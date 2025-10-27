@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\services\storage_service.py
+# hypothesis_version: 6.142.4
+
+[b'0', 0.0, 0.1, 1.0, 256, 1024, '1.0.0', 'active_operations', 'average_read_speed', 'average_write_speed', 'complete_files', 'completion_rate', 'delete', 'failed_operations', 'incomplete_files', 'rb', 'read', 'running', 'storage_operation', 'storage_service', 'success_rate', 'total_bytes_read', 'total_bytes_written', 'total_files', 'total_operations', 'total_size', 'wb', 'write']

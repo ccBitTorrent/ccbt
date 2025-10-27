@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\metrics.py
+# hypothesis_version: 6.142.4
+
+[0.0, 3600, 'Total bytes uploaded', 'active_peers', 'bytes_downloaded', 'bytes_uploaded', 'connected_peers', 'consecutive_failures', 'counter', 'disk_queue_depth', 'download_rate', 'gauge', 'global', 'hash_queue_depth', 'histogram', 'peers', 'pieces_completed', 'pieces_total', 'progress', 'prom_download_rate', 'registry', 'request_latency', 'system', 'timestamp', 'torrents', 'upload_rate']

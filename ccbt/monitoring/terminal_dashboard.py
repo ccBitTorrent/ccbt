@@ -1,0 +1,662 @@
+"""
+Textual-based terminal dashboard for ccBitTorrent.
+
+Provides a live view of global session stats and per-torrent status.
+
+References:
+- Textual framework documentation: https://textual.textualize.io/
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any, Dict, List, Optional
+
+from rich.table import Table
+from rich.panel import Panel
+
+try:
+    from textual import events  # type: ignore[import-not-found]
+    from textual.app import App, ComposeResult  # type: ignore[import-not-found]
+    from textual.containers import Container, Horizontal  # type: ignore[import-not-found]
+    from textual.widgets import Header, Footer, Static, DataTable, Sparkline, Input, RichLog  # type: ignore[import-not-found]
+    _TEXTUAL_AVAILABLE = True
+except Exception:  # pragma: no cover - fallback when Textual isn't installed
+    _TEXTUAL_AVAILABLE = False
+
+    class _Stub:
+        def __init__(self, *args, **kwargs):
+            self.id = kwargs.get("id", "")
+            self.display = True
+
+        def update(self, *args, **kwargs):
+            pass
+
+        def write(self, *args, **kwargs):
+            pass
+
+        def add_row(self, *args, **kwargs):
+            pass
+
+        def add_columns(self, *args, **kwargs):
+            pass
+
+        def clear(self, *args, **kwargs):
+            pass
+
+        def focus(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class App:  # type: ignore[no-redef]
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def run(self, *args, **kwargs):
+            pass
+
+        def set_interval(self, *args, **kwargs):
+            pass
+
+        def query_one(self, *args, **kwargs):
+            return _Stub()
+
+        def refresh(self, *args, **kwargs):
+            pass
+
+        def mount(self, *args, **kwargs):
+            pass
+
+    class ComposeResult:  # type: ignore[no-redef]
+        pass
+
+    class Container(_Stub):
+        pass
+
+    class Horizontal(_Stub):
+        pass
+
+    class Header(_Stub):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+
+    class Footer(_Stub):
+        pass
+
+    class Static(_Stub):
+        pass
+
+    class DataTable(_Stub):
+        cursor_row_key = None
+
+    class Sparkline(_Stub):
+        data = []
+
+    class Input(_Stub):
+        class Submitted:  # minimal shim for type
+            def __init__(self):
+                self.input = _Stub()
+                self.value = ""
+
+    class RichLog(_Stub):
+        pass
+
+    class events:  # type: ignore[no-redef]
+        class Key:  # minimal shim
+            def __init__(self, key: str = ""):
+                self.key = key
+
+from ..session import AsyncSessionManager
+from ..monitoring import get_alert_manager, MetricsCollector
+from ..checkpoint import CheckpointManager
+
+
+class Overview(Static):
+    """Simple widget to render global stats."""
+
+    def update_from_stats(self, stats: Dict[str, Any]) -> None:
+        rows = [
+            ("Torrents", str(stats.get("num_torrents", 0))),
+            ("Active", str(stats.get("num_active", 0))),
+            ("Paused", str(stats.get("num_paused", 0))),
+            ("Seeding", str(stats.get("num_seeding", 0))),
+            ("Down Rate", f"{stats.get('download_rate', 0.0):.1f} B/s"),
+            ("Up Rate", f"{stats.get('upload_rate', 0.0):.1f} B/s"),
+            ("Avg Progress", f"{stats.get('average_progress', 0.0)*100:.1f}%"),
+        ]
+        t = Table(show_header=False, box=None, expand=True)
+        t.add_column("Key", style="cyan", ratio=1)
+        t.add_column("Value", style="green", ratio=2)
+        for k, v in rows:
+            t.add_row(k, v)
+        self.update(Panel(t, title="Overview"))
+
+
+class TorrentsTable(Static):
+    """Widget to render per-torrent status table."""
+
+    def on_mount(self) -> None:  # type: ignore[override]
+        self._dt = DataTable(zebra_stripes=True)
+        self._dt.add_columns("Info Hash", "Name", "Status", "Progress", "Down/Up (B/s)")
+        self.update(self._dt)
+
+    def update_from_status(self, status: Dict[str, Dict[str, Any]]) -> None:
+        dt: DataTable = self._dt
+        dt.clear()
+        for ih, st in status.items():
+            progress = f"{float(st.get('progress', 0.0))*100:.1f}%"
+            rates = f"{float(st.get('download_rate', 0.0)):.0f} / {float(st.get('upload_rate', 0.0)):.0f}"
+            dt.add_row(ih, str(st.get("name", "-")), str(st.get("status", "-")), progress, rates, key=ih)
+
+    def get_selected_info_hash(self) -> Optional[str]:
+        try:
+            if hasattr(self._dt, "cursor_row_key"):
+                row_key = getattr(self._dt, "cursor_row_key")
+                return None if row_key is None else str(row_key)
+        except Exception:
+            pass
+        return None
+
+
+class PeersTable(Static):
+    """Widget to render peers for selected torrent."""
+
+    def on_mount(self) -> None:  # type: ignore[override]
+        self._dt = DataTable(zebra_stripes=True)
+        self._dt.add_columns("IP", "Port", "Down (B/s)", "Up (B/s)", "Choked", "Client")
+        self.update(self._dt)
+
+    def update_from_peers(self, peers: List[Dict[str, Any]]) -> None:
+        dt: DataTable = self._dt
+        dt.clear()
+        for p in peers or []:
+            dt.add_row(
+                str(p.get("ip", "-")),
+                str(p.get("port", "-")),
+                f"{float(p.get('download_rate', 0.0)):.0f}",
+                f"{float(p.get('upload_rate', 0.0)):.0f}",
+                str(p.get("choked", False)),
+                str(p.get("client", "?")),
+            )
+
+
+class SpeedSparklines(Static):
+    """Widget to show download/upload speed history."""
+
+    def on_mount(self) -> None:  # type: ignore[override]
+        self._down = Sparkline()
+        self._up = Sparkline()
+        self._down_history: List[float] = []
+        self._up_history: List[float] = []
+        cont = Container(self._down, self._up)
+        self.update(Panel(cont, title="Speeds"))
+
+    def update_from_stats(self, stats: Dict[str, Any]) -> None:
+        self._down_history.append(float(stats.get("download_rate", 0.0)))
+        self._up_history.append(float(stats.get("upload_rate", 0.0)))
+        # Keep last 120 samples (~2 minutes at 1s)
+        self._down_history = self._down_history[-120:]
+        self._up_history = self._up_history[-120:]
+        try:
+            self._down.data = self._down_history  # type: ignore[attr-defined]
+            self._up.data = self._up_history  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+
+class TerminalDashboard(App):
+    """Textual dashboard application."""
+
+    CSS = """
+    Screen { layout: vertical; }
+    #body { layout: horizontal; height: 1fr; }
+    #left, #right { width: 1fr; }
+    #left { layout: vertical; }
+    #right { layout: vertical; }
+    #torrents { height: 2fr; }
+    #peers { height: 1fr; }
+    """
+
+    def __init__(self, session: AsyncSessionManager, refresh_interval: float = 1.0):
+        super().__init__()
+        self.session = session
+        self.refresh_interval = max(0.2, float(refresh_interval))
+        self.overview = Overview(id="overview")
+        self.speeds = SpeedSparklines(id="speeds")
+        self.torrents = TorrentsTable(id="torrents")
+        self.peers = PeersTable(id="peers")
+        self.details = Static(id="details")
+        self.statusbar = Static(id="statusbar")
+        self.alerts = Static(id="alerts")
+        self.alert_manager = get_alert_manager()
+        self.metrics_collector = MetricsCollector()
+        self._poll_task: Optional[asyncio.Task] = None
+        self._filter_input: Optional[Input] = None
+        self._filter_text: str = ""
+        self._last_status: Dict[str, Dict[str, Any]] = {}
+        self.logs = RichLog(id="logs")
+        self._compact = False
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        with Horizontal(id="body"):
+            yield Container(self.overview, self.speeds, id="left")
+            yield Container(self.torrents, self.peers, self.details, self.logs, id="right")
+        yield self.statusbar
+        yield Container(self.alerts)
+        yield Footer()
+
+    BINDINGS = [
+        ("p", "pause_torrent", "Pause"),
+        ("r", "resume_torrent", "Resume"),
+        ("q", "quit", "Quit"),
+    ]
+
+    async def on_mount(self) -> None:  # type: ignore[override]
+        # Start the session and begin polling
+        await self.session.start()
+        try:
+            await self.metrics_collector.start()
+        except Exception:
+            pass
+        # Auto-load alert rules from configured path or default if present
+        try:
+            from pathlib import Path
+            default_path = getattr(getattr(self.session, "config", None), "observability", None)
+            rules_path = None
+            if default_path and getattr(default_path, "alerts_rules_path", None):
+                rules_path = Path(default_path.alerts_rules_path)
+            else:
+                rules_path = Path(".ccbt/alerts.json")
+            default_rules = rules_path
+            if default_rules.exists():
+                self.alert_manager.load_rules_from_file(default_rules)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        self.set_interval(self.refresh_interval, self._schedule_poll)
+
+    def _schedule_poll(self) -> None:
+        if self._poll_task and not self._poll_task.done():
+            return
+        self._poll_task = asyncio.create_task(self._poll_once())
+
+    async def _poll_once(self) -> None:
+        try:
+            stats = await self.session.get_global_stats()
+            self.overview.update_from_stats(stats)
+            self.speeds.update_from_stats(stats)
+            all_status = await self.session.get_status()
+            self._last_status = all_status
+            self._apply_filter_and_update()
+            # Evaluate alert rules using current system metrics if available
+            try:
+                # Attempt to feed system CPU usage if present via MetricsCollector
+                sys_cpu = None
+                if hasattr(self.metrics_collector, "get_system_metrics"):
+                    sm = self.metrics_collector.get_system_metrics()  # type: ignore[attr-defined]
+                    sys_cpu = sm.get("cpu_usage") if isinstance(sm, dict) else None
+                # If we have a CPU rule, evaluate it with current value
+                if sys_cpu is not None and getattr(self.alert_manager, "alert_rules", None):
+                    for rn, rule in list(self.alert_manager.alert_rules.items()):
+                        if rule.metric_name in ("system_cpu_usage", "cpu_usage"):
+                            await self.alert_manager.process_alert(rule.metric_name, float(sys_cpu))  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            # Update peers for the selected torrent (if any)
+            ih = self.torrents.get_selected_info_hash()
+            peers: List[Dict[str, Any]] = []
+            if ih:
+                try:
+                    peers = await self.session.get_peers_for_torrent(ih)
+                except Exception:
+                    peers = []
+            self.peers.update_from_peers(peers)
+            # Update details panel for selected torrent
+            if ih and ih in all_status:
+                st = all_status[ih]
+                det = Table(show_header=False, box=None, expand=True)
+                det.add_column("k", ratio=1)
+                det.add_column("v", ratio=2)
+                det.add_row("Name", str(st.get("name", "-")))
+                det.add_row("Status", str(st.get("status", "-")))
+                det.add_row("Progress", f"{float(st.get('progress',0.0))*100:.1f}%")
+                det.add_row("Down", f"{float(st.get('download_rate',0.0)):.0f} B/s")
+                det.add_row("Up", f"{float(st.get('upload_rate',0.0)):.0f} B/s")
+                self.details.update(Panel(det, title="Details"))
+            else:
+                self.details.update(Panel("Select a torrent for details", title="Details"))
+            # Update status bar counters
+            sb = f"Torrents: {stats.get('num_torrents',0)}  Active: {stats.get('num_active',0)}  Paused: {stats.get('num_paused',0)}  Seeding: {stats.get('num_seeding',0)}  D: {float(stats.get('download_rate',0.0)):.0f}B/s  U: {float(stats.get('upload_rate',0.0)):.0f}B/s"
+            self.statusbar.update(Panel(sb, title="Status"))
+            # Show alert rules and active alerts
+            if getattr(self.alert_manager, "alert_rules", None):
+                rules = Table(title="Alert Rules", expand=True)
+                rules.add_column("Name", style="cyan")
+                rules.add_column("Metric")
+                rules.add_column("Condition")
+                rules.add_column("Severity", style="red")
+                for rn, rule in self.alert_manager.alert_rules.items():
+                    rules.add_row(rn, rule.metric_name, rule.condition, getattr(rule.severity, "value", str(rule.severity)))
+            else:
+                rules = Panel("No alert rules configured", title="Alert Rules")
+
+            if getattr(self.alert_manager, "active_alerts", None):
+                act = Table(title="Active Alerts", expand=True)
+                act.add_column("Severity", style="red")
+                act.add_column("Rule", style="yellow")
+                act.add_column("Value")
+                for a in self.alert_manager.active_alerts.values():
+                    act.add_row(getattr(a.severity, "value", str(a.severity)), a.rule_name, str(a.value))
+            else:
+                act = Panel("No active alerts", title="Active Alerts")
+
+            # Ensure we pass Widgets to Container
+            # Wrap both in Static to satisfy Textual's Widget expectations
+            self.alerts.update(Container(Static(rules), Static(act)))
+        except Exception as e:
+            # Render error where overview goes
+            self.overview.update(Panel(str(e), title="Error", border_style="red"))
+
+    async def on_unmount(self) -> None:  # type: ignore[override]
+        try:
+            await self.session.stop()
+        except Exception:
+            pass
+        try:
+            await self.metrics_collector.stop()
+        except Exception:
+            pass
+
+    # Key bindings
+    async def on_key(self, event: events.Key) -> None:  # type: ignore[override]
+        if event.key in ("q", "Q"):
+            await self.action_quit()
+            return
+        if event.key in ("delete",):
+            ih = self.torrents.get_selected_info_hash()
+            if ih:
+                # Basic inline confirm: press 'y' to confirm deletion
+                self.overview.update(Panel(f"Delete torrent {ih[:16]}…? Press 'y' to confirm or 'n' to cancel", title="Confirm", border_style="yellow"))
+                self._pending_delete = ih  # type: ignore[attr-defined]
+            return
+        if event.key in ("y", "Y"):
+            ih = getattr(self, "_pending_delete", None)
+            if ih:
+                try:
+                    await self.session.remove(ih)
+                except Exception:
+                    pass
+                finally:
+                    self._pending_delete = None  # type: ignore[attr-defined]
+            return
+        if event.key in ("n", "N"):
+            if getattr(self, "_pending_delete", None):
+                self._pending_delete = None  # type: ignore[attr-defined]
+            return
+        if event.key in ("p", "P"):
+            ih = self.torrents.get_selected_info_hash()
+            if ih:
+                try:
+                    await self.session.pause_torrent(ih)
+                    self.logs.write(f"Paused {ih}")
+                except Exception:
+                    pass
+            return
+        if event.key in ("r", "R"):
+            ih = self.torrents.get_selected_info_hash()
+            if ih:
+                try:
+                    await self.session.resume_torrent(ih)
+                    self.logs.write(f"Resumed {ih}")
+                except Exception:
+                    pass
+            return
+        if event.key == "/":
+            # Command palette lite: filter by name/status
+            if not self._filter_input:
+                self._filter_input = Input(placeholder="Filter (name or status), press Enter to apply", id="filter")
+                self.mount(self._filter_input)
+                self._filter_input.focus()
+            else:
+                self._filter_input.display = True
+                self._filter_input.focus()
+            return
+        if event.key in (":",):
+            # Simple command palette: 
+            # pause|resume|remove|announce|scrape|pex|rehash|limit <down> <up>|backup <path>|restore <path>
+            self._cmd_input = Input(placeholder="> command", id="cmd")
+            self.mount(self._cmd_input)
+            self._cmd_input.focus()
+            return
+        if event.key in ("a", "A"):
+            # Force announce
+            ih = self.torrents.get_selected_info_hash()
+            if ih:
+                try:
+                    ok = await self.session.force_announce(ih)
+                    self.statusbar.update(Panel(f"Announce: {'OK' if ok else 'Failed'}", title="Status"))
+                    self.logs.write(f"Announce {'OK' if ok else 'Failed'} for {ih}")
+                except Exception:
+                    self.statusbar.update(Panel("Announce: Failed", title="Status", border_style="red"))
+            return
+        if event.key in ("s", "S"):
+            # Force scrape (placeholder)
+            ih = self.torrents.get_selected_info_hash()
+            if ih:
+                ok = await self.session.force_scrape(ih)
+                self.statusbar.update(Panel(f"Scrape: {'OK' if ok else 'Failed'}", title="Status"))
+                self.logs.write(f"Scrape {'OK' if ok else 'Failed'} for {ih}")
+            return
+        if event.key in ("e", "E"):
+            # Refresh PEX (placeholder)
+            ih = self.torrents.get_selected_info_hash()
+            if ih:
+                ok = await self.session.refresh_pex(ih)
+                self.statusbar.update(Panel(f"PEX: {'OK' if ok else 'Failed'}", title="Status"))
+                self.logs.write(f"PEX {'OK' if ok else 'Failed'} for {ih}")
+            return
+        if event.key in ("h", "H"):
+            # Rehash (placeholder)
+            ih = self.torrents.get_selected_info_hash()
+            if ih:
+                ok = await self.session.rehash_torrent(ih)
+                self.statusbar.update(Panel(f"Rehash: {'OK' if ok else 'Failed'}", title="Status"))
+                self.logs.write(f"Rehash {'OK' if ok else 'Failed'} for {ih}")
+            return
+        if event.key in ("x", "X"):
+            # Export snapshot
+            from pathlib import Path
+            p = Path("dashboard_snapshot.json")
+            try:
+                await self.session.export_session_state(p)
+                self.statusbar.update(Panel(f"Snapshot saved to {p}", title="Status"))
+                self.logs.write(f"Snapshot saved to {p}")
+            except Exception as e:
+                self.statusbar.update(Panel(f"Snapshot failed: {e}", title="Status", border_style="red"))
+            return
+        if event.key in ("1",):
+            ih = self.torrents.get_selected_info_hash()
+            if ih:
+                try:
+                    await self.session.set_rate_limits(ih, 0, 0)
+                    self.statusbar.update(Panel("Rate limits disabled", title="Status"))
+                    self.logs.write(f"Rate limits disabled for {ih}")
+                except Exception:
+                    pass
+            return
+        if event.key in ("2",):
+            ih = self.torrents.get_selected_info_hash()
+            if ih:
+                try:
+                    await self.session.set_rate_limits(ih, 1024, 1024)
+                    self.statusbar.update(Panel("Rate limits set to 1024 KiB/s", title="Status"))
+                    self.logs.write(f"Rate limits set to 1024/1024 KiB/s for {ih}")
+                except Exception:
+                    pass
+            return
+        if event.key in ("m", "M"):
+            # Toggle metrics collection interval among 1, 5, 10 seconds
+            next_map = {1.0: 5.0, 5.0: 10.0, 10.0: 1.0}
+            current = float(getattr(self.metrics_collector, "collection_interval", 5.0))
+            if current not in next_map:
+                current = 5.0
+            new_iv = next_map[current]
+            try:
+                self.metrics_collector.collection_interval = new_iv
+                self.statusbar.update(Panel(f"Metrics interval: {new_iv}s", title="Status"))
+                self.logs.write(f"Metrics interval set to {new_iv}s")
+            except Exception:
+                pass
+            return
+        if event.key in ("R",):
+            # Toggle dashboard refresh interval among 0.5, 1.0, 2.0
+            next_map = {0.5: 1.0, 1.0: 2.0, 2.0: 0.5}
+            current = self.refresh_interval
+            # pick nearest bucket
+            if current not in next_map:
+                current = 1.0
+            self.refresh_interval = next_map[current]
+            # Reset interval
+            self.set_interval(self.refresh_interval, self._schedule_poll)
+            self.statusbar.update(Panel(f"UI refresh interval: {self.refresh_interval}s", title="Status"))
+            return
+        if event.key in ("t", "T"):
+            # Toggle light/dark theme
+            try:
+                self.dark = not self.dark  # type: ignore[attr-defined]
+                self.statusbar.update(Panel(f"Theme: {'Dark' if self.dark else 'Light'}", title="Status"))
+            except Exception:
+                pass
+            return
+        if event.key in ("c", "C"):
+            # Toggle compact mode (adjust panel proportions)
+            self._compact = not self._compact
+            try:
+                torrents = self.query_one("#torrents")
+                peers = self.query_one("#peers")
+                details = self.query_one("#details")
+                logs = self.query_one("#logs")
+                # Increase torrents area when compact
+                if self._compact:
+                    torrents.styles.height = "3fr"  # type: ignore[attr-defined]
+                    peers.styles.height = "1fr"  # type: ignore[attr-defined]
+                    details.display = False  # type: ignore[attr-defined]
+                    logs.display = False  # type: ignore[attr-defined]
+                else:
+                    torrents.styles.height = "2fr"  # type: ignore[attr-defined]
+                    peers.styles.height = "1fr"  # type: ignore[attr-defined]
+                    details.display = True  # type: ignore[attr-defined]
+                    logs.display = True  # type: ignore[attr-defined]
+                self.refresh(layout=True)  # type: ignore[call-arg]
+            except Exception:
+                pass
+            return
+        if event.key in ("k", "K"):
+            # Acknowledge (resolve) all active alerts
+            try:
+                for aid in list(getattr(self.alert_manager, "active_alerts", {}).keys()):
+                    await self.alert_manager.resolve_alert(aid)  # type: ignore[attr-defined]
+                self.logs.write("Acknowledged all alerts")
+            except Exception:
+                pass
+            return
+
+    async def on_input_submitted(self, message: Input.Submitted) -> None:  # type: ignore[override]
+        if message.input.id == "filter":
+            self._filter_text = message.value.strip()
+            if self._filter_input:
+                self._filter_input.display = False
+            self._apply_filter_and_update()
+        elif message.input.id == "cmd":
+            cmdline = message.value.strip()
+            message.input.display = False
+            await self._run_command(cmdline)
+
+    def _apply_filter_and_update(self) -> None:
+        status = self._last_status
+        if not self._filter_text:
+            self.torrents.update_from_status(status)
+            return
+        filt = self._filter_text.lower()
+        filtered: Dict[str, Dict[str, Any]] = {}
+        for ih, st in status.items():
+            name = str(st.get("name", "")).lower()
+            state = str(st.get("status", "")).lower()
+            if (filt in name) or (filt in state):
+                filtered[ih] = st
+        self.torrents.update_from_status(filtered)
+
+    async def _run_command(self, cmdline: str) -> None:
+        parts = cmdline.split()
+        if not parts:
+            return
+        cmd = parts[0].lower()
+        ih = self.torrents.get_selected_info_hash()
+        try:
+            if cmd == "pause" and ih:
+                await self.session.pause_torrent(ih)
+                self.logs.write(f"Paused {ih}")
+            elif cmd == "resume" and ih:
+                await self.session.resume_torrent(ih)
+                self.logs.write(f"Resumed {ih}")
+            elif cmd == "remove" and ih:
+                await self.session.remove(ih)
+                self.logs.write(f"Removed {ih}")
+            elif cmd == "announce" and ih:
+                await self.session.force_announce(ih)
+                self.logs.write(f"Announce sent {ih}")
+            elif cmd == "scrape" and ih:
+                await self.session.force_scrape(ih)
+                self.logs.write(f"Scrape requested {ih}")
+            elif cmd == "pex" and ih:
+                await self.session.refresh_pex(ih)
+                self.logs.write(f"PEX refresh {ih}")
+            elif cmd == "rehash" and ih:
+                await self.session.rehash_torrent(ih)
+                self.logs.write(f"Rehash {ih}")
+            elif cmd == "limit" and ih and len(parts) >= 3:
+                await self.session.set_rate_limits(ih, int(parts[1]), int(parts[2]))
+                self.logs.write(f"Set limits {parts[1]}/{parts[2]} KiB/s for {ih}")
+            elif cmd == "backup" and ih and len(parts) >= 2:
+                from pathlib import Path
+                await self.session.checkpoint_backup_torrent(ih, Path(parts[1]))
+                self.logs.write(f"Backup checkpoint to {parts[1]} for {ih}")
+            elif cmd == "restore" and len(parts) >= 2:
+                # Restore checkpoint from backup file
+                from pathlib import Path
+                cm = CheckpointManager(self.session.config.disk)
+                await cm.restore_checkpoint(Path(parts[1]))
+                self.logs.write(f"Restored checkpoint from {parts[1]}")
+        except Exception as e:
+            self.logs.write(f"Command error: {e}")
+
+    # Actions
+    async def action_pause_torrent(self) -> None:
+        ih = self.torrents.get_selected_info_hash()
+        if ih:
+            try:
+                await self.session.pause_torrent(ih)
+                self.statusbar.update(Panel(f"Paused {ih[:12]}…", title="Action"))
+            except Exception as e:
+                self.statusbar.update(Panel(f"Pause failed: {e}", title="Action", border_style="red"))
+
+    async def action_resume_torrent(self) -> None:
+        ih = self.torrents.get_selected_info_hash()
+        if ih:
+            try:
+                await self.session.resume_torrent(ih)
+                self.statusbar.update(Panel(f"Resumed {ih[:12]}…", title="Action"))
+            except Exception as e:
+                self.statusbar.update(Panel(f"Resume failed: {e}", title="Action", border_style="red"))
+
+
+def run_dashboard(session: AsyncSessionManager, refresh: Optional[float] = None) -> None:
+    """Run the Textual dashboard App for the provided session."""
+    TerminalDashboard(session, refresh_interval=refresh or 1.0).run()
+
+

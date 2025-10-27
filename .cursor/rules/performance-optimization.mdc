@@ -1,0 +1,109 @@
+---
+globs: ccbt/disk_io.py,ccbt/async_peer_connection.py,ccbt/buffers.py,ccbt/network_optimizer.py
+description: Performance optimization patterns and requirements
+---
+
+# Performance Optimization Patterns
+
+## Zero-Copy Operations
+Located in [ccbt/buffers.py](mdc:ccbt/buffers.py):
+
+### Ring Buffers
+- **High-Throughput**: Ring buffers for zero-copy data transfer
+- **Memory Pools**: Pre-allocated memory pools for frequent allocations
+- **Buffer Management**: Efficient buffer lifecycle management
+
+```python
+class RingBuffer:
+    def __init__(self, size: int):
+        self.buffer = bytearray(size)
+        self.head = 0
+        self.tail = 0
+    
+    def write(self, data: bytes) -> int:
+        # Zero-copy write operation
+        pass
+```
+
+## Network I/O Optimization
+Located in [ccbt/network_optimizer.py](mdc:ccbt/network_optimizer.py):
+
+### Socket Tuning
+- **TCP_NODELAY**: Disable Nagle's algorithm for low latency
+- **SO_REUSEPORT**: Enable port reuse for load balancing
+- **Buffer Sizing**: Optimize socket buffer sizes based on BDP
+- **Connection Pooling**: Reuse connections for efficiency
+
+```python
+class NetworkOptimizer:
+    def optimize_socket(self, sock: socket.socket) -> None:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+```
+
+## Disk I/O Enhancement
+Located in [ccbt/disk_io.py](mdc:ccbt/disk_io.py):
+
+### io_uring Support (Linux)
+- **Asynchronous I/O**: Use io_uring for high-performance I/O
+- **Batch Operations**: Batch multiple I/O operations
+- **Zero-Copy I/O**: Direct memory access for large transfers
+
+### AIO Fallback
+- **Cross-Platform**: AIO fallback for non-Linux systems
+- **Async I/O**: Asynchronous file operations
+- **Error Handling**: Proper error handling for I/O operations
+
+### NVMe Optimizations
+- **Direct I/O**: Bypass page cache for large sequential writes
+- **Write-Behind Caching**: Optimize write performance
+- **SSD Detection**: Detect SSD storage for optimization
+
+```python
+class DiskIO:
+    async def write_piece(self, piece_data: bytes, offset: int) -> None:
+        if self.use_io_uring:
+            await self._io_uring_write(piece_data, offset)
+        else:
+            await self._aio_write(piece_data, offset)
+```
+
+## Hash Verification Optimization
+Located in [ccbt/async_piece_manager.py](mdc:ccbt/async_piece_manager.py):
+
+### SIMD-Accelerated SHA-1
+- **OpenSSL Integration**: Use OpenSSL for SIMD-accelerated hashing
+- **Batch Verification**: Verify multiple pieces simultaneously
+- **Hash Caching**: Cache partial piece hashes
+
+```python
+class HashVerifier:
+    def verify_piece(self, piece_data: bytes, expected_hash: bytes) -> bool:
+        # SIMD-accelerated SHA-1 verification
+        actual_hash = hashlib.sha1(piece_data).digest()
+        return actual_hash == expected_hash
+```
+
+## Memory Optimization
+
+### Memory Pools
+- **Pre-allocation**: Pre-allocate memory pools for frequent operations
+- **Object Reuse**: Reuse objects to reduce garbage collection
+- **Memory Mapping**: Use memory mapping for large files
+
+### Garbage Collection
+- **Generational GC**: Optimize for generational garbage collection
+- **Weak References**: Use weak references where appropriate
+- **Memory Profiling**: Profile memory usage for optimization
+
+## Performance Targets
+- **50% improvement** in download speed
+- **30% reduction** in memory usage
+- **40% improvement** in disk I/O throughput
+- **Sub-100ms** peer connection establishment
+
+## Benchmarking
+- **Performance Tests**: Regular performance regression testing
+- **Load Testing**: High-load scenario testing
+- **Memory Profiling**: Memory usage analysis
+- **CPU Profiling**: CPU usage optimization

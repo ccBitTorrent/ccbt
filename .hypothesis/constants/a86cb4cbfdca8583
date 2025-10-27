@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\cli\config_commands.py
+# hypothesis_version: 6.142.4
+
+['--backup', '--config', '--confirm', '--format', '--from-version', '--global', '--key', '--local', '--section', '--to-version', '.', '.bak', '.config', '0', '1', 'MIGRATED', 'OK', 'VALID', 'ccbt', 'ccbt.toml', 'config_file', 'false', 'format_', 'get', 'global_flag', 'json', 'key', 'local_flag', 'migrate', 'no', 'off', 'on', 'reset', 'set', 'show', 'toml', 'true', 'utf-8', 'validate', 'value', 'yaml', 'yes']

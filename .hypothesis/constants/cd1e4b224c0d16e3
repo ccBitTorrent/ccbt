@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\monitoring\tracing.py
+# hypothesis_version: 6.142.4
+
+[0.0, 1.0, 1000, 3600, 10000, 'TraceContext', 'active_spans', 'attributes', 'cancelled', 'client', 'completed_spans', 'consumer', 'duration', 'end_time', 'error', 'events', 'internal', 'json', 'kind', 'name', 'ok', 'parent_span_id', 'producer', 'sampled_spans', 'sampling_decisions', 'sampling_rate', 'server', 'span_count', 'span_id', 'spans', 'spans_completed', 'spans_created', 'start_time', 'status', 'timeout', 'timestamp', 'trace_context', 'trace_id', 'traces', 'traces_completed', 'traces_created']

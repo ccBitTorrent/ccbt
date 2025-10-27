@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\buffers.py
+# hypothesis_version: 6.142.4
+
+[b'\x00', 'clear', 'memory_pools', 'pool_stats', 'ring_buffers', 'zero_copy_buffers']

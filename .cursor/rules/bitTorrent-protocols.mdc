@@ -1,0 +1,116 @@
+---
+globs: ccbt/torrent.py,ccbt/peer.py,ccbt/tracker.py,ccbt/dht.py,ccbt/extensions/*.py
+description: BitTorrent protocol implementation patterns
+---
+
+# BitTorrent Protocol Implementation
+
+## Core Protocols Implemented
+
+### BitTorrent Protocol (BEP 5)
+- **Handshake**: 68-byte handshake with protocol string, reserved bytes, info hash, peer ID
+- **Message Types**: Keep-alive, choke, unchoke, interested, not interested, have, bitfield, request, piece, cancel, port
+- **Piece Management**: 16KB blocks, piece verification with SHA-1
+- **Peer Communication**: TCP connections with message framing
+
+### Fast Extension (BEP 6)
+- **Suggest Piece**: Suggest pieces to peers
+- **Have All**: Indicate having all pieces
+- **Have None**: Indicate having no pieces
+- **Reject Request**: Reject specific piece requests
+- **Allow Fast**: Allow fast piece requests
+
+### Extension Protocol (BEP 10)
+- **Extension Handshake**: Negotiate supported extensions
+- **Custom Extensions**: Support for custom extension messages
+- **Extension Messages**: Extended message format with message IDs
+
+### WebSeed (BEP 19)
+- **HTTP Range Requests**: Download pieces via HTTP
+- **WebSeed Integration**: Combine BitTorrent and HTTP sources
+- **Fallback Support**: Use WebSeed when BitTorrent peers unavailable
+
+### Compact Peer Lists (BEP 23)
+- **IPv4 Format**: 6-byte compact format (4 bytes IP + 2 bytes port)
+- **IPv6 Format**: 18-byte compact format (16 bytes IP + 2 bytes port)
+- **Efficient Parsing**: Optimized peer list parsing
+
+### DHT (BEP 5)
+- **Kademlia Algorithm**: Distributed hash table implementation
+- **Peer Discovery**: Find peers without trackers
+- **Bootstrap Nodes**: Connect to DHT network
+- **Node Management**: Maintain DHT node table
+
+### PEX (BEP 11)
+- **Peer Exchange**: Exchange peer lists between connected peers
+- **Efficient Discovery**: Reduce dependency on trackers
+- **Peer Lists**: Compact peer list exchange
+
+## Implementation Patterns
+
+### Message Handling
+```python
+class PeerConnection:
+    async def handle_message(self, message: bytes) -> None:
+        if message[0] == MessageType.CHOKE:
+            await self.handle_choke()
+        elif message[0] == MessageType.UNCHOKE:
+            await self.handle_unchoke()
+        # ... other message types
+```
+
+### Piece Selection
+```python
+class PieceManager:
+    def get_next_piece(self) -> Optional[int]:
+        # Rarest-first algorithm
+        rarest_pieces = self.get_rarest_pieces()
+        return rarest_pieces[0] if rarest_pieces else None
+```
+
+### Tracker Communication
+```python
+class Tracker:
+    async def announce(self, torrent: Torrent, peer_id: bytes) -> TrackerResponse:
+        params = {
+            'info_hash': torrent.info_hash,
+            'peer_id': peer_id,
+            'port': self.port,
+            'uploaded': torrent.uploaded_bytes,
+            'downloaded': torrent.downloaded_bytes,
+            'left': torrent.left_bytes
+        }
+        # HTTP GET request to tracker
+```
+
+### DHT Implementation
+```python
+class DHT:
+    async def find_peers(self, info_hash: bytes) -> List[PeerInfo]:
+        # Kademlia FIND_PEERS query
+        closest_nodes = self.get_closest_nodes(info_hash)
+        # Query nodes for peers
+```
+
+## Protocol Extensions
+
+### MSE/PE (BEP 3)
+- **Message Stream Encryption**: Encrypt peer communication
+- **Protocol Encryption**: Encrypt handshake and messages
+- **Key Exchange**: Secure key exchange mechanism
+
+### WebTorrent Support
+- **WebRTC Data Channels**: Browser-based peer connections
+- **WebSocket Trackers**: WebSocket-based tracker communication
+- **Hybrid Mode**: Support both BitTorrent and WebTorrent peers
+
+### IPFS Integration
+- **Content Addressing**: Content-addressed storage
+- **IPFS Gateways**: HTTP gateway support
+- **Hybrid Protocol**: BitTorrent + IPFS hybrid mode
+
+## Error Handling
+- **Protocol Violations**: Handle invalid protocol messages
+- **Connection Errors**: Handle network connection issues
+- **Timeout Handling**: Handle peer and tracker timeouts
+- **Retry Logic**: Implement exponential backoff for retries

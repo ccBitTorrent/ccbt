@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\security\anomaly_detector.py
+# hypothesis_version: 6.142.4
+
+[0.0, 0.05, 0.1, 0.3, 0.5, 0.7, 1.0, 2.0, 3.0, 5.0, 10.0, -1000, -100, 100, 1000, 1800, 3600, 10000, 'anomalies_by_type', 'anomaly_type', 'baseline_mean', 'baseline_std', 'behavioral', 'behavioral_deviation', 'bytes_per_message', 'bytes_received', 'bytes_sent', 'confidence', 'connection_duration', 'connection_quality', 'connection_time', 'count', 'critical', 'current_value', 'description', 'detection_rate', 'deviation', 'error_count', 'error_rate', 'expected_value', 'false_positive_rate', 'false_positives', 'high', 'ip', 'low', 'mean', 'medium', 'message_count', 'message_frequency', 'metadata', 'metric', 'network', 'network_anomaly_rate', 'peer_id', 'performance', 'protocol', 'request_type', 'severity', 'statistical', 'statistical_z_score', 'std', 'timestamp', 'total_anomalies', 'traffic_ratio', 'true_positives', 'value', 'z_score']

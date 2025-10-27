@@ -1,0 +1,43 @@
+---
+alwaysApply: true
+description: Project structure and architecture overview
+---
+
+# ccBitTorrent Project Structure
+
+## Core Architecture
+This is a high-performance BitTorrent client with modern architecture:
+
+- **Main Entry**: [ccbt/__main__.py](mdc:ccbt/__main__.py) - CLI entry point
+- **Session Management**: [ccbt/session.py](mdc:ccbt/session.py) - Main client session
+- **Configuration**: [ccbt/config.py](mdc:ccbt/config.py) - Configuration management with Pydantic models
+- **Models**: [ccbt/models.py](mdc:ccbt/models.py) - Pydantic data models and validation
+
+## Key Components
+
+### Core BitTorrent Implementation
+- [ccbt/torrent.py](mdc:ccbt/torrent.py) - Torrent file handling and metadata
+- [ccbt/peer.py](mdc:ccbt/peer.py) - Peer connection management
+- [ccbt/peer_connection.py](mdc:ccbt/peer_connection.py) - Peer connection logic
+- [ccbt/async_peer_connection.py](mdc:ccbt/async_peer_connection.py) - Async peer connections
+- [ccbt/piece_manager.py](mdc:ccbt/piece_manager.py) - Piece selection and management
+- [ccbt/tracker.py](mdc:ccbt/tracker.py) - Tracker communication
+- [ccbt/dht.py](mdc:ccbt/dht.py) - Distributed Hash Table implementation
+
+### Advanced Features
+- [ccbt/security/](mdc:ccbt/security/) - Security enhancements and ML features
+- [ccbt/ml/](mdc:ccbt/ml/) - Machine learning optimizations
+- [ccbt/monitoring/](mdc:ccbt/monitoring/) - Advanced monitoring and observability
+- [ccbt/observability/](mdc:ccbt/observability/) - Performance profiling and debugging
+
+### CLI and Interface
+- [ccbt/cli/](mdc:ccbt/cli/) - Enhanced CLI with Rich interface
+- [ccbt/events.py](mdc:ccbt/events.py) - Event-driven architecture
+- [ccbt/exceptions.py](mdc:ccbt/exceptions.py) - Exception hierarchy
+
+## Development Patterns
+- **Async/Await**: All I/O operations are asynchronous
+- **Event-Driven**: Components communicate via events
+- **Service-Oriented**: Modular service architecture
+- **Plugin System**: Extensible plugin architecture
+- **Type Safety**: Comprehensive type hints with Pydantic validation

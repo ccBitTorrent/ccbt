@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\protocols\hybrid.py
+# hypothesis_version: 6.142.4
+
+[0.0, 0.1, 0.3, 0.6, 0.9, 1.0, 1.1, 2.0, 1000, 'active_connections', 'bittorrent_weight', 'completed', 'error', 'hybrid', 'hybrid_protocol', 'ipfs_weight', 'leechers', 'peer_id', 'peers_found', 'protocol_performance', 'protocol_type', 'protocol_weights', 'seeders', 'state', 'strategy', 'sub_protocol', 'sub_protocols', 'sub_protocols_used', 'timestamp', 'total_peers', 'use_bittorrent', 'use_ipfs', 'use_webtorrent', 'webtorrent_weight']

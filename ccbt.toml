@@ -1,0 +1,124 @@
+# ccBitTorrent Configuration File
+# This file contains all tunable parameters for the BitTorrent client
+
+[network]
+# Connection limits
+max_global_peers = 200
+max_peers_per_torrent = 50
+max_connections_per_peer = 1
+
+# Request pipeline settings
+pipeline_depth = 16
+block_size_kib = 16
+max_block_size_kib = 64
+min_block_size_kib = 4
+
+# Socket tuning
+socket_rcvbuf_kib = 256
+socket_sndbuf_kib = 256
+tcp_nodelay = true
+
+# Timeouts (seconds)
+connection_timeout = 10.0
+peer_timeout = 60.0
+tracker_timeout = 30.0
+dht_timeout = 2.0
+
+# Listen settings
+listen_port = 6881
+listen_interface = "0.0.0.0"
+enable_ipv6 = true
+
+# Transport protocols
+enable_tcp = true
+enable_utp = false
+enable_encryption = false
+
+# Choking strategy
+max_upload_slots = 4
+optimistic_unchoke_interval = 30.0
+unchoke_interval = 10.0
+
+[disk]
+# Preallocation strategy: none, sparse, full
+preallocate = "full"
+sparse_files = false
+
+# Write optimization
+write_batch_kib = 64
+write_buffer_kib = 1024
+use_mmap = true
+mmap_cache_mb = 256
+
+# Hash verification
+hash_workers = 4
+hash_chunk_size = 65536         # Chunk size for hash verification (bytes)
+hash_batch_size = 4             # Number of pieces to verify in parallel batches
+hash_queue_size = 100
+
+# I/O threading
+disk_workers = 2
+disk_queue_size = 200
+
+[strategy]
+# Piece selection strategy: round_robin, rarest_first, sequential
+piece_selection = "rarest_first"
+endgame_duplicates = 2
+streaming_mode = false
+
+# Piece priorities
+first_piece_priority = true
+last_piece_priority = false
+
+# Endgame threshold (0.0 to 1.0)
+endgame_threshold = 0.95
+
+[discovery]
+# DHT settings
+enable_dht = true
+dht_port = 6882
+dht_bootstrap_nodes = [
+    "router.bittorrent.com:6881",
+    "dht.transmissionbt.com:6881",
+    "dht.libtorrent.org:25401"
+]
+
+# PEX settings
+enable_pex = true
+pex_interval = 30.0
+
+# Tracker settings
+enable_http_trackers = true
+enable_udp_trackers = true
+tracker_announce_interval = 1800.0
+tracker_scrape_interval = 3600.0
+
+[limits]
+# Global rate limits (KiB/s, 0 = unlimited)
+global_down_kib = 0
+global_up_kib = 0
+
+# Per-torrent rate limits (KiB/s, 0 = unlimited)
+per_torrent_down_kib = 0
+per_torrent_up_kib = 0
+
+# Per-peer rate limits (KiB/s, 0 = unlimited)
+per_peer_up_kib = 0
+
+# Scheduler settings
+scheduler_slice_ms = 100
+
+[observability]
+# Logging
+log_level = "INFO"
+log_file = ""
+log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Metrics
+enable_metrics = true
+metrics_port = 9090
+metrics_interval = 5.0
+
+# Tracing
+enable_peer_tracing = false
+trace_file = ""

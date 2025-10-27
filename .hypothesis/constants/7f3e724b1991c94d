@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\protocols\webtorrent.py
+# hypothesis_version: 6.142.4
+
+[0.0, 100, 200, 8080, '/signaling', 'answer', 'bytes_received', 'bytes_sent', 'compact', 'completed', 'connection_state', 'downloaded', 'error', 'event', 'ice-candidate', 'ice_connection_state', 'info_hash', 'ip', 'last_activity', 'leechers', 'left', 'localhost', 'new', 'offer', 'open', 'peer-info', 'peer_id', 'peers', 'port', 'protocol_type', 'seeders', 'started', 'timestamp', 'tracker_url', 'type', 'uploaded', 'webrtc', 'webtorrent']

@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\async_piece_manager.py
+# hypothesis_version: 6.142.4
+
+[0.01, 1.0, 100, 1000, 1024, 'Entered endgame mode', 'active_peers', 'average_availability', 'bitfield', 'complete', 'completed_pieces', 'completion_rate', 'downloading', 'downloading_pieces', 'endgame_mode', 'file_info', 'hash-verify', 'missing', 'missing_pieces', 'num_pieces', 'peer_count', 'peer_info', 'peer_key', 'piece_frequency', 'piece_hashes', 'piece_index', 'piece_length', 'pieces_info', 'progress', 'reliability_scores', 'requested', 'timestamp', 'total_length', 'total_pieces', 'verified', 'verified_pieces']

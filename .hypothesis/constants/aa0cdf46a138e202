@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\extensions\dht.py
+# hypothesis_version: 6.142.4
+
+[0.0, 160, 'Unknown error', 'a', 'announce_peer', 'bucket_index', 'bucket_sizes', 'e', 'error', 'error_code', 'error_message', 'find_node', 'get_peers', 'id', 'info_hash', 'ip', 'node_id', 'nodes', 'peer_ip', 'peer_port', 'peers', 'ping', 'port', 'q', 'r', 't', 'target', 'timestamp', 'token', 'total_nodes', 'y']

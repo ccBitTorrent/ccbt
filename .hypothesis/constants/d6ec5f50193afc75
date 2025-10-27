@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\peer_connection.py
+# hypothesis_version: 6.142.4
+
+[b'-CC0101-', b'x', 1.0, 5.0, 10.0, 30.0, 60.0, 4096, 'Connection timed out', 'Manual disconnect', 'Shutdown', 'active', 'bitfield_received', 'bitfield_sent', 'choked', 'connected', 'connecting', 'disconnected', 'error', 'file_assembler', 'handshake_received', 'handshake_sent', 'info_hash', 'ip', 'num_pieces', 'pieces_info', 'port']

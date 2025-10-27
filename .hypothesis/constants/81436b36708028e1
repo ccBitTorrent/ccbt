@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\piece_manager.py
+# hypothesis_version: 6.142.4
+
+[1.0, 1024, 8192, 16384, 'complete', 'downloading', 'file_info', 'missing', 'num_pieces', 'peer_state', 'piece_hashes', 'piece_length', 'pieces_info', 'requested', 'total_length', 'verified']

@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\plugins\logging_plugin.py
+# hypothesis_version: 6.142.4
+
+['*', '1.0.0', 'INFO', 'a', 'correlation_id', 'data', 'event_id', 'event_type', 'logging_plugin', 'priority', 'source', 'timestamp']

@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\logging_config.py
+# hypothesis_version: 6.142.4
+
+[1024, '\x1b[0m', '\x1b[31m', '\x1b[32m', '\x1b[33m', '\x1b[35m', '\x1b[36m', '%Y-%m-%d %H:%M:%S', '()', 'CRITICAL', 'DEBUG', 'ERROR', 'INFO', 'WARNING', 'args', 'backupCount', 'ccbt', 'class', 'colored', 'console', 'correlation', 'correlation_id', 'created', 'datefmt', 'details', 'exc_info', 'exc_text', 'exception', 'file', 'filename', 'filters', 'format', 'formatter', 'formatters', 'funcName', 'function', 'getMessage', 'handlers', 'level', 'levelname', 'levelno', 'line', 'lineno', 'logger', 'loggers', 'maxBytes', 'message', 'module', 'msecs', 'msg', 'name', 'no-correlation-id', 'pathname', 'process', 'processName', 'propagate', 'relativeCreated', 'root', 'simple', 'stack_info', 'stream', 'structured', 'thread', 'threadName', 'timestamp', 'version']

@@ -1,0 +1,72 @@
+---
+globs: *.py
+description: Development patterns and coding standards for ccBitTorrent
+---
+
+# ccBitTorrent Development Patterns
+
+## Type Safety Requirements
+- **All functions must have type hints** - Use `typing` module extensively
+- **Use Pydantic models** - Replace dataclasses with Pydantic BaseModel for validation
+- **Async functions** - Use `async def` for all I/O operations
+- **Return type annotations** - Always specify return types, use `-> None` for void functions
+
+## Async Programming Patterns
+```python
+# Correct async pattern
+async def download_torrent(torrent: Torrent) -> None:
+    await session.start_download(torrent)
+    while not torrent.is_complete():
+        await asyncio.sleep(1)
+
+# Use context managers for resource cleanup
+async with session:
+    await session.start_download(torrent)
+```
+
+## Event-Driven Architecture
+- **Emit events** for all significant actions using [ccbt/events.py](mdc:ccbt/events.py)
+- **Subscribe to events** for component communication
+- **Use typed events** with proper data structures
+
+```python
+from ccbt.events import Event, EventType, emit_event
+
+# Emit events
+await emit_event(Event(
+    event_type=EventType.PEER_CONNECTED.value,
+    data={'peer_id': peer_id, 'ip': ip}
+))
+```
+
+## Error Handling
+- **Use custom exceptions** from [ccbt/exceptions.py](mdc:ccbt/exceptions.py)
+- **Proper error propagation** in async code
+- **Context managers** for resource cleanup
+
+```python
+from ccbt.exceptions import NetworkError, DiskError
+
+try:
+    await peer.connect()
+except NetworkError as e:
+    logger.error(f"Network error: {e}")
+    raise
+```
+
+## Configuration Management
+- **Use Pydantic models** for configuration validation
+- **Environment variable overrides** with CCBT_ prefix
+- **Hot reload support** for configuration changes
+
+## Performance Optimization
+- **Zero-copy operations** where possible
+- **Memory pools** for frequent allocations
+- **Ring buffers** for high-throughput operations
+- **SIMD-accelerated** hash verification
+
+## Security Patterns
+- **Validate all inputs** using Pydantic models
+- **Rate limiting** for all external interactions
+- **Peer validation** before connections
+- **Encryption support** for sensitive data

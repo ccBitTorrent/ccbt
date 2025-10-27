@@ -1,0 +1,564 @@
+"""Alert Manager for ccBitTorrent.
+
+Provides comprehensive alert management including:
+- Alert rule engine
+- Notification channels
+- Alert escalation
+- Alert history
+- Alert suppression
+"""
+
+import asyncio
+import json
+import smtplib
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from pathlib import Path
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
+
+from ..events import Event, EventType, emit_event
+
+
+class AlertSeverity(Enum):
+    """Alert severity levels."""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+
+class NotificationChannel(Enum):
+    """Notification channels."""
+    EMAIL = "email"
+    WEBHOOK = "webhook"
+    SLACK = "slack"
+    DISCORD = "discord"
+    LOG = "log"
+
+
+@dataclass
+class Alert:
+    """Alert instance."""
+    id: str
+    rule_name: str
+    metric_name: str
+    value: Any
+    condition: str
+    severity: AlertSeverity
+    description: str
+    timestamp: float
+    resolved: bool = False
+    resolved_timestamp: Optional[float] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class NotificationConfig:
+    """Notification configuration."""
+    channel: NotificationChannel
+    enabled: bool = True
+    config: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class AlertRule:
+    """Alert rule definition."""
+    name: str
+    metric_name: str
+    condition: str
+    severity: AlertSeverity
+    description: str
+    enabled: bool = True
+    cooldown_seconds: int = 300
+    escalation_seconds: int = 0
+    notification_channels: List[NotificationChannel] = field(default_factory=list)
+    suppression_rules: List[str] = field(default_factory=list)
+    last_triggered: float = 0.0
+    trigger_count: int = 0
+
+
+class AlertManager:
+    """Alert management system."""
+
+    def __init__(self):
+        self.alert_rules: Dict[str, AlertRule] = {}
+        self.active_alerts: Dict[str, Alert] = {}
+        self.alert_history: deque = deque(maxlen=10000)
+        self.notification_configs: Dict[NotificationChannel, NotificationConfig] = {}
+        self.notification_handlers: Dict[NotificationChannel, Callable] = {}
+
+        # Alert suppression
+        self.suppression_rules: Dict[str, Dict[str, Any]] = {}
+        self.suppressed_alerts: Dict[str, float] = {}
+
+        # Statistics
+        self.stats = {
+            "alerts_triggered": 0,
+            "alerts_resolved": 0,
+            "notifications_sent": 0,
+            "notification_failures": 0,
+            "suppressed_alerts": 0,
+        }
+
+        # Initialize default notification handlers
+        self._initialize_notification_handlers()
+
+    # ------------------- Persistence -------------------
+    def export_rules(self) -> List[Dict[str, Any]]:
+        """Export alert rules as a serializable list of dicts."""
+        exported: List[Dict[str, Any]] = []
+        for rule in self.alert_rules.values():
+            exported.append({
+                "name": rule.name,
+                "metric_name": rule.metric_name,
+                "condition": rule.condition,
+                "severity": rule.severity.value,
+                "description": rule.description,
+                "enabled": rule.enabled,
+                "cooldown_seconds": rule.cooldown_seconds,
+                "escalation_seconds": rule.escalation_seconds,
+                "notification_channels": [c.value for c in rule.notification_channels],
+                "suppression_rules": list(rule.suppression_rules),
+                # omit dynamic fields last_triggered/trigger_count on export
+            })
+        return exported
+
+    def import_rules(self, rules: List[Dict[str, Any]]) -> int:
+        """Import alert rules from list of dicts; returns number loaded."""
+        loaded = 0
+        for data in rules:
+            try:
+                sev = AlertSeverity(str(data.get("severity", "warning")))
+            except Exception:
+                sev = AlertSeverity.WARNING
+            channels = []
+            for c in data.get("notification_channels", []):
+                try:
+                    channels.append(NotificationChannel(str(c)))
+                except Exception:
+                    continue
+            rule = AlertRule(
+                name=str(data.get("name")),
+                metric_name=str(data.get("metric_name")),
+                condition=str(data.get("condition")),
+                severity=sev,
+                description=str(data.get("description", "")),
+                enabled=bool(data.get("enabled", True)),
+                cooldown_seconds=int(data.get("cooldown_seconds", 300)),
+                escalation_seconds=int(data.get("escalation_seconds", 0)),
+                notification_channels=channels,
+                suppression_rules=list(data.get("suppression_rules", [])),
+            )
+            self.alert_rules[rule.name] = rule
+            loaded += 1
+        return loaded
+
+    def save_rules_to_file(self, path: Path) -> None:
+        """Save alert rules to JSON file."""
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {"rules": self.export_rules()}
+            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception:
+            # best-effort persistence
+            pass
+
+    def load_rules_from_file(self, path: Path) -> int:
+        """Load alert rules from JSON file; returns number loaded."""
+        try:
+            if not path.exists():
+                return 0
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            rules = payload.get("rules", [])
+            return self.import_rules(rules)
+        except Exception:
+            return 0
+
+    def add_alert_rule(self, rule: AlertRule) -> None:
+        """Add an alert rule."""
+        self.alert_rules[rule.name] = rule
+
+    def remove_alert_rule(self, rule_name: str) -> None:
+        """Remove an alert rule."""
+        if rule_name in self.alert_rules:
+            del self.alert_rules[rule_name]
+
+    def update_alert_rule(self, rule_name: str, updates: Dict[str, Any]) -> None:
+        """Update an alert rule."""
+        if rule_name in self.alert_rules:
+            rule = self.alert_rules[rule_name]
+            for key, value in updates.items():
+                if hasattr(rule, key):
+                    setattr(rule, key, value)
+
+    def add_suppression_rule(self, name: str, rule: Dict[str, Any]) -> None:
+        """Add a suppression rule."""
+        self.suppression_rules[name] = rule
+
+    def remove_suppression_rule(self, name: str) -> None:
+        """Remove a suppression rule."""
+        if name in self.suppression_rules:
+            del self.suppression_rules[name]
+
+    def configure_notification(self, channel: NotificationChannel, config: NotificationConfig) -> None:
+        """Configure notification channel."""
+        self.notification_configs[channel] = config
+
+    def register_notification_handler(self, channel: NotificationChannel, handler: Callable) -> None:
+        """Register custom notification handler."""
+        self.notification_handlers[channel] = handler
+
+    async def process_alert(self, metric_name: str, value: Any, timestamp: Optional[float] = None) -> None:
+        """Process an alert for a metric."""
+        if timestamp is None:
+            timestamp = time.time()
+
+        # Check all alert rules for this metric
+        for rule_name, rule in self.alert_rules.items():
+            if rule.metric_name != metric_name or not rule.enabled:
+                continue
+
+            # Check cooldown
+            if timestamp - rule.last_triggered < rule.cooldown_seconds:
+                continue
+
+            # Evaluate condition
+            if self._evaluate_condition(rule.condition, value):
+                await self._trigger_alert(rule, value, timestamp)
+
+    async def resolve_alert(self, alert_id: str, timestamp: Optional[float] = None) -> bool:
+        """Resolve an alert."""
+        if timestamp is None:
+            timestamp = time.time()
+
+        if alert_id not in self.active_alerts:
+            return False
+
+        alert = self.active_alerts[alert_id]
+        alert.resolved = True
+        alert.resolved_timestamp = timestamp
+
+        # Move to history
+        self.alert_history.append(alert)
+        del self.active_alerts[alert_id]
+
+        # Update statistics
+        self.stats["alerts_resolved"] += 1
+
+        # Emit alert resolved event
+        await emit_event(Event(
+            event_type=EventType.ALERT_RESOLVED.value,
+            data={
+                "alert_id": alert_id,
+                "rule_name": alert.rule_name,
+                "metric_name": alert.metric_name,
+                "duration": timestamp - alert.timestamp,
+                "timestamp": timestamp,
+            },
+        ))
+
+        return True
+
+    async def resolve_alerts_for_metric(self, metric_name: str, timestamp: Optional[float] = None) -> int:
+        """Resolve all alerts for a specific metric."""
+        if timestamp is None:
+            timestamp = time.time()
+
+        resolved_count = 0
+        alerts_to_resolve = [
+            alert_id for alert_id, alert in self.active_alerts.items()
+            if alert.metric_name == metric_name
+        ]
+
+        for alert_id in alerts_to_resolve:
+            if await self.resolve_alert(alert_id, timestamp):
+                resolved_count += 1
+
+        return resolved_count
+
+    def get_active_alerts(self) -> Dict[str, Alert]:
+        """Get all active alerts."""
+        return self.active_alerts.copy()
+
+    def get_alert_history(self, limit: int = 100) -> List[Alert]:
+        """Get alert history."""
+        return list(self.alert_history)[-limit:]
+
+    def get_alert_statistics(self) -> Dict[str, Any]:
+        """Get alert statistics."""
+        return {
+            "alerts_triggered": self.stats["alerts_triggered"],
+            "alerts_resolved": self.stats["alerts_resolved"],
+            "notifications_sent": self.stats["notifications_sent"],
+            "notification_failures": self.stats["notification_failures"],
+            "suppressed_alerts": self.stats["suppressed_alerts"],
+            "active_alerts": len(self.active_alerts),
+            "alert_rules": len(self.alert_rules),
+            "suppression_rules": len(self.suppression_rules),
+        }
+
+    def get_alert_rules(self) -> Dict[str, AlertRule]:
+        """Get all alert rules."""
+        return self.alert_rules.copy()
+
+    def get_suppression_rules(self) -> Dict[str, Dict[str, Any]]:
+        """Get all suppression rules."""
+        return self.suppression_rules.copy()
+
+    def cleanup_old_alerts(self, max_age_seconds: int = 86400) -> None:
+        """Clean up old alerts from history."""
+        current_time = time.time()
+        cutoff_time = current_time - max_age_seconds
+
+        # Remove old alerts from history
+        while self.alert_history and self.alert_history[0].timestamp < cutoff_time:
+            self.alert_history.popleft()
+
+        # Clean up suppressed alerts
+        to_remove = []
+        for alert_id, suppress_time in self.suppressed_alerts.items():
+            if suppress_time < cutoff_time:
+                to_remove.append(alert_id)
+
+        for alert_id in to_remove:
+            del self.suppressed_alerts[alert_id]
+
+    async def _trigger_alert(self, rule: AlertRule, value: Any, timestamp: float) -> None:
+        """Trigger an alert."""
+        # Check suppression rules
+        if self._is_alert_suppressed(rule, value):
+            self.stats["suppressed_alerts"] += 1
+            return
+
+        # Create alert
+        alert_id = f"{rule.name}_{int(timestamp)}"
+        alert = Alert(
+            id=alert_id,
+            rule_name=rule.name,
+            metric_name=rule.metric_name,
+            value=value,
+            condition=rule.condition,
+            severity=rule.severity,
+            description=rule.description,
+            timestamp=timestamp,
+        )
+
+        # Store alert
+        self.active_alerts[alert_id] = alert
+        self.alert_history.append(alert)
+
+        # Update rule statistics
+        rule.last_triggered = timestamp
+        rule.trigger_count += 1
+
+        # Update global statistics
+        self.stats["alerts_triggered"] += 1
+
+        # Send notifications
+        await self._send_notifications(alert)
+
+        # Emit alert triggered event
+        await emit_event(Event(
+            event_type=EventType.ALERT_TRIGGERED.value,
+            data={
+                "alert_id": alert_id,
+                "rule_name": rule.name,
+                "metric_name": rule.metric_name,
+                "value": value,
+                "condition": rule.condition,
+                "severity": rule.severity.value,
+                "description": rule.description,
+                "timestamp": timestamp,
+            },
+        ))
+
+    def _is_alert_suppressed(self, rule: AlertRule, value: Any) -> bool:
+        """Check if alert is suppressed."""
+        # Check rule-specific suppression
+        for suppression_rule_name in rule.suppression_rules:
+            if suppression_rule_name in self.suppression_rules:
+                suppression_rule = self.suppression_rules[suppression_rule_name]
+                if self._evaluate_suppression_rule(suppression_rule, rule, value):
+                    return True
+
+        # Check global suppression
+        for suppression_rule in self.suppression_rules.values():
+            if self._evaluate_suppression_rule(suppression_rule, rule, value):
+                return True
+
+        return False
+
+    def _evaluate_suppression_rule(self, suppression_rule: Dict[str, Any],
+                                 rule: AlertRule, value: Any) -> bool:
+        """Evaluate suppression rule."""
+        try:
+            # Check if rule matches
+            if "rule_name" in suppression_rule and suppression_rule["rule_name"] != rule.name:
+                return False
+
+            if "metric_name" in suppression_rule and suppression_rule["metric_name"] != rule.metric_name:
+                return False
+
+            # Check time-based suppression
+            if "time_range" in suppression_rule:
+                current_hour = time.localtime().tm_hour
+                start_hour = suppression_rule["time_range"].get("start", 0)
+                end_hour = suppression_rule["time_range"].get("end", 23)
+
+                if not (start_hour <= current_hour <= end_hour):
+                    return False
+
+            # Check value-based suppression
+            if "value_condition" in suppression_rule:
+                condition = suppression_rule["value_condition"]
+                if not self._evaluate_condition(condition, value):
+                    return False
+
+            return True
+
+        except Exception:
+            return False
+
+    def _evaluate_condition(self, condition: str, value: Any) -> bool:
+        """Evaluate alert condition."""
+        try:
+            # Replace 'value' with actual value
+            condition_expr = condition.replace("value", str(value))
+            return eval(condition_expr)
+        except:
+            return False
+
+    async def _send_notifications(self, alert: Alert) -> None:
+        """Send notifications for an alert."""
+        rule = self.alert_rules.get(alert.rule_name)
+        if not rule:
+            return
+
+        for channel in rule.notification_channels:
+            try:
+                await self._send_notification(channel, alert)
+                self.stats["notifications_sent"] += 1
+            except Exception as e:
+                self.stats["notification_failures"] += 1
+
+                # Emit notification error event
+                await emit_event(Event(
+                    event_type=EventType.NOTIFICATION_ERROR.value,
+                    data={
+                        "channel": channel.value,
+                        "alert_id": alert.id,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ))
+
+    async def _send_notification(self, channel: NotificationChannel, alert: Alert) -> None:
+        """Send notification via specific channel."""
+        if channel in self.notification_handlers:
+            handler = self.notification_handlers[channel]
+            if asyncio.iscoroutinefunction(handler):
+                await handler(alert)
+            else:
+                handler(alert)
+        # Use default handler
+        elif channel == NotificationChannel.EMAIL:
+            await self._send_email_notification(alert)
+        elif channel == NotificationChannel.WEBHOOK:
+            await self._send_webhook_notification(alert)
+        elif channel == NotificationChannel.LOG:
+            await self._send_log_notification(alert)
+
+    async def _send_email_notification(self, alert: Alert) -> None:
+        """Send email notification."""
+        config = self.notification_configs.get(NotificationChannel.EMAIL)
+        if not config or not config.enabled:
+            return
+
+        # Create email message
+        msg = MIMEMultipart()
+        msg["From"] = config.config.get("from_email", "alerts@ccbt.local")
+        msg["To"] = config.config.get("to_email", "admin@ccbt.local")
+        msg["Subject"] = f"Alert: {alert.rule_name} - {alert.severity.value.upper()}"
+
+        body = f"""
+        Alert Details:
+        - Rule: {alert.rule_name}
+        - Metric: {alert.metric_name}
+        - Value: {alert.value}
+        - Condition: {alert.condition}
+        - Severity: {alert.severity.value}
+        - Description: {alert.description}
+        - Timestamp: {time.ctime(alert.timestamp)}
+        """
+
+        msg.attach(MIMEText(body, "plain"))
+
+        # Send email
+        smtp_server = config.config.get("smtp_server", "localhost")
+        smtp_port = config.config.get("smtp_port", 587)
+        smtp_username = config.config.get("smtp_username")
+        smtp_password = config.config.get("smtp_password")
+
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        if smtp_username and smtp_password:
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+
+        server.send_message(msg)
+        server.quit()
+
+    async def _send_webhook_notification(self, alert: Alert) -> None:
+        """Send webhook notification."""
+        config = self.notification_configs.get(NotificationChannel.WEBHOOK)
+        if not config or not config.enabled:
+            return
+
+        import aiohttp
+
+        webhook_url = config.config.get("url")
+        if not webhook_url:
+            return
+
+        payload = {
+            "alert_id": alert.id,
+            "rule_name": alert.rule_name,
+            "metric_name": alert.metric_name,
+            "value": alert.value,
+            "condition": alert.condition,
+            "severity": alert.severity.value,
+            "description": alert.description,
+            "timestamp": alert.timestamp,
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(webhook_url, json=payload) as response:
+                if response.status >= 400:
+                    raise Exception(f"Webhook failed with status {response.status}")
+
+    async def _send_log_notification(self, alert: Alert) -> None:
+        """Send log notification."""
+        import logging
+
+        logger = logging.getLogger("ccbt.alerts")
+
+        log_message = (
+            f"ALERT: {alert.rule_name} - {alert.severity.value.upper()} - "
+            f"{alert.metric_name}={alert.value} ({alert.condition}) - {alert.description}"
+        )
+
+        if alert.severity == AlertSeverity.CRITICAL:
+            logger.critical(log_message)
+        elif alert.severity == AlertSeverity.ERROR:
+            logger.error(log_message)
+        elif alert.severity == AlertSeverity.WARNING:
+            logger.warning(log_message)
+        else:
+            logger.info(log_message)
+
+    def _initialize_notification_handlers(self) -> None:
+        """Initialize default notification handlers."""
+        # Default handlers are implemented in _send_notification method

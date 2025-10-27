@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\peer.py
+# hypothesis_version: 6.142.4
+
+[b'\x00', b'BitTorrent protocol', 1.0, 100, 1000, 1024, '!I', '!IB', '!IBI', '!IBIII', '!II', '!III', 'B', 'BitfieldMessage', 'CancelMessage', 'ChokeMessage', 'Darwin', 'Handshake', 'HaveMessage', 'InterestedMessage', 'KeepAliveMessage', 'Linux', 'NotInterestedMessage', 'PeerMessage', 'PieceMessage', 'RequestMessage', 'UnchokeMessage', 'Windows', 'begin', 'bitfield', 'block', 'buffer_capacity', 'buffer_size', 'buffer_usage', 'length', 'pending_messages', 'piece_index', 'pool_sizes']

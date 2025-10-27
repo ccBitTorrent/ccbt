@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\file_assembler.py
+# hypothesis_version: 6.142.4
+
+[0.0, 0.01, '.', 'AsyncFileAssembler', '__call__', '_piece_manager', 'completed', 'corrupted_pieces', 'download_rate', 'files', 'info_hash', 'missing_files', 'missing_pieces', 'name', 'num_pieces', 'peers', 'piece_length', 'pieces', 'progress', 'start', 'torrent_data', 'total_length', 'unknown', 'upload_rate', 'valid']

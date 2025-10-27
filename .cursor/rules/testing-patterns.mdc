@@ -1,0 +1,99 @@
+---
+globs: tests/**/*.py
+description: Testing patterns and requirements for ccBitTorrent
+---
+
+# Testing Patterns
+
+## Testing Requirements
+- **90%+ test coverage** for all new code
+- **Unit tests** for all functions and methods
+- **Integration tests** for component interactions
+- **Property-based tests** for algorithms using Hypothesis
+- **Performance tests** for optimizations
+- **Chaos tests** for resilience and fault tolerance
+
+## Test Structure
+Located in [tests/](mdc:tests/) directory:
+
+### Unit Tests
+- **Core Components**: [tests/test_bencode.py](mdc:tests/test_bencode.py), [tests/test_torrent.py](mdc:tests/test_torrent.py)
+- **Peer Management**: [tests/test_peer.py](mdc:tests/test_peer.py), [tests/test_peer_connection.py](mdc:tests/test_peer_connection.py)
+- **Piece Management**: [tests/test_piece_manager.py](mdc:tests/test_piece_manager.py)
+- **Security**: [tests/security/](mdc:tests/security/) - Security component tests
+
+### Integration Tests
+- **End-to-End**: Complete download workflows
+- **Network Simulation**: Mock network conditions
+- **Component Interaction**: Service integration testing
+
+### Property-Based Tests
+- **Bencode**: Encoding/decoding properties
+- **Piece Selection**: Algorithm properties
+- **Message Serialization**: Protocol message properties
+
+### Performance Tests
+- **Benchmarks**: Performance regression detection
+- **Load Testing**: High-load scenarios
+- **Memory Usage**: Memory leak detection
+
+### Chaos Engineering
+- **Fault Injection**: Network and disk failures
+- **Partition Testing**: Network partition scenarios
+- **Peer Behavior**: Malicious peer simulation
+
+## Testing Patterns
+
+### Async Testing
+```python
+import pytest
+import asyncio
+
+@pytest.mark.asyncio
+async def test_async_function():
+    result = await async_function()
+    assert result is not None
+```
+
+### Property-Based Testing
+```python
+from hypothesis import given, strategies as st
+
+@given(st.binary())
+def test_bencode_properties(data):
+    encoded = bencode.encode(data)
+    decoded = bencode.decode(encoded)
+    assert decoded == data
+```
+
+### Mock Testing
+```python
+from unittest.mock import AsyncMock, patch
+
+@patch('ccbt.network.socket')
+async def test_network_operation(mock_socket):
+    mock_socket.return_value = AsyncMock()
+    # Test implementation
+```
+
+### Performance Testing
+```python
+import pytest
+import time
+
+def test_performance(benchmark):
+    result = benchmark(expensive_function)
+    assert result < 1.0  # 1 second threshold
+```
+
+## Test Data Management
+- **Fixtures**: Use pytest fixtures for test data
+- **Mock Objects**: Mock external dependencies
+- **Test Databases**: In-memory databases for testing
+- **Temporary Files**: Use tempfile for file operations
+
+## Continuous Integration
+- **Pre-commit Hooks**: Automatic testing before commits
+- **Coverage Reports**: Track test coverage
+- **Performance Regression**: Detect performance regressions
+- **Security Scanning**: Automated security testing

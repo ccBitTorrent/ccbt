@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\extensions\__init__.py
+# hypothesis_version: 6.142.4
+
+['DHTExtension', 'ExtensionProtocol', 'FastExtension', 'PeerExchange', 'WebSeedExtension']

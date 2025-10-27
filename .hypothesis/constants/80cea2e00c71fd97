@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\cli\advanced_commands.py
+# hypothesis_version: 6.142.4
+
+['--analyze', '--benchmark', '--coverage', '--encrypt', '--force', '--format', '--integration', '--language', '--optimize', '--performance', '--profile', '--rate-limit', '--rehash', '--repair', '--scan', '--section', '--security', '--unit', '--validate', '--verify', 'Enable encryption', 'Enable rate limiting', 'Rehash all pieces', 'Run security tests', 'Run unit tests', 'docs', 'en', 'format_', 'html', 'info_hash', 'integration', 'pdf', 'performance', 'performance_test', 'recover', 'security', 'security_test', 'test', 'text', 'unit']

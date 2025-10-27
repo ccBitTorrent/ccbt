@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\protocols\ipfs.py
+# hypothesis_version: 6.142.4
+
+[0.0, 1000, '/ipfs/bitswap/1.2.0', 'blocks_count', 'cid', 'completed', 'error', 'ipfs', 'last_accessed', 'leechers', 'links_count', 'peer_id', 'protocol_type', 'seeders', 'size', 'timestamp']

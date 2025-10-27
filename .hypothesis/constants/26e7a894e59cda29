@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\cli\monitoring_commands.py
+# hypothesis_version: 6.142.4
+
+[0.0, 0.2, 1.0, 5.0, '--add', '--clear-active', '--condition', '--duration', '--format', '--include-system', '--interval', '--list', '--list-active', '--load', '--metric', '--name', '--output', '--refresh', '--remove', '--rules', '--save', '--severity', '--test', '--value', '.', '.ccbt/alerts.json', 'Add an alert rule', 'Export format', 'List active alerts', 'List alert rules', 'Metric name for rule', 'Refresh interval (s)', 'Remove an alert rule', 'Rule name', 'active_alerts', 'add_rule', 'alert_rules', 'alerts', 'alerts_rules_path', 'critical', 'dashboard', 'error', 'format_', 'info', 'json', 'list_', 'metrics', 'performance', 'prometheus', 'remove_rule', 'system', 'test_rule', 'utf-8', 'value', 'warning']

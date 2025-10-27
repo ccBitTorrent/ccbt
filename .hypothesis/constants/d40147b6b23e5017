@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\torrent.py
+# hypothesis_version: 6.142.4
+
+[b'announce', b'announce-list', b'comment', b'created by', b'creation date', b'encoding', b'files', b'info', b'length', b'name', b'path', b'piece length', b'pieces', 'ftp://', 'http://', 'https://', 'num_pieces', 'piece_hashes', 'piece_length', 'rb', 'total_length', 'utf-8']

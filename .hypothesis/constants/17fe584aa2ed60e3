@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\extensions\protocol.py
+# hypothesis_version: 6.142.4
+
+['!IB', 'error', 'extension_name', 'extensions', 'message_handlers', 'message_id', 'payload', 'peer_id', 'timestamp', 'total_extensions', 'total_peers', 'utf-8', 'version']

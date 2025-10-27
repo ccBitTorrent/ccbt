@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\services\base.py
+# hypothesis_version: 6.142.4
+
+[0.0, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0, '1.0.0', 'degraded', 'error', 'running', 'starting', 'stopped', 'stopping']

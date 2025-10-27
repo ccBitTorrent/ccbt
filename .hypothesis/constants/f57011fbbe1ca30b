@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\protocols\bittorrent.py
+# hypothesis_version: 6.142.4
+
+[200, 'active_connections', 'bittorrent', 'bytes_received', 'bytes_sent', 'completed', 'connections_failed', 'error', 'errors', 'last_activity', 'leechers', 'messages_received', 'messages_sent', 'peer_id', 'peers_count', 'protocol_type', 'seeders', 'state', 'stats', 'timestamp']

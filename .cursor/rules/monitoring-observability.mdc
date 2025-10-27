@@ -1,0 +1,96 @@
+---
+globs: ccbt/monitoring/*.py,ccbt/observability/*.py
+description: Monitoring and observability implementation patterns
+---
+
+# Monitoring & Observability
+
+## Monitoring Components
+Located in [ccbt/monitoring/](mdc:ccbt/monitoring/) directory:
+
+### Metrics Collection
+- **Custom Metrics**: Use [ccbt/monitoring/metrics_collector.py](mdc:ccbt/monitoring/metrics_collector.py) for comprehensive metrics
+- **System Metrics**: CPU, memory, disk, network I/O tracking
+- **Performance Metrics**: Download/upload speeds, piece completion, peer connections
+- **Real-time Collection**: Automatic metrics collection with configurable intervals
+
+### Alert Management
+- **Alert Rules**: Rule-based alert system with conditions
+- **Notification Channels**: Email, webhook, Slack, Discord, log notifications
+- **Alert Escalation**: Automatic alert escalation based on severity
+- **Suppression Rules**: Alert suppression based on time and conditions
+
+### Distributed Tracing
+- **Span Management**: Span creation, completion, and correlation
+- **Trace Context**: Context propagation across async operations
+- **Performance Profiling**: Function-level performance profiling
+- **Trace Export**: JSON format trace export
+
+### Dashboard Management
+- **Real-time Dashboards**: Live dashboard updates
+- **Widget System**: Multiple widget types (metric, graph, table, alert, log)
+- **Grafana Integration**: Grafana dashboard template generation
+- **Custom Dashboards**: User-defined dashboard creation
+
+## Observability Components
+Located in [ccbt/observability/](mdc:ccbt/observability/) directory:
+
+### Performance Profiling
+- **Function Profiling**: Function-level performance profiling
+- **Async Profiling**: Async operation profiling
+- **Memory Profiling**: Memory usage tracking
+- **Bottleneck Detection**: Automatic bottleneck identification
+
+## Implementation Patterns
+
+### Metrics Recording
+```python
+from ccbt.monitoring import MetricsCollector
+
+metrics = MetricsCollector()
+metrics.record_metric("download_speed", 1024*1024)
+metrics.set_gauge("peer_count", len(peers))
+metrics.increment_counter("pieces_completed")
+```
+
+### Alert Rules
+```python
+from ccbt.monitoring import AlertManager
+
+alert_manager = AlertManager()
+alert_manager.add_alert_rule(
+    name="high_cpu",
+    metric_name="system_cpu_usage",
+    condition="value > 80",
+    severity="warning"
+)
+```
+
+### Tracing
+```python
+from ccbt.monitoring import TracingManager
+
+tracing = TracingManager()
+span_id = tracing.start_span("download_piece", SpanKind.INTERNAL)
+# ... do work ...
+tracing.end_span(span_id, SpanStatus.OK)
+```
+
+### Profiling
+```python
+from ccbt.observability import Profiler
+
+profiler = Profiler()
+profiler.start()
+
+@profiler.profile_function("download_piece")
+async def download_piece(piece_index: int):
+    # ... implementation ...
+```
+
+## Event Integration
+All monitoring components emit events for integration:
+- `MONITORING_STARTED` - Monitoring system started
+- `ALERT_TRIGGERED` - Alert condition met
+- `SPAN_STARTED` - Tracing span started
+- `BOTTLENECK_DETECTED` - Performance bottleneck identified

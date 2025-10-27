@@ -1,0 +1,159 @@
+---
+globs: docs/**/*.md,*.md
+description: Documentation standards and requirements
+---
+
+# Documentation Standards
+
+## Documentation Structure
+Located in [docs/](mdc:docs/) directory:
+
+### Main Documentation
+- **README**: [docs/README.md](mdc:docs/README.md) - Project overview and quick start
+- **API Reference**: [docs/API.md](mdc:docs/API.md) - Complete API documentation
+- **Migration Guide**: [MIGRATION.md](mdc:MIGRATION.md) - Migration from v1 to v2
+
+### Code Documentation
+- **Docstrings**: All public functions must have comprehensive docstrings
+- **Type Hints**: All functions must have complete type annotations
+- **Examples**: Include usage examples in docstrings
+- **API Documentation**: Document all public APIs
+
+## Documentation Requirements
+
+### Function Documentation
+```python
+async def download_torrent(torrent_path: str, output_dir: str = None) -> Torrent:
+    """
+    Download a torrent file.
+    
+    Args:
+        torrent_path: Path to the torrent file
+        output_dir: Output directory for downloaded files
+        
+    Returns:
+        Torrent object representing the download
+        
+    Raises:
+        ValidationError: If torrent file is invalid
+        NetworkError: If network connection fails
+        
+    Example:
+        >>> torrent = await download_torrent("example.torrent")
+        >>> print(f"Downloading: {torrent.name}")
+    """
+```
+
+### Class Documentation
+```python
+class Torrent:
+    """
+    Represents a BitTorrent torrent file and its download state.
+    
+    This class handles torrent metadata, piece management, and download
+    progress tracking. It provides methods for starting, stopping, and
+    monitoring torrent downloads.
+    
+    Attributes:
+        name: The name of the torrent
+        total_size: Total size in bytes
+        downloaded_bytes: Number of bytes downloaded
+        progress_percentage: Download progress as percentage
+        
+    Example:
+        >>> torrent = Torrent.from_file("example.torrent")
+        >>> await torrent.start_download()
+    """
+```
+
+### Module Documentation
+```python
+"""
+BitTorrent peer connection management.
+
+This module provides classes and functions for managing peer connections
+in the BitTorrent protocol. It handles peer discovery, connection
+establishment, message exchange, and connection lifecycle management.
+
+Classes:
+    Peer: Represents a peer connection
+    PeerConnection: Manages peer communication
+    PeerManager: Manages multiple peer connections
+
+Functions:
+    connect_to_peer: Establish connection to a peer
+    discover_peers: Discover peers via DHT or trackers
+"""
+```
+
+## Documentation Standards
+
+### Markdown Formatting
+- **Headers**: Use proper header hierarchy (H1, H2, H3)
+- **Code Blocks**: Use syntax highlighting for code examples
+- **Links**: Use relative links for internal documentation
+- **Tables**: Use markdown tables for structured data
+
+### API Documentation
+- **Complete Coverage**: Document all public APIs
+- **Type Information**: Include parameter and return types
+- **Examples**: Provide working code examples
+- **Error Handling**: Document possible exceptions
+
+### Architecture Documentation
+- **System Overview**: High-level system architecture
+- **Component Diagrams**: Visual representation of components
+- **Data Flow**: Document data flow through the system
+- **Integration Points**: Document external integrations
+
+## Code Examples
+
+### Basic Usage
+```python
+# Basic torrent download
+from ccbt import Session
+from ccbt.config import ConfigManager
+
+async def main():
+    config_manager = ConfigManager()
+    session = Session(config_manager.config)
+    
+    await session.start()
+    torrent = await session.add_torrent("example.torrent")
+    await session.start_download(torrent)
+    
+    while not torrent.is_complete():
+        await asyncio.sleep(1)
+    
+    await session.stop()
+```
+
+### Advanced Features
+```python
+# Advanced features with monitoring
+from ccbt import Session
+from ccbt.monitoring import MetricsCollector
+from ccbt.security import SecurityManager
+
+async def main():
+    # Setup monitoring
+    metrics = MetricsCollector()
+    security = SecurityManager()
+    
+    # Create session with monitoring
+    session = Session(config, metrics=metrics, security=security)
+    
+    # Start monitoring
+    await metrics.start()
+    await security.start()
+    
+    # Download with monitoring
+    torrent = await session.add_torrent("example.torrent")
+    await session.start_download(torrent)
+```
+
+## Documentation Maintenance
+- **Keep Updated**: Update documentation with code changes
+- **Version Control**: Track documentation changes
+- **Review Process**: Review documentation changes
+- **User Feedback**: Incorporate user feedback

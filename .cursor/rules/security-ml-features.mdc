@@ -1,0 +1,78 @@
+---
+globs: ccbt/security/*.py,ccbt/ml/*.py
+description: Security and ML features implementation patterns
+---
+
+# Security & ML Features
+
+## Security Implementation
+Located in [ccbt/security/](mdc:ccbt/security/) directory:
+
+### Security Manager
+- **Peer Validation**: Use [ccbt/security/security_manager.py](mdc:ccbt/security/security_manager.py) for peer reputation tracking
+- **Rate Limiting**: Implement adaptive rate limiting with ML-based adjustment
+- **Anomaly Detection**: Use statistical and behavioral analysis patterns
+- **IP Management**: Blacklist/whitelist with automatic threat detection
+
+### Peer Validator
+- **Handshake Validation**: BitTorrent protocol compliance checking
+- **Peer ID Validation**: Malicious and suspicious pattern detection
+- **Quality Assessment**: Connection quality evaluation and scoring
+
+### Encryption Support
+- **MSE/PE Protocol**: Message Stream Encryption and Protocol Encryption
+- **Key Exchange**: Secure key exchange mechanisms
+- **Session Management**: Encryption session lifecycle
+
+## Machine Learning Features
+Located in [ccbt/ml/](mdc:ccbt/ml/) directory:
+
+### Peer Selection
+- **Quality Prediction**: ML-based peer quality assessment
+- **Feature Extraction**: Comprehensive peer behavior analysis
+- **Online Learning**: Adaptive learning from performance data
+
+### Piece Prediction
+- **Download Prediction**: ML-based piece download time prediction
+- **Success Rate Prediction**: Piece download success probability
+- **Priority Optimization**: Intelligent piece priority calculation
+
+### Adaptive Limiting
+- **Bandwidth Estimation**: ML-based bandwidth prediction
+- **Congestion Control**: TCP-like congestion control algorithms
+- **Fair Queuing**: Fair bandwidth allocation across peers
+
+## Implementation Patterns
+
+### Security Events
+```python
+# Emit security events
+await emit_event(Event(
+    event_type=EventType.SECURITY_EVENT.value,
+    data={
+        'threat_type': threat_type.value,
+        'peer_id': peer_id,
+        'severity': severity.value
+    }
+))
+```
+
+### ML Predictions
+```python
+# Use ML services
+from ccbt.ml import PeerSelector, PiecePredictor
+
+peer_selector = PeerSelector()
+prediction = await peer_selector.predict_peer_quality(peer_info)
+```
+
+### Rate Limiting
+```python
+# Adaptive rate limiting
+from ccbt.security import RateLimiter
+
+rate_limiter = RateLimiter()
+is_allowed, wait_time = await rate_limiter.check_rate_limit(
+    peer_id, limit_type, request_size
+)
+```

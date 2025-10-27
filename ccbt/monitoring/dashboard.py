@@ -1,0 +1,485 @@
+"""Dashboard Manager for ccBitTorrent.
+
+Provides comprehensive dashboard functionality including:
+- Real-time metrics display
+- Grafana dashboard templates
+- Custom dashboard creation
+- Metric visualization
+- Alert integration
+"""
+
+import asyncio
+import json
+import time
+from collections import defaultdict
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from ..events import Event, EventType, emit_event
+
+
+class DashboardType(Enum):
+    """Dashboard types."""
+    OVERVIEW = "overview"
+    PERFORMANCE = "performance"
+    NETWORK = "network"
+    SECURITY = "security"
+    ALERTS = "alerts"
+    CUSTOM = "custom"
+
+
+class WidgetType(Enum):
+    """Widget types."""
+    METRIC = "metric"
+    GRAPH = "graph"
+    TABLE = "table"
+    ALERT = "alert"
+    LOG = "log"
+    CUSTOM = "custom"
+
+
+@dataclass
+class Widget:
+    """Dashboard widget."""
+    id: str
+    type: WidgetType
+    title: str
+    position: Dict[str, int]  # x, y, width, height
+    config: Dict[str, Any] = field(default_factory=dict)
+    refresh_interval: int = 5  # seconds
+    enabled: bool = True
+
+
+@dataclass
+class Dashboard:
+    """Dashboard definition."""
+    id: str
+    name: str
+    type: DashboardType
+    description: str
+    widgets: List[Widget] = field(default_factory=list)
+    refresh_interval: int = 5  # seconds
+    enabled: bool = True
+    created_at: float = 0.0
+    updated_at: float = 0.0
+
+
+@dataclass
+class DashboardData:
+    """Dashboard data."""
+    dashboard_id: str
+    timestamp: float
+    data: Dict[str, Any]
+
+
+class DashboardManager:
+    """Dashboard management system."""
+
+    def __init__(self):
+        self.dashboards: Dict[str, Dashboard] = {}
+        self.dashboard_data: Dict[str, DashboardData] = {}
+        self.data_sources: Dict[str, Any] = {}
+
+        # Real-time data
+        self.real_time_data: Dict[str, Any] = {}
+        self.data_subscribers: Dict[str, List[callable]] = defaultdict(list)
+
+        # Dashboard templates
+        self.templates: Dict[DashboardType, Dashboard] = {}
+
+        # Statistics
+        self.stats = {
+            "dashboards_created": 0,
+            "widgets_created": 0,
+            "data_updates": 0,
+            "subscribers": 0,
+        }
+
+        # Initialize default templates
+        self._initialize_templates()
+
+    def create_dashboard(self, name: str, dashboard_type: DashboardType,
+                        description: str = "", widgets: Optional[List[Widget]] = None) -> str:
+        """Create a new dashboard."""
+        dashboard_id = f"dashboard_{int(time.time())}"
+
+        dashboard = Dashboard(
+            id=dashboard_id,
+            name=name,
+            type=dashboard_type,
+            description=description,
+            widgets=widgets or [],
+            created_at=time.time(),
+            updated_at=time.time(),
+        )
+
+        self.dashboards[dashboard_id] = dashboard
+        self.stats["dashboards_created"] += 1
+
+        # Emit dashboard created event
+        asyncio.create_task(emit_event(Event(
+            event_type=EventType.DASHBOARD_CREATED.value,
+            data={
+                "dashboard_id": dashboard_id,
+                "name": name,
+                "type": dashboard_type.value,
+                "timestamp": time.time(),
+            },
+        )))
+
+        return dashboard_id
+
+    def add_widget(self, dashboard_id: str, widget: Widget) -> bool:
+        """Add widget to dashboard."""
+        if dashboard_id not in self.dashboards:
+            return False
+
+        dashboard = self.dashboards[dashboard_id]
+        dashboard.widgets.append(widget)
+        dashboard.updated_at = time.time()
+
+        self.stats["widgets_created"] += 1
+
+        # Emit widget added event
+        asyncio.create_task(emit_event(Event(
+            event_type=EventType.WIDGET_ADDED.value,
+            data={
+                "dashboard_id": dashboard_id,
+                "widget_id": widget.id,
+                "type": widget.type.value,
+                "timestamp": time.time(),
+            },
+        )))
+
+        return True
+
+    def remove_widget(self, dashboard_id: str, widget_id: str) -> bool:
+        """Remove widget from dashboard."""
+        if dashboard_id not in self.dashboards:
+            return False
+
+        dashboard = self.dashboards[dashboard_id]
+        dashboard.widgets = [w for w in dashboard.widgets if w.id != widget_id]
+        dashboard.updated_at = time.time()
+
+        # Emit widget removed event
+        asyncio.create_task(emit_event(Event(
+            event_type=EventType.WIDGET_REMOVED.value,
+            data={
+                "dashboard_id": dashboard_id,
+                "widget_id": widget_id,
+                "timestamp": time.time(),
+            },
+        )))
+
+        return True
+
+    def update_widget(self, dashboard_id: str, widget_id: str, updates: Dict[str, Any]) -> bool:
+        """Update widget configuration."""
+        if dashboard_id not in self.dashboards:
+            return False
+
+        dashboard = self.dashboards[dashboard_id]
+        for widget in dashboard.widgets:
+            if widget.id == widget_id:
+                for key, value in updates.items():
+                    if hasattr(widget, key):
+                        setattr(widget, key, value)
+
+                dashboard.updated_at = time.time()
+
+                # Emit widget updated event
+                asyncio.create_task(emit_event(Event(
+                    event_type=EventType.WIDGET_UPDATED.value,
+                    data={
+                        "dashboard_id": dashboard_id,
+                        "widget_id": widget_id,
+                        "updates": updates,
+                        "timestamp": time.time(),
+                    },
+                )))
+
+                return True
+
+        return False
+
+    def get_dashboard(self, dashboard_id: str) -> Optional[Dashboard]:
+        """Get dashboard by ID."""
+        return self.dashboards.get(dashboard_id)
+
+    def get_all_dashboards(self) -> Dict[str, Dashboard]:
+        """Get all dashboards."""
+        return self.dashboards.copy()
+
+    def get_dashboard_data(self, dashboard_id: str) -> Optional[DashboardData]:
+        """Get dashboard data."""
+        return self.dashboard_data.get(dashboard_id)
+
+    def update_dashboard_data(self, dashboard_id: str, data: Dict[str, Any]) -> None:
+        """Update dashboard data."""
+        dashboard_data = DashboardData(
+            dashboard_id=dashboard_id,
+            timestamp=time.time(),
+            data=data,
+        )
+
+        self.dashboard_data[dashboard_id] = dashboard_data
+        self.real_time_data[dashboard_id] = data
+
+        # Notify subscribers
+        if dashboard_id in self.data_subscribers:
+            for subscriber in self.data_subscribers[dashboard_id]:
+                try:
+                    if asyncio.iscoroutinefunction(subscriber):
+                        asyncio.create_task(subscriber(dashboard_data))
+                    else:
+                        subscriber(dashboard_data)
+                except Exception as e:
+                    # Emit subscriber error event
+                    asyncio.create_task(emit_event(Event(
+                        event_type=EventType.DASHBOARD_ERROR.value,
+                        data={
+                            "error": f"Subscriber error: {e!s}",
+                            "dashboard_id": dashboard_id,
+                            "timestamp": time.time(),
+                        },
+                    )))
+
+        self.stats["data_updates"] += 1
+
+    def subscribe_to_dashboard(self, dashboard_id: str, callback: callable) -> None:
+        """Subscribe to dashboard data updates."""
+        self.data_subscribers[dashboard_id].append(callback)
+        self.stats["subscribers"] += 1
+
+    def unsubscribe_from_dashboard(self, dashboard_id: str, callback: callable) -> None:
+        """Unsubscribe from dashboard data updates."""
+        if dashboard_id in self.data_subscribers:
+            try:
+                self.data_subscribers[dashboard_id].remove(callback)
+                self.stats["subscribers"] -= 1
+            except ValueError:
+                pass
+
+    def create_grafana_dashboard(self, dashboard_id: str) -> Dict[str, Any]:
+        """Create Grafana dashboard JSON."""
+        dashboard = self.get_dashboard(dashboard_id)
+        if not dashboard:
+            return {}
+
+        grafana_dashboard = {
+            "dashboard": {
+                "id": None,
+                "title": dashboard.name,
+                "description": dashboard.description,
+                "tags": ["ccbt", dashboard.type.value],
+                "timezone": "browser",
+                "refresh": f"{dashboard.refresh_interval}s",
+                "time": {
+                    "from": "now-1h",
+                    "to": "now",
+                },
+                "panels": [],
+            },
+        }
+
+        # Convert widgets to Grafana panels
+        for widget in dashboard.widgets:
+            panel = self._widget_to_grafana_panel(widget)
+            if panel:
+                grafana_dashboard["dashboard"]["panels"].append(panel)
+
+        return grafana_dashboard
+
+    def export_dashboard(self, dashboard_id: str, format_type: str = "json") -> str:
+        """Export dashboard in specified format."""
+        dashboard = self.get_dashboard(dashboard_id)
+        if not dashboard:
+            return ""
+
+        if format_type == "json":
+            return json.dumps({
+                "dashboard": dashboard,
+                "data": self.dashboard_data.get(dashboard_id),
+            }, indent=2)
+        if format_type == "grafana":
+            return json.dumps(self.create_grafana_dashboard(dashboard_id), indent=2)
+        raise ValueError(f"Unsupported format: {format_type}")
+
+    def get_dashboard_statistics(self) -> Dict[str, Any]:
+        """Get dashboard statistics."""
+        return {
+            "dashboards_created": self.stats["dashboards_created"],
+            "widgets_created": self.stats["widgets_created"],
+            "data_updates": self.stats["data_updates"],
+            "subscribers": self.stats["subscribers"],
+            "active_dashboards": len(self.dashboards),
+            "data_sources": len(self.data_sources),
+            "templates": len(self.templates),
+        }
+
+    def _initialize_templates(self) -> None:
+        """Initialize default dashboard templates."""
+        # Overview template
+        overview_dashboard = Dashboard(
+            id="template_overview",
+            name="Overview",
+            type=DashboardType.OVERVIEW,
+            description="System overview dashboard",
+            widgets=[
+                Widget(
+                    id="system_metrics",
+                    type=WidgetType.METRIC,
+                    title="System Metrics",
+                    position={"x": 0, "y": 0, "width": 6, "height": 4},
+                    config={"metrics": ["cpu_usage", "memory_usage", "disk_usage"]},
+                ),
+                Widget(
+                    id="network_metrics",
+                    type=WidgetType.GRAPH,
+                    title="Network Activity",
+                    position={"x": 6, "y": 0, "width": 6, "height": 4},
+                    config={"metrics": ["bytes_sent", "bytes_received"]},
+                ),
+            ],
+        )
+        self.templates[DashboardType.OVERVIEW] = overview_dashboard
+
+        # Performance template
+        performance_dashboard = Dashboard(
+            id="template_performance",
+            name="Performance",
+            type=DashboardType.PERFORMANCE,
+            description="Performance monitoring dashboard",
+            widgets=[
+                Widget(
+                    id="download_speed",
+                    type=WidgetType.GRAPH,
+                    title="Download Speed",
+                    position={"x": 0, "y": 0, "width": 12, "height": 6},
+                    config={"metric": "download_speed", "unit": "bytes/s"},
+                ),
+                Widget(
+                    id="upload_speed",
+                    type=WidgetType.GRAPH,
+                    title="Upload Speed",
+                    position={"x": 0, "y": 6, "width": 12, "height": 6},
+                    config={"metric": "upload_speed", "unit": "bytes/s"},
+                ),
+            ],
+        )
+        self.templates[DashboardType.PERFORMANCE] = performance_dashboard
+
+        # Security template
+        security_dashboard = Dashboard(
+            id="template_security",
+            name="Security",
+            type=DashboardType.SECURITY,
+            description="Security monitoring dashboard",
+            widgets=[
+                Widget(
+                    id="security_events",
+                    type=WidgetType.TABLE,
+                    title="Security Events",
+                    position={"x": 0, "y": 0, "width": 12, "height": 8},
+                    config={"columns": ["timestamp", "event_type", "severity", "description"]},
+                ),
+                Widget(
+                    id="blocked_ips",
+                    type=WidgetType.METRIC,
+                    title="Blocked IPs",
+                    position={"x": 0, "y": 8, "width": 6, "height": 4},
+                    config={"metric": "blocked_ips_count"},
+                ),
+            ],
+        )
+        self.templates[DashboardType.SECURITY] = security_dashboard
+
+    def _widget_to_grafana_panel(self, widget: Widget) -> Optional[Dict[str, Any]]:
+        """Convert widget to Grafana panel."""
+        if widget.type == WidgetType.METRIC:
+            return {
+                "id": widget.id,
+                "title": widget.title,
+                "type": "stat",
+                "gridPos": widget.position,
+                "targets": [
+                    {
+                        "expr": widget.config.get("metric", ""),
+                        "refId": "A",
+                    },
+                ],
+            }
+        if widget.type == WidgetType.GRAPH:
+            return {
+                "id": widget.id,
+                "title": widget.title,
+                "type": "graph",
+                "gridPos": widget.position,
+                "targets": [
+                    {
+                        "expr": widget.config.get("metric", ""),
+                        "refId": "A",
+                    },
+                ],
+                "yAxes": [
+                    {
+                        "label": widget.config.get("unit", ""),
+                        "min": 0,
+                    },
+                ],
+            }
+        if widget.type == WidgetType.TABLE:
+            return {
+                "id": widget.id,
+                "title": widget.title,
+                "type": "table",
+                "gridPos": widget.position,
+                "targets": [
+                    {
+                        "expr": widget.config.get("query", ""),
+                        "refId": "A",
+                    },
+                ],
+                "columns": widget.config.get("columns", []),
+            }
+        if widget.type == WidgetType.ALERT:
+            return {
+                "id": widget.id,
+                "title": widget.title,
+                "type": "alertlist",
+                "gridPos": widget.position,
+                "options": {
+                    "showOptions": "current",
+                    "maxItems": widget.config.get("max_items", 10),
+                },
+            }
+
+        return None
+
+    def create_dashboard_from_template(self, template_type: DashboardType, name: str) -> str:
+        """Create dashboard from template."""
+        if template_type not in self.templates:
+            raise ValueError(f"Template not found: {template_type}")
+
+        template = self.templates[template_type]
+
+        # Create new dashboard based on template
+        dashboard_id = self.create_dashboard(name, template_type, template.description)
+        dashboard = self.dashboards[dashboard_id]
+
+        # Copy widgets from template
+        for widget in template.widgets:
+            new_widget = Widget(
+                id=f"{widget.id}_{int(time.time())}",
+                type=widget.type,
+                title=widget.title,
+                position=widget.position.copy(),
+                config=widget.config.copy(),
+                refresh_interval=widget.refresh_interval,
+                enabled=widget.enabled,
+            )
+            dashboard.widgets.append(new_widget)
+
+        return dashboard_id

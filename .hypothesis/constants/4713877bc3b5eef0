@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\session.py
+# hypothesis_version: 6.142.4
+
+[0.0, 300, 9090, '.', 'AsyncSessionManager', 'Unknown', 'added_time', 'announce', 'announce_list', 'can_resume', 'corrupted_pieces', 'created_at', 'download_rate', 'downloading', 'error', 'file', 'file_assembler', 'file_info', 'info_hash', 'localhost', 'magnet', 'magnet_uri', 'missing_files', 'name', 'peers', 'pieces_completed', 'pieces_total', 'progress', 'seeding', 'starting', 'status', 'stopped', 'torrent_file_path', 'total_pieces', 'total_size', 'updated_at', 'upload_rate', 'uptime', 'valid', 'verified_pieces']

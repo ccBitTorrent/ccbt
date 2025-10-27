@@ -1,0 +1,690 @@
+"""Checkpoint management for ccBitTorrent.
+
+Provides comprehensive checkpointing functionality for download resume,
+including JSON and binary formats, validation, and cleanup.
+"""
+
+import asyncio
+import gzip
+import json
+import struct
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+try:
+    import msgpack  # type: ignore[import-not-found]
+    HAS_MSGPACK = True
+except Exception:
+    HAS_MSGPACK = False
+    msgpack = None  # type: ignore[assignment]
+
+from .exceptions import (
+    CheckpointCorruptedError,
+    CheckpointError,
+    CheckpointNotFoundError,
+    CheckpointVersionError,
+)
+from .logging_config import get_logger
+from .models import (
+    CheckpointFormat,
+    DiskConfig,
+    DownloadStats,
+    FileCheckpoint,
+    PieceState,
+    TorrentCheckpoint,
+)
+
+
+@dataclass
+class CheckpointFileInfo:
+    """Information about a checkpoint file."""
+    path: Path
+    info_hash: bytes
+    created_at: float
+    updated_at: float
+    size: int
+    format: CheckpointFormat
+
+
+class CheckpointManager:
+    """Manages torrent download checkpoints with JSON and binary formats."""
+
+    # Binary format constants
+    MAGIC_BYTES = b"CCBT"
+    VERSION = 1
+
+    def __init__(self, config: Optional[DiskConfig] = None):
+        """Initialize checkpoint manager.
+        
+        Args:
+            config: Disk configuration with checkpoint settings
+        """
+        self.config = config or DiskConfig()
+        self.logger = get_logger(__name__)
+
+        # Determine checkpoint directory
+        if self.config.checkpoint_dir:
+            self.checkpoint_dir = Path(self.config.checkpoint_dir)
+        else:
+            # Default to download_dir/.ccbt/checkpoints
+            self.checkpoint_dir = Path(".ccbt/checkpoints")
+
+        # Ensure checkpoint directory exists
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+        self.logger.info(f"Checkpoint manager initialized with directory: {self.checkpoint_dir}")
+
+    def _get_checkpoint_path(self, info_hash: bytes, format: CheckpointFormat) -> Path:
+        """Get checkpoint file path for given info hash and format."""
+        info_hash_hex = info_hash.hex()
+
+        if format == CheckpointFormat.JSON:
+            return self.checkpoint_dir / f"{info_hash_hex}.checkpoint.json"
+        if format == CheckpointFormat.BINARY:
+            ext = ".checkpoint.bin.gz" if self.config.checkpoint_compression else ".checkpoint.bin"
+            return self.checkpoint_dir / f"{info_hash_hex}{ext}"
+        raise ValueError(f"Invalid checkpoint format: {format}")
+
+    async def save_checkpoint(self, checkpoint: TorrentCheckpoint,
+                            format: Optional[CheckpointFormat] = None) -> Path:
+        """Save checkpoint to disk.
+        
+        Args:
+            checkpoint: Checkpoint data to save
+            format: Format to save in (uses config default if None)
+            
+        Returns:
+            Path to saved checkpoint file
+            
+        Raises:
+            CheckpointError: If saving fails
+        """
+        if not self.config.checkpoint_enabled:
+            raise CheckpointError("Checkpointing is disabled")
+
+        format = format or self.config.checkpoint_format
+
+        try:
+            if format == CheckpointFormat.JSON:
+                return await self._save_json_checkpoint(checkpoint)
+            if format == CheckpointFormat.BINARY:
+                return await self._save_binary_checkpoint(checkpoint)
+            if format == CheckpointFormat.BOTH:
+                # Save both formats
+                json_path = await self._save_json_checkpoint(checkpoint)
+                bin_path = await self._save_binary_checkpoint(checkpoint)
+                self.logger.debug(f"Saved checkpoint in both formats: {json_path}, {bin_path}")
+                return json_path  # Return JSON path as primary
+            raise ValueError(f"Invalid checkpoint format: {format}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to save checkpoint: {e}")
+            raise CheckpointError(f"Failed to save checkpoint: {e}")
+
+    async def _save_json_checkpoint(self, checkpoint: TorrentCheckpoint) -> Path:
+        """Save checkpoint in JSON format."""
+        path = self._get_checkpoint_path(checkpoint.info_hash, CheckpointFormat.JSON)
+
+        # Update timestamp
+        checkpoint.updated_at = time.time()
+
+        # Convert to dict for JSON serialization
+        checkpoint_dict = checkpoint.model_dump()
+
+        # Convert bytes to hex strings for JSON
+        checkpoint_dict["info_hash"] = checkpoint.info_hash.hex()
+
+        # Convert PieceState enums to strings
+        if "piece_states" in checkpoint_dict:
+            checkpoint_dict["piece_states"] = {
+                str(k): v.value if hasattr(v, "value") else str(v)
+                for k, v in checkpoint_dict["piece_states"].items()
+            }
+
+        # Ensure new metadata fields are included
+        if not checkpoint_dict.get("torrent_file_path"):
+            checkpoint_dict["torrent_file_path"] = checkpoint.torrent_file_path
+        if not checkpoint_dict.get("magnet_uri"):
+            checkpoint_dict["magnet_uri"] = checkpoint.magnet_uri
+        if not checkpoint_dict.get("announce_urls"):
+            checkpoint_dict["announce_urls"] = checkpoint.announce_urls
+        if not checkpoint_dict.get("display_name"):
+            checkpoint_dict["display_name"] = checkpoint.display_name
+
+        # Write JSON file
+        def _write_json():
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(checkpoint_dict, f, indent=2, ensure_ascii=False)
+
+        await asyncio.get_event_loop().run_in_executor(None, _write_json)
+
+        self.logger.debug(f"Saved JSON checkpoint: {path}")
+        return path
+
+    async def _save_binary_checkpoint(self, checkpoint: TorrentCheckpoint) -> Path:
+        """Save checkpoint in binary format."""
+        if not HAS_MSGPACK:
+            raise CheckpointError("msgpack is required for binary checkpoint format")
+
+        path = self._get_checkpoint_path(checkpoint.info_hash, CheckpointFormat.BINARY)
+
+        # Update timestamp
+        checkpoint.updated_at = time.time()
+
+        # Prepare binary data
+        def _write_binary():
+            with open(path, "wb") as f:
+                # Write header
+                f.write(self.MAGIC_BYTES)  # 4 bytes
+                f.write(struct.pack("B", self.VERSION))  # 1 byte
+                f.write(checkpoint.info_hash)  # 20 bytes
+                f.write(struct.pack("Q", int(checkpoint.updated_at)))  # 8 bytes timestamp
+                f.write(struct.pack("I", checkpoint.total_pieces))  # 4 bytes
+
+                # Write verified pieces bitfield
+                bitfield = bytearray((checkpoint.total_pieces + 7) // 8)
+                for piece_idx in checkpoint.verified_pieces:
+                    byte_idx = piece_idx // 8
+                    bit_idx = piece_idx % 8
+                    bitfield[byte_idx] |= (1 << (7 - bit_idx))
+                f.write(bitfield)
+
+                # Write metadata as msgpack
+                metadata = {
+                    "torrent_name": checkpoint.torrent_name,
+                    "piece_length": checkpoint.piece_length,
+                    "total_length": checkpoint.total_length,
+                    "piece_states": {str(k): v.value for k, v in checkpoint.piece_states.items()},
+                    "download_stats": checkpoint.download_stats.model_dump(),
+                    "output_dir": checkpoint.output_dir,
+                    "files": [f.model_dump() for f in checkpoint.files],
+                    "peer_info": checkpoint.peer_info,
+                    "endgame_mode": checkpoint.endgame_mode,
+                    "torrent_file_path": checkpoint.torrent_file_path,
+                    "magnet_uri": checkpoint.magnet_uri,
+                    "announce_urls": checkpoint.announce_urls,
+                    "display_name": checkpoint.display_name,
+                }
+
+                if not HAS_MSGPACK or msgpack is None:
+                    raise CheckpointError("msgpack not available for binary checkpoint write")
+                metadata_bytes = msgpack.packb(metadata)  # type: ignore[attr-defined]
+                f.write(struct.pack("I", len(metadata_bytes)))  # 4 bytes length
+                f.write(metadata_bytes)
+
+        if self.config.checkpoint_compression:
+            # Compress the binary data
+            def _write_compressed():
+                with open(path, "wb") as f:
+                    with gzip.GzipFile(fileobj=f, mode="wb") as gz:
+                        _write_binary_data(gz)
+
+            def _write_binary_data(f):
+                f.write(self.MAGIC_BYTES)
+                f.write(struct.pack("B", self.VERSION))
+                f.write(checkpoint.info_hash)
+                f.write(struct.pack("Q", int(checkpoint.updated_at)))
+                f.write(struct.pack("I", checkpoint.total_pieces))
+
+                bitfield = bytearray((checkpoint.total_pieces + 7) // 8)
+                for piece_idx in checkpoint.verified_pieces:
+                    byte_idx = piece_idx // 8
+                    bit_idx = piece_idx % 8
+                    bitfield[byte_idx] |= (1 << (7 - bit_idx))
+                f.write(bitfield)
+
+                metadata = {
+                    "torrent_name": checkpoint.torrent_name,
+                    "piece_length": checkpoint.piece_length,
+                    "total_length": checkpoint.total_length,
+                    "piece_states": {str(k): v.value for k, v in checkpoint.piece_states.items()},
+                    "download_stats": checkpoint.download_stats.model_dump(),
+                    "output_dir": checkpoint.output_dir,
+                    "files": [f.model_dump() for f in checkpoint.files],
+                    "peer_info": checkpoint.peer_info,
+                    "endgame_mode": checkpoint.endgame_mode,
+                    "torrent_file_path": checkpoint.torrent_file_path,
+                    "magnet_uri": checkpoint.magnet_uri,
+                    "announce_urls": checkpoint.announce_urls,
+                    "display_name": checkpoint.display_name,
+                }
+
+                if not HAS_MSGPACK or msgpack is None:
+                    raise CheckpointError("msgpack not available for binary checkpoint write")
+                metadata_bytes = msgpack.packb(metadata)  # type: ignore[attr-defined]
+                f.write(struct.pack("I", len(metadata_bytes)))
+                f.write(metadata_bytes)
+
+            await asyncio.get_event_loop().run_in_executor(None, _write_compressed)
+        else:
+            await asyncio.get_event_loop().run_in_executor(None, _write_binary)
+
+        self.logger.debug(f"Saved binary checkpoint: {path}")
+        return path
+
+    async def load_checkpoint(self, info_hash: bytes,
+                            format: Optional[CheckpointFormat] = None) -> Optional[TorrentCheckpoint]:
+        """Load checkpoint from disk.
+        
+        Args:
+            info_hash: Torrent info hash
+            format: Format to load (tries both if None)
+            
+        Returns:
+            Loaded checkpoint or None if not found
+            
+        Raises:
+            CheckpointError: If loading fails
+        """
+        if not self.config.checkpoint_enabled:
+            return None
+
+        format = format or self.config.checkpoint_format
+
+        try:
+            if format == CheckpointFormat.JSON:
+                return await self._load_json_checkpoint(info_hash)
+            if format == CheckpointFormat.BINARY:
+                return await self._load_binary_checkpoint(info_hash)
+            if format == CheckpointFormat.BOTH:
+                # Try JSON first, then binary
+                checkpoint = await self._load_json_checkpoint(info_hash)
+                if checkpoint is None:
+                    checkpoint = await self._load_binary_checkpoint(info_hash)
+                return checkpoint
+            raise ValueError(f"Invalid checkpoint format: {format}")
+
+        except CheckpointNotFoundError:
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to load checkpoint: {e}")
+            raise CheckpointError(f"Failed to load checkpoint: {e}")
+
+    async def _load_json_checkpoint(self, info_hash: bytes) -> Optional[TorrentCheckpoint]:
+        """Load checkpoint from JSON format."""
+        path = self._get_checkpoint_path(info_hash, CheckpointFormat.JSON)
+
+        if not path.exists():
+            raise CheckpointNotFoundError(f"JSON checkpoint not found: {path}")
+
+        def _read_json():
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+
+        try:
+            checkpoint_dict = await asyncio.get_event_loop().run_in_executor(None, _read_json)
+
+            # Convert hex string back to bytes
+            checkpoint_dict["info_hash"] = bytes.fromhex(checkpoint_dict["info_hash"])
+
+            # Convert string values back to PieceState enums
+            if "piece_states" in checkpoint_dict:
+                checkpoint_dict["piece_states"] = {
+                    int(k): PieceState(v) for k, v in checkpoint_dict["piece_states"].items()
+                }
+
+            # Validate version
+            if checkpoint_dict.get("version", "1.0") != "1.0":
+                raise CheckpointVersionError(f"Incompatible checkpoint version: {checkpoint_dict.get('version')}")
+
+            checkpoint = TorrentCheckpoint(**checkpoint_dict)
+            self.logger.debug(f"Loaded JSON checkpoint: {path}")
+            return checkpoint
+
+        except json.JSONDecodeError as e:
+            raise CheckpointCorruptedError(f"Invalid JSON in checkpoint file: {e}")
+        except Exception as e:
+            raise CheckpointCorruptedError(f"Failed to parse checkpoint: {e}")
+
+    async def _load_binary_checkpoint(self, info_hash: bytes) -> Optional[TorrentCheckpoint]:
+        """Load checkpoint from binary format."""
+        if not HAS_MSGPACK:
+            raise CheckpointError("msgpack is required for binary checkpoint format")
+
+        path = self._get_checkpoint_path(info_hash, CheckpointFormat.BINARY)
+
+        if not path.exists():
+            raise CheckpointNotFoundError(f"Binary checkpoint not found: {path}")
+
+        def _read_binary():
+            with open(path, "rb") as f:
+                if self.config.checkpoint_compression:
+                    with gzip.GzipFile(fileobj=f, mode="rb") as gz:
+                        return _read_binary_data(gz)
+                else:
+                    return _read_binary_data(f)
+
+        def _read_binary_data(f):
+            # Read header
+            magic = f.read(4)
+            if magic != self.MAGIC_BYTES:
+                raise CheckpointCorruptedError("Invalid magic bytes in checkpoint file")
+
+            version = struct.unpack("B", f.read(1))[0]
+            if version != self.VERSION:
+                raise CheckpointVersionError(f"Incompatible checkpoint version: {version}")
+
+            file_info_hash = f.read(20)
+            if file_info_hash != info_hash:
+                raise CheckpointCorruptedError("Info hash mismatch in checkpoint file")
+
+            timestamp = struct.unpack("Q", f.read(8))[0]
+            total_pieces = struct.unpack("I", f.read(4))[0]
+
+            # Read bitfield
+            bitfield_size = (total_pieces + 7) // 8
+            bitfield = f.read(bitfield_size)
+
+            # Parse verified pieces from bitfield
+            verified_pieces = []
+            for byte_idx, byte_val in enumerate(bitfield):
+                for bit_idx in range(8):
+                    piece_idx = byte_idx * 8 + bit_idx
+                    if piece_idx < total_pieces and (byte_val & (1 << (7 - bit_idx))):
+                        verified_pieces.append(piece_idx)
+
+            # Read metadata
+            metadata_len = struct.unpack("I", f.read(4))[0]
+            metadata_bytes = f.read(metadata_len)
+            if not HAS_MSGPACK or msgpack is None:
+                raise CheckpointError("msgpack not available for binary checkpoint read")
+            metadata = msgpack.unpackb(metadata_bytes, raw=False)  # type: ignore[attr-defined]
+
+            # Convert string values back to PieceState enums
+            if "piece_states" in metadata:
+                metadata["piece_states"] = {
+                    int(k): PieceState(v) for k, v in metadata["piece_states"].items()
+                }
+
+            # Create checkpoint object
+            checkpoint_dict = {
+                "version": "1.0",
+                "info_hash": info_hash,
+                "created_at": timestamp,  # Use timestamp as created_at
+                "updated_at": timestamp,
+                "total_pieces": total_pieces,
+                "verified_pieces": verified_pieces,
+                "piece_states": metadata.get("piece_states", {}),
+                "download_stats": DownloadStats(**metadata.get("download_stats", {})),
+                "files": [FileCheckpoint(**f) for f in metadata.get("files", [])],
+                "peer_info": metadata.get("peer_info"),
+                "endgame_mode": metadata.get("endgame_mode", False),
+            }
+
+            # Add required fields from metadata
+            checkpoint_dict.update({
+                "torrent_name": metadata.get("torrent_name", "Unknown"),
+                "piece_length": metadata.get("piece_length", 0),
+                "total_length": metadata.get("total_length", 0),
+                "output_dir": metadata.get("output_dir", "."),
+                "torrent_file_path": metadata.get("torrent_file_path"),
+                "magnet_uri": metadata.get("magnet_uri"),
+                "announce_urls": metadata.get("announce_urls", []),
+                "display_name": metadata.get("display_name"),
+            })
+
+            return checkpoint_dict
+
+        try:
+            checkpoint_dict = await asyncio.get_event_loop().run_in_executor(None, _read_binary)
+            checkpoint = TorrentCheckpoint(**checkpoint_dict)
+            self.logger.debug(f"Loaded binary checkpoint: {path}")
+            return checkpoint
+
+        except Exception as e:
+            raise CheckpointCorruptedError(f"Failed to parse binary checkpoint: {e}")
+
+    async def delete_checkpoint(self, info_hash: bytes) -> bool:
+        """Delete checkpoint files for given info hash.
+        
+        Args:
+            info_hash: Torrent info hash
+            
+        Returns:
+            True if any files were deleted, False otherwise
+        """
+        deleted = False
+
+        # Delete JSON checkpoint
+        json_path = self._get_checkpoint_path(info_hash, CheckpointFormat.JSON)
+        if json_path.exists():
+            json_path.unlink()
+            deleted = True
+            self.logger.debug(f"Deleted JSON checkpoint: {json_path}")
+
+        # Delete binary checkpoint
+        bin_path = self._get_checkpoint_path(info_hash, CheckpointFormat.BINARY)
+        if bin_path.exists():
+            bin_path.unlink()
+            deleted = True
+            self.logger.debug(f"Deleted binary checkpoint: {bin_path}")
+
+        return deleted
+
+    async def list_checkpoints(self) -> List[CheckpointFileInfo]:
+        """List all available checkpoints.
+        
+        Returns:
+            List of checkpoint file information
+        """
+        checkpoints = []
+
+        if not self.checkpoint_dir.exists():
+            return checkpoints
+
+        for file_path in self.checkpoint_dir.glob("*.checkpoint.*"):
+            try:
+                # Extract info hash from filename
+                filename = file_path.stem
+                if filename.endswith(".checkpoint"):
+                    info_hash_hex = filename.replace(".checkpoint", "")
+                    info_hash = bytes.fromhex(info_hash_hex)
+                else:
+                    continue
+
+                # Determine format
+                if file_path.suffix == ".json":
+                    format_type = CheckpointFormat.JSON
+                elif file_path.suffix in [".bin", ".gz"]:
+                    format_type = CheckpointFormat.BINARY
+                else:
+                    continue
+
+                stat = file_path.stat()
+                checkpoints.append(CheckpointFileInfo(
+                    path=file_path,
+                    info_hash=info_hash,
+                    created_at=stat.st_ctime,
+                    updated_at=stat.st_mtime,
+                    size=stat.st_size,
+                    format=format_type,
+                ))
+
+            except Exception as e:
+                self.logger.warning(f"Failed to process checkpoint file {file_path}: {e}")
+                continue
+
+        return sorted(checkpoints, key=lambda x: x.updated_at, reverse=True)
+    
+    async def verify_checkpoint(self, info_hash: bytes) -> bool:
+        """Verify that a checkpoint exists and is structurally valid."""
+        cp = await self.load_checkpoint(info_hash)
+        if cp is None:
+            return False
+        # basic invariants
+        if len(cp.verified_pieces) > cp.total_pieces:
+            return False
+        return True
+    
+    async def export_checkpoint(self, info_hash: bytes, fmt: str = "json") -> bytes:
+        """Export checkpoint in the desired format and return bytes."""
+        cp = await self.load_checkpoint(info_hash)
+        if cp is None:
+            raise CheckpointNotFoundError(f"No checkpoint for {info_hash.hex()}")
+        fmt = (fmt or "json").lower()
+        if fmt == "json":
+            cp_dict = cp.model_dump()
+            cp_dict['info_hash'] = cp.info_hash.hex()
+            return json.dumps(cp_dict, indent=2).encode('utf-8')
+        elif fmt == "binary":
+            # Save to temp path using binary writer and read back
+            path = await self._save_binary_checkpoint(cp)
+            data = path.read_bytes()
+            return data
+        else:
+            raise CheckpointError(f"Unsupported export format: {fmt}")
+    
+    async def backup_checkpoint(self, info_hash: bytes, destination: Path, *, compress: bool = True, encrypt: bool = False) -> Path:
+        """Create a portable backup of the checkpoint at destination.
+
+        Backup format is JSON optionally gzipped and optionally encrypted if cryptography is available.
+        """
+        cp = await self.load_checkpoint(info_hash)
+        if cp is None:
+            raise CheckpointNotFoundError(f"No checkpoint for {info_hash.hex()}")
+
+        # Serialize JSON
+        data = await self.export_checkpoint(info_hash, fmt="json")
+
+        # Optional compression
+        if compress:
+            data = gzip.compress(data)
+
+        # Optional encryption
+        if encrypt:
+            try:
+                from cryptography.fernet import Fernet  # type: ignore
+            except Exception:
+                raise CheckpointError("Encryption requested but cryptography is not installed")
+            key_path = destination.with_suffix(destination.suffix + ".key")
+            key = Fernet.generate_key()
+            f = Fernet(key)
+            data = f.encrypt(data)
+            key_path.write_bytes(key)
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
+        self.logger.info(f"Wrote checkpoint backup to {destination}")
+        return destination
+
+    async def restore_checkpoint(self, backup_file: Path, *, info_hash: Optional[bytes] = None) -> TorrentCheckpoint:
+        """Restore a checkpoint from a backup file. Returns the restored checkpoint model."""
+        data = backup_file.read_bytes()
+        # Try decrypt if a .key file exists
+        key_file = backup_file.with_suffix(backup_file.suffix + ".key")
+        if key_file.exists():
+            try:
+                from cryptography.fernet import Fernet  # type: ignore
+                key = key_file.read_bytes()
+                f = Fernet(key)
+                data = f.decrypt(data)
+            except Exception as e:
+                raise CheckpointError(f"Failed to decrypt backup: {e}")
+
+        # Try decompress
+        try:
+            data = gzip.decompress(data)
+        except OSError:
+            # Not compressed, proceed
+            pass
+
+        try:
+            cp_dict = json.loads(data.decode('utf-8'))
+        except Exception as e:
+            raise CheckpointError(f"Invalid backup content: {e}")
+
+        # Convert back types
+        cp_dict['info_hash'] = bytes.fromhex(cp_dict['info_hash'])
+        if info_hash and cp_dict['info_hash'] != info_hash:
+            raise CheckpointError("Backup info hash does not match provided info hash")
+        if 'piece_states' in cp_dict:
+            cp_dict['piece_states'] = {int(k): PieceState(v) for k, v in cp_dict['piece_states'].items()}
+
+        cp = TorrentCheckpoint(**cp_dict)
+
+        # Save to disk using configured format(s)
+        await self.save_checkpoint(cp, self.config.checkpoint_format)
+        return cp
+
+    async def cleanup_old_checkpoints(self, max_age_days: int = 30) -> int:
+        """Clean up old checkpoint files.
+        
+        Args:
+            max_age_days: Maximum age in days before cleanup
+            
+        Returns:
+            Number of files deleted
+        """
+        if not self.checkpoint_dir.exists():
+            return 0
+
+        cutoff_time = time.time() - (max_age_days * 24 * 60 * 60)
+        deleted_count = 0
+
+        for file_path in self.checkpoint_dir.glob("*.checkpoint.*"):
+            try:
+                if file_path.stat().st_mtime < cutoff_time:
+                    file_path.unlink()
+                    deleted_count += 1
+                    self.logger.debug(f"Cleaned up old checkpoint: {file_path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to cleanup checkpoint {file_path}: {e}")
+
+        if deleted_count > 0:
+            self.logger.info(f"Cleaned up {deleted_count} old checkpoint files")
+
+        return deleted_count
+
+    async def convert_checkpoint_format(self, info_hash: bytes,
+                                      from_format: CheckpointFormat,
+                                      to_format: CheckpointFormat) -> Path:
+        """Convert checkpoint between formats.
+        
+        Args:
+            info_hash: Torrent info hash
+            from_format: Source format
+            to_format: Target format
+            
+        Returns:
+            Path to converted checkpoint file
+        """
+        # Load from source format
+        checkpoint = await self.load_checkpoint(info_hash, from_format)
+        if checkpoint is None:
+            raise CheckpointNotFoundError(f"No checkpoint found for {info_hash.hex()}")
+
+        # Save in target format
+        return await self.save_checkpoint(checkpoint, to_format)
+
+    def get_checkpoint_stats(self) -> Dict[str, Any]:
+        """Get checkpoint directory statistics."""
+        if not self.checkpoint_dir.exists():
+            return {
+                "total_files": 0,
+                "total_size": 0,
+                "json_files": 0,
+                "binary_files": 0,
+                "oldest_checkpoint": None,
+                "newest_checkpoint": None,
+            }
+
+        files = list(self.checkpoint_dir.glob("*.checkpoint.*"))
+        total_size = sum(f.stat().st_size for f in files)
+
+        json_files = len([f for f in files if f.suffix == ".json"])
+        binary_files = len([f for f in files if f.suffix in [".bin", ".gz"]])
+
+        timestamps = [f.stat().st_mtime for f in files]
+        oldest_checkpoint = min(timestamps) if timestamps else None
+        newest_checkpoint = max(timestamps) if timestamps else None
+
+        return {
+            "total_files": len(files),
+            "total_size": total_size,
+            "json_files": json_files,
+            "binary_files": binary_files,
+            "oldest_checkpoint": oldest_checkpoint,
+            "newest_checkpoint": newest_checkpoint,
+        }

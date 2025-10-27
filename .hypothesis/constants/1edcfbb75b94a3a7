@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\pex.py
+# hypothesis_version: 6.142.4
+
+[0.0, 1.0, 10.0, 30.0, 100, 3600, 'PEX manager started', 'PEX manager stopped', 'pex']

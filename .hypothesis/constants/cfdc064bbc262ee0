@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\security\peer_validator.py
+# hypothesis_version: 6.142.4
+
+[b'\x00', b'-AZ', b'-BT', b'-LT', b'-TR', b'-UT', b'BitTorrent protocol', b'\xff', 0.0, 0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.5, 0.6, 0.8, 1.0, 5.0, 10.0, 100, 300, 900, 1000, 1024, 2000, 3600, 4000, '00000000000000000000', 'AAAAAAAAAAAAAAAAAAAA', 'Empty message', 'FFFFFFFFFFFFFFFFFFFF', 'Invalid info hash', 'Invalid peer ID', 'Message too large', 'Valid handshake', 'Valid message', 'activity_level', 'big', 'bytes_received', 'bytes_sent', 'error_count', 'error_rate', 'factors', 'handshake_time', 'invalid_handshake', 'invalid_peer_id', 'last_activity', 'message_count', 'message_efficiency', 'metrics', 'protocol_compliance', 'protocol_violation', 'quality_score', 'rate_limit_exceeded', 'reason', 'suspicious_behavior', 'valid']

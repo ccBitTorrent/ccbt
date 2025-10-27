@@ -1,0 +1,4 @@
+# file: C:\Users\claud\proj\bittorrentclient\ccbt\protocols\base.py
+# hypothesis_version: 6.142.4
+
+[0.0, 'active', 'active_connections', 'bittorrent', 'bytes_received', 'bytes_sent', 'capabilities', 'connected', 'connecting', 'connections_failed', 'disconnected', 'error', 'errors', 'handshake', 'hybrid', 'ip', 'ipfs', 'last_activity', 'max_connections', 'messages_received', 'messages_sent', 'peer_id', 'peer_info', 'peers_count', 'port', 'protocol_type', 'state', 'stats', 'supports_dht', 'supports_encryption', 'supports_ipfs', 'supports_ipv6', 'supports_metadata', 'supports_pex', 'supports_webrtc', 'timestamp', 'webtorrent']

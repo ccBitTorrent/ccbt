@@ -1,0 +1,262 @@
+[build-system]
+requires = ["hatchling>=1.8.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ccbt"
+version = "0.1.0"
+description = "A high-performance BitTorrent client implementation in Python"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+keywords = ["bittorrent", "p2p", "torrent", "client"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: System :: Networking",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "requests>=2.25.0",
+    "aiofiles>=23.0.0",
+    "aiohttp>=3.8.0",
+    "toml>=0.10.2",
+    "pydantic>=2.0.0",
+    "prometheus-client>=0.16.0",
+    "psutil>=5.8.0",
+    "pywin32>=305; sys_platform == 'win32'",
+    "rich>=14.2.0",
+    "textual>=0.52.0",
+    "click>=8.1.8",
+    "msgpack>=1.1.1",
+    "textual>=0.73.0",
+    "textual-dev>=1.6.1",
+    "pytest>=8.3.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.2.0",
+    "pytest-cov>=2.12.0",
+    "hypothesis>=6.0.0",
+    "pytest-benchmark>=4.0.0",
+    "ruff>=0.1.6",
+    "ty>=0.0.1a24",
+    "pre-commit>=3.0.0",
+    "bandit>=1.7.5",
+    "pylint>=3.0.0",
+    "safety>=2.0.0",
+    "commitizen>=3.0.0",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/yourusername/ccbt"
+Repository = "https://github.com/yourusername/ccbt"
+Issues = "https://github.com/yourusername/ccbt/issues"
+
+[project.scripts]
+ccbt = "ccbt.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ccbt*"]
+
+[tool.setuptools.package-data]
+ccbt = ["py.typed"]
+
+# Ruff configuration
+[tool.ruff]
+target-version = "py38"
+line-length = 88
+select = [
+    "E4",   # pycodestyle errors
+    "E7",   # pycodestyle errors
+    "E9",   # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "ARG",  # flake8-unused-arguments
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "TID",  # flake8-tidy-imports
+    "Q",    # flake8-quotes
+    "I",    # isort
+    "N",    # pep8-naming
+    "D",    # pydocstyle
+    "S",    # flake8-bandit
+    "A",    # flake8-builtins
+    "COM",  # flake8-commas
+    "DTZ",  # flake8-datetimez
+    "EM",   # flake8-errmsg
+    "EXE",  # flake8-executable
+    "FA",   # flake8-future-annotations
+    "ISC",  # flake8-implicit-str-concat
+    "ICN",  # flake8-import-conventions
+    "G",    # flake8-logging-format
+    "INP",  # flake8-no-pep420
+    "PIE",  # flake8-pie
+    "T20",  # flake8-print
+    "PYI",  # flake8-pyi
+    "PT",   # flake8-pytest-style
+    "RSE",  # flake8-raise
+    "RET",  # flake8-return
+    "SLF",  # flake8-self
+    "SLOT", # flake8-slots
+    "INT",  # flake8-gettext
+    "PGH",  # pygrep-hooks
+    "PL",   # pylint
+    "TRY",  # tryceratops
+    "FLY",  # flynt
+    "NPY",  # numpy
+    "AIR",  # airflow
+    "PERF", # perflint
+    "FURB", # refurb
+    "RUF",  # ruff-specific rules
+]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",     # assert
+    "S104",     # hardcoded-bind-all-interfaces
+    "PLR2004",  # magic-value-comparison
+    "TID252",   # relative-imports
+    "D",        # pydocstyle
+]
+"**/test_*.py" = [
+    "PLR2004",  # magic-value-comparison
+    "S101",     # assert
+    "TID252",   # relative-imports
+]
+"**/__init__.py" = ["TID252"]
+"**/scripts/**/*.py" = ["T20"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["ccbt"]
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+inline-quotes = "double"
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.pylint]
+max-args = 10
+max-branches = 12
+max-returns = 6
+max-statements = 50
+
+[tool.ruff.lint.pylint.messages-control]
+disable = [
+    "too-few-public-methods",
+    "too-many-arguments",
+    "too-many-branches",
+    "too-many-locals",
+    "too-many-statements",
+]
+
+# Ty configuration (type checker)
+[tool.ty]
+python_version = "3.8"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+# Module-specific Ty overrides
+[[tool.ty.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+check_untyped_defs = false
+
+[[tool.ty.overrides]]
+module = ["win32file.*", "win32con.*", "pywintypes.*"]
+ignore_missing_imports = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=ccbt",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["ccbt"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/env/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+# Bandit security linter
+[tool.bandit]
+exclude_dirs = ["tests", "test_*"]
+skips = ["B101", "B601"]
+
+# Commitizen configuration
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+tag_format = "v$version"
+version_scheme = "pep440"
+
+# UV workspace configuration (for monorepo support)
+[tool.uv.workspace]
+members = []

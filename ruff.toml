@@ -1,0 +1,133 @@
+# Ruff configuration file
+# See: https://docs.astral.sh/ruff/configuration/
+
+# Exclude directories
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+# Line length
+line-length = 88
+
+# Target Python version
+target-version = "py38"
+
+[lint]
+# Enable basic rules
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "ARG",  # flake8-unused-arguments
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "TID",  # flake8-tidy-imports
+    "Q",    # flake8-quotes
+    "I",    # isort
+    "N",    # pep8-naming
+    "D",    # pydocstyle
+    "S",    # flake8-bandit
+    "A",    # flake8-builtins
+    "COM",  # flake8-commas
+    "DTZ",  # flake8-datetimez
+    "EM",   # flake8-errmsg
+    "EXE",  # flake8-executable
+    "FA",   # flake8-future-annotations
+    "ISC",  # flake8-implicit-str-concat
+    "ICN",  # flake8-import-conventions
+    "G",    # flake8-logging-format
+    "INP",  # flake8-no-pep420
+    "PIE",  # flake8-pie
+    "T20",  # flake8-print
+    "PYI",  # flake8-pyi
+    "PT",   # flake8-pytest-style
+    "RSE",  # flake8-raise
+    "RET",  # flake8-return
+    "SLF",  # flake8-self
+    "SLOT", # flake8-slots
+    "INT",  # flake8-gettext
+    "PGH",  # pygrep-hooks
+    "PL",   # pylint
+    "TRY",  # tryceratops
+    "FLY",  # flynt
+    "NPY",  # numpy
+    "AIR",  # airflow
+    "PERF", # perflint
+    "FURB", # refurb
+    "RUF",  # ruff-specific rules
+]
+
+# Allow fix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+# Per-file ignores
+[lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",     # assert
+    "S104",     # hardcoded-bind-all-interfaces
+    "PLR2004",  # magic-value-comparison
+    "TID252",   # relative-imports
+    "D",        # pydocstyle
+]
+
+"**/test_*.py" = [
+    "PLR2004",  # magic-value-comparison
+    "S101",     # assert
+    "TID252",   # relative-imports
+]
+
+"**/__init__.py" = ["TID252"]
+"**/scripts/**/*.py" = ["T20"]
+
+# Pydocstyle configuration
+[lint.pydocstyle]
+convention = "google"
+
+# Isort configuration
+[lint.isort]
+known-first-party = ["ccbt"]
+
+# Flake8-quotes configuration
+[lint.flake8-quotes]
+docstring-quotes = "double"
+inline-quotes = "double"
+
+# Flake8-tidy-imports configuration
+[lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+# Pylint configuration
+[lint.pylint]
+max-args = 10
+max-branches = 12
+max-returns = 6
+max-statements = 50
+max-locals = 20
+max-public-methods = 20
