@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\cli\interactive.py
-# hypothesis_version: 6.142.4
-
-[0.5, 100, ' | ', 'Commands: ', 'Connected Peers', 'Download', 'Download Information', 'Download Speed', 'Download paused', 'Download resumed', 'Download stopped', 'Downloaded', 'Files', 'Help', 'IP', 'Name', 'No peers connected', 'No torrent active', 'Peers', 'Pieces', 'Port', 'Priority', 'Progress', 'Property', 'Running', 'Size', 'Status', 'Status: ', 'Torrent Status', 'Unknown', 'Upload', 'Upload Speed', 'Value', 'Welcome', 'blue', 'bold', 'bold blue', 'clear', 'cyan', 'download_speed', 'files', 'footer', 'green', 'header', 'help', 'left', 'main', 'name', 'pause', 'peers', 'peers_connected', 'pieces_completed', 'pieces_total', 'quit', 'resume', 'right', 'seeding', 'status', 'stop', 'upload_speed', 'white', 'yellow']

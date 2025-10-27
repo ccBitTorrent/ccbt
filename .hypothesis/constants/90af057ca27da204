@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\tracker.py
-# hypothesis_version: 6.142.4
-
-[b'complete', b'download_url', b'failure reason', b'incomplete', b'interval', b'ip', b'peers', b'port', b'tracker id', b'warning message', 0.0, 1.0, 200, 300, 1800, 6881, '&', '-CC0101-', '.', '0123456789abcdef', '1', '?', 'User-Agent', 'announce', 'big', 'ccBitTorrent/0.1.0', 'compact', 'complete', 'download_url', 'downloaded', 'event', 'file_info', 'ignore', 'incomplete', 'info_hash', 'interval', 'ip', 'left', 'peer_id', 'peers', 'port', 'started', 'total_length', 'tracker_id', 'uploaded', 'utf-8', 'warning_message']

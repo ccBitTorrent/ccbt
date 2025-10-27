@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\disk_io.py
-# hypothesis_version: 6.142.4
-
-[b'\x00', 0.01, 0.1, 5.0, 200, 256, 1024, 16384, '/dev/nvme', '/sys/class/nvme', 'bytes_written', 'cache_hits', 'cache_misses', 'direct_io_operations', 'disk-io', 'io_uring_operations', 'linux', 'nvme_optimizations', 'preallocations', 'queue_full_errors', 'r+b', 'rb', 'wb', 'win32', 'writes']

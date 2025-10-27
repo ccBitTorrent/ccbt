@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\security\security_manager.py
-# hypothesis_version: 6.142.4
-
-[0.0, 0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 1.0, 100, 1024, 3600, 10000, 'IP is blacklisted', 'Low reputation score', 'Rate limit exceeded', 'Valid peer', 'blacklist_size', 'blacklisted_peers', 'blocked_connections', 'critical', 'ddos_attack', 'description', 'high', 'invalid_handshake', 'ip', 'low', 'malicious_peer', 'medium', 'metadata', 'peer_id', 'protocol_violation', 'rate_limit_exceeded', 'reason', 'reputation_tracking', 'security_events', 'severity', 'suspicious_behavior', 'threat_type', 'timestamp', 'total_connections', 'whitelist_size', 'whitelisted_peers']

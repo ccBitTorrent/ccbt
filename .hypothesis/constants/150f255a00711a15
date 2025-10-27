@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\security\encryption.py
-# hypothesis_version: 6.142.4
-
-[0.0, 10.0, 3600, '!BB', 'active_sessions', 'aes', 'aes_cipher', 'bytes_decrypted', 'bytes_encrypted', 'chacha20', 'chacha20_cipher', 'created_at', 'disabled', 'encryption_rate', 'encryption_type', 'error', 'handshake_complete', 'handshake_failures', 'ip', 'last_activity', 'none', 'peer_id', 'preferred', 'rc4', 'rc4_cipher', 'required', 'sessions_created', 'sessions_failed', 'timestamp']

@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\cli\advanced_commands.py
-# hypothesis_version: 6.142.4
-
-[b'X', 1e-09, 1024, '--analyze', '--benchmark', '--cov-report', '--cov=ccbt', '--coverage', '--encrypt', '--force', '--integration', '--optimize', '--performance', '--profile', '--rate-limit', '--rehash', '--repair', '--scan', '--security', '--unit', '--validate', '--verify', '-k', '-m', '-q', 'CPU count', 'Direct I/O', 'Disk workers', 'Enable encryption', 'Enable rate limiting', 'Item', 'Platform', 'Python', 'Rehash all pieces', 'Run security tests', 'Run unit tests', 'Top profile entries:', 'Use mmap', 'Value', 'Write batch KiB', 'Write buffer KiB', 'bench.bin', 'cyan', 'green', 'info_hash', 'io_uring', 'performance', 'performance_test', 'pytest', 'read_mb_s', 'read_time_s', 'recover', 'security', 'security_test', 'size_mb', 'term-missing', 'test', 'tests', 'tests/integration', 'tests/performance', 'tests/security', 'tottime', 'write_mb_s', 'write_time_s']

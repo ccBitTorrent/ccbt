@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\services\tracker_service.py
-# hypothesis_version: 6.142.4
-
-[0.0, 0.5, 1800.0, '1.0.0', 'active_trackers', 'failed_announces', 'healthy_trackers', 'running', 'started', 'success_rate', 'successful_announces', 'total_announces', 'total_trackers', 'tracker_add', 'tracker_announce', 'tracker_remove', 'tracker_service']

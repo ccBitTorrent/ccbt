@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\observability\profiler.py
-# hypothesis_version: 6.142.4
-
-[0.0, 0.001, 0.1, 1.0, 100, 1024, 3600, 10000, 'active_profiles', 'async', 'avg_duration', 'avg_memory', 'bottlenecks_detected', 'call_count', 'cumulative', 'cumulative_time', 'custom', 'duration', 'enabled', 'function', 'function_name', 'io', 'max_duration', 'max_memory', 'memory', 'memory_usage', 'min_duration', 'min_memory', 'module_name', 'primitive_calls', 'profile_entries', 'profiles_completed', 'profiles_started', 'timestamp', 'total_calls', 'total_duration', 'total_memory', 'total_time']

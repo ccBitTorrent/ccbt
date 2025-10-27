@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\services\peer_service.py
-# hypothesis_version: 6.142.4
-
-[0.0, 0.5, 1.0, 30.0, 200, 300, '1.0.0', 'active_peers', 'failed_connections', 'max_peers', 'peer_connect', 'peer_disconnect', 'peer_service', 'running', 'total_bytes_received', 'total_bytes_sent', 'total_connections']

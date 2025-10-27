@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\monitoring\metrics_collector.py
-# hypothesis_version: 6.142.4
-
-[0.0, 5.0, 100, 300, 1000, 3600, ',', '/', 'aggregated_value', 'aggregation', 'alert_rules', 'alerts_triggered', 'avg', 'bytes_recv', 'bytes_sent', 'collection_errors', 'collection_interval', 'condition', 'count', 'counter', 'cpu_usage', 'current_value', 'description', 'disk_usage', 'download_speed', 'error', 'gauge', 'histogram', 'info', 'json', 'labels', 'max', 'memory_usage', 'metric_name', 'metrics_collected', 'min', 'name', 'network_io', 'peer_connections', 'percentile', 'pieces_completed', 'pieces_failed', 'process_count', 'prometheus', 'registered_metrics', 'retention_seconds', 'rule_name', 'running', 'severity', 'sum', 'summary', 'system_cpu_usage', 'system_disk_usage', 'system_memory_usage', 'system_process_count', 'timestamp', 'tracker_requests', 'tracker_responses', 'type', 'upload_speed', 'value', 'value_count', 'warning', '{', '}']

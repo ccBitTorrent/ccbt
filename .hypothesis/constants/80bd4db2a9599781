@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\config.py
-# hypothesis_version: 6.142.4
-
-[1.0, 5.0, '.ccbt.toml', '.config', 'CCBT_DOWN_LIMIT', 'CCBT_LISTEN_PORT', 'CCBT_LOG_FILE', 'CCBT_LOG_LEVEL', 'CCBT_MAX_PEERS', 'CCBT_PIECE_SELECTION', 'CCBT_UP_LIMIT', 'ConfigManager', '_hot_reload_task', '_last_mtime', 'ccbt', 'ccbt.toml', 'darwin', 'global_down_kib', 'global_up_kib', 'linux', 'listen_port', 'log_file', 'log_level', 'max_global_peers', 'network', 'observability', 'piece_selection', 'r', 'strategy', 'utf-8', 'win32']

@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\protocols\__init__.py
-# hypothesis_version: 6.142.4
-
-['BitTorrentProtocol', 'IPFSProtocol', 'Protocol', 'ProtocolManager', 'ProtocolType', 'WebTorrentProtocol']

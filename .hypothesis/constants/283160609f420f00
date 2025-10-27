@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\extensions\webseed.py
-# hypothesis_version: 6.142.4
-
-[-1.0, 0.0, 0.3, 0.7, 1.0, 30.0, 3600.0, 200, 206, 'Range', 'active_webseeds', 'bytes_downloaded', 'bytes_failed', 'error', 'is_active', 'last_accessed', 'name', 'overall_success_rate', 'piece_index', 'status_code', 'success_rate', 'timestamp', 'total_bytes', 'total_bytes_failed', 'total_webseeds', 'url', 'webseed_id']

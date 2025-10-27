@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\dht.py
-# hypothesis_version: 6.142.4
-
-[b'\x00', b'a', b'id', b'info_hash', b'nodes', b'port', b'q', b'r', b't', b'target', b'token', b'values', b'y', b'\xff', 0.0, 5.0, 300.0, 600.0, 900.0, 159, 160, 6881, 25401, '.', '0.0.0.0', 'Bootstrapping DHT...', 'DHT client stopped', 'announce_peer', 'ascii', 'big', 'buckets', 'dht.libtorrent.org', 'find_node', 'get_peers', 'good_nodes', 'node_id', 'non_empty_buckets', 'pending_queries', 'router.utorrent.com', 'routing_table', 'tokens', 'total_nodes']

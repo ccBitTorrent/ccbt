@@ -10,6 +10,7 @@ References:
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from rich.table import Table
@@ -255,6 +256,9 @@ class TerminalDashboard(App):
         ("p", "pause_torrent", "Pause"),
         ("r", "resume_torrent", "Resume"),
         ("q", "quit", "Quit"),
+        ("i", "quick_add_torrent", "Quick Add"),
+        ("o", "advanced_add_torrent", "Advanced Add"),
+        ("b", "browse_add_torrent", "Browse"),
     ]
 
     async def on_mount(self) -> None:  # type: ignore[override]
@@ -556,6 +560,29 @@ class TerminalDashboard(App):
             except Exception:
                 pass
             return
+        if event.key in ("i", "I"):
+            # Quick add torrent
+            await self._quick_add_torrent()
+            return
+        if event.key in ("o", "O"):
+            # Advanced add torrent
+            await self._advanced_add_torrent()
+            return
+        if event.key in ("b", "B"):
+            # Browse for torrent file
+            await self._browse_add_torrent()
+            return
+        if event.key in ("enter",):
+            # Handle file browser selection
+            try:
+                browser = self.query_one("#file_browser")
+                if browser and browser.display:
+                    selected_key = getattr(browser, "cursor_row_key", None)
+                    if selected_key:
+                        await self._handle_file_browser_selection(selected_key)
+                    return
+            except Exception:
+                pass
         if event.key in ("k", "K"):
             # Acknowledge (resolve) all active alerts
             try:
@@ -576,6 +603,23 @@ class TerminalDashboard(App):
             cmdline = message.value.strip()
             message.input.display = False
             await self._run_command(cmdline)
+        elif message.input.id == "add_torrent":
+            path_or_magnet = message.value.strip()
+            message.input.display = False
+            await self._process_add_torrent(path_or_magnet, {})
+        elif message.input.id == "add_torrent_advanced_step1":
+            path_or_magnet = message.value.strip()
+            message.input.display = False
+            if path_or_magnet:
+                await self._show_advanced_options(path_or_magnet)
+        elif message.input.id == "add_torrent_advanced_step2":
+            output_dir = message.value.strip() or "."
+            message.input.display = False
+            await self._process_advanced_options(output_dir)
+        elif message.input.id == "add_torrent_browse":
+            path_or_magnet = message.value.strip()
+            message.input.display = False
+            await self._process_add_torrent(path_or_magnet, {})
 
     def _apply_filter_and_update(self) -> None:
         status = self._last_status
@@ -634,6 +678,224 @@ class TerminalDashboard(App):
                 self.logs.write(f"Restored checkpoint from {parts[1]}")
         except Exception as e:
             self.logs.write(f"Command error: {e}")
+
+    async def _quick_add_torrent(self) -> None:
+        """Quick add torrent with default settings."""
+        input_widget = Input(placeholder="File path or magnet link", id="add_torrent")
+        self.mount(input_widget)
+        input_widget.focus()
+
+    async def _advanced_add_torrent(self) -> None:
+        """Advanced add torrent with configuration options."""
+        # Step 1: Get torrent path/magnet
+        input_widget = Input(placeholder="File path or magnet link", id="add_torrent_advanced_step1")
+        self.mount(input_widget)
+        input_widget.focus()
+
+    async def _browse_add_torrent(self) -> None:
+        """Browse for torrent file."""
+        try:
+            current_dir = Path.cwd()
+            
+            # Create a simple file browser using DataTable
+            browser_table = DataTable(zebra_stripes=True, id="file_browser")
+            browser_table.add_columns("Name", "Type", "Size")
+            
+            # Add parent directory entry
+            browser_table.add_row("..", "Directory", "", key="..")
+            
+            # List directory contents
+            try:
+                for item in sorted(current_dir.iterdir()):
+                    if item.is_dir():
+                        browser_table.add_row(item.name, "Directory", "", key=str(item))
+                    elif item.suffix.lower() == '.torrent':
+                        size = item.stat().st_size
+                        size_str = f"{size:,} bytes" if size < 1024 else f"{size/1024:.1f} KB"
+                        browser_table.add_row(item.name, "Torrent", size_str, key=str(item))
+            except PermissionError:
+                browser_table.add_row("Permission denied", "Error", "", key="error")
+            
+            # Mount the browser
+            self.mount(browser_table)
+            browser_table.focus()
+            
+            # Store current directory for navigation
+            self._browser_current_dir = current_dir  # type: ignore[attr-defined]
+            
+        except Exception as e:
+            # Fallback to text input
+            input_widget = Input(placeholder=f"Enter torrent file path (browse failed: {e})", id="add_torrent_browse")
+            self.mount(input_widget)
+            input_widget.focus()
+
+    async def _process_add_torrent(
+        self,
+        path_or_magnet: str,
+        options: Dict[str, Any]
+    ) -> None:
+        """Process torrent addition."""
+        try:
+            # Determine if file or magnet
+            if path_or_magnet.startswith("magnet:"):
+                info_hash = await self.session.add_magnet(
+                    path_or_magnet,
+                    resume=options.get("resume", False)
+                )
+            else:
+                info_hash = await self.session.add_torrent(
+                    path_or_magnet,
+                    resume=options.get("resume", False)
+                )
+            
+            # Apply rate limits if specified
+            if "download_limit" in options or "upload_limit" in options:
+                await self.session.set_rate_limits(
+                    info_hash,
+                    options.get("download_limit", 0),
+                    options.get("upload_limit", 0)
+                )
+            
+            self.statusbar.update(Panel(
+                f"Added torrent: {info_hash[:12]}...",
+                title="Success",
+                border_style="green"
+            ))
+            self.logs.write(f"Added torrent: {path_or_magnet}")
+        except Exception as e:
+            self.statusbar.update(Panel(
+                f"Failed to add torrent: {e}",
+                title="Error",
+                border_style="red"
+            ))
+            self.logs.write(f"Error adding torrent: {e}")
+
+    async def _show_advanced_options(self, path_or_magnet: str) -> None:
+        """Show advanced options dialog for torrent addition."""
+        # Create a simple options dialog using multiple input prompts
+        # For now, we'll use a simple approach with separate prompts
+        
+        # Step 2: Output directory
+        input_widget = Input(
+            placeholder="Output directory (default: .)", 
+            id="add_torrent_advanced_step2",
+            value="."
+        )
+        self.mount(input_widget)
+        input_widget.focus()
+        
+        # Store the torrent path for later use
+        self._pending_torrent_path = path_or_magnet  # type: ignore[attr-defined]
+
+    async def _process_advanced_options(self, output_dir: str) -> None:
+        """Process advanced options and add torrent."""
+        try:
+            path_or_magnet = getattr(self, "_pending_torrent_path", "")
+            if not path_or_magnet:
+                self.statusbar.update(Panel("Error: No torrent path found", title="Error", border_style="red"))
+                return
+            
+            # For now, use default options except output directory
+            options = {
+                "output_dir": output_dir,
+                "resume": False,
+                "download_limit": 0,
+                "upload_limit": 0
+            }
+            
+            await self._process_add_torrent(path_or_magnet, options)
+            
+            # Clean up
+            self._pending_torrent_path = None  # type: ignore[attr-defined]
+            
+        except Exception as e:
+            self.statusbar.update(Panel(f"Error processing options: {e}", title="Error", border_style="red"))
+            self.logs.write(f"Error processing advanced options: {e}")
+
+    async def _handle_file_browser_selection(self, selected_key: str) -> None:
+        """Handle file browser selection."""
+        try:
+            if selected_key == "..":
+                # Navigate to parent directory
+                current_dir = getattr(self, "_browser_current_dir", Path.cwd())
+                parent_dir = current_dir.parent
+                if parent_dir != current_dir:  # Not at root
+                    await self._navigate_to_directory(parent_dir)
+                return
+            
+            if selected_key == "error":
+                # Permission error, fallback to text input
+                self.query_one("#file_browser").display = False
+                input_widget = Input(placeholder="Enter torrent file path manually", id="add_torrent_browse")
+                self.mount(input_widget)
+                input_widget.focus()
+                return
+            
+            selected_path = Path(selected_key)
+            
+            if selected_path.is_dir():
+                # Navigate to directory
+                await self._navigate_to_directory(selected_path)
+            elif selected_path.suffix.lower() == '.torrent':
+                # Select torrent file
+                self.query_one("#file_browser").display = False
+                await self._process_add_torrent(str(selected_path), {})
+            else:
+                # Not a torrent file, show error
+                self.statusbar.update(Panel(
+                    f"Selected file is not a torrent: {selected_path.name}",
+                    title="Error",
+                    border_style="red"
+                ))
+                
+        except Exception as e:
+            self.statusbar.update(Panel(
+                f"Error handling selection: {e}",
+                title="Error",
+                border_style="red"
+            ))
+            self.logs.write(f"Error handling file browser selection: {e}")
+
+    async def _navigate_to_directory(self, new_dir: Path) -> None:
+        """Navigate to a new directory in the file browser."""
+        try:
+            # Remove old browser
+            old_browser = self.query_one("#file_browser")
+            if old_browser:
+                old_browser.display = False
+            
+            # Create new browser for the directory
+            browser_table = DataTable(zebra_stripes=True, id="file_browser")
+            browser_table.add_columns("Name", "Type", "Size")
+            
+            # Add parent directory entry
+            browser_table.add_row("..", "Directory", "", key="..")
+            
+            # List directory contents
+            try:
+                for item in sorted(new_dir.iterdir()):
+                    if item.is_dir():
+                        browser_table.add_row(item.name, "Directory", "", key=str(item))
+                    elif item.suffix.lower() == '.torrent':
+                        size = item.stat().st_size
+                        size_str = f"{size:,} bytes" if size < 1024 else f"{size/1024:.1f} KB"
+                        browser_table.add_row(item.name, "Torrent", size_str, key=str(item))
+            except PermissionError:
+                browser_table.add_row("Permission denied", "Error", "", key="error")
+            
+            # Mount the new browser
+            self.mount(browser_table)
+            browser_table.focus()
+            
+            # Update current directory
+            self._browser_current_dir = new_dir  # type: ignore[attr-defined]
+            
+        except Exception as e:
+            self.statusbar.update(Panel(
+                f"Error navigating to directory: {e}",
+                title="Error",
+                border_style="red"
+            ))
 
     # Actions
     async def action_pause_torrent(self) -> None:

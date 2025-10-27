@@ -14,9 +14,14 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..events import Event, EventType, emit_event
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..session import AsyncSessionManager
 
 
 class DashboardType(Enum):
@@ -483,3 +488,159 @@ class DashboardManager:
             dashboard.widgets.append(new_widget)
 
         return dashboard_id
+
+    async def add_torrent_file(
+        self, 
+        session: "AsyncSessionManager",
+        file_path: str,
+        output_dir: Optional[str] = None,
+        resume: bool = False,
+        download_limit: int = 0,
+        upload_limit: int = 0
+    ) -> Dict[str, Any]:
+        """Add torrent from file with optional configuration."""
+        try:
+            # Validate file
+            if not Path(file_path).exists():
+                raise ValueError(f"Torrent file not found: {file_path}")
+            
+            if not file_path.lower().endswith('.torrent'):
+                raise ValueError(f"File must have .torrent extension: {file_path}")
+            
+            # Add to session
+            info_hash = await session.add_torrent(file_path, resume=resume)
+            
+            # Apply rate limits if specified
+            if download_limit > 0 or upload_limit > 0:
+                await session.set_rate_limits(info_hash, download_limit, upload_limit)
+            
+            # Emit success event
+            await emit_event(Event(
+                event_type=EventType.TORRENT_ADDED.value,
+                data={"info_hash": info_hash, "source": "file", "path": file_path}
+            ))
+            
+            return {"success": True, "info_hash": info_hash}
+        except Exception as e:
+            # Emit error event
+            await emit_event(Event(
+                event_type=EventType.DASHBOARD_ERROR.value,
+                data={"error": str(e), "operation": "add_torrent_file"}
+            ))
+            return {"success": False, "error": str(e)}
+
+    async def add_torrent_magnet(
+        self,
+        session: "AsyncSessionManager",
+        magnet_uri: str,
+        output_dir: Optional[str] = None,
+        resume: bool = False,
+        download_limit: int = 0,
+        upload_limit: int = 0
+    ) -> Dict[str, Any]:
+        """Add torrent from magnet link with optional configuration."""
+        try:
+            # Validate magnet link
+            if not magnet_uri.startswith("magnet:?"):
+                raise ValueError("Invalid magnet link format - must start with 'magnet:?'")
+            
+            if "xt=urn:btih:" not in magnet_uri:
+                raise ValueError("Invalid magnet link - missing 'xt=urn:btih:' parameter")
+            
+            # Add to session
+            info_hash = await session.add_magnet(magnet_uri, resume=resume)
+            
+            # Apply rate limits if specified
+            if download_limit > 0 or upload_limit > 0:
+                await session.set_rate_limits(info_hash, download_limit, upload_limit)
+            
+            # Emit success event
+            await emit_event(Event(
+                event_type=EventType.TORRENT_ADDED.value,
+                data={"info_hash": info_hash, "source": "magnet", "uri": magnet_uri}
+            ))
+            
+            return {"success": True, "info_hash": info_hash}
+        except Exception as e:
+            # Emit error event
+            await emit_event(Event(
+                event_type=EventType.DASHBOARD_ERROR.value,
+                data={"error": str(e), "operation": "add_torrent_magnet"}
+            ))
+            return {"success": False, "error": str(e)}
+
+    def validate_torrent_file(self, file_path: str) -> Dict[str, Any]:
+        """Validate torrent file before adding."""
+        try:
+            path = Path(file_path)
+            if not path.exists():
+                return {"valid": False, "error": f"File not found: {file_path}"}
+            
+            if not path.is_file():
+                return {"valid": False, "error": f"Path is not a file: {file_path}"}
+            
+            if not file_path.lower().endswith('.torrent'):
+                return {"valid": False, "error": f"File must have .torrent extension: {file_path}"}
+            
+            # Check file size (basic validation)
+            if path.stat().st_size == 0:
+                return {"valid": False, "error": f"Torrent file is empty: {file_path}"}
+            
+            return {"valid": True, "path": str(path.absolute())}
+        except Exception as e:
+            return {"valid": False, "error": f"Validation error: {e}"}
+
+    def validate_magnet_link(self, magnet_uri: str) -> Dict[str, Any]:
+        """Validate magnet link format."""
+        try:
+            if not magnet_uri.startswith("magnet:?"):
+                return {"valid": False, "error": "Magnet link must start with 'magnet:?'"}
+            
+            if "xt=urn:btih:" not in magnet_uri:
+                return {"valid": False, "error": "Magnet link must contain 'xt=urn:btih:' parameter"}
+            
+            # Extract info hash for basic validation
+            parts = magnet_uri.split("xt=urn:btih:")
+            if len(parts) < 2:
+                return {"valid": False, "error": "Invalid magnet link format"}
+            
+            info_hash_part = parts[1].split("&")[0]
+            if len(info_hash_part) not in [40, 32]:  # SHA-1 (40 chars) or MD5 (32 chars)
+                return {"valid": False, "error": "Invalid info hash length in magnet link"}
+            
+            return {"valid": True, "uri": magnet_uri}
+        except Exception as e:
+            return {"valid": False, "error": f"Validation error: {e}"}
+
+    def get_add_torrent_options(self) -> Dict[str, Any]:
+        """Get available configuration options for adding torrents."""
+        return {
+            "output_dir": {
+                "type": "string",
+                "default": ".",
+                "description": "Output directory for downloaded files"
+            },
+            "resume": {
+                "type": "boolean",
+                "default": False,
+                "description": "Resume from checkpoint if available"
+            },
+            "download_limit": {
+                "type": "integer",
+                "default": 0,
+                "min": 0,
+                "description": "Download rate limit in KiB/s (0 = unlimited)"
+            },
+            "upload_limit": {
+                "type": "integer",
+                "default": 0,
+                "min": 0,
+                "description": "Upload rate limit in KiB/s (0 = unlimited)"
+            },
+            "priority": {
+                "type": "choice",
+                "choices": ["low", "normal", "high"],
+                "default": "normal",
+                "description": "Torrent priority"
+            }
+        }

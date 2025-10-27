@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\checkpoint.py
-# hypothesis_version: 6.142.4
-
-[b'CCBT', '*.checkpoint.*', '.', '.bin', '.ccbt/checkpoints', '.checkpoint', '.checkpoint.bin', '.checkpoint.bin.gz', '.gz', '.json', '.key', '1.0', 'B', 'I', 'Q', 'Unknown', 'announce_urls', 'binary', 'binary_files', 'created_at', 'display_name', 'download_stats', 'endgame_mode', 'files', 'info_hash', 'json', 'json_files', 'magnet_uri', 'newest_checkpoint', 'oldest_checkpoint', 'output_dir', 'peer_info', 'piece_length', 'piece_states', 'rb', 'torrent_file_path', 'torrent_name', 'total_files', 'total_length', 'total_pieces', 'total_size', 'updated_at', 'utf-8', 'value', 'verified_pieces', 'version', 'w', 'wb']

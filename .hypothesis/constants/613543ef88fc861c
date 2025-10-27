@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\monitoring\alert_manager.py
-# hypothesis_version: 6.142.4
-
-[0.0, 100, 300, 400, 587, 10000, 86400, 'From', 'Subject', 'To', 'active_alerts', 'admin@ccbt.local', 'alert_id', 'alert_rules', 'alerts@ccbt.local', 'alerts_resolved', 'alerts_triggered', 'ccbt.alerts', 'channel', 'condition', 'critical', 'description', 'discord', 'duration', 'email', 'end', 'error', 'from_email', 'info', 'localhost', 'log', 'metric_name', 'notifications_sent', 'plain', 'rule_name', 'severity', 'slack', 'smtp_password', 'smtp_port', 'smtp_server', 'smtp_username', 'start', 'suppressed_alerts', 'suppression_rules', 'time_range', 'timestamp', 'to_email', 'url', 'value', 'value_condition', 'warning', 'webhook']

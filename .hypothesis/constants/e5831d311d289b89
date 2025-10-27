@@ -1,4 +1,0 @@
-# file: C:\Users\claud\proj\bittorrentclient\ccbt\tracker_server_http.py
-# hypothesis_version: 6.142.4
-
-[b'failure reason', b'interval', b'peers', 200, 404, 1800, 3600, 6969, '/announce', '0', '0.0.0.0', 'Content-Type', '__main__', 'big', 'event', 'info_hash', 'peer_id', 'port', 'stopped', 'text/plain', 'utf-8']
