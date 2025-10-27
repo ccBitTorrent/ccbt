@@ -11,7 +11,7 @@ A modern, high-performance BitTorrent client built with Python asyncio, featurin
 - **Request Pipelining**: Deep request queues (16-64 outstanding requests per peer)
 - **Tit-for-Tat Choking**: Fair bandwidth allocation with optimistic unchoke
 - **Parallel Metadata**: Concurrent ut_metadata fetching from multiple peers
-- **Disk I/O Optimization**: File preallocation, write batching, memory-mapped I/O
+- **Disk I/O Optimization**: File preallocation, write batching, ring-buffer staging, memory-mapped I/O, io_uring/direct I/O (configurable)
 - **Hash Verification Pool**: Parallel SHA-1 verification across worker threads
 
 ### 🔧 Advanced Configuration
@@ -33,6 +33,9 @@ A modern, high-performance BitTorrent client built with Python asyncio, featurin
 - **Structured Logging**: Configurable logging with per-peer tracing
 - **Performance Stats**: Real-time throughput, latency, and queue depth tracking
 - **Health Monitoring**: Connection quality and peer reliability scoring
+- **Terminal Dashboard**: Textual-based live dashboard for sessions, torrents, peers
+- **Alert Manager**: Rule-based alerts with persistence and testing via CLI
+- **Monitoring CLI**: `dashboard`, `alerts`, and `metrics` commands
 
 ### 🔄 Resume Functionality
 - **Checkpoint Management**: Automatic save/load of download progress
@@ -59,6 +62,13 @@ For optimal performance on Windows, install pywin32:
 ```bash
 pip install pywin32
 ```
+
+## Documentation
+- Configuration Guide: [docs/configuration.md](docs/configuration.md)
+- CLI Reference: [docs/cli-reference.md](docs/cli-reference.md)
+- Monitoring & Observability: [docs/monitoring.md](docs/monitoring.md)
+- Checkpoints Guide: [docs/checkpoints.md](docs/checkpoints.md)
+- Example Configurations: [docs/examples/](docs/examples/)
 
 ## Configuration
 
@@ -123,13 +133,16 @@ export CCBT_LOG_LEVEL=DEBUG
 #### Basic Usage
 ```bash
 # Download a torrent file
-python -m ccbt torrent.torrent
+python -m ccbt download torrent.torrent
 
 # Download from magnet link
-python -m ccbt "magnet:?xt=urn:btih:..."
+python -m ccbt magnet "magnet:?xt=urn:btih:..."
 
-# Run in daemon mode with multiple torrents
-python -m ccbt --daemon --add torrent1.torrent --add "magnet:?xt=..."
+# Interactive mode
+python -m ccbt interactive
+
+# Terminal monitoring dashboard
+python -m ccbt dashboard
 ```
 
 #### Advanced Options

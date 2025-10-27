@@ -280,6 +280,19 @@ def reload_config() -> Config:
     return _config_manager.config
 
 
+def set_config(new_config: Config) -> None:
+    """Replace the global configuration at runtime.
+
+    Reconfigures logging based on the new config. Components that snapshot
+    config must re-read values to pick up changes.
+    """
+    global _config_manager
+    if _config_manager is None:
+        _config_manager = ConfigManager(None)
+    _config_manager.config = new_config
+    _config_manager._setup_logging()
+
+
 # Backward compatibility functions
 def get_network_config() -> NetworkConfig:
     """Get network configuration (backward compatibility)."""

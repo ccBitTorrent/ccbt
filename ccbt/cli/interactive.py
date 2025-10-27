@@ -377,9 +377,9 @@ Available Commands:
             return
         
         peers = []
-        if hasattr(self.session, "get_peers_for_torrent") and self.current_torrent is not None:
+        if hasattr(self.session, "get_peers_for_torrent") and self.current_info_hash_hex:
             try:
-                peers = self.session.get_peers_for_torrent(self.current_torrent)  # type: ignore[attr-defined]
+                peers = await self.session.get_peers_for_torrent(self.current_info_hash_hex)  # type: ignore[attr-defined]
             except Exception:
                 peers = []
         
@@ -396,13 +396,25 @@ Available Commands:
         table.add_column("Progress", style="blue")
         
         for peer in (peers if isinstance(peers, list) else []):
-            table.add_row(
-                peer.ip,
-                str(peer.port),
-                f"{peer.download_speed / 1024:.1f} KB/s",
-                f"{peer.upload_speed / 1024:.1f} KB/s",
-                f"{peer.progress_percentage():.1f}%",
-            )
+            ip = getattr(peer, "ip", None)
+            port = getattr(peer, "port", None)
+            d = getattr(peer, "download_speed", None)
+            u = getattr(peer, "upload_speed", None)
+            prog = getattr(peer, "progress_percentage", None)
+            if isinstance(peer, dict):
+                ip = peer.get("ip", ip)
+                port = peer.get("port", port)
+                d = peer.get("download_rate", d)
+                u = peer.get("upload_rate", u)
+            dkb = (float(d) / 1024.0) if isinstance(d, (int, float)) else 0.0
+            ukb = (float(u) / 1024.0) if isinstance(u, (int, float)) else 0.0
+            prog_val = 0.0
+            if callable(prog):
+                try:
+                    prog_val = float(prog())
+                except Exception:
+                    prog_val = 0.0
+            table.add_row(str(ip or "-"), str(port or "-"), f"{dkb:.1f} KB/s", f"{ukb:.1f} KB/s", f"{prog_val:.1f}%")
         
         self.console.print(table)
     
@@ -849,6 +861,9 @@ Available Commands:
                 from ..models import Config as ConfigModel
                 new_cfg = ConfigModel(**cfg)
                 cm.config = new_cfg
+                # publish to global runtime
+                from ..config import set_config
+                set_config(new_cfg)
                 self.console.print("[green]Updated runtime configuration[/green]")
             except Exception as e:
                 self.console.print(f"[red]Failed to set config: {e}[/red]")

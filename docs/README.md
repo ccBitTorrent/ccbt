@@ -4,6 +4,13 @@
 
 ccBitTorrent is a high-performance, feature-rich BitTorrent client written in Python. It implements modern BitTorrent protocols and provides advanced features for optimal download performance.
 
+## Documentation Index
+- Configuration Guide: [configuration.md](configuration.md)
+- CLI Reference: [cli-reference.md](cli-reference.md)
+- Monitoring & Observability: [monitoring.md](monitoring.md)
+- Checkpoints Guide: [checkpoints.md](checkpoints.md)
+- Examples: [examples/](examples/)
+
 ## Features
 
 ### Core BitTorrent Features
@@ -71,28 +78,31 @@ pip install -r requirements.txt
 ### Basic Usage
 ```bash
 # Download a torrent file
-ccbt download example.torrent
+python -m ccbt download example.torrent
 
 # Download from magnet link
-ccbt magnet "magnet:?xt=urn:btih:..."
+python -m ccbt magnet "magnet:?xt=urn:btih:..."
 
 # Start interactive mode
-ccbt interactive
+python -m ccbt interactive
 
-# Start web interface
-ccbt web
+# Start terminal dashboard
+python -m ccbt dashboard
 ```
 
 ### Configuration
 ```bash
-# Create configuration file
-ccbt config --create
+# Show current configuration (JSON)
+python -m ccbt config show --format json
 
-# Edit configuration
-ccbt config --edit
+# Get a value
+python -m ccbt config get network.listen_port
 
-# Show current configuration
-ccbt config
+# Set a value (persist locally)
+python -m ccbt config set network.listen_port 6881 --local
+
+# Reset a key to defaults
+python -m ccbt config reset network.listen_port
 ```
 
 ## Configuration
