@@ -1,0 +1,24 @@
+[network]
+listen_port = 7002
+max_global_peers = 300
+pipeline_depth = 48
+block_size_kib = 32
+
+[disk]
+preallocate = "full"
+write_batch_kib = 256
+write_buffer_kib = 8192
+use_mmap = true
+mmap_cache_mb = 512
+
+[discovery]
+enable_dht = true
+
+[strategy]
+piece_selection = "sequential"
+endgame_threshold = 0.98
+
+[observability]
+log_level = "WARNING"
+enable_metrics = true
+metrics_interval = 1.0

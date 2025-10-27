@@ -116,6 +116,8 @@ class DiskIOManager:
             self.ring_buffer = get_buffer_manager().create_ring_buffer(max(1024 * 1024, self.write_buffer_kib * 1024 if hasattr(self, 'write_buffer_kib') else 1024 * 1024))  # type: ignore[attr-defined]
         except Exception:
             self.ring_buffer = None
+        # Thread-local staging buffers to avoid per-call allocation and avoid contention
+        self._thread_local: threading.local = threading.local()
 
         # Advanced I/O features
         # Respect config toggles: enable_io_uring, direct_io
@@ -145,6 +147,25 @@ class DiskIOManager:
 
         self.logger = get_logger(__name__)
         self._detect_platform_capabilities()
+
+    def _get_thread_staging_buffer(self, min_size: int) -> bytearray:
+        """Get or create a thread-local staging buffer of at least min_size bytes."""
+        default_size = max(min_size, int(getattr(self.config.disk, "write_buffer_kib", 256)) * 1024)
+        buf: Optional[bytearray] = getattr(self._thread_local, "staging_buffer", None)
+        if buf is None or len(buf) < default_size:
+            buf = bytearray(default_size)
+            self._thread_local.staging_buffer = buf
+        return buf
+
+    def _get_thread_ring_buffer(self, min_size: int):
+        """Get or create a thread-local ring buffer sized for disk staging."""
+        from .buffers import RingBuffer, get_buffer_manager  # local import to avoid cycles
+        default_size = max(min_size, int(getattr(self.config.disk, "write_buffer_kib", 256)) * 1024)
+        rb = getattr(self._thread_local, "ring_buffer", None)
+        if rb is None or not isinstance(rb, RingBuffer) or rb.size < default_size:  # type: ignore[attr-defined]
+            rb = get_buffer_manager().create_ring_buffer(default_size)
+            self._thread_local.ring_buffer = rb
+        return rb
 
     def _detect_platform_capabilities(self) -> None:
         """Detect platform-specific I/O capabilities."""
@@ -439,13 +460,20 @@ class DiskIOManager:
                         self.write_requests[request.file_path] = []
                     self.write_requests[request.file_path].append(request)
 
-                # Flush if batch size reached or timeout
+                # Flush if batch size reached, total bytes exceed threshold, or timeout
                 config = get_config()
                 batch_size_threshold = max(1, config.disk.write_batch_kib * 1024 // 16384)  # At least 1 request
+                byte_threshold = max(64 * 1024, int(getattr(config.disk, "write_buffer_kib", 256)) * 1024)
                 # Use a shorter timeout for more responsive batching
                 timeout_threshold = 0.005  # 5ms timeout for quick processing
-                if len(self.write_requests[request.file_path]) >= batch_size_threshold or \
-                   (time.time() - request.timestamp) > timeout_threshold:
+                should_flush = len(self.write_requests[request.file_path]) >= batch_size_threshold
+                if not should_flush:
+                    total_bytes = sum(len(r.data) for r in self.write_requests[request.file_path])
+                    if total_bytes >= byte_threshold:
+                        should_flush = True
+                if not should_flush and (time.time() - request.timestamp) > timeout_threshold:
+                    should_flush = True
+                if should_flush:
                     await self._flush_file_writes(request.file_path)
 
             except asyncio.TimeoutError:
@@ -499,11 +527,39 @@ class DiskIOManager:
         if not writes_to_process:
             return
 
-        # Sort writes by offset for optimal disk access
+        # Sort writes by offset for optimal disk access and opportunistically stage
         writes_to_process.sort(key=lambda x: x.offset)
+        # If ring buffer exists, stage small writes to reduce fragmentation
+        if self.ring_buffer is not None:
+            try:
+                for req in writes_to_process:
+                    if len(req.data) <= 32 * 1024 and self.ring_buffer.available() >= len(req.data):
+                        self.ring_buffer.write(req.data)
+            except Exception:
+                # Non-fatal; continue without staging
+                pass
 
-        # Combine contiguous writes
+        # Combine contiguous writes, including data staged in ring buffers
         combined_writes = self._combine_contiguous_writes(writes_to_process)
+        # If thread-local ring buffer has data, append it as a contiguous segment
+        try:
+            rb = self._get_thread_ring_buffer(0)
+            views = rb.peek_views()
+            total_rb = sum(v.nbytes for v in views)
+            if total_rb > 0 and combined_writes:
+                # Try to attach to end of last run if contiguous by offset
+                last_offset, last_data = combined_writes[-1]
+                # We don't know the target offset for staged bytes; conservatively flush as separate segment
+                # Use last_offset + len(last_data) as the next contiguous region
+                next_offset = last_offset + len(last_data)
+                # Merge two memoryviews if possible
+                if len(views) == 1:
+                    combined_writes.append((next_offset, bytes(views[0])))
+                elif len(views) == 2:
+                    combined_writes.append((next_offset, bytes(views[0]) + bytes(views[1])))
+                rb.consume(total_rb)
+        except Exception:
+            pass
 
         # Execute writes in thread pool (best effort)
         await asyncio.get_event_loop().run_in_executor(
@@ -537,51 +593,65 @@ class DiskIOManager:
                 with open(file_path, "wb") as f:
                     f.write(b"\x00" * max_offset)
 
-            # Optimize contiguous writes using writev when available
+            # Optimize contiguous writes by coalescing into a per-call staging buffer
             try:
                 import os
                 fd = os.open(file_path, os.O_RDWR)
                 try:
-                    # Coalesce contiguous runs up to a staging threshold
                     staging_threshold = max(64 * 1024, getattr(self.config.disk, "write_buffer_kib", 128) * 1024)
-                    run_start = None
-                    run_size = 0
-                    run_chunks: List[bytes] = []
-                    prev_end = None
+                    buffer = self._get_thread_staging_buffer(staging_threshold)
+                    buf_pos = 0
+                    run_start: Optional[int] = None
+                    prev_end: Optional[int] = None
+
                     def flush_run() -> None:
-                        nonlocal run_start, run_size, run_chunks
-                        if run_start is None or not run_chunks:
+                        nonlocal run_start, buf_pos
+                        if run_start is None or buf_pos == 0:
                             return
                         os.lseek(fd, run_start, os.SEEK_SET)
-                        if len(run_chunks) == 1:
-                            os.write(fd, run_chunks[0])
-                        else:
-                            os.write(fd, b"".join(run_chunks))
+                        os.write(fd, buffer[:buf_pos])
                         self.stats["writes"] += 1
-                        self.stats["bytes_written"] += run_size
+                        self.stats["bytes_written"] += buf_pos
                         run_start = None
-                        run_size = 0
-                        run_chunks = []
+                        buf_pos = 0
+
                     for offset, data in combined_writes:
+                        data_len = len(data)
+                        # If no active run, start one
                         if run_start is None:
                             run_start = offset
-                            run_size = len(data)
-                            run_chunks = [data]
-                            prev_end = offset + len(data)
-                            continue
-                        if offset == prev_end and (run_size + len(data)) <= staging_threshold:
-                            # Extend current run
-                            run_chunks.append(data)
-                            run_size += len(data)
-                            prev_end = offset + len(data)
-                        else:
-                            # Flush current run and start new
+                            prev_end = offset
+                            buf_pos = 0
+
+                        # If not contiguous with current run, flush and start new run
+                        if prev_end is None or offset != prev_end:
                             flush_run()
                             run_start = offset
-                            run_size = len(data)
-                            run_chunks = [data]
-                            prev_end = offset + len(data)
-                    # Flush remaining
+                            prev_end = offset
+
+                        # If data larger than buffer, flush current and write directly
+                        if data_len >= len(buffer):
+                            flush_run()
+                            os.lseek(fd, offset, os.SEEK_SET)
+                            os.write(fd, data)
+                            self.stats["writes"] += 1
+                            self.stats["bytes_written"] += data_len
+                            run_start = None
+                            prev_end = offset + data_len
+                            continue
+
+                        # If data won't fit, flush then start fresh
+                        if buf_pos + data_len > len(buffer):
+                            flush_run()
+                            run_start = offset
+                            prev_end = offset
+
+                        # Copy into staging buffer
+                        buffer[buf_pos:buf_pos + data_len] = data
+                        buf_pos += data_len
+                        prev_end = offset + data_len
+
+                    # Flush any remaining staged data
                     flush_run()
                 finally:
                     os.close(fd)

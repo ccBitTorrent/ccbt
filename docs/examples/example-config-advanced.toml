@@ -1,0 +1,34 @@
+[network]
+listen_port = 7001
+max_global_peers = 500
+max_peers_per_torrent = 100
+pipeline_depth = 32
+block_size_kib = 32
+enable_ipv6 = true
+enable_tcp = true
+enable_utp = false
+enable_encryption = true
+
+[disk]
+preallocate = "full"
+write_batch_kib = 128
+write_buffer_kib = 4096
+use_mmap = true
+direct_io = false
+sync_writes = false
+mmap_cache_mb = 256
+
+[discovery]
+enable_dht = true
+dht_port = 6882
+
+[strategy]
+piece_selection = "rarest_first"
+endgame_threshold = 0.95
+endgame_duplicates = 2
+
+[observability]
+log_level = "INFO"
+structured_logging = true
+enable_metrics = true
+metrics_interval = 2.0

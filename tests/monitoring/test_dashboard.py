@@ -1,3 +1,26 @@
+"""Basic tests for monitoring dashboard wiring.
+
+We only import and instantiate key components to ensure they are available.
+"""
+
+import pytest
+
+
+def test_alert_manager_singleton():
+	from ccbt.monitoring import get_alert_manager
+	am = get_alert_manager()
+	am2 = get_alert_manager()
+	assert am is am2
+
+
+@pytest.mark.asyncio
+async def test_metrics_collector_runs_briefly():
+	from ccbt.monitoring.metrics_collector import MetricsCollector
+	mc = MetricsCollector()
+	# Start and immediately stop: internal methods should be safe
+	await mc.start()
+	await mc.stop()
+
 import asyncio
 
 import pytest

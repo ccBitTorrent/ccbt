@@ -1,0 +1,21 @@
+[network]
+listen_port = 6881
+max_global_peers = 150
+pipeline_depth = 16
+block_size_kib = 16
+enable_encryption = true
+
+[security]
+validate_peers = true
+rate_limit_enabled = true
+max_connections_per_peer = 1
+
+[disk]
+preallocate = "full"
+write_batch_kib = 64
+write_buffer_kib = 1024
+use_mmap = true
+
+[observability]
+log_level = "INFO"
+structured_logging = true

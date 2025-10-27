@@ -111,6 +111,48 @@ class RingBuffer:
             self.used -= to_read
             return bytes(result)
 
+    def peek_views(self, size: Optional[int] = None) -> List[memoryview]:
+        """Return up to two memoryviews representing current readable data without consuming it.
+
+        Args:
+            size: Optional maximum bytes to peek; defaults to all available.
+
+        Returns:
+            List of 1-2 memoryviews into the internal buffer.
+        """
+        with self.lock:
+            if self.used == 0:
+                return []
+            to_read = self.used if size is None else min(size, self.used)
+            first_chunk = min(to_read, self.size - self.read_pos)
+            second_chunk = to_read - first_chunk
+            views: List[memoryview] = []
+            if first_chunk > 0:
+                views.append(memoryview(self.buffer)[self.read_pos:self.read_pos + first_chunk])
+            if second_chunk > 0:
+                views.append(memoryview(self.buffer)[:second_chunk])
+            return views
+
+    def consume(self, size: int) -> int:
+        """Consume bytes from the buffer without returning them.
+
+        Returns:
+            Number of bytes actually consumed.
+        """
+        with self.lock:
+            if size <= 0 or self.used == 0:
+                return 0
+            to_consume = min(size, self.used)
+            first_chunk = min(to_consume, self.size - self.read_pos)
+            second_chunk = to_consume - first_chunk
+            # Advance read pointer accounting for wrap
+            if second_chunk > 0:
+                self.read_pos = second_chunk
+            else:
+                self.read_pos = (self.read_pos + first_chunk) % self.size
+            self.used -= to_consume
+            return to_consume
+
     def peek(self, size: int) -> bytes:
         """Peek at data without consuming it.
         

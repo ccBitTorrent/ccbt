@@ -27,7 +27,7 @@ from ..monitoring import (
 from ..session import AsyncSessionManager
 from .config_commands import config as config_group
 from .monitoring_commands import dashboard as dashboard_cmd, alerts as alerts_cmd, metrics as metrics_cmd
-from .advanced_commands import performance as performance_cmd, security as security_cmd, recover as recover_cmd, test as test_cmd, docs as docs_cmd
+from .advanced_commands import performance as performance_cmd, security as security_cmd, recover as recover_cmd, test as test_cmd
 from .interactive import InteractiveCLI
 from .progress import ProgressManager
 
@@ -221,7 +221,7 @@ def cli(ctx, config, verbose, debug):
     cli.add_command(security_cmd)
     cli.add_command(recover_cmd)
     cli.add_command(test_cmd)
-    cli.add_command(docs_cmd)
+    # docs command removed; docs are maintained in repository
 
 
 @cli.command()

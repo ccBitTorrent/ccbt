@@ -1,0 +1,21 @@
+[network]
+listen_port = 6881
+max_global_peers = 200
+pipeline_depth = 16
+block_size_kib = 16
+
+[disk]
+preallocate = "full"
+write_batch_kib = 64
+write_buffer_kib = 1024
+use_mmap = true
+
+[discovery]
+enable_dht = true
+
+[strategy]
+piece_selection = "rarest_first"
+
+[observability]
+log_level = "INFO"
+enable_metrics = true
