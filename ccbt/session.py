@@ -677,19 +677,36 @@ class AsyncSessionManager:
             else:
                 parser = TorrentParser()
                 td_model = parser.parse(path)
-                td = {
-                    "name": td_model.name,
-                    "info_hash": td_model.info_hash,
-                    "pieces_info": {
-                        "piece_hashes": list(td_model.pieces),
-                        "piece_length": td_model.piece_length,
-                        "num_pieces": td_model.num_pieces,
-                        "total_length": td_model.total_length,
-                    },
-                    "file_info": {
-                        "total_length": td_model.total_length,
-                    },
-                }
+                # Accept both model objects and plain dicts from mocked parsers in tests
+                if isinstance(td_model, dict):
+                    name = td_model.get("name") or td_model.get("torrent_name") or "unknown"
+                    ih = td_model.get("info_hash")
+                    if isinstance(ih, str):
+                        ih = bytes.fromhex(ih)
+                    if not isinstance(ih, (bytes, bytearray)):
+                        raise ValueError("info_hash must be bytes")
+                    td = {
+                        "name": name,
+                        "info_hash": bytes(ih),
+                        "pieces_info": td_model.get("pieces_info", {}),
+                        "file_info": td_model.get("file_info", {
+                            "total_length": td_model.get("total_length", 0),
+                        }),
+                    }
+                else:
+                    td = {
+                        "name": td_model.name,
+                        "info_hash": td_model.info_hash,
+                        "pieces_info": {
+                            "piece_hashes": list(td_model.pieces),
+                            "piece_length": td_model.piece_length,
+                            "num_pieces": td_model.num_pieces,
+                            "total_length": td_model.total_length,
+                        },
+                        "file_info": {
+                            "total_length": td_model.total_length,
+                        },
+                    }
                 info_hash = td["info_hash"]
                 if isinstance(info_hash, str):
                     info_hash = bytes.fromhex(info_hash)
@@ -996,8 +1013,12 @@ class AsyncSessionManager:
             if source_type == "file" and torrent_source:
                 parser = TorrentParser()
                 torrent_data_model = parser.parse(torrent_source)
+                if isinstance(torrent_data_model, dict):
+                    torrent_info_hash = torrent_data_model.get("info_hash")
+                else:
+                    torrent_info_hash = getattr(torrent_data_model, "info_hash", None)
                 torrent_data = {
-                    "info_hash": torrent_data_model.info_hash,
+                    "info_hash": torrent_info_hash,
                 }
                 if torrent_data["info_hash"] != info_hash:
                     raise ValueError(

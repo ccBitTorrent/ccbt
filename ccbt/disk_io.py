@@ -56,6 +56,21 @@ class WriteRequest:
     future: asyncio.Future
     timestamp: float = field(default_factory=time.time)
 
+    @staticmethod
+    def create_future() -> asyncio.Future:
+        """Create a future even when no loop is running (for tests)."""
+        try:
+            loop = asyncio.get_running_loop()
+            return loop.create_future()
+        except RuntimeError:
+            # No running loop; create a new loop temporarily for the Future
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                return loop.create_future()
+            finally:
+                asyncio.set_event_loop(None)
+
 
 @dataclass
 class MmapCache:
