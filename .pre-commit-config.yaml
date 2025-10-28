@@ -35,3 +35,10 @@
         files: ^ccbt/.*\.py$
         exclude: ^(tests/|benchmarks/|.*/__pycache__/)
         pass_filenames: false
+      - id: mkdocs-build
+        name: mkdocs-build
+        entry: uv run mkdocs build --strict
+        language: system
+        types: [markdown]
+        files: ^(docs/.*\.md|README\.md|mkdocs\.yml)$
+        pass_filenames: false

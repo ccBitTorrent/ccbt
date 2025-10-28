@@ -779,40 +779,173 @@ alert_manager.add_alert_rule(
 
 ```python
 import asyncio
-from ccbt import Session
-from ccbt.config import ConfigManager
+from ccbt.config import init_config
+from ccbt.session import AsyncSessionManager
 
 async def main():
-    # Load configuration
-    config_manager = ConfigManager()
-    config = config_manager.config
+    # Initialize configuration
+    config_manager = init_config()
     
-    # Create session
-    session = Session(config)
+    # Create session manager
+    session = AsyncSessionManager()
+    await session.start()
     
-    try:
-        # Start session
-        await session.start()
+    # Add torrent
+    torrent_id = await session.add_torrent("torrent.torrent")
+    
+    # Monitor progress
+    while True:
+        status = await session.get_status(torrent_id)
+        print(f"Progress: {status['progress']*100:.1f}%")
         
-        # Add torrent
-        torrent = await session.add_torrent("example.torrent")
+        if status['completed']:
+            break
         
-        # Start download
-        await session.start_download(torrent)
-        
-        # Wait for completion
-        while not torrent.is_complete():
-            print(f"Progress: {torrent.progress_percentage():.1f}%")
-            await asyncio.sleep(1)
-        
-        print("Download completed!")
-        
-    finally:
-        # Stop session
-        await session.stop()
+        await asyncio.sleep(1)
+    
+    await session.stop()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
+```
+
+### Advanced Configuration
+
+```python
+from ccbt.config import Config, NetworkConfig, StrategyConfig
+
+# Create custom configuration
+config = Config()
+config.network.max_global_peers = 100
+config.network.pipeline_depth = 32
+config.strategy.piece_selection = PieceSelectionStrategy.RAREST_FIRST
+config.strategy.endgame_duplicates = 3
+
+# Use custom config
+session = AsyncSessionManager(config=config)
+```
+
+### Resume Functionality
+
+```python
+import asyncio
+from ccbt.session import AsyncSessionManager
+from ccbt.checkpoint import CheckpointManager
+from ccbt.models import DiskConfig
+
+async def resume_example():
+    # Configure checkpointing
+    config = DiskConfig(
+        checkpoint_enabled=True,
+        auto_resume=True,
+        checkpoint_interval=30.0
+    )
+    
+    # Create session manager
+    session = AsyncSessionManager()
+    await session.start()
+    
+    # Check for existing checkpoints
+    resumable = await session.list_resumable_checkpoints()
+    print(f"Found {len(resumable)} resumable checkpoints")
+    
+    # Resume from specific checkpoint
+    if resumable:
+        checkpoint = resumable[0]
+        info_hash_hex = await session.resume_from_checkpoint(
+            checkpoint.info_hash, 
+            checkpoint,
+            torrent_path="/path/to/torrent.torrent"  # Optional
+        )
+        print(f"Resumed download: {info_hash_hex}")
+    
+    # Add new torrent with resume capability
+    torrent_id = await session.add_torrent("new_torrent.torrent", resume=True)
+    
+    # Monitor progress
+    while True:
+        status = await session.get_status(torrent_id)
+        print(f"Progress: {status['progress']*100:.1f}%")
+        
+        if status['completed']:
+            break
+        
+        await asyncio.sleep(1)
+    
+    await session.stop()
+
+asyncio.run(resume_example())
+```
+
+### Checkpoint Management
+
+```python
+from ccbt.checkpoint import CheckpointManager
+from ccbt.models import TorrentCheckpoint, DiskConfig
+
+async def checkpoint_management():
+    config = DiskConfig(checkpoint_enabled=True)
+    checkpoint_manager = CheckpointManager(config)
+    
+    # List all checkpoints
+    checkpoints = await checkpoint_manager.list_checkpoints()
+    print(f"Found {len(checkpoints)} checkpoints")
+    
+    # Get checkpoint info
+    for checkpoint_info in checkpoints:
+        checkpoint = await checkpoint_manager.load_checkpoint(checkpoint_info.info_hash)
+        if checkpoint:
+            print(f"Torrent: {checkpoint.torrent_name}")
+            print(f"Progress: {len(checkpoint.verified_pieces)}/{checkpoint.total_pieces}")
+            print(f"Can resume: {bool(checkpoint.torrent_file_path or checkpoint.magnet_uri)}")
+    
+    # Clean old checkpoints
+    cleaned = await checkpoint_manager.cleanup_old_checkpoints(days=7)
+    print(f"Cleaned {cleaned} old checkpoints")
+    
+    # Delete specific checkpoint
+    if checkpoints:
+        deleted = await checkpoint_manager.delete_checkpoint(checkpoints[0].info_hash)
+        print(f"Deleted checkpoint: {deleted}")
+
+asyncio.run(checkpoint_management())
+```
+
+### Interactive Resume
+
+```python
+from ccbt.session import AsyncSessionManager
+from ccbt.checkpoint import CheckpointManager
+
+async def interactive_resume():
+    session = AsyncSessionManager()
+    checkpoint_manager = CheckpointManager()
+    
+    await session.start()
+    
+    # Check for checkpoints and prompt user
+    checkpoints = await session.list_resumable_checkpoints()
+    
+    if checkpoints:
+        print("Found existing checkpoints:")
+        for i, checkpoint in enumerate(checkpoints):
+            progress = len(checkpoint.verified_pieces) / checkpoint.total_pieces
+            print(f"{i+1}. {checkpoint.torrent_name} ({progress*100:.1f}% complete)")
+        
+        # User selection (in real app, use proper input handling)
+        choice = 0  # Simplified for example
+        if 0 <= choice < len(checkpoints):
+            selected_checkpoint = checkpoints[choice]
+            
+            # Resume selected checkpoint
+            info_hash_hex = await session.resume_from_checkpoint(
+                selected_checkpoint.info_hash,
+                selected_checkpoint
+            )
+            print(f"Resumed: {info_hash_hex}")
+    
+    await session.stop()
+
+asyncio.run(interactive_resume())
 ```
 
 ### Advanced Usage

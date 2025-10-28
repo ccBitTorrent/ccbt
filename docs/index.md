@@ -2,43 +2,6 @@
 
 A modern, high-performance BitTorrent client built with Python asyncio, featuring advanced piece selection algorithms, parallel metadata exchange, and optimized disk I/O.
 
-## Quick Start
-
-### Installation with UV
-
-```bash
-# Install UV (if not installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install ccBitTorrent
-uv pip install ccbittorrent
-```
-
-### Your First Download
-
-```bash
-# Download from torrent file
-uv run ccbt download movie.torrent
-
-# Download from magnet link
-uv run ccbt magnet "magnet:?xt=urn:btih:..."
-
-# Launch Terminal Dashboard (Recommended)
-uv run ccbt dashboard
-```
-
-## Documentation
-
-- [Getting Started Guide](docs/getting-started.md) - Step-by-step tutorial
-- [CLI Reference](docs/cli-reference.md) - Complete command reference
-- [Terminal Dashboard](docs/dashboard-guide.md) - Dashboard features and usage
-- [Configuration](docs/configuration.md) - Configuration options
-- [Monitoring](docs/monitoring.md) - Observability and metrics
-- [Checkpoints](docs/checkpoints.md) - Resume functionality
-- [API Documentation](docs/API.md) - Python API usage
-- [Performance Tuning](docs/performance.md) - Optimization guide
-- [Architecture](docs/architecture.md) - Technical details
-
 ## Features
 
 ### 🚀 Performance Optimizations
@@ -83,61 +46,42 @@ uv run ccbt dashboard
 - **CLI Integration**: Complete command-line interface for checkpoint management
 - **Error Recovery**: Graceful handling of corrupted or missing checkpoints
 
-## Terminal Dashboard
+## Quick Start
 
-The Terminal Dashboard provides a live view of all torrents, peers, and system metrics in a beautiful terminal interface.
+### Installation with UV
 
-### Features
-- **Real-time Updates**: Live torrent status and progress tracking
-- **Peer Monitoring**: View connected peers, their speeds, and client information
-- **Speed Visualization**: Download/upload speed graphs with sparklines
-- **Alert System**: Real-time notifications for important events
-- **Interactive Controls**: Keyboard shortcuts for common operations
-- **Multi-torrent Support**: Monitor multiple downloads simultaneously
-
-### Keyboard Shortcuts
-- `q` - Quit dashboard
-- `p` - Pause selected torrent
-- `r` - Resume selected torrent
-- `↑/↓` - Navigate torrent list
-- `Enter` - View torrent details
-- `Space` - Toggle pause/resume
-- `D` - Delete selected torrent
-- `H` - Show help
-
-### Launching
 ```bash
-# Start with default settings
+# Install UV (if not installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install ccBitTorrent
+uv pip install ccbittorrent
+```
+
+### Your First Download
+
+```bash
+# Download from torrent file
+uv run ccbt download movie.torrent
+
+# Download from magnet link
+uv run ccbt magnet "magnet:?xt=urn:btih:..."
+
+# Launch Terminal Dashboard (Recommended)
 uv run ccbt dashboard
-
-# Custom refresh interval (seconds)
-uv run ccbt dashboard --refresh 2.0
-
-# Load alert rules on startup
-uv run ccbt dashboard --rules /path/to/alert-rules.json
 ```
 
-### Dashboard Layout
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ ccBitTorrent Dashboard                    [Q] Quit [H] Help     │
-├─────────────────────────────────────────────────────────────────┤
-│ Overview                                                         │
-│ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐    │
-│ │ Download Speed  │ │ Upload Speed    │ │ Connected Peers │    │
-│ │ 1.2 MB/s        │ │ 256 KB/s        │ │ 12              │    │
-│ └─────────────────┘ └─────────────────┘ └─────────────────┘    │
-├─────────────────────────────────────────────────────────────────┤
-│ Torrents                                    [P] Pause [R] Resume │
-│ ┌─────────────────────────────────────────────────────────────┐ │
-│ │ Name                Progress  Speed    Peers  Status        │ │
-│ │ ████████████████░░░ 85.2%     1.2MB/s  12    Downloading   │ │
-│ │ ████████████████████ 100%     0KB/s    8     Seeding       │ │
-│ └─────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-```
+## Documentation
 
-For detailed dashboard usage, see the [Terminal Dashboard Guide](docs/dashboard-guide.md).
+- [Getting Started Guide](getting-started.md) - Step-by-step tutorial
+- [CLI Reference](cli-reference.md) - Complete command reference
+- [Terminal Dashboard](dashboard-guide.md) - Dashboard features and usage
+- [Configuration](configuration.md) - Configuration options
+- [Monitoring](monitoring.md) - Observability and metrics
+- [Checkpoints](checkpoints.md) - Resume functionality
+- [API Documentation](API.md) - Python API usage
+- [Performance Tuning](performance.md) - Optimization guide
+- [Architecture](architecture.md) - Technical details
 
 ## Installation
 
@@ -145,26 +89,9 @@ For detailed dashboard usage, see the [Terminal Dashboard Guide](docs/dashboard-
 - Python 3.8 or higher
 - UV package manager (recommended)
 
-### Install UV (if not already installed)
-
+### Install Dependencies
 ```bash
-# On macOS and Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# On Windows
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-### Install ccBitTorrent
-
-```bash
-# Install from PyPI
-uv pip install ccbittorrent
-
-# Or install from source
-git clone https://github.com/yourusername/ccbittorrent.git
-cd ccbittorrent
-uv pip install -e .
+uv pip install -r requirements.txt
 ```
 
 ### Windows Users
@@ -188,7 +115,7 @@ uv run ccbt magnet "magnet:?xt=urn:btih:..."
 # Interactive mode
 uv run ccbt interactive
 
-# Terminal monitoring dashboard (Recommended)
+# Terminal monitoring dashboard
 uv run ccbt dashboard
 ```
 
@@ -243,9 +170,35 @@ uv run ccbt --no-checkpoint torrent.torrent
 uv run ccbt --resume torrent.torrent
 ```
 
-### Python API
+## Terminal Dashboard
 
-For Python API usage, see the [API Documentation](docs/API.md).
+The Terminal Dashboard provides a live view of all torrents, peers, and system metrics.
+
+### Features
+- Real-time torrent status and progress
+- Live peer connections and speeds
+- Download/upload speed graphs
+- Alert notifications
+- Interactive controls
+
+### Keyboard Shortcuts
+- `q` - Quit
+- `p` - Pause selected torrent
+- `r` - Resume selected torrent
+- `↑/↓` - Navigate torrents
+- `Enter` - View torrent details
+
+### Launching
+```bash
+# Start with default settings
+uv run ccbt dashboard
+
+# Custom refresh interval (seconds)
+uv run ccbt dashboard --refresh 2.0
+
+# Load alert rules on startup
+uv run ccbt dashboard --rules /path/to/alert-rules.json
+```
 
 ## Configuration
 
@@ -303,14 +256,17 @@ export CCBT_UP_LIMIT=512     # KiB/s
 export CCBT_LOG_LEVEL=DEBUG
 ```
 
-For detailed configuration options, see the [Configuration Guide](docs/configuration.md).
-
 ## Performance Tuning
 
-### Quick Tips
+### Network Optimization
 - **Pipeline Depth**: Increase for high-latency connections (16-64)
 - **Block Size**: Larger blocks for high-bandwidth connections (16-64 KiB)
+- **Socket Buffers**: Increase for high-throughput scenarios
+- **Connection Limits**: Balance between discovery and resource usage
+
+### Disk I/O Optimization
 - **Preallocation**: Use "full" for better performance on SSDs
+- **Write Batching**: Larger batches reduce system call overhead
 - **Memory Mapping**: Enable for read-heavy workloads
 - **Hash Workers**: Scale with CPU cores (4-8 workers)
 
@@ -319,7 +275,10 @@ For detailed configuration options, see the [Configuration Guide](docs/configura
 - **Sequential**: Good for streaming media files
 - **Round-Robin**: Simple but less efficient
 
-For detailed performance optimization, see the [Performance Tuning Guide](docs/performance.md).
+### Rate Limiting
+- **Global Limits**: Overall bandwidth constraints
+- **Per-Torrent Limits**: Individual torrent bandwidth allocation
+- **Per-Peer Limits**: Prevent single peer from consuming all bandwidth
 
 ## Monitoring and Metrics
 
@@ -341,7 +300,13 @@ Access metrics at `http://localhost:9090/metrics`
 - `ccbt_disk_queue_depth`: Disk I/O queue depth
 - `ccbt_hash_queue_depth`: Hash verification queue depth
 
-For detailed monitoring setup, see the [Monitoring Guide](docs/monitoring.md).
+### Logging
+```toml
+[observability]
+log_level = "INFO"
+log_file = "ccbt.log"
+enable_peer_tracing = false
+```
 
 ## Architecture
 
@@ -361,12 +326,11 @@ For detailed monitoring setup, see the [Monitoring Guide](docs/monitoring.md).
 6. **Hash Verification**: Parallel SHA-1 verification with worker pool
 7. **Disk Assembly**: Batched writes with memory-mapped reads
 
-For detailed technical architecture, see the [Architecture Documentation](docs/architecture.md).
-
 ## Development
 
-### Quick Start with UV (Recommended)
+### Quick Start
 
+#### With UV (Recommended - Fastest)
 ```bash
 # Install UV (if not already installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -377,6 +341,30 @@ make uv-install
 # Run all checks with UV
 make uv-run-all
 ```
+
+#### Traditional Setup
+```bash
+# Set up development environment
+make setup-dev
+
+# Install development dependencies
+make install-dev
+
+# Run all checks
+make pre-commit
+```
+
+### Development Tools
+
+This project uses modern Python tooling for development:
+
+- **UV**: Ultra-fast Python package manager and project manager
+- **Ruff**: Fast Python linter and formatter (replaces black, isort, flake8)
+- **Ty**: Fast type checker (replaces mypy)
+- **Pre-commit**: Git hooks for code quality
+- **Pytest**: Testing framework with coverage
+- **Bandit**: Security linting
+- **Commitizen**: Conventional commit messages
 
 ### Available Commands
 
@@ -395,6 +383,26 @@ make uv-run-test       # Run tests with UV
 make uv-run-type       # Run type checking with UV
 make uv-run-security   # Run security checks with UV
 make uv-run-all        # Run all checks with UV
+```
+
+#### Traditional Commands
+```bash
+# Development setup
+make setup-dev          # Set up pre-commit hooks and run initial checks
+make install-dev        # Install development dependencies
+
+# Code quality
+make lint               # Run linting (ruff)
+make format             # Format code (ruff)
+make type-check         # Run type checking (ty)
+make pre-commit         # Run all pre-commit checks
+
+# Testing
+make test               # Run tests
+make test-cov           # Run tests with coverage
+
+# Cleanup
+make clean              # Clean temporary files
 ```
 
 ### Running Tests
@@ -418,7 +426,38 @@ python benchmarks/bench_throughput.py
 python benchmarks/bench_disk.py
 ```
 
-For detailed development setup, see the project's development documentation.
+### Code Quality
+```bash
+# Run all quality checks
+make pre-commit
+
+# Individual tools
+make lint               # Ruff linting
+make format             # Ruff formatting
+make type-check         # Ty type checking
+
+# Security checks
+bandit -r ccbt/ -f json -o bandit-report.json
+```
+
+### Pre-commit Hooks
+
+The project includes comprehensive pre-commit hooks that run automatically on commit:
+
+- **Basic checks**: Trailing whitespace, file endings, YAML/JSON validation
+- **Ruff**: Fast linting and formatting
+- **Ty**: Fast type checking
+- **Bandit**: Security vulnerability scanning
+- **Pylint**: Additional code quality checks
+- **Safety**: Dependency vulnerability scanning
+- **Commitizen**: Conventional commit message validation
+
+### Configuration Files
+
+- `pyproject.toml`: Project configuration and tool settings
+- `ruff.toml`: Ruff linting and formatting configuration
+- `.pre-commit-config.yaml`: Pre-commit hook configuration
+- `mypy.ini`: Type checking configuration (for Ty compatibility)
 
 ## Contributing
 
