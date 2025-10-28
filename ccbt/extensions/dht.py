@@ -17,11 +17,8 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any
 
-# import bencodepy  # Module not installed
+from ccbt import bencode
 from ccbt.events import Event, EventType, emit_event
-
-# Error message constants
-_ERROR_BENCODEPY_NOT_AVAILABLE = "bencodepy not available"
 
 if TYPE_CHECKING:
     from ccbt.models import PeerInfo
@@ -77,6 +74,10 @@ class DHTExtension:
         self.nodes: dict[bytes, DHTNode] = {}
         self.buckets: list[set[DHTNode]] = [[] for _ in range(160)]  # 160-bit ID space
         self.routing_table: dict[bytes, DHTNode] = {}
+
+        # Peer storage for get_peers queries
+        self.peer_storage: dict[bytes, set[tuple[str, int]]] = {}
+        self.peer_tokens: dict[bytes, str] = {}  # info_hash -> token
 
     def _generate_node_id(self) -> bytes:
         """Generate random node ID."""
@@ -234,6 +235,16 @@ class DHTExtension:
 
         return self._encode_dht_message(response_data)
 
+    def encode_error_response(self, transaction_id: bytes, error_code: int, error_message: str) -> bytes:
+        """Encode DHT error response."""
+        response_data = {
+            "t": transaction_id.decode(),
+            "y": "e",
+            "e": [error_code, error_message],
+        }
+
+        return self._encode_dht_message(response_data)
+
     def encode_find_node_response(
         self,
         transaction_id: bytes,
@@ -298,19 +309,13 @@ class DHTExtension:
 
         return self._encode_dht_message(response_data)
 
-    def _encode_dht_message(self, _data: dict[str, Any]) -> bytes:
+    def _encode_dht_message(self, data: dict[str, Any]) -> bytes:
         """Encode DHT message to bencoded format."""
-        # TODO: Implement bencode encoding when bencodepy is available
-        # return bencodepy.encode(data)
-        msg = _ERROR_BENCODEPY_NOT_AVAILABLE
-        raise NotImplementedError(msg)
+        return bencode.encode(data)
 
-    def _decode_dht_message(self, _data: bytes) -> dict[str, Any]:
+    def _decode_dht_message(self, data: bytes) -> dict[str, Any]:
         """Decode DHT message from bencoded format."""
-        # TODO: Implement bencode decoding when bencodepy is available
-        # return bencodepy.decode(data)
-        msg = _ERROR_BENCODEPY_NOT_AVAILABLE
-        raise NotImplementedError(msg)
+        return bencode.decode(data)
 
     async def handle_dht_message(
         self,
@@ -347,8 +352,8 @@ class DHTExtension:
 
     async def _handle_query(
         self,
-        _peer_ip: str,
-        _peer_port: int,
+        peer_ip: str,
+        peer_port: int,
         message: dict[str, Any],
     ) -> bytes:
         """Handle DHT query."""
@@ -362,23 +367,56 @@ class DHTExtension:
             closest_nodes = self.find_closest_nodes(target_id)
             return self.encode_find_node_response(transaction_id, closest_nodes)
         if query_type == "get_peers":
-            bytes.fromhex(message.get("a", {}).get("info_hash", ""))
-            # TODO: Implement peer storage and retrieval
-            return self.encode_get_peers_response(transaction_id, [], [], "")
+            info_hash = bytes.fromhex(message.get("a", {}).get("info_hash", ""))
+            peers_list = self._get_stored_peers(info_hash)
+            token = self._generate_token(info_hash)
+            return self.encode_get_peers_response(transaction_id, peers_list, [], token)
         if query_type == "announce_peer":
-            # TODO: Implement peer announcement
-            return self.encode_ping_response(transaction_id, self.node_id)
+            info_hash = bytes.fromhex(message.get("a", {}).get("info_hash", ""))
+            token = message.get("a", {}).get("token", "")
+            peer_port = message.get("a", {}).get("port", 0)
+
+            if self._validate_token(info_hash, token):
+                # Store peer with the IP of the querying peer
+                self._store_peer(info_hash, peer_ip, peer_port)
+                return self.encode_ping_response(transaction_id, self.node_id)
+            return self.encode_error_response(transaction_id, 203, "Invalid token")
 
         return b""
 
     async def _handle_response(
         self,
-        peer_ip: str,
-        peer_port: int,
+        _peer_ip: str,
+        _peer_port: int,
         message: dict[str, Any],
     ) -> None:
         """Handle DHT response."""
-        # TODO: Implement response handling
+        response_type = message.get("r", {})
+
+        # Handle ping responses - update node as alive
+        if "id" in response_type:
+            node_id = bytes.fromhex(response_type["id"])
+            if node_id in self.routing_table:
+                self.routing_table[node_id].last_seen = time.time()
+
+        # Handle find_node responses - add returned nodes to routing table
+        if "nodes" in response_type:
+            nodes_data = response_type["nodes"]
+            self._add_nodes_from_compact_format(nodes_data)
+
+        # Handle get_peers responses - extract and store peer information
+        if "values" in response_type:
+            peers_data = response_type["values"]
+            info_hash = message.get("a", {}).get("info_hash", "")
+            if info_hash:
+                self._store_peers_from_compact_format(
+                    bytes.fromhex(info_hash), peers_data
+                )
+
+        # Handle announce_peer responses - confirm announcement
+        if "id" in response_type and "token" in message.get("a", {}):
+            # Announcement was successful
+            pass
 
     async def _handle_error(
         self,
@@ -410,6 +448,61 @@ class DHTExtension:
     def get_bucket_sizes(self) -> list[int]:
         """Get bucket sizes."""
         return [len(bucket) for bucket in self.buckets]
+
+    def _get_stored_peers(self, info_hash: bytes) -> list[tuple[str, int]]:
+        """Get stored peers for info hash."""
+        return list(self.peer_storage.get(info_hash, set()))
+
+    def _store_peer(self, info_hash: bytes, peer_ip: str, peer_port: int) -> None:
+        """Store peer information for info hash."""
+        if info_hash not in self.peer_storage:
+            self.peer_storage[info_hash] = set()
+        self.peer_storage[info_hash].add((peer_ip, peer_port))
+
+    def _generate_token(self, info_hash: bytes) -> str:
+        """Generate token for peer announcement."""
+        # Simple token generation - in production, use HMAC with secret key
+        token_data = self.node_id + info_hash + str(time.time()).encode()
+        token = hashlib.sha1(token_data, usedforsecurity=False).hexdigest()[:8]
+        self.peer_tokens[info_hash] = token
+        return token
+
+    def _validate_token(self, info_hash: bytes, token: str) -> bool:
+        """Validate token for peer announcement."""
+        return self.peer_tokens.get(info_hash) == token
+
+    def _add_nodes_from_compact_format(self, nodes_data: bytes) -> None:
+        """Add nodes from compact format string."""
+        # Compact format: 26 bytes per node (20-byte node ID + 4-byte IP + 2-byte port)
+        node_size = 26
+        for i in range(0, len(nodes_data), node_size):
+            if i + node_size <= len(nodes_data):
+                node_bytes = nodes_data[i : i + node_size]
+                node_id = node_bytes[:20]
+                ip_bytes = node_bytes[20:24]
+                port_bytes = node_bytes[24:26]
+
+                # Convert IP bytes to string
+                ip = ".".join(str(b) for b in ip_bytes)
+                port = int.from_bytes(port_bytes, "big")
+
+                node = DHTNode(node_id=node_id, ip=ip, port=port, last_seen=time.time())
+                self.routing_table[node_id] = node
+
+    def _store_peers_from_compact_format(
+        self, info_hash: bytes, peers_data: list[str]
+    ) -> None:
+        """Store peers from compact format list."""
+        for peer_data in peers_data:
+            if len(peer_data) >= 6:  # 4-byte IP + 2-byte port
+                ip_bytes = peer_data[:4]
+                port_bytes = peer_data[4:6]
+
+                # Convert IP bytes to string
+                ip = ".".join(str(b) for b in ip_bytes)
+                port = int.from_bytes(port_bytes, "big")
+
+                self._store_peer(info_hash, ip, port)
 
     def get_node_statistics(self) -> dict[str, Any]:
         """Get node statistics."""
