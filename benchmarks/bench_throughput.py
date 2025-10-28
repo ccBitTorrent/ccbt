@@ -4,11 +4,13 @@ Tests the performance of the async peer connection protocol
 with loopback connections to measure maximum throughput.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import statistics
 import time
-from typing import Any, Dict
+from typing import Any
 
 from ccbt.async_peer_connection import AsyncPeerConnectionManager
 from ccbt.async_piece_manager import AsyncPieceManager
@@ -23,7 +25,7 @@ class ThroughputBenchmark:
         self.config = get_config()
         self.results = {}
 
-    async def setup_benchmark(self) -> Dict[str, Any]:
+    async def setup_benchmark(self) -> dict[str, Any]:
         """Set up benchmark environment."""
         # Create temporary torrent data
         torrent_data = {
@@ -58,12 +60,15 @@ class ThroughputBenchmark:
             "peer_manager": peer_manager,
         }
 
-    async def cleanup_benchmark(self, setup_data: Dict[str, Any]):
+    async def cleanup_benchmark(self, setup_data: dict[str, Any]):
         """Clean up benchmark environment."""
         await setup_data["piece_manager"].stop()
         await setup_data["peer_manager"].shutdown()
 
-    async def benchmark_message_throughput(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_message_throughput(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark message throughput."""
         peer_manager = setup_data["peer_manager"]
 
@@ -93,7 +98,10 @@ class ThroughputBenchmark:
             "total_messages": num_messages,
         }
 
-    async def benchmark_request_pipelining(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_request_pipelining(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark request pipelining performance."""
         peer_manager = setup_data["peer_manager"]
 
@@ -122,7 +130,10 @@ class ThroughputBenchmark:
             "total_requests": num_requests,
         }
 
-    async def benchmark_concurrent_connections(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_concurrent_connections(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark concurrent connection handling."""
         peer_manager = setup_data["peer_manager"]
 
@@ -131,7 +142,7 @@ class ThroughputBenchmark:
         connections = []
 
         for i in range(num_connections):
-            peer_info = PeerInfo(f"127.0.0.{i+1}", 6881)
+            peer_info = PeerInfo(f"127.0.0.{i + 1}", 6881)
             mock_connection = Mock()
             mock_connection.peer_info = peer_info
             mock_connection.is_connected = True
@@ -163,7 +174,10 @@ class ThroughputBenchmark:
             "total_connections": num_connections,
         }
 
-    async def benchmark_memory_usage(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_memory_usage(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark memory usage patterns."""
         import gc
 
@@ -202,10 +216,12 @@ class ThroughputBenchmark:
             "memory_increase_mb": peak_memory - initial_memory,
         }
 
-    async def run_benchmark(self, benchmark_name: str, benchmark_func) -> Dict[str, float]:
+    async def run_benchmark(
+        self,
+        benchmark_name: str,
+        benchmark_func,
+    ) -> dict[str, float]:
         """Run a single benchmark."""
-        print(f"Running {benchmark_name}...")
-
         setup_data = await self.setup_benchmark()
 
         try:
@@ -251,30 +267,19 @@ class ThroughputBenchmark:
             ("Memory Usage", self.benchmark_memory_usage),
         ]
 
-        print("Starting BitTorrent Throughput Benchmarks")
-        print("=" * 50)
-
         for name, func in benchmarks:
             try:
                 result = await self.run_benchmark(name, func)
                 self.results[name] = result
 
-                print(f"\n{name} Results:")
-                print(f"  Mean Throughput: {result['mean_throughput']:.2f}")
-                print(f"  Std Deviation: {result['std_throughput']:.2f}")
-                print(f"  Runs: {result['runs']}")
-
             except Exception as e:
-                print(f"Benchmark {name} failed: {e}")
                 self.results[name] = {"error": str(e)}
 
-        print("\n" + "=" * 50)
-        print("Benchmark Summary:")
         for name, result in self.results.items():
             if "error" in result:
-                print(f"  {name}: ERROR - {result['error']}")
+                pass
             else:
-                print(f"  {name}: {result['mean_throughput']:.2f} ops/sec")
+                pass
 
     def save_results(self, filename: str):
         """Save benchmark results to file."""
@@ -283,14 +288,16 @@ class ThroughputBenchmark:
         with open(filename, "w") as f:
             json.dump(self.results, f, indent=2)
 
-        print(f"Results saved to {filename}")
-
 
 async def main():
     """Main benchmark function."""
     parser = argparse.ArgumentParser(description="BitTorrent Throughput Benchmark")
-    parser.add_argument("--output", "-o", default="throughput_results.json",
-                      help="Output file for results")
+    parser.add_argument(
+        "--output",
+        "-o",
+        default="throughput_results.json",
+        help="Output file for results",
+    )
     args = parser.parse_args()
 
     benchmark = ThroughputBenchmark()

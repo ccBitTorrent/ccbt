@@ -1,30 +1,36 @@
 """Metrics plugin for ccBitTorrent.
 
+from __future__ import annotations
+
 Collects and aggregates performance metrics from events.
 """
 
+from __future__ import annotations
+
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from ..events import Event, EventHandler, EventType
-from ..logging_config import get_logger
-from .base import Plugin
+from ccbt.events import Event, EventHandler, EventType
+from ccbt.logging_config import get_logger
+from ccbt.plugins.base import Plugin
 
 
 @dataclass
 class Metric:
     """A performance metric."""
+
     name: str
     value: float
     unit: str
     timestamp: float
-    tags: Dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class MetricAggregate:
     """Aggregated metric statistics."""
+
     name: str
     count: int
     sum: float
@@ -32,16 +38,17 @@ class MetricAggregate:
     max: float
     avg: float
     unit: str
-    tags: Dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
 
 
 class MetricsCollector(EventHandler):
     """Collects metrics from events."""
 
     def __init__(self, max_metrics: int = 10000):
+        """Initialize metrics collector."""
         self.max_metrics = max_metrics
         self.metrics: deque = deque(maxlen=max_metrics)
-        self.aggregates: Dict[str, MetricAggregate] = {}
+        self.aggregates: dict[str, MetricAggregate] = {}
         self.logger = get_logger(__name__)
 
     async def handle(self, event: Event) -> None:
@@ -130,9 +137,12 @@ class MetricsCollector(EventHandler):
         agg.max = max(agg.max, metric.value)
         agg.avg = agg.sum / agg.count
 
-    def get_metrics(self, name: Optional[str] = None,
-                   tags: Optional[Dict[str, str]] = None,
-                   limit: int = 100) -> List[Metric]:
+    def get_metrics(
+        self,
+        name: str | None = None,
+        tags: dict[str, str] | None = None,
+        limit: int = 100,
+    ) -> list[Metric]:
         """Get metrics with optional filtering."""
         metrics = list(self.metrics)
 
@@ -140,11 +150,13 @@ class MetricsCollector(EventHandler):
             metrics = [m for m in metrics if m.name == name]
 
         if tags:
-            metrics = [m for m in metrics if all(m.tags.get(k) == v for k, v in tags.items())]
+            metrics = [
+                m for m in metrics if all(m.tags.get(k) == v for k, v in tags.items())
+            ]
 
         return metrics[-limit:] if limit > 0 else metrics
 
-    def get_aggregates(self, name: Optional[str] = None) -> List[MetricAggregate]:
+    def get_aggregates(self, name: str | None = None) -> list[MetricAggregate]:
         """Get metric aggregates."""
         aggregates = list(self.aggregates.values())
 
@@ -157,14 +169,15 @@ class MetricsCollector(EventHandler):
 class MetricsPlugin(Plugin):
     """Plugin for collecting and aggregating metrics."""
 
-    def __init__(self, max_metrics: int = 10000):
+    def __init__(self, name: str = "metrics_plugin", max_metrics: int = 10000):
+        """Initialize metrics plugin."""
         super().__init__(
-            name="metrics_plugin",
+            name=name,
             version="1.0.0",
             description="Performance metrics collection plugin",
         )
         self.max_metrics = max_metrics
-        self.collector: Optional[MetricsCollector] = None
+        self.collector: MetricsCollector | None = None
 
     async def initialize(self) -> None:
         """Initialize the metrics plugin."""
@@ -178,7 +191,8 @@ class MetricsPlugin(Plugin):
         self.collector = MetricsCollector(self.max_metrics)
 
         # Register event handler
-        from ..events import get_event_bus
+        from ccbt.events import get_event_bus
+
         event_bus = get_event_bus()
 
         # Register for relevant event types
@@ -191,34 +205,47 @@ class MetricsPlugin(Plugin):
         self.logger.info("Stopping metrics plugin")
 
         if self.collector:
-            from ..events import get_event_bus
+            from ccbt.events import get_event_bus
+
             event_bus = get_event_bus()
 
             # Unregister event handler
-            event_bus.unregister_handler(EventType.PERFORMANCE_METRIC.value, self.collector)
-            event_bus.unregister_handler(EventType.PIECE_DOWNLOADED.value, self.collector)
-            event_bus.unregister_handler(EventType.TORRENT_COMPLETED.value, self.collector)
+            event_bus.unregister_handler(
+                EventType.PERFORMANCE_METRIC.value,
+                self.collector,
+            )
+            event_bus.unregister_handler(
+                EventType.PIECE_DOWNLOADED.value,
+                self.collector,
+            )
+            event_bus.unregister_handler(
+                EventType.TORRENT_COMPLETED.value,
+                self.collector,
+            )
 
     async def cleanup(self) -> None:
         """Cleanup metrics plugin resources."""
         self.logger.info("Cleaning up metrics plugin")
         self.collector = None
 
-    def get_metrics(self, name: Optional[str] = None,
-                   tags: Optional[Dict[str, str]] = None,
-                   limit: int = 100) -> List[Metric]:
+    def get_metrics(
+        self,
+        name: str | None = None,
+        tags: dict[str, str] | None = None,
+        limit: int = 100,
+    ) -> list[Metric]:
         """Get collected metrics."""
         if self.collector:
             return self.collector.get_metrics(name, tags, limit)
         return []
 
-    def get_aggregates(self, name: Optional[str] = None) -> List[MetricAggregate]:
+    def get_aggregates(self, name: str | None = None) -> list[MetricAggregate]:
         """Get metric aggregates."""
         if self.collector:
             return self.collector.get_aggregates(name)
         return []
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get plugin statistics."""
         if self.collector:
             return {
@@ -226,4 +253,8 @@ class MetricsPlugin(Plugin):
                 "total_aggregates": len(self.collector.aggregates),
                 "max_metrics": self.max_metrics,
             }
-        return {"total_metrics": 0, "total_aggregates": 0, "max_metrics": self.max_metrics}
+        return {
+            "total_metrics": 0,
+            "total_aggregates": 0,
+            "max_metrics": self.max_metrics,
+        }

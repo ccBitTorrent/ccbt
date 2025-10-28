@@ -1,22 +1,29 @@
 """Peer service for ccBitTorrent.
 
+from __future__ import annotations
+
 Manages peer connections, handshakes, and peer communication
 with health checks and circuit breaker protection.
 """
 
+from __future__ import annotations
+
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
-from ..logging_config import LoggingContext
-from ..models import PeerInfo
-from .base import HealthCheck, Service
+from ccbt.logging_config import LoggingContext
+from ccbt.services.base import HealthCheck, Service
+
+if TYPE_CHECKING:
+    from ccbt.models import PeerInfo
 
 
 @dataclass
 class PeerConnection:
     """Represents a peer connection."""
+
     peer_info: PeerInfo
     connected_at: float
     last_activity: float
@@ -31,6 +38,7 @@ class PeerService(Service):
     """Service for managing peer connections."""
 
     def __init__(self, max_peers: int = 200, connection_timeout: float = 30.0):
+        """Initialize peer service."""
         super().__init__(
             name="peer_service",
             version="1.0.0",
@@ -38,7 +46,7 @@ class PeerService(Service):
         )
         self.max_peers = max_peers
         self.connection_timeout = connection_timeout
-        self.peers: Dict[str, PeerConnection] = {}
+        self.peers: dict[str, PeerConnection] = {}
         self.active_connections = 0
         self.total_connections = 0
         self.failed_connections = 0
@@ -75,8 +83,8 @@ class PeerService(Service):
         try:
             # Check if we can manage peers
             healthy = (
-                self.active_connections <= self.max_peers and
-                self.failed_connections < self.max_peers * 0.5
+                self.active_connections <= self.max_peers
+                and self.failed_connections < self.max_peers * 0.5
             )
 
             # Calculate health score
@@ -110,7 +118,8 @@ class PeerService(Service):
         self.logger.info("Initializing peer management")
 
         # Start peer monitoring task
-        asyncio.create_task(self._monitor_peers())
+        task = asyncio.create_task(self._monitor_peers())
+        task.add_done_callback(lambda _t: None)  # Discard task reference
 
     async def _monitor_peers(self) -> None:
         """Monitor peer connections."""
@@ -129,17 +138,17 @@ class PeerService(Service):
                 for peer_id in inactive_peers:
                     await self.disconnect_peer(peer_id)
 
-                self.logger.debug(f"Peer monitoring: {len(self.peers)} active peers")
+                self.logger.debug("Peer monitoring: %s active peers", len(self.peers))
 
-            except Exception as e:
-                self.logger.error(f"Error in peer monitoring: {e}")
+            except Exception:
+                self.logger.exception("Error in peer monitoring")
 
     async def connect_peer(self, peer_info: PeerInfo) -> bool:
         """Connect to a peer.
-        
+
         Args:
             peer_info: Peer information
-            
+
         Returns:
             True if connection successful
         """
@@ -149,12 +158,15 @@ class PeerService(Service):
             with LoggingContext("peer_connect", peer_id=peer_id):
                 # Check if already connected
                 if peer_id in self.peers:
-                    self.logger.warning(f"Already connected to peer: {peer_id}")
+                    self.logger.warning("Already connected to peer: %s", peer_id)
                     return True
 
                 # Check connection limit
                 if self.active_connections >= self.max_peers:
-                    self.logger.warning(f"Connection limit reached: {self.max_connections}")
+                    self.logger.warning(
+                        "Connection limit reached: %s",
+                        self.max_peers,
+                    )
                     return False
 
                 # Create peer connection
@@ -169,17 +181,17 @@ class PeerService(Service):
                 self.active_connections += 1
                 self.total_connections += 1
 
-                self.logger.info(f"Connected to peer: {peer_id}")
+                self.logger.info("Connected to peer: %s", peer_id)
                 return True
 
-        except Exception as e:
+        except Exception:
             self.failed_connections += 1
-            self.logger.error(f"Failed to connect to peer {peer_id}: {e}")
+            self.logger.exception("Failed to connect to peer %s", peer_id)
             return False
 
     async def disconnect_peer(self, peer_id: str) -> None:
         """Disconnect a peer.
-        
+
         Args:
             peer_id: Peer identifier
         """
@@ -198,20 +210,20 @@ class PeerService(Service):
                     del self.peers[peer_id]
                     self.active_connections -= 1
 
-                    self.logger.info(f"Disconnected peer: {peer_id}")
+                    self.logger.info("Disconnected peer: %s", peer_id)
 
-        except Exception as e:
-            self.logger.error(f"Error disconnecting peer {peer_id}: {e}")
+        except Exception:
+            self.logger.exception("Error disconnecting peer %s", peer_id)
 
-    async def get_peer(self, peer_id: str) -> Optional[PeerConnection]:
+    async def get_peer(self, peer_id: str) -> PeerConnection | None:
         """Get peer connection by ID."""
         return self.peers.get(peer_id)
 
-    async def list_peers(self) -> List[PeerConnection]:
+    async def list_peers(self) -> list[PeerConnection]:
         """List all peer connections."""
         return list(self.peers.values())
 
-    async def get_peer_stats(self) -> Dict[str, Any]:
+    async def get_peer_stats(self) -> dict[str, Any]:
         """Get peer service statistics."""
         return {
             "active_peers": len(self.peers),
@@ -223,13 +235,19 @@ class PeerService(Service):
             "total_pieces_downloaded": self.total_pieces_downloaded,
             "total_pieces_uploaded": self.total_pieces_uploaded,
             "connection_success_rate": (
-                (self.total_connections - self.failed_connections) / max(self.total_connections, 1)
+                (self.total_connections - self.failed_connections)
+                / max(self.total_connections, 1)
             ),
         }
 
-    async def update_peer_activity(self, peer_id: str, bytes_sent: int = 0,
-                                 bytes_received: int = 0, pieces_downloaded: int = 0,
-                                 pieces_uploaded: int = 0) -> None:
+    async def update_peer_activity(
+        self,
+        peer_id: str,
+        bytes_sent: int = 0,
+        bytes_received: int = 0,
+        pieces_downloaded: int = 0,
+        pieces_uploaded: int = 0,
+    ) -> None:
         """Update peer activity statistics."""
         if peer_id in self.peers:
             connection = self.peers[peer_id]
@@ -239,16 +257,19 @@ class PeerService(Service):
             connection.pieces_downloaded += pieces_downloaded
             connection.pieces_uploaded += pieces_uploaded
 
-    async def get_best_peers(self, limit: int = 10) -> List[PeerConnection]:
+    async def get_best_peers(self, limit: int = 10) -> list[PeerConnection]:
         """Get the best performing peers."""
         peers = list(self.peers.values())
 
         # Sort by connection quality and activity
-        peers.sort(key=lambda p: (
-            p.connection_quality,
-            p.pieces_downloaded + p.pieces_uploaded,
-            p.last_activity,
-        ), reverse=True)
+        peers.sort(
+            key=lambda p: (
+                p.connection_quality,
+                p.pieces_downloaded + p.pieces_uploaded,
+                p.last_activity,
+            ),
+            reverse=True,
+        )
 
         return peers[:limit]
 

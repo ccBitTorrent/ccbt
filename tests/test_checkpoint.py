@@ -1,5 +1,4 @@
-"""
-Tests for checkpoint functionality.
+"""Tests for checkpoint functionality.
 
 Tests checkpoint save/load, resume validation, and CLI commands.
 """
@@ -83,7 +82,10 @@ class TestCheckpointManager:
     @pytest.mark.asyncio
     async def test_save_json_checkpoint(self, checkpoint_manager, sample_checkpoint):
         """Test saving checkpoint in JSON format."""
-        path = await checkpoint_manager.save_checkpoint(sample_checkpoint, CheckpointFormat.JSON)
+        path = await checkpoint_manager.save_checkpoint(
+            sample_checkpoint,
+            CheckpointFormat.JSON,
+        )
 
         assert path.exists()
         assert path.suffix == ".json"
@@ -102,11 +104,15 @@ class TestCheckpointManager:
     async def test_load_json_checkpoint(self, checkpoint_manager, sample_checkpoint):
         """Test loading checkpoint from JSON format."""
         # Save checkpoint first
-        await checkpoint_manager.save_checkpoint(sample_checkpoint, CheckpointFormat.JSON)
+        await checkpoint_manager.save_checkpoint(
+            sample_checkpoint,
+            CheckpointFormat.JSON,
+        )
 
         # Load checkpoint
         loaded_checkpoint = await checkpoint_manager.load_checkpoint(
-            sample_checkpoint.info_hash, CheckpointFormat.JSON,
+            sample_checkpoint.info_hash,
+            CheckpointFormat.JSON,
         )
 
         assert loaded_checkpoint is not None
@@ -119,7 +125,10 @@ class TestCheckpointManager:
     async def test_save_binary_checkpoint(self, checkpoint_manager, sample_checkpoint):
         """Test saving checkpoint in binary format."""
         try:
-            path = await checkpoint_manager.save_checkpoint(sample_checkpoint, CheckpointFormat.BINARY)
+            path = await checkpoint_manager.save_checkpoint(
+                sample_checkpoint,
+                CheckpointFormat.BINARY,
+            )
 
             assert path.exists()
             assert path.suffix in [".bin", ".gz"]
@@ -128,6 +137,7 @@ class TestCheckpointManager:
             with open(path, "rb") as f:
                 if path.suffix == ".gz":
                     import gzip
+
                     with gzip.open(path, "rb") as gz:
                         magic = gz.read(4)
                 else:
@@ -145,18 +155,24 @@ class TestCheckpointManager:
         """Test loading checkpoint from binary format."""
         try:
             # Save checkpoint first
-            await checkpoint_manager.save_checkpoint(sample_checkpoint, CheckpointFormat.BINARY)
+            await checkpoint_manager.save_checkpoint(
+                sample_checkpoint,
+                CheckpointFormat.BINARY,
+            )
 
             # Load checkpoint
             loaded_checkpoint = await checkpoint_manager.load_checkpoint(
-                sample_checkpoint.info_hash, CheckpointFormat.BINARY,
+                sample_checkpoint.info_hash,
+                CheckpointFormat.BINARY,
             )
 
             assert loaded_checkpoint is not None
             assert loaded_checkpoint.info_hash == sample_checkpoint.info_hash
             assert loaded_checkpoint.torrent_name == sample_checkpoint.torrent_name
             assert loaded_checkpoint.total_pieces == sample_checkpoint.total_pieces
-            assert loaded_checkpoint.verified_pieces == sample_checkpoint.verified_pieces
+            assert (
+                loaded_checkpoint.verified_pieces == sample_checkpoint.verified_pieces
+            )
         except CheckpointError as e:
             if "msgpack is required" in str(e):
                 pytest.skip("msgpack not available for binary checkpoint format")
@@ -167,7 +183,10 @@ class TestCheckpointManager:
     async def test_save_both_formats(self, checkpoint_manager, sample_checkpoint):
         """Test saving checkpoint in both formats."""
         try:
-            path = await checkpoint_manager.save_checkpoint(sample_checkpoint, CheckpointFormat.BOTH)
+            path = await checkpoint_manager.save_checkpoint(
+                sample_checkpoint,
+                CheckpointFormat.BOTH,
+            )
 
             # Should return JSON path
             assert path.suffix == ".json"
@@ -197,16 +216,27 @@ class TestCheckpointManager:
         """Test deleting checkpoint."""
         try:
             # Save checkpoint in both formats
-            await checkpoint_manager.save_checkpoint(sample_checkpoint, CheckpointFormat.BOTH)
+            await checkpoint_manager.save_checkpoint(
+                sample_checkpoint,
+                CheckpointFormat.BOTH,
+            )
 
             # Delete checkpoint
-            deleted = await checkpoint_manager.delete_checkpoint(sample_checkpoint.info_hash)
+            deleted = await checkpoint_manager.delete_checkpoint(
+                sample_checkpoint.info_hash,
+            )
 
             assert deleted is True
 
             # Verify files are deleted
-            json_path = checkpoint_manager._get_checkpoint_path(sample_checkpoint.info_hash, CheckpointFormat.JSON)
-            bin_path = checkpoint_manager._get_checkpoint_path(sample_checkpoint.info_hash, CheckpointFormat.BINARY)
+            json_path = checkpoint_manager._get_checkpoint_path(
+                sample_checkpoint.info_hash,
+                CheckpointFormat.JSON,
+            )
+            bin_path = checkpoint_manager._get_checkpoint_path(
+                sample_checkpoint.info_hash,
+                CheckpointFormat.BINARY,
+            )
 
             assert not json_path.exists()
             assert not bin_path.exists()
@@ -220,7 +250,10 @@ class TestCheckpointManager:
     async def test_list_checkpoints(self, checkpoint_manager, sample_checkpoint):
         """Test listing checkpoints."""
         # Save checkpoint
-        await checkpoint_manager.save_checkpoint(sample_checkpoint, CheckpointFormat.JSON)
+        await checkpoint_manager.save_checkpoint(
+            sample_checkpoint,
+            CheckpointFormat.JSON,
+        )
 
         # List checkpoints
         checkpoints = await checkpoint_manager.list_checkpoints()
@@ -228,19 +261,25 @@ class TestCheckpointManager:
         assert len(checkpoints) == 1
         assert isinstance(checkpoints[0], CheckpointFileInfo)
         assert checkpoints[0].info_hash == sample_checkpoint.info_hash
-        assert checkpoints[0].format == CheckpointFormat.JSON
+        assert checkpoints[0].checkpoint_format == CheckpointFormat.JSON
 
     @pytest.mark.asyncio
     async def test_cleanup_old_checkpoints(self, checkpoint_manager, sample_checkpoint):
         """Test cleaning up old checkpoints."""
         # Save checkpoint
-        await checkpoint_manager.save_checkpoint(sample_checkpoint, CheckpointFormat.JSON)
+        await checkpoint_manager.save_checkpoint(
+            sample_checkpoint,
+            CheckpointFormat.JSON,
+        )
 
         # Mock old timestamp
         old_time = time.time() - (31 * 24 * 60 * 60)  # 31 days ago
 
         # Modify file timestamp
-        json_path = checkpoint_manager._get_checkpoint_path(sample_checkpoint.info_hash, CheckpointFormat.JSON)
+        json_path = checkpoint_manager._get_checkpoint_path(
+            sample_checkpoint.info_hash,
+            CheckpointFormat.JSON,
+        )
         os.utime(json_path, (old_time, old_time))
 
         # Cleanup checkpoints older than 30 days
@@ -253,7 +292,10 @@ class TestCheckpointManager:
     async def test_checkpoint_stats(self, checkpoint_manager, sample_checkpoint):
         """Test checkpoint statistics."""
         # Save checkpoint
-        await checkpoint_manager.save_checkpoint(sample_checkpoint, CheckpointFormat.JSON)
+        await checkpoint_manager.save_checkpoint(
+            sample_checkpoint,
+            CheckpointFormat.JSON,
+        )
 
         # Get stats
         stats = checkpoint_manager.get_checkpoint_stats()
@@ -270,7 +312,10 @@ class TestCheckpointManager:
         """Test handling corrupted JSON checkpoint."""
         # Create corrupted JSON file
         info_hash = b"\x00" * 20
-        json_path = checkpoint_manager._get_checkpoint_path(info_hash, CheckpointFormat.JSON)
+        json_path = checkpoint_manager._get_checkpoint_path(
+            info_hash,
+            CheckpointFormat.JSON,
+        )
 
         with open(json_path, "w") as f:
             f.write('{"invalid": json}')  # Invalid JSON
@@ -283,10 +328,16 @@ class TestCheckpointManager:
     async def test_version_mismatch(self, checkpoint_manager, sample_checkpoint):
         """Test handling version mismatch."""
         # Save checkpoint
-        await checkpoint_manager.save_checkpoint(sample_checkpoint, CheckpointFormat.JSON)
+        await checkpoint_manager.save_checkpoint(
+            sample_checkpoint,
+            CheckpointFormat.JSON,
+        )
 
         # Modify version in JSON file
-        json_path = checkpoint_manager._get_checkpoint_path(sample_checkpoint.info_hash, CheckpointFormat.JSON)
+        json_path = checkpoint_manager._get_checkpoint_path(
+            sample_checkpoint.info_hash,
+            CheckpointFormat.JSON,
+        )
 
         with open(json_path) as f:
             data = json.load(f)
@@ -298,7 +349,10 @@ class TestCheckpointManager:
 
         # Try to load checkpoint with wrong version
         with pytest.raises(CheckpointError):
-            await checkpoint_manager.load_checkpoint(sample_checkpoint.info_hash, CheckpointFormat.JSON)
+            await checkpoint_manager.load_checkpoint(
+                sample_checkpoint.info_hash,
+                CheckpointFormat.JSON,
+            )
 
     @pytest.mark.asyncio
     async def test_disabled_checkpointing(self, temp_dir):
@@ -317,7 +371,7 @@ class TestCheckpointManager:
             total_pieces=10,
             piece_length=16384,
             total_length=163840,
-            output_dir="/tmp",
+            output_dir=tempfile.gettempdir(),
         )
 
         # Should raise error when trying to save
@@ -325,7 +379,9 @@ class TestCheckpointManager:
             await checkpoint_manager.save_checkpoint(sample_checkpoint)
 
         # Should return None when trying to load
-        checkpoint = await checkpoint_manager.load_checkpoint(sample_checkpoint.info_hash)
+        checkpoint = await checkpoint_manager.load_checkpoint(
+            sample_checkpoint.info_hash,
+        )
         assert checkpoint is None
 
 
@@ -359,7 +415,7 @@ class TestCheckpointIntegration:
         checkpoint = await piece_manager.get_checkpoint_state(
             "test_torrent",
             b"\x00" * 20,
-            "/tmp",
+            tempfile.gettempdir(),
         )
 
         assert checkpoint.torrent_name == "test_torrent"
@@ -390,7 +446,7 @@ class TestCheckpointIntegration:
         with patch("ccbt.file_assembler.DiskIOManager") as mock_disk_io:
             mock_disk_io.return_value = Mock()
 
-            file_assembler = AsyncFileAssembler(torrent_data, "/tmp")
+            file_assembler = AsyncFileAssembler(torrent_data, tempfile.gettempdir())
 
             # Create test checkpoint
             checkpoint = TorrentCheckpoint(
@@ -402,7 +458,7 @@ class TestCheckpointIntegration:
                 piece_length=16384,
                 total_length=16384,
                 verified_pieces=[0],
-                output_dir="/tmp",
+                output_dir=tempfile.gettempdir(),
                 files=[
                     FileCheckpoint(path="/tmp/test.bin", size=16384, exists=True),
                 ],

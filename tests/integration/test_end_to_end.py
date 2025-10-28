@@ -1,5 +1,4 @@
-"""
-End-to-end integration tests for ccBitTorrent.
+"""End-to-end integration tests for ccBitTorrent.
 
 Tests complete workflows from torrent parsing to download completion.
 """
@@ -30,6 +29,7 @@ class TestEndToEnd:
         try:
             import asyncio
             import gc
+
             # Give a moment for cleanup
             loop = asyncio.get_event_loop()
             if loop.is_running():
@@ -83,6 +83,7 @@ class TestEndToEnd:
 
         # Use proper bencode encoding instead of manual bytestring
         from ccbt.bencode import encode
+
         torrent_data = {
             "announce": "http://tracker.example.com/announce",
             "info": {
@@ -110,6 +111,7 @@ class TestEndToEnd:
         """Test session management integration."""
         # Clean up any existing checkpoints to ensure fresh state
         import shutil
+
         checkpoint_dir = Path(".ccbt/checkpoints")
         if checkpoint_dir.exists():
             shutil.rmtree(checkpoint_dir, ignore_errors=True)
@@ -122,11 +124,14 @@ class TestEndToEnd:
             await session_manager.start()
 
             # Add torrent session
-            info_hash = await session_manager.add_torrent(sample_torrent_data, resume=False)
+            info_hash = await session_manager.add_torrent(
+                sample_torrent_data,
+                resume=False,
+            )
 
             assert info_hash is not None
             assert len(session_manager.torrents) == 1
-            session = list(session_manager.torrents.values())[0]
+            session = next(iter(session_manager.torrents.values()))
             assert session.info.name == "test_torrent"
             # Session automatically starts and goes to downloading state
             assert session.info.status in ["starting", "downloading"]
@@ -155,6 +160,7 @@ class TestEndToEnd:
 
         # Emit test event
         from ccbt.events import emit_peer_connected
+
         await emit_peer_connected("192.168.1.1", 6881, "test_peer_id")
 
         # Wait for event processing
@@ -172,10 +178,10 @@ class TestEndToEnd:
         # Load logging plugin
         from ccbt.plugins.logging_plugin import LoggingPlugin
 
-        plugin = LoggingPlugin()
+        LoggingPlugin()
         plugin_name = await plugin_manager.load_plugin(LoggingPlugin)
 
-        assert plugin_name == "logging_plugin"
+        assert plugin_name == "LoggingPlugin"
         assert plugin_manager.get_plugin(plugin_name) is not None
 
         # Start plugin
@@ -220,7 +226,12 @@ class TestEndToEnd:
         assert service_info.state.value == "stopped"
 
     @pytest.mark.asyncio
-    async def test_complete_workflow_integration(self, temp_dir, sample_torrent_data, event_bus):
+    async def test_complete_workflow_integration(
+        self,
+        temp_dir,
+        sample_torrent_data,
+        event_bus,
+    ):
         """Test complete workflow integration."""
         # Start event bus
         await event_bus.start()
@@ -233,10 +244,13 @@ class TestEndToEnd:
             await session_manager.start()
 
             # Add torrent session
-            info_hash = await session_manager.add_torrent(sample_torrent_data, resume=False)
+            await session_manager.add_torrent(
+                sample_torrent_data,
+                resume=False,
+            )
 
             # Get the session object
-            session = list(session_manager.torrents.values())[0]
+            session = next(iter(session_manager.torrents.values()))
 
             # Start session
             await session.start()
@@ -276,10 +290,13 @@ class TestEndToEnd:
             await session_manager.start()
 
             # Add invalid torrent - should succeed but checkpoint operations should fail
-            info_hash = await session_manager.add_torrent(invalid_torrent_data, resume=False)
+            await session_manager.add_torrent(
+                invalid_torrent_data,
+                resume=False,
+            )
 
             # Get the session object
-            session = list(session_manager.torrents.values())[0]
+            session = next(iter(session_manager.torrents.values()))
 
             # Start session - should succeed but log validation errors
             await session.start()
@@ -311,7 +328,9 @@ class TestEndToEnd:
                 )
 
                 await session_manager.add_torrent(torrent_data, resume=False)
-                session = list(session_manager.torrents.values())[-1]  # Get the last added session
+                session = list(session_manager.torrents.values())[
+                    -1
+                ]  # Get the last added session
                 sessions.append(session)
 
             # Check all sessions are created
@@ -345,10 +364,13 @@ class TestEndToEnd:
             await session_manager.start()
 
             # Add torrent session
-            info_hash = await session_manager.add_torrent(sample_torrent_data, resume=False)
+            await session_manager.add_torrent(
+                sample_torrent_data,
+                resume=False,
+            )
 
             # Get the session object
-            session = list(session_manager.torrents.values())[0]
+            session = next(iter(session_manager.torrents.values()))
 
             # Start session
             await session.start()
@@ -372,10 +394,13 @@ class TestEndToEnd:
             await session_manager.start()
 
             # Add torrent session
-            info_hash = await session_manager.add_torrent(sample_torrent_data, resume=False)
+            await session_manager.add_torrent(
+                sample_torrent_data,
+                resume=False,
+            )
 
             # Get the session object
-            session = list(session_manager.torrents.values())[0]
+            session = next(iter(session_manager.torrents.values()))
 
             # Start session
             start_time = asyncio.get_event_loop().time()

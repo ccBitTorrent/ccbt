@@ -5,20 +5,22 @@ peer lists and announce the client's presence in the swarm with concurrent
 announces and optimized HTTP handling.
 """
 
+from __future__ import annotations
+
 import asyncio
+import contextlib
 import logging
-import random
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import aiohttp
 
-from .bencode import BencodeDecoder
-from .config import get_config
+from ccbt.bencode import BencodeDecoder
+from ccbt.config import get_config
 
 
 class TrackerError(Exception):
@@ -28,23 +30,25 @@ class TrackerError(Exception):
 @dataclass
 class TrackerResponse:
     """Tracker response data."""
+
     interval: int
-    peers: List[Dict[str, Any]]
-    complete: Optional[int] = None
-    incomplete: Optional[int] = None
-    download_url: Optional[str] = None
-    tracker_id: Optional[str] = None
-    warning_message: Optional[str] = None
+    peers: list[dict[str, Any]]
+    complete: int | None = None
+    incomplete: int | None = None
+    download_url: str | None = None
+    tracker_id: str | None = None
+    warning_message: str | None = None
 
 
 @dataclass
 class TrackerSession:
     """Tracker session state."""
+
     url: str
     last_announce: float = 0.0
     interval: int = 1800
-    min_interval: Optional[int] = None
-    tracker_id: Optional[str] = None
+    min_interval: int | None = None
+    tracker_id: str | None = None
     failure_count: int = 0
     last_failure: float = 0.0
     backoff_delay: float = 1.0
@@ -64,13 +68,13 @@ class AsyncTrackerClient:
         self.user_agent = "ccBitTorrent/0.1.0"
 
         # HTTP session
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
 
         # Tracker sessions
-        self.sessions: Dict[str, TrackerSession] = {}
+        self.sessions: dict[str, TrackerSession] = {}
 
         # Background tasks
-        self._announce_task: Optional[asyncio.Task] = None
+        self._announce_task: asyncio.Task | None = None
 
         self.logger = logging.getLogger(__name__)
 
@@ -101,19 +105,23 @@ class AsyncTrackerClient:
         """Stop the async tracker client."""
         if self._announce_task:
             self._announce_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._announce_task
-            except asyncio.CancelledError:
-                pass
 
         if self.session:
             await self.session.close()
 
         self.logger.info("Async tracker client stopped")
 
-    async def announce(self, torrent_data: Dict[str, Any], port: int = 6881,
-                      uploaded: int = 0, downloaded: int = 0, left: Optional[int] = None,
-                      event: str = "started") -> TrackerResponse:
+    async def announce(
+        self,
+        torrent_data: dict[str, Any],
+        port: int = 6881,
+        uploaded: int = 0,
+        downloaded: int = 0,
+        left: int | None = None,
+        event: str = "started",
+    ) -> TrackerResponse:
         """Announce to the tracker and get peer list asynchronously.
 
         Args:
@@ -131,7 +139,8 @@ class AsyncTrackerClient:
             TrackerError: If tracker communication fails
         """
         if not self.session:
-            raise TrackerError("Tracker client not started")
+            msg = "Tracker client not started"
+            raise TrackerError(msg)
 
         try:
             # Generate peer ID if not already present
@@ -163,16 +172,23 @@ class AsyncTrackerClient:
             # Update tracker session
             self._update_tracker_session(torrent_data["announce"], response)
 
-            return response
-
         except Exception as e:
             self._handle_tracker_failure(torrent_data["announce"])
-            raise TrackerError(f"Tracker announce failed: {e}")
+            msg = f"Tracker announce failed: {e}"
+            raise TrackerError(msg) from e
+        else:
+            return response
 
-    async def announce_to_multiple(self, torrent_data: Dict[str, Any],
-                                 tracker_urls: List[str], port: int = 6881,
-                                 uploaded: int = 0, downloaded: int = 0,
-                                 left: Optional[int] = None, event: str = "started") -> List[TrackerResponse]:
+    async def announce_to_multiple(
+        self,
+        torrent_data: dict[str, Any],
+        tracker_urls: list[str],
+        port: int = 6881,
+        uploaded: int = 0,
+        downloaded: int = 0,
+        left: int | None = None,
+        event: str = "started",
+    ) -> list[TrackerResponse]:
         """Announce to multiple trackers concurrently.
 
         Args:
@@ -188,7 +204,8 @@ class AsyncTrackerClient:
             List of successful tracker responses
         """
         if not self.session:
-            raise TrackerError("Tracker client not started")
+            msg = "Tracker client not started"
+            raise TrackerError(msg)
 
         # Create announce tasks for all trackers
         tasks = []
@@ -198,7 +215,14 @@ class AsyncTrackerClient:
             torrent_copy["announce"] = url
 
             task = asyncio.create_task(
-                self._announce_to_tracker(torrent_copy, port, uploaded, downloaded, left, event),
+                self._announce_to_tracker(
+                    torrent_copy,
+                    port,
+                    uploaded,
+                    downloaded,
+                    left,
+                    event,
+                ),
             )
             tasks.append(task)
 
@@ -211,29 +235,56 @@ class AsyncTrackerClient:
             if isinstance(result, TrackerResponse):
                 successful_responses.append(result)
             elif isinstance(result, Exception):
-                self.logger.warning(f"Tracker announce failed: {result}")
+                self.logger.warning("Tracker announce failed: %s", result)
 
         return successful_responses
 
-    async def _announce_to_tracker(self, torrent_data: Dict[str, Any], port: int,
-                                 uploaded: int, downloaded: int, left: Optional[int],
-                                 event: str) -> TrackerResponse:
+    async def _announce_to_tracker(
+        self,
+        torrent_data: dict[str, Any],
+        port: int,
+        uploaded: int,
+        downloaded: int,
+        left: int | None,
+        event: str,
+    ) -> TrackerResponse:
         """Announce to a single tracker."""
         try:
-            return await self.announce(torrent_data, port, uploaded, downloaded, left, event)
+            return await self.announce(
+                torrent_data,
+                port,
+                uploaded,
+                downloaded,
+                left,
+                event,
+            )
         except Exception as e:
-            self.logger.warning(f"Failed to announce to {torrent_data['announce']}: {e}")
+            self.logger.warning(
+                "Failed to announce to %s: %s",
+                torrent_data["announce"],
+                e,
+            )
             raise
 
     def _generate_peer_id(self) -> bytes:
         """Generate a unique peer ID for this client."""
         # Use format: -CC0101- followed by 12 random bytes
-        random_bytes = bytes(random.getrandbits(8) for _ in range(12))
+        import secrets
+
+        random_bytes = secrets.token_bytes(12)
         return self.peer_id_prefix + random_bytes
 
-    def _build_tracker_url(self, base_url: str, info_hash: bytes, peer_id: bytes,
-                          port: int, uploaded: int, downloaded: int, left: int,
-                          event: str) -> str:
+    def _build_tracker_url(
+        self,
+        base_url: str,
+        info_hash: bytes,
+        peer_id: bytes,
+        port: int,
+        uploaded: int,
+        downloaded: int,
+        left: int,
+        event: str,
+    ) -> str:
         """Build the complete tracker URL with all required parameters.
 
         Args:
@@ -275,17 +326,23 @@ class AsyncTrackerClient:
 
     async def _make_request_async(self, url: str) -> bytes:
         """Make async HTTP GET request to tracker."""
+        if self.session is None:
+            msg = "HTTP session not initialized"
+            raise RuntimeError(msg)
         try:
             async with self.session.get(url) as response:
                 if response.status != 200:
-                    raise TrackerError(f"HTTP {response.status}: {response.reason}")
+                    msg = f"HTTP {response.status}: {response.reason}"
+                    raise TrackerError(msg)
 
                 return await response.read()
 
         except aiohttp.ClientError as e:
-            raise TrackerError(f"Network error: {e}")
+            msg = f"Network error: {e}"
+            raise TrackerError(msg) from e
         except Exception as e:
-            raise TrackerError(f"Request failed: {e}")
+            msg = f"Request failed: {e}"
+            raise TrackerError(msg) from e
 
     def _update_tracker_session(self, url: str, response: TrackerResponse) -> None:
         """Update tracker session with response data."""
@@ -328,14 +385,17 @@ class AsyncTrackerClient:
             # Check for failure reason
             if b"failure reason" in decoded:
                 reason = decoded[b"failure reason"].decode("utf-8", errors="ignore")
-                raise TrackerError(f"Tracker failure: {reason}")
+                msg = f"Tracker failure: {reason}"
+                raise TrackerError(msg)
 
             # Validate required fields
             if b"interval" not in decoded:
-                raise TrackerError("Missing interval in tracker response")
+                msg = "Missing interval in tracker response"
+                raise TrackerError(msg)
 
             if b"peers" not in decoded:
-                raise TrackerError("Missing peers in tracker response")
+                msg = "Missing peers in tracker response"
+                raise TrackerError(msg)
 
             # Extract basic fields
             interval = decoded[b"interval"]
@@ -375,9 +435,10 @@ class AsyncTrackerClient:
         except Exception as e:
             if isinstance(e, TrackerError):
                 raise
-            raise TrackerError(f"Failed to parse tracker response: {e}")
+            msg = f"Failed to parse tracker response: {e}"
+            raise TrackerError(msg) from e
 
-    def _parse_compact_peers(self, peers_data: bytes) -> List[Dict[str, Any]]:
+    def _parse_compact_peers(self, peers_data: bytes) -> list[dict[str, Any]]:
         """Parse compact peer format.
 
         In compact format, peers are encoded as 6 bytes per peer:
@@ -394,14 +455,17 @@ class AsyncTrackerClient:
             TrackerError: If peer data is invalid
         """
         if len(peers_data) % 6 != 0:
-            raise TrackerError(f"Invalid compact peer data length: {len(peers_data)} bytes")
+            msg = f"Invalid compact peer data length: {len(peers_data)} bytes"
+            raise TrackerError(
+                msg,
+            )
 
         peers = []
         num_peers = len(peers_data) // 6
 
         for i in range(num_peers):
             start = i * 6
-            peer_bytes = peers_data[start:start + 6]
+            peer_bytes = peers_data[start : start + 6]
 
             # Extract IP (4 bytes)
             ip_bytes = peer_bytes[0:4]
@@ -411,14 +475,16 @@ class AsyncTrackerClient:
             port_bytes = peer_bytes[4:6]
             port = int.from_bytes(port_bytes, byteorder="big")
 
-            peers.append({
-                "ip": ip,
-                "port": port,
-            })
+            peers.append(
+                {
+                    "ip": ip,
+                    "port": port,
+                },
+            )
 
         return peers
 
-    async def scrape(self, torrent_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def scrape(self, _torrent_data: dict[str, Any]) -> dict[str, Any]:
         """Scrape tracker for statistics asynchronously (if supported).
 
         Note: Not all trackers support scraping.
@@ -449,19 +515,29 @@ class TrackerClient:
         self.user_agent = "ccBitTorrent/0.1.0"
 
         # Tracker sessions
-        self.sessions: Dict[str, TrackerSession] = {}
+        self.sessions: dict[str, TrackerSession] = {}
 
         self.logger = logging.getLogger(__name__)
 
     def _generate_peer_id(self) -> bytes:
         """Generate a unique peer ID."""
-        import random
-        random_part = "".join(random.choice("0123456789abcdef") for _ in range(12))
+        import secrets
+
+        random_part = "".join(secrets.choice("0123456789abcdef") for _ in range(12))
         return self.peer_id_prefix + random_part.encode("utf-8")
 
-    def _build_tracker_url(self, announce_url: str, info_hash: bytes, peer_id: bytes,
-                          port: int, uploaded: int = 0, downloaded: int = 0,
-                          left: int = 0, event: str = "", compact: int = 1) -> str:
+    def _build_tracker_url(
+        self,
+        announce_url: str,
+        info_hash: bytes,
+        peer_id: bytes,
+        port: int,
+        uploaded: int = 0,
+        downloaded: int = 0,
+        left: int = 0,
+        event: str = "",
+        compact: int = 1,
+    ) -> str:
         """Build tracker URL with parameters."""
         params = {
             "info_hash": info_hash,
@@ -478,10 +554,9 @@ class TrackerClient:
 
         # Build query string
         query_parts = []
-        for key, value in params.items():
-            if isinstance(value, bytes):
-                value = value.hex()
-            query_parts.append(f"{key}={value}")
+        for key, param_val in params.items():
+            value_str = param_val.hex() if isinstance(param_val, bytes) else param_val
+            query_parts.append(f"{key}={value_str}")
 
         query_string = "&".join(query_parts)
         separator = "&" if "?" in announce_url else "?"
@@ -494,16 +569,26 @@ class TrackerClient:
             req = urllib.request.Request(url)
             req.add_header("User-Agent", "ccBitTorrent/0.1.0")
 
-            with urllib.request.urlopen(req) as response:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https"):
+                msg = f"Unsupported URL scheme: {parsed.scheme}"
+                raise ValueError(msg)
+
+            with urllib.request.urlopen(req) as response:  # nosec S310 - scheme validated
                 return response.read()
         except urllib.error.HTTPError as e:
-            raise TrackerError(f"HTTP {e.code}")
+            msg = f"HTTP {e.code}"
+            raise TrackerError(msg) from e
         except urllib.error.URLError as e:
-            raise TrackerError(f"Network error: {e}")
+            msg = f"Network error: {e}"
+            raise TrackerError(msg) from e
         except Exception as e:
-            raise TrackerError(f"Request failed: {e}")
+            msg = f"Request failed: {e}"
+            raise TrackerError(msg) from e
 
-    def _parse_response(self, response_data: bytes) -> Dict[str, Any]:
+    def _parse_response(self, response_data: bytes) -> dict[str, Any]:
         """Parse tracker response."""
         try:
             # Decode bencoded response
@@ -512,15 +597,21 @@ class TrackerClient:
 
             # Check for failure reason
             if b"failure reason" in decoded:
-                failure_reason = decoded[b"failure reason"].decode("utf-8", errors="ignore")
-                raise TrackerError(f"Tracker failure: {failure_reason}")
+                failure_reason = decoded[b"failure reason"].decode(
+                    "utf-8",
+                    errors="ignore",
+                )
+                msg = f"Tracker failure: {failure_reason}"
+                raise TrackerError(msg)
 
             # Validate required fields
             if b"interval" not in decoded:
-                raise TrackerError("Missing interval in tracker response")
+                msg = "Missing interval in tracker response"
+                raise TrackerError(msg)
 
             if b"peers" not in decoded:
-                raise TrackerError("Missing peers in tracker response")
+                msg = "Missing peers in tracker response"
+                raise TrackerError(msg)
 
             # Extract response data
             interval = decoded[b"interval"]
@@ -536,7 +627,10 @@ class TrackerClient:
                     # Dictionary format
                     for peer_info in peers_data:
                         if isinstance(peer_info, dict):
-                            peer_ip = peer_info.get(b"ip", b"").decode("utf-8", errors="ignore")
+                            peer_ip = peer_info.get(b"ip", b"").decode(
+                                "utf-8",
+                                errors="ignore",
+                            )
                             peer_port = peer_info.get(b"port", 0)
                             if peer_ip and peer_port:
                                 peers.append({"ip": peer_ip, "port": peer_port})
@@ -544,10 +638,26 @@ class TrackerClient:
             # Optional fields
             complete = decoded.get(b"complete")
             incomplete = decoded.get(b"incomplete")
-            download_url = decoded.get(b"download_url", b"").decode("utf-8", errors="ignore") if b"download_url" in decoded else None
-            tracker_id = decoded.get(b"tracker id", b"").decode("utf-8", errors="ignore") if b"tracker id" in decoded else None
-            warning_message = decoded.get(b"warning message", b"").decode("utf-8", errors="ignore") if b"warning message" in decoded else None
+            download_url = (
+                decoded.get(b"download_url", b"").decode("utf-8", errors="ignore")
+                if b"download_url" in decoded
+                else None
+            )
+            tracker_id = (
+                decoded.get(b"tracker id", b"").decode("utf-8", errors="ignore")
+                if b"tracker id" in decoded
+                else None
+            )
+            warning_message = (
+                decoded.get(b"warning message", b"").decode("utf-8", errors="ignore")
+                if b"warning message" in decoded
+                else None
+            )
 
+        except Exception as e:
+            msg = f"Failed to parse tracker response: {e}"
+            raise TrackerError(msg) from e
+        else:
             return {
                 "interval": interval,
                 "peers": peers,
@@ -558,17 +668,15 @@ class TrackerClient:
                 "warning_message": warning_message,
             }
 
-        except Exception as e:
-            raise TrackerError(f"Failed to parse tracker response: {e}")
-
-    def _parse_compact_peers(self, peers_data: bytes) -> List[Dict[str, Any]]:
+    def _parse_compact_peers(self, peers_data: bytes) -> list[dict[str, Any]]:
         """Parse compact peer format (4 bytes IP + 2 bytes port)."""
         if len(peers_data) % 6 != 0:
-            raise TrackerError(f"Invalid compact peers data length: {len(peers_data)}")
+            msg = f"Invalid compact peers data length: {len(peers_data)}"
+            raise TrackerError(msg)
 
         peers = []
         for i in range(0, len(peers_data), 6):
-            peer_bytes = peers_data[i:i+6]
+            peer_bytes = peers_data[i : i + 6]
             ip_bytes = peer_bytes[0:4]
             port_bytes = peer_bytes[4:6]
 
@@ -582,7 +690,7 @@ class TrackerClient:
 
         return peers
 
-    def _update_tracker_session(self, url: str, response: Dict[str, Any]) -> None:
+    def _update_tracker_session(self, url: str, response: dict[str, Any]) -> None:
         """Update tracker session with response data."""
         if url not in self.sessions:
             self.sessions[url] = TrackerSession(url=url)
@@ -603,9 +711,15 @@ class TrackerClient:
         session.last_failure = time.time()
         session.backoff_delay = min(session.backoff_delay * 2, 300)  # Max 5 minutes
 
-    def announce(self, torrent_data: Dict[str, Any], port: int = 6881,
-                uploaded: int = 0, downloaded: int = 0, left: Optional[int] = None,
-                event: str = "started") -> Dict[str, Any]:
+    def announce(
+        self,
+        torrent_data: dict[str, Any],
+        port: int = 6881,
+        uploaded: int = 0,
+        downloaded: int = 0,
+        left: int | None = None,
+        event: str = "started",
+    ) -> dict[str, Any]:
         """Announce to the tracker and get peer list.
 
         Args:
@@ -652,8 +766,6 @@ class TrackerClient:
             # Update tracker session
             self._update_tracker_session(torrent_data["announce"], response)
 
-            return response
-
         except TrackerError:
             # Update failure count and re-raise
             self._handle_tracker_failure(torrent_data["announce"])
@@ -661,4 +773,7 @@ class TrackerClient:
         except Exception as e:
             # Handle unexpected errors
             self._handle_tracker_failure(torrent_data["announce"])
-            raise TrackerError(f"Tracker announce failed: {e}")
+            msg = f"Tracker announce failed: {e}"
+            raise TrackerError(msg) from e
+        else:
+            return response

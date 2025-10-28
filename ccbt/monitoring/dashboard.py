@@ -1,5 +1,7 @@
 """Dashboard Manager for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides comprehensive dashboard functionality including:
 - Real-time metrics display
 - Grafana dashboard templates
@@ -8,24 +10,63 @@ Provides comprehensive dashboard functionality including:
 - Alert integration
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
+import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
-from ..events import Event, EventType, emit_event
-from typing import TYPE_CHECKING
+from ccbt.events import Event, EventType, emit_event
+
+logger = logging.getLogger(__name__)
+MIN_MAGNET_PARTS = 2
+
+
+class TorrentFileNotFoundError(ValueError):
+    """Torrent file not found error."""
+
+    def __init__(self, file_path: str):
+        """Initialize torrent file not found error."""
+        super().__init__(f"Torrent file not found: {file_path}")
+
+
+class InvalidTorrentExtensionError(ValueError):
+    """Invalid torrent file extension error."""
+
+    def __init__(self, file_path: str):
+        """Initialize invalid torrent extension error."""
+        super().__init__(f"File must have .torrent extension: {file_path}")
+
+
+class InvalidMagnetFormatError(ValueError):
+    """Invalid magnet link format error."""
+
+    def __init__(self):
+        """Initialize invalid magnet format error."""
+        super().__init__("Invalid magnet link format - must start with 'magnet:?'")
+
+
+class MissingBtihError(ValueError):
+    """Missing btih parameter error."""
+
+    def __init__(self):
+        """Initialize missing btih error."""
+        super().__init__("Invalid magnet link - missing 'xt=urn:btih:' parameter")
+
 
 if TYPE_CHECKING:
-    from ..session import AsyncSessionManager
+    from ccbt.session import AsyncSessionManager
 
 
 class DashboardType(Enum):
     """Dashboard types."""
+
     OVERVIEW = "overview"
     PERFORMANCE = "performance"
     NETWORK = "network"
@@ -36,6 +77,7 @@ class DashboardType(Enum):
 
 class WidgetType(Enum):
     """Widget types."""
+
     METRIC = "metric"
     GRAPH = "graph"
     TABLE = "table"
@@ -47,11 +89,12 @@ class WidgetType(Enum):
 @dataclass
 class Widget:
     """Dashboard widget."""
+
     id: str
     type: WidgetType
     title: str
-    position: Dict[str, int]  # x, y, width, height
-    config: Dict[str, Any] = field(default_factory=dict)
+    position: dict[str, int]  # x, y, width, height
+    config: dict[str, Any] = field(default_factory=dict)
     refresh_interval: int = 5  # seconds
     enabled: bool = True
 
@@ -59,11 +102,12 @@ class Widget:
 @dataclass
 class Dashboard:
     """Dashboard definition."""
+
     id: str
     name: str
     type: DashboardType
     description: str
-    widgets: List[Widget] = field(default_factory=list)
+    widgets: list[Widget] = field(default_factory=list)
     refresh_interval: int = 5  # seconds
     enabled: bool = True
     created_at: float = 0.0
@@ -73,25 +117,30 @@ class Dashboard:
 @dataclass
 class DashboardData:
     """Dashboard data."""
+
     dashboard_id: str
     timestamp: float
-    data: Dict[str, Any]
+    data: dict[str, Any]
 
 
 class DashboardManager:
     """Dashboard management system."""
 
+    # Constants for magnet link validation
+    MIN_MAGNET_PARTS = 2
+
     def __init__(self):
-        self.dashboards: Dict[str, Dashboard] = {}
-        self.dashboard_data: Dict[str, DashboardData] = {}
-        self.data_sources: Dict[str, Any] = {}
+        """Initialize the dashboard manager."""
+        self.dashboards: dict[str, Dashboard] = {}
+        self.dashboard_data: dict[str, DashboardData] = {}
+        self.data_sources: dict[str, Any] = {}
 
         # Real-time data
-        self.real_time_data: Dict[str, Any] = {}
-        self.data_subscribers: Dict[str, List[callable]] = defaultdict(list)
+        self.real_time_data: dict[str, Any] = {}
+        self.data_subscribers: dict[str, list[Callable]] = defaultdict(list)
 
         # Dashboard templates
-        self.templates: Dict[DashboardType, Dashboard] = {}
+        self.templates: dict[DashboardType, Dashboard] = {}
 
         # Statistics
         self.stats = {
@@ -104,8 +153,13 @@ class DashboardManager:
         # Initialize default templates
         self._initialize_templates()
 
-    def create_dashboard(self, name: str, dashboard_type: DashboardType,
-                        description: str = "", widgets: Optional[List[Widget]] = None) -> str:
+    def create_dashboard(
+        self,
+        name: str,
+        dashboard_type: DashboardType,
+        description: str = "",
+        widgets: list[Widget] | None = None,
+    ) -> str:
         """Create a new dashboard."""
         dashboard_id = f"dashboard_{int(time.time())}"
 
@@ -123,15 +177,20 @@ class DashboardManager:
         self.stats["dashboards_created"] += 1
 
         # Emit dashboard created event
-        asyncio.create_task(emit_event(Event(
-            event_type=EventType.DASHBOARD_CREATED.value,
-            data={
-                "dashboard_id": dashboard_id,
-                "name": name,
-                "type": dashboard_type.value,
-                "timestamp": time.time(),
-            },
-        )))
+        task = asyncio.create_task(
+            emit_event(
+                Event(
+                    event_type=EventType.DASHBOARD_CREATED.value,
+                    data={
+                        "dashboard_id": dashboard_id,
+                        "name": name,
+                        "type": dashboard_type.value,
+                        "timestamp": time.time(),
+                    },
+                ),
+            ),
+        )
+        task.add_done_callback(lambda _t: None)  # Discard task reference
 
         return dashboard_id
 
@@ -147,15 +206,20 @@ class DashboardManager:
         self.stats["widgets_created"] += 1
 
         # Emit widget added event
-        asyncio.create_task(emit_event(Event(
-            event_type=EventType.WIDGET_ADDED.value,
-            data={
-                "dashboard_id": dashboard_id,
-                "widget_id": widget.id,
-                "type": widget.type.value,
-                "timestamp": time.time(),
-            },
-        )))
+        task = asyncio.create_task(
+            emit_event(
+                Event(
+                    event_type=EventType.WIDGET_ADDED.value,
+                    data={
+                        "dashboard_id": dashboard_id,
+                        "widget_id": widget.id,
+                        "type": widget.type.value,
+                        "timestamp": time.time(),
+                    },
+                ),
+            ),
+        )
+        task.add_done_callback(lambda _t: None)  # Discard task reference
 
         return True
 
@@ -169,18 +233,28 @@ class DashboardManager:
         dashboard.updated_at = time.time()
 
         # Emit widget removed event
-        asyncio.create_task(emit_event(Event(
-            event_type=EventType.WIDGET_REMOVED.value,
-            data={
-                "dashboard_id": dashboard_id,
-                "widget_id": widget_id,
-                "timestamp": time.time(),
-            },
-        )))
+        task = asyncio.create_task(
+            emit_event(
+                Event(
+                    event_type=EventType.WIDGET_REMOVED.value,
+                    data={
+                        "dashboard_id": dashboard_id,
+                        "widget_id": widget_id,
+                        "timestamp": time.time(),
+                    },
+                ),
+            ),
+        )
+        task.add_done_callback(lambda _t: None)  # Discard task reference
 
         return True
 
-    def update_widget(self, dashboard_id: str, widget_id: str, updates: Dict[str, Any]) -> bool:
+    def update_widget(
+        self,
+        dashboard_id: str,
+        widget_id: str,
+        updates: dict[str, Any],
+    ) -> bool:
         """Update widget configuration."""
         if dashboard_id not in self.dashboards:
             return False
@@ -195,33 +269,42 @@ class DashboardManager:
                 dashboard.updated_at = time.time()
 
                 # Emit widget updated event
-                asyncio.create_task(emit_event(Event(
-                    event_type=EventType.WIDGET_UPDATED.value,
-                    data={
-                        "dashboard_id": dashboard_id,
-                        "widget_id": widget_id,
-                        "updates": updates,
-                        "timestamp": time.time(),
-                    },
-                )))
+                task = asyncio.create_task(
+                    emit_event(
+                        Event(
+                            event_type=EventType.WIDGET_UPDATED.value,
+                            data={
+                                "dashboard_id": dashboard_id,
+                                "widget_id": widget_id,
+                                "updates": updates,
+                                "timestamp": time.time(),
+                            },
+                        ),
+                    ),
+                )
+                task.add_done_callback(lambda _t: None)  # Discard task reference
 
                 return True
 
         return False
 
-    def get_dashboard(self, dashboard_id: str) -> Optional[Dashboard]:
+    def get_dashboard(self, dashboard_id: str) -> Dashboard | None:
         """Get dashboard by ID."""
         return self.dashboards.get(dashboard_id)
 
-    def get_all_dashboards(self) -> Dict[str, Dashboard]:
+    def get_all_dashboards(self) -> dict[str, Dashboard]:
         """Get all dashboards."""
         return self.dashboards.copy()
 
-    def get_dashboard_data(self, dashboard_id: str) -> Optional[DashboardData]:
+    def get_dashboard_data(self, dashboard_id: str) -> DashboardData | None:
         """Get dashboard data."""
         return self.dashboard_data.get(dashboard_id)
 
-    def update_dashboard_data(self, dashboard_id: str, data: Dict[str, Any]) -> None:
+    async def update_dashboard_data(
+        self,
+        dashboard_id: str,
+        data: dict[str, Any],
+    ) -> None:
         """Update dashboard data."""
         dashboard_data = DashboardData(
             dashboard_id=dashboard_id,
@@ -234,31 +317,44 @@ class DashboardManager:
 
         # Notify subscribers
         if dashboard_id in self.data_subscribers:
-            for subscriber in self.data_subscribers[dashboard_id]:
+
+            async def _notify_subscriber(subscriber, dashboard_data):
+                """Notify a single subscriber safely."""
                 try:
                     if asyncio.iscoroutinefunction(subscriber):
-                        asyncio.create_task(subscriber(dashboard_data))
+                        task = asyncio.create_task(subscriber(dashboard_data))
+                        task.add_done_callback(
+                            lambda _t: None
+                        )  # Discard task reference
                     else:
                         subscriber(dashboard_data)
                 except Exception as e:
                     # Emit subscriber error event
-                    asyncio.create_task(emit_event(Event(
-                        event_type=EventType.DASHBOARD_ERROR.value,
-                        data={
-                            "error": f"Subscriber error: {e!s}",
-                            "dashboard_id": dashboard_id,
-                            "timestamp": time.time(),
-                        },
-                    )))
+                    task = asyncio.create_task(
+                        emit_event(
+                            Event(
+                                event_type=EventType.DASHBOARD_ERROR.value,
+                                data={
+                                    "error": f"Subscriber error: {e!s}",
+                                    "dashboard_id": dashboard_id,
+                                    "timestamp": time.time(),
+                                },
+                            ),
+                        ),
+                    )
+                    task.add_done_callback(lambda _t: None)  # Discard task reference
+
+            for subscriber in self.data_subscribers[dashboard_id]:
+                await _notify_subscriber(subscriber, dashboard_data)
 
         self.stats["data_updates"] += 1
 
-    def subscribe_to_dashboard(self, dashboard_id: str, callback: callable) -> None:
+    def subscribe_to_dashboard(self, dashboard_id: str, callback: Callable) -> None:
         """Subscribe to dashboard data updates."""
         self.data_subscribers[dashboard_id].append(callback)
         self.stats["subscribers"] += 1
 
-    def unsubscribe_from_dashboard(self, dashboard_id: str, callback: callable) -> None:
+    def unsubscribe_from_dashboard(self, dashboard_id: str, callback: Callable) -> None:
         """Unsubscribe from dashboard data updates."""
         if dashboard_id in self.data_subscribers:
             try:
@@ -267,13 +363,13 @@ class DashboardManager:
             except ValueError:
                 pass
 
-    def create_grafana_dashboard(self, dashboard_id: str) -> Dict[str, Any]:
+    def create_grafana_dashboard(self, dashboard_id: str) -> dict[str, Any]:
         """Create Grafana dashboard JSON."""
         dashboard = self.get_dashboard(dashboard_id)
         if not dashboard:
             return {}
 
-        grafana_dashboard = {
+        grafana_dashboard: dict[str, Any] = {
             "dashboard": {
                 "id": None,
                 "title": dashboard.name,
@@ -285,7 +381,7 @@ class DashboardManager:
                     "from": "now-1h",
                     "to": "now",
                 },
-                "panels": [],
+                "panels": [],  # type: list[dict[str, Any]]
             },
         }
 
@@ -304,15 +400,19 @@ class DashboardManager:
             return ""
 
         if format_type == "json":
-            return json.dumps({
-                "dashboard": dashboard,
-                "data": self.dashboard_data.get(dashboard_id),
-            }, indent=2)
+            return json.dumps(
+                {
+                    "dashboard": dashboard,
+                    "data": self.dashboard_data.get(dashboard_id),
+                },
+                indent=2,
+            )
         if format_type == "grafana":
             return json.dumps(self.create_grafana_dashboard(dashboard_id), indent=2)
-        raise ValueError(f"Unsupported format: {format_type}")
+        msg = f"Unsupported format: {format_type}"
+        raise ValueError(msg)
 
-    def get_dashboard_statistics(self) -> Dict[str, Any]:
+    def get_dashboard_statistics(self) -> dict[str, Any]:
         """Get dashboard statistics."""
         return {
             "dashboards_created": self.stats["dashboards_created"],
@@ -388,7 +488,14 @@ class DashboardManager:
                     type=WidgetType.TABLE,
                     title="Security Events",
                     position={"x": 0, "y": 0, "width": 12, "height": 8},
-                    config={"columns": ["timestamp", "event_type", "severity", "description"]},
+                    config={
+                        "columns": [
+                            "timestamp",
+                            "event_type",
+                            "severity",
+                            "description",
+                        ],
+                    },
                 ),
                 Widget(
                     id="blocked_ips",
@@ -401,7 +508,7 @@ class DashboardManager:
         )
         self.templates[DashboardType.SECURITY] = security_dashboard
 
-    def _widget_to_grafana_panel(self, widget: Widget) -> Optional[Dict[str, Any]]:
+    def _widget_to_grafana_panel(self, widget: Widget) -> dict[str, Any] | None:
         """Convert widget to Grafana panel."""
         if widget.type == WidgetType.METRIC:
             return {
@@ -463,10 +570,15 @@ class DashboardManager:
 
         return None
 
-    def create_dashboard_from_template(self, template_type: DashboardType, name: str) -> str:
+    def create_dashboard_from_template(
+        self,
+        template_type: DashboardType,
+        name: str,
+    ) -> str:
         """Create dashboard from template."""
         if template_type not in self.templates:
-            raise ValueError(f"Template not found: {template_type}")
+            msg = f"Template not found: {template_type}"
+            raise ValueError(msg)
 
         template = self.templates[template_type]
 
@@ -490,157 +602,199 @@ class DashboardManager:
         return dashboard_id
 
     async def add_torrent_file(
-        self, 
-        session: "AsyncSessionManager",
+        self,
+        session: AsyncSessionManager,
         file_path: str,
-        output_dir: Optional[str] = None,
+        _output_dir: str | None = None,
         resume: bool = False,
         download_limit: int = 0,
-        upload_limit: int = 0
-    ) -> Dict[str, Any]:
+        upload_limit: int = 0,
+    ) -> dict[str, Any]:
         """Add torrent from file with optional configuration."""
+
+        def _raise_file_not_found():
+            raise TorrentFileNotFoundError(file_path)
+
+        def _raise_invalid_extension():
+            raise InvalidTorrentExtensionError(file_path)
+
         try:
             # Validate file
             if not Path(file_path).exists():
-                raise ValueError(f"Torrent file not found: {file_path}")
-            
-            if not file_path.lower().endswith('.torrent'):
-                raise ValueError(f"File must have .torrent extension: {file_path}")
-            
+                _raise_file_not_found()
+
+            if not file_path.lower().endswith(".torrent"):
+                _raise_invalid_extension()
+
             # Add to session
             info_hash = await session.add_torrent(file_path, resume=resume)
-            
+
             # Apply rate limits if specified
             if download_limit > 0 or upload_limit > 0:
                 await session.set_rate_limits(info_hash, download_limit, upload_limit)
-            
+
             # Emit success event
-            await emit_event(Event(
-                event_type=EventType.TORRENT_ADDED.value,
-                data={"info_hash": info_hash, "source": "file", "path": file_path}
-            ))
-            
-            return {"success": True, "info_hash": info_hash}
+            await emit_event(
+                Event(
+                    event_type=EventType.TORRENT_ADDED.value,
+                    data={"info_hash": info_hash, "source": "file", "path": file_path},
+                ),
+            )
         except Exception as e:
             # Emit error event
-            await emit_event(Event(
-                event_type=EventType.DASHBOARD_ERROR.value,
-                data={"error": str(e), "operation": "add_torrent_file"}
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.DASHBOARD_ERROR.value,
+                    data={"error": str(e), "operation": "add_torrent_file"},
+                ),
+            )
             return {"success": False, "error": str(e)}
+        else:
+            return {"success": True, "info_hash": info_hash}
 
     async def add_torrent_magnet(
         self,
-        session: "AsyncSessionManager",
+        session: AsyncSessionManager,
         magnet_uri: str,
-        output_dir: Optional[str] = None,
+        _output_dir: str | None = None,
         resume: bool = False,
         download_limit: int = 0,
-        upload_limit: int = 0
-    ) -> Dict[str, Any]:
+        upload_limit: int = 0,
+    ) -> dict[str, Any]:
         """Add torrent from magnet link with optional configuration."""
+
+        def _raise_invalid_magnet_format():
+            raise InvalidMagnetFormatError
+
+        def _raise_missing_btih():
+            raise MissingBtihError
+
         try:
             # Validate magnet link
             if not magnet_uri.startswith("magnet:?"):
-                raise ValueError("Invalid magnet link format - must start with 'magnet:?'")
-            
+                _raise_invalid_magnet_format()
+
             if "xt=urn:btih:" not in magnet_uri:
-                raise ValueError("Invalid magnet link - missing 'xt=urn:btih:' parameter")
-            
+                _raise_missing_btih()
+
             # Add to session
             info_hash = await session.add_magnet(magnet_uri, resume=resume)
-            
+
             # Apply rate limits if specified
             if download_limit > 0 or upload_limit > 0:
                 await session.set_rate_limits(info_hash, download_limit, upload_limit)
-            
+
             # Emit success event
-            await emit_event(Event(
-                event_type=EventType.TORRENT_ADDED.value,
-                data={"info_hash": info_hash, "source": "magnet", "uri": magnet_uri}
-            ))
-            
-            return {"success": True, "info_hash": info_hash}
+            await emit_event(
+                Event(
+                    event_type=EventType.TORRENT_ADDED.value,
+                    data={
+                        "info_hash": info_hash,
+                        "source": "magnet",
+                        "uri": magnet_uri,
+                    },
+                ),
+            )
         except Exception as e:
             # Emit error event
-            await emit_event(Event(
-                event_type=EventType.DASHBOARD_ERROR.value,
-                data={"error": str(e), "operation": "add_torrent_magnet"}
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.DASHBOARD_ERROR.value,
+                    data={"error": str(e), "operation": "add_torrent_magnet"},
+                ),
+            )
             return {"success": False, "error": str(e)}
+        else:
+            return {"success": True, "info_hash": info_hash}
 
-    def validate_torrent_file(self, file_path: str) -> Dict[str, Any]:
+    def validate_torrent_file(self, file_path: str) -> dict[str, Any]:
         """Validate torrent file before adding."""
         try:
             path = Path(file_path)
             if not path.exists():
                 return {"valid": False, "error": f"File not found: {file_path}"}
-            
+
             if not path.is_file():
                 return {"valid": False, "error": f"Path is not a file: {file_path}"}
-            
-            if not file_path.lower().endswith('.torrent'):
-                return {"valid": False, "error": f"File must have .torrent extension: {file_path}"}
-            
+
+            if not file_path.lower().endswith(".torrent"):
+                return {
+                    "valid": False,
+                    "error": f"File must have .torrent extension: {file_path}",
+                }
+
             # Check file size (basic validation)
             if path.stat().st_size == 0:
                 return {"valid": False, "error": f"Torrent file is empty: {file_path}"}
-            
+
             return {"valid": True, "path": str(path.absolute())}
         except Exception as e:
             return {"valid": False, "error": f"Validation error: {e}"}
 
-    def validate_magnet_link(self, magnet_uri: str) -> Dict[str, Any]:
+    def validate_magnet_link(self, magnet_uri: str) -> dict[str, Any]:
         """Validate magnet link format."""
         try:
             if not magnet_uri.startswith("magnet:?"):
-                return {"valid": False, "error": "Magnet link must start with 'magnet:?'"}
-            
+                return {
+                    "valid": False,
+                    "error": "Magnet link must start with 'magnet:?'",
+                }
+
             if "xt=urn:btih:" not in magnet_uri:
-                return {"valid": False, "error": "Magnet link must contain 'xt=urn:btih:' parameter"}
-            
+                return {
+                    "valid": False,
+                    "error": "Magnet link must contain 'xt=urn:btih:' parameter",
+                }
+
             # Extract info hash for basic validation
             parts = magnet_uri.split("xt=urn:btih:")
-            if len(parts) < 2:
+            if len(parts) < MIN_MAGNET_PARTS:
                 return {"valid": False, "error": "Invalid magnet link format"}
-            
+
             info_hash_part = parts[1].split("&")[0]
-            if len(info_hash_part) not in [40, 32]:  # SHA-1 (40 chars) or MD5 (32 chars)
-                return {"valid": False, "error": "Invalid info hash length in magnet link"}
-            
-            return {"valid": True, "uri": magnet_uri}
+            if len(info_hash_part) not in [
+                40,
+                32,
+            ]:  # SHA-1 (40 chars) or MD5 (32 chars)
+                return {
+                    "valid": False,
+                    "error": "Invalid info hash length in magnet link",
+                }
+
         except Exception as e:
             return {"valid": False, "error": f"Validation error: {e}"}
+        else:
+            return {"valid": True, "uri": magnet_uri}
 
-    def get_add_torrent_options(self) -> Dict[str, Any]:
+    def get_add_torrent_options(self) -> dict[str, Any]:
         """Get available configuration options for adding torrents."""
         return {
             "output_dir": {
                 "type": "string",
                 "default": ".",
-                "description": "Output directory for downloaded files"
+                "description": "Output directory for downloaded files",
             },
             "resume": {
                 "type": "boolean",
                 "default": False,
-                "description": "Resume from checkpoint if available"
+                "description": "Resume from checkpoint if available",
             },
             "download_limit": {
                 "type": "integer",
                 "default": 0,
                 "min": 0,
-                "description": "Download rate limit in KiB/s (0 = unlimited)"
+                "description": "Download rate limit in KiB/s (0 = unlimited)",
             },
             "upload_limit": {
                 "type": "integer",
                 "default": 0,
                 "min": 0,
-                "description": "Upload rate limit in KiB/s (0 = unlimited)"
+                "description": "Upload rate limit in KiB/s (0 = unlimited)",
             },
             "priority": {
                 "type": "choice",
                 "choices": ["low", "normal", "high"],
                 "default": "normal",
-                "description": "Torrent priority"
-            }
+                "description": "Torrent priority",
+            },
         }

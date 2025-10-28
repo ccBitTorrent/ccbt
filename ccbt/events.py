@@ -1,24 +1,30 @@
 """Event-driven architecture for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides a comprehensive event system for decoupled communication
 between components with typed events and event replay capability.
 """
 
+from __future__ import annotations
+
 import asyncio
+import contextlib
 import json
 import time
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from .exceptions import CCBTException
-from .logging_config import LoggingContext, get_logger
+from ccbt.exceptions import CCBTError
+from ccbt.logging_config import LoggingContext, get_logger
 
 
 class EventPriority(Enum):
     """Event priority levels."""
+
     LOW = 1
     NORMAL = 2
     HIGH = 3
@@ -27,6 +33,7 @@ class EventPriority(Enum):
 
 class EventType(Enum):
     """Built-in event types."""
+
     # Peer events
     PEER_CONNECTED = "peer_connected"
     PEER_DISCONNECTED = "peer_disconnected"
@@ -186,22 +193,23 @@ class EventType(Enum):
     BOTTLENECK_DETECTED = "bottleneck_detected"
 
 
-class EventError(CCBTException):
+class EventError(CCBTError):
     """Exception raised for event-related errors."""
 
 
 @dataclass
 class Event:
     """Base event class."""
+
     event_type: str = ""
     timestamp: float = field(default_factory=time.time)
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     priority: EventPriority = EventPriority.NORMAL
-    source: Optional[str] = None
-    data: Dict[str, Any] = field(default_factory=dict)
-    correlation_id: Optional[str] = None
+    source: str | None = None
+    data: dict[str, Any] = field(default_factory=dict)
+    correlation_id: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert event to dictionary."""
         return {
             "event_type": self.event_type,
@@ -218,7 +226,7 @@ class Event:
         return json.dumps(self.to_dict())
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Event":
+    def from_dict(cls, data: dict[str, Any]) -> Event:
         """Create event from dictionary."""
         return cls(
             event_type=data["event_type"],
@@ -231,7 +239,7 @@ class Event:
         )
 
     @classmethod
-    def from_json(cls, json_str: str) -> "Event":
+    def from_json(cls, json_str: str) -> Event:
         """Create event from JSON string."""
         return cls.from_dict(json.loads(json_str))
 
@@ -240,93 +248,114 @@ class Event:
 @dataclass
 class PeerConnectedEvent(Event):
     """Event emitted when a peer connects."""
+
     peer_ip: str = ""
     peer_port: int = 0
-    peer_id: Optional[str] = None
+    peer_id: str | None = None
 
     def __post_init__(self):
+        """Initialize event type and data."""
         self.event_type = EventType.PEER_CONNECTED.value
-        self.data.update({
-            "peer_ip": self.peer_ip,
-            "peer_port": self.peer_port,
-            "peer_id": self.peer_id,
-        })
+        self.data.update(
+            {
+                "peer_ip": self.peer_ip,
+                "peer_port": self.peer_port,
+                "peer_id": self.peer_id,
+            },
+        )
 
 
 @dataclass
 class PeerDisconnectedEvent(Event):
     """Event emitted when a peer disconnects."""
+
     peer_ip: str = ""
     peer_port: int = 0
-    reason: Optional[str] = None
+    reason: str | None = None
 
     def __post_init__(self):
+        """Initialize event type and data."""
         self.event_type = EventType.PEER_DISCONNECTED.value
-        self.data.update({
-            "peer_ip": self.peer_ip,
-            "peer_port": self.peer_port,
-            "reason": self.reason,
-        })
+        self.data.update(
+            {
+                "peer_ip": self.peer_ip,
+                "peer_port": self.peer_port,
+                "reason": self.reason,
+            },
+        )
 
 
 @dataclass
 class PieceDownloadedEvent(Event):
     """Event emitted when a piece is downloaded."""
+
     piece_index: int = 0
     piece_size: int = 0
     download_time: float = 0.0
-    peer_ip: Optional[str] = None
+    peer_ip: str | None = None
 
     def __post_init__(self):
+        """Initialize event type and data."""
         self.event_type = EventType.PIECE_DOWNLOADED.value
-        self.data.update({
-            "piece_index": self.piece_index,
-            "piece_size": self.piece_size,
-            "download_time": self.download_time,
-            "peer_ip": self.peer_ip,
-        })
+        self.data.update(
+            {
+                "piece_index": self.piece_index,
+                "piece_size": self.piece_size,
+                "download_time": self.download_time,
+                "peer_ip": self.peer_ip,
+            },
+        )
 
 
 @dataclass
 class TorrentCompletedEvent(Event):
     """Event emitted when a torrent is completed."""
+
     torrent_name: str = ""
     total_size: int = 0
     download_time: float = 0.0
     average_speed: float = 0.0
 
     def __post_init__(self):
+        """Initialize event data after object creation."""
         self.event_type = EventType.TORRENT_COMPLETED.value
-        self.data.update({
-            "torrent_name": self.torrent_name,
-            "total_size": self.total_size,
-            "download_time": self.download_time,
-            "average_speed": self.average_speed,
-        })
+        self.data.update(
+            {
+                "torrent_name": self.torrent_name,
+                "total_size": self.total_size,
+                "download_time": self.download_time,
+                "average_speed": self.average_speed,
+            },
+        )
 
 
 @dataclass
 class PerformanceMetricEvent(Event):
     """Event emitted for performance metrics."""
+
     metric_name: str = ""
     metric_value: float = 0.0
     metric_unit: str = ""
-    tags: Dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
+        """Initialize event data after object creation."""
         self.event_type = EventType.PERFORMANCE_METRIC.value
-        self.data.update({
-            "metric_name": self.metric_name,
-            "metric_value": self.metric_value,
-            "metric_unit": self.metric_unit,
-            "tags": self.tags,
-        })
+        self.data.update(
+            {
+                "metric_name": self.metric_name,
+                "metric_value": self.metric_value,
+                "metric_unit": self.metric_unit,
+                "tags": self.tags,
+            },
+        )
 
 
 class EventHandler(ABC):
     """Base class for event handlers."""
 
     def __init__(self, name: str):
+        """Initialize event handler."""
         self.name = name
         self.logger = get_logger(f"event_handler.{name}")
 
@@ -334,7 +363,7 @@ class EventHandler(ABC):
     async def handle(self, event: Event) -> None:
         """Handle an event."""
 
-    def can_handle(self, event: Event) -> bool:
+    def can_handle(self, _event: Event) -> bool:
         """Check if this handler can handle the event."""
         return True
 
@@ -344,19 +373,19 @@ class EventBus:
 
     def __init__(self, max_queue_size: int = 10000):
         """Initialize event bus.
-        
+
         Args:
             max_queue_size: Maximum size of event queue
         """
         self.max_queue_size = max_queue_size
-        self.handlers: Dict[str, List[EventHandler]] = {}
+        self.handlers: dict[str, list[EventHandler]] = {}
         self.event_queue: asyncio.Queue = asyncio.Queue(maxsize=max_queue_size)
-        self.replay_buffer: List[Event] = []
+        self.replay_buffer: list[Event] = []
         self.max_replay_events = 1000
         self.running = False
         self.logger = get_logger(__name__)
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._task: Optional[asyncio.Task] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._task: asyncio.Task | None = None
 
         # Statistics
         self.stats = {
@@ -368,7 +397,7 @@ class EventBus:
 
     def register_handler(self, event_type: str, handler: EventHandler) -> None:
         """Register an event handler.
-        
+
         Args:
             event_type: Type of event to handle
             handler: Handler instance
@@ -378,11 +407,15 @@ class EventBus:
 
         self.handlers[event_type].append(handler)
         self.stats["handlers_registered"] += 1
-        self.logger.debug(f"Registered handler '{handler.name}' for event type '{event_type}'")
+        self.logger.debug(
+            "Registered handler '%s' for event type '%s'",
+            handler.name,
+            event_type,
+        )
 
     def unregister_handler(self, event_type: str, handler: EventHandler) -> None:
         """Unregister an event handler.
-        
+
         Args:
             event_type: Type of event
             handler: Handler instance
@@ -390,13 +423,17 @@ class EventBus:
         if event_type in self.handlers:
             try:
                 self.handlers[event_type].remove(handler)
-                self.logger.debug(f"Unregistered handler '{handler.name}' for event type '{event_type}'")
+                self.logger.debug(
+                    "Unregistered handler '%s' for event type '%s'",
+                    handler.name,
+                    event_type,
+                )
             except ValueError:
                 pass
 
     async def emit(self, event: Event) -> None:
         """Emit an event.
-        
+
         Args:
             event: Event to emit
         """
@@ -409,7 +446,10 @@ class EventBus:
             # Add to queue
             if self.event_queue.full():
                 self.stats["events_dropped"] += 1
-                self.logger.warning(f"Event queue full, dropping event: {event.event_type}")
+                self.logger.warning(
+                    "Event queue full, dropping event: %s",
+                    event.event_type,
+                )
                 return
 
             # If we somehow switched loops between start/emit, rebind queue lazily
@@ -438,8 +478,8 @@ class EventBus:
             await self.event_queue.put(event)
             self.stats["queue_size"] = self.event_queue.qsize()
 
-        except Exception as e:
-            self.logger.error(f"Failed to emit event: {e}")
+        except Exception:
+            self.logger.exception("Failed to emit event")
 
     async def start(self) -> None:
         """Start the event bus."""
@@ -455,10 +495,8 @@ class EventBus:
         if self._loop is not current_loop:
             # Cancel any previous processing task bound to another loop
             if self._task is not None and not self._task.done():
-                try:
+                with contextlib.suppress(Exception):
                     self._task.cancel()
-                except Exception:
-                    pass
             self._task = None
             # Recreate queue bound to this loop
             self.event_queue = asyncio.Queue(maxsize=self.max_queue_size)
@@ -479,14 +517,11 @@ class EventBus:
         self.logger.info("Event bus stopped")
         # Cancel and await processing task to avoid stray logging on closed streams
         if self._task is not None:
-            try:
-                self._task.cancel()
-                # Ensure cancellation is processed
+            self._task.cancel()
+            # Ensure cancellation is processed; ignore cancellation-related errors
+            with contextlib.suppress(Exception):
                 await asyncio.gather(self._task, return_exceptions=True)
-            except Exception:
-                pass
-            finally:
-                self._task = None
+            self._task = None
 
     async def _process_events(self) -> None:
         """Process events from the queue."""
@@ -501,13 +536,17 @@ class EventBus:
                 continue
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Error processing event: {e}")
+            except Exception:
+                self.logger.exception("Error processing event")
 
     async def _handle_event(self, event: Event) -> None:
         """Handle a single event."""
         try:
-            with LoggingContext("event_handle", event_type=event.event_type, event_id=event.event_id):
+            with LoggingContext(
+                "event_handle",
+                event_type=event.event_type,
+                event_id=event.event_id,
+            ):
                 # Get handlers for this event type
                 handlers = self.handlers.get(event.event_type, [])
 
@@ -516,37 +555,49 @@ class EventBus:
                 all_handlers = handlers + wildcard_handlers
 
                 if not all_handlers:
-                    self.logger.debug(f"No handlers for event type: {event.event_type}")
+                    self.logger.debug(
+                        "No handlers for event type: %s",
+                        event.event_type,
+                    )
                     return
 
                 # Process handlers
                 tasks = []
                 for handler in all_handlers:
                     if handler.can_handle(event):
-                        task = asyncio.create_task(self._handle_with_handler(event, handler))
+                        task = asyncio.create_task(
+                            self._handle_with_handler(event, handler),
+                        )
                         tasks.append(task)
 
                 if tasks:
                     await asyncio.gather(*tasks, return_exceptions=True)
 
-        except Exception as e:
-            self.logger.error(f"Error handling event: {e}")
+        except Exception:
+            self.logger.exception("Error handling event")
 
     async def _handle_with_handler(self, event: Event, handler: EventHandler) -> None:
         """Handle event with a specific handler."""
         try:
             await handler.handle(event)
-        except Exception as e:
-            self.logger.error(f"Handler '{handler.name}' failed for event '{event.event_type}': {e}")
+        except Exception:
+            self.logger.exception(
+                "Handler '%s' failed for event '%s'",
+                handler.name,
+                event.event_type,
+            )
 
-    def get_replay_events(self, event_type: Optional[str] = None,
-                         limit: int = 100) -> List[Event]:
+    def get_replay_events(
+        self,
+        event_type: str | None = None,
+        limit: int = 100,
+    ) -> list[Event]:
         """Get events from replay buffer.
-        
+
         Args:
             event_type: Filter by event type
             limit: Maximum number of events to return
-            
+
         Returns:
             List of events
         """
@@ -557,7 +608,7 @@ class EventBus:
 
         return events
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get event bus statistics."""
         return {
             "running": self.running,
@@ -570,7 +621,7 @@ class EventBus:
 
 
 # Global event bus instance
-_event_bus: Optional[EventBus] = None
+_event_bus: EventBus | None = None
 
 
 def get_event_bus() -> EventBus:
@@ -587,7 +638,11 @@ async def emit_event(event: Event) -> None:
     await bus.emit(event)
 
 
-async def emit_peer_connected(peer_ip: str, peer_port: int, peer_id: Optional[str] = None) -> None:
+async def emit_peer_connected(
+    peer_ip: str,
+    peer_port: int,
+    peer_id: str | None = None,
+) -> None:
     """Emit peer connected event."""
     event = PeerConnectedEvent(
         event_type=EventType.PEER_CONNECTED.value,
@@ -598,7 +653,11 @@ async def emit_peer_connected(peer_ip: str, peer_port: int, peer_id: Optional[st
     await emit_event(event)
 
 
-async def emit_peer_disconnected(peer_ip: str, peer_port: int, reason: Optional[str] = None) -> None:
+async def emit_peer_disconnected(
+    peer_ip: str,
+    peer_port: int,
+    reason: str | None = None,
+) -> None:
     """Emit peer disconnected event."""
     event = PeerDisconnectedEvent(
         event_type=EventType.PEER_DISCONNECTED.value,
@@ -609,8 +668,12 @@ async def emit_peer_disconnected(peer_ip: str, peer_port: int, reason: Optional[
     await emit_event(event)
 
 
-async def emit_piece_downloaded(piece_index: int, piece_size: int,
-                              download_time: float, peer_ip: Optional[str] = None) -> None:
+async def emit_piece_downloaded(
+    piece_index: int,
+    piece_size: int,
+    download_time: float,
+    peer_ip: str | None = None,
+) -> None:
     """Emit piece downloaded event."""
     event = PieceDownloadedEvent(
         event_type=EventType.PIECE_DOWNLOADED.value,
@@ -622,8 +685,12 @@ async def emit_piece_downloaded(piece_index: int, piece_size: int,
     await emit_event(event)
 
 
-async def emit_torrent_completed(torrent_name: str, total_size: int,
-                                download_time: float, average_speed: float) -> None:
+async def emit_torrent_completed(
+    torrent_name: str,
+    total_size: int,
+    download_time: float,
+    average_speed: float,
+) -> None:
     """Emit torrent completed event."""
     event = TorrentCompletedEvent(
         event_type=EventType.TORRENT_COMPLETED.value,
@@ -635,8 +702,12 @@ async def emit_torrent_completed(torrent_name: str, total_size: int,
     await emit_event(event)
 
 
-async def emit_performance_metric(metric_name: str, metric_value: float,
-                                metric_unit: str, tags: Optional[Dict[str, str]] = None) -> None:
+async def emit_performance_metric(
+    metric_name: str,
+    metric_value: float,
+    metric_unit: str,
+    tags: dict[str, str] | None = None,
+) -> None:
     """Emit performance metric event."""
     event = PerformanceMetricEvent(
         event_type=EventType.PERFORMANCE_METRIC.value,

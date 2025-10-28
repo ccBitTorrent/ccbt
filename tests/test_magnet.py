@@ -49,4 +49,3 @@ def test_build_torrent_data_from_metadata_multi_file():
     assert td["info_hash"] == ih
     assert td["file_info"]["type"] == "multi"
     assert td["pieces_info"]["num_pieces"] == 2
-

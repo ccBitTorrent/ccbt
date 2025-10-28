@@ -1,5 +1,7 @@
 """Rate Limiter for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides adaptive rate limiting including:
 - Per-peer rate limiting
 - Global rate limiting
@@ -7,18 +9,20 @@ Provides adaptive rate limiting including:
 - DDoS protection
 """
 
+from __future__ import annotations
+
 import statistics
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Tuple
 
-from ..events import Event, EventType, emit_event
+from ccbt.events import Event, EventType, emit_event
 
 
 class RateLimitType(Enum):
     """Types of rate limits."""
+
     CONNECTION = "connection"
     MESSAGE = "message"
     BYTES = "bytes"
@@ -28,7 +32,8 @@ class RateLimitType(Enum):
 
 class RateLimitAlgorithm(Enum):
     """Rate limiting algorithms."""
-    TOKEN_BUCKET = "token_bucket"
+
+    TOKEN_BUCKET = "token_bucket"  # nosec S105 - Enum value, not a password
     SLIDING_WINDOW = "sliding_window"
     LEAKY_BUCKET = "leaky_bucket"
     ADAPTIVE = "adaptive"
@@ -37,6 +42,7 @@ class RateLimitAlgorithm(Enum):
 @dataclass
 class RateLimit:
     """Rate limit configuration."""
+
     limit_type: RateLimitType
     max_requests: int
     time_window: float  # seconds
@@ -48,6 +54,7 @@ class RateLimit:
 @dataclass
 class RateLimitStats:
     """Rate limit statistics."""
+
     peer_id: str
     ip: str
     limit_type: RateLimitType
@@ -63,19 +70,25 @@ class RateLimiter:
     """Adaptive rate limiter."""
 
     def __init__(self):
-        self.rate_limits: Dict[RateLimitType, RateLimit] = {}
-        self.peer_stats: Dict[str, Dict[RateLimitType, RateLimitStats]] = defaultdict(dict)
-        self.global_stats: Dict[RateLimitType, RateLimitStats] = {}
+        """Initialize rate limiter."""
+        self.rate_limits: dict[RateLimitType, RateLimit] = {}
+        self.peer_stats: dict[str, dict[RateLimitType, RateLimitStats]] = defaultdict(
+            dict,
+        )
+        self.global_stats: dict[RateLimitType, RateLimitStats] = {}
 
         # Token bucket state
-        self.token_buckets: Dict[str, Dict[RateLimitType, float]] = defaultdict(dict)
+        self.token_buckets: dict[str, dict[RateLimitType, float]] = defaultdict(dict)
 
         # Sliding window state
-        self.sliding_windows: Dict[str, Dict[RateLimitType, deque]] = defaultdict(dict)
+        self.sliding_windows: dict[str, dict[RateLimitType, deque]] = defaultdict(dict)
 
         # Adaptive rate adjustment
-        self.adaptive_rates: Dict[str, Dict[RateLimitType, float]] = defaultdict(dict)
-        self.performance_history: Dict[str, List[float]] = defaultdict(list)
+        self.adaptive_rates: dict[str, dict[RateLimitType, float]] = defaultdict(dict)
+        # Store (timestamp, performance_metric) tuples per peer
+        self.performance_history: dict[str, list[tuple[float, float]]] = defaultdict(
+            list
+        )
 
         # Configuration
         self.default_limits = {
@@ -116,16 +129,21 @@ class RateLimiter:
         for limit_type, limit in self.default_limits.items():
             self.rate_limits[limit_type] = limit
 
-    async def check_rate_limit(self, peer_id: str, ip: str, limit_type: RateLimitType,
-                             request_size: int = 1) -> Tuple[bool, float]:
+    async def check_rate_limit(
+        self,
+        peer_id: str,
+        ip: str,
+        limit_type: RateLimitType,
+        request_size: int = 1,
+    ) -> tuple[bool, float]:
         """Check if request is within rate limit.
-        
+
         Args:
             peer_id: Peer identifier
             ip: Peer IP address
             limit_type: Type of rate limit
             request_size: Size of the request
-            
+
         Returns:
             Tuple of (is_allowed, wait_time)
         """
@@ -135,13 +153,20 @@ class RateLimiter:
             return True, 0.0
 
         # Check global rate limit first
-        global_allowed, global_wait = await self._check_global_rate_limit(limit_type, request_size)
+        global_allowed, global_wait = await self._check_global_rate_limit(
+            limit_type,
+            request_size,
+        )
         if not global_allowed:
             return False, global_wait
 
         # Check peer-specific rate limit
         peer_allowed, peer_wait = await self._check_peer_rate_limit(
-            peer_id, ip, limit_type, request_size, rate_limit,
+            peer_id,
+            ip,
+            limit_type,
+            request_size,
+            rate_limit,
         )
 
         if not peer_allowed:
@@ -152,8 +177,14 @@ class RateLimiter:
 
         return True, 0.0
 
-    async def record_request(self, peer_id: str, ip: str, limit_type: RateLimitType,
-                           request_size: int = 1, success: bool = True) -> None:
+    async def record_request(
+        self,
+        peer_id: str,
+        ip: str,
+        limit_type: RateLimitType,
+        request_size: int = 1,
+        success: bool = True,
+    ) -> None:
         """Record a request for rate limiting."""
         # Update peer statistics
         self._update_rate_limit_stats(peer_id, ip, limit_type, request_size, success)
@@ -166,8 +197,13 @@ class RateLimiter:
         if self.rate_limits[limit_type].algorithm == RateLimitAlgorithm.ADAPTIVE:
             await self._adjust_adaptive_rate(peer_id, limit_type)
 
-    def set_rate_limit(self, limit_type: RateLimitType, max_requests: int,
-                      time_window: float, algorithm: RateLimitAlgorithm = RateLimitAlgorithm.TOKEN_BUCKET) -> None:
+    def set_rate_limit(
+        self,
+        limit_type: RateLimitType,
+        max_requests: int,
+        time_window: float,
+        algorithm: RateLimitAlgorithm = RateLimitAlgorithm.TOKEN_BUCKET,
+    ) -> None:
         """Set rate limit configuration."""
         self.rate_limits[limit_type] = RateLimit(
             limit_type=limit_type,
@@ -176,11 +212,11 @@ class RateLimiter:
             algorithm=algorithm,
         )
 
-    def get_rate_limit_stats(self, peer_id: str) -> Dict[RateLimitType, RateLimitStats]:
+    def get_rate_limit_stats(self, peer_id: str) -> dict[RateLimitType, RateLimitStats]:
         """Get rate limit statistics for a peer."""
         return self.peer_stats.get(peer_id, {}).copy()
 
-    def get_global_rate_limit_stats(self) -> Dict[RateLimitType, RateLimitStats]:
+    def get_global_rate_limit_stats(self) -> dict[RateLimitType, RateLimitStats]:
         """Get global rate limit statistics."""
         return self.global_stats.copy()
 
@@ -235,7 +271,11 @@ class RateLimiter:
             if not peer_windows:
                 del self.sliding_windows[peer_id]
 
-    async def _check_global_rate_limit(self, limit_type: RateLimitType, request_size: int) -> Tuple[bool, float]:
+    async def _check_global_rate_limit(
+        self,
+        limit_type: RateLimitType,
+        request_size: int,
+    ) -> tuple[bool, float]:
         """Check global rate limit."""
         rate_limit = self.rate_limits[limit_type]
 
@@ -274,8 +314,14 @@ class RateLimiter:
 
         return True, 0.0
 
-    async def _check_peer_rate_limit(self, peer_id: str, ip: str, limit_type: RateLimitType,
-                                    request_size: int, rate_limit: RateLimit) -> Tuple[bool, float]:
+    async def _check_peer_rate_limit(
+        self,
+        peer_id: str,
+        ip: str,
+        limit_type: RateLimitType,
+        request_size: int,
+        rate_limit: RateLimit,
+    ) -> tuple[bool, float]:
         """Check peer-specific rate limit."""
         # Initialize peer stats if needed
         if peer_id not in self.peer_stats:
@@ -294,19 +340,39 @@ class RateLimiter:
                 total_requests=0,
             )
 
-        stats = self.peer_stats[peer_id][limit_type]
+        self.peer_stats[peer_id][limit_type]
 
         # Use appropriate algorithm
         if rate_limit.algorithm == RateLimitAlgorithm.TOKEN_BUCKET:
-            return await self._check_token_bucket(peer_id, limit_type, request_size, rate_limit)
+            return await self._check_token_bucket(
+                peer_id,
+                limit_type,
+                request_size,
+                rate_limit,
+            )
         if rate_limit.algorithm == RateLimitAlgorithm.SLIDING_WINDOW:
-            return await self._check_sliding_window(peer_id, limit_type, request_size, rate_limit)
+            return await self._check_sliding_window(
+                peer_id,
+                limit_type,
+                request_size,
+                rate_limit,
+            )
         if rate_limit.algorithm == RateLimitAlgorithm.ADAPTIVE:
-            return await self._check_adaptive(peer_id, limit_type, request_size, rate_limit)
+            return await self._check_adaptive(
+                peer_id,
+                limit_type,
+                request_size,
+                rate_limit,
+            )
         return True, 0.0
 
-    async def _check_token_bucket(self, peer_id: str, limit_type: RateLimitType,
-                                 request_size: int, rate_limit: RateLimit) -> Tuple[bool, float]:
+    async def _check_token_bucket(
+        self,
+        peer_id: str,
+        limit_type: RateLimitType,
+        request_size: int,
+        rate_limit: RateLimit,
+    ) -> tuple[bool, float]:
         """Check token bucket rate limit."""
         current_time = time.time()
 
@@ -318,7 +384,9 @@ class RateLimiter:
 
         # Add tokens based on time elapsed
         time_elapsed = current_time - self.peer_stats[peer_id][limit_type].last_request
-        tokens_to_add = time_elapsed * (rate_limit.max_requests / rate_limit.time_window)
+        tokens_to_add = time_elapsed * (
+            rate_limit.max_requests / rate_limit.time_window
+        )
         tokens = min(rate_limit.max_requests, tokens + tokens_to_add)
 
         # Check if we have enough tokens
@@ -327,11 +395,18 @@ class RateLimiter:
             self.token_buckets[peer_id][limit_type] = tokens
             return True, 0.0
         # Calculate wait time
-        wait_time = (request_size - tokens) * (rate_limit.time_window / rate_limit.max_requests)
+        wait_time = (request_size - tokens) * (
+            rate_limit.time_window / rate_limit.max_requests
+        )
         return False, wait_time
 
-    async def _check_sliding_window(self, peer_id: str, limit_type: RateLimitType,
-                                  request_size: int, rate_limit: RateLimit) -> Tuple[bool, float]:
+    async def _check_sliding_window(
+        self,
+        peer_id: str,
+        limit_type: RateLimitType,
+        request_size: int,
+        rate_limit: RateLimit,
+    ) -> tuple[bool, float]:
         """Check sliding window rate limit."""
         current_time = time.time()
 
@@ -361,8 +436,13 @@ class RateLimiter:
 
         return False, max(0.0, wait_time)
 
-    async def _check_adaptive(self, peer_id: str, limit_type: RateLimitType,
-                            request_size: int, rate_limit: RateLimit) -> Tuple[bool, float]:
+    async def _check_adaptive(
+        self,
+        peer_id: str,
+        limit_type: RateLimitType,
+        request_size: int,
+        rate_limit: RateLimit,
+    ) -> tuple[bool, float]:
         """Check adaptive rate limit."""
         # Get adaptive rate for this peer
         if limit_type not in self.adaptive_rates[peer_id]:
@@ -397,8 +477,14 @@ class RateLimiter:
 
         return False, max(0.0, wait_time)
 
-    def _update_rate_limit_stats(self, peer_id: str, ip: str, limit_type: RateLimitType,
-                               request_size: int, success: bool) -> None:
+    def _update_rate_limit_stats(
+        self,
+        peer_id: str,
+        ip: str,
+        limit_type: RateLimitType,
+        request_size: int,
+        success: bool,
+    ) -> None:
         """Update rate limit statistics."""
         if peer_id not in self.peer_stats:
             self.peer_stats[peer_id] = {}
@@ -425,7 +511,12 @@ class RateLimiter:
             stats.limit_hits += 1
             stats.is_limited = True
 
-    def _update_performance_history(self, peer_id: str, request_size: int, success: bool) -> None:
+    def _update_performance_history(
+        self,
+        peer_id: str,
+        request_size: int,
+        success: bool,
+    ) -> None:
         """Update performance history for adaptive rate limiting."""
         if peer_id not in self.performance_history:
             self.performance_history[peer_id] = []
@@ -439,11 +530,16 @@ class RateLimiter:
         # Keep only recent history (last hour)
         cutoff_time = current_time - 3600
         self.performance_history[peer_id] = [
-            (timestamp, metric) for timestamp, metric in self.performance_history[peer_id]
+            (timestamp, metric)
+            for timestamp, metric in self.performance_history[peer_id]
             if timestamp > cutoff_time
         ]
 
-    async def _adjust_adaptive_rate(self, peer_id: str, limit_type: RateLimitType) -> None:
+    async def _adjust_adaptive_rate(
+        self,
+        peer_id: str,
+        limit_type: RateLimitType,
+    ) -> None:
         """Adjust adaptive rate based on performance history."""
         if peer_id not in self.performance_history:
             return
@@ -452,7 +548,9 @@ class RateLimiter:
             return
 
         # Calculate average performance
-        performance_metrics = [metric for _, metric in self.performance_history[peer_id]]
+        performance_metrics = [
+            metric for _, metric in self.performance_history[peer_id]
+        ]
         if not performance_metrics:
             return
 
@@ -474,14 +572,16 @@ class RateLimiter:
         self.adaptive_rates[peer_id][limit_type] = new_rate
 
         # Emit adaptive rate change event
-        await emit_event(Event(
-            event_type=EventType.RATE_LIMIT_ADAPTIVE_CHANGED.value,
-            data={
-                "peer_id": peer_id,
-                "limit_type": limit_type.value,
-                "old_rate": current_rate,
-                "new_rate": new_rate,
-                "performance": avg_performance,
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.RATE_LIMIT_ADAPTIVE_CHANGED.value,
+                data={
+                    "peer_id": peer_id,
+                    "limit_type": limit_type.value,
+                    "old_rate": current_rate,
+                    "new_rate": new_rate,
+                    "performance": avg_performance,
+                    "timestamp": time.time(),
+                },
+            ),
+        )

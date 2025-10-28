@@ -1,5 +1,7 @@
 """Alert Manager for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides comprehensive alert management including:
 - Alert rule engine
 - Notification channels
@@ -8,23 +10,31 @@ Provides comprehensive alert management including:
 - Alert suppression
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
+import logging
 import smtplib
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from pathlib import Path
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
-from ..events import Event, EventType, emit_event
+from ccbt.events import Event, EventType, emit_event
+
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class AlertSeverity(Enum):
     """Alert severity levels."""
+
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
@@ -33,6 +43,7 @@ class AlertSeverity(Enum):
 
 class NotificationChannel(Enum):
     """Notification channels."""
+
     EMAIL = "email"
     WEBHOOK = "webhook"
     SLACK = "slack"
@@ -43,6 +54,7 @@ class NotificationChannel(Enum):
 @dataclass
 class Alert:
     """Alert instance."""
+
     id: str
     rule_name: str
     metric_name: str
@@ -52,21 +64,23 @@ class Alert:
     description: str
     timestamp: float
     resolved: bool = False
-    resolved_timestamp: Optional[float] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    resolved_timestamp: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class NotificationConfig:
     """Notification configuration."""
+
     channel: NotificationChannel
     enabled: bool = True
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class AlertRule:
     """Alert rule definition."""
+
     name: str
     metric_name: str
     condition: str
@@ -75,8 +89,8 @@ class AlertRule:
     enabled: bool = True
     cooldown_seconds: int = 300
     escalation_seconds: int = 0
-    notification_channels: List[NotificationChannel] = field(default_factory=list)
-    suppression_rules: List[str] = field(default_factory=list)
+    notification_channels: list[NotificationChannel] = field(default_factory=list)
+    suppression_rules: list[str] = field(default_factory=list)
     last_triggered: float = 0.0
     trigger_count: int = 0
 
@@ -85,15 +99,16 @@ class AlertManager:
     """Alert management system."""
 
     def __init__(self):
-        self.alert_rules: Dict[str, AlertRule] = {}
-        self.active_alerts: Dict[str, Alert] = {}
+        """Initialize alert manager."""
+        self.alert_rules: dict[str, AlertRule] = {}
+        self.active_alerts: dict[str, Alert] = {}
         self.alert_history: deque = deque(maxlen=10000)
-        self.notification_configs: Dict[NotificationChannel, NotificationConfig] = {}
-        self.notification_handlers: Dict[NotificationChannel, Callable] = {}
+        self.notification_configs: dict[NotificationChannel, NotificationConfig] = {}
+        self.notification_handlers: dict[NotificationChannel, Callable] = {}
 
         # Alert suppression
-        self.suppression_rules: Dict[str, Dict[str, Any]] = {}
-        self.suppressed_alerts: Dict[str, float] = {}
+        self.suppression_rules: dict[str, dict[str, Any]] = {}
+        self.suppressed_alerts: dict[str, float] = {}
 
         # Statistics
         self.stats = {
@@ -108,11 +123,10 @@ class AlertManager:
         self._initialize_notification_handlers()
 
     # ------------------- Persistence -------------------
-    def export_rules(self) -> List[Dict[str, Any]]:
+    def export_rules(self) -> list[dict[str, Any]]:
         """Export alert rules as a serializable list of dicts."""
-        exported: List[Dict[str, Any]] = []
-        for rule in self.alert_rules.values():
-            exported.append({
+        return [
+            {
                 "name": rule.name,
                 "metric_name": rule.metric_name,
                 "condition": rule.condition,
@@ -124,10 +138,11 @@ class AlertManager:
                 "notification_channels": [c.value for c in rule.notification_channels],
                 "suppression_rules": list(rule.suppression_rules),
                 # omit dynamic fields last_triggered/trigger_count on export
-            })
-        return exported
+            }
+            for rule in self.alert_rules.values()
+        ]
 
-    def import_rules(self, rules: List[Dict[str, Any]]) -> int:
+    def import_rules(self, rules: list[dict[str, Any]]) -> int:
         """Import alert rules from list of dicts; returns number loaded."""
         loaded = 0
         for data in rules:
@@ -139,7 +154,8 @@ class AlertManager:
             for c in data.get("notification_channels", []):
                 try:
                     channels.append(NotificationChannel(str(c)))
-                except Exception:
+                except Exception as e:
+                    logger.debug("Failed to parse alert channel: %s", e)
                     continue
             rule = AlertRule(
                 name=str(data.get("name")),
@@ -163,9 +179,8 @@ class AlertManager:
             path.parent.mkdir(parents=True, exist_ok=True)
             payload = {"rules": self.export_rules()}
             path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        except Exception:
-            # best-effort persistence
-            pass
+        except (OSError, ValueError, TypeError) as e:
+            logger.debug("Failed to save alert rules: %s", e)
 
     def load_rules_from_file(self, path: Path) -> int:
         """Load alert rules from JSON file; returns number loaded."""
@@ -187,7 +202,7 @@ class AlertManager:
         if rule_name in self.alert_rules:
             del self.alert_rules[rule_name]
 
-    def update_alert_rule(self, rule_name: str, updates: Dict[str, Any]) -> None:
+    def update_alert_rule(self, rule_name: str, updates: dict[str, Any]) -> None:
         """Update an alert rule."""
         if rule_name in self.alert_rules:
             rule = self.alert_rules[rule_name]
@@ -195,7 +210,7 @@ class AlertManager:
                 if hasattr(rule, key):
                     setattr(rule, key, value)
 
-    def add_suppression_rule(self, name: str, rule: Dict[str, Any]) -> None:
+    def add_suppression_rule(self, name: str, rule: dict[str, Any]) -> None:
         """Add a suppression rule."""
         self.suppression_rules[name] = rule
 
@@ -204,21 +219,34 @@ class AlertManager:
         if name in self.suppression_rules:
             del self.suppression_rules[name]
 
-    def configure_notification(self, channel: NotificationChannel, config: NotificationConfig) -> None:
+    def configure_notification(
+        self,
+        channel: NotificationChannel,
+        config: NotificationConfig,
+    ) -> None:
         """Configure notification channel."""
         self.notification_configs[channel] = config
 
-    def register_notification_handler(self, channel: NotificationChannel, handler: Callable) -> None:
+    def register_notification_handler(
+        self,
+        channel: NotificationChannel,
+        handler: Callable,
+    ) -> None:
         """Register custom notification handler."""
         self.notification_handlers[channel] = handler
 
-    async def process_alert(self, metric_name: str, value: Any, timestamp: Optional[float] = None) -> None:
+    async def process_alert(
+        self,
+        metric_name: str,
+        value: Any,
+        timestamp: float | None = None,
+    ) -> None:
         """Process an alert for a metric."""
         if timestamp is None:
             timestamp = time.time()
 
         # Check all alert rules for this metric
-        for rule_name, rule in self.alert_rules.items():
+        for rule in self.alert_rules.values():
             if rule.metric_name != metric_name or not rule.enabled:
                 continue
 
@@ -230,7 +258,11 @@ class AlertManager:
             if self._evaluate_condition(rule.condition, value):
                 await self._trigger_alert(rule, value, timestamp)
 
-    async def resolve_alert(self, alert_id: str, timestamp: Optional[float] = None) -> bool:
+    async def resolve_alert(
+        self,
+        alert_id: str,
+        timestamp: float | None = None,
+    ) -> bool:
         """Resolve an alert."""
         if timestamp is None:
             timestamp = time.time()
@@ -250,27 +282,34 @@ class AlertManager:
         self.stats["alerts_resolved"] += 1
 
         # Emit alert resolved event
-        await emit_event(Event(
-            event_type=EventType.ALERT_RESOLVED.value,
-            data={
-                "alert_id": alert_id,
-                "rule_name": alert.rule_name,
-                "metric_name": alert.metric_name,
-                "duration": timestamp - alert.timestamp,
-                "timestamp": timestamp,
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.ALERT_RESOLVED.value,
+                data={
+                    "alert_id": alert_id,
+                    "rule_name": alert.rule_name,
+                    "metric_name": alert.metric_name,
+                    "duration": timestamp - alert.timestamp,
+                    "timestamp": timestamp,
+                },
+            ),
+        )
 
         return True
 
-    async def resolve_alerts_for_metric(self, metric_name: str, timestamp: Optional[float] = None) -> int:
+    async def resolve_alerts_for_metric(
+        self,
+        metric_name: str,
+        timestamp: float | None = None,
+    ) -> int:
         """Resolve all alerts for a specific metric."""
         if timestamp is None:
             timestamp = time.time()
 
         resolved_count = 0
         alerts_to_resolve = [
-            alert_id for alert_id, alert in self.active_alerts.items()
+            alert_id
+            for alert_id, alert in self.active_alerts.items()
             if alert.metric_name == metric_name
         ]
 
@@ -280,15 +319,15 @@ class AlertManager:
 
         return resolved_count
 
-    def get_active_alerts(self) -> Dict[str, Alert]:
+    def get_active_alerts(self) -> dict[str, Alert]:
         """Get all active alerts."""
         return self.active_alerts.copy()
 
-    def get_alert_history(self, limit: int = 100) -> List[Alert]:
+    def get_alert_history(self, limit: int = 100) -> list[Alert]:
         """Get alert history."""
         return list(self.alert_history)[-limit:]
 
-    def get_alert_statistics(self) -> Dict[str, Any]:
+    def get_alert_statistics(self) -> dict[str, Any]:
         """Get alert statistics."""
         return {
             "alerts_triggered": self.stats["alerts_triggered"],
@@ -301,11 +340,11 @@ class AlertManager:
             "suppression_rules": len(self.suppression_rules),
         }
 
-    def get_alert_rules(self) -> Dict[str, AlertRule]:
+    def get_alert_rules(self) -> dict[str, AlertRule]:
         """Get all alert rules."""
         return self.alert_rules.copy()
 
-    def get_suppression_rules(self) -> Dict[str, Dict[str, Any]]:
+    def get_suppression_rules(self) -> dict[str, dict[str, Any]]:
         """Get all suppression rules."""
         return self.suppression_rules.copy()
 
@@ -327,7 +366,12 @@ class AlertManager:
         for alert_id in to_remove:
             del self.suppressed_alerts[alert_id]
 
-    async def _trigger_alert(self, rule: AlertRule, value: Any, timestamp: float) -> None:
+    async def _trigger_alert(
+        self,
+        rule: AlertRule,
+        value: Any,
+        timestamp: float,
+    ) -> None:
         """Trigger an alert."""
         # Check suppression rules
         if self._is_alert_suppressed(rule, value):
@@ -362,19 +406,21 @@ class AlertManager:
         await self._send_notifications(alert)
 
         # Emit alert triggered event
-        await emit_event(Event(
-            event_type=EventType.ALERT_TRIGGERED.value,
-            data={
-                "alert_id": alert_id,
-                "rule_name": rule.name,
-                "metric_name": rule.metric_name,
-                "value": value,
-                "condition": rule.condition,
-                "severity": rule.severity.value,
-                "description": rule.description,
-                "timestamp": timestamp,
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.ALERT_TRIGGERED.value,
+                data={
+                    "alert_id": alert_id,
+                    "rule_name": rule.name,
+                    "metric_name": rule.metric_name,
+                    "value": value,
+                    "condition": rule.condition,
+                    "severity": rule.severity.value,
+                    "description": rule.description,
+                    "timestamp": timestamp,
+                },
+            ),
+        )
 
     def _is_alert_suppressed(self, rule: AlertRule, value: Any) -> bool:
         """Check if alert is suppressed."""
@@ -392,15 +438,25 @@ class AlertManager:
 
         return False
 
-    def _evaluate_suppression_rule(self, suppression_rule: Dict[str, Any],
-                                 rule: AlertRule, value: Any) -> bool:
+    def _evaluate_suppression_rule(
+        self,
+        suppression_rule: dict[str, Any],
+        rule: AlertRule,
+        value: Any,
+    ) -> bool:
         """Evaluate suppression rule."""
         try:
             # Check if rule matches
-            if "rule_name" in suppression_rule and suppression_rule["rule_name"] != rule.name:
+            if (
+                "rule_name" in suppression_rule
+                and suppression_rule["rule_name"] != rule.name
+            ):
                 return False
 
-            if "metric_name" in suppression_rule and suppression_rule["metric_name"] != rule.metric_name:
+            if (
+                "metric_name" in suppression_rule
+                and suppression_rule["metric_name"] != rule.metric_name
+            ):
                 return False
 
             # Check time-based suppression
@@ -418,18 +474,94 @@ class AlertManager:
                 if not self._evaluate_condition(condition, value):
                     return False
 
-            return True
-
         except Exception:
             return False
+        else:
+            return True
 
     def _evaluate_condition(self, condition: str, value: Any) -> bool:
-        """Evaluate alert condition."""
+        """Evaluate alert condition safely."""
         try:
             # Replace 'value' with actual value
             condition_expr = condition.replace("value", str(value))
-            return eval(condition_expr)
-        except:
+
+            # Safe evaluation using ast and operator modules
+            import ast
+            import operator
+
+            # Define safe operations
+            safe_operators = {
+                ast.Lt: operator.lt,
+                ast.LtE: operator.le,
+                ast.Gt: operator.gt,
+                ast.GtE: operator.ge,
+                ast.Eq: operator.eq,
+                ast.NotEq: operator.ne,
+                ast.Add: operator.add,
+                ast.Sub: operator.sub,
+                ast.Mult: operator.mul,
+                ast.Div: operator.truediv,
+                ast.Mod: operator.mod,
+                ast.Pow: operator.pow,
+            }
+
+            # Define safe unary operations
+            safe_unary_operators = {
+                ast.USub: operator.neg,
+                ast.UAdd: operator.pos,
+            }
+
+            # Parse and evaluate safely
+            tree = ast.parse(condition_expr, mode="eval")
+
+            def safe_eval(node):
+                if isinstance(node, ast.Expression):
+                    return safe_eval(node.body)
+                if isinstance(node, ast.Constant):
+                    return node.value
+                if isinstance(node, ast.Name):
+                    # Only allow specific variables
+                    if node.id in ["value"]:
+                        return value
+                    msg = f"Variable '{node.id}' not allowed"
+                    raise ValueError(msg)
+                if isinstance(node, ast.BinOp):
+                    left = safe_eval(node.left)
+                    right = safe_eval(node.right)
+                    op = safe_operators.get(type(node.op))
+                    if op is None:
+                        msg = f"Operation {type(node.op).__name__} not allowed"
+                        raise ValueError(
+                            msg,
+                        )
+                    return op(left, right)
+                if isinstance(node, ast.UnaryOp):
+                    operand = safe_eval(node.operand)
+                    op = safe_unary_operators.get(type(node.op))
+                    if op is None:
+                        msg = f"Operation {type(node.op).__name__} not allowed"
+                        raise ValueError(
+                            msg,
+                        )
+                    return op(operand)
+                if isinstance(node, ast.Compare):
+                    left = safe_eval(node.left)
+                    for op, comparator in zip(node.ops, node.comparators):
+                        right = safe_eval(comparator)
+                        op_func = safe_operators.get(type(op))
+                        if op_func is None:
+                            msg = f"Operation {type(op).__name__} not allowed"
+                            raise ValueError(
+                                msg,
+                            )
+                        if not op_func(left, right):
+                            return False
+                    return True
+                msg = f"Node type {type(node).__name__} not allowed"
+                raise ValueError(msg)
+
+            return safe_eval(tree)
+        except Exception:
             return False
 
     async def _send_notifications(self, alert: Alert) -> None:
@@ -446,17 +578,23 @@ class AlertManager:
                 self.stats["notification_failures"] += 1
 
                 # Emit notification error event
-                await emit_event(Event(
-                    event_type=EventType.NOTIFICATION_ERROR.value,
-                    data={
-                        "channel": channel.value,
-                        "alert_id": alert.id,
-                        "error": str(e),
-                        "timestamp": time.time(),
-                    },
-                ))
+                await emit_event(
+                    Event(
+                        event_type=EventType.NOTIFICATION_ERROR.value,
+                        data={
+                            "channel": channel.value,
+                            "alert_id": alert.id,
+                            "error": str(e),
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
-    async def _send_notification(self, channel: NotificationChannel, alert: Alert) -> None:
+    async def _send_notification(
+        self,
+        channel: NotificationChannel,
+        alert: Alert,
+    ) -> None:
         """Send notification via specific channel."""
         if channel in self.notification_handlers:
             handler = self.notification_handlers[channel]
@@ -534,15 +672,15 @@ class AlertManager:
             "timestamp": alert.timestamp,
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(webhook_url, json=payload) as response:
-                if response.status >= 400:
-                    raise Exception(f"Webhook failed with status {response.status}")
+        async with aiohttp.ClientSession() as session, session.post(
+            webhook_url, json=payload
+        ) as response:
+            if response.status >= 400:
+                msg = f"Webhook failed with status {response.status}"
+                raise RuntimeError(msg)
 
     async def _send_log_notification(self, alert: Alert) -> None:
         """Send log notification."""
-        import logging
-
         logger = logging.getLogger("ccbt.alerts")
 
         log_message = (

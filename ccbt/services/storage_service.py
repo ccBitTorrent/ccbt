@@ -1,22 +1,27 @@
 """Storage service for ccBitTorrent.
 
+from __future__ import annotations
+
 Manages file storage operations with health checks and
 circuit breaker protection.
 """
+
+from __future__ import annotations
 
 import asyncio
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from ..logging_config import LoggingContext
-from .base import HealthCheck, Service
+from ccbt.logging_config import LoggingContext
+from ccbt.services.base import HealthCheck, Service
 
 
 @dataclass
 class StorageOperation:
     """Represents a storage operation."""
+
     operation_type: str
     file_path: str
     size: int
@@ -28,6 +33,7 @@ class StorageOperation:
 @dataclass
 class FileInfo:
     """Information about a stored file."""
+
     path: str
     size: int
     created_at: float
@@ -40,8 +46,8 @@ class FileInfo:
 class StorageService(Service):
     """Service for managing file storage operations."""
 
-    def __init__(self, max_concurrent_operations: int = 10,
-                 cache_size_mb: int = 256):
+    def __init__(self, max_concurrent_operations: int = 10, cache_size_mb: int = 256):
+        """Initialize storage service."""
         super().__init__(
             name="storage_service",
             version="1.0.0",
@@ -52,7 +58,7 @@ class StorageService(Service):
         self.cache_size_bytes = cache_size_mb * 1024 * 1024
 
         # Storage tracking
-        self.files: Dict[str, FileInfo] = {}
+        self.files: dict[str, FileInfo] = {}
         self.active_operations = 0
         self.total_operations = 0
         self.successful_operations = 0
@@ -66,7 +72,7 @@ class StorageService(Service):
 
         # Operation queue
         self.operation_queue: asyncio.Queue = asyncio.Queue()
-        self.operation_tasks: List[asyncio.Task] = []
+        self.operation_tasks: list[asyncio.Task] = []
 
     async def start(self) -> None:
         """Start the storage service."""
@@ -94,8 +100,8 @@ class StorageService(Service):
         try:
             # Check if we can perform storage operations
             healthy = (
-                self.active_operations <= self.max_concurrent_operations and
-                self.failed_operations < self.total_operations * 0.1
+                self.active_operations <= self.max_concurrent_operations
+                and self.failed_operations < self.total_operations * 0.1
             )
 
             # Calculate health score
@@ -131,7 +137,7 @@ class StorageService(Service):
         self.logger.info("Initializing storage management")
 
         # Start operation processing tasks
-        for i in range(self.max_concurrent_operations):
+        for _i in range(self.max_concurrent_operations):
             task = asyncio.create_task(self._process_operations())
             self.operation_tasks.append(task)
 
@@ -144,21 +150,24 @@ class StorageService(Service):
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Error processing storage operation: {e}")
+            except Exception:
+                self.logger.exception("Error processing storage operation")
 
     async def _execute_operation(self, operation: StorageOperation) -> None:
         """Execute a storage operation."""
         try:
-            with LoggingContext("storage_operation",
-                              operation=operation.operation_type,
-                              file_path=operation.file_path):
-
+            with LoggingContext(
+                operation.operation_type,
+                file_path=operation.file_path,
+            ):
                 start_time = time.time()
                 success = False
 
                 if operation.operation_type == "write":
-                    success = await self._write_file(operation.file_path, operation.size)
+                    success = await self._write_file(
+                        operation.file_path,
+                        operation.size,
+                    )
                 elif operation.operation_type == "read":
                     success = await self._read_file(operation.file_path, operation.size)
                 elif operation.operation_type == "delete":
@@ -175,8 +184,8 @@ class StorageService(Service):
                 self.total_operations += 1
                 self.active_operations -= 1
 
-        except Exception as e:
-            self.logger.error(f"Storage operation failed: {e}")
+        except Exception:
+            self.logger.exception("Storage operation failed")
             self.failed_operations += 1
             self.total_operations += 1
             self.active_operations -= 1
@@ -192,11 +201,12 @@ class StorageService(Service):
                 f.write(b"0" * size)
 
             self.total_bytes_written += size
-            return True
 
-        except Exception as e:
-            self.logger.error(f"Failed to write file {file_path}: {e}")
+        except Exception:
+            self.logger.exception("Failed to write file %s", file_path)
             return False
+        else:
+            return True
 
     async def _read_file(self, file_path: str, size: int) -> bool:
         """Read a file."""
@@ -209,11 +219,12 @@ class StorageService(Service):
                 data = f.read(size)
 
             self.total_bytes_read += len(data)
-            return True
 
-        except Exception as e:
-            self.logger.error(f"Failed to read file {file_path}: {e}")
+        except Exception:
+            self.logger.exception("Failed to read file %s", file_path)
             return False
+        else:
+            return True
 
     async def _delete_file(self, file_path: str) -> bool:
         """Delete a file."""
@@ -221,19 +232,20 @@ class StorageService(Service):
             path = Path(file_path)
             if path.exists():
                 path.unlink()
-            return True
 
-        except Exception as e:
-            self.logger.error(f"Failed to delete file {file_path}: {e}")
+        except Exception:
+            self.logger.exception("Failed to delete file %s", file_path)
             return False
+        else:
+            return True
 
     async def write_file(self, file_path: str, data: bytes) -> bool:
         """Write data to a file.
-        
+
         Args:
             file_path: Path to file
             data: Data to write
-            
+
         Returns:
             True if successful
         """
@@ -255,13 +267,13 @@ class StorageService(Service):
 
         return True
 
-    async def read_file(self, file_path: str, size: int) -> Optional[bytes]:
+    async def read_file(self, file_path: str, size: int) -> bytes | None:
         """Read data from a file.
-        
+
         Args:
             file_path: Path to file
             size: Number of bytes to read
-            
+
         Returns:
             File data or None if failed
         """
@@ -286,10 +298,10 @@ class StorageService(Service):
 
     async def delete_file(self, file_path: str) -> bool:
         """Delete a file.
-        
+
         Args:
             file_path: Path to file
-            
+
         Returns:
             True if successful
         """
@@ -311,15 +323,15 @@ class StorageService(Service):
 
         return True
 
-    async def get_file_info(self, file_path: str) -> Optional[FileInfo]:
+    async def get_file_info(self, file_path: str) -> FileInfo | None:
         """Get file information."""
         return self.files.get(file_path)
 
-    async def list_files(self) -> List[FileInfo]:
+    async def list_files(self) -> list[FileInfo]:
         """List all tracked files."""
         return list(self.files.values())
 
-    async def get_storage_stats(self) -> Dict[str, Any]:
+    async def get_storage_stats(self) -> dict[str, Any]:
         """Get storage service statistics."""
         return {
             "total_files": len(self.files),
@@ -337,7 +349,7 @@ class StorageService(Service):
             ),
         }
 
-    async def get_disk_usage(self) -> Dict[str, Any]:
+    async def get_disk_usage(self) -> dict[str, Any]:
         """Get disk usage information."""
         total_size = sum(f.size for f in self.files.values())
         complete_files = sum(1 for f in self.files.values() if f.is_complete)

@@ -1,7 +1,5 @@
+"""Tests for Security Manager.
 """
-Tests for Security Manager.
-"""
-
 
 import pytest
 
@@ -51,7 +49,9 @@ class TestSecurityManager:
 
         assert not is_valid
         assert reason == "IP is blacklisted"
-        assert security_manager.stats["blocked_connections"] == 0  # Not counted as blocked yet
+        assert (
+            security_manager.stats["blocked_connections"] == 0
+        )  # Not counted as blocked yet
 
     @pytest.mark.asyncio
     async def test_validate_peer_rate_limited(self, security_manager, sample_peer_info):
@@ -72,7 +72,11 @@ class TestSecurityManager:
 
         # Record successful activity
         await security_manager.record_peer_activity(
-            peer_id, sample_peer_info.ip, True, 1000, 2000,
+            peer_id,
+            sample_peer_info.ip,
+            True,
+            1000,
+            2000,
         )
 
         # Check reputation was created
@@ -89,7 +93,10 @@ class TestSecurityManager:
 
         # Report violation
         await security_manager.report_violation(
-            peer_id, sample_peer_info.ip, ThreatType.MALICIOUS_PEER, "Test violation",
+            peer_id,
+            sample_peer_info.ip,
+            ThreatType.MALICIOUS_PEER,
+            "Test violation",
         )
 
         # Check reputation was updated

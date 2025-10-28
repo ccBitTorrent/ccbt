@@ -1,20 +1,25 @@
 """High-performance buffer management for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides ring buffers, memory pools, and zero-copy operations for optimal
 memory usage and performance in network I/O and message processing.
 """
 
+from __future__ import annotations
+
 import threading
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable
 
-from .logging_config import get_logger
+from ccbt.logging_config import get_logger
 
 
 @dataclass
 class BufferStats:
     """Statistics for buffer operations."""
+
     total_allocations: int = 0
     total_deallocations: int = 0
     peak_usage: int = 0
@@ -28,7 +33,7 @@ class RingBuffer:
 
     def __init__(self, size: int, alignment: int = 1) -> None:
         """Initialize ring buffer.
-        
+
         Args:
             size: Buffer size in bytes
             alignment: Memory alignment requirement
@@ -44,10 +49,10 @@ class RingBuffer:
 
     def write(self, data: bytes) -> int:
         """Write data to ring buffer.
-        
+
         Args:
             data: Data to write
-            
+
         Returns:
             Number of bytes written
         """
@@ -66,11 +71,15 @@ class RingBuffer:
             second_chunk = to_write - first_chunk
 
             # First chunk
-            self.buffer[self.write_pos:self.write_pos + first_chunk] = data[:first_chunk]
+            self.buffer[self.write_pos : self.write_pos + first_chunk] = data[
+                :first_chunk
+            ]
 
             # Second chunk (if buffer wraps around)
             if second_chunk > 0:
-                self.buffer[:second_chunk] = data[first_chunk:first_chunk + second_chunk]
+                self.buffer[:second_chunk] = data[
+                    first_chunk : first_chunk + second_chunk
+                ]
                 self.write_pos = second_chunk
             else:
                 self.write_pos = (self.write_pos + first_chunk) % self.size
@@ -80,10 +89,10 @@ class RingBuffer:
 
     def read(self, size: int) -> bytes:
         """Read data from ring buffer.
-        
+
         Args:
             size: Number of bytes to read
-            
+
         Returns:
             Data read from buffer
         """
@@ -99,7 +108,9 @@ class RingBuffer:
             second_chunk = to_read - first_chunk
 
             # First chunk
-            result[:first_chunk] = self.buffer[self.read_pos:self.read_pos + first_chunk]
+            result[:first_chunk] = self.buffer[
+                self.read_pos : self.read_pos + first_chunk
+            ]
 
             # Second chunk (if buffer wraps around)
             if second_chunk > 0:
@@ -111,7 +122,7 @@ class RingBuffer:
             self.used -= to_read
             return bytes(result)
 
-    def peek_views(self, size: Optional[int] = None) -> List[memoryview]:
+    def peek_views(self, size: int | None = None) -> list[memoryview]:
         """Return up to two memoryviews representing current readable data without consuming it.
 
         Args:
@@ -126,9 +137,13 @@ class RingBuffer:
             to_read = self.used if size is None else min(size, self.used)
             first_chunk = min(to_read, self.size - self.read_pos)
             second_chunk = to_read - first_chunk
-            views: List[memoryview] = []
+            views: list[memoryview] = []
             if first_chunk > 0:
-                views.append(memoryview(self.buffer)[self.read_pos:self.read_pos + first_chunk])
+                views.append(
+                    memoryview(self.buffer)[
+                        self.read_pos : self.read_pos + first_chunk
+                    ],
+                )
             if second_chunk > 0:
                 views.append(memoryview(self.buffer)[:second_chunk])
             return views
@@ -155,10 +170,10 @@ class RingBuffer:
 
     def peek(self, size: int) -> bytes:
         """Peek at data without consuming it.
-        
+
         Args:
             size: Number of bytes to peek
-            
+
         Returns:
             Data at current read position
         """
@@ -174,7 +189,9 @@ class RingBuffer:
             second_chunk = to_read - first_chunk
 
             # First chunk
-            result[:first_chunk] = self.buffer[self.read_pos:self.read_pos + first_chunk]
+            result[:first_chunk] = self.buffer[
+                self.read_pos : self.read_pos + first_chunk
+            ]
 
             # Second chunk (if buffer wraps around)
             if second_chunk > 0:
@@ -203,9 +220,14 @@ class RingBuffer:
 class MemoryPool:
     """Memory pool for efficient allocation/deallocation."""
 
-    def __init__(self, size: int, count: int, factory: Optional[Callable[[], Any]] = None) -> None:
+    def __init__(
+        self,
+        size: int,
+        count: int,
+        factory: Callable[[], Any] | None = None,
+    ) -> None:
         """Initialize memory pool.
-        
+
         Args:
             size: Size of each object
             count: Number of objects in pool
@@ -231,7 +253,10 @@ class MemoryPool:
                 obj = self.pool.popleft()
                 self.stats.cache_hits += 1
                 self.stats.current_usage += 1
-                self.stats.peak_usage = max(self.stats.peak_usage, self.stats.current_usage)
+                self.stats.peak_usage = max(
+                    self.stats.peak_usage,
+                    self.stats.current_usage,
+                )
                 return obj
             # Pool exhausted, create new object
             obj = self.factory()
@@ -278,7 +303,7 @@ class ZeroCopyBuffer:
 
     def __init__(self, size: int) -> None:
         """Initialize zero-copy buffer.
-        
+
         Args:
             size: Buffer size in bytes
         """
@@ -289,12 +314,12 @@ class ZeroCopyBuffer:
         self.lock = threading.Lock()
         self.logger = get_logger(__name__)
 
-    def write(self, data: Union[bytes, memoryview]) -> int:
+    def write(self, data: bytes | memoryview) -> int:
         """Write data to buffer with zero-copy when possible.
-        
+
         Args:
             data: Data to write
-            
+
         Returns:
             Number of bytes written
         """
@@ -310,19 +335,19 @@ class ZeroCopyBuffer:
 
             # Use memoryview for zero-copy operation
             if isinstance(data, memoryview):
-                self.view[self.pos:self.pos + to_write] = data[:to_write]
+                self.view[self.pos : self.pos + to_write] = data[:to_write]
             else:
-                self.buffer[self.pos:self.pos + to_write] = data[:to_write]
+                self.buffer[self.pos : self.pos + to_write] = data[:to_write]
 
             self.pos += to_write
             return to_write
 
     def read(self, size: int) -> memoryview:
         """Read data from buffer as memoryview for zero-copy.
-        
+
         Args:
             size: Number of bytes to read
-            
+
         Returns:
             Memoryview of the data
         """
@@ -336,16 +361,16 @@ class ZeroCopyBuffer:
 
             # Shift remaining data
             if self.pos > 0:
-                self.buffer[:self.pos] = self.buffer[to_read:to_read + self.pos]
+                self.buffer[: self.pos] = self.buffer[to_read : to_read + self.pos]
 
             return result
 
     def peek(self, size: int) -> memoryview:
         """Peek at data without consuming it.
-        
+
         Args:
             size: Number of bytes to peek
-            
+
         Returns:
             Memoryview of the data
         """
@@ -377,9 +402,9 @@ class BufferManager:
 
     def __init__(self) -> None:
         """Initialize buffer manager."""
-        self.ring_buffers: List[RingBuffer] = []
-        self.memory_pools: List[MemoryPool] = []
-        self.zero_copy_buffers: List[ZeroCopyBuffer] = []
+        self.ring_buffers: list[RingBuffer] = []
+        self.memory_pools: list[MemoryPool] = []
+        self.zero_copy_buffers: list[ZeroCopyBuffer] = []
         self.lock = threading.Lock()
         self.logger = get_logger(__name__)
 
@@ -390,7 +415,12 @@ class BufferManager:
             self.ring_buffers.append(buffer)
             return buffer
 
-    def create_memory_pool(self, size: int, count: int, factory: Optional[Callable[[], Any]] = None) -> MemoryPool:
+    def create_memory_pool(
+        self,
+        size: int,
+        count: int,
+        factory: Callable[[], Any] | None = None,
+    ) -> MemoryPool:
         """Create a new memory pool."""
         with self.lock:
             pool = MemoryPool(size, count, factory)
@@ -404,20 +434,19 @@ class BufferManager:
             self.zero_copy_buffers.append(buffer)
             return buffer
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get statistics for all buffers."""
         with self.lock:
-            stats = {
+            return {
                 "ring_buffers": len(self.ring_buffers),
                 "memory_pools": len(self.memory_pools),
                 "zero_copy_buffers": len(self.zero_copy_buffers),
                 "pool_stats": [pool.get_stats() for pool in self.memory_pools],
             }
-            return stats
 
 
 # Global buffer manager instance
-_buffer_manager: Optional[BufferManager] = None
+_buffer_manager: BufferManager | None = None
 
 
 def get_buffer_manager() -> BufferManager:

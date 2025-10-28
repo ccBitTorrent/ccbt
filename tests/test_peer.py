@@ -1,5 +1,4 @@
-"""
-Tests for peer protocol implementation.
+"""Tests for peer protocol implementation.
 """
 
 import struct
@@ -116,11 +115,13 @@ class TestHandshake:
 
         # Manually create invalid handshake data (67 bytes, should be 68)
         protocol_len = 18  # Should be 19
-        encoded = (struct.pack("B", protocol_len) +
-                  b"BitTorrent protoco" +  # 18 bytes instead of 19
-                  b"\x00" * 8 +
-                  info_hash +
-                  peer_id)
+        encoded = (
+            struct.pack("B", protocol_len)
+            + b"BitTorrent protoco"  # 18 bytes instead of 19
+            + b"\x00" * 8
+            + info_hash
+            + peer_id
+        )
         # Pad to 68 bytes to pass length check
         encoded = encoded.ljust(68, b"\x00")
 
@@ -133,11 +134,10 @@ class TestHandshake:
         peer_id = b"peer_id_20_bytes____"
 
         # Create handshake with wrong protocol string
-        encoded = (b"\x13"  # 19
-                  b"Wrong protocol name" +
-                  b"\x00" * 8 +
-                  info_hash +
-                  peer_id)
+        encoded = (
+            b"\x13"  # 19
+            b"Wrong protocol name" + b"\x00" * 8 + info_hash + peer_id
+        )
 
         with pytest.raises(HandshakeError, match="Invalid protocol string"):
             Handshake.decode(encoded)
@@ -150,7 +150,13 @@ class TestHandshake:
         info_hash = b"info_hash_20_bytes__"
         peer_id = b"peer_id_20_bytes____"
 
-        handshake = Handshake.from_parts(protocol_len, protocol, reserved, info_hash, peer_id)
+        handshake = Handshake.from_parts(
+            protocol_len,
+            protocol,
+            reserved,
+            info_hash,
+            peer_id,
+        )
 
         assert handshake.info_hash == info_hash
         assert handshake.peer_id == peer_id
@@ -162,12 +168,24 @@ class TestHandshake:
     def test_handshake_from_parts_invalid_protocol_length(self):
         """Test creating handshake with mismatched protocol length."""
         with pytest.raises(HandshakeError, match="Protocol length mismatch"):
-            Handshake.from_parts(19, b"Wrong length protocol", b"\x00" * 8, b"x" * 20, b"y" * 20)
+            Handshake.from_parts(
+                19,
+                b"Wrong length protocol",
+                b"\x00" * 8,
+                b"x" * 20,
+                b"y" * 20,
+            )
 
     def test_handshake_from_parts_invalid_reserved_length(self):
         """Test creating handshake with invalid reserved bytes length."""
         with pytest.raises(HandshakeError, match="Reserved must be 8 bytes"):
-            Handshake.from_parts(19, b"BitTorrent protocol", b"\x00" * 7, b"x" * 20, b"y" * 20)
+            Handshake.from_parts(
+                19,
+                b"BitTorrent protocol",
+                b"\x00" * 7,
+                b"x" * 20,
+                b"y" * 20,
+            )
 
 
 class TestKeepAliveMessage:
@@ -328,7 +346,7 @@ class TestBitfieldMessage:
 
     def test_encode(self):
         """Test encoding bitfield message."""
-        bitfield = b"\xFF\x00\x80"  # 24 bits: 11111111 00000000 10000000
+        bitfield = b"\xff\x00\x80"  # 24 bits: 11111111 00000000 10000000
         message = BitfieldMessage(bitfield)
         encoded = message.encode()
 
@@ -343,10 +361,12 @@ class TestBitfieldMessage:
 
     def test_decode(self):
         """Test decoding bitfield message."""
-        bitfield = b"\xFF\x00\x80"
-        encoded = (struct.pack("!I", 4) +  # length = 4 (1 ID + 3 bitfield)
-                  struct.pack("B", MessageType.BITFIELD) +
-                  bitfield)
+        bitfield = b"\xff\x00\x80"
+        encoded = (
+            struct.pack("!I", 4)  # length = 4 (1 ID + 3 bitfield)
+            + struct.pack("B", MessageType.BITFIELD)
+            + bitfield
+        )
 
         message = BitfieldMessage.decode(encoded)
 
@@ -363,28 +383,28 @@ class TestBitfieldMessage:
         # Byte 0: 10110001 -> pieces 0,2,3,7 (from high to low bit)
         # Byte 1: 01100010 -> pieces 9,10,14 (from high to low bit)
 
-        assert message.has_piece(0, 16) == True   # Bit 7 of byte 0
-        assert message.has_piece(1, 16) == False  # Bit 6 of byte 0
-        assert message.has_piece(2, 16) == True   # Bit 5 of byte 0
-        assert message.has_piece(3, 16) == True   # Bit 4 of byte 0
-        assert message.has_piece(4, 16) == False  # Bit 3 of byte 0
-        assert message.has_piece(5, 16) == False  # Bit 2 of byte 0
-        assert message.has_piece(6, 16) == False  # Bit 1 of byte 0
-        assert message.has_piece(7, 16) == True   # Bit 0 of byte 0
+        assert message.has_piece(0, 16)  # Bit 7 of byte 0
+        assert not message.has_piece(1, 16)  # Bit 6 of byte 0
+        assert message.has_piece(2, 16)  # Bit 5 of byte 0
+        assert message.has_piece(3, 16)  # Bit 4 of byte 0
+        assert not message.has_piece(4, 16)  # Bit 3 of byte 0
+        assert not message.has_piece(5, 16)  # Bit 2 of byte 0
+        assert not message.has_piece(6, 16)  # Bit 1 of byte 0
+        assert message.has_piece(7, 16)  # Bit 0 of byte 0
 
-        assert message.has_piece(8, 16) == False  # Bit 7 of byte 1
-        assert message.has_piece(9, 16) == True   # Bit 6 of byte 1
-        assert message.has_piece(10, 16) == True  # Bit 5 of byte 1
-        assert message.has_piece(11, 16) == False # Bit 4 of byte 1
-        assert message.has_piece(12, 16) == False # Bit 3 of byte 1
-        assert message.has_piece(13, 16) == False # Bit 2 of byte 1
-        assert message.has_piece(14, 16) == True  # Bit 1 of byte 1
-        assert message.has_piece(15, 16) == False # Bit 0 of byte 1
+        assert not message.has_piece(8, 16)  # Bit 7 of byte 1
+        assert message.has_piece(9, 16)  # Bit 6 of byte 1
+        assert message.has_piece(10, 16)  # Bit 5 of byte 1
+        assert not message.has_piece(11, 16)  # Bit 4 of byte 1
+        assert not message.has_piece(12, 16)  # Bit 3 of byte 1
+        assert not message.has_piece(13, 16)  # Bit 2 of byte 1
+        assert message.has_piece(14, 16)  # Bit 1 of byte 1
+        assert not message.has_piece(15, 16)  # Bit 0 of byte 1
 
         # Test out of range
-        assert message.has_piece(-1, 16) == False
-        assert message.has_piece(16, 16) == False
-        assert message.has_piece(100, 16) == False
+        assert not message.has_piece(-1, 16)
+        assert not message.has_piece(16, 16)
+        assert not message.has_piece(100, 16)
 
     def test_decode_invalid_length(self):
         """Test decoding bitfield with invalid length."""
@@ -402,7 +422,10 @@ class TestRequestMessage:
         encoded = message.encode()
 
         assert len(encoded) == 17
-        length, message_id, piece_index, begin, req_length = struct.unpack("!IBIII", encoded)
+        length, message_id, piece_index, begin, req_length = struct.unpack(
+            "!IBIII",
+            encoded,
+        )
         assert length == 13
         assert message_id == MessageType.REQUEST
         assert piece_index == 5
@@ -445,10 +468,12 @@ class TestPieceMessage:
     def test_decode(self):
         """Test decoding piece message."""
         block = b"piece data here"
-        encoded = (struct.pack("!I", 9 + len(block)) +  # length = 9 + 15 = 24
-                  struct.pack("B", MessageType.PIECE) +
-                  struct.pack("!II", 7, 1500) +
-                  block)
+        encoded = (
+            struct.pack("!I", 9 + len(block))  # length = 9 + 15 = 24
+            + struct.pack("B", MessageType.PIECE)
+            + struct.pack("!II", 7, 1500)
+            + block
+        )
 
         message = PieceMessage.decode(encoded)
 
@@ -467,7 +492,10 @@ class TestCancelMessage:
         encoded = message.encode()
 
         assert len(encoded) == 17
-        length, message_id, piece_index, begin, req_length = struct.unpack("!IBIII", encoded)
+        length, message_id, piece_index, begin, req_length = struct.unpack(
+            "!IBIII",
+            encoded,
+        )
         assert length == 13
         assert message_id == MessageType.CANCEL
         assert piece_index == 5
@@ -488,70 +516,88 @@ class TestCancelMessage:
 class TestMessageDecoder:
     """Test cases for MessageDecoder."""
 
-    def test_decode_keepalive(self):
+    async def test_decode_keepalive(self):
         """Test decoding keep-alive message."""
         decoder = MessageDecoder()
-        messages = decoder.add_data(struct.pack("!I", 0))
+        await decoder.feed_data(struct.pack("!I", 0))
+        message = await decoder.get_message()
 
-        assert len(messages) == 1
-        assert isinstance(messages[0], KeepAliveMessage)
+        assert message is not None
+        assert isinstance(message, KeepAliveMessage)
 
-    def test_decode_choke(self):
+    async def test_decode_choke(self):
         """Test decoding choke message."""
         decoder = MessageDecoder()
-        messages = decoder.add_data(struct.pack("!IB", 1, MessageType.CHOKE))
+        await decoder.feed_data(struct.pack("!IB", 1, MessageType.CHOKE))
+        message = await decoder.get_message()
 
-        assert len(messages) == 1
-        assert isinstance(messages[0], ChokeMessage)
+        assert message is not None
+        assert isinstance(message, ChokeMessage)
 
-    def test_decode_have(self):
+    async def test_decode_have(self):
         """Test decoding have message."""
         decoder = MessageDecoder()
         # Full message: length(5) + id(4) + piece_index(42)
-        messages = decoder.add_data(struct.pack("!IBI", 5, MessageType.HAVE, 42))
+        await decoder.feed_data(memoryview(struct.pack("!IBI", 5, MessageType.HAVE, 42)))
+        message = await decoder.get_message()
 
-        assert len(messages) == 1
-        assert isinstance(messages[0], HaveMessage)
-        assert messages[0].piece_index == 42
+        assert message is not None
+        assert isinstance(message, HaveMessage)
+        assert message.piece_index == 42
 
-    def test_decode_bitfield(self):
+    async def test_decode_bitfield(self):
         """Test decoding bitfield message."""
         decoder = MessageDecoder()
-        bitfield = b"\xFF\x00"
+        bitfield = b"\xff\x00"
         # Full message: length(3) + id(5) + bitfield
-        encoded = (struct.pack("!I", 3) +  # length = 3 (1 ID + 2 bitfield)
-                  struct.pack("B", MessageType.BITFIELD) +
-                  bitfield)
-        messages = decoder.add_data(encoded)
+        encoded = (
+            struct.pack("!I", 3)  # length = 3 (1 ID + 2 bitfield)
+            + struct.pack("B", MessageType.BITFIELD)
+            + bitfield
+        )
+        await decoder.feed_data(memoryview(encoded))
+        message = await decoder.get_message()
 
-        assert len(messages) == 1
-        assert isinstance(messages[0], BitfieldMessage)
-        assert messages[0].bitfield == bitfield
+        assert message is not None
+        assert isinstance(message, BitfieldMessage)
+        assert message.bitfield == bitfield
 
-    def test_decode_partial_data(self):
+    async def test_decode_partial_data(self):
         """Test decoding with partial data."""
         decoder = MessageDecoder()
 
         # Add partial message (only length)
-        messages = decoder.add_data(struct.pack("!I", 5))
-        assert len(messages) == 0
+        await decoder.feed_data(struct.pack("!I", 5))
+        message = await decoder.get_message()
+        assert message is None  # Should be None since message is incomplete
 
         # Add rest of message (message ID and payload, length field already in buffer)
-        messages = decoder.add_data(struct.pack("BI", MessageType.HAVE, 42))
-        assert len(messages) == 1
-        assert isinstance(messages[0], HaveMessage)
-        assert messages[0].piece_index == 42
+        await decoder.feed_data(memoryview(struct.pack("BI", MessageType.HAVE, 42)))
+        message = await decoder.get_message()
+        assert message is not None
+        assert isinstance(message, HaveMessage)
+        assert message.piece_index == 42
 
-    def test_decode_multiple_messages(self):
+    async def test_decode_multiple_messages(self):
         """Test decoding multiple messages in one data chunk."""
         decoder = MessageDecoder()
 
         # Create multiple messages (each with full length field)
-        messages_data = (struct.pack("!IB", 1, MessageType.CHOKE) +
-                        struct.pack("!IB", 1, MessageType.UNCHOKE) +
-                        struct.pack("!IBI", 5, MessageType.HAVE, 10))
+        messages_data = (
+            struct.pack("!IB", 1, MessageType.CHOKE)
+            + struct.pack("!IB", 1, MessageType.UNCHOKE)
+            + struct.pack("!IBI", 5, MessageType.HAVE, 10)
+        )
 
-        messages = decoder.add_data(messages_data)
+        await decoder.feed_data(memoryview(messages_data))
+
+        # Get all messages
+        messages = []
+        while True:
+            message = await decoder.get_message()
+            if message is None:
+                break
+            messages.append(message)
 
         assert len(messages) == 3
         assert isinstance(messages[0], ChokeMessage)
@@ -559,25 +605,28 @@ class TestMessageDecoder:
         assert isinstance(messages[2], HaveMessage)
         assert messages[2].piece_index == 10
 
-    def test_decode_piece_message(self):
+    async def test_decode_piece_message(self):
         """Test decoding piece message."""
         decoder = MessageDecoder()
 
         block = b"x" * 100
         # Full message: length(109) + id(7) + piece_index(5) + begin(1000) + block(100)
         # Total: 4 + 1 + 4 + 4 + 100 = 113 bytes
-        encoded = (struct.pack("!I", 9 + len(block)) +  # length = 9 + 100 = 109
-                  struct.pack("B", MessageType.PIECE) +
-                  struct.pack("!II", 5, 1000) +
-                  block)
+        encoded = (
+            struct.pack("!I", 9 + len(block))  # length = 9 + 100 = 109
+            + struct.pack("B", MessageType.PIECE)
+            + struct.pack("!II", 5, 1000)
+            + block
+        )
 
-        messages = decoder.add_data(encoded)
+        await decoder.feed_data(memoryview(encoded))
+        message = await decoder.get_message()
 
-        assert len(messages) == 1
-        assert isinstance(messages[0], PieceMessage)
-        assert messages[0].piece_index == 5
-        assert messages[0].begin == 1000
-        assert messages[0].block == block
+        assert message is not None
+        assert isinstance(message, PieceMessage)
+        assert message.piece_index == 5
+        assert message.begin == 1000
+        assert message.block == block
 
 
 class TestCreateMessage:
@@ -596,15 +645,19 @@ class TestCreateMessage:
 
     def test_create_bitfield(self):
         """Test creating bitfield message."""
-        bitfield = b"\xFF\x00"
+        bitfield = b"\xff\x00"
         message = create_message(MessageType.BITFIELD, bitfield=bitfield)
         assert isinstance(message, BitfieldMessage)
         assert message.bitfield == bitfield
 
     def test_create_request(self):
         """Test creating request message."""
-        message = create_message(MessageType.REQUEST,
-                               piece_index=5, begin=1000, length=16384)
+        message = create_message(
+            MessageType.REQUEST,
+            piece_index=5,
+            begin=1000,
+            length=16384,
+        )
         assert isinstance(message, RequestMessage)
         assert message.piece_index == 5
         assert message.begin == 1000
@@ -623,10 +676,10 @@ class TestPeerState:
         """Test initial peer state."""
         state = PeerState()
 
-        assert state.am_choking == True
-        assert state.am_interested == False
-        assert state.peer_choking == True
-        assert state.peer_interested == False
+        assert state.am_choking
+        assert not state.am_interested
+        assert state.peer_choking
+        assert not state.peer_interested
         assert state.bitfield is None
         assert state.pieces_we_have == set()
 

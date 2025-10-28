@@ -1,10 +1,15 @@
 """Advanced piece management for BitTorrent client.
 
+from __future__ import annotations
+
 Implements rarest-first piece selection, endgame mode, per-peer availability tracking,
 and parallel hash verification for high performance.
 """
 
+from __future__ import annotations
+
 import asyncio
+import contextlib
 import hashlib
 import logging
 import time
@@ -12,32 +17,43 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable
 
-from .async_peer_connection import AsyncPeerConnection
-from .config import get_config
-from .models import DownloadStats, FileCheckpoint, TorrentCheckpoint, PieceSelectionStrategy
-from .models import PieceState as PieceStateModel
+from ccbt.config import get_config
+from ccbt.models import (
+    DownloadStats,
+    FileCheckpoint,
+    PieceSelectionStrategy,
+    TorrentCheckpoint,
+)
+from ccbt.models import PieceState as PieceStateModel
+
+if TYPE_CHECKING:
+    from ccbt.async_peer_connection import AsyncPeerConnection
 
 
 class PieceState(Enum):
     """States of a piece download."""
-    MISSING = "missing"      # We don't have this piece
+
+    MISSING = "missing"  # We don't have this piece
     REQUESTED = "requested"  # We've requested this piece from peers
     DOWNLOADING = "downloading"  # We're actively downloading this piece
-    COMPLETE = "complete"    # We have the complete piece
-    VERIFIED = "verified"    # Piece hash has been verified
+    COMPLETE = "complete"  # We have the complete piece
+    VERIFIED = "verified"  # Piece hash has been verified
 
 
 @dataclass
 class PieceBlock:
     """Represents a block within a piece."""
+
     piece_index: int
     begin: int
     length: int
     data: bytes = b""
     received: bool = False
-    requested_from: Set[str] = field(default_factory=set)  # Peer keys that have this block
+    requested_from: set[str] = field(
+        default_factory=set,
+    )  # Peer keys that have this block
 
     def is_complete(self) -> bool:
         """Check if block is complete."""
@@ -60,9 +76,10 @@ class PieceBlock:
 @dataclass
 class PieceData:
     """Represents a complete piece with all its blocks."""
+
     piece_index: int
     length: int
-    blocks: List[PieceBlock] = field(default_factory=list)
+    blocks: list[PieceBlock] = field(default_factory=list)
     state: PieceState = PieceState.MISSING
     hash_verified: bool = False
     priority: int = 0  # Higher priority = download first
@@ -103,13 +120,14 @@ class PieceData:
     def get_data(self) -> bytes:
         """Get the complete piece data."""
         if not self.is_complete():
-            raise ValueError(f"Piece {self.piece_index} is not complete")
+            msg = f"Piece {self.piece_index} is not complete"
+            raise ValueError(msg)
 
         # Sort blocks by begin offset and concatenate
         sorted_blocks = sorted(self.blocks, key=lambda b: b.begin)
         return b"".join(block.data for block in sorted_blocks)
 
-    def get_missing_blocks(self) -> List[PieceBlock]:
+    def get_missing_blocks(self) -> list[PieceBlock]:
         """Get list of missing blocks."""
         return [block for block in self.blocks if not block.received]
 
@@ -118,8 +136,8 @@ class PieceData:
         if not self.is_complete():
             return False
 
-        actual_hash = hashlib.sha1(self.get_data()).digest()
-        self.hash_verified = (actual_hash == expected_hash)
+        actual_hash = hashlib.sha1(self.get_data()).digest()  # nosec B324 - SHA-1 required by BitTorrent protocol (BEP 3)
+        self.hash_verified = actual_hash == expected_hash
 
         if self.hash_verified:
             self.state = PieceState.VERIFIED
@@ -136,8 +154,9 @@ class PieceData:
 @dataclass
 class PeerAvailability:
     """Tracks which pieces a peer has."""
+
     peer_key: str
-    pieces: Set[int] = field(default_factory=set)
+    pieces: set[int] = field(default_factory=set)
     last_updated: float = field(default_factory=time.time)
     reliability_score: float = 1.0  # 0.0 to 1.0, higher is better
 
@@ -145,7 +164,7 @@ class PeerAvailability:
 class AsyncPieceManager:
     """Advanced piece manager with rarest-first and endgame mode."""
 
-    def __init__(self, torrent_data: Dict[str, Any]):
+    def __init__(self, torrent_data: dict[str, Any]):
         """Initialize async piece manager.
 
         Args:
@@ -159,13 +178,13 @@ class AsyncPieceManager:
         self.piece_hashes = torrent_data["pieces_info"]["piece_hashes"]
 
         # Piece tracking
-        self.pieces: List[PieceData] = []
-        self.completed_pieces: Set[int] = set()
-        self.verified_pieces: Set[int] = set()
+        self.pieces: list[PieceData] = []
+        self.completed_pieces: set[int] = set()
+        self.verified_pieces: set[int] = set()
         self.lock = asyncio.Lock()
 
         # Per-peer availability tracking
-        self.peer_availability: Dict[str, PeerAvailability] = {}
+        self.peer_availability: dict[str, PeerAvailability] = {}
         self.piece_frequency: Counter = Counter()  # How many peers have each piece
 
         # Endgame mode
@@ -210,18 +229,18 @@ class AsyncPieceManager:
         self.bytes_downloaded = 0
 
         # Callbacks
-        self.on_piece_completed: Optional[Callable[[int], None]] = None
-        self.on_piece_verified: Optional[Callable[[int], None]] = None
-        self.on_download_complete: Optional[Callable[[], None]] = None
-        self.on_file_assembled: Optional[Callable[[int], None]] = None
-        self.on_checkpoint_save: Optional[Callable[[], None]] = None
+        self.on_piece_completed: Callable[[int], None] | None = None
+        self.on_piece_verified: Callable[[int], None] | None = None
+        self.on_download_complete: Callable[[], None] | None = None
+        self.on_file_assembled: Callable[[int], None] | None = None
+        self.on_checkpoint_save: Callable[[], None] | None = None
 
         # File assembler (set by download manager)
-        self.file_assembler: Optional[Any] = None
+        self.file_assembler: Any | None = None
 
         # Background tasks
-        self._hash_worker_task: Optional[asyncio.Task] = None
-        self._piece_selector_task: Optional[asyncio.Task] = None
+        self._hash_worker_task: asyncio.Task | None = None
+        self._piece_selector_task: asyncio.Task | None = None
 
         self.logger = logging.getLogger(__name__)
 
@@ -235,34 +254,38 @@ class AsyncPieceManager:
         """Stop background tasks."""
         if self._hash_worker_task:
             self._hash_worker_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._hash_worker_task
-            except asyncio.CancelledError:
-                pass
 
         if self._piece_selector_task:
             self._piece_selector_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._piece_selector_task
-            except asyncio.CancelledError:
-                pass
 
         self.hash_executor.shutdown(wait=True)
         self.logger.info("Async piece manager stopped")
 
-    def get_missing_pieces(self) -> List[int]:
+    def get_missing_pieces(self) -> list[int]:
         """Get list of missing piece indices."""
-        return [i for i, piece in enumerate(self.pieces) if piece.state == PieceState.MISSING]
+        return [
+            i
+            for i, piece in enumerate(self.pieces)
+            if piece.state == PieceState.MISSING
+        ]
 
-    def get_downloading_pieces(self) -> List[int]:
+    def get_downloading_pieces(self) -> list[int]:
         """Get list of downloading piece indices."""
-        return [i for i, piece in enumerate(self.pieces) if piece.state == PieceState.DOWNLOADING]
+        return [
+            i
+            for i, piece in enumerate(self.pieces)
+            if piece.state == PieceState.DOWNLOADING
+        ]
 
-    def get_completed_pieces(self) -> List[int]:
+    def get_completed_pieces(self) -> list[int]:
         """Get list of completed piece indices."""
         return list(self.completed_pieces)
 
-    def get_verified_pieces(self) -> List[int]:
+    def get_verified_pieces(self) -> list[int]:
         """Get list of verified piece indices."""
         return list(self.verified_pieces)
 
@@ -272,7 +295,7 @@ class AsyncPieceManager:
             return 1.0
         return len(self.verified_pieces) / self.num_pieces
 
-    def get_piece_status(self) -> Dict[str, int]:
+    def get_piece_status(self) -> dict[str, int]:
         """Get piece status counts."""
         status_counts = defaultdict(int)
         for piece in self.pieces:
@@ -290,7 +313,7 @@ class AsyncPieceManager:
             # Initialize empty availability for the peer
             if peer_key not in self.peer_availability:
                 self.peer_availability[peer_key] = PeerAvailability(peer_key)
-            self.logger.debug(f"Added peer {peer_key} to piece manager")
+            self.logger.debug("Added peer %s to piece manager", peer_key)
 
     async def _remove_peer(self, peer) -> None:
         """Remove a peer from the piece manager.
@@ -310,11 +333,11 @@ class AsyncPieceManager:
 
                 # Remove peer from availability tracking
                 del self.peer_availability[peer_key]
-                self.logger.debug(f"Removed peer {peer_key} from piece manager")
+                self.logger.debug("Removed peer %s from piece manager", peer_key)
 
     async def _update_peer_availability(self, peer) -> None:
         """Update peer availability from peer's bitfield.
-        
+
         Args:
             peer: Peer object with bitfield attribute
         """
@@ -335,7 +358,9 @@ class AsyncPieceManager:
             for byte_idx, byte_val in enumerate(bitfield):
                 for bit_idx in range(8):
                     piece_idx = byte_idx * 8 + bit_idx
-                    if piece_idx < self.num_pieces and (byte_val & (1 << (7 - bit_idx))):
+                    if piece_idx < self.num_pieces and (
+                        byte_val & (1 << (7 - bit_idx))
+                    ):
                         pieces.add(piece_idx)
 
             # Update peer availability
@@ -366,7 +391,11 @@ class AsyncPieceManager:
             if not old_has_piece:
                 self.piece_frequency[piece_index] += 1
 
-    async def request_piece_from_peers(self, piece_index: int, peer_manager: Any) -> None:
+    async def request_piece_from_peers(
+        self,
+        piece_index: int,
+        peer_manager: Any,
+    ) -> None:
         """Request a piece from available peers using rarest-first or endgame logic.
 
         Args:
@@ -398,31 +427,58 @@ class AsyncPieceManager:
 
         # Distribute blocks among peers
         if self.endgame_mode:
-            await self._request_blocks_endgame(piece_index, missing_blocks, available_peers, peer_manager)
+            await self._request_blocks_endgame(
+                piece_index,
+                missing_blocks,
+                available_peers,
+                peer_manager,
+            )
         else:
-            await self._request_blocks_normal(piece_index, missing_blocks, available_peers, peer_manager)
+            await self._request_blocks_normal(
+                piece_index,
+                missing_blocks,
+                available_peers,
+                peer_manager,
+            )
 
         async with self.lock:
             piece.state = PieceState.DOWNLOADING
 
-    async def _get_peers_for_piece(self, piece_index: int, peer_manager: Any) -> List[AsyncPeerConnection]:
+    async def _get_peers_for_piece(
+        self,
+        piece_index: int,
+        peer_manager: Any,
+    ) -> list[AsyncPeerConnection]:
         """Get peers that have the specified piece."""
         available_peers = []
 
         for connection in peer_manager.get_active_peers():
             peer_key = str(connection.peer_info)
-            if (peer_key in self.peer_availability and
-                piece_index in self.peer_availability[peer_key].pieces and
-                connection.can_request()):
+            if (
+                peer_key in self.peer_availability
+                and piece_index in self.peer_availability[peer_key].pieces
+                and connection.can_request()
+            ):
                 available_peers.append(connection)
 
         return available_peers
 
-    async def _request_blocks_normal(self, piece_index: int, missing_blocks: List[PieceBlock],
-                                   available_peers: List[AsyncPeerConnection], peer_manager: Any) -> None:
+    async def _request_blocks_normal(
+        self,
+        piece_index: int,
+        missing_blocks: list[PieceBlock],
+        available_peers: list[AsyncPeerConnection],
+        peer_manager: Any,
+    ) -> None:
         """Request blocks in normal mode (no duplicates)."""
         # Sort peers by reliability and availability
-        available_peers.sort(key=lambda p: self.peer_availability.get(str(p.peer_info), PeerAvailability("")).reliability_score, reverse=True)
+        available_peers.sort(
+            key=lambda p: self.peer_availability.get(
+                str(p.peer_info),
+                PeerAvailability(""),
+            ).reliability_score,
+            reverse=True,
+        )
 
         # Distribute blocks among peers
         blocks_per_peer = max(1, len(missing_blocks) // len(available_peers))
@@ -437,11 +493,21 @@ class AsyncPieceManager:
             # Request blocks from this peer
             for block in missing_blocks[start_block:end_block]:
                 if peer_connection.can_request():
-                    await peer_manager.request_piece(peer_connection, piece_index, block.begin, block.length)
+                    await peer_manager.request_piece(
+                        peer_connection,
+                        piece_index,
+                        block.begin,
+                        block.length,
+                    )
                     block.requested_from.add(str(peer_connection.peer_info))
 
-    async def _request_blocks_endgame(self, piece_index: int, missing_blocks: List[PieceBlock],
-                                    available_peers: List[AsyncPeerConnection], peer_manager: Any) -> None:
+    async def _request_blocks_endgame(
+        self,
+        piece_index: int,
+        missing_blocks: list[PieceBlock],
+        available_peers: list[AsyncPeerConnection],
+        peer_manager: Any,
+    ) -> None:
         """Request blocks in endgame mode (with duplicates)."""
         # In endgame, request each block from multiple peers
         for block in missing_blocks:
@@ -449,12 +515,24 @@ class AsyncPieceManager:
             capable_peers = [p for p in available_peers if p.can_request()]
 
             # Request from up to endgame_duplicates peers
-            for i, peer_connection in enumerate(capable_peers[:self.endgame_duplicates]):
+            for _i, peer_connection in enumerate(
+                capable_peers[: self.endgame_duplicates],
+            ):
                 if peer_connection.can_request():
-                    await peer_manager.request_piece(peer_connection, piece_index, block.begin, block.length)
+                    await peer_manager.request_piece(
+                        peer_connection,
+                        piece_index,
+                        block.begin,
+                        block.length,
+                    )
                     block.requested_from.add(str(peer_connection.peer_info))
 
-    async def handle_piece_block(self, piece_index: int, begin: int, data: bytes) -> None:
+    async def handle_piece_block(
+        self,
+        piece_index: int,
+        begin: int,
+        data: bytes,
+    ) -> None:
         """Handle a received piece block.
 
         Args:
@@ -469,14 +547,12 @@ class AsyncPieceManager:
             piece = self.pieces[piece_index]
 
             # Add block to piece
-            if piece.add_block(begin, data):
-                # Check if piece is now complete
-                if piece.state == PieceState.COMPLETE:
-                    self.completed_pieces.add(piece_index)
+            if piece.add_block(begin, data) and piece.state == PieceState.COMPLETE:
+                self.completed_pieces.add(piece_index)
 
-                    # Notify callback
-                    if self.on_piece_completed:
-                        self.on_piece_completed(piece_index)
+                # Notify callback
+                if self.on_piece_completed:
+                    self.on_piece_completed(piece_index)
 
                     # Queue for hash verification
                     await self.hash_queue.put((piece_index, piece))
@@ -490,8 +566,8 @@ class AsyncPieceManager:
                 self.hash_queue.task_done()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Error in hash worker: {e}")
+            except Exception:
+                self.logger.exception("Error in hash worker")
 
     async def _verify_piece_hash(self, piece_index: int, piece: PieceData) -> None:
         """Verify piece hash in background with optimizations."""
@@ -526,39 +602,43 @@ class AsyncPieceManager:
                     if self.on_download_complete:
                         self.on_download_complete()
 
-                self.logger.info(f"Verified piece {piece_index}")
+                self.logger.info("Verified piece %s", piece_index)
             else:
-                self.logger.warning(f"Hash verification failed for piece {piece_index}")
+                self.logger.warning(
+                    "Hash verification failed for piece %s",
+                    piece_index,
+                )
 
-        except Exception as e:
-            self.logger.error(f"Error verifying piece {piece_index}: {e}")
+        except Exception:
+            self.logger.exception("Error verifying piece %s", piece_index)
 
     def _hash_piece_optimized(self, piece: PieceData, expected_hash: bytes) -> bool:
         """Optimized piece hash verification using memoryview and zero-copy operations."""
-        import hashlib
-
         try:
             # Get piece data (no optional data buffer available in this implementation)
             data_bytes = piece.get_data()
             data_view = memoryview(data_bytes)
 
             # Create SHA-1 hasher
-            hasher = hashlib.sha1()
+            hasher = hashlib.sha1()  # nosec B324 - SHA-1 required by BitTorrent protocol (BEP 3)
 
             # Hash in optimized chunks to balance memory usage and performance
             chunk_size = self.config.disk.hash_chunk_size
             for i in range(0, len(data_view), chunk_size):
-                chunk = data_view[i:i + chunk_size]
+                chunk = data_view[i : i + chunk_size]
                 hasher.update(chunk)
 
             actual_hash = hasher.digest()
+        except Exception:
+            self.logger.exception("Error in optimized hash verification")
+            return False
+        else:
             return actual_hash == expected_hash
 
-        except Exception as e:
-            self.logger.error(f"Error in optimized hash verification: {e}")
-            return False
-
-    async def _batch_verify_pieces(self, pieces_to_verify: List[Tuple[int, PieceData]]) -> None:
+    async def _batch_verify_pieces(
+        self,
+        pieces_to_verify: list[tuple[int, PieceData]],
+    ) -> None:
         """Batch verify multiple pieces for better performance."""
         if not pieces_to_verify:
             return
@@ -576,15 +656,20 @@ class AsyncPieceManager:
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 piece_index, _ = pieces_to_verify[i]
-                self.logger.error(f"Batch verification failed for piece {piece_index}: {result}")
+                self.logger.error(
+                    "Batch verification failed for piece %s: %s",
+                    piece_index,
+                    result,
+                )
 
-        self.logger.info(f"Batch verified {len(pieces_to_verify)} pieces")
+        self.logger.info("Batch verified %s pieces", len(pieces_to_verify))
 
     async def _verify_pending_pieces_batch(self) -> None:
         """Verify all pending pieces in optimized batches."""
         async with self.lock:
             pending_pieces = [
-                (i, piece) for i, piece in enumerate(self.pieces)
+                (i, piece)
+                for i, piece in enumerate(self.pieces)
                 if piece.state == PieceState.COMPLETE and not piece.hash_verified
             ]
 
@@ -594,7 +679,7 @@ class AsyncPieceManager:
         # Process in batches for optimal performance
         batch_size = self.config.disk.hash_batch_size
         for i in range(0, len(pending_pieces), batch_size):
-            batch = pending_pieces[i:i + batch_size]
+            batch = pending_pieces[i : i + batch_size]
             await self._batch_verify_pieces(batch)
 
             # Small delay between batches to prevent overwhelming the system
@@ -608,8 +693,8 @@ class AsyncPieceManager:
                 await self._select_pieces()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Error in piece selector: {e}")
+            except Exception:
+                self.logger.exception("Error in piece selector")
 
     async def _select_pieces(self) -> None:
         """Select pieces to download based on strategy."""
@@ -619,10 +704,12 @@ class AsyncPieceManager:
         # Check if we should enter endgame mode
         remaining_pieces = len(self.get_missing_pieces())
         total_pieces = self.num_pieces
-        if remaining_pieces <= total_pieces * (1.0 - self.endgame_threshold):
-            if not self.endgame_mode:
-                self.endgame_mode = True
-                self.logger.info("Entered endgame mode")
+        if (
+            remaining_pieces <= total_pieces * (1.0 - self.endgame_threshold)
+            and not self.endgame_mode
+        ):
+            self.endgame_mode = True
+            self.logger.info("Entered endgame mode")
 
         # Select pieces based on strategy
         if self.config.strategy.piece_selection == PieceSelectionStrategy.RAREST_FIRST:
@@ -632,11 +719,14 @@ class AsyncPieceManager:
         else:
             await self._select_round_robin()
 
-    async def _select_rarest_piece(self) -> Optional[int]:
+    async def _select_rarest_piece(self) -> int | None:
         """Select a single piece using rarest-first algorithm."""
         async with self.lock:
-            missing_pieces = [i for i, piece in enumerate(self.pieces)
-                            if piece.state == PieceState.MISSING]
+            missing_pieces = [
+                i
+                for i, piece in enumerate(self.pieces)
+                if piece.state == PieceState.MISSING
+            ]
 
             if not missing_pieces:
                 return None
@@ -645,7 +735,9 @@ class AsyncPieceManager:
             available_pieces = []
             for piece_idx in missing_pieces:
                 frequency = self.piece_frequency.get(piece_idx, 0)
-                if frequency > 0:  # Only consider pieces available from at least one peer
+                if (
+                    frequency > 0
+                ):  # Only consider pieces available from at least one peer
                     available_pieces.append(piece_idx)
 
             if not available_pieces:
@@ -674,14 +766,14 @@ class AsyncPieceManager:
         async with self.lock:
             if 0 <= piece_index < len(self.pieces):
                 self.pieces[piece_index].state = PieceState.REQUESTED
-                self.logger.debug(f"Marked piece {piece_index} as requested")
+                self.logger.debug("Marked piece %s as requested", piece_index)
 
     async def _set_piece_priority(self, piece_index: int, priority: int) -> None:
         """Set priority for a piece."""
         async with self.lock:
             if 0 <= piece_index < len(self.pieces):
                 self.pieces[piece_index].priority = priority
-                self.logger.debug(f"Set piece {piece_index} priority to {priority}")
+                self.logger.debug("Set piece %s priority to %s", piece_index, priority)
 
     async def _on_piece_completed(self, piece_index: int) -> None:
         """Handle piece completion."""
@@ -689,9 +781,9 @@ class AsyncPieceManager:
             if 0 <= piece_index < len(self.pieces):
                 self.pieces[piece_index].state = PieceState.COMPLETE
                 self.verified_pieces.add(piece_index)
-                self.logger.debug(f"Piece {piece_index} completed")
+                self.logger.debug("Piece %s completed", piece_index)
 
-    async def _calculate_swarm_health(self) -> Dict[str, Any]:
+    async def _calculate_swarm_health(self) -> dict[str, Any]:
         """Calculate swarm health metrics."""
         async with self.lock:
             total_pieces = len(self.pieces)
@@ -703,24 +795,35 @@ class AsyncPieceManager:
 
             # Calculate average availability
             total_availability = sum(self.piece_frequency.values())
-            average_availability = total_availability / total_pieces if total_pieces > 0 else 0
+            average_availability = (
+                total_availability / total_pieces if total_pieces > 0 else 0
+            )
 
             # Find rarest piece availability
-            rarest_availability = min(availability_counts.keys()) if availability_counts else 0
+            rarest_availability = (
+                min(availability_counts.keys()) if availability_counts else 0
+            )
 
             return {
                 "total_pieces": total_pieces,
                 "completed_pieces": completed_pieces,
                 "missing_pieces": missing_pieces,
-                "completion_percentage": (completed_pieces / total_pieces * 100) if total_pieces > 0 else 0,
-                "completion_rate": completed_pieces / total_pieces if total_pieces > 0 else 0,
+                "completion_percentage": (completed_pieces / total_pieces * 100)
+                if total_pieces > 0
+                else 0,
+                "completion_rate": completed_pieces / total_pieces
+                if total_pieces > 0
+                else 0,
                 "average_availability": average_availability,
                 "rarest_piece_availability": rarest_availability,
                 "availability_distribution": dict(availability_counts),
                 "active_peers": len(self.peer_availability),
             }
 
-    async def _generate_endgame_requests(self, piece_index: int) -> List[Dict[str, Any]]:
+    async def _generate_endgame_requests(
+        self,
+        piece_index: int,
+    ) -> list[dict[str, Any]]:
         """Generate endgame requests for a piece from all available peers."""
         async with self.lock:
             requests = []
@@ -741,8 +844,11 @@ class AsyncPieceManager:
     async def _select_rarest_first(self) -> None:
         """Select pieces using rarest-first algorithm."""
         async with self.lock:
-            missing_pieces = [i for i, piece in enumerate(self.pieces)
-                            if piece.state == PieceState.MISSING]
+            missing_pieces = [
+                i
+                for i, piece in enumerate(self.pieces)
+                if piece.state == PieceState.MISSING
+            ]
 
             if not missing_pieces:
                 return
@@ -760,7 +866,7 @@ class AsyncPieceManager:
             piece_scores.sort(reverse=True)
 
             # Select top pieces to request
-            for score, piece_idx in piece_scores[:5]:  # Request up to 5 pieces at once
+            for _score, piece_idx in piece_scores[:5]:  # Request up to 5 pieces at once
                 if self.pieces[piece_idx].state == PieceState.MISSING:
                     # This will be handled by the main request logic
                     pass
@@ -768,8 +874,11 @@ class AsyncPieceManager:
     async def _select_sequential(self) -> None:
         """Select pieces sequentially."""
         async with self.lock:
-            missing_pieces = [i for i, piece in enumerate(self.pieces)
-                            if piece.state == PieceState.MISSING]
+            missing_pieces = [
+                i
+                for i, piece in enumerate(self.pieces)
+                if piece.state == PieceState.MISSING
+            ]
 
             if missing_pieces:
                 # Request first missing piece
@@ -780,8 +889,11 @@ class AsyncPieceManager:
     async def _select_round_robin(self) -> None:
         """Select pieces in round-robin fashion."""
         async with self.lock:
-            missing_pieces = [i for i, piece in enumerate(self.pieces)
-                            if piece.state == PieceState.MISSING]
+            missing_pieces = [
+                i
+                for i, piece in enumerate(self.pieces)
+                if piece.state == PieceState.MISSING
+            ]
 
             if missing_pieces:
                 # Simple round-robin selection
@@ -789,7 +901,7 @@ class AsyncPieceManager:
                 if self.pieces[piece_idx].state == PieceState.MISSING:
                     pass  # Will be handled by main request logic
 
-    async def start_download(self, peer_manager: Any) -> None:
+    async def start_download(self, _peer_manager: Any) -> None:
         """Start the download process."""
         self.is_downloading = True
         self.logger.info("Started piece download")
@@ -799,7 +911,7 @@ class AsyncPieceManager:
         self.is_downloading = False
         self.logger.info("Stopped piece download")
 
-    def get_piece_data(self, piece_index: int) -> Optional[bytes]:
+    def get_piece_data(self, piece_index: int) -> bytes | None:
         """Get complete piece data if available."""
         if piece_index >= len(self.pieces):
             return None
@@ -810,7 +922,7 @@ class AsyncPieceManager:
 
         return None
 
-    def get_block(self, piece_index: int, begin: int, length: int) -> Optional[bytes]:
+    def get_block(self, piece_index: int, begin: int, length: int) -> bytes | None:
         """Get a block of data from a piece."""
         if piece_index >= len(self.pieces):
             return None
@@ -828,7 +940,7 @@ class AsyncPieceManager:
 
         return None
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get piece manager statistics."""
         return {
             "total_pieces": self.num_pieces,
@@ -842,15 +954,19 @@ class AsyncPieceManager:
             "peer_count": len(self.peer_availability),
         }
 
-    async def get_checkpoint_state(self, torrent_name: str, info_hash: bytes,
-                                 output_dir: str) -> TorrentCheckpoint:
+    async def get_checkpoint_state(
+        self,
+        torrent_name: str,
+        info_hash: bytes,
+        output_dir: str,
+    ) -> TorrentCheckpoint:
         """Get current state for checkpointing.
-        
+
         Args:
             torrent_name: Name of the torrent
             info_hash: Torrent info hash
             output_dir: Output directory for files
-            
+
         Returns:
             TorrentCheckpoint with current state
         """
@@ -858,7 +974,9 @@ class AsyncPieceManager:
             # Calculate download statistics
             current_time = time.time()
             download_time = current_time - self.download_start_time
-            average_speed = self.bytes_downloaded / download_time if download_time > 0 else 0
+            average_speed = (
+                self.bytes_downloaded / download_time if download_time > 0 else 0
+            )
 
             # Get piece states
             piece_states = {}
@@ -872,12 +990,16 @@ class AsyncPieceManager:
                 file_sizes = self.file_assembler.get_file_sizes()
                 files_exist = self.file_assembler.verify_files_exist()
 
-                for file_path in file_paths:
-                    files.append(FileCheckpoint(
-                        path=file_path,
-                        size=file_sizes.get(file_path, 0),
-                        exists=files_exist.get(file_path, False),
-                    ))
+                files.extend(
+                    [
+                        FileCheckpoint(
+                            path=file_path,
+                            size=file_sizes.get(file_path, 0),
+                            exists=files_exist.get(file_path, False),
+                        )
+                        for file_path in file_paths
+                    ]
+                )
 
             # Create download stats
             download_stats = DownloadStats(
@@ -889,7 +1011,7 @@ class AsyncPieceManager:
             )
 
             # Create checkpoint
-            checkpoint = TorrentCheckpoint(
+            return TorrentCheckpoint(
                 info_hash=info_hash,
                 torrent_name=torrent_name,
                 created_at=self.download_start_time,
@@ -906,9 +1028,7 @@ class AsyncPieceManager:
                 endgame_mode=self.endgame_mode,
             )
 
-            return checkpoint
-
-    def _get_peer_info_summary(self) -> Dict[str, Any]:
+    def _get_peer_info_summary(self) -> dict[str, Any]:
         """Get summary of peer information for checkpoint."""
         return {
             "peer_count": len(self.peer_availability),
@@ -921,12 +1041,15 @@ class AsyncPieceManager:
 
     async def restore_from_checkpoint(self, checkpoint: TorrentCheckpoint) -> None:
         """Restore piece manager state from checkpoint.
-        
+
         Args:
             checkpoint: Checkpoint data to restore from
         """
         async with self.lock:
-            self.logger.info(f"Restoring piece manager from checkpoint: {checkpoint.torrent_name}")
+            self.logger.info(
+                "Restoring piece manager from checkpoint: %s",
+                checkpoint.torrent_name,
+            )
 
             # Restore download state
             self.download_start_time = checkpoint.download_stats.start_time
@@ -938,7 +1061,7 @@ class AsyncPieceManager:
                 if 0 <= piece_idx < len(self.pieces):
                     piece = self.pieces[piece_idx]
                     piece.state = PieceState(piece_state.value)
-                    piece.hash_verified = (piece_state == PieceStateModel.VERIFIED)
+                    piece.hash_verified = piece_state == PieceStateModel.VERIFIED
 
             # Restore verified pieces
             self.verified_pieces = set(checkpoint.verified_pieces)
@@ -953,7 +1076,10 @@ class AsyncPieceManager:
             if checkpoint.peer_info and "piece_frequency" in checkpoint.peer_info:
                 self.piece_frequency = Counter(checkpoint.peer_info["piece_frequency"])
 
-            self.logger.info(f"Restored {len(self.verified_pieces)} verified pieces from checkpoint")
+            self.logger.info(
+                "Restored %s verified pieces from checkpoint",
+                len(self.verified_pieces),
+            )
 
     async def update_download_stats(self, bytes_downloaded: int) -> None:
         """Update download statistics."""

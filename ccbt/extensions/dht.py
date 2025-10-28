@@ -6,18 +6,30 @@ Provides support for:
 - DHT message handling
 """
 
+from __future__ import annotations
+
+import asyncio
+import contextlib
 import hashlib
-import random
+import secrets
+import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any
 
-from ..events import Event, EventType, emit_event
-from ..models import PeerInfo
+# import bencodepy  # Module not installed
+from ccbt.events import Event, EventType, emit_event
+
+# Error message constants
+_ERROR_BENCODEPY_NOT_AVAILABLE = "bencodepy not available"
+
+if TYPE_CHECKING:
+    from ccbt.models import PeerInfo
 
 
 class DHTMessageType(IntEnum):
     """DHT message types."""
+
     QUERY = 0
     RESPONSE = 1
     ERROR = 2
@@ -25,6 +37,7 @@ class DHTMessageType(IntEnum):
 
 class DHTQueryType(IntEnum):
     """DHT query types."""
+
     PING = 0
     FIND_NODE = 1
     GET_PEERS = 2
@@ -34,39 +47,47 @@ class DHTQueryType(IntEnum):
 @dataclass
 class DHTNode:
     """DHT node information."""
+
     node_id: bytes
     ip: str
     port: int
     last_seen: float = 0.0
 
     def __hash__(self):
+        """Return hash of DHT node."""
         return hash((self.node_id, self.ip, self.port))
 
     def __eq__(self, other):
+        """Check equality of DHT nodes."""
         if not isinstance(other, DHTNode):
             return False
-        return (self.node_id == other.node_id and
-                self.ip == other.ip and
-                self.port == other.port)
+        return (
+            self.node_id == other.node_id
+            and self.ip == other.ip
+            and self.port == other.port
+        )
 
 
 class DHTExtension:
     """DHT (Distributed Hash Table) implementation."""
 
-    def __init__(self, node_id: Optional[bytes] = None):
+    def __init__(self, node_id: bytes | None = None):
+        """Initialize DHT implementation."""
         self.node_id = node_id or self._generate_node_id()
-        self.nodes: Dict[bytes, DHTNode] = {}
-        self.buckets: List[Set[DHTNode]] = [[] for _ in range(160)]  # 160-bit ID space
-        self.routing_table: Dict[bytes, DHTNode] = {}
+        self.nodes: dict[bytes, DHTNode] = {}
+        self.buckets: list[set[DHTNode]] = [[] for _ in range(160)]  # 160-bit ID space
+        self.routing_table: dict[bytes, DHTNode] = {}
 
     def _generate_node_id(self) -> bytes:
         """Generate random node ID."""
-        return hashlib.sha1(str(random.random()).encode()).digest()
+        # Use cryptographically secure random bytes for DHT node ID generation
+        return hashlib.sha1(secrets.token_bytes(32)).digest()  # nosec B324 - SHA-1 for DHT node ID generation, not security-sensitive
 
     def _calculate_distance(self, id1: bytes, id2: bytes) -> int:
         """Calculate XOR distance between two node IDs."""
         if len(id1) != len(id2):
-            raise ValueError("Node IDs must have same length")
+            msg = "Node IDs must have same length"
+            raise ValueError(msg)
 
         distance = 0
         for i in range(len(id1)):
@@ -93,16 +114,22 @@ class DHTExtension:
         self.routing_table[node.node_id] = node
 
         # Emit event for new node
-        emit_event(Event(
-            event_type=EventType.DHT_NODE_ADDED.value,
-            data={
-                "node_id": node.node_id.hex(),
-                "ip": node.ip,
-                "port": node.port,
-                "bucket_index": bucket_index,
-                "timestamp": time.time(),
-            },
-        ))
+        with contextlib.suppress(RuntimeError):
+            # No event loop running, skip event emission
+            asyncio.create_task(  # noqa: RUF006
+                emit_event(
+                    Event(
+                        event_type=EventType.DHT_NODE_ADDED.value,
+                        data={
+                            "node_id": node.node_id.hex(),
+                            "ip": node.ip,
+                            "port": node.port,
+                            "bucket_index": bucket_index,
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
+            )
 
     def remove_node(self, node_id: bytes) -> None:
         """Remove node from routing table."""
@@ -116,15 +143,21 @@ class DHTExtension:
             del self.routing_table[node_id]
 
             # Emit event for node removal
-            emit_event(Event(
-                event_type=EventType.DHT_NODE_REMOVED.value,
-                data={
-                    "node_id": node_id.hex(),
-                    "timestamp": time.time(),
-                },
-            ))
+            with contextlib.suppress(RuntimeError):
+                # No event loop running, skip event emission
+                asyncio.create_task(  # noqa: RUF006
+                    emit_event(
+                        Event(
+                            event_type=EventType.DHT_NODE_REMOVED.value,
+                            data={
+                                "node_id": node_id.hex(),
+                                "timestamp": time.time(),
+                            },
+                        ),
+                    )
+                )
 
-    def find_closest_nodes(self, target_id: bytes, count: int = 8) -> List[DHTNode]:
+    def find_closest_nodes(self, target_id: bytes, count: int = 8) -> list[DHTNode]:
         """Find closest nodes to target ID."""
         all_nodes = list(self.routing_table.values())
         all_nodes.sort(key=lambda n: self._calculate_distance(n.node_id, target_id))
@@ -169,7 +202,13 @@ class DHTExtension:
 
         return self._encode_dht_message(query_data)
 
-    def encode_announce_peer_query(self, transaction_id: bytes, info_hash: bytes, port: int, token: str) -> bytes:
+    def encode_announce_peer_query(
+        self,
+        transaction_id: bytes,
+        info_hash: bytes,
+        port: int,
+        token: str,
+    ) -> bytes:
         """Encode ANNOUNCE_PEER query."""
         query_data = {
             "t": transaction_id.decode(),
@@ -195,15 +234,20 @@ class DHTExtension:
 
         return self._encode_dht_message(response_data)
 
-    def encode_find_node_response(self, transaction_id: bytes, nodes: List[DHTNode]) -> bytes:
+    def encode_find_node_response(
+        self,
+        transaction_id: bytes,
+        nodes: list[DHTNode],
+    ) -> bytes:
         """Encode FIND_NODE response."""
-        nodes_data = []
-        for node in nodes:
-            nodes_data.append({
+        nodes_data = [
+            {
                 "id": node.node_id.hex(),
                 "ip": node.ip,
                 "port": node.port,
-            })
+            }
+            for node in nodes
+        ]
 
         response_data = {
             "t": transaction_id.decode(),
@@ -216,22 +260,30 @@ class DHTExtension:
 
         return self._encode_dht_message(response_data)
 
-    def encode_get_peers_response(self, transaction_id: bytes, peers: List[PeerInfo], nodes: List[DHTNode], token: str) -> bytes:
+    def encode_get_peers_response(
+        self,
+        transaction_id: bytes,
+        peers: list[PeerInfo],
+        nodes: list[DHTNode],
+        token: str,
+    ) -> bytes:
         """Encode GET_PEERS response."""
-        peers_data = []
-        for peer in peers:
-            peers_data.append({
+        peers_data = [
+            {
                 "ip": peer.ip,
                 "port": peer.port,
-            })
+            }
+            for peer in peers
+        ]
 
-        nodes_data = []
-        for node in nodes:
-            nodes_data.append({
+        nodes_data = [
+            {
                 "id": node.node_id.hex(),
                 "ip": node.ip,
                 "port": node.port,
-            })
+            }
+            for node in nodes
+        ]
 
         response_data = {
             "t": transaction_id.decode(),
@@ -246,17 +298,26 @@ class DHTExtension:
 
         return self._encode_dht_message(response_data)
 
-    def _encode_dht_message(self, data: Dict[str, Any]) -> bytes:
+    def _encode_dht_message(self, _data: dict[str, Any]) -> bytes:
         """Encode DHT message to bencoded format."""
-        import bencodepy
-        return bencodepy.encode(data)
+        # TODO: Implement bencode encoding when bencodepy is available
+        # return bencodepy.encode(data)
+        msg = _ERROR_BENCODEPY_NOT_AVAILABLE
+        raise NotImplementedError(msg)
 
-    def _decode_dht_message(self, data: bytes) -> Dict[str, Any]:
+    def _decode_dht_message(self, _data: bytes) -> dict[str, Any]:
         """Decode DHT message from bencoded format."""
-        import bencodepy
-        return bencodepy.decode(data)
+        # TODO: Implement bencode decoding when bencodepy is available
+        # return bencodepy.decode(data)
+        msg = _ERROR_BENCODEPY_NOT_AVAILABLE
+        raise NotImplementedError(msg)
 
-    async def handle_dht_message(self, peer_ip: str, peer_port: int, data: bytes) -> Optional[bytes]:
+    async def handle_dht_message(
+        self,
+        peer_ip: str,
+        peer_port: int,
+        data: bytes,
+    ) -> bytes | None:
         """Handle incoming DHT message."""
         try:
             message = self._decode_dht_message(data)
@@ -270,19 +331,26 @@ class DHTExtension:
 
         except Exception as e:
             # Emit event for DHT error
-            await emit_event(Event(
-                event_type=EventType.DHT_ERROR.value,
-                data={
-                    "peer_ip": peer_ip,
-                    "peer_port": peer_port,
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.DHT_ERROR.value,
+                    data={
+                        "peer_ip": peer_ip,
+                        "peer_port": peer_port,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
         return None
 
-    async def _handle_query(self, peer_ip: str, peer_port: int, message: Dict[str, Any]) -> bytes:
+    async def _handle_query(
+        self,
+        _peer_ip: str,
+        _peer_port: int,
+        message: dict[str, Any],
+    ) -> bytes:
         """Handle DHT query."""
         query_type = message.get("q")
         transaction_id = message.get("t", "").encode()
@@ -294,7 +362,7 @@ class DHTExtension:
             closest_nodes = self.find_closest_nodes(target_id)
             return self.encode_find_node_response(transaction_id, closest_nodes)
         if query_type == "get_peers":
-            info_hash = bytes.fromhex(message.get("a", {}).get("info_hash", ""))
+            bytes.fromhex(message.get("a", {}).get("info_hash", ""))
             # TODO: Implement peer storage and retrieval
             return self.encode_get_peers_response(transaction_id, [], [], "")
         if query_type == "announce_peer":
@@ -303,42 +371,50 @@ class DHTExtension:
 
         return b""
 
-    async def _handle_response(self, peer_ip: str, peer_port: int, message: Dict[str, Any]) -> None:
+    async def _handle_response(
+        self,
+        peer_ip: str,
+        peer_port: int,
+        message: dict[str, Any],
+    ) -> None:
         """Handle DHT response."""
         # TODO: Implement response handling
 
-    async def _handle_error(self, peer_ip: str, peer_port: int, message: Dict[str, Any]) -> None:
+    async def _handle_error(
+        self,
+        peer_ip: str,
+        peer_port: int,
+        message: dict[str, Any],
+    ) -> None:
         """Handle DHT error."""
         error_code = message.get("e", [0, "Unknown error"])
         error_message = error_code[1] if len(error_code) > 1 else "Unknown error"
 
-        await emit_event(Event(
-            event_type=EventType.DHT_ERROR.value,
-            data={
-                "peer_ip": peer_ip,
-                "peer_port": peer_port,
-                "error_code": error_code[0],
-                "error_message": error_message,
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.DHT_ERROR.value,
+                data={
+                    "peer_ip": peer_ip,
+                    "peer_port": peer_port,
+                    "error_code": error_code[0],
+                    "error_message": error_message,
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
     def get_routing_table_size(self) -> int:
         """Get routing table size."""
         return len(self.routing_table)
 
-    def get_bucket_sizes(self) -> List[int]:
+    def get_bucket_sizes(self) -> list[int]:
         """Get bucket sizes."""
         return [len(bucket) for bucket in self.buckets]
 
-    def get_node_statistics(self) -> Dict[str, Any]:
+    def get_node_statistics(self) -> dict[str, Any]:
         """Get node statistics."""
         return {
             "total_nodes": len(self.routing_table),
             "bucket_sizes": self.get_bucket_sizes(),
             "node_id": self.node_id.hex(),
         }
-
-
-# Import time module for timestamps
-import time

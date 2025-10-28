@@ -1,10 +1,10 @@
-"""
-Integration tests for resume functionality.
+"""Integration tests for resume functionality.
 
 Tests complete resume workflow from checkpoint loading to download continuation.
 """
 
 import asyncio
+import contextlib
 import tempfile
 import time
 from pathlib import Path
@@ -70,7 +70,7 @@ class TestResumeIntegration:
             info_hash=sample_torrent_data["info_hash"],
             torrent_name=sample_torrent_data["name"],
             created_at=time.time() - 3600,  # 1 hour ago
-            updated_at=time.time() - 1800,   # 30 minutes ago
+            updated_at=time.time() - 1800,  # 30 minutes ago
             total_pieces=sample_torrent_data["pieces_info"]["num_pieces"],
             piece_length=sample_torrent_data["pieces_info"]["piece_length"],
             total_length=sample_torrent_data["file_info"]["total_length"],
@@ -94,7 +94,13 @@ class TestResumeIntegration:
         )
 
     @pytest.mark.asyncio
-    async def test_session_resume_from_checkpoint(self, config, sample_torrent_data, sample_checkpoint, temp_dir):
+    async def test_session_resume_from_checkpoint(
+        self,
+        config,
+        sample_torrent_data,
+        sample_checkpoint,
+        temp_dir,
+    ):
         """Test session resuming from checkpoint."""
         # Create checkpoint manager and save checkpoint
         checkpoint_manager = CheckpointManager(config)
@@ -119,14 +125,22 @@ class TestResumeIntegration:
                 mock_session_class.return_value = mock_session
 
                 # Add torrent with resume=True
-                info_hash_hex = await session_manager.add_torrent("dummy.torrent", resume=True)
+                await session_manager.add_torrent(
+                    "dummy.torrent",
+                    resume=True,
+                )
 
                 # Verify session was created and started with resume=True
                 mock_session_class.assert_called_once()
                 mock_session.start.assert_called_once_with(resume=True)
 
     @pytest.mark.asyncio
-    async def test_checkpoint_auto_save_on_piece_verification(self, config, sample_torrent_data, temp_dir):
+    async def test_checkpoint_auto_save_on_piece_verification(
+        self,
+        config,
+        sample_torrent_data,
+        temp_dir,
+    ):
         """Test automatic checkpoint saving on piece verification."""
         # Create session
         session = AsyncTorrentSession(sample_torrent_data, str(temp_dir))
@@ -149,7 +163,12 @@ class TestResumeIntegration:
         checkpoint_manager.save_checkpoint.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_checkpoint_periodic_save(self, config, sample_torrent_data, temp_dir):
+    async def test_checkpoint_periodic_save(
+        self,
+        config,
+        sample_torrent_data,
+        temp_dir,
+    ):
         """Test periodic checkpoint saving."""
         # Create session
         session = AsyncTorrentSession(sample_torrent_data, str(temp_dir))
@@ -174,16 +193,19 @@ class TestResumeIntegration:
 
         # Stop the task
         checkpoint_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await checkpoint_task
-        except asyncio.CancelledError:
-            pass
 
         # Verify checkpoint save was called
         assert checkpoint_manager.save_checkpoint.call_count >= 1
 
     @pytest.mark.asyncio
-    async def test_checkpoint_cleanup_on_completion(self, config, sample_torrent_data, temp_dir):
+    async def test_checkpoint_cleanup_on_completion(
+        self,
+        config,
+        sample_torrent_data,
+        temp_dir,
+    ):
         """Test checkpoint cleanup when download completes."""
         # Create session
         session = AsyncTorrentSession(sample_torrent_data, str(temp_dir))
@@ -207,10 +229,18 @@ class TestResumeIntegration:
         await session.stop()
 
         # Verify checkpoint was deleted
-        checkpoint_manager.delete_checkpoint.assert_called_once_with(sample_torrent_data["info_hash"])
+        checkpoint_manager.delete_checkpoint.assert_called_once_with(
+            sample_torrent_data["info_hash"],
+        )
 
     @pytest.mark.asyncio
-    async def test_file_validation_on_resume(self, config, sample_torrent_data, sample_checkpoint, temp_dir):
+    async def test_file_validation_on_resume(
+        self,
+        config,
+        sample_torrent_data,
+        sample_checkpoint,
+        temp_dir,
+    ):
         """Test file validation during resume."""
         # Create test file
         test_file = temp_dir / "test.bin"
@@ -233,7 +263,9 @@ class TestResumeIntegration:
             "existing_pieces": {0},
             "warnings": [],
         }
-        file_assembler.verify_existing_pieces = AsyncMock(return_value=validation_results)
+        file_assembler.verify_existing_pieces = AsyncMock(
+            return_value=validation_results,
+        )
         session.download_manager.file_assembler = file_assembler
 
         # Mock piece manager on session (not download_manager)
@@ -250,7 +282,13 @@ class TestResumeIntegration:
         piece_manager.restore_from_checkpoint.assert_called_once_with(sample_checkpoint)
 
     @pytest.mark.asyncio
-    async def test_resume_with_corrupted_files(self, config, sample_torrent_data, sample_checkpoint, temp_dir):
+    async def test_resume_with_corrupted_files(
+        self,
+        config,
+        sample_torrent_data,
+        sample_checkpoint,
+        temp_dir,
+    ):
         """Test resume behavior with corrupted files."""
         # Create corrupted test file (wrong size)
         test_file = temp_dir / "test.bin"
@@ -269,15 +307,19 @@ class TestResumeIntegration:
         validation_results = {
             "valid": False,
             "missing_files": [],
-            "size_mismatches": [{
-                "path": str(test_file),
-                "expected": 16384,
-                "actual": 1000,
-            }],
+            "size_mismatches": [
+                {
+                    "path": str(test_file),
+                    "expected": 16384,
+                    "actual": 1000,
+                },
+            ],
             "existing_pieces": set(),
             "warnings": ["Size mismatch for test file"],
         }
-        file_assembler.verify_existing_pieces = AsyncMock(return_value=validation_results)
+        file_assembler.verify_existing_pieces = AsyncMock(
+            return_value=validation_results,
+        )
         session.download_manager.file_assembler = file_assembler
 
         # Mock piece manager on session (not download_manager)

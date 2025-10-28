@@ -1,7 +1,5 @@
+"""Tests for hybrid protocol implementation.
 """
-Tests for hybrid protocol implementation.
-"""
-
 
 import pytest
 
@@ -236,7 +234,8 @@ class TestHybridProtocol:
         assert caps.max_connections > 0
         assert caps.supports_ipv6
 
-    def test_state_management(self):
+    @pytest.mark.asyncio
+    async def test_state_management(self):
         """Test state management."""
         protocol = HybridProtocol()
 
@@ -251,7 +250,8 @@ class TestHybridProtocol:
         protocol.set_state(ProtocolState.ACTIVE)
         assert protocol.get_state() == ProtocolState.ACTIVE
 
-    def test_peer_management(self, sample_peer_info):
+    @pytest.mark.asyncio
+    async def test_peer_management(self, sample_peer_info):
         """Test peer management."""
         protocol = HybridProtocol()
 
@@ -286,7 +286,12 @@ class TestHybridProtocol:
         assert stats.bytes_received == 0
 
         # Update stats
-        protocol.update_stats(bytes_sent=100, bytes_received=200, messages_sent=5, messages_received=3)
+        protocol.update_stats(
+            bytes_sent=100,
+            bytes_received=200,
+            messages_sent=5,
+            messages_received=3,
+        )
 
         updated_stats = protocol.get_stats()
         assert updated_stats.bytes_sent == 100

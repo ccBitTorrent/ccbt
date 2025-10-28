@@ -1,5 +1,4 @@
-"""
-Tests for Fast Extension (BEP 6).
+"""Tests for Fast Extension (BEP 6).
 """
 
 import struct
@@ -114,7 +113,10 @@ class TestFastExtension:
         assert isinstance(data, bytes)
         assert len(data) == 13
 
-        message_type, decoded_index, decoded_begin, decoded_length = struct.unpack("!BIII", data)
+        message_type, decoded_index, decoded_begin, decoded_length = struct.unpack(
+            "!BIII",
+            data,
+        )
         assert message_type == FastMessageType.REJECT
         assert decoded_index == index
         assert decoded_begin == begin
@@ -125,7 +127,9 @@ class TestFastExtension:
         index, begin, length = 1, 2, 3
         data = struct.pack("!BIII", FastMessageType.REJECT, index, begin, length)
 
-        decoded_index, decoded_begin, decoded_length = fast_extension.decode_reject(data)
+        decoded_index, decoded_begin, decoded_length = fast_extension.decode_reject(
+            data,
+        )
         assert decoded_index == index
         assert decoded_begin == begin
         assert decoded_length == length
@@ -153,15 +157,15 @@ class TestFastExtension:
     def test_invalid_message_types(self, fast_extension):
         """Test invalid message types."""
         # Test invalid Suggest message
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid Suggest message"):
             fast_extension.decode_suggest(b"")
 
         # Test invalid Reject message
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid Reject message"):
             fast_extension.decode_reject(b"")
 
         # Test invalid Allow Fast message
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid Allow Fast message"):
             fast_extension.decode_allow_fast(b"")
 
     def test_suggested_pieces_management(self, fast_extension):
@@ -262,7 +266,9 @@ class TestFastExtension:
         # Test Reject
         index, begin, length = 1, 2, 3
         encoded = fast_extension.encode_reject(index, begin, length)
-        decoded_index, decoded_begin, decoded_length = fast_extension.decode_reject(encoded)
+        decoded_index, decoded_begin, decoded_length = fast_extension.decode_reject(
+            encoded,
+        )
         assert decoded_index == index
         assert decoded_begin == begin
         assert decoded_length == length

@@ -1,22 +1,27 @@
 """Base service architecture for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides the foundation for service-oriented components with health checks,
 circuit breakers, and service discovery.
 """
+
+from __future__ import annotations
 
 import asyncio
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
-from ..exceptions import CCBTException
-from ..logging_config import get_logger
+from ccbt.exceptions import CCBTError
+from ccbt.logging_config import get_logger
 
 
 class ServiceState(Enum):
     """Service lifecycle states."""
+
     STOPPED = "stopped"
     STARTING = "starting"
     RUNNING = "running"
@@ -25,13 +30,14 @@ class ServiceState(Enum):
     DEGRADED = "degraded"
 
 
-class ServiceError(CCBTException):
+class ServiceError(CCBTError):
     """Exception raised for service-related errors."""
 
 
 @dataclass
 class ServiceInfo:
     """Information about a service."""
+
     name: str
     version: str
     description: str
@@ -40,12 +46,13 @@ class ServiceInfo:
     last_health_check: float = 0.0
     error_count: int = 0
     success_count: int = 0
-    dependencies: List[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
 
 
 @dataclass
 class HealthCheck:
     """Health check result."""
+
     service_name: str
     healthy: bool
     score: float
@@ -59,7 +66,7 @@ class Service(ABC):
 
     def __init__(self, name: str, version: str = "1.0.0", description: str = ""):
         """Initialize service.
-        
+
         Args:
             name: Service name
             version: Service version
@@ -72,7 +79,7 @@ class Service(ABC):
         self.health_score = 1.0
         self.error_count = 0
         self.success_count = 0
-        self.dependencies: List[str] = []
+        self.dependencies: list[str] = []
         self.logger = get_logger(f"service.{name}")
 
         # Health check settings
@@ -127,10 +134,13 @@ class Service(ABC):
             return False
 
         # Check if timeout has passed
-        if time.time() - self.circuit_breaker_last_failure > self.circuit_breaker_timeout:
+        if (
+            time.time() - self.circuit_breaker_last_failure
+            > self.circuit_breaker_timeout
+        ):
             self.circuit_breaker_open = False
             self.circuit_breaker_failures = 0
-            self.logger.info(f"Circuit breaker closed for service '{self.name}'")
+            self.logger.info("Circuit breaker closed for service '%s'", self.name)
             return False
 
         return True
@@ -140,7 +150,7 @@ class Service(ABC):
         self.success_count += 1
         self.health_score = min(1.0, self.health_score + 0.1)
 
-    def record_error(self, error: Exception) -> None:
+    def record_error(self, _error: Exception) -> None:
         """Record an error."""
         self.error_count += 1
         self.health_score = max(0.0, self.health_score - 0.1)
@@ -150,7 +160,11 @@ class Service(ABC):
         if self.circuit_breaker_failures >= self.circuit_breaker_threshold:
             self.circuit_breaker_open = True
             self.circuit_breaker_last_failure = time.time()
-            self.logger.warning(f"Circuit breaker opened for service '{self.name}' after {self.circuit_breaker_failures} failures")
+            self.logger.warning(
+                "Circuit breaker opened for service '%s' after %s failures",
+                self.name,
+                self.circuit_breaker_failures,
+            )
 
     async def start_health_monitoring(self) -> None:
         """Start health monitoring task."""
@@ -163,25 +177,37 @@ class Service(ABC):
                     self.health_score = health_check.score
 
                     if not health_check.healthy:
-                        self.logger.warning(f"Health check failed for service '{self.name}': {health_check.message}")
+                        self.logger.warning(
+                            "Health check failed for service '%s': %s",
+                            self.name,
+                            health_check.message,
+                        )
                     else:
-                        self.logger.debug(f"Health check passed for service '{self.name}'")
+                        self.logger.debug(
+                            "Health check passed for service '%s'",
+                            self.name,
+                        )
 
-            except Exception as e:
-                self.logger.error(f"Health monitoring error for service '{self.name}': {e}")
+            except Exception:
+                self.logger.exception(
+                    "Health monitoring error for service '%s'",
+                    self.name,
+                )
 
     async def call_with_circuit_breaker(self, func: Callable, *args, **kwargs) -> Any:
         """Call a function with circuit breaker protection."""
         if self.is_circuit_breaker_open():
-            raise ServiceError(f"Circuit breaker is open for service '{self.name}'")
+            msg = f"Circuit breaker is open for service '{self.name}'"
+            raise ServiceError(msg)
 
         try:
             result = await func(*args, **kwargs)
             self.record_success()
-            return result
         except Exception as e:
             self.record_error(e)
             raise
+        else:
+            return result
 
 
 class ServiceManager:
@@ -189,32 +215,34 @@ class ServiceManager:
 
     def __init__(self):
         """Initialize service manager."""
-        self.services: Dict[str, Service] = {}
-        self.service_info: Dict[str, ServiceInfo] = {}
-        self.health_check_tasks: Dict[str, asyncio.Task] = {}
+        self.services: dict[str, Service] = {}
+        self.service_info: dict[str, ServiceInfo] = {}
+        self.health_check_tasks: dict[str, asyncio.Task] = {}
         self.logger = get_logger(__name__)
 
     async def register_service(self, service: Service) -> None:
         """Register a service.
-        
+
         Args:
             service: Service instance
         """
         if service.name in self.services:
-            raise ServiceError(f"Service '{service.name}' is already registered")
+            msg = f"Service '{service.name}' is already registered"
+            raise ServiceError(msg)
 
         self.services[service.name] = service
         self.service_info[service.name] = service.get_info()
-        self.logger.info(f"Registered service: {service.name}")
+        self.logger.info("Registered service: %s", service.name)
 
     async def unregister_service(self, service_name: str) -> None:
         """Unregister a service.
-        
+
         Args:
             service_name: Name of service to unregister
         """
         if service_name not in self.services:
-            raise ServiceError(f"Service '{service_name}' is not registered")
+            msg = f"Service '{service_name}' is not registered"
+            raise ServiceError(msg)
 
         # Stop service if running
         if self.services[service_name].state == ServiceState.RUNNING:
@@ -228,21 +256,23 @@ class ServiceManager:
         # Remove service
         del self.services[service_name]
         del self.service_info[service_name]
-        self.logger.info(f"Unregistered service: {service_name}")
+        self.logger.info("Unregistered service: %s", service_name)
 
     async def start_service(self, service_name: str) -> None:
         """Start a service.
-        
+
         Args:
             service_name: Name of service to start
         """
         if service_name not in self.services:
-            raise ServiceError(f"Service '{service_name}' is not registered")
+            msg = f"Service '{service_name}' is not registered"
+            raise ServiceError(msg)
 
         service = self.services[service_name]
 
         if service.state != ServiceState.STOPPED:
-            raise ServiceError(f"Service '{service_name}' is not in stopped state")
+            msg = f"Service '{service_name}' is not in stopped state"
+            raise ServiceError(msg)
 
         try:
             service.state = ServiceState.STARTING
@@ -253,26 +283,29 @@ class ServiceManager:
             health_task = asyncio.create_task(service.start_health_monitoring())
             self.health_check_tasks[service_name] = health_task
 
-            self.logger.info(f"Started service: {service_name}")
+            self.logger.info("Started service: %s", service_name)
 
         except Exception as e:
             service.state = ServiceState.ERROR
-            self.logger.error(f"Failed to start service '{service_name}': {e}")
-            raise ServiceError(f"Failed to start service '{service_name}': {e}")
+            self.logger.exception("Failed to start service '%s'", service_name)
+            msg = f"Failed to start service '{service_name}': {e}"
+            raise ServiceError(msg) from e
 
     async def stop_service(self, service_name: str) -> None:
         """Stop a service.
-        
+
         Args:
             service_name: Name of service to stop
         """
         if service_name not in self.services:
-            raise ServiceError(f"Service '{service_name}' is not registered")
+            msg = f"Service '{service_name}' is not registered"
+            raise ServiceError(msg)
 
         service = self.services[service_name]
 
         if service.state != ServiceState.RUNNING:
-            raise ServiceError(f"Service '{service_name}' is not running")
+            msg = f"Service '{service_name}' is not running"
+            raise ServiceError(msg)
 
         try:
             service.state = ServiceState.STOPPING
@@ -284,30 +317,31 @@ class ServiceManager:
                 self.health_check_tasks[service_name].cancel()
                 del self.health_check_tasks[service_name]
 
-            self.logger.info(f"Stopped service: {service_name}")
+            self.logger.info("Stopped service: %s", service_name)
 
         except Exception as e:
             service.state = ServiceState.ERROR
-            self.logger.error(f"Failed to stop service '{service_name}': {e}")
-            raise ServiceError(f"Failed to stop service '{service_name}': {e}")
+            self.logger.exception("Failed to stop service '%s'", service_name)
+            msg = f"Failed to stop service '{service_name}': {e}"
+            raise ServiceError(msg) from e
 
-    def get_service(self, service_name: str) -> Optional[Service]:
+    def get_service(self, service_name: str) -> Service | None:
         """Get a service by name."""
         return self.services.get(service_name)
 
-    def get_service_info(self, service_name: str) -> Optional[ServiceInfo]:
+    def get_service_info(self, service_name: str) -> ServiceInfo | None:
         """Get service information."""
         return self.service_info.get(service_name)
 
-    def list_services(self) -> List[ServiceInfo]:
+    def list_services(self) -> list[ServiceInfo]:
         """List all registered services."""
         return list(self.service_info.values())
 
-    def get_healthy_services(self) -> List[ServiceInfo]:
+    def get_healthy_services(self) -> list[ServiceInfo]:
         """Get all healthy services."""
         return [info for info in self.service_info.values() if info.health_score > 0.5]
 
-    def get_service_dependencies(self, service_name: str) -> List[str]:
+    def get_service_dependencies(self, service_name: str) -> list[str]:
         """Get service dependencies."""
         if service_name in self.service_info:
             return self.service_info[service_name].dependencies
@@ -322,14 +356,17 @@ class ServiceManager:
             try:
                 if self.services[service_name].state == ServiceState.RUNNING:
                     await self.stop_service(service_name)
-            except Exception as e:
-                self.logger.error(f"Error shutting down service '{service_name}': {e}")
+            except Exception:
+                self.logger.exception(
+                    "Error shutting down service '%s'",
+                    service_name,
+                )
 
         self.logger.info("Service manager shutdown complete")
 
 
 # Global service manager instance
-_service_manager: Optional[ServiceManager] = None
+_service_manager: ServiceManager | None = None
 
 
 def get_service_manager() -> ServiceManager:

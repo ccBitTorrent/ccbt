@@ -1,27 +1,36 @@
 """WebSeed extension implementation (BEP 19).
 
+from __future__ import annotations
+
 Provides support for:
 - HTTP range requests
 - WebSeed peer simulation
 - Integration with piece manager
 """
 
+from __future__ import annotations
+
+import asyncio
+import contextlib
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import aiohttp
 
-from ..events import Event, EventType, emit_event
-from ..models import PieceInfo
+from ccbt.events import Event, EventType, emit_event
+
+if TYPE_CHECKING:
+    from ccbt.models import PieceInfo
 
 
 @dataclass
 class WebSeedInfo:
     """WebSeed information."""
+
     url: str
-    name: Optional[str] = None
+    name: str | None = None
     is_active: bool = True
     last_accessed: float = 0.0
     bytes_downloaded: int = 0
@@ -33,8 +42,9 @@ class WebSeedExtension:
     """WebSeed extension implementation (BEP 19)."""
 
     def __init__(self):
-        self.webseeds: Dict[str, WebSeedInfo] = {}
-        self.session: Optional[aiohttp.ClientSession] = None
+        """Initialize WebSeed extension."""
+        self.webseeds: dict[str, WebSeedInfo] = {}
+        self.session: aiohttp.ClientSession | None = None
         self.timeout = aiohttp.ClientTimeout(total=30.0)
 
     async def start(self) -> None:
@@ -48,7 +58,7 @@ class WebSeedExtension:
             await self.session.close()
             self.session = None
 
-    def add_webseed(self, url: str, name: Optional[str] = None) -> str:
+    def add_webseed(self, url: str, name: str | None = None) -> str:
         """Add WebSeed URL."""
         webseed_id = url
         self.webseeds[webseed_id] = WebSeedInfo(
@@ -57,15 +67,21 @@ class WebSeedExtension:
         )
 
         # Emit event for WebSeed added
-        emit_event(Event(
-            event_type=EventType.WEBSEED_ADDED.value,
-            data={
-                "webseed_id": webseed_id,
-                "url": url,
-                "name": name,
-                "timestamp": time.time(),
-            },
-        ))
+        with contextlib.suppress(RuntimeError):
+            # No event loop running, skip event emission
+            asyncio.create_task(  # noqa: RUF006
+                emit_event(
+                    Event(
+                        event_type=EventType.WEBSEED_ADDED.value,
+                        data={
+                            "webseed_id": webseed_id,
+                            "url": url,
+                            "name": name,
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
+            )
 
         return webseed_id
 
@@ -75,23 +91,34 @@ class WebSeedExtension:
             del self.webseeds[webseed_id]
 
             # Emit event for WebSeed removed
-            emit_event(Event(
-                event_type=EventType.WEBSEED_REMOVED.value,
-                data={
-                    "webseed_id": webseed_id,
-                    "timestamp": time.time(),
-                },
-            ))
+            with contextlib.suppress(RuntimeError):
+                # No event loop running, skip event emission
+                asyncio.create_task(  # noqa: RUF006
+                    emit_event(
+                        Event(
+                            event_type=EventType.WEBSEED_REMOVED.value,
+                            data={
+                                "webseed_id": webseed_id,
+                                "timestamp": time.time(),
+                            },
+                        ),
+                    )
+                )
 
-    def get_webseed(self, webseed_id: str) -> Optional[WebSeedInfo]:
+    def get_webseed(self, webseed_id: str) -> WebSeedInfo | None:
         """Get WebSeed information."""
         return self.webseeds.get(webseed_id)
 
-    def list_webseeds(self) -> Dict[str, WebSeedInfo]:
+    def list_webseeds(self) -> dict[str, WebSeedInfo]:
         """List all WebSeeds."""
         return self.webseeds.copy()
 
-    async def download_piece(self, webseed_id: str, piece_info: PieceInfo, piece_data: bytes) -> Optional[bytes]:
+    async def download_piece(
+        self,
+        webseed_id: str,
+        piece_info: PieceInfo,
+        _piece_data: bytes,
+    ) -> bytes | None:
         """Download piece from WebSeed."""
         if webseed_id not in self.webseeds:
             return None
@@ -113,6 +140,8 @@ class WebSeedExtension:
                 "Range": f"bytes={start_byte}-{end_byte}",
             }
 
+            if self.session is None:
+                return None
             async with self.session.get(webseed.url, headers=headers) as response:
                 if response.status == 206:  # Partial Content
                     data = await response.read()
@@ -120,56 +149,73 @@ class WebSeedExtension:
                     # Update WebSeed statistics
                     webseed.last_accessed = time.time()
                     webseed.bytes_downloaded += len(data)
-                    webseed.success_rate = webseed.bytes_downloaded / (webseed.bytes_downloaded + webseed.bytes_failed)
+                    webseed.success_rate = webseed.bytes_downloaded / (
+                        webseed.bytes_downloaded + webseed.bytes_failed
+                    )
 
                     # Emit event for successful download
-                    await emit_event(Event(
-                        event_type=EventType.WEBSEED_DOWNLOAD_SUCCESS.value,
-                        data={
-                            "webseed_id": webseed_id,
-                            "piece_index": piece_info.index,
-                            "bytes_downloaded": len(data),
-                            "timestamp": time.time(),
-                        },
-                    ))
+                    await emit_event(
+                        Event(
+                            event_type=EventType.WEBSEED_DOWNLOAD_SUCCESS.value,
+                            data={
+                                "webseed_id": webseed_id,
+                                "piece_index": piece_info.index,
+                                "bytes_downloaded": len(data),
+                                "timestamp": time.time(),
+                            },
+                        ),
+                    )
 
                     return data
                 # Update failure statistics
                 webseed.bytes_failed += piece_info.length
-                webseed.success_rate = webseed.bytes_downloaded / (webseed.bytes_downloaded + webseed.bytes_failed)
+                webseed.success_rate = webseed.bytes_downloaded / (
+                    webseed.bytes_downloaded + webseed.bytes_failed
+                )
 
                 # Emit event for failed download
-                await emit_event(Event(
-                    event_type=EventType.WEBSEED_DOWNLOAD_FAILED.value,
-                    data={
-                        "webseed_id": webseed_id,
-                        "piece_index": piece_info.index,
-                        "status_code": response.status,
-                        "timestamp": time.time(),
-                    },
-                ))
+                await emit_event(
+                    Event(
+                        event_type=EventType.WEBSEED_DOWNLOAD_FAILED.value,
+                        data={
+                            "webseed_id": webseed_id,
+                            "piece_index": piece_info.index,
+                            "status_code": response.status,
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
                 return None
 
         except Exception as e:
             # Update failure statistics
             webseed.bytes_failed += piece_info.length
-            webseed.success_rate = webseed.bytes_downloaded / (webseed.bytes_downloaded + webseed.bytes_failed)
+            webseed.success_rate = webseed.bytes_downloaded / (
+                webseed.bytes_downloaded + webseed.bytes_failed
+            )
 
             # Emit event for error
-            await emit_event(Event(
-                event_type=EventType.WEBSEED_ERROR.value,
-                data={
-                    "webseed_id": webseed_id,
-                    "piece_index": piece_info.index,
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.WEBSEED_ERROR.value,
+                    data={
+                        "webseed_id": webseed_id,
+                        "piece_index": piece_info.index,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
             return None
 
-    async def download_piece_range(self, webseed_id: str, start_byte: int, length: int) -> Optional[bytes]:
+    async def download_piece_range(
+        self,
+        webseed_id: str,
+        start_byte: int,
+        length: int,
+    ) -> bytes | None:
         """Download specific byte range from WebSeed."""
         if webseed_id not in self.webseeds:
             return None
@@ -190,6 +236,8 @@ class WebSeedExtension:
                 "Range": f"bytes={start_byte}-{end_byte}",
             }
 
+            if self.session is None:
+                return None
             async with self.session.get(webseed.url, headers=headers) as response:
                 if response.status == 206:  # Partial Content
                     data = await response.read()
@@ -197,23 +245,29 @@ class WebSeedExtension:
                     # Update WebSeed statistics
                     webseed.last_accessed = time.time()
                     webseed.bytes_downloaded += len(data)
-                    webseed.success_rate = webseed.bytes_downloaded / (webseed.bytes_downloaded + webseed.bytes_failed)
+                    webseed.success_rate = webseed.bytes_downloaded / (
+                        webseed.bytes_downloaded + webseed.bytes_failed
+                    )
 
                     return data
                 # Update failure statistics
                 webseed.bytes_failed += length
-                webseed.success_rate = webseed.bytes_downloaded / (webseed.bytes_downloaded + webseed.bytes_failed)
+                webseed.success_rate = webseed.bytes_downloaded / (
+                    webseed.bytes_downloaded + webseed.bytes_failed
+                )
 
                 return None
 
         except Exception:
             # Update failure statistics
             webseed.bytes_failed += length
-            webseed.success_rate = webseed.bytes_downloaded / (webseed.bytes_downloaded + webseed.bytes_failed)
+            webseed.success_rate = webseed.bytes_downloaded / (
+                webseed.bytes_downloaded + webseed.bytes_failed
+            )
 
             return None
 
-    def get_best_webseed(self) -> Optional[str]:
+    def get_best_webseed(self) -> str | None:
         """Get best WebSeed based on success rate and activity."""
         if not self.webseeds:
             return None
@@ -226,7 +280,9 @@ class WebSeedExtension:
                 continue
 
             # Calculate score based on success rate and recency
-            recency_score = 1.0 - (time.time() - webseed.last_accessed) / 3600.0  # 1 hour decay
+            recency_score = (
+                1.0 - (time.time() - webseed.last_accessed) / 3600.0
+            )  # 1 hour decay
             recency_score = max(0.0, recency_score)
 
             score = webseed.success_rate * 0.7 + recency_score * 0.3
@@ -237,7 +293,7 @@ class WebSeedExtension:
 
         return best_webseed_id
 
-    def get_webseed_statistics(self, webseed_id: str) -> Optional[Dict[str, Any]]:
+    def get_webseed_statistics(self, webseed_id: str) -> dict[str, Any] | None:
         """Get WebSeed statistics."""
         webseed = self.webseeds.get(webseed_id)
         if not webseed:
@@ -254,7 +310,7 @@ class WebSeedExtension:
             "total_bytes": webseed.bytes_downloaded + webseed.bytes_failed,
         }
 
-    def get_all_statistics(self) -> Dict[str, Any]:
+    def get_all_statistics(self) -> dict[str, Any]:
         """Get all WebSeed statistics."""
         total_bytes_downloaded = 0
         total_bytes_failed = 0
@@ -267,7 +323,9 @@ class WebSeedExtension:
                 active_webseeds += 1
 
         total_bytes = total_bytes_downloaded + total_bytes_failed
-        overall_success_rate = total_bytes_downloaded / total_bytes if total_bytes > 0 else 0.0
+        overall_success_rate = (
+            total_bytes_downloaded / total_bytes if total_bytes > 0 else 0.0
+        )
 
         return {
             "total_webseeds": len(self.webseeds),
@@ -313,13 +371,15 @@ class WebSeedExtension:
                 await self.start()
 
             # Make HEAD request to check availability
+            if self.session is None:
+                return False
             async with self.session.head(webseed.url) as response:
                 return response.status == 200
 
         except Exception:
             return False
 
-    async def health_check_all(self) -> Dict[str, bool]:
+    async def health_check_all(self) -> dict[str, bool]:
         """Perform health check on all WebSeeds."""
         results = {}
 

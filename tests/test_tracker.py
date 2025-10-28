@@ -1,5 +1,4 @@
-"""
-Tests for tracker communication functionality.
+"""Tests for tracker communication functionality.
 """
 
 from unittest.mock import Mock, patch
@@ -99,9 +98,9 @@ class TestTrackerClient:
         # Peer 2: IP 10.0.0.5, port 12345
         peer_data = (
             b"\xc0\xa8\x01\x64"  # 192.168.1.100
-            b"\x1a\xe1"          # 6881 (0x1ae1)
+            b"\x1a\xe1"  # 6881 (0x1ae1)
             b"\x0a\x00\x00\x05"  # 10.0.0.5
-            b"\x30\x39"             # 12345 (0x3039)
+            b"\x30\x39"  # 12345 (0x3039)
         )
 
         peers = self.client._parse_compact_peers(peer_data)
@@ -171,10 +170,12 @@ class TestTrackerClient:
         # Mock HTTP response
         mock_response = Mock()
         mock_response.status = 200
-        mock_response.read.return_value = encode({
-            b"interval": 1800,
-            b"peers": b"\xc0\xa8\x01\x64\x1a\xe1",
-        })
+        mock_response.read.return_value = encode(
+            {
+                b"interval": 1800,
+                b"peers": b"\xc0\xa8\x01\x64\x1a\xe1",
+            },
+        )
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         response_data = self.client._make_request("http://tracker.example.com/announce")
@@ -210,10 +211,12 @@ class TestTrackerClient:
     def test_announce_success(self, mock_make_request):
         """Test successful tracker announce."""
         # Mock tracker response
-        response_data = encode({
-            b"interval": 1800,
-            b"peers": b"\xc0\xa8\x01\x64\x1a\xe1\x0a\x00\x00\x05\x30\x39",
-        })
+        response_data = encode(
+            {
+                b"interval": 1800,
+                b"peers": b"\xc0\xa8\x01\x64\x1a\xe1\x0a\x00\x00\x05\x30\x39",
+            },
+        )
         mock_make_request.return_value = response_data
 
         response = self.client.announce(self.torrent_data)
@@ -235,13 +238,15 @@ class TestTrackerClient:
     @patch("ccbt.tracker.TrackerClient._make_request")
     def test_announce_with_custom_params(self, mock_make_request):
         """Test tracker announce with custom parameters."""
-        response_data = encode({
-            b"interval": 1800,
-            b"peers": b"",
-        })
+        response_data = encode(
+            {
+                b"interval": 1800,
+                b"peers": b"",
+            },
+        )
         mock_make_request.return_value = response_data
 
-        response = self.client.announce(
+        self.client.announce(
             self.torrent_data,
             port=9999,
             uploaded=1000,
@@ -262,9 +267,11 @@ class TestTrackerClient:
     def test_announce_tracker_error(self, mock_make_request):
         """Test tracker announce with tracker error response."""
         # Mock failure response
-        response_data = encode({
-            b"failure reason": b"Invalid request",
-        })
+        response_data = encode(
+            {
+                b"failure reason": b"Invalid request",
+            },
+        )
         mock_make_request.return_value = response_data
 
         with pytest.raises(TrackerError, match="Tracker failure"):
@@ -276,10 +283,12 @@ class TestTrackerClient:
         del self.torrent_data["peer_id"]
 
         with patch.object(self.client, "_make_request") as mock_request:
-            response_data = encode({
-                b"interval": 1800,
-                b"peers": b"",
-            })
+            response_data = encode(
+                {
+                    b"interval": 1800,
+                    b"peers": b"",
+                },
+            )
             mock_request.return_value = response_data
 
             self.client.announce(self.torrent_data)

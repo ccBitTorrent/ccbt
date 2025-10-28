@@ -1,5 +1,4 @@
-"""
-Chaos engineering tests with fault injection.
+"""Chaos engineering tests with fault injection.
 
 Tests system resilience under various failure conditions
 and fault injection scenarios.
@@ -8,6 +7,7 @@ and fault injection scenarios.
 import asyncio
 import random
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,9 +34,10 @@ class TestFaultInjection:
         """Cleanup resources after each test."""
         yield
         # Force cleanup of any remaining async resources
-        try:
+        with suppress(Exception):
             import asyncio
             import gc
+
             # Give a moment for cleanup
             loop = asyncio.get_event_loop()
             if loop.is_running():
@@ -46,8 +47,6 @@ class TestFaultInjection:
                 # Run cleanup immediately
                 asyncio.run(asyncio.sleep(0.1))
                 gc.collect()
-        except Exception:
-            pass
 
     @pytest.mark.asyncio
     async def test_network_failure_injection(self, temp_dir):
@@ -58,10 +57,13 @@ class TestFaultInjection:
             await session_manager.start()
 
             # Create torrent session
-            torrent_data = create_test_torrent_dict(name="test_torrent", file_length=1024)
+            torrent_data = create_test_torrent_dict(
+                name="test_torrent",
+                file_length=1024,
+            )
 
-            info_hash = await session_manager.add_torrent(torrent_data, resume=False)
-            session = list(session_manager.torrents.values())[0]
+            await session_manager.add_torrent(torrent_data, resume=False)
+            session = next(iter(session_manager.torrents.values()))
 
             # Inject network failure
             with patch("ccbt.tracker.AsyncTrackerClient.announce") as mock_announce:
@@ -85,10 +87,13 @@ class TestFaultInjection:
             await session_manager.start()
 
             # Create torrent session
-            torrent_data = create_test_torrent_dict(name="test_torrent", file_length=1024)
+            torrent_data = create_test_torrent_dict(
+                name="test_torrent",
+                file_length=1024,
+            )
 
-            info_hash = await session_manager.add_torrent(torrent_data, resume=False)
-            session = list(session_manager.torrents.values())[0]
+            await session_manager.add_torrent(torrent_data, resume=False)
+            session = next(iter(session_manager.torrents.values()))
 
             # Inject disk failure
             with patch("ccbt.disk_io.DiskIOManager.write_block") as mock_write:
@@ -152,8 +157,9 @@ class TestFaultInjection:
                     self.name = "faulty_handler"
 
                 async def handle(self, event):
-                    if random.random() < 0.5:  # 50% failure rate
-                        raise Exception("Event handler failure")
+                    if random.random() < 0.5:  # nosec S311 - test fault injection only
+                        msg = "Event handler failure"
+                        raise RuntimeError(msg)
 
             handler = FaultyHandler()
             event_bus.register_handler(EventType.PEER_CONNECTED.value, handler)
@@ -188,16 +194,18 @@ class TestFaultInjection:
                     self.state = "stopped"
 
                 async def start(self):
-                    if random.random() < 0.3:  # 30% failure rate
-                        raise Exception("Service start failure")
+                    if random.random() < 0.3:  # nosec S311 - test fault injection only
+                        msg = "Service start failure"
+                        raise RuntimeError(msg)
                     self.state = "running"
 
                 async def stop(self):
                     self.state = "stopped"
 
                 async def health_check(self):
-                    if random.random() < 0.2:  # 20% failure rate
-                        raise Exception("Health check failure")
+                    if random.random() < 0.2:  # nosec S311 - test fault injection only
+                        msg = "Health check failure"
+                        raise RuntimeError(msg)
                     return {
                         "healthy": True,
                         "score": 1.0,
@@ -219,10 +227,8 @@ class TestFaultInjection:
 
             # Start services (some may fail)
             for i in range(5):
-                try:
+                with suppress(Exception):
                     await service_manager.start_service(f"faulty_service_{i}")
-                except Exception:
-                    pass  # Expected some failures
 
             # Check some services are running
             services = service_manager.list_services()
@@ -248,12 +254,14 @@ class TestFaultInjection:
                     self.state = "unloaded"
 
                 async def initialize(self):
-                    if random.random() < 0.3:  # 30% failure rate
-                        raise Exception("Plugin initialization failure")
+                    if random.random() < 0.3:  # nosec S311 - test fault injection only
+                        msg = "Plugin initialization failure"
+                        raise RuntimeError(msg)
 
                 async def start(self):
-                    if random.random() < 0.2:  # 20% failure rate
-                        raise Exception("Plugin start failure")
+                    if random.random() < 0.2:  # nosec S311 - test fault injection only
+                        msg = "Plugin start failure"
+                        raise RuntimeError(msg)
                     self.state = "running"
 
                 async def stop(self):
@@ -263,11 +271,9 @@ class TestFaultInjection:
                     pass
 
             # Load plugin (may fail)
-            try:
+            with suppress(Exception):
                 plugin_name = await plugin_manager.load_plugin(FaultyPlugin)
                 await plugin_manager.start_plugin(plugin_name)
-            except Exception:
-                pass  # Expected some failures
 
             # Check plugin manager is still functional
             plugins = plugin_manager.list_plugins()
@@ -299,8 +305,9 @@ class TestFaultInjection:
 
             # Start sessions concurrently with random failures
             async def start_session_with_failure(session):
-                if random.random() < 0.3:  # 30% failure rate
-                    raise Exception("Session start failure")
+                if random.random() < 0.3:  # nosec S311 - test fault injection only
+                    msg = "Session start failure"
+                    raise RuntimeError(msg)
                 await session.start()
 
             # Start all sessions concurrently
@@ -308,7 +315,9 @@ class TestFaultInjection:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # Check some sessions started successfully
-            successful_sessions = [s for s, r in zip(sessions, results) if not isinstance(r, Exception)]
+            successful_sessions = [
+                s for s, r in zip(sessions, results) if not isinstance(r, Exception)
+            ]
             assert len(successful_sessions) > 0
 
         finally:
@@ -344,11 +353,8 @@ class TestFaultInjection:
 
             # Start sessions (some may fail due to resource exhaustion)
             for session in sessions:
-                try:
+                with suppress(Exception):
                     await session.start()
-                except Exception:
-                    # Expected some failures
-                    pass
 
             # Check some sessions are running
             running_sessions = [s for s in sessions if s.info.status == "downloading"]
@@ -366,13 +372,17 @@ class TestFaultInjection:
             await session_manager.start()
 
             # Create session with timeout injection
-            torrent_data = create_test_torrent_dict(name="test_torrent", file_length=1024)
+            torrent_data = create_test_torrent_dict(
+                name="test_torrent",
+                file_length=1024,
+            )
 
-            info_hash = await session_manager.add_torrent(torrent_data, resume=False)
-            session = list(session_manager.torrents.values())[0]
+            await session_manager.add_torrent(torrent_data, resume=False)
+            session = next(iter(session_manager.torrents.values()))
 
             # Inject timeout in tracker communication
             with patch("ccbt.tracker.AsyncTrackerClient.announce") as mock_announce:
+
                 async def timeout_announce(*args, **kwargs):
                     await asyncio.sleep(10)  # Simulate timeout
                     return []
@@ -380,11 +390,8 @@ class TestFaultInjection:
                 mock_announce.side_effect = timeout_announce
 
                 # Start session with timeout
-                try:
+                with suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(session.start(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    # Expected timeout
-                    pass
 
                 # Check session is still functional
                 assert session.info.status in ["downloading", "error"]
@@ -410,15 +417,15 @@ class TestFaultInjection:
             corrupted_torrent_data["total_length"] = -1  # Invalid length
             corrupted_torrent_data["piece_length"] = 0  # Invalid piece length
 
-            info_hash = await session_manager.add_torrent(corrupted_torrent_data, resume=False)
-            session = list(session_manager.torrents.values())[0]
+            await session_manager.add_torrent(
+                corrupted_torrent_data,
+                resume=False,
+            )
+            session = next(iter(session_manager.torrents.values()))
 
             # Start session (should handle corruption gracefully)
-            try:
+            with suppress(Exception):
                 await session.start()
-            except Exception:
-                # Expected failure due to corruption
-                pass
 
             # Check session is in error state or stopped (corruption may not prevent downloading state)
             assert session.info.status in ["error", "stopped", "downloading"]

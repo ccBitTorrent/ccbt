@@ -1,21 +1,25 @@
 """Configuration management for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides centralized configuration with TOML support, validation, hot-reload,
 and hierarchical loading from defaults → config file → environment → CLI → per-torrent.
 """
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import toml
 
-from .exceptions import ConfigurationError
-from .logging_config import get_logger, setup_logging
-from .models import (
+from ccbt.exceptions import ConfigurationError
+from ccbt.logging_config import get_logger, setup_logging
+from ccbt.models import (
     Config,
     DiscoveryConfig,
     DiskConfig,
@@ -30,15 +34,15 @@ IS_LINUX = sys.platform.startswith("linux")
 IS_MACOS = sys.platform == "darwin"
 
 # Global configuration instance
-_config_manager: Optional["ConfigManager"] = None
+_config_manager: ConfigManager | None = None
 
 
 class ConfigManager:
     """Manages configuration loading, validation, and hot-reload."""
 
-    def __init__(self, config_file: Optional[Union[str, Path]] = None):
+    def __init__(self, config_file: str | Path | None = None):
         """Initialize configuration manager.
-        
+
         Args:
             config_file: Path to TOML config file. If None, searches for ccbt.toml
         """
@@ -46,9 +50,12 @@ class ConfigManager:
         self.config = self._load_config()
         self._setup_logging()
         # internal
-        self._hot_reload_task: Optional[asyncio.Task] = None
+        self._hot_reload_task: asyncio.Task | None = None
 
-    def _find_config_file(self, config_file: Optional[Union[str, Path]]) -> Optional[Path]:
+    def _find_config_file(
+        self,
+        config_file: str | Path | None,
+    ) -> Path | None:
         """Find configuration file in standard locations."""
         if config_file:
             return Path(config_file)
@@ -78,7 +85,9 @@ class ConfigManager:
                     toml_data = toml.load(f)
                 config_data.update(toml_data)
             except Exception as e:
-                logging.warning(f"Failed to load config file {self.config_file}: {e}")
+                logging.warning(
+                    "Failed to load config file %s: %s", self.config_file, e
+                )
 
         # Apply environment overrides
         env_config = self._get_env_config()
@@ -86,17 +95,17 @@ class ConfigManager:
 
         try:
             # Create Pydantic model with validation
-            config = Config(**config_data)
-            return config
+            return Config(**config_data)
         except Exception as e:
-            raise ConfigurationError(f"Invalid configuration: {e}")
+            msg = f"Invalid configuration: {e}"
+            raise ConfigurationError(msg) from e
 
-    def _get_env_config(self) -> Dict[str, Any]:
+    def _get_env_config(self) -> dict[str, Any]:
         """Get configuration from environment variables."""
-        env_config: Dict[str, Any] = {}
+        env_config: dict[str, Any] = {}
 
         # Mapping of environment variables to config paths
-        env_mappings: Dict[str, str] = {
+        env_mappings: dict[str, str] = {
             # Network
             "CCBT_MAX_PEERS": "network.max_global_peers",
             "CCBT_MAX_PEERS_PER_TORRENT": "network.max_peers_per_torrent",
@@ -113,13 +122,11 @@ class ConfigManager:
             "CCBT_MAX_UPLOAD_SLOTS": "network.max_upload_slots",
             "CCBT_TRACKER_TIMEOUT": "network.tracker_timeout",
             "CCBT_DNS_CACHE_TTL": "network.dns_cache_ttl",
-
             # Strategy
             "CCBT_PIECE_SELECTION": "strategy.piece_selection",
             "CCBT_ENDGAME_DUPLICATES": "strategy.endgame_duplicates",
             "CCBT_ENDGAME_THRESHOLD": "strategy.endgame_threshold",
             "CCBT_STREAMING_MODE": "strategy.streaming_mode",
-
             # Disk
             "CCBT_PREALLOCATE": "disk.preallocate",
             "CCBT_USE_MMAP": "disk.use_mmap",
@@ -134,13 +141,11 @@ class ConfigManager:
             "CCBT_CHECKPOINT_DIR": "disk.checkpoint_dir",
             "CCBT_CHECKPOINT_COMPRESSION": "disk.checkpoint_compression",
             "CCBT_AUTO_RESUME": "disk.auto_resume",
-
             # Discovery
             "CCBT_ENABLE_DHT": "discovery.enable_dht",
             "CCBT_DHT_PORT": "discovery.dht_port",
             "CCBT_ENABLE_PEX": "discovery.enable_pex",
             "CCBT_ENABLE_UDP_TRACKERS": "discovery.enable_udp_trackers",
-
             # Observability
             "CCBT_LOG_LEVEL": "observability.log_level",
             "CCBT_LOG_FILE": "observability.log_file",
@@ -149,7 +154,7 @@ class ConfigManager:
             "CCBT_ENABLE_PEER_TRACING": "observability.enable_peer_tracing",
         }
 
-        def _parse_env_value(raw: str) -> Union[bool, int, float, str]:
+        def _parse_env_value(raw: str) -> bool | int | float | str:
             low = raw.lower()
             if low in {"true", "1", "yes", "on"}:
                 return True
@@ -162,7 +167,7 @@ class ConfigManager:
             except ValueError:
                 return raw
 
-        def _set_nested(d: Dict[str, Any], path: str, value: Any) -> None:
+        def _set_nested(d: dict[str, Any], path: str, value: Any) -> None:
             parts = path.split(".")
             cur = d
             for p in parts[:-1]:
@@ -177,12 +182,20 @@ class ConfigManager:
 
         return env_config
 
-    def _merge_config(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    def _merge_config(
+        self,
+        base: dict[str, Any],
+        override: dict[str, Any],
+    ) -> dict[str, Any]:
         """Merge configuration dictionaries recursively."""
         result = base.copy()
 
         for key, value in override.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            if (
+                key in result
+                and isinstance(result[key], dict)
+                and isinstance(value, dict)
+            ):
                 result[key] = self._merge_config(result[key], value)
             else:
                 result[key] = value
@@ -201,17 +214,21 @@ class ConfigManager:
             try:
                 return toml.dumps(data)
             except Exception as e:
-                raise ConfigurationError(f"Failed to export TOML: {e}")
+                msg = f"Failed to export TOML: {e}"
+                raise ConfigurationError(msg) from e
         if fmt == "json":
             import json
+
             return json.dumps(data, indent=2)
         if fmt == "yaml":
             try:
-                import yaml  # type: ignore
-            except Exception:
-                raise ConfigurationError("PyYAML not installed; cannot export YAML")
+                import yaml  # type: ignore[import-untyped]
+            except Exception as e:
+                msg = "PyYAML not installed; cannot export YAML"
+                raise ConfigurationError(msg) from e
             return yaml.safe_dump(data, sort_keys=False)
-        raise ConfigurationError(f"Unsupported export format: {fmt}")
+        msg = f"Unsupported export format: {fmt}"
+        raise ConfigurationError(msg)
 
     def _setup_logging(self) -> None:
         """Set up logging configuration."""
@@ -230,23 +247,29 @@ class ConfigManager:
         except Exception:
             self._hot_reload_task = None
 
-        while True:
-            try:
-                if self.config_file.exists():
-                    current_mtime = self.config_file.stat().st_mtime
-                    if hasattr(self, "_last_mtime") and current_mtime > self._last_mtime:
-                        logger.info("Configuration file changed, reloading...")
-                        self.config = self._load_config()
-                        self._setup_logging()
-                        logger.info("Configuration reloaded successfully")
-                    self._last_mtime = current_mtime
+        while await self._hot_reload_loop_step(logger):
+            pass
 
-                await asyncio.sleep(1.0)  # Check every second
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in hot-reload monitoring: {e}")
-                await asyncio.sleep(5.0)
+    async def _hot_reload_loop_step(self, logger: logging.Logger) -> bool:
+        """Execute a single hot-reload step. Return False to stop the loop."""
+        try:
+            if self.config_file is not None and self.config_file.exists():
+                current_mtime = self.config_file.stat().st_mtime
+                if hasattr(self, "_last_mtime") and current_mtime > self._last_mtime:
+                    logger.info("Configuration file changed, reloading...")
+                    self.config = self._load_config()
+                    self._setup_logging()
+                    logger.info("Configuration reloaded successfully")
+                self._last_mtime = current_mtime
+
+            await asyncio.sleep(1.0)  # Check every second
+            return True
+        except asyncio.CancelledError:
+            return False
+        except Exception:
+            logger.exception("Error in hot-reload monitoring")
+            await asyncio.sleep(5.0)
+            return True
 
     def stop_hot_reload(self) -> None:
         """Stop hot-reload monitoring."""
@@ -262,21 +285,19 @@ def get_config() -> Config:
     return _config_manager.config
 
 
-def init_config(config_file: Optional[Union[str, Path]] = None) -> ConfigManager:
+def init_config(config_file: str | Path | None = None) -> ConfigManager:
     """Initialize the global configuration manager."""
-    global _config_manager
-    _config_manager = ConfigManager(config_file)
-    return _config_manager
+    return ConfigManager(config_file)
 
 
 def reload_config() -> Config:
     """Reload configuration from file."""
-    global _config_manager
     if _config_manager is None:
-        raise ConfigurationError("Configuration not initialized")
+        msg = "Configuration not initialized"
+        raise ConfigurationError(msg)
 
-    _config_manager.config = _config_manager._load_config()
-    _config_manager._setup_logging()
+    _config_manager.config = _config_manager._load_config()  # noqa: SLF001
+    _config_manager._setup_logging()  # noqa: SLF001
     return _config_manager.config
 
 
@@ -290,7 +311,7 @@ def set_config(new_config: Config) -> None:
     if _config_manager is None:
         _config_manager = ConfigManager(None)
     _config_manager.config = new_config
-    _config_manager._setup_logging()
+    _config_manager._setup_logging()  # noqa: SLF001
 
 
 # Backward compatibility functions

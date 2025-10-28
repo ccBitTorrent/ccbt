@@ -1,5 +1,7 @@
 """ML-based Piece Predictor for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides intelligent piece selection using machine learning:
 - Predictive piece selection
 - Download pattern analysis
@@ -7,18 +9,21 @@ Provides intelligent piece selection using machine learning:
 - Completion time prediction
 """
 
+from __future__ import annotations
+
 import statistics
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from ..events import Event, EventType, emit_event
+from ccbt.events import Event, EventType, emit_event
 
 
 class PiecePriority(Enum):
     """Piece priority levels."""
+
     CRITICAL = "critical"
     HIGH = "high"
     MEDIUM = "medium"
@@ -28,6 +33,7 @@ class PiecePriority(Enum):
 
 class PieceStatus(Enum):
     """Piece status."""
+
     MISSING = "missing"
     DOWNLOADING = "downloading"
     COMPLETED = "completed"
@@ -37,6 +43,7 @@ class PieceStatus(Enum):
 @dataclass
 class PieceInfo:
     """Piece information."""
+
     piece_index: int
     size: int
     hash: bytes
@@ -53,9 +60,10 @@ class PieceInfo:
 @dataclass
 class DownloadPattern:
     """Download pattern analysis."""
+
     piece_index: int
-    download_times: List[float]
-    download_speeds: List[float]
+    download_times: list[float]
+    download_speeds: list[float]
     success_rate: float
     avg_download_time: float
     pattern_type: str  # "sequential", "random", "rarest_first", "endgame"
@@ -65,6 +73,7 @@ class DownloadPattern:
 @dataclass
 class PiecePrediction:
     """Piece download prediction."""
+
     piece_index: int
     predicted_download_time: float
     predicted_success_rate: float
@@ -78,14 +87,15 @@ class PiecePredictor:
     """ML-based piece predictor."""
 
     def __init__(self):
-        self.piece_info: Dict[int, PieceInfo] = {}
-        self.download_patterns: Dict[int, DownloadPattern] = {}
-        self.piece_features: Dict[int, Dict[str, float]] = {}
+        """Initialize ML-based piece predictor."""
+        self.piece_info: dict[int, PieceInfo] = {}
+        self.download_patterns: dict[int, DownloadPattern] = {}
+        self.piece_features: dict[int, dict[str, float]] = {}
 
         # ML models
-        self.download_time_model: Dict[str, Any] = {}
-        self.success_rate_model: Dict[str, Any] = {}
-        self.priority_model: Dict[str, Any] = {}
+        self.download_time_model: dict[str, Any] = {}
+        self.success_rate_model: dict[str, Any] = {}
+        self.priority_model: dict[str, Any] = {}
 
         # Learning parameters
         self.learning_rate = 0.01
@@ -93,8 +103,8 @@ class PiecePredictor:
         self.max_samples = 1000
 
         # Performance tracking
-        self.performance_history: Dict[int, List[float]] = defaultdict(list)
-        self.prediction_accuracy: Dict[int, List[bool]] = defaultdict(list)
+        self.performance_history: dict[int, list[float]] = defaultdict(list)
+        self.prediction_accuracy: dict[int, list[bool]] = defaultdict(list)
 
         # Statistics
         self.stats = {
@@ -104,13 +114,17 @@ class PiecePredictor:
             "patterns_learned": 0,
         }
 
-    async def predict_piece_download_time(self, piece_index: int, piece_size: int) -> PiecePrediction:
+    async def predict_piece_download_time(
+        self,
+        piece_index: int,
+        piece_size: int,
+    ) -> PiecePrediction:
         """Predict piece download time using ML.
-        
+
         Args:
             piece_index: Piece index
             piece_size: Piece size in bytes
-            
+
         Returns:
             Piece download prediction
         """
@@ -144,28 +158,34 @@ class PiecePredictor:
         self.stats["total_predictions"] += 1
 
         # Emit prediction event
-        await emit_event(Event(
-            event_type=EventType.ML_PIECE_PREDICTION.value,
-            data={
-                "piece_index": piece_index,
-                "predicted_download_time": predicted_time,
-                "predicted_success_rate": success_rate,
-                "priority_score": priority_score,
-                "completion_probability": completion_prob,
-                "features": features,
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.ML_PIECE_PREDICTION.value,
+                data={
+                    "piece_index": piece_index,
+                    "predicted_download_time": predicted_time,
+                    "predicted_success_rate": success_rate,
+                    "priority_score": priority_score,
+                    "completion_probability": completion_prob,
+                    "features": features,
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
         return prediction
 
-    async def select_optimal_pieces(self, available_pieces: List[int], count: int = 10) -> List[int]:
+    async def select_optimal_pieces(
+        self,
+        available_pieces: list[int],
+        count: int = 10,
+    ) -> list[int]:
         """Select optimal pieces for download.
-        
+
         Args:
             available_pieces: List of available piece indices
             count: Number of pieces to select
-            
+
         Returns:
             List of optimal piece indices
         """
@@ -178,20 +198,25 @@ class PiecePredictor:
                 continue
 
             # Predict piece performance
-            prediction = await self.predict_piece_download_time(piece_index, piece_info.size)
+            prediction = await self.predict_piece_download_time(
+                piece_index,
+                piece_info.size,
+            )
             piece_predictions.append((piece_index, prediction))
 
         # Sort by priority score
         piece_predictions.sort(key=lambda x: x[1].priority_score, reverse=True)
 
         # Select top pieces
-        optimal_pieces = [piece_index for piece_index, _ in piece_predictions[:count]]
+        return [piece_index for piece_index, _ in piece_predictions[:count]]
 
-        return optimal_pieces
-
-    async def update_piece_performance(self, piece_index: int, performance_data: Dict[str, Any]) -> None:
+    async def update_piece_performance(
+        self,
+        piece_index: int,
+        performance_data: dict[str, Any],
+    ) -> None:
         """Update piece performance data for learning.
-        
+
         Args:
             piece_index: Piece index
             performance_data: Performance metrics
@@ -206,8 +231,12 @@ class PiecePredictor:
             piece_info.download_start_time = performance_data["download_start_time"]
 
         if "download_complete_time" in performance_data:
-            piece_info.download_complete_time = performance_data["download_complete_time"]
-            piece_info.download_duration = piece_info.download_complete_time - piece_info.download_start_time
+            piece_info.download_complete_time = performance_data[
+                "download_complete_time"
+            ]
+            piece_info.download_duration = (
+                piece_info.download_complete_time - piece_info.download_start_time
+            )
 
         if "download_speed" in performance_data:
             piece_info.download_speed = performance_data["download_speed"]
@@ -223,7 +252,9 @@ class PiecePredictor:
         await self._update_download_pattern(piece_index, performance_data)
 
         # Record performance for learning
-        self.performance_history[piece_index].append(performance_data.get("download_time", 0.0))
+        self.performance_history[piece_index].append(
+            performance_data.get("download_time", 0.0),
+        )
 
         # Update prediction accuracy
         if "actual_download_time" in performance_data:
@@ -240,13 +271,13 @@ class PiecePredictor:
         # Trigger online learning
         await self._online_learning(piece_index, performance_data)
 
-    async def analyze_download_patterns(self) -> Dict[str, Any]:
+    async def analyze_download_patterns(self) -> dict[str, Any]:
         """Analyze download patterns across all pieces.
-        
+
         Returns:
             Pattern analysis results
         """
-        pattern_analysis = {
+        pattern_analysis: dict[str, Any] = {
             "total_pieces": len(self.piece_info),
             "completed_pieces": 0,
             "failed_pieces": 0,
@@ -284,28 +315,33 @@ class PiecePredictor:
             pattern_analysis["priority_distribution"][piece_info.priority.value] += 1
 
         # Calculate averages
-        if pattern_analysis["completed_pieces"] > 0:
-            pattern_analysis["avg_download_time"] = total_download_time / pattern_analysis["completed_pieces"]
-            pattern_analysis["avg_download_speed"] = total_download_speed / pattern_analysis["completed_pieces"]
+        completed_pieces = pattern_analysis["completed_pieces"]
+        if completed_pieces > 0:
+            pattern_analysis["avg_download_time"] = (
+                total_download_time / completed_pieces
+            )
+            pattern_analysis["avg_download_speed"] = (
+                total_download_speed / completed_pieces
+            )
 
         if total_attempts > 0:
             pattern_analysis["success_rate"] = total_successes / total_attempts
 
         return pattern_analysis
 
-    def get_piece_info(self, piece_index: int) -> Optional[PieceInfo]:
+    def get_piece_info(self, piece_index: int) -> PieceInfo | None:
         """Get piece information."""
         return self.piece_info.get(piece_index)
 
-    def get_all_piece_info(self) -> Dict[int, PieceInfo]:
+    def get_all_piece_info(self) -> dict[int, PieceInfo]:
         """Get all piece information."""
         return self.piece_info.copy()
 
-    def get_download_pattern(self, piece_index: int) -> Optional[DownloadPattern]:
+    def get_download_pattern(self, piece_index: int) -> DownloadPattern | None:
         """Get download pattern for a piece."""
         return self.download_patterns.get(piece_index)
 
-    def get_ml_statistics(self) -> Dict[str, Any]:
+    def get_ml_statistics(self) -> dict[str, Any]:
         """Get ML statistics."""
         total_predictions = self.stats["total_predictions"]
         accurate_predictions = self.stats["accurate_predictions"]
@@ -340,7 +376,11 @@ class PiecePredictor:
             if piece_index not in self.piece_info:
                 del self.performance_history[piece_index]
 
-    async def _extract_piece_features(self, piece_index: int, piece_size: int) -> Dict[str, float]:
+    async def _extract_piece_features(
+        self,
+        piece_index: int,
+        piece_size: int,
+    ) -> dict[str, float]:
         """Extract features for piece prediction."""
         features = {
             "piece_index": float(piece_index),
@@ -373,14 +413,16 @@ class PiecePredictor:
         features["network_quality"] = await self._estimate_network_quality()
 
         # Estimate peer availability
-        features["peer_availability"] = await self._estimate_peer_availability(piece_index)
+        features["peer_availability"] = await self._estimate_peer_availability(
+            piece_index,
+        )
 
         # Estimate piece rarity
         features["piece_rarity"] = await self._estimate_piece_rarity(piece_index)
 
         return features
 
-    async def _predict_download_time(self, features: Dict[str, float]) -> float:
+    async def _predict_download_time(self, features: dict[str, float]) -> float:
         """Predict piece download time using ML."""
         # This is a simplified prediction
         # In a real implementation, this would use a trained ML model
@@ -399,7 +441,7 @@ class PiecePredictor:
 
         return max(0.1, predicted_time)  # Minimum 0.1 seconds
 
-    async def _predict_success_rate(self, features: Dict[str, float]) -> float:
+    async def _predict_success_rate(self, features: dict[str, float]) -> float:
         """Predict piece download success rate."""
         # This is a simplified prediction
         # In a real implementation, this would use a trained ML model
@@ -413,11 +455,13 @@ class PiecePredictor:
         piece_rarity = features["piece_rarity"]
 
         # Calculate success rate
-        success_rate = base_success_rate * network_quality * peer_availability * piece_rarity
+        success_rate = (
+            base_success_rate * network_quality * peer_availability * piece_rarity
+        )
 
         return max(0.0, min(1.0, success_rate))
 
-    async def _calculate_priority_score(self, features: Dict[str, float]) -> float:
+    async def _calculate_priority_score(self, features: dict[str, float]) -> float:
         """Calculate piece priority score."""
         # Weighted combination of features
         score = 0.0
@@ -436,7 +480,10 @@ class PiecePredictor:
 
         return max(0.0, min(1.0, score))
 
-    async def _calculate_completion_probability(self, features: Dict[str, float]) -> float:
+    async def _calculate_completion_probability(
+        self,
+        features: dict[str, float],
+    ) -> float:
         """Calculate piece completion probability."""
         # This is a simplified calculation
         # In a real implementation, this would use a more sophisticated model
@@ -454,7 +501,11 @@ class PiecePredictor:
 
         return max(0.0, min(1.0, completion_prob))
 
-    async def _update_download_pattern(self, piece_index: int, performance_data: Dict[str, Any]) -> None:
+    async def _update_download_pattern(
+        self,
+        piece_index: int,
+        performance_data: dict[str, Any],
+    ) -> None:
         """Update download pattern for a piece."""
         if piece_index not in self.download_patterns:
             self.download_patterns[piece_index] = DownloadPattern(
@@ -473,20 +524,24 @@ class PiecePredictor:
         if "download_time" in performance_data:
             pattern.download_times.append(performance_data["download_time"])
             if len(pattern.download_times) > self.max_samples:
-                pattern.download_times = pattern.download_times[-self.max_samples:]
+                pattern.download_times = pattern.download_times[-self.max_samples :]
 
         # Update download speeds
         if "download_speed" in performance_data:
             pattern.download_speeds.append(performance_data["download_speed"])
             if len(pattern.download_speeds) > self.max_samples:
-                pattern.download_speeds = pattern.download_speeds[-self.max_samples:]
+                pattern.download_speeds = pattern.download_speeds[-self.max_samples :]
 
         # Update success rate
         if "success" in performance_data:
             # Calculate success rate from recent attempts
-            recent_attempts = pattern.download_times[-10:] if pattern.download_times else []
+            recent_attempts = (
+                pattern.download_times[-10:] if pattern.download_times else []
+            )
             if recent_attempts:
-                success_count = sum(1 for _ in recent_attempts if performance_data["success"])
+                success_count = sum(
+                    1 for _ in recent_attempts if performance_data["success"]
+                )
                 pattern.success_rate = success_count / len(recent_attempts)
 
         # Update average download time
@@ -512,9 +567,9 @@ class PiecePredictor:
             # Analyze download times
             if len(pattern.download_times) >= 3:
                 times = pattern.download_times
-                if all(times[i] <= times[i+1] for i in range(len(times)-1)):
+                if all(times[i] <= times[i + 1] for i in range(len(times) - 1)):
                     return "sequential"
-                if all(times[i] >= times[i+1] for i in range(len(times)-1)):
+                if all(times[i] >= times[i + 1] for i in range(len(times) - 1)):
                     return "reverse_sequential"
                 return "random"
 
@@ -527,14 +582,14 @@ class PiecePredictor:
 
         return 0.7  # Default network quality
 
-    async def _estimate_peer_availability(self, piece_index: int) -> float:
+    async def _estimate_peer_availability(self, _piece_index: int) -> float:
         """Estimate peer availability for a piece."""
         # This is a placeholder implementation
         # In a real implementation, this would analyze peer availability
 
         return 0.8  # Default peer availability
 
-    async def _estimate_piece_rarity(self, piece_index: int) -> float:
+    async def _estimate_piece_rarity(self, _piece_index: int) -> float:
         """Estimate piece rarity."""
         # This is a placeholder implementation
         # In a real implementation, this would analyze piece availability across peers
@@ -552,7 +607,11 @@ class PiecePredictor:
         }
         return priority_scores.get(priority, 0.5)
 
-    async def _online_learning(self, piece_index: int, performance_data: Dict[str, Any]) -> None:
+    async def _online_learning(
+        self,
+        piece_index: int,
+        _performance_data: dict[str, Any],
+    ) -> None:
         """Perform online learning to improve predictions."""
         if piece_index not in self.performance_history:
             return
@@ -561,11 +620,13 @@ class PiecePredictor:
             return
 
         # Get recent performance data
-        recent_performance = self.performance_history[piece_index][-self.min_samples:]
+        recent_performance = self.performance_history[piece_index][-self.min_samples :]
 
         # Calculate performance trend
         if len(recent_performance) >= 2:
-            trend = statistics.mean(recent_performance[-3:]) - statistics.mean(recent_performance[-6:-3])
+            trend = statistics.mean(recent_performance[-3:]) - statistics.mean(
+                recent_performance[-6:-3],
+            )
 
             # Adjust models based on performance
             if trend > 0.1:  # Performance improving

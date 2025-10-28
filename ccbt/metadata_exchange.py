@@ -1,16 +1,23 @@
 """Metadata exchange (BEP 10 + ut_metadata) for magnet downloads.
 
+from __future__ import annotations
+
 Connects to peers, negotiates the extension protocol, and downloads
 the torrent metadata (info dictionary) in pieces.
 """
 
+from __future__ import annotations
+
 import hashlib
+import logging
 import math
 import socket
 import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from .bencode import BencodeDecoder, BencodeEncoder
+from ccbt.bencode import BencodeDecoder, BencodeEncoder
+
+logger = logging.getLogger(__name__)
 
 EXT_PROTOCOL_FLAG_BYTE = 5  # reserved[5] |= 0x10
 EXT_PROTOCOL_FLAG_MASK = 0x10
@@ -21,7 +28,7 @@ def _handshake(info_hash: bytes, peer_id: bytes) -> bytes:
     pstr = b"BitTorrent protocol"
     reserved = bytearray(8)
     reserved[EXT_PROTOCOL_FLAG_BYTE] |= EXT_PROTOCOL_FLAG_MASK
-    return (struct.pack("B", len(pstr)) + pstr + bytes(reserved) + info_hash + peer_id)
+    return struct.pack("B", len(pstr)) + pstr + bytes(reserved) + info_hash + peer_id
 
 
 def _read_exact(sock: socket.socket, n: int) -> bytes:
@@ -29,7 +36,8 @@ def _read_exact(sock: socket.socket, n: int) -> bytes:
     while len(buf) < n:
         chunk = sock.recv(n - len(buf))
         if not chunk:
-            raise ConnectionError("Connection closed")
+            msg = "Connection closed"
+            raise ConnectionError(msg)
         buf += chunk
     return buf
 
@@ -40,7 +48,7 @@ def _send_extended_handshake(sock: socket.socket) -> None:
     sock.sendall(msg)
 
 
-def _recv_message(sock: socket.socket) -> Tuple[int, bytes]:
+def _recv_message(sock: socket.socket) -> tuple[int, bytes]:
     header = _read_exact(sock, 4)
     length = struct.unpack("!I", header)[0]
     if length == 0:
@@ -49,8 +57,13 @@ def _recv_message(sock: socket.socket) -> Tuple[int, bytes]:
     return (length, payload)
 
 
-def fetch_metadata_from_peers(info_hash: bytes, peers: List[Dict[str, Any]],
-                              timeout: float = 5.0, peer_id: Optional[bytes] = None) -> Optional[Dict[bytes, Any]]:
+def fetch_metadata_from_peers(
+    info_hash: bytes,
+    peers: list[dict[str, Any]],
+    timeout: float = 5.0,
+    peer_id: bytes | None = None,
+) -> dict[bytes, Any] | None:
+    """Fetch torrent metadata from a list of peers."""
     if peer_id is None:
         peer_id = b"-CC0101-" + b"x" * 12
 
@@ -66,7 +79,11 @@ def fetch_metadata_from_peers(info_hash: bytes, peers: List[Dict[str, Any]],
                 # Handshake
                 sock.sendall(_handshake(info_hash, peer_id))
                 hs = _read_exact(sock, 68)
-                if len(hs) != 68 or hs[1:20] != b"BitTorrent protocol" or hs[28:48] != info_hash:
+                if (
+                    len(hs) != 68
+                    or hs[1:20] != b"BitTorrent protocol"
+                    or hs[28:48] != info_hash
+                ):
                     continue
 
                 # Extended handshake
@@ -98,13 +115,21 @@ def fetch_metadata_from_peers(info_hash: bytes, peers: List[Dict[str, Any]],
                     continue
 
                 num_pieces = math.ceil(int(metadata_size) / METADATA_PIECE_SIZE)
-                pieces = [None] * num_pieces  # type: ignore
+                pieces = [None] * num_pieces  # type: ignore[list-item]
 
                 # Request each piece
                 for idx in range(num_pieces):
                     req_dict = {b"msg_type": 0, b"piece": idx}
                     req_payload = BencodeEncoder().encode(req_dict)
-                    req_msg = struct.pack("!IBB", 2 + len(req_payload), 20, int(ut_metadata_id)) + req_payload
+                    req_msg = (
+                        struct.pack(
+                            "!IBB",
+                            2 + len(req_payload),
+                            20,
+                            int(ut_metadata_id),
+                        )
+                        + req_payload
+                    )
                     sock.sendall(req_msg)
 
                     # Await piece
@@ -121,24 +146,23 @@ def fetch_metadata_from_peers(info_hash: bytes, peers: List[Dict[str, Any]],
                         piece_index = header.get(b"piece")
                         if msg_type == 1 and piece_index == idx:
                             header_len = decoder.pos
-                            piece_data = payload[2 + header_len:]
+                            piece_data = payload[2 + header_len :]
                             pieces[idx] = piece_data
                             break
 
                 if any(p is None for p in pieces):
                     continue
 
-                metadata = b"".join(pieces)  # type: ignore
+                metadata = b"".join(pieces)  # type: ignore[arg-type]
                 # Decode to dict
                 info = BencodeDecoder(metadata).decode()
                 # Validate hash
                 info_encoded = BencodeEncoder().encode(info)
-                if hashlib.sha1(info_encoded).digest() != info_hash:
+                if hashlib.sha1(info_encoded).digest() != info_hash:  # nosec B324 - SHA-1 required by BitTorrent protocol (BEP 3)
                     continue
                 return info
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to fetch metadata from peer: %s", e)
             continue
 
     return None
-
-

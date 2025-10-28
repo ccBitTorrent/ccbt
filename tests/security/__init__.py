@@ -1,5 +1,4 @@
-"""
-Tests for security enhancements.
+"""Tests for security enhancements.
 
 Tests all security components including:
 - Security Manager

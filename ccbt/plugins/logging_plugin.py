@@ -1,21 +1,25 @@
 """Logging plugin for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides structured logging of events for debugging and monitoring.
 """
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import Optional
 
-from ..events import Event, EventHandler, EventType
-from ..logging_config import get_logger
-from .base import Plugin
+from ccbt.events import Event, EventHandler, EventType
+from ccbt.logging_config import get_logger
+from ccbt.plugins.base import Plugin
 
 
 class EventLoggingHandler(EventHandler):
     """Handler for logging events."""
 
-    def __init__(self, log_file: Optional[str] = None):
+    def __init__(self, log_file: str | None = None):
+        """Initialize event logging handler."""
         super().__init__("event_logging_handler")
         self.log_file = log_file
         self.logger = get_logger(__name__)
@@ -37,29 +41,35 @@ class EventLoggingHandler(EventHandler):
         }
 
         # Log to console
-        self.logger.info(f"Event: {event.event_type} - {json.dumps(event.data)}")
+        self.logger.info("Event: %s - %s", event.event_type, json.dumps(event.data))
 
         # Log to file if specified
         if self.log_file:
             try:
                 with open(self.log_file, "a") as f:
                     f.write(json.dumps(log_entry) + "\n")
-            except Exception as e:
-                self.logger.error(f"Failed to write to log file: {e}")
+            except Exception:
+                self.logger.exception("Failed to write to log file")
 
 
 class LoggingPlugin(Plugin):
     """Plugin for structured event logging."""
 
-    def __init__(self, log_file: Optional[str] = None, log_level: str = "INFO"):
+    def __init__(
+        self,
+        name: str = "logging_plugin",
+        log_file: str | None = None,
+        log_level: str = "INFO",
+    ):
+        """Initialize logging plugin."""
         super().__init__(
-            name="logging_plugin",
+            name=name,
             version="1.0.0",
             description="Structured event logging plugin",
         )
         self.log_file = log_file
         self.log_level = log_level
-        self.handler: Optional[EventLoggingHandler] = None
+        self.handler: EventLoggingHandler | None = None
 
     async def initialize(self) -> None:
         """Initialize the logging plugin."""
@@ -78,7 +88,8 @@ class LoggingPlugin(Plugin):
         self.handler = EventLoggingHandler(self.log_file)
 
         # Register for all events
-        from ..events import get_event_bus
+        from ccbt.events import get_event_bus
+
         event_bus = get_event_bus()
 
         # Register handler for all event types
@@ -93,7 +104,8 @@ class LoggingPlugin(Plugin):
         self.logger.info("Stopping logging plugin")
 
         if self.handler:
-            from ..events import get_event_bus
+            from ccbt.events import get_event_bus
+
             event_bus = get_event_bus()
 
             # Unregister handler

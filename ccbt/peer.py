@@ -5,16 +5,20 @@ message encoding/decoding, and peer state management with optimizations
 for memory efficiency, zero-copy operations, and object reuse.
 """
 
+from __future__ import annotations
+
+import asyncio
+import contextlib
 import logging
 import socket
 import struct
 from collections import deque
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any
 
-from .config import get_config
-from .exceptions import HandshakeError, MessageError
-from .models import MessageType
-from .models import PeerInfo as PeerInfoModel
+from ccbt.config import get_config
+from ccbt.exceptions import HandshakeError, MessageError
+from ccbt.models import MessageType
+from ccbt.models import PeerInfo as PeerInfoModel
 
 # MessageType is now imported from models.py
 
@@ -23,18 +27,23 @@ class PeerState:
     """Tracks the state of a peer connection."""
 
     def __init__(self) -> None:
-        self.am_choking: bool = True      # We are choking the peer
+        """Initialize peer state."""
+        self.am_choking: bool = True  # We are choking the peer
         self.am_interested: bool = False  # We are interested in the peer
-        self.peer_choking: bool = True    # Peer is choking us
-        self.peer_interested: bool = False # Peer is interested in us
-        self.bitfield: Optional[bytes] = None        # Peer's bitfield (which pieces they have)
-        self.pieces_we_have: Set[int] = set() # Pieces we have downloaded
+        self.peer_choking: bool = True  # Peer is choking us
+        self.peer_interested: bool = False  # Peer is interested in us
+        self.bitfield: bytes | None = None  # Peer's bitfield (which pieces they have)
+        self.pieces_we_have: set[int] = set()  # Pieces we have downloaded
 
     def __str__(self) -> str:
-        return (f"PeerState(choking={self.am_choking}, "
-                f"interested={self.am_interested}, "
-                f"peer_choking={self.peer_choking}, "
-                f"peer_interested={self.peer_interested})")
+        """Return string representation of peer state."""
+        return (
+            f"PeerState(choking={self.am_choking}, "
+            f"interested={self.am_interested}, "
+            f"peer_choking={self.peer_choking}, "
+            f"peer_interested={self.peer_interested})"
+        )
+
 
 # HandshakeError and MessageError are now imported from exceptions.py
 
@@ -58,9 +67,11 @@ class Handshake:
             peer_id: 20-byte peer ID
         """
         if len(info_hash) != 20:
-            raise HandshakeError(f"Info hash must be 20 bytes, got {len(info_hash)}")
+            msg = f"Info hash must be 20 bytes, got {len(info_hash)}"
+            raise HandshakeError(msg)
         if len(peer_id) != 20:
-            raise HandshakeError(f"Peer ID must be 20 bytes, got {len(peer_id)}")
+            msg = f"Peer ID must be 20 bytes, got {len(peer_id)}"
+            raise HandshakeError(msg)
 
         self.info_hash: bytes = info_hash
         self.peer_id: bytes = peer_id
@@ -72,14 +83,16 @@ class Handshake:
         Total: 1 + 19 + 8 + 20 + 20 = 68 bytes
         """
         protocol_len = len(self.PROTOCOL_STRING)
-        return (struct.pack("B", protocol_len) +
-                self.PROTOCOL_STRING +
-                self.RESERVED_BYTES +
-                self.info_hash +
-                self.peer_id)
+        return (
+            struct.pack("B", protocol_len)
+            + self.PROTOCOL_STRING
+            + self.RESERVED_BYTES
+            + self.info_hash
+            + self.peer_id
+        )
 
     @classmethod
-    def decode(cls, data: bytes) -> "Handshake":
+    def decode(cls, data: bytes) -> Handshake:
         """Decode handshake from bytes.
 
         Args:
@@ -92,16 +105,19 @@ class Handshake:
             HandshakeError: If data is invalid
         """
         if len(data) != 68:
-            raise HandshakeError(f"Handshake must be 68 bytes, got {len(data)}")
+            msg = f"Handshake must be 68 bytes, got {len(data)}"
+            raise HandshakeError(msg)
 
         # Parse protocol length and string
         protocol_len = struct.unpack("B", data[0:1])[0]
         if protocol_len != 19:
-            raise HandshakeError(f"Invalid protocol length: {protocol_len}")
+            msg = f"Invalid protocol length: {protocol_len}"
+            raise HandshakeError(msg)
 
         protocol_string = data[1:20]
         if protocol_string != cls.PROTOCOL_STRING:
-            raise HandshakeError(f"Invalid protocol string: {protocol_string}")
+            msg = f"Invalid protocol string: {protocol_string}"
+            raise HandshakeError(msg)
 
         # Parse reserved bytes
         reserved = data[20:28]
@@ -117,14 +133,24 @@ class Handshake:
         return cls(info_hash, peer_id)
 
     @classmethod
-    def from_parts(cls, protocol_len: int, protocol: bytes,
-                   reserved: bytes, info_hash: bytes, peer_id: bytes) -> "Handshake":
+    def from_parts(
+        cls,
+        protocol_len: int,
+        protocol: bytes,
+        reserved: bytes,
+        info_hash: bytes,
+        peer_id: bytes,
+    ) -> Handshake:
         """Create handshake from individual components."""
         # Validate components
         if len(protocol) != protocol_len:
-            raise HandshakeError(f"Protocol length mismatch: expected {protocol_len}, got {len(protocol)}")
+            msg = f"Protocol length mismatch: expected {protocol_len}, got {len(protocol)}"
+            raise HandshakeError(
+                msg,
+            )
         if len(reserved) != 8:
-            raise HandshakeError(f"Reserved must be 8 bytes, got {len(reserved)}")
+            msg = f"Reserved must be 8 bytes, got {len(reserved)}"
+            raise HandshakeError(msg)
 
         return cls(info_hash, peer_id)
 
@@ -133,6 +159,7 @@ class PeerMessage:
     """Base class for peer messages."""
 
     def __init__(self, message_id: int):
+        """Initialize peer message."""
         self.message_id = message_id
 
     def encode(self) -> bytes:
@@ -140,7 +167,7 @@ class PeerMessage:
         raise NotImplementedError
 
     @classmethod
-    def decode(cls, data: bytes) -> "PeerMessage":
+    def decode(cls, data: bytes) -> PeerMessage:
         """Decode message from bytes."""
         raise NotImplementedError
 
@@ -149,6 +176,7 @@ class KeepAliveMessage(PeerMessage):
     """Keep-alive message (length = 0)."""
 
     def __init__(self):
+        """Initialize keep-alive message."""
         super().__init__(-1)  # Keep-alive doesn't have a message ID
 
     def encode(self) -> bytes:
@@ -156,13 +184,15 @@ class KeepAliveMessage(PeerMessage):
         return struct.pack("!I", 0)  # 4-byte length = 0
 
     @classmethod
-    def decode(cls, data: bytes) -> "KeepAliveMessage":
+    def decode(cls, data: bytes) -> KeepAliveMessage:
         """Decode keep-alive message."""
         if len(data) != 4:
-            raise MessageError(f"Keep-alive must be 4 bytes, got {len(data)}")
+            msg = f"Keep-alive must be 4 bytes, got {len(data)}"
+            raise MessageError(msg)
         length = struct.unpack("!I", data)[0]
         if length != 0:
-            raise MessageError(f"Keep-alive length must be 0, got {length}")
+            msg = f"Keep-alive length must be 0, got {length}"
+            raise MessageError(msg)
         return cls()
 
 
@@ -170,6 +200,7 @@ class ChokeMessage(PeerMessage):
     """Choke message."""
 
     def __init__(self):
+        """Initialize choke message."""
         super().__init__(MessageType.CHOKE)
 
     def encode(self) -> bytes:
@@ -177,15 +208,20 @@ class ChokeMessage(PeerMessage):
         return struct.pack("!I", 1) + struct.pack("B", self.message_id)
 
     @classmethod
-    def decode(cls, data: bytes) -> "ChokeMessage":
+    def decode(cls, data: bytes) -> ChokeMessage:
         """Decode choke message."""
         if len(data) != 5:
-            raise MessageError(f"Choke message must be 5 bytes, got {len(data)}")
+            msg = f"Choke message must be 5 bytes, got {len(data)}"
+            raise MessageError(msg)
         length, message_id = struct.unpack("!IB", data)
         if length != 1:
-            raise MessageError(f"Choke message length must be 1, got {length}")
+            msg = f"Choke message length must be 1, got {length}"
+            raise MessageError(msg)
         if message_id != MessageType.CHOKE:
-            raise MessageError(f"Expected choke message ID {MessageType.CHOKE}, got {message_id}")
+            msg = f"Expected choke message ID {MessageType.CHOKE}, got {message_id}"
+            raise MessageError(
+                msg,
+            )
         return cls()
 
 
@@ -193,6 +229,7 @@ class UnchokeMessage(PeerMessage):
     """Unchoke message."""
 
     def __init__(self):
+        """Initialize unchoke message."""
         super().__init__(MessageType.UNCHOKE)
 
     def encode(self) -> bytes:
@@ -200,15 +237,20 @@ class UnchokeMessage(PeerMessage):
         return struct.pack("!I", 1) + struct.pack("B", self.message_id)
 
     @classmethod
-    def decode(cls, data: bytes) -> "UnchokeMessage":
+    def decode(cls, data: bytes) -> UnchokeMessage:
         """Decode unchoke message."""
         if len(data) != 5:
-            raise MessageError(f"Unchoke message must be 5 bytes, got {len(data)}")
+            msg = f"Unchoke message must be 5 bytes, got {len(data)}"
+            raise MessageError(msg)
         length, message_id = struct.unpack("!IB", data)
         if length != 1:
-            raise MessageError(f"Unchoke message length must be 1, got {length}")
+            msg = f"Unchoke message length must be 1, got {length}"
+            raise MessageError(msg)
         if message_id != MessageType.UNCHOKE:
-            raise MessageError(f"Expected unchoke message ID {MessageType.UNCHOKE}, got {message_id}")
+            msg = f"Expected unchoke message ID {MessageType.UNCHOKE}, got {message_id}"
+            raise MessageError(
+                msg,
+            )
         return cls()
 
 
@@ -216,6 +258,7 @@ class InterestedMessage(PeerMessage):
     """Interested message."""
 
     def __init__(self):
+        """Initialize interested message."""
         super().__init__(MessageType.INTERESTED)
 
     def encode(self) -> bytes:
@@ -223,15 +266,20 @@ class InterestedMessage(PeerMessage):
         return struct.pack("!I", 1) + struct.pack("B", self.message_id)
 
     @classmethod
-    def decode(cls, data: bytes) -> "InterestedMessage":
+    def decode(cls, data: bytes) -> InterestedMessage:
         """Decode interested message."""
         if len(data) != 5:
-            raise MessageError(f"Interested message must be 5 bytes, got {len(data)}")
+            msg = f"Interested message must be 5 bytes, got {len(data)}"
+            raise MessageError(msg)
         length, message_id = struct.unpack("!IB", data)
         if length != 1:
-            raise MessageError(f"Interested message length must be 1, got {length}")
+            msg = f"Interested message length must be 1, got {length}"
+            raise MessageError(msg)
         if message_id != MessageType.INTERESTED:
-            raise MessageError(f"Expected interested message ID {MessageType.INTERESTED}, got {message_id}")
+            msg = f"Expected interested message ID {MessageType.INTERESTED}, got {message_id}"
+            raise MessageError(
+                msg,
+            )
         return cls()
 
 
@@ -239,6 +287,7 @@ class NotInterestedMessage(PeerMessage):
     """Not interested message."""
 
     def __init__(self):
+        """Initialize not interested message."""
         super().__init__(MessageType.NOT_INTERESTED)
 
     def encode(self) -> bytes:
@@ -246,15 +295,22 @@ class NotInterestedMessage(PeerMessage):
         return struct.pack("!I", 1) + struct.pack("B", self.message_id)
 
     @classmethod
-    def decode(cls, data: bytes) -> "NotInterestedMessage":
+    def decode(cls, data: bytes) -> NotInterestedMessage:
         """Decode not interested message."""
         if len(data) != 5:
-            raise MessageError(f"Not interested message must be 5 bytes, got {len(data)}")
+            msg = f"Not interested message must be 5 bytes, got {len(data)}"
+            raise MessageError(
+                msg,
+            )
         length, message_id = struct.unpack("!IB", data)
         if length != 1:
-            raise MessageError(f"Not interested message length must be 1, got {length}")
+            msg = f"Not interested message length must be 1, got {length}"
+            raise MessageError(msg)
         if message_id != MessageType.NOT_INTERESTED:
-            raise MessageError(f"Expected not interested message ID {MessageType.NOT_INTERESTED}, got {message_id}")
+            msg = f"Expected not interested message ID {MessageType.NOT_INTERESTED}, got {message_id}"
+            raise MessageError(
+                msg,
+            )
         return cls()
 
 
@@ -272,20 +328,27 @@ class HaveMessage(PeerMessage):
 
     def encode(self) -> bytes:
         """Encode have message."""
-        return (struct.pack("!I", 5) +  # length = 5 (1 byte ID + 4 bytes piece index)
-                struct.pack("B", self.message_id) +
-                struct.pack("!I", self.piece_index))
+        return (
+            struct.pack("!I", 5)  # length = 5 (1 byte ID + 4 bytes piece index)
+            + struct.pack("B", self.message_id)
+            + struct.pack("!I", self.piece_index)
+        )
 
     @classmethod
-    def decode(cls, data: bytes) -> "HaveMessage":
+    def decode(cls, data: bytes) -> HaveMessage:
         """Decode have message."""
         if len(data) != 9:
-            raise MessageError(f"Have message must be 9 bytes, got {len(data)}")
+            msg = f"Have message must be 9 bytes, got {len(data)}"
+            raise MessageError(msg)
         length, message_id, piece_index = struct.unpack("!IBI", data)
         if length != 5:
-            raise MessageError(f"Have message length must be 5, got {length}")
+            msg = f"Have message length must be 5, got {length}"
+            raise MessageError(msg)
         if message_id != MessageType.HAVE:
-            raise MessageError(f"Expected have message ID {MessageType.HAVE}, got {message_id}")
+            msg = f"Expected have message ID {MessageType.HAVE}, got {message_id}"
+            raise MessageError(
+                msg,
+            )
         return cls(piece_index)
 
 
@@ -304,26 +367,38 @@ class BitfieldMessage(PeerMessage):
     def encode(self) -> bytes:
         """Encode bitfield message."""
         length = 1 + len(self.bitfield)  # 1 byte ID + bitfield
-        return (struct.pack("!I", length) +
-                struct.pack("B", self.message_id) +
-                self.bitfield)
+        return (
+            struct.pack("!I", length)
+            + struct.pack("B", self.message_id)
+            + self.bitfield
+        )
 
     @classmethod
-    def decode(cls, data: bytes) -> "BitfieldMessage":
+    def decode(cls, data: bytes) -> BitfieldMessage:
         """Decode bitfield message."""
         if len(data) < 5:
-            raise MessageError(f"Bitfield message too short: {len(data)} bytes")
+            msg = f"Bitfield message too short: {len(data)} bytes"
+            raise MessageError(msg)
 
         length, message_id = struct.unpack("!IB", data[:5])
         if length < 1:
-            raise MessageError(f"Bitfield message length too small: {length}")
+            msg = f"Bitfield message length too small: {length}"
+            raise MessageError(msg)
 
         expected_length = 4 + length  # 4 bytes length + length field value
         if len(data) != expected_length:
-            raise MessageError(f"Bitfield message length mismatch: expected {expected_length}, got {len(data)}")
+            msg = f"Bitfield message length mismatch: expected {expected_length}, got {len(data)}"
+            raise MessageError(
+                msg,
+            )
 
         if message_id != MessageType.BITFIELD:
-            raise MessageError(f"Expected bitfield message ID {MessageType.BITFIELD}, got {message_id}")
+            msg = (
+                f"Expected bitfield message ID {MessageType.BITFIELD}, got {message_id}"
+            )
+            raise MessageError(
+                msg,
+            )
 
         bitfield = data[5:]
         return cls(bitfield)
@@ -370,20 +445,30 @@ class RequestMessage(PeerMessage):
 
     def encode(self) -> bytes:
         """Encode request message."""
-        return (struct.pack("!I", 13) +  # length = 13 (1 byte ID + 12 bytes payload)
-                struct.pack("B", self.message_id) +
-                struct.pack("!III", self.piece_index, self.begin, self.length))
+        return (
+            struct.pack("!I", 13)  # length = 13 (1 byte ID + 12 bytes payload)
+            + struct.pack("B", self.message_id)
+            + struct.pack("!III", self.piece_index, self.begin, self.length)
+        )
 
     @classmethod
-    def decode(cls, data: bytes) -> "RequestMessage":
+    def decode(cls, data: bytes) -> RequestMessage:
         """Decode request message."""
         if len(data) != 17:
-            raise MessageError(f"Request message must be 17 bytes, got {len(data)}")
-        length, message_id, piece_index, begin, req_length = struct.unpack("!IBIII", data)
+            msg = f"Request message must be 17 bytes, got {len(data)}"
+            raise MessageError(msg)
+        length, message_id, piece_index, begin, req_length = struct.unpack(
+            "!IBIII",
+            data,
+        )
         if length != 13:
-            raise MessageError(f"Request message length must be 13, got {length}")
+            msg = f"Request message length must be 13, got {length}"
+            raise MessageError(msg)
         if message_id != MessageType.REQUEST:
-            raise MessageError(f"Expected request message ID {MessageType.REQUEST}, got {message_id}")
+            msg = f"Expected request message ID {MessageType.REQUEST}, got {message_id}"
+            raise MessageError(
+                msg,
+            )
         return cls(piece_index, begin, req_length)
 
 
@@ -406,27 +491,37 @@ class PieceMessage(PeerMessage):
     def encode(self) -> bytes:
         """Encode piece message."""
         length = 1 + 4 + 4 + len(self.block)  # ID + index + begin + block
-        return (struct.pack("!I", length) +
-                struct.pack("B", self.message_id) +
-                struct.pack("!II", self.piece_index, self.begin) +
-                self.block)
+        return (
+            struct.pack("!I", length)
+            + struct.pack("B", self.message_id)
+            + struct.pack("!II", self.piece_index, self.begin)
+            + self.block
+        )
 
     @classmethod
-    def decode(cls, data: bytes) -> "PieceMessage":
+    def decode(cls, data: bytes) -> PieceMessage:
         """Decode piece message."""
         if len(data) < 13:
-            raise MessageError(f"Piece message too short: {len(data)} bytes")
+            msg = f"Piece message too short: {len(data)} bytes"
+            raise MessageError(msg)
 
         length, message_id = struct.unpack("!IB", data[:5])
         if length < 9:
-            raise MessageError(f"Piece message length too small: {length}")
+            msg = f"Piece message length too small: {length}"
+            raise MessageError(msg)
 
         expected_length = 4 + length  # 4 bytes length + length field value
         if len(data) != expected_length:
-            raise MessageError(f"Piece message length mismatch: expected {expected_length}, got {len(data)}")
+            msg = f"Piece message length mismatch: expected {expected_length}, got {len(data)}"
+            raise MessageError(
+                msg,
+            )
 
         if message_id != MessageType.PIECE:
-            raise MessageError(f"Expected piece message ID {MessageType.PIECE}, got {message_id}")
+            msg = f"Expected piece message ID {MessageType.PIECE}, got {message_id}"
+            raise MessageError(
+                msg,
+            )
 
         piece_index, begin = struct.unpack("!II", data[5:13])
         block = data[13:]
@@ -451,32 +546,307 @@ class CancelMessage(PeerMessage):
 
     def encode(self) -> bytes:
         """Encode cancel message."""
-        return (struct.pack("!I", 13) +  # length = 13 (1 byte ID + 12 bytes payload)
-                struct.pack("B", self.message_id) +
-                struct.pack("!III", self.piece_index, self.begin, self.length))
+        return (
+            struct.pack("!I", 13)  # length = 13 (1 byte ID + 12 bytes payload)
+            + struct.pack("B", self.message_id)
+            + struct.pack("!III", self.piece_index, self.begin, self.length)
+        )
 
     @classmethod
-    def decode(cls, data: bytes) -> "CancelMessage":
+    def decode(cls, data: bytes) -> CancelMessage:
         """Decode cancel message."""
         if len(data) != 17:
-            raise MessageError(f"Cancel message must be 17 bytes, got {len(data)}")
-        length, message_id, piece_index, begin, req_length = struct.unpack("!IBIII", data)
+            msg = f"Cancel message must be 17 bytes, got {len(data)}"
+            raise MessageError(msg)
+        length, message_id, piece_index, begin, req_length = struct.unpack(
+            "!IBIII",
+            data,
+        )
         if length != 13:
-            raise MessageError(f"Cancel message length must be 13, got {length}")
+            msg = f"Cancel message length must be 13, got {length}"
+            raise MessageError(msg)
         if message_id != MessageType.CANCEL:
-            raise MessageError(f"Expected cancel message ID {MessageType.CANCEL}, got {message_id}")
+            msg = f"Expected cancel message ID {MessageType.CANCEL}, got {message_id}"
+            raise MessageError(
+                msg,
+            )
         return cls(piece_index, begin, req_length)
+
+
+class AsyncMessageDecoder:
+    """High-performance async message decoder with queue-based processing."""
+
+    def __init__(self, max_buffer_size: int = 1024 * 1024):  # 1MB buffer
+        """Initialize async message decoder."""
+        self.config = get_config()
+        self.max_buffer_size = max_buffer_size
+
+        # Async message queue
+        self.message_queue = asyncio.Queue(maxsize=1000)
+        self.buffer = bytearray()
+        self.buffer_view: memoryview | None = None
+
+        # Object pools for message reuse
+        self.message_pools = {
+            MessageType.CHOKE: deque(maxlen=100),
+            MessageType.UNCHOKE: deque(maxlen=100),
+            MessageType.INTERESTED: deque(maxlen=100),
+            MessageType.NOT_INTERESTED: deque(maxlen=100),
+            MessageType.HAVE: deque(maxlen=100),
+            MessageType.REQUEST: deque(maxlen=100),
+            MessageType.CANCEL: deque(maxlen=100),
+        }
+
+        # Pre-allocated struct unpackers for performance
+        self._unpack_length = struct.Struct("!I").unpack
+        self._unpack_message_id = struct.Struct("B").unpack
+        self._unpack_have = struct.Struct("!IBI").unpack
+        self._unpack_request = struct.Struct("!IBIII").unpack
+
+        self.logger = logging.getLogger(__name__)
+
+    async def feed_data(self, data: bytes | memoryview) -> None:
+        """Feed data to the decoder asynchronously.
+
+        Args:
+            data: Raw bytes or memoryview from the peer connection
+        """
+        # Convert to bytes for simpler handling
+        data_bytes = bytes(data) if isinstance(data, memoryview) else data
+
+        # Add to buffer
+        self.buffer.extend(data_bytes)
+
+        # Process complete messages from buffer
+        await self._process_buffer()
+
+    async def get_message(self) -> PeerMessage | None:
+        """Get the next message from the queue.
+
+        Returns:
+            Next message or None if queue is empty
+        """
+        try:
+            return await asyncio.wait_for(self.message_queue.get(), timeout=0.1)
+        except asyncio.TimeoutError:
+            return None
+
+    async def get_messages(self, max_messages: int = 10) -> list[PeerMessage]:
+        """Get multiple messages from the queue.
+
+        Args:
+            max_messages: Maximum number of messages to retrieve
+
+        Returns:
+            List of messages
+        """
+        messages = []
+        for _ in range(max_messages):
+            message = await self.get_message()
+            if message is None:
+                break
+            messages.append(message)
+        return messages
+
+    def __aiter__(self):
+        """Async iterator support."""
+        return self
+
+    async def __anext__(self) -> PeerMessage:
+        """Async iteration support."""
+        message = await self.message_queue.get()
+        if message is None:
+            raise StopAsyncIteration
+        return message
+
+    async def _process_buffer(self) -> None:
+        """Process complete messages from the buffer."""
+        while len(self.buffer) >= 4:
+            # Read message length
+            length = struct.unpack("!I", self.buffer[0:4])[0]
+
+            # Check if we have complete message
+            if len(self.buffer) < 4 + length:
+                break
+
+            # Extract message data
+            message_data = self.buffer[4 : 4 + length]
+
+            # Decode message
+            try:
+                if length == 0:
+                    # Keep-alive message
+                    message = KeepAliveMessage()
+                else:
+                    message_id = message_data[0]
+                    if length == 1:
+                        # Simple 1-byte messages
+                        message = self._decode_simple_message(message_id)
+                    else:
+                        # Complex messages with payload
+                        message = self._decode_complex_message(
+                            message_id, memoryview(message_data)
+                        )
+
+                # Add to queue
+                await self.message_queue.put(message)
+
+            except Exception as e:
+                self.logger.warning("Failed to decode message: %s", e)
+                # Skip this message and continue
+
+            # Remove processed message from buffer
+            del self.buffer[0 : 4 + length]
+
+    def _decode_simple_message(self, message_id: int) -> PeerMessage:
+        """Decode simple 1-byte messages."""
+        if message_id == MessageType.CHOKE:
+            return self._get_pooled_message(MessageType.CHOKE)
+        if message_id == MessageType.UNCHOKE:
+            return self._get_pooled_message(MessageType.UNCHOKE)
+        if message_id == MessageType.INTERESTED:
+            return self._get_pooled_message(MessageType.INTERESTED)
+        if message_id == MessageType.NOT_INTERESTED:
+            return self._get_pooled_message(MessageType.NOT_INTERESTED)
+        msg = f"Unknown simple message type: {message_id}"
+        raise MessageError(msg)
+
+    def _decode_complex_message(
+        self,
+        message_id: int,
+        message_data: memoryview,
+    ) -> PeerMessage:
+        """Decode complex messages with payload."""
+        if message_id == MessageType.HAVE:
+            if len(message_data) != 5:
+                msg = f"Have message must be 5 bytes, got {len(message_data)}"
+                raise MessageError(msg)
+            piece_index = struct.unpack("!I", message_data[1:5])[0]
+            return self._get_pooled_have_message(piece_index)
+
+        if message_id == MessageType.BITFIELD:
+            if len(message_data) < 1:
+                msg = "Bitfield message too short"
+                raise MessageError(msg)
+            bitfield = bytes(message_data[1:])  # Convert to bytes for storage
+            return BitfieldMessage(bitfield)
+
+        if message_id == MessageType.REQUEST:
+            if len(message_data) != 13:
+                msg = f"Request message must be 13 bytes, got {len(message_data)}"
+                raise MessageError(msg)
+            piece_index, begin, length = struct.unpack("!III", message_data[1:13])
+            return self._get_pooled_request_message(piece_index, begin, length)
+
+        if message_id == MessageType.PIECE:
+            if len(message_data) < 9:
+                msg = "Piece message too short"
+                raise MessageError(msg)
+            piece_index, begin = struct.unpack("!II", message_data[1:9])
+            block_data = bytes(message_data[9:])  # Convert to bytes
+            return PieceMessage(piece_index, begin, block_data)
+
+        if message_id == MessageType.CANCEL:
+            if len(message_data) != 13:
+                msg = f"Cancel message must be 13 bytes, got {len(message_data)}"
+                raise MessageError(msg)
+            piece_index, begin, length = struct.unpack("!III", message_data[1:13])
+            return self._get_pooled_cancel_message(piece_index, begin, length)
+
+        msg = f"Unknown complex message type: {message_id}"
+        raise MessageError(msg)
+
+    def _get_pooled_message(self, message_type: MessageType) -> PeerMessage:
+        """Get a message from the object pool or create new one."""
+        pool = self.message_pools.get(message_type)
+        if pool and pool:
+            return pool.popleft()
+
+        # Create new message
+        if message_type == MessageType.CHOKE:
+            return ChokeMessage()
+        if message_type == MessageType.UNCHOKE:
+            return UnchokeMessage()
+        if message_type == MessageType.INTERESTED:
+            return InterestedMessage()
+        if message_type == MessageType.NOT_INTERESTED:
+            return NotInterestedMessage()
+        msg = f"Cannot pool message type: {message_type}"
+        raise MessageError(msg)
+
+    def _get_pooled_have_message(self, piece_index: int) -> HaveMessage:
+        """Get a HaveMessage from pool or create new one."""
+        pool = self.message_pools[MessageType.HAVE]
+        if pool:
+            msg = pool.popleft()
+            msg.piece_index = piece_index
+            return msg
+        return HaveMessage(piece_index)
+
+    def _get_pooled_request_message(
+        self,
+        piece_index: int,
+        begin: int,
+        length: int,
+    ) -> RequestMessage:
+        """Get a RequestMessage from pool or create new one."""
+        pool = self.message_pools[MessageType.REQUEST]
+        if pool:
+            msg = pool.popleft()
+            msg.piece_index = piece_index
+            msg.begin = begin
+            msg.length = length
+            return msg
+        return RequestMessage(piece_index, begin, length)
+
+    def _get_pooled_cancel_message(
+        self,
+        piece_index: int,
+        begin: int,
+        length: int,
+    ) -> CancelMessage:
+        """Get a CancelMessage from pool or create new one."""
+        pool = self.message_pools[MessageType.CANCEL]
+        if pool:
+            msg = pool.popleft()
+            msg.piece_index = piece_index
+            msg.begin = begin
+            msg.length = length
+            return msg
+        return CancelMessage(piece_index, begin, length)
+
+    def return_message_to_pool(self, message: PeerMessage) -> None:
+        """Return a message to the object pool for reuse."""
+        if message.message_id in self.message_pools:
+            pool = self.message_pools[message.message_id]
+            if pool.maxlen is not None and len(pool) < pool.maxlen:
+                pool.append(message)
+
+    def get_buffer_stats(self) -> dict[str, Any]:
+        """Get buffer statistics for monitoring."""
+        return {
+            "buffer_size": len(self.buffer),
+            "buffer_capacity": self.max_buffer_size,
+            "buffer_usage": len(self.buffer) / self.max_buffer_size,
+            "queue_size": self.message_queue.qsize(),
+            "pool_sizes": {
+                msg_type.name: len(pool)
+                for msg_type, pool in self.message_pools.items()
+            },
+        }
 
 
 class OptimizedMessageDecoder:
     """High-performance message decoder with memoryview and object reuse."""
 
     def __init__(self, max_buffer_size: int = 1024 * 1024):  # 1MB buffer
+        """Initialize optimized message decoder."""
         self.config = get_config()
         self.max_buffer_size = max_buffer_size
 
         # Simple buffer for partial messages
         self.buffer = bytearray()
+        self.buffer_view: memoryview | None = None
 
         # Object pools for message reuse
         self.message_pools = {
@@ -497,20 +867,17 @@ class OptimizedMessageDecoder:
 
         self.logger = logging.getLogger(__name__)
 
-    def add_data(self, data: Union[bytes, memoryview]) -> List[PeerMessage]:
+    def add_data(self, data: bytes | memoryview) -> list[PeerMessage]:
         """Add data to the buffer and return any complete messages.
-        
+
         Args:
             data: Raw bytes or memoryview from the peer connection
-            
+
         Returns:
             List of decoded messages
         """
         # Convert to bytes for simpler handling
-        if isinstance(data, memoryview):
-            data_bytes = bytes(data)
-        else:
-            data_bytes = data
+        data_bytes = bytes(data) if isinstance(data, memoryview) else data
 
         # Add to buffer
         self.buffer.extend(data_bytes)
@@ -527,7 +894,7 @@ class OptimizedMessageDecoder:
                 break
 
             # Extract message data
-            message_data = self.buffer[4:4+length]
+            message_data = self.buffer[4 : 4 + length]
 
             # Decode message
             if length == 0:
@@ -540,17 +907,28 @@ class OptimizedMessageDecoder:
                     messages.append(self._decode_simple_message(message_id))
                 else:
                     # Complex messages with payload
-                    messages.append(self._decode_complex_message(message_id, message_data))
+                    # Convert to memoryview for decoding
+                    if not isinstance(message_data, (memoryview, bytearray)):
+                        msg = f"Expected memoryview or bytearray for message_data, got {type(message_data)}"
+                        raise TypeError(msg)
+                    messages.append(
+                        self._decode_complex_message(
+                            message_id, memoryview(message_data)
+                        ),
+                    )
 
             # Remove processed message from buffer
-            del self.buffer[0:4+length]
+            del self.buffer[0 : 4 + length]
 
         return messages
 
-    def _decode_next_message(self) -> Optional[PeerMessage]:
+    def _decode_next_message(self) -> PeerMessage | None:
         """Decode the next message from the buffer using memoryview."""
         if self.buffer_size < 4:
             return None  # Need at least 4 bytes for length
+
+        if self.buffer_view is None:
+            return None  # Buffer view not initialized
 
         # Read message length using memoryview
         length = self._unpack_length(self.buffer_view[0:4])[0]
@@ -566,8 +944,11 @@ class OptimizedMessageDecoder:
         if self.buffer_size < 4 + length:
             return None
 
+        if self.buffer_view is None:
+            return None  # Buffer view not initialized
+
         # Extract message data using memoryview (zero-copy)
-        message_data = self.buffer_view[4:4 + length]
+        message_data = self.buffer_view[4 : 4 + length]
         self._consume_buffer(4 + length)
 
         # Decode based on message ID
@@ -589,42 +970,59 @@ class OptimizedMessageDecoder:
             return self._get_pooled_message(MessageType.INTERESTED)
         if message_id == MessageType.NOT_INTERESTED:
             return self._get_pooled_message(MessageType.NOT_INTERESTED)
-        raise MessageError(f"Unknown simple message type: {message_id}")
+        msg = f"Unknown simple message type: {message_id}"
+        raise MessageError(msg)
 
-    def _decode_complex_message(self, message_id: int, message_data: memoryview) -> PeerMessage:
+    def _decode_complex_message(
+        self,
+        message_id: int,
+        message_data: memoryview,
+    ) -> PeerMessage:
         """Decode complex messages with payload."""
         if message_id == MessageType.HAVE:
             if len(message_data) != 5:
-                raise MessageError(f"Have message must be 5 bytes, got {len(message_data)}")
+                msg = f"Have message must be 5 bytes, got {len(message_data)}"
+                raise MessageError(
+                    msg,
+                )
             piece_index = struct.unpack("!I", message_data[1:5])[0]
             return self._get_pooled_have_message(piece_index)
 
         if message_id == MessageType.BITFIELD:
             if len(message_data) < 1:
-                raise MessageError("Bitfield message too short")
+                msg = "Bitfield message too short"
+                raise MessageError(msg)
             bitfield = bytes(message_data[1:])  # Convert to bytes for storage
             return BitfieldMessage(bitfield)
 
         if message_id == MessageType.REQUEST:
             if len(message_data) != 13:
-                raise MessageError(f"Request message must be 13 bytes, got {len(message_data)}")
+                msg = f"Request message must be 13 bytes, got {len(message_data)}"
+                raise MessageError(
+                    msg,
+                )
             piece_index, begin, length = struct.unpack("!III", message_data[1:13])
             return self._get_pooled_request_message(piece_index, begin, length)
 
         if message_id == MessageType.PIECE:
             if len(message_data) < 9:
-                raise MessageError("Piece message too short")
+                msg = "Piece message too short"
+                raise MessageError(msg)
             piece_index, begin = struct.unpack("!II", message_data[1:9])
             block_data = bytes(message_data[9:])  # Convert to bytes
             return PieceMessage(piece_index, begin, block_data)
 
         if message_id == MessageType.CANCEL:
             if len(message_data) != 13:
-                raise MessageError(f"Cancel message must be 13 bytes, got {len(message_data)}")
+                msg = f"Cancel message must be 13 bytes, got {len(message_data)}"
+                raise MessageError(
+                    msg,
+                )
             piece_index, begin, length = struct.unpack("!III", message_data[1:13])
             return self._get_pooled_cancel_message(piece_index, begin, length)
 
-        raise MessageError(f"Unknown complex message type: {message_id}")
+        msg = f"Unknown complex message type: {message_id}"
+        raise MessageError(msg)
 
     def _get_pooled_message(self, message_type: MessageType) -> PeerMessage:
         """Get a message from the object pool or create new one."""
@@ -641,7 +1039,8 @@ class OptimizedMessageDecoder:
             return InterestedMessage()
         if message_type == MessageType.NOT_INTERESTED:
             return NotInterestedMessage()
-        raise MessageError(f"Cannot pool message type: {message_type}")
+        msg = f"Cannot pool message type: {message_type}"
+        raise MessageError(msg)
 
     def _get_pooled_have_message(self, piece_index: int) -> HaveMessage:
         """Get a HaveMessage from pool or create new one."""
@@ -652,7 +1051,12 @@ class OptimizedMessageDecoder:
             return msg
         return HaveMessage(piece_index)
 
-    def _get_pooled_request_message(self, piece_index: int, begin: int, length: int) -> RequestMessage:
+    def _get_pooled_request_message(
+        self,
+        piece_index: int,
+        begin: int,
+        length: int,
+    ) -> RequestMessage:
         """Get a RequestMessage from pool or create new one."""
         pool = self.message_pools[MessageType.REQUEST]
         if pool:
@@ -663,7 +1067,12 @@ class OptimizedMessageDecoder:
             return msg
         return RequestMessage(piece_index, begin, length)
 
-    def _get_pooled_cancel_message(self, piece_index: int, begin: int, length: int) -> CancelMessage:
+    def _get_pooled_cancel_message(
+        self,
+        piece_index: int,
+        begin: int,
+        length: int,
+    ) -> CancelMessage:
         """Get a CancelMessage from pool or create new one."""
         pool = self.message_pools[MessageType.CANCEL]
         if pool:
@@ -680,14 +1089,21 @@ class OptimizedMessageDecoder:
             self._reset_buffer()
             return
 
+        if self.buffer_view is None:
+            self._reset_buffer()
+            return
+
         # Simple approach: create new buffer with remaining data
         remaining = self.buffer_size - bytes_to_consume
-        remaining_data = bytes(self.buffer_view[bytes_to_consume:bytes_to_consume + remaining])
+        remaining_data = bytes(
+            self.buffer_view[bytes_to_consume : bytes_to_consume + remaining],
+        )
 
         # Clear buffer and add remaining data
         self.buffer_size = 0
         self.buffer_pos = 0
-        self.buffer_view[0:remaining] = remaining_data
+        if self.buffer_view is not None:
+            self.buffer_view[0:remaining] = remaining_data
         self.buffer_size = remaining
         self.buffer_pos = remaining
 
@@ -696,27 +1112,12 @@ class OptimizedMessageDecoder:
         self.buffer_pos = 0
         self.buffer_size = 0
 
-    def return_message_to_pool(self, message: PeerMessage) -> None:
-        """Return a message to the object pool for reuse."""
-        if message.message_id in self.message_pools:
-            pool = self.message_pools[message.message_id]
-            if len(pool) < pool.maxlen:
-                pool.append(message)
 
-    def get_buffer_stats(self) -> Dict[str, Any]:
-        """Get buffer statistics for monitoring."""
-        return {
-            "buffer_size": self.buffer_size,
-            "buffer_capacity": self.max_buffer_size,
-            "buffer_usage": self.buffer_size / self.max_buffer_size,
-            "pool_sizes": {msg_type.name: len(pool) for msg_type, pool in self.message_pools.items()},
-        }
-
-
-class MessageDecoder(OptimizedMessageDecoder):
+class MessageDecoder(AsyncMessageDecoder):
     """Backward compatibility wrapper for MessageDecoder."""
 
     def __init__(self):
+        """Initialize message decoder."""
         super().__init__()
 
 
@@ -748,19 +1149,21 @@ def create_message(message_type: MessageType, **kwargs) -> PeerMessage:
         return PieceMessage(kwargs["piece_index"], kwargs["begin"], kwargs["block"])
     if message_type == MessageType.CANCEL:
         return CancelMessage(kwargs["piece_index"], kwargs["begin"], kwargs["length"])
-    raise MessageError(f"Unknown message type: {message_type}")
+    msg = f"Unknown message type: {message_type}"
+    raise MessageError(msg)
 
 
 class SocketOptimizer:
     """Socket optimization utilities for high-performance networking."""
 
     def __init__(self):
+        """Initialize socket optimizer."""
         self.config = get_config()
         self.logger = logging.getLogger(__name__)
 
     def optimize_socket(self, sock: socket.socket) -> None:
         """Apply socket optimizations for high-performance BitTorrent.
-        
+
         Args:
             sock: Socket to optimize
         """
@@ -770,8 +1173,15 @@ class SocketOptimizer:
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
             # Socket buffer sizes
-            rcvbuf = self.config.network.socket_rcvbuf
-            sndbuf = self.config.network.socket_sndbuf
+            if hasattr(self.config.network, "socket_rcvbuf") and hasattr(
+                self.config.network, "socket_sndbuf"
+            ):
+                rcvbuf = self.config.network.socket_rcvbuf
+                sndbuf = self.config.network.socket_sndbuf
+            else:
+                # Default buffer sizes
+                rcvbuf = 65536
+                sndbuf = 65536
 
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, sndbuf)
@@ -788,10 +1198,14 @@ class SocketOptimizer:
             # Platform-specific optimizations
             self._apply_platform_optimizations(sock)
 
-            self.logger.debug(f"Applied socket optimizations: rcvbuf={rcvbuf}, sndbuf={sndbuf}")
+            self.logger.debug(
+                "Applied socket optimizations: rcvbuf=%s, sndbuf=%s",
+                rcvbuf,
+                sndbuf,
+            )
 
         except Exception as e:
-            self.logger.warning(f"Failed to apply socket optimizations: {e}")
+            self.logger.warning("Failed to apply socket optimizations: %s", e)
 
     def _apply_platform_optimizations(self, sock) -> None:
         """Apply platform-specific socket optimizations."""
@@ -811,37 +1225,42 @@ class SocketOptimizer:
                 pass  # Not supported on this system
 
         elif system == "Darwin":  # macOS
-            try:
+            with contextlib.suppress(OSError, AttributeError):
                 # TCP_NOPUSH - batch small packets (macOS equivalent of TCP_CORK)
                 sock.setsockopt(socket.IPPROTO_TCP, 4, 1)  # TCP_NOPUSH
 
-            except (OSError, AttributeError):
-                pass  # Not supported on this system
-
         elif system == "Windows":
-            try:
+            with contextlib.suppress(OSError, AttributeError, ImportError):
                 # Windows-specific optimizations
-                import ctypes
-                from ctypes import wintypes
-
                 # Set TCP window scaling
                 sock.setsockopt(socket.IPPROTO_TCP, 8, 1)  # TCP window scaling
 
-            except (OSError, AttributeError, ImportError):
-                pass  # Not supported on this system
-
-    def get_optimal_buffer_sizes(self, connection_count: int) -> Tuple[int, int]:
+    def get_optimal_buffer_sizes(self, connection_count: int) -> tuple[int, int]:
         """Calculate optimal socket buffer sizes based on connection count.
-        
+
         Args:
             connection_count: Number of active connections
-            
+
         Returns:
             Tuple of (receive_buffer_size, send_buffer_size)
         """
         # Base buffer sizes
-        base_rcvbuf = self.config.network.socket_rcvbuf
-        base_sndbuf = self.config.network.socket_sndbuf
+        if hasattr(self.config.network, "socket_rcvbuf") and hasattr(
+            self.config.network, "socket_sndbuf"
+        ):
+            base_rcvbuf = self.config.network.socket_rcvbuf
+            base_sndbuf = self.config.network.socket_sndbuf
+            # Ensure they are numeric types
+            if not isinstance(base_rcvbuf, (int, float)):
+                msg = f"Expected int or float for base_rcvbuf, got {type(base_rcvbuf)}"
+                raise TypeError(msg)
+            if not isinstance(base_sndbuf, (int, float)):
+                msg = f"Expected int or float for base_sndbuf, got {type(base_sndbuf)}"
+                raise TypeError(msg)
+        else:
+            # Default buffer sizes
+            base_rcvbuf = 65536
+            base_sndbuf = 65536
 
         # Scale with connection count (up to a maximum)
         max_connections = self.config.network.max_global_peers
@@ -863,6 +1282,7 @@ class MessageBuffer:
     """High-performance message buffer with preallocation and batching."""
 
     def __init__(self, max_size: int = 64 * 1024):  # 64KB default
+        """Initialize message buffer."""
         self.max_size = max_size
         self.buffer = bytearray(max_size)
         self.buffer_view = memoryview(self.buffer)
@@ -879,10 +1299,10 @@ class MessageBuffer:
 
     def add_message(self, message: PeerMessage) -> bool:
         """Add a message to the buffer.
-        
+
         Args:
             message: Message to add
-            
+
         Returns:
             True if message was added, False if buffer is full
         """
@@ -895,28 +1315,30 @@ class MessageBuffer:
                 return False
 
             # Add to buffer
-            self.buffer_view[self.write_pos:self.write_pos + len(message_data)] = message_data
+            self.buffer_view[self.write_pos : self.write_pos + len(message_data)] = (
+                message_data
+            )
             self.write_pos += len(message_data)
 
             # Track pending message
             self.pending_messages.append((message, len(message_data)))
 
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to add message to buffer: {e}")
+        except Exception:
+            self.logger.exception("Failed to add message to buffer")
             return False
+        else:
+            return True
 
     def get_buffered_data(self) -> memoryview:
         """Get all buffered data as memoryview."""
-        return self.buffer_view[:self.write_pos]
+        return self.buffer_view[: self.write_pos]
 
     def clear(self) -> None:
         """Clear the buffer."""
         self.write_pos = 0
         self.pending_messages.clear()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get buffer statistics."""
         return {
             "buffer_size": self.write_pos,
@@ -935,6 +1357,6 @@ def optimize_socket(sock: socket.socket) -> None:
     _socket_optimizer.optimize_socket(sock)
 
 
-def get_optimal_buffer_sizes(connection_count: int) -> Tuple[int, int]:
+def get_optimal_buffer_sizes(connection_count: int) -> tuple[int, int]:
     """Get optimal socket buffer sizes for the given connection count."""
     return _socket_optimizer.get_optimal_buffer_sizes(connection_count)

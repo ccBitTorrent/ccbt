@@ -5,32 +5,38 @@ Manages multiple torrents (file or magnet), coordinates tracker announces,
 DHT, PEX, and provides status aggregation with async event loop management.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable
 
-from .checkpoint import CheckpointManager
-from .config import get_config
-from .dht import AsyncDHTClient
-from .exceptions import ValidationError
-from .file_assembler import AsyncDownloadManager
-from .logging_config import get_logger
-from .magnet import build_minimal_torrent_data, parse_magnet
-from .metrics import Metrics
-from .models import PieceState, TorrentCheckpoint
-from .models import TorrentInfo as TorrentInfoModel
-from .pex import PEXManager
-from .services.peer_service import PeerService
-from .torrent import TorrentParser
-from .tracker import AsyncTrackerClient
+from ccbt.checkpoint import CheckpointManager
+from ccbt.config import get_config
+from ccbt.dht import AsyncDHTClient
+from ccbt.exceptions import ValidationError
+from ccbt.file_assembler import AsyncDownloadManager
+from ccbt.logging_config import get_logger
+from ccbt.magnet import build_minimal_torrent_data, parse_magnet
+from ccbt.metrics import Metrics
+from ccbt.models import PieceState, TorrentCheckpoint
+from ccbt.models import TorrentInfo as TorrentInfoModel
+from ccbt.pex import PEXManager
+from ccbt.services.peer_service import PeerService
+from ccbt.torrent import TorrentParser
+from ccbt.tracker import AsyncTrackerClient
+
+# Constants
+INFO_HASH_LENGTH = 20  # SHA-1 hash length in bytes
 
 
 @dataclass
 class TorrentSessionInfo:
     """Information about a torrent session."""
+
     info_hash: bytes
     name: str
     output_dir: str
@@ -41,9 +47,13 @@ class TorrentSessionInfo:
 class AsyncTorrentSession:
     """Represents one active torrent's lifecycle with async operations."""
 
-    def __init__(self, torrent_data: Union[Dict[str, Any], TorrentInfoModel],
-                 output_dir: Union[str, Path] = ".",
-                 session_manager: Optional["AsyncSessionManager"] = None) -> None:
+    def __init__(
+        self,
+        torrent_data: dict[str, Any] | TorrentInfoModel,
+        output_dir: str | Path = ".",
+        session_manager: AsyncSessionManager | None = None,
+    ) -> None:
+        """Initialize TorrentSession with torrent data and output directory."""
         self.config = get_config()
         self.torrent_data = torrent_data
         self.output_dir = Path(output_dir)
@@ -53,7 +63,8 @@ class AsyncTorrentSession:
         self.download_manager = AsyncDownloadManager(torrent_data, str(output_dir))
 
         # Create a proper piece manager for checkpoint operations
-        from .async_piece_manager import AsyncPieceManager
+        from ccbt.async_piece_manager import AsyncPieceManager
+
         self._normalized_td = self._normalize_torrent_data(torrent_data)
         self.piece_manager = AsyncPieceManager(self._normalized_td)
 
@@ -61,7 +72,7 @@ class AsyncTorrentSession:
         self.download_manager.piece_manager = self.piece_manager
 
         self.tracker = AsyncTrackerClient()
-        self.pex_manager: Optional[PEXManager] = None
+        self.pex_manager: PEXManager | None = None
         self.checkpoint_manager = CheckpointManager(self.config.disk)
 
         # Session state
@@ -69,7 +80,10 @@ class AsyncTorrentSession:
             name = torrent_data.name
             info_hash = torrent_data.info_hash
         else:
-            name = torrent_data.get("name") or torrent_data.get("file_info", {}).get("name", "Unknown")
+            name = torrent_data.get("name") or torrent_data.get("file_info", {}).get(
+                "name",
+                "Unknown",
+            )
             info_hash = torrent_data["info_hash"]
 
         self.info = TorrentSessionInfo(
@@ -80,13 +94,13 @@ class AsyncTorrentSession:
         )
 
         # Source tracking for checkpoint metadata
-        self.torrent_file_path: Optional[str] = None
-        self.magnet_uri: Optional[str] = None
+        self.torrent_file_path: str | None = None
+        self.magnet_uri: str | None = None
 
         # Background tasks
-        self._announce_task: Optional[asyncio.Task[None]] = None
-        self._status_task: Optional[asyncio.Task[None]] = None
-        self._checkpoint_task: Optional[asyncio.Task[None]] = None
+        self._announce_task: asyncio.Task[None] | None = None
+        self._status_task: asyncio.Task[None] | None = None
+        self._checkpoint_task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
 
         # Checkpoint state
@@ -94,13 +108,16 @@ class AsyncTorrentSession:
         self.resume_from_checkpoint = False
 
         # Callbacks
-        self.on_status_update: Optional[Callable[[Dict[str, Any]], None]] = None
-        self.on_complete: Optional[Callable[[], None]] = None
-        self.on_error: Optional[Callable[[Exception], None]] = None
+        self.on_status_update: Callable[[dict[str, Any]], None] | None = None
+        self.on_complete: Callable[[], None] | None = None
+        self.on_error: Callable[[Exception], None] | None = None
 
         self.logger = get_logger(__name__)
 
-    def _normalize_torrent_data(self, td: Union[Dict[str, Any], TorrentInfoModel]) -> Dict[str, Any]:
+    def _normalize_torrent_data(
+        self,
+        td: dict[str, Any] | TorrentInfoModel,
+    ) -> dict[str, Any]:
         """Convert TorrentInfoModel or legacy dict into a normalized dict expected by piece manager.
 
         Returns a dict with keys: 'file_info', 'pieces_info', and minimal metadata.
@@ -110,8 +127,13 @@ class AsyncTorrentSession:
             # Best-effort fill pieces_info / file_info if missing
             pieces_info = td.get("pieces_info")
             file_info = td.get("file_info")
-            result: Dict[str, Any] = dict(td)
-            if not pieces_info and "pieces" in td and "piece_length" in td and "num_pieces" in td:
+            result: dict[str, Any] = dict(td)
+            if (
+                not pieces_info
+                and "pieces" in td
+                and "piece_length" in td
+                and "num_pieces" in td
+            ):
                 result["pieces_info"] = {
                     "piece_hashes": td.get("pieces", []),
                     "piece_length": td.get("piece_length", 0),
@@ -119,7 +141,10 @@ class AsyncTorrentSession:
                     "total_length": td.get("total_length", 0),
                 }
             if not file_info:
-                result.setdefault("file_info", {"total_length": td.get("total_length", 0)})
+                result.setdefault(
+                    "file_info",
+                    {"total_length": td.get("total_length", 0)},
+                )
             return result
         # TorrentInfoModel
         return {
@@ -146,42 +171,22 @@ class AsyncTorrentSession:
         try:
             self.info.status = "starting"
 
-            # Check for existing checkpoint
+            # Check for existing checkpoint only if resuming
             checkpoint = None
-            if self.config.disk.checkpoint_enabled:
-                checkpoint = await self.checkpoint_manager.load_checkpoint(self.info.info_hash)
-                if checkpoint:
-                    self.logger.info(f"Found checkpoint for {self.info.name}")
-                    if resume or self.config.disk.auto_resume:
+            if self.config.disk.checkpoint_enabled and (
+                resume or self.config.disk.auto_resume
+            ):
+                try:
+                    checkpoint = await self.checkpoint_manager.load_checkpoint(
+                        self.info.info_hash,
+                    )
+                    if checkpoint:
+                        self.logger.info("Found checkpoint for %s", self.info.name)
                         self.resume_from_checkpoint = True
                         self.logger.info("Resuming from checkpoint")
-                    # Check if we should prompt user
-                    elif self._should_prompt_for_resume():
-                        try:
-                            import sys
-                            try:
-                                import rich.prompt as rich_prompt  # type: ignore[import-not-found]
-                            except Exception:
-                                rich_prompt = None  # type: ignore[assignment]
-
-                            if sys.stdin.isatty() and rich_prompt and hasattr(rich_prompt, "Confirm"):
-                                should_resume = rich_prompt.Confirm.ask(
-                                    f"Checkpoint found for '{self.info.name}'. Resume download?",
-                                    default=True,
-                                )
-                                if should_resume:
-                                    self.resume_from_checkpoint = True
-                                    self.logger.info("User chose to resume from checkpoint")
-                                else:
-                                    self.logger.info("User chose not to resume from checkpoint")
-                            else:
-                                # Non-interactive mode or Rich not available, don't resume
-                                self.logger.info("Checkpoint found but running in non-interactive mode or Rich not available")
-                        except ImportError:
-                            # Rich not available, skip prompt
-                            self.logger.info("Checkpoint found but Rich not available for prompt")
-                    else:
-                        self.logger.info("Checkpoint found but resume not requested")
+                except Exception as e:
+                    self.logger.warning("Failed to load checkpoint: %s", e)
+                    checkpoint = None
 
             # Start tracker client
             await self.tracker.start()
@@ -195,7 +200,9 @@ class AsyncTorrentSession:
 
             # Set up checkpoint callback
             if self.config.disk.checkpoint_enabled:
-                self.download_manager.piece_manager.on_checkpoint_save = self._save_checkpoint
+                self.download_manager.piece_manager.on_checkpoint_save = (
+                    self._save_checkpoint
+                )
 
             # Handle resume from checkpoint
             if self.resume_from_checkpoint and checkpoint:
@@ -215,11 +222,11 @@ class AsyncTorrentSession:
                 self._checkpoint_task = asyncio.create_task(self._checkpoint_loop())
 
             self.info.status = "downloading"
-            self.logger.info(f"Started torrent session: {self.info.name}")
+            self.logger.info("Started torrent session: %s", self.info.name)
 
         except Exception as e:
             self.info.status = "error"
-            self.logger.error(f"Failed to start torrent session: {e}")
+            self.logger.exception("Failed to start torrent session")
             if self.on_error:
                 await self.on_error(e)
             raise
@@ -237,11 +244,14 @@ class AsyncTorrentSession:
             self._checkpoint_task.cancel()
 
         # Save final checkpoint before stopping
-        if self.config.disk.checkpoint_enabled and not self.download_manager.download_complete:
+        if (
+            self.config.disk.checkpoint_enabled
+            and not self.download_manager.download_complete
+        ):
             try:
                 await self._save_checkpoint()
             except Exception as e:
-                self.logger.warning(f"Failed to save final checkpoint: {e}")
+                self.logger.warning("Failed to save final checkpoint: %s", e)
 
         # Stop components
         if self.pex_manager:
@@ -252,7 +262,7 @@ class AsyncTorrentSession:
         await self.tracker.stop()
 
         self.info.status = "stopped"
-        self.logger.info(f"Stopped torrent session: {self.info.name}")
+        self.logger.info("Stopped torrent session: %s", self.info.name)
 
     async def pause(self) -> None:
         """Pause the torrent session by stopping background work and saving a checkpoint.
@@ -265,7 +275,7 @@ class AsyncTorrentSession:
                 try:
                     await self._save_checkpoint()
                 except Exception as e:
-                    self.logger.warning(f"Failed to save checkpoint on pause: {e}")
+                    self.logger.warning("Failed to save checkpoint on pause: %s", e)
 
             # Stop background tasks
             self._stop_event.set()
@@ -283,9 +293,9 @@ class AsyncTorrentSession:
             await self.download_manager.stop()
 
             self.info.status = "paused"
-            self.logger.info(f"Paused torrent session: {self.info.name}")
-        except Exception as e:
-            self.logger.error(f"Failed to pause torrent: {e}")
+            self.logger.info("Paused torrent session: %s", self.info.name)
+        except Exception:
+            self.logger.exception("Failed to pause torrent")
             raise
 
     async def resume(self) -> None:
@@ -293,9 +303,9 @@ class AsyncTorrentSession:
         try:
             await self.start(resume=True)
             self.info.status = "downloading"
-            self.logger.info(f"Resumed torrent session: {self.info.name}")
-        except Exception as e:
-            self.logger.error(f"Failed to resume torrent: {e}")
+            self.logger.info("Resumed torrent session: %s", self.info.name)
+        except Exception:
+            self.logger.exception("Failed to resume torrent")
             raise
 
     async def _announce_loop(self) -> None:
@@ -305,7 +315,7 @@ class AsyncTorrentSession:
         while not self._stop_event.is_set():
             try:
                 # Announce to tracker
-                td: Dict[str, Any]
+                td: dict[str, Any]
                 if isinstance(self.torrent_data, TorrentInfoModel):
                     td = {
                         "info_hash": self.torrent_data.info_hash,
@@ -327,7 +337,7 @@ class AsyncTorrentSession:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.warning(f"Tracker announce failed: {e}")
+                self.logger.warning("Tracker announce failed: %s", e)
                 await asyncio.sleep(60)  # Retry in 1 minute on error
 
     async def _status_loop(self) -> None:
@@ -351,27 +361,36 @@ class AsyncTorrentSession:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Status loop error: {e}")
+            except Exception:
+                self.logger.exception("Status loop error")
                 await asyncio.sleep(5)
 
     async def _on_download_complete(self) -> None:
         """Handle download completion."""
         self.info.status = "seeding"
-        self.logger.info(f"Download complete, now seeding: {self.info.name}")
+        self.logger.info("Download complete, now seeding: %s", self.info.name)
 
         # Clean up checkpoint if configured to do so
-        if self.config.disk.checkpoint_enabled and self.config.disk.auto_delete_checkpoint_on_complete:
+        if (
+            self.config.disk.checkpoint_enabled
+            and self.config.disk.auto_delete_checkpoint_on_complete
+        ):
             try:
                 await self.delete_checkpoint()
-                self.logger.info(f"Deleted checkpoint for completed download: {self.info.name}")
+                self.logger.info(
+                    "Deleted checkpoint for completed download: %s",
+                    self.info.name,
+                )
             except Exception as e:
-                self.logger.warning(f"Failed to delete checkpoint after completion: {e}")
+                self.logger.warning(
+                    "Failed to delete checkpoint after completion: %s",
+                    e,
+                )
 
         if self.on_complete:
             await self.on_complete()
 
-    async def _on_piece_verified(self, piece_index: int) -> None:
+    async def _on_piece_verified(self, _piece_index: int) -> None:
         """Handle piece verification."""
         # Update PEX manager if available
         if self.pex_manager:
@@ -383,40 +402,68 @@ class AsyncTorrentSession:
             try:
                 await self._save_checkpoint()
             except Exception as e:
-                self.logger.warning(f"Failed to save checkpoint after piece verification: {e}")
+                self.logger.warning(
+                    "Failed to save checkpoint after piece verification: %s",
+                    e,
+                )
 
-    async def get_status(self) -> Dict[str, Any]:
+    async def get_status(self) -> dict[str, Any]:
         """Get current torrent status."""
         status = self.download_manager.get_status()
-        status.update({
-            "info_hash": self.info.info_hash.hex(),
-            "name": self.info.name,
-            "status": self.info.status,
-            "added_time": self.info.added_time,
-            "uptime": time.time() - self.info.added_time,
-        })
+        status.update(
+            {
+                "info_hash": self.info.info_hash.hex(),
+                "name": self.info.name,
+                "status": self.info.status,
+                "added_time": self.info.added_time,
+                "uptime": time.time() - self.info.added_time,
+            },
+        )
         return status
 
     async def _resume_from_checkpoint(self, checkpoint: TorrentCheckpoint) -> None:
         """Resume download from checkpoint."""
         try:
-            self.logger.info(f"Resuming download from checkpoint: {checkpoint.torrent_name}")
+            self.logger.info(
+                "Resuming download from checkpoint: %s",
+                checkpoint.torrent_name,
+            )
 
             # Validate existing files
-            if hasattr(self.download_manager, "file_assembler") and self.download_manager.file_assembler:
-                validation_results = await self.download_manager.file_assembler.verify_existing_pieces(checkpoint)
+            if (
+                hasattr(self.download_manager, "file_assembler")
+                and self.download_manager.file_assembler
+            ):
+                validation_results = (
+                    await self.download_manager.file_assembler.verify_existing_pieces(
+                        checkpoint,
+                    )
+                )
 
                 if not validation_results["valid"]:
-                    self.logger.warning("File validation failed, some files may need to be re-downloaded")
+                    self.logger.warning(
+                        "File validation failed, some files may need to be re-downloaded",
+                    )
                     if validation_results.get("missing_files"):
-                        self.logger.warning(f"Missing files: {validation_results['missing_files']}")
+                        self.logger.warning(
+                            "Missing files: %s",
+                            validation_results["missing_files"],
+                        )
                     if validation_results.get("corrupted_pieces"):
-                        self.logger.warning(f"Corrupted pieces: {validation_results['corrupted_pieces']}")
+                        self.logger.warning(
+                            "Corrupted pieces: %s",
+                            validation_results["corrupted_pieces"],
+                        )
 
             # Skip preallocation for existing files
-            if hasattr(self.download_manager, "file_assembler") and self.download_manager.file_assembler:
+            if (
+                hasattr(self.download_manager, "file_assembler")
+                and self.download_manager.file_assembler
+            ):
                 # Mark pieces as already written if they exist
-                written_pieces = self.download_manager.file_assembler.get_written_pieces()
+                written_pieces = (
+                    self.download_manager.file_assembler.get_written_pieces()
+                )
                 for piece_idx in checkpoint.verified_pieces:
                     if piece_idx not in written_pieces:
                         written_pieces.add(piece_idx)
@@ -427,10 +474,13 @@ class AsyncTorrentSession:
                 self.logger.info("Restored piece manager state from checkpoint")
 
             self.checkpoint_loaded = True
-            self.logger.info(f"Successfully resumed from checkpoint: {len(checkpoint.verified_pieces)} pieces verified")
+            self.logger.info(
+                "Successfully resumed from checkpoint: %s pieces verified",
+                len(checkpoint.verified_pieces),
+            )
 
-        except Exception as e:
-            self.logger.error(f"Failed to resume from checkpoint: {e}")
+        except Exception:
+            self.logger.exception("Failed to resume from checkpoint")
             raise
 
     async def _save_checkpoint(self) -> None:
@@ -463,10 +513,10 @@ class AsyncTorrentSession:
                 checkpoint.display_name = self.torrent_data.get("name", self.info.name)
 
             await self.checkpoint_manager.save_checkpoint(checkpoint)
-            self.logger.debug(f"Saved checkpoint for {self.info.name}")
+            self.logger.debug("Saved checkpoint for %s", self.info.name)
 
-        except Exception as e:
-            self.logger.error(f"Failed to save checkpoint: {e}")
+        except Exception:
+            self.logger.exception("Failed to save checkpoint")
             raise
 
     async def _checkpoint_loop(self) -> None:
@@ -480,15 +530,15 @@ class AsyncTorrentSession:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Error in checkpoint loop: {e}")
+            except Exception:
+                self.logger.exception("Error in checkpoint loop")
 
     async def delete_checkpoint(self) -> bool:
         """Delete checkpoint files for this torrent."""
         try:
             return await self.checkpoint_manager.delete_checkpoint(self.info.info_hash)
-        except Exception as e:
-            self.logger.error(f"Failed to delete checkpoint: {e}")
+        except Exception:
+            self.logger.exception("Failed to delete checkpoint")
             return False
 
 
@@ -496,32 +546,33 @@ class AsyncSessionManager:
     """High-performance async session manager for multiple torrents."""
 
     def __init__(self, output_dir: str = "."):
+        """Initialize async session manager."""
         self.config = get_config()
         self.output_dir = output_dir
-        self.torrents: Dict[bytes, AsyncTorrentSession] = {}
+        self.torrents: dict[bytes, AsyncTorrentSession] = {}
         self.lock = asyncio.Lock()
 
         # Global components
-        self.dht_client: Optional[AsyncDHTClient] = None
+        self.dht_client: AsyncDHTClient | None = None
         self.metrics = Metrics()
-        self.peer_service: Optional[PeerService] = PeerService(
+        self.peer_service: PeerService | None = PeerService(
             max_peers=self.config.network.max_global_peers,
             connection_timeout=self.config.network.connection_timeout,
         )
 
         # Background tasks
-        self._cleanup_task: Optional[asyncio.Task] = None
-        self._metrics_task: Optional[asyncio.Task] = None
+        self._cleanup_task: asyncio.Task | None = None
+        self._metrics_task: asyncio.Task | None = None
 
         # Callbacks
-        self.on_torrent_added: Optional[Callable[[bytes, str], None]] = None
-        self.on_torrent_removed: Optional[Callable[[bytes], None]] = None
-        self.on_torrent_complete: Optional[Callable[[bytes, str], None]] = None
+        self.on_torrent_added: Callable[[bytes, str], None] | None = None
+        self.on_torrent_removed: Callable[[bytes], None] | None = None
+        self.on_torrent_complete: Callable[[bytes, str], None] | None = None
 
         self.logger = logging.getLogger(__name__)
 
         # Simple per-torrent rate limits (not enforced yet, stored for reporting)
-        self._per_torrent_limits: Dict[bytes, Dict[str, int]] = {}
+        self._per_torrent_limits: dict[bytes, dict[str, int]] = {}
 
     async def start(self) -> None:
         """Start the async session manager."""
@@ -534,7 +585,8 @@ class AsyncSessionManager:
             if self.peer_service:
                 await self.peer_service.start()
         except Exception:
-            pass
+            # Best-effort: log and continue
+            self.logger.debug("Peer service start failed", exc_info=True)
 
         # Start background tasks
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
@@ -564,7 +616,8 @@ class AsyncSessionManager:
             if self.peer_service:
                 await self.peer_service.stop()
         except Exception:
-            pass
+            # Best-effort: log and continue
+            self.logger.debug("Peer service stop failed", exc_info=True)
 
         self.logger.info("Async session manager stopped")
 
@@ -599,7 +652,12 @@ class AsyncSessionManager:
         await session.resume()
         return True
 
-    async def set_rate_limits(self, info_hash_hex: str, download_kib: int, upload_kib: int) -> bool:
+    async def set_rate_limits(
+        self,
+        info_hash_hex: str,
+        download_kib: int,
+        upload_kib: int,
+    ) -> bool:
         """Set per-torrent rate limits (stored for reporting).
 
         Currently not enforced at I/O level.
@@ -618,9 +676,9 @@ class AsyncSessionManager:
             }
         return True
 
-    async def get_global_stats(self) -> Dict[str, Any]:
+    async def get_global_stats(self) -> dict[str, Any]:
         """Aggregate global statistics across all torrents."""
-        stats: Dict[str, Any] = {
+        stats: dict[str, Any] = {
             "num_torrents": 0,
             "num_active": 0,
             "num_paused": 0,
@@ -651,21 +709,30 @@ class AsyncSessionManager:
     async def export_session_state(self, path: Path) -> None:
         """Export current session state to a JSON file."""
         import json
-        data: Dict[str, Any] = {"torrents": {}, "config": self.config.model_dump(mode="json")}
+
+        data: dict[str, Any] = {
+            "torrents": {},
+            "config": self.config.model_dump(mode="json"),
+        }
         async with self.lock:
             for ih, sess in self.torrents.items():
                 data["torrents"][ih.hex()] = await sess.get_status()
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
-    async def import_session_state(self, path: Path) -> Dict[str, Any]:
+    async def import_session_state(self, path: Path) -> dict[str, Any]:
         """Import session state from a JSON file. Returns the parsed state.
 
         This does not automatically start torrents.
         """
         import json
+
         return json.loads(path.read_text(encoding="utf-8"))
 
-    async def add_torrent(self, path: Union[str, Dict[str, Any]], resume: bool = False) -> str:
+    async def add_torrent(
+        self,
+        path: str | dict[str, Any],
+        resume: bool = False,
+    ) -> str:
         """Add a torrent file or torrent data to the session."""
         try:
             # Handle both file paths and torrent dictionaries
@@ -673,25 +740,34 @@ class AsyncSessionManager:
                 td = path  # Already parsed torrent data
                 info_hash = td.get("info_hash") if isinstance(td, dict) else None
                 if not info_hash:
-                    raise ValueError("Missing info_hash in torrent data")
+                    error_msg = "Missing info_hash in torrent data"
+                    raise ValueError(error_msg)
             else:
                 parser = TorrentParser()
                 td_model = parser.parse(path)
                 # Accept both model objects and plain dicts from mocked parsers in tests
                 if isinstance(td_model, dict):
-                    name = td_model.get("name") or td_model.get("torrent_name") or "unknown"
+                    name = (
+                        td_model.get("name")
+                        or td_model.get("torrent_name")
+                        or "unknown"
+                    )
                     ih = td_model.get("info_hash")
                     if isinstance(ih, str):
                         ih = bytes.fromhex(ih)
                     if not isinstance(ih, (bytes, bytearray)):
-                        raise ValueError("info_hash must be bytes")
+                        error_msg = "info_hash must be bytes"
+                        raise TypeError(error_msg)
                     td = {
                         "name": name,
                         "info_hash": bytes(ih),
                         "pieces_info": td_model.get("pieces_info", {}),
-                        "file_info": td_model.get("file_info", {
-                            "total_length": td_model.get("total_length", 0),
-                        }),
+                        "file_info": td_model.get(
+                            "file_info",
+                            {
+                                "total_length": td_model.get("total_length", 0),
+                            },
+                        ),
                     }
                 else:
                     td = {
@@ -711,12 +787,14 @@ class AsyncSessionManager:
                 if isinstance(info_hash, str):
                     info_hash = bytes.fromhex(info_hash)
                 if not isinstance(info_hash, bytes):
-                    raise ValueError("info_hash must be bytes")
+                    error_msg = "info_hash must be bytes"
+                    raise TypeError(error_msg)
 
             # Check if already exists
             async with self.lock:
                 if isinstance(info_hash, bytes) and info_hash in self.torrents:
-                    raise ValueError(f"Torrent {info_hash.hex()} already exists")
+                    msg = f"Torrent {info_hash.hex()} already exists"
+                    raise ValueError(msg)
 
                 # Create session
                 session = AsyncTorrentSession(td, self.output_dir, self)
@@ -734,12 +812,14 @@ class AsyncSessionManager:
             if self.on_torrent_added:
                 await self.on_torrent_added(info_hash, session.info.name)
 
-            self.logger.info(f"Added torrent: {session.info.name}")
+            self.logger.info("Added torrent: %s", session.info.name)
             return info_hash.hex()
 
-        except Exception as e:
-            path_desc = getattr(path, "name", str(path)) if hasattr(path, "name") else str(path)
-            self.logger.error(f"Failed to add torrent {path_desc}: {e}")
+        except Exception:
+            path_desc = (
+                getattr(path, "name", str(path)) if hasattr(path, "name") else str(path)
+            )
+            self.logger.exception("Failed to add torrent %s", path_desc)
             raise
 
     async def add_magnet(self, uri: str, resume: bool = False) -> str:
@@ -751,12 +831,14 @@ class AsyncSessionManager:
             if isinstance(info_hash, str):
                 info_hash = bytes.fromhex(info_hash)
             if not isinstance(info_hash, bytes):
-                raise ValueError("info_hash must be bytes")
+                error_msg = "info_hash must be bytes"
+                raise TypeError(error_msg)
 
             # Check if already exists
             async with self.lock:
                 if isinstance(info_hash, bytes) and info_hash in self.torrents:
-                    raise ValueError(f"Magnet {info_hash.hex()} already exists")
+                    msg = f"Magnet {info_hash.hex()} already exists"
+                    raise ValueError(msg)
 
                 # Create session
                 session = AsyncTorrentSession(td, self.output_dir, self)
@@ -773,11 +855,11 @@ class AsyncSessionManager:
             if self.on_torrent_added:
                 await self.on_torrent_added(info_hash, session.info.name)
 
-            self.logger.info(f"Added magnet: {session.info.name}")
+            self.logger.info("Added magnet: %s", session.info.name)
             return info_hash.hex()
 
-        except Exception as e:
-            self.logger.error(f"Failed to add magnet {uri}: {e}")
+        except Exception:
+            self.logger.exception("Failed to add magnet %s", uri)
             raise
 
     async def remove(self, info_hash_hex: str) -> bool:
@@ -797,12 +879,12 @@ class AsyncSessionManager:
             if self.on_torrent_removed:
                 await self.on_torrent_removed(info_hash)
 
-            self.logger.info(f"Removed torrent: {session.info.name}")
+            self.logger.info("Removed torrent: %s", session.info.name)
             return True
 
         return False
 
-    async def get_peers_for_torrent(self, info_hash_hex: str) -> List[Dict[str, Any]]:
+    async def get_peers_for_torrent(self, info_hash_hex: str) -> list[dict[str, Any]]:
         """Return list of peers for a torrent (placeholder).
 
         Returns an empty list until peer tracking is wired.
@@ -840,7 +922,7 @@ class AsyncSessionManager:
         if not sess:
             return False
         try:
-            td: Dict[str, Any]
+            td: dict[str, Any]
             if isinstance(sess.torrent_data, dict):
                 td = sess.torrent_data  # type: ignore[assignment]
             else:
@@ -850,12 +932,18 @@ class AsyncSessionManager:
                     "name": sess.info.name,
                 }
             await sess.tracker.announce(td)
-            return True
         except Exception:
             return False
+        else:
+            return True
 
-    async def checkpoint_backup_torrent(self, info_hash_hex: str, destination: Path,
-                                        compress: bool = True, encrypt: bool = False) -> bool:
+    async def checkpoint_backup_torrent(
+        self,
+        info_hash_hex: str,
+        destination: Path,
+        compress: bool = True,
+        encrypt: bool = False,
+    ) -> bool:
         """Create a checkpoint backup for a torrent to the destination path."""
         try:
             info_hash = bytes.fromhex(info_hash_hex)
@@ -863,10 +951,16 @@ class AsyncSessionManager:
             return False
         try:
             cp = CheckpointManager(self.config.disk)
-            await cp.backup_checkpoint(info_hash, destination, compress=compress, encrypt=encrypt)
-            return True
+            await cp.backup_checkpoint(
+                info_hash,
+                destination,
+                compress=compress,
+                encrypt=encrypt,
+            )
         except Exception:
             return False
+        else:
+            return True
 
     async def rehash_torrent(self, info_hash_hex: str) -> bool:
         """Rehash all pieces (placeholder)."""
@@ -898,11 +992,12 @@ class AsyncSessionManager:
         try:
             if hasattr(sess.pex_manager, "refresh"):
                 await sess.pex_manager.refresh()  # type: ignore[attr-defined]
-            return True
         except Exception:
             return False
+        else:
+            return True
 
-    async def get_status(self) -> Dict[str, Any]:
+    async def get_status(self) -> dict[str, Any]:
         """Get status of all torrents."""
         status = {}
         async with self.lock:
@@ -910,7 +1005,7 @@ class AsyncSessionManager:
                 status[info_hash.hex()] = await session.get_status()
         return status
 
-    async def get_torrent_status(self, info_hash_hex: str) -> Optional[Dict[str, Any]]:
+    async def get_torrent_status(self, info_hash_hex: str) -> dict[str, Any] | None:
         """Get status of a specific torrent."""
         try:
             info_hash = bytes.fromhex(info_hash_hex)
@@ -946,8 +1041,8 @@ class AsyncSessionManager:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Cleanup loop error: {e}")
+            except Exception:
+                self.logger.exception("Cleanup loop error")
 
     async def _metrics_loop(self) -> None:
         """Background task for metrics collection."""
@@ -956,26 +1051,29 @@ class AsyncSessionManager:
                 await asyncio.sleep(10)  # Update every 10 seconds
 
                 # Collect global metrics
-                status = await self.get_status()
                 # TODO: Implement global status update for metrics
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Metrics loop error: {e}")
+            except Exception:
+                self.logger.exception("Metrics loop error")
 
-    async def resume_from_checkpoint(self, info_hash: bytes, checkpoint: TorrentCheckpoint,
-                                   torrent_path: Optional[str] = None) -> str:
+    async def resume_from_checkpoint(
+        self,
+        info_hash: bytes,
+        checkpoint: TorrentCheckpoint,
+        torrent_path: str | None = None,
+    ) -> str:
         """Resume download from checkpoint.
-        
+
         Args:
             info_hash: Torrent info hash
             checkpoint: Checkpoint data
             torrent_path: Optional explicit torrent file path
-            
+
         Returns:
             Info hash hex string of resumed torrent
-            
+
         Raises:
             ValueError: If torrent source cannot be determined
             FileNotFoundError: If torrent file doesn't exist
@@ -984,7 +1082,8 @@ class AsyncSessionManager:
         try:
             # Validate checkpoint
             if not await self.validate_checkpoint(checkpoint):
-                raise ValidationError("Invalid checkpoint data")
+                error_msg = "Invalid checkpoint data"
+                raise ValidationError(error_msg)
 
             # Priority order: explicit path -> stored file path -> magnet URI
             torrent_source = None
@@ -993,21 +1092,28 @@ class AsyncSessionManager:
             if torrent_path and Path(torrent_path).exists():
                 torrent_source = torrent_path
                 source_type = "file"
-                self.logger.info(f"Using explicit torrent file: {torrent_path}")
-            elif checkpoint.torrent_file_path and Path(checkpoint.torrent_file_path).exists():
+                self.logger.info("Using explicit torrent file: %s", torrent_path)
+            elif (
+                checkpoint.torrent_file_path
+                and Path(checkpoint.torrent_file_path).exists()
+            ):
                 torrent_source = checkpoint.torrent_file_path
                 source_type = "file"
-                self.logger.info(f"Using stored torrent file: {checkpoint.torrent_file_path}")
+                self.logger.info(
+                    "Using stored torrent file: %s",
+                    checkpoint.torrent_file_path,
+                )
             elif checkpoint.magnet_uri:
                 torrent_source = checkpoint.magnet_uri
                 source_type = "magnet"
-                self.logger.info(f"Using stored magnet URI: {checkpoint.magnet_uri}")
+                self.logger.info("Using stored magnet URI: %s", checkpoint.magnet_uri)
             else:
-                raise ValueError(
+                error_msg = (
                     f"Cannot resume torrent {info_hash.hex()}: "
                     "No valid torrent source found in checkpoint. "
-                    "Please provide torrent file or magnet link.",
+                    "Please provide torrent file or magnet link."
                 )
+                raise ValueError(error_msg)
 
             # Validate info hash matches if using explicit torrent file
             if source_type == "file" and torrent_source:
@@ -1021,21 +1127,27 @@ class AsyncSessionManager:
                     "info_hash": torrent_info_hash,
                 }
                 if torrent_data["info_hash"] != info_hash:
-                    raise ValueError(
-                        f"Info hash mismatch: checkpoint is for {info_hash.hex()}, "
-                        f"but torrent file is for {torrent_data['info_hash'].hex()}",
+                    torrent_hash_hex = (
+                        torrent_data["info_hash"].hex()
+                        if torrent_data["info_hash"] is not None
+                        else "None"
                     )
+                    error_msg = (
+                        f"Info hash mismatch: checkpoint is for {info_hash.hex()}, "
+                        f"but torrent file is for {torrent_hash_hex}"
+                    )
+                    raise ValueError(error_msg)
 
             # Add torrent/magnet with resume=True
             if source_type == "file":
                 return await self.add_torrent(torrent_source, resume=True)
             return await self.add_magnet(torrent_source, resume=True)
 
-        except Exception as e:
-            self.logger.error(f"Failed to resume from checkpoint: {e}")
+        except Exception:
+            self.logger.exception("Failed to resume from checkpoint")
             raise
 
-    async def list_resumable_checkpoints(self) -> List[TorrentCheckpoint]:
+    async def list_resumable_checkpoints(self) -> list[TorrentCheckpoint]:
         """List all checkpoints that can be auto-resumed."""
         checkpoint_manager = CheckpointManager(self.config.disk)
         checkpoints = await checkpoint_manager.list_checkpoints()
@@ -1043,32 +1155,46 @@ class AsyncSessionManager:
         resumable = []
         for checkpoint_info in checkpoints:
             try:
-                checkpoint = await checkpoint_manager.load_checkpoint(checkpoint_info.info_hash)
-                if checkpoint and (checkpoint.torrent_file_path or checkpoint.magnet_uri):
+                checkpoint = await checkpoint_manager.load_checkpoint(
+                    checkpoint_info.info_hash,
+                )
+                if checkpoint and (
+                    checkpoint.torrent_file_path or checkpoint.magnet_uri
+                ):
                     resumable.append(checkpoint)
             except Exception as e:
-                self.logger.warning(f"Failed to load checkpoint {checkpoint_info.info_hash.hex()}: {e}")
+                self.logger.warning(
+                    "Failed to load checkpoint %s: %s",
+                    checkpoint_info.info_hash.hex(),
+                    e,
+                )
                 continue
 
         return resumable
 
-    async def find_checkpoint_by_name(self, name: str) -> Optional[TorrentCheckpoint]:
+    async def find_checkpoint_by_name(self, name: str) -> TorrentCheckpoint | None:
         """Find checkpoint by torrent name."""
         checkpoint_manager = CheckpointManager(self.config.disk)
         checkpoints = await checkpoint_manager.list_checkpoints()
 
         for checkpoint_info in checkpoints:
             try:
-                checkpoint = await checkpoint_manager.load_checkpoint(checkpoint_info.info_hash)
+                checkpoint = await checkpoint_manager.load_checkpoint(
+                    checkpoint_info.info_hash,
+                )
                 if checkpoint and checkpoint.torrent_name == name:
                     return checkpoint
             except Exception as e:
-                self.logger.warning(f"Failed to load checkpoint {checkpoint_info.info_hash.hex()}: {e}")
+                self.logger.warning(
+                    "Failed to load checkpoint %s: %s",
+                    checkpoint_info.info_hash.hex(),
+                    e,
+                )
                 continue
 
         return None
 
-    async def get_checkpoint_info(self, info_hash: bytes) -> Optional[Dict[str, Any]]:
+    async def get_checkpoint_info(self, info_hash: bytes) -> dict[str, Any] | None:
         """Get checkpoint summary information."""
         checkpoint_manager = CheckpointManager(self.config.disk)
         checkpoint = await checkpoint_manager.load_checkpoint(info_hash)
@@ -1079,7 +1205,9 @@ class AsyncSessionManager:
         return {
             "info_hash": info_hash.hex(),
             "name": checkpoint.torrent_name,
-            "progress": len(checkpoint.verified_pieces) / checkpoint.total_pieces if checkpoint.total_pieces > 0 else 0,
+            "progress": len(checkpoint.verified_pieces) / checkpoint.total_pieces
+            if checkpoint.total_pieces > 0
+            else 0,
             "verified_pieces": len(checkpoint.verified_pieces),
             "total_pieces": checkpoint.total_pieces,
             "total_size": checkpoint.total_length,
@@ -1094,7 +1222,10 @@ class AsyncSessionManager:
         """Validate checkpoint integrity."""
         try:
             # Basic validation
-            if not checkpoint.info_hash or len(checkpoint.info_hash) != 20:
+            if (
+                not checkpoint.info_hash
+                or len(checkpoint.info_hash) != INFO_HASH_LENGTH
+            ):
                 return False
 
             if checkpoint.total_pieces <= 0 or checkpoint.piece_length <= 0:
@@ -1115,10 +1246,10 @@ class AsyncSessionManager:
                 if not isinstance(state, PieceState):
                     return False
 
-            return True
-
         except Exception:
             return False
+        else:
+            return True
 
     async def cleanup_completed_checkpoints(self) -> int:
         """Remove checkpoints for completed downloads."""
@@ -1126,21 +1257,41 @@ class AsyncSessionManager:
         checkpoints = await checkpoint_manager.list_checkpoints()
 
         cleaned = 0
-        for checkpoint_info in checkpoints:
+
+        async def process_checkpoint(checkpoint_info):
+            """Process a single checkpoint."""
             try:
-                checkpoint = await checkpoint_manager.load_checkpoint(checkpoint_info.info_hash)
-                if checkpoint and len(checkpoint.verified_pieces) == checkpoint.total_pieces:
+                checkpoint = await checkpoint_manager.load_checkpoint(
+                    checkpoint_info.info_hash,
+                )
+                if (
+                    checkpoint
+                    and len(checkpoint.verified_pieces) == checkpoint.total_pieces
+                ):
                     # Download is complete, delete checkpoint
-                    await checkpoint_manager.delete_checkpoint(checkpoint_info.info_hash)
-                    cleaned += 1
-                    self.logger.info(f"Cleaned up completed checkpoint: {checkpoint.torrent_name}")
+                    await checkpoint_manager.delete_checkpoint(
+                        checkpoint_info.info_hash,
+                    )
+                    self.logger.info(
+                        "Cleaned up completed checkpoint: %s",
+                        checkpoint.torrent_name,
+                    )
+                    return True
             except Exception as e:
-                self.logger.warning(f"Failed to process checkpoint {checkpoint_info.info_hash.hex()}: {e}")
-                continue
+                self.logger.warning(
+                    "Failed to process checkpoint %s: %s",
+                    checkpoint_info.info_hash.hex(),
+                    e,
+                )
+            return False
+
+        for checkpoint_info in checkpoints:
+            if await process_checkpoint(checkpoint_info):
+                cleaned += 1
 
         return cleaned
 
-    def load_torrent(self, torrent_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
+    def load_torrent(self, torrent_path: str | Path) -> dict[str, Any] | None:
         """Load torrent file and return parsed data."""
         try:
             parser = TorrentParser()
@@ -1159,63 +1310,42 @@ class AsyncSessionManager:
                 },
                 "announce": getattr(tdm, "announce", ""),
             }
-        except Exception as e:
-            self.logger.error(f"Failed to load torrent {torrent_path}: {e}")
+        except Exception:
+            self.logger.exception("Failed to load torrent %s", torrent_path)
             return None
 
-    def parse_magnet_link(self, magnet_uri: str) -> Optional[Dict[str, Any]]:
+    def parse_magnet_link(self, magnet_uri: str) -> dict[str, Any] | None:
         """Parse magnet link and return torrent data."""
         try:
-            from .magnet import build_minimal_torrent_data, parse_magnet
             magnet_info = parse_magnet(magnet_uri)
-            torrent_data = build_minimal_torrent_data(
+            return build_minimal_torrent_data(
                 magnet_info.info_hash,
                 magnet_info.display_name,
                 magnet_info.trackers,
             )
-            return torrent_data
-        except Exception as e:
-            self.logger.error(f"Failed to parse magnet link: {e}")
+        except Exception:
+            self.logger.exception("Failed to parse magnet link")
             return None
 
-    async def start_web_interface(self, host: str = "localhost", port: int = 9090) -> None:
+    async def start_web_interface(
+        self,
+        host: str = "localhost",
+        port: int = 9090,
+    ) -> None:
         """Start web interface (placeholder implementation)."""
-        self.logger.info(f"Web interface would start on http://{host}:{port}")
+        self.logger.info("Web interface would start on http://%s:%s", host, port)
         # TODO: Implement actual web interface
         await asyncio.sleep(1)  # Placeholder to prevent immediate exit
 
     @property
-    def peers(self) -> List[Dict[str, Any]]:
+    def peers(self) -> list[dict[str, Any]]:
         """Get list of connected peers (placeholder)."""
         return []
 
     @property
-    def dht(self) -> Optional[Any]:
+    def dht(self) -> Any | None:
         """Get DHT instance (placeholder)."""
         return None
-
-    async def get_torrent_status(self, info_hash_hex: str) -> Optional[Dict[str, Any]]:
-        """Get status for a specific torrent by info hash hex."""
-        try:
-            info_hash_bytes = bytes.fromhex(info_hash_hex)
-            async with self.lock:
-                if info_hash_bytes in self.torrents:
-                    session = self.torrents[info_hash_bytes]
-                    return {
-                        "info_hash": info_hash_hex,
-                        "name": session.info.name,
-                        "status": session.info.status,
-                        "progress": 0.0,  # TODO: implement actual progress
-                        "download_rate": 0.0,
-                        "upload_rate": 0.0,
-                        "peers": 0,
-                        "pieces_completed": 0,
-                        "pieces_total": 0,
-                    }
-            return None
-        except Exception as e:
-            self.logger.error(f"Failed to get torrent status: {e}")
-            return None
 
 
 # Backward compatibility
@@ -1223,10 +1353,11 @@ class SessionManager(AsyncSessionManager):
     """Backward compatibility wrapper for SessionManager."""
 
     def __init__(self, output_dir: str = "."):
+        """Initialize SessionManager with output directory."""
         super().__init__(output_dir)
         self._session_started = False
 
-    def add_torrent(self, path: Union[str, Dict[str, Any]]) -> str:
+    def add_torrent(self, path: str | dict[str, Any]) -> str:
         """Synchronous add_torrent for backward compatibility."""
         if not self._session_started:
             loop = asyncio.get_event_loop()
@@ -1251,7 +1382,7 @@ class SessionManager(AsyncSessionManager):
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(super().remove(info_hash_hex))
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """Synchronous status for backward compatibility."""
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(super().get_status())

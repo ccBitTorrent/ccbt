@@ -1,28 +1,44 @@
 """WebTorrent protocol implementation.
 
+from __future__ import annotations
+
 Provides WebRTC-based peer-to-peer communication
 compatible with WebTorrent clients.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
+import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 from aiohttp import web
 
-from ..events import Event, EventType, emit_event
-from ..models import PeerInfo, TorrentInfo
-from .base import Protocol, ProtocolCapabilities, ProtocolState, ProtocolType
+from ccbt.events import Event, EventType, emit_event
+from ccbt.models import PeerInfo, TorrentInfo
+from ccbt.protocols.base import (
+    Protocol,
+    ProtocolCapabilities,
+    ProtocolState,
+    ProtocolType,
+)
+
+if TYPE_CHECKING:
+    from aiohttp.web import Application, WebSocketResponse
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class WebRTCConnection:
     """WebRTC connection information."""
+
     peer_id: str
-    data_channel: Optional[Any] = None  # RTCDataChannel
+    data_channel: Any | None = None  # RTCDataChannel
     connection_state: str = "new"
     ice_connection_state: str = "new"
     last_activity: float = 0.0
@@ -34,6 +50,7 @@ class WebTorrentProtocol(Protocol):
     """WebTorrent protocol implementation."""
 
     def __init__(self):
+        """Initialize WebTorrent protocol."""
         super().__init__(ProtocolType.WEBTORRENT)
 
         # WebTorrent-specific capabilities
@@ -49,15 +66,15 @@ class WebTorrentProtocol(Protocol):
         )
 
         # WebRTC connections
-        self.webrtc_connections: Dict[str, WebRTCConnection] = {}
-        self.data_channels: Dict[str, Any] = {}
+        self.webrtc_connections: dict[str, WebRTCConnection] = {}
+        self.data_channels: dict[str, Any] = {}
 
         # WebSocket server for signaling
-        self.websocket_server: Optional[web.Application] = None
-        self.websocket_connections: Set[web.WebSocketResponse] = set()
+        self.websocket_server: Application | None = None
+        self.websocket_connections: set[WebSocketResponse] = set()
 
         # Tracker URLs for WebTorrent
-        self.tracker_urls: List[str] = []
+        self.tracker_urls: list[str] = []
 
     async def start(self) -> None:
         """Start WebTorrent protocol."""
@@ -69,13 +86,15 @@ class WebTorrentProtocol(Protocol):
             self.set_state(ProtocolState.CONNECTED)
 
             # Emit protocol started event
-            await emit_event(Event(
-                event_type=EventType.PROTOCOL_STARTED.value,
-                data={
-                    "protocol_type": "webtorrent",
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PROTOCOL_STARTED.value,
+                    data={
+                        "protocol_type": "webtorrent",
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
         except Exception:
             self.set_state(ProtocolState.ERROR)
@@ -97,13 +116,15 @@ class WebTorrentProtocol(Protocol):
             self.set_state(ProtocolState.DISCONNECTED)
 
             # Emit protocol stopped event
-            await emit_event(Event(
-                event_type=EventType.PROTOCOL_STOPPED.value,
-                data={
-                    "protocol_type": "webtorrent",
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PROTOCOL_STOPPED.value,
+                    data={
+                        "protocol_type": "webtorrent",
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
         except Exception:
             self.set_state(ProtocolState.ERROR)
@@ -111,23 +132,23 @@ class WebTorrentProtocol(Protocol):
 
     async def _start_websocket_server(self) -> None:
         """Start WebSocket server for signaling."""
-        app = web.Application()
+        app = web.Application()  # type: ignore[attr-defined]
 
         # WebSocket endpoint for signaling
         app.router.add_get("/signaling", self._websocket_handler)
 
         # Start server
-        runner = web.AppRunner(app)
+        runner = web.AppRunner(app)  # type: ignore[attr-defined]
         await runner.setup()
 
-        site = web.TCPSite(runner, "localhost", 8080)
+        site = web.TCPSite(runner, "localhost", 8080)  # type: ignore[attr-defined]
         await site.start()
 
         self.websocket_server = app
 
-    async def _websocket_handler(self, request: web.Request) -> web.WebSocketResponse:
+    async def _websocket_handler(self, request: web.Request) -> web.WebSocketResponse:  # type: ignore[attr-defined]
         """Handle WebSocket connections for signaling."""
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse()  # type: ignore[attr-defined]
         await ws.prepare(request)
 
         self.websocket_connections.add(ws)
@@ -143,7 +164,11 @@ class WebTorrentProtocol(Protocol):
 
         return ws
 
-    async def _handle_signaling_message(self, ws: web.WebSocketResponse, message: str) -> None:
+    async def _handle_signaling_message(
+        self,
+        ws: web.WebSocketResponse,  # type: ignore[attr-defined]
+        message: str,
+    ) -> None:
         """Handle WebRTC signaling messages."""
         try:
             data = json.loads(message)
@@ -160,29 +185,47 @@ class WebTorrentProtocol(Protocol):
 
         except Exception as e:
             # Emit error event
-            await emit_event(Event(
-                event_type=EventType.PROTOCOL_ERROR.value,
-                data={
-                    "protocol_type": "webtorrent",
-                    "error": f"Signaling error: {e!s}",
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PROTOCOL_ERROR.value,
+                    data={
+                        "protocol_type": "webtorrent",
+                        "error": f"Signaling error: {e!s}",
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
-    async def _handle_offer(self, ws: web.WebSocketResponse, data: Dict[str, Any]) -> None:
+    async def _handle_offer(
+        self,
+        ws: web.WebSocketResponse,  # type: ignore[attr-defined]
+        data: dict[str, Any],
+    ) -> None:
         """Handle WebRTC offer."""
         # TODO: Implement WebRTC offer handling
         # This would involve creating an RTCPeerConnection and handling the offer
 
-    async def _handle_answer(self, ws: web.WebSocketResponse, data: Dict[str, Any]) -> None:
+    async def _handle_answer(
+        self,
+        ws: web.WebSocketResponse,  # type: ignore[attr-defined]
+        data: dict[str, Any],
+    ) -> None:
         """Handle WebRTC answer."""
         # TODO: Implement WebRTC answer handling
 
-    async def _handle_ice_candidate(self, ws: web.WebSocketResponse, data: Dict[str, Any]) -> None:
+    async def _handle_ice_candidate(
+        self,
+        ws: web.WebSocketResponse,  # type: ignore[attr-defined]
+        data: dict[str, Any],
+    ) -> None:
         """Handle ICE candidate."""
         # TODO: Implement ICE candidate handling
 
-    async def _handle_peer_info(self, ws: web.WebSocketResponse, data: Dict[str, Any]) -> None:
+    async def _handle_peer_info(
+        self,
+        _ws: web.WebSocketResponse,  # type: ignore[attr-defined]
+        data: dict[str, Any],
+    ) -> None:
         """Handle peer information."""
         peer_id = data.get("peer_id")
         if peer_id:
@@ -212,24 +255,28 @@ class WebTorrentProtocol(Protocol):
             self.stats.connections_established += 1
             self.update_stats()
 
-            return True
-
         except Exception as e:
             self.stats.connections_failed += 1
             self.update_stats(errors=1)
 
             # Emit connection error event
-            await emit_event(Event(
-                event_type=EventType.PEER_CONNECTION_FAILED.value,
-                data={
-                    "protocol_type": "webtorrent",
-                    "peer_id": peer_info.peer_id.hex() if peer_info.peer_id else None,
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PEER_CONNECTION_FAILED.value,
+                    data={
+                        "protocol_type": "webtorrent",
+                        "peer_id": peer_info.peer_id.hex()
+                        if peer_info.peer_id
+                        else None,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
             return False
+        else:
+            return True
 
     async def disconnect_peer(self, peer_id: str) -> None:
         """Disconnect from a WebTorrent peer."""
@@ -262,13 +309,13 @@ class WebTorrentProtocol(Protocol):
 
             self.update_stats(bytes_sent=len(message), messages_sent=1)
 
-            return True
-
         except Exception:
             self.update_stats(errors=1)
             return False
+        else:
+            return True
 
-    async def receive_message(self, peer_id: str) -> Optional[bytes]:
+    async def receive_message(self, peer_id: str) -> bytes | None:
         """Receive message from WebTorrent peer."""
         if peer_id not in self.webrtc_connections:
             return None
@@ -286,36 +333,45 @@ class WebTorrentProtocol(Protocol):
             connection.last_activity = time.time()
             self.update_stats(messages_received=1)
 
-            return None
-
         except Exception:
             self.update_stats(errors=1)
             return None
+        else:
+            return None
 
-    async def announce_torrent(self, torrent_info: TorrentInfo) -> List[PeerInfo]:
+    async def announce_torrent(self, torrent_info: TorrentInfo) -> list[PeerInfo]:
         """Announce torrent to WebTorrent trackers."""
         peers = []
 
         # Use WebTorrent trackers
         for tracker_url in self.tracker_urls:
             try:
-                tracker_peers = await self._announce_to_tracker(tracker_url, torrent_info)
+                tracker_peers = await self._announce_to_tracker(
+                    tracker_url,
+                    torrent_info,
+                )
                 peers.extend(tracker_peers)
             except Exception as e:
                 # Emit tracker error event
-                await emit_event(Event(
-                    event_type=EventType.TRACKER_ERROR.value,
-                    data={
-                        "protocol_type": "webtorrent",
-                        "tracker_url": tracker_url,
-                        "error": str(e),
-                        "timestamp": time.time(),
-                    },
-                ))
+                await emit_event(
+                    Event(
+                        event_type=EventType.TRACKER_ERROR.value,
+                        data={
+                            "protocol_type": "webtorrent",
+                            "tracker_url": tracker_url,
+                            "error": str(e),
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
         return peers
 
-    async def _announce_to_tracker(self, tracker_url: str, torrent_info: TorrentInfo) -> List[PeerInfo]:
+    async def _announce_to_tracker(
+        self,
+        tracker_url: str,
+        torrent_info: TorrentInfo,
+    ) -> list[PeerInfo]:
         """Announce to a specific WebTorrent tracker."""
         try:
             async with aiohttp.ClientSession() as session:
@@ -341,7 +397,7 @@ class WebTorrentProtocol(Protocol):
         except Exception:
             return []
 
-    def _parse_tracker_response(self, data: Dict[str, Any]) -> List[PeerInfo]:
+    def _parse_tracker_response(self, data: dict[str, Any]) -> list[PeerInfo]:
         """Parse WebTorrent tracker response."""
         peers = []
 
@@ -352,13 +408,15 @@ class WebTorrentProtocol(Protocol):
                     peer_info = PeerInfo(
                         ip=peer_data.get("ip", ""),
                         port=peer_data.get("port", 0),
-                        peer_id=peer_data.get("peer_id", "").encode() if peer_data.get("peer_id") else None,
+                        peer_id=peer_data.get("peer_id", "").encode()
+                        if peer_data.get("peer_id")
+                        else None,
                     )
                     peers.append(peer_info)
 
         return peers
 
-    async def scrape_torrent(self, torrent_info: TorrentInfo) -> Dict[str, int]:
+    async def scrape_torrent(self, torrent_info: TorrentInfo) -> dict[str, int]:
         """Scrape torrent statistics from WebTorrent trackers."""
         stats = {
             "seeders": 0,
@@ -372,12 +430,17 @@ class WebTorrentProtocol(Protocol):
                 stats["seeders"] += tracker_stats.get("seeders", 0)
                 stats["leechers"] += tracker_stats.get("leechers", 0)
                 stats["completed"] += tracker_stats.get("completed", 0)
-            except Exception:
+            except Exception as e:
+                logger.debug("Failed to aggregate tracker stats: %s", e)
                 continue
 
         return stats
 
-    async def _scrape_tracker(self, tracker_url: str, torrent_info: TorrentInfo) -> Dict[str, int]:
+    async def _scrape_tracker(
+        self,
+        tracker_url: str,
+        torrent_info: TorrentInfo,
+    ) -> dict[str, int]:
         """Scrape statistics from a specific tracker."""
         try:
             async with aiohttp.ClientSession() as session:
@@ -403,7 +466,7 @@ class WebTorrentProtocol(Protocol):
     def _generate_peer_id(self) -> str:
         """Generate WebTorrent peer ID."""
         # WebTorrent uses a specific peer ID format
-        return f"-WT0001-{hashlib.sha1(str(time.time()).encode()).hexdigest()[:12]}"
+        return f"-WT0001-{hashlib.sha1(str(time.time()).encode()).hexdigest()[:12]}"  # nosec B324 - SHA-1 for peer ID generation, not security-sensitive
 
     def add_tracker(self, tracker_url: str) -> None:
         """Add WebTorrent tracker."""
@@ -415,11 +478,11 @@ class WebTorrentProtocol(Protocol):
         if tracker_url in self.tracker_urls:
             self.tracker_urls.remove(tracker_url)
 
-    def get_webrtc_connections(self) -> Dict[str, WebRTCConnection]:
+    def get_webrtc_connections(self) -> dict[str, WebRTCConnection]:
         """Get WebRTC connections."""
         return self.webrtc_connections.copy()
 
-    def get_connection_stats(self, peer_id: str) -> Optional[Dict[str, Any]]:
+    def get_connection_stats(self, peer_id: str) -> dict[str, Any] | None:
         """Get connection statistics for a peer."""
         if peer_id not in self.webrtc_connections:
             return None
@@ -435,7 +498,7 @@ class WebTorrentProtocol(Protocol):
             "bytes_received": connection.bytes_received,
         }
 
-    def get_all_connection_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_connection_stats(self) -> dict[str, dict[str, Any]]:
         """Get connection statistics for all peers."""
         stats = {}
 

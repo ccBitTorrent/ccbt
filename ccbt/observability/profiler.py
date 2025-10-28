@@ -1,5 +1,7 @@
 """Performance Profiler for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides comprehensive performance profiling including:
 - Function-level profiling
 - Async operation profiling
@@ -7,6 +9,8 @@ Provides comprehensive performance profiling including:
 - I/O operation profiling
 - Performance bottleneck detection
 """
+
+from __future__ import annotations
 
 import asyncio
 import cProfile
@@ -18,13 +22,14 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from ..events import Event, EventType, emit_event
+from ccbt.events import Event, EventType, emit_event
 
 
 class ProfileType(Enum):
     """Profile types."""
+
     FUNCTION = "function"
     ASYNC = "async"
     MEMORY = "memory"
@@ -35,6 +40,7 @@ class ProfileType(Enum):
 @dataclass
 class ProfileEntry:
     """Profile entry."""
+
     function_name: str
     module_name: str
     start_time: float
@@ -43,27 +49,29 @@ class ProfileEntry:
     memory_usage: int
     call_count: int
     profile_type: ProfileType
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class ProfileReport:
     """Profile report."""
+
     total_duration: float
     total_memory: int
     function_count: int
-    entries: List[ProfileEntry]
-    bottlenecks: List[ProfileEntry]
-    recommendations: List[str]
+    entries: list[ProfileEntry]
+    bottlenecks: list[ProfileEntry]
+    recommendations: list[str]
 
 
 class Profiler:
     """Performance profiler."""
 
     def __init__(self):
+        """Initialize profiler."""
         self.profile_entries: deque = deque(maxlen=10000)
-        self.active_profiles: Dict[str, ProfileEntry] = {}
-        self.profile_stats: Dict[str, Dict[str, Any]] = defaultdict(dict)
+        self.active_profiles: dict[str, ProfileEntry] = {}
+        self.profile_stats: dict[str, dict[str, Any]] = defaultdict(dict)
 
         # Configuration
         self.enabled = False
@@ -87,12 +95,17 @@ class Profiler:
         self.enabled = True
 
         # Emit profiling started event
-        asyncio.create_task(emit_event(Event(
-            event_type=EventType.PROFILING_STARTED.value,
-            data={
-                "timestamp": time.time(),
-            },
-        )))
+        task = asyncio.create_task(
+            emit_event(
+                Event(
+                    event_type=EventType.PROFILING_STARTED.value,
+                    data={
+                        "timestamp": time.time(),
+                    },
+                ),
+            ),
+        )
+        task.add_done_callback(lambda _t: None)  # Discard task reference
 
     def stop(self) -> None:
         """Stop profiling."""
@@ -103,16 +116,25 @@ class Profiler:
             self.end_profile(profile_id)
 
         # Emit profiling stopped event
-        asyncio.create_task(emit_event(Event(
-            event_type=EventType.PROFILING_STOPPED.value,
-            data={
-                "timestamp": time.time(),
-            },
-        )))
+        task = asyncio.create_task(
+            emit_event(
+                Event(
+                    event_type=EventType.PROFILING_STOPPED.value,
+                    data={
+                        "timestamp": time.time(),
+                    },
+                ),
+            ),
+        )
+        task.add_done_callback(lambda _t: None)  # Discard task reference
 
-    def start_profile(self, function_name: str, module_name: str = "",
-                     profile_type: ProfileType = ProfileType.FUNCTION,
-                     metadata: Optional[Dict[str, Any]] = None) -> str:
+    def start_profile(
+        self,
+        function_name: str,
+        module_name: str = "",
+        profile_type: ProfileType = ProfileType.FUNCTION,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
         """Start profiling a function."""
         if not self.enabled:
             return ""
@@ -140,7 +162,7 @@ class Profiler:
 
         return profile_id
 
-    def end_profile(self, profile_id: str) -> Optional[ProfileEntry]:
+    def end_profile(self, profile_id: str) -> ProfileEntry | None:
         """End profiling a function."""
         if profile_id not in self.active_profiles:
             return None
@@ -163,24 +185,33 @@ class Profiler:
                 self.stats["bottlenecks_detected"] += 1
 
                 # Emit bottleneck detected event
-                asyncio.create_task(emit_event(Event(
-                    event_type=EventType.BOTTLENECK_DETECTED.value,
-                    data={
-                        "function_name": entry.function_name,
-                        "module_name": entry.module_name,
-                        "duration": entry.duration,
-                        "memory_usage": entry.memory_usage,
-                        "timestamp": entry.end_time,
-                    },
-                )))
+                task = asyncio.create_task(
+                    emit_event(
+                        Event(
+                            event_type=EventType.BOTTLENECK_DETECTED.value,
+                            data={
+                                "function_name": entry.function_name,
+                                "module_name": entry.module_name,
+                                "duration": entry.duration,
+                                "memory_usage": entry.memory_usage,
+                                "timestamp": entry.end_time,
+                            },
+                        ),
+                    ),
+                )
+                task.add_done_callback(lambda _t: None)  # Discard task reference
 
         del self.active_profiles[profile_id]
         return entry
 
-    def profile_function(self, function_name: Optional[str] = None,
-                        module_name: Optional[str] = None,
-                        profile_type: ProfileType = ProfileType.FUNCTION):
+    def profile_function(
+        self,
+        function_name: str | None = None,
+        module_name: str | None = None,
+        profile_type: ProfileType = ProfileType.FUNCTION,
+    ):
         """Decorator for profiling functions."""
+
         def decorator(func):
             name = function_name or func.__name__
             module = module_name or func.__module__
@@ -189,19 +220,23 @@ class Profiler:
             def wrapper(*args, **kwargs):
                 profile_id = self.start_profile(name, module, profile_type)
                 try:
-                    result = func(*args, **kwargs)
-                    return result
+                    return func(*args, **kwargs)
                 finally:
                     if profile_id:
                         self.end_profile(profile_id)
 
             return wrapper
+
         return decorator
 
-    def profile_async_function(self, function_name: Optional[str] = None,
-                              module_name: Optional[str] = None,
-                              profile_type: ProfileType = ProfileType.ASYNC):
+    def profile_async_function(
+        self,
+        function_name: str | None = None,
+        module_name: str | None = None,
+        profile_type: ProfileType = ProfileType.ASYNC,
+    ):
         """Decorator for profiling async functions."""
+
         def decorator(func):
             name = function_name or func.__name__
             module = module_name or func.__module__
@@ -210,13 +245,13 @@ class Profiler:
             async def wrapper(*args, **kwargs):
                 profile_id = self.start_profile(name, module, profile_type)
                 try:
-                    result = await func(*args, **kwargs)
-                    return result
+                    return await func(*args, **kwargs)
                 finally:
                     if profile_id:
                         self.end_profile(profile_id)
 
             return wrapper
+
         return decorator
 
     def get_profile_report(self, limit: int = 100) -> ProfileReport:
@@ -227,7 +262,7 @@ class Profiler:
         # Calculate totals
         total_duration = sum(entry.duration for entry in recent_entries)
         total_memory = sum(entry.memory_usage for entry in recent_entries)
-        function_count = len(set(entry.function_name for entry in recent_entries))
+        function_count = len({entry.function_name for entry in recent_entries})
 
         # Find bottlenecks (top 10% by duration)
         sorted_entries = sorted(recent_entries, key=lambda x: x.duration, reverse=True)
@@ -246,10 +281,13 @@ class Profiler:
             recommendations=recommendations,
         )
 
-    def get_function_stats(self, function_name: str) -> Dict[str, Any]:
+    def get_function_stats(self, function_name: str) -> dict[str, Any]:
         """Get statistics for a specific function."""
-        function_entries = [entry for entry in self.profile_entries
-                           if entry.function_name == function_name]
+        function_entries = [
+            entry
+            for entry in self.profile_entries
+            if entry.function_name == function_name
+        ]
 
         if not function_entries:
             return {}
@@ -270,14 +308,20 @@ class Profiler:
             "max_memory": max(memory_usage),
         }
 
-    def get_top_functions(self, limit: int = 10, sort_by: str = "duration") -> List[Dict[str, Any]]:
+    def get_top_functions(
+        self,
+        limit: int = 10,
+        sort_by: str = "duration",
+    ) -> list[dict[str, Any]]:
         """Get top functions by specified metric."""
-        function_stats = defaultdict(lambda: {
-            "function_name": "",
-            "call_count": 0,
-            "total_duration": 0.0,
-            "total_memory": 0,
-        })
+        function_stats = defaultdict(
+            lambda: {
+                "function_name": "",
+                "call_count": 0,
+                "total_duration": 0.0,
+                "total_memory": 0,
+            },
+        )
 
         # Aggregate stats by function
         for entry in self.profile_entries:
@@ -296,7 +340,7 @@ class Profiler:
 
         return sorted_functions[:limit]
 
-    def get_profiler_statistics(self) -> Dict[str, Any]:
+    def get_profiler_statistics(self) -> dict[str, Any]:
         """Get profiler statistics."""
         return {
             "enabled": self.enabled,
@@ -323,6 +367,7 @@ class Profiler:
         """Get current memory usage."""
         try:
             import psutil
+
             process = psutil.Process()
             return process.memory_info().rss
         except ImportError:
@@ -334,8 +379,11 @@ class Profiler:
         # In production, this would be more sophisticated
         return entry.duration > 1.0  # 1 second threshold
 
-    def _generate_recommendations(self, entries: List[ProfileEntry],
-                                bottlenecks: List[ProfileEntry]) -> List[str]:
+    def _generate_recommendations(
+        self,
+        entries: list[ProfileEntry],
+        bottlenecks: list[ProfileEntry],
+    ) -> list[str]:
         """Generate performance recommendations."""
         recommendations = []
 
@@ -359,7 +407,9 @@ class Profiler:
         # Analyze bottlenecks
         if bottlenecks:
             bottleneck_functions = [b.function_name for b in bottlenecks]
-            recommendations.append(f"Focus on optimizing: {', '.join(bottleneck_functions)}")
+            recommendations.append(
+                f"Focus on optimizing: {', '.join(bottleneck_functions)}",
+            )
 
         return recommendations
 
@@ -368,6 +418,7 @@ class CPROfiler:
     """cProfile-based profiler."""
 
     def __init__(self):
+        """Initialize cProfile profiler."""
         self.profiler = cProfile.Profile()
         self.enabled = False
 
@@ -393,15 +444,15 @@ class CPROfiler:
 
         return s.getvalue()
 
-    def get_stats_dict(self) -> Dict[str, Any]:
+    def get_stats_dict(self) -> dict[str, Any]:
         """Get profiling statistics as dictionary."""
         if not self.enabled:
             return {}
 
         stats = pstats.Stats(self.profiler)
         return {
-            "total_calls": stats.total_calls,
-            "primitive_calls": stats.prim_calls,
-            "total_time": stats.total_tt,
-            "cumulative_time": stats.total_cumtime,
+            "total_calls": getattr(stats, "total_calls", 0),
+            "primitive_calls": getattr(stats, "prim_calls", 0),
+            "total_time": getattr(stats, "total_tt", 0.0),
+            "cumulative_time": getattr(stats, "total_cumtime", 0.0),
         }

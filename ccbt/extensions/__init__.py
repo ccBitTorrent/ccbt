@@ -1,5 +1,7 @@
 """BitTorrent protocol extensions.
 
+from __future__ import annotations
+
 Implements various BitTorrent protocol extensions including:
 - Fast Extension (BEP 6)
 - Extension Protocol (BEP 10)
@@ -9,11 +11,11 @@ Implements various BitTorrent protocol extensions including:
 - Compact Peer Lists (BEP 23)
 """
 
-from .dht import DHTExtension
-from .fast import FastExtension
-from .pex import PeerExchange
-from .protocol import ExtensionProtocol
-from .webseed import WebSeedExtension
+from ccbt.extensions.dht import DHTExtension
+from ccbt.extensions.fast import FastExtension
+from ccbt.extensions.pex import PeerExchange
+from ccbt.extensions.protocol import ExtensionProtocol
+from ccbt.extensions.webseed import WebSeedExtension
 
 __all__ = [
     "DHTExtension",

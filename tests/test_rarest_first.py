@@ -1,12 +1,12 @@
-"""
-Integration tests for rarest-first piece selection algorithm.
+"""Integration tests for rarest-first piece selection algorithm.
 
 Tests the correctness of the rarest-first algorithm and endgame mode
 in the async piece manager.
 """
 
+from __future__ import annotations
+
 import asyncio
-from typing import List
 from unittest.mock import Mock
 
 import pytest
@@ -78,13 +78,13 @@ class TestRarestFirstSelection:
 
         return peers
 
-    def _create_bitfield(self, pieces: List[int], num_pieces: int) -> bytes:
+    def _create_bitfield(self, pieces: list[int], num_pieces: int) -> bytes:
         """Create a bitfield with specified pieces set."""
         bitfield = bytearray((num_pieces + 7) // 8)
         for piece in pieces:
             byte_index = piece // 8
             bit_index = piece % 8
-            bitfield[byte_index] |= (1 << (7 - bit_index))
+            bitfield[byte_index] |= 1 << (7 - bit_index)
         return bytes(bitfield)
 
     @pytest.mark.asyncio

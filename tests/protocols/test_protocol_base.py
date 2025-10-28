@@ -1,8 +1,7 @@
-"""
-Tests for protocol base classes.
+"""Tests for protocol base classes.
 """
 
-from typing import Dict, List, Optional
+from __future__ import annotations
 
 import pytest
 
@@ -17,7 +16,7 @@ from ccbt.protocols.base import (
 )
 
 
-class TestProtocol(Protocol):
+class _TestProtocolImpl(Protocol):
     """Concrete implementation of Protocol for testing."""
 
     def __init__(self, protocol_type: ProtocolType):
@@ -52,23 +51,23 @@ class TestProtocol(Protocol):
             return True
         return False
 
-    async def receive_message(self, peer_id: str) -> Optional[bytes]:
+    async def receive_message(self, peer_id: str) -> bytes | None:
         """Receive message from peer."""
         if peer_id in self.active_connections:
             self.stats.messages_received += 1
             return b"test_message"
         return None
 
-    async def announce_torrent(self, torrent_info: TorrentInfo) -> List[PeerInfo]:
+    async def announce_torrent(self, torrent_info: TorrentInfo) -> list[PeerInfo]:
         """Announce torrent and get peers."""
         self.stats.announces += 1
         return [PeerInfo(ip="127.0.0.1", port=6881)]
 
-    async def scrape_torrent(self, torrent_info: TorrentInfo) -> Dict[str, int]:
+    async def scrape_torrent(self, torrent_info: TorrentInfo) -> dict[str, int]:
         """Scrape torrent statistics."""
         return {"seeders": 10, "leechers": 5, "completed": 100}
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         """Check protocol health."""
         return self.state in [ProtocolState.CONNECTED, ProtocolState.ACTIVE]
 
@@ -97,7 +96,7 @@ class TestProtocolBase:
 
     def test_protocol_creation(self):
         """Test protocol creation."""
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         assert protocol.protocol_type == ProtocolType.BITTORRENT
         assert protocol.state == ProtocolState.DISCONNECTED
@@ -108,7 +107,7 @@ class TestProtocolBase:
 
     def test_capabilities_management(self):
         """Test capabilities management."""
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         caps = protocol.get_capabilities()
         assert isinstance(caps, ProtocolCapabilities)
@@ -128,7 +127,7 @@ class TestProtocolBase:
 
     def test_stats_management(self):
         """Test statistics management."""
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         stats = protocol.get_stats()
         assert isinstance(stats, ProtocolStats)
@@ -136,7 +135,12 @@ class TestProtocolBase:
         assert stats.bytes_received == 0
 
         # Update stats
-        protocol.update_stats(bytes_sent=100, bytes_received=200, messages_sent=5, messages_received=3)
+        protocol.update_stats(
+            bytes_sent=100,
+            bytes_received=200,
+            messages_sent=5,
+            messages_received=3,
+        )
 
         updated_stats = protocol.get_stats()
         assert updated_stats.bytes_sent == 100
@@ -144,9 +148,10 @@ class TestProtocolBase:
         assert updated_stats.messages_sent == 5
         assert updated_stats.messages_received == 3
 
-    def test_peer_management(self, sample_peer_info):
+    @pytest.mark.asyncio
+    async def test_peer_management(self, sample_peer_info):
         """Test peer management."""
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         # Add peer
         protocol.add_peer(sample_peer_info)
@@ -169,9 +174,10 @@ class TestProtocolBase:
         assert sample_peer_info.ip not in protocol.active_connections
         assert not protocol.is_connected(sample_peer_info.ip)
 
-    def test_state_management(self):
+    @pytest.mark.asyncio
+    async def test_state_management(self):
         """Test state management."""
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         # Initial state
         assert protocol.get_state() == ProtocolState.DISCONNECTED
@@ -184,28 +190,29 @@ class TestProtocolBase:
         protocol.set_state(ProtocolState.ACTIVE)
         assert protocol.get_state() == ProtocolState.ACTIVE
 
-    def test_health_check(self):
+    @pytest.mark.asyncio
+    async def test_health_check(self):
         """Test health check."""
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         # Disconnected state
-        assert not protocol.health_check()
+        assert not await protocol.health_check()
 
         # Connected state
         protocol.set_state(ProtocolState.CONNECTED)
-        assert protocol.health_check()
+        assert await protocol.health_check()
 
         # Active state
         protocol.set_state(ProtocolState.ACTIVE)
-        assert protocol.health_check()
+        assert await protocol.health_check()
 
         # Error state
         protocol.set_state(ProtocolState.ERROR)
-        assert not protocol.health_check()
+        assert not await protocol.health_check()
 
     def test_protocol_info(self):
         """Test protocol information."""
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         info = protocol.get_protocol_info()
         assert isinstance(info, dict)
@@ -233,10 +240,11 @@ class TestProtocolManager:
         assert len(manager.active_protocols) == 0
         assert len(manager.protocol_stats) == 0
 
-    def test_register_protocol(self):
+    @pytest.mark.asyncio
+    async def test_register_protocol(self):
         """Test protocol registration."""
         manager = ProtocolManager()
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         manager.register_protocol(protocol)
 
@@ -244,21 +252,23 @@ class TestProtocolManager:
         assert ProtocolType.BITTORRENT in manager.protocols
         assert manager.protocols[ProtocolType.BITTORRENT] == protocol
 
-    def test_unregister_protocol(self):
+    @pytest.mark.asyncio
+    async def test_unregister_protocol(self):
         """Test protocol unregistration."""
         manager = ProtocolManager()
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         manager.register_protocol(protocol)
         assert len(manager.protocols) == 1
 
-        manager.unregister_protocol(ProtocolType.BITTORRENT)
+        await manager.unregister_protocol(ProtocolType.BITTORRENT)
         assert len(manager.protocols) == 0
 
-    def test_get_protocol(self):
+    @pytest.mark.asyncio
+    async def test_get_protocol(self):
         """Test getting protocol."""
         manager = ProtocolManager()
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         manager.register_protocol(protocol)
 
@@ -269,7 +279,8 @@ class TestProtocolManager:
         non_existent = manager.get_protocol(ProtocolType.WEBTORRENT)
         assert non_existent is None
 
-    def test_list_protocols(self):
+    @pytest.mark.asyncio
+    async def test_list_protocols(self):
         """Test listing protocols."""
         manager = ProtocolManager()
 
@@ -277,8 +288,8 @@ class TestProtocolManager:
         assert len(manager.list_protocols()) == 0
 
         # Add protocols
-        protocol1 = TestProtocol(ProtocolType.BITTORRENT)
-        protocol2 = TestProtocol(ProtocolType.WEBTORRENT)
+        protocol1 = _TestProtocolImpl(ProtocolType.BITTORRENT)
+        protocol2 = _TestProtocolImpl(ProtocolType.WEBTORRENT)
 
         manager.register_protocol(protocol1)
         manager.register_protocol(protocol2)
@@ -296,8 +307,8 @@ class TestProtocolManager:
         assert len(manager.list_active_protocols()) == 0
 
         # Add protocols
-        protocol1 = TestProtocol(ProtocolType.BITTORRENT)
-        protocol2 = TestProtocol(ProtocolType.WEBTORRENT)
+        protocol1 = _TestProtocolImpl(ProtocolType.BITTORRENT)
+        protocol2 = _TestProtocolImpl(ProtocolType.WEBTORRENT)
 
         manager.register_protocol(protocol1)
         manager.register_protocol(protocol2)
@@ -308,7 +319,7 @@ class TestProtocolManager:
     def test_get_protocol_statistics(self):
         """Test getting protocol statistics."""
         manager = ProtocolManager()
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         manager.register_protocol(protocol)
 
@@ -325,8 +336,8 @@ class TestProtocolManager:
     def test_get_combined_peers(self):
         """Test getting combined peers."""
         manager = ProtocolManager()
-        protocol1 = TestProtocol(ProtocolType.BITTORRENT)
-        protocol2 = TestProtocol(ProtocolType.WEBTORRENT)
+        protocol1 = _TestProtocolImpl(ProtocolType.BITTORRENT)
+        protocol2 = _TestProtocolImpl(ProtocolType.WEBTORRENT)
 
         manager.register_protocol(protocol1)
         manager.register_protocol(protocol2)
@@ -351,19 +362,20 @@ class TestProtocolManager:
         assert "192.168.1.1" in combined_peers
         assert "192.168.1.2" in combined_peers
 
-    def test_health_check_all(self):
+    @pytest.mark.asyncio
+    async def test_health_check_all(self):
         """Test health check for all protocols."""
         manager = ProtocolManager()
-        protocol = TestProtocol(ProtocolType.BITTORRENT)
+        protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
 
         manager.register_protocol(protocol)
 
         # Disconnected state
-        health_results = manager.health_check_all_sync()
+        health_results = await manager.health_check_all()
         assert ProtocolType.BITTORRENT in health_results
         assert not health_results[ProtocolType.BITTORRENT]
 
         # Connected state
         protocol.set_state(ProtocolState.CONNECTED)
-        health_results = manager.health_check_all_sync()
+        health_results = await manager.health_check_all()
         assert health_results[ProtocolType.BITTORRENT]

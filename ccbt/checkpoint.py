@@ -1,33 +1,39 @@
 """Checkpoint management for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides comprehensive checkpointing functionality for download resume,
-including JSON and binary formats, validation, and cleanup.
+including JSON and binary checkpoint_formats, validation, and cleanup.
 """
 
+from __future__ import annotations
+
 import asyncio
+import contextlib
 import gzip
 import json
 import struct
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     import msgpack  # type: ignore[import-not-found]
+
     HAS_MSGPACK = True
 except Exception:
     HAS_MSGPACK = False
     msgpack = None  # type: ignore[assignment]
 
-from .exceptions import (
+from ccbt.exceptions import (
     CheckpointCorruptedError,
     CheckpointError,
     CheckpointNotFoundError,
     CheckpointVersionError,
 )
-from .logging_config import get_logger
-from .models import (
+from ccbt.logging_config import get_logger
+from ccbt.models import (
     CheckpointFormat,
     DiskConfig,
     DownloadStats,
@@ -39,25 +45,26 @@ from .models import (
 
 @dataclass
 class CheckpointFileInfo:
-    """Information about a checkpoint file."""
+    """Incheckpoint_formation about a checkpoint file."""
+
     path: Path
     info_hash: bytes
     created_at: float
     updated_at: float
     size: int
-    format: CheckpointFormat
+    checkpoint_format: CheckpointFormat
 
 
 class CheckpointManager:
-    """Manages torrent download checkpoints with JSON and binary formats."""
+    """Manages torrent download checkpoints with JSON and binary checkpoint_formats."""
 
-    # Binary format constants
+    # Binary checkpoint_format constants
     MAGIC_BYTES = b"CCBT"
     VERSION = 1
 
-    def __init__(self, config: Optional[DiskConfig] = None):
+    def __init__(self, config: DiskConfig | None = None):
         """Initialize checkpoint manager.
-        
+
         Args:
             config: Disk configuration with checkpoint settings
         """
@@ -74,57 +81,77 @@ class CheckpointManager:
         # Ensure checkpoint directory exists
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-        self.logger.info(f"Checkpoint manager initialized with directory: {self.checkpoint_dir}")
+        self.logger.info(
+            "Checkpoint manager initialized with directory: %s",
+            self.checkpoint_dir,
+        )
 
-    def _get_checkpoint_path(self, info_hash: bytes, format: CheckpointFormat) -> Path:
-        """Get checkpoint file path for given info hash and format."""
+    def _get_checkpoint_path(
+        self, info_hash: bytes, checkpoint_format: CheckpointFormat
+    ) -> Path:
+        """Get checkpoint file path for given info hash and checkpoint_format."""
         info_hash_hex = info_hash.hex()
 
-        if format == CheckpointFormat.JSON:
+        if checkpoint_format == CheckpointFormat.JSON:
             return self.checkpoint_dir / f"{info_hash_hex}.checkpoint.json"
-        if format == CheckpointFormat.BINARY:
-            ext = ".checkpoint.bin.gz" if self.config.checkpoint_compression else ".checkpoint.bin"
+        if checkpoint_format == CheckpointFormat.BINARY:
+            ext = (
+                ".checkpoint.bin.gz"
+                if self.config.checkpoint_compression
+                else ".checkpoint.bin"
+            )
             return self.checkpoint_dir / f"{info_hash_hex}{ext}"
-        raise ValueError(f"Invalid checkpoint format: {format}")
+        msg = f"Invalid checkpoint checkpoint_format: {checkpoint_format}"
+        raise ValueError(msg)
 
-    async def save_checkpoint(self, checkpoint: TorrentCheckpoint,
-                            format: Optional[CheckpointFormat] = None) -> Path:
+    async def save_checkpoint(
+        self,
+        checkpoint: TorrentCheckpoint,
+        checkpoint_format: CheckpointFormat | None = None,
+    ) -> Path:
         """Save checkpoint to disk.
-        
+
         Args:
             checkpoint: Checkpoint data to save
-            format: Format to save in (uses config default if None)
-            
+            checkpoint_format: Format to save in (uses config default if None)
+
         Returns:
             Path to saved checkpoint file
-            
+
         Raises:
             CheckpointError: If saving fails
         """
         if not self.config.checkpoint_enabled:
-            raise CheckpointError("Checkpointing is disabled")
+            msg = "Checkpointing is disabled"
+            raise CheckpointError(msg)
 
-        format = format or self.config.checkpoint_format
+        checkpoint_format = checkpoint_format or self.config.checkpoint_format
 
         try:
-            if format == CheckpointFormat.JSON:
+            if checkpoint_format == CheckpointFormat.JSON:
                 return await self._save_json_checkpoint(checkpoint)
-            if format == CheckpointFormat.BINARY:
+            if checkpoint_format == CheckpointFormat.BINARY:
                 return await self._save_binary_checkpoint(checkpoint)
-            if format == CheckpointFormat.BOTH:
-                # Save both formats
+            if checkpoint_format == CheckpointFormat.BOTH:
+                # Save both checkpoint_formats
                 json_path = await self._save_json_checkpoint(checkpoint)
                 bin_path = await self._save_binary_checkpoint(checkpoint)
-                self.logger.debug(f"Saved checkpoint in both formats: {json_path}, {bin_path}")
+                self.logger.debug(
+                    "Saved checkpoint in both checkpoint_formats: %s, %s",
+                    json_path,
+                    bin_path,
+                )
                 return json_path  # Return JSON path as primary
-            raise ValueError(f"Invalid checkpoint format: {format}")
+            msg = f"Invalid checkpoint checkpoint_format: {checkpoint_format}"
+            raise ValueError(msg)
 
         except Exception as e:
-            self.logger.error(f"Failed to save checkpoint: {e}")
-            raise CheckpointError(f"Failed to save checkpoint: {e}")
+            self.logger.exception("Failed to save checkpoint")
+            msg = f"Failed to save checkpoint: {e}"
+            raise CheckpointError(msg) from e
 
     async def _save_json_checkpoint(self, checkpoint: TorrentCheckpoint) -> Path:
-        """Save checkpoint in JSON format."""
+        """Save checkpoint in JSON checkpoint_format."""
         path = self._get_checkpoint_path(checkpoint.info_hash, CheckpointFormat.JSON)
 
         # Update timestamp
@@ -160,13 +187,14 @@ class CheckpointManager:
 
         await asyncio.get_event_loop().run_in_executor(None, _write_json)
 
-        self.logger.debug(f"Saved JSON checkpoint: {path}")
+        self.logger.debug("Saved JSON checkpoint: %s", path)
         return path
 
     async def _save_binary_checkpoint(self, checkpoint: TorrentCheckpoint) -> Path:
-        """Save checkpoint in binary format."""
+        """Save checkpoint in binary checkpoint_format."""
         if not HAS_MSGPACK:
-            raise CheckpointError("msgpack is required for binary checkpoint format")
+            msg = "msgpack is required for binary checkpoint checkpoint_format"
+            raise CheckpointError(msg)
 
         path = self._get_checkpoint_path(checkpoint.info_hash, CheckpointFormat.BINARY)
 
@@ -180,7 +208,9 @@ class CheckpointManager:
                 f.write(self.MAGIC_BYTES)  # 4 bytes
                 f.write(struct.pack("B", self.VERSION))  # 1 byte
                 f.write(checkpoint.info_hash)  # 20 bytes
-                f.write(struct.pack("Q", int(checkpoint.updated_at)))  # 8 bytes timestamp
+                f.write(
+                    struct.pack("Q", int(checkpoint.updated_at)),
+                )  # 8 bytes timestamp
                 f.write(struct.pack("I", checkpoint.total_pieces))  # 4 bytes
 
                 # Write verified pieces bitfield
@@ -188,7 +218,7 @@ class CheckpointManager:
                 for piece_idx in checkpoint.verified_pieces:
                     byte_idx = piece_idx // 8
                     bit_idx = piece_idx % 8
-                    bitfield[byte_idx] |= (1 << (7 - bit_idx))
+                    bitfield[byte_idx] |= 1 << (7 - bit_idx)
                 f.write(bitfield)
 
                 # Write metadata as msgpack
@@ -196,7 +226,9 @@ class CheckpointManager:
                     "torrent_name": checkpoint.torrent_name,
                     "piece_length": checkpoint.piece_length,
                     "total_length": checkpoint.total_length,
-                    "piece_states": {str(k): v.value for k, v in checkpoint.piece_states.items()},
+                    "piece_states": {
+                        str(k): v.value for k, v in checkpoint.piece_states.items()
+                    },
                     "download_stats": checkpoint.download_stats.model_dump(),
                     "output_dir": checkpoint.output_dir,
                     "files": [f.model_dump() for f in checkpoint.files],
@@ -209,7 +241,10 @@ class CheckpointManager:
                 }
 
                 if not HAS_MSGPACK or msgpack is None:
-                    raise CheckpointError("msgpack not available for binary checkpoint write")
+                    msg = "msgpack not available for binary checkpoint write"
+                    raise CheckpointError(
+                        msg,
+                    )
                 metadata_bytes = msgpack.packb(metadata)  # type: ignore[attr-defined]
                 f.write(struct.pack("I", len(metadata_bytes)))  # 4 bytes length
                 f.write(metadata_bytes)
@@ -217,9 +252,8 @@ class CheckpointManager:
         if self.config.checkpoint_compression:
             # Compress the binary data
             def _write_compressed():
-                with open(path, "wb") as f:
-                    with gzip.GzipFile(fileobj=f, mode="wb") as gz:
-                        _write_binary_data(gz)
+                with open(path, "wb") as f, gzip.GzipFile(fileobj=f, mode="wb") as gz:
+                    _write_binary_data(gz)
 
             def _write_binary_data(f):
                 f.write(self.MAGIC_BYTES)
@@ -232,14 +266,16 @@ class CheckpointManager:
                 for piece_idx in checkpoint.verified_pieces:
                     byte_idx = piece_idx // 8
                     bit_idx = piece_idx % 8
-                    bitfield[byte_idx] |= (1 << (7 - bit_idx))
+                    bitfield[byte_idx] |= 1 << (7 - bit_idx)
                 f.write(bitfield)
 
                 metadata = {
                     "torrent_name": checkpoint.torrent_name,
                     "piece_length": checkpoint.piece_length,
                     "total_length": checkpoint.total_length,
-                    "piece_states": {str(k): v.value for k, v in checkpoint.piece_states.items()},
+                    "piece_states": {
+                        str(k): v.value for k, v in checkpoint.piece_states.items()
+                    },
                     "download_stats": checkpoint.download_stats.model_dump(),
                     "output_dir": checkpoint.output_dir,
                     "files": [f.model_dump() for f in checkpoint.files],
@@ -252,7 +288,10 @@ class CheckpointManager:
                 }
 
                 if not HAS_MSGPACK or msgpack is None:
-                    raise CheckpointError("msgpack not available for binary checkpoint write")
+                    msg = "msgpack not available for binary checkpoint write"
+                    raise CheckpointError(
+                        msg,
+                    )
                 metadata_bytes = msgpack.packb(metadata)  # type: ignore[attr-defined]
                 f.write(struct.pack("I", len(metadata_bytes)))
                 f.write(metadata_bytes)
@@ -261,60 +300,76 @@ class CheckpointManager:
         else:
             await asyncio.get_event_loop().run_in_executor(None, _write_binary)
 
-        self.logger.debug(f"Saved binary checkpoint: {path}")
+        self.logger.debug("Saved binary checkpoint: %s", path)
         return path
 
-    async def load_checkpoint(self, info_hash: bytes,
-                            format: Optional[CheckpointFormat] = None) -> Optional[TorrentCheckpoint]:
+    async def load_checkpoint(
+        self,
+        info_hash: bytes,
+        checkpoint_format: CheckpointFormat | None = None,
+    ) -> TorrentCheckpoint | None:
         """Load checkpoint from disk.
-        
+
         Args:
             info_hash: Torrent info hash
-            format: Format to load (tries both if None)
-            
+            checkpoint_format: Format to load (tries both if None)
+
         Returns:
             Loaded checkpoint or None if not found
-            
+
         Raises:
             CheckpointError: If loading fails
         """
         if not self.config.checkpoint_enabled:
             return None
 
-        format = format or self.config.checkpoint_format
+        checkpoint_format = checkpoint_format or self.config.checkpoint_format
 
         try:
-            if format == CheckpointFormat.JSON:
+            if checkpoint_format == CheckpointFormat.JSON:
                 return await self._load_json_checkpoint(info_hash)
-            if format == CheckpointFormat.BINARY:
+            if checkpoint_format == CheckpointFormat.BINARY:
                 return await self._load_binary_checkpoint(info_hash)
-            if format == CheckpointFormat.BOTH:
+            if checkpoint_format == CheckpointFormat.BOTH:
                 # Try JSON first, then binary
                 checkpoint = await self._load_json_checkpoint(info_hash)
                 if checkpoint is None:
                     checkpoint = await self._load_binary_checkpoint(info_hash)
                 return checkpoint
-            raise ValueError(f"Invalid checkpoint format: {format}")
+            msg = f"Invalid checkpoint checkpoint_format: {checkpoint_format}"
+            raise ValueError(msg)
 
         except CheckpointNotFoundError:
             return None
         except Exception as e:
-            self.logger.error(f"Failed to load checkpoint: {e}")
-            raise CheckpointError(f"Failed to load checkpoint: {e}")
+            self.logger.exception("Failed to load checkpoint")
+            msg = f"Failed to load checkpoint: {e}"
+            raise CheckpointError(msg) from e
 
-    async def _load_json_checkpoint(self, info_hash: bytes) -> Optional[TorrentCheckpoint]:
-        """Load checkpoint from JSON format."""
+    async def _load_json_checkpoint(
+        self,
+        info_hash: bytes,
+    ) -> TorrentCheckpoint | None:
+        """Load checkpoint from JSON checkpoint_format."""
         path = self._get_checkpoint_path(info_hash, CheckpointFormat.JSON)
 
         if not path.exists():
-            raise CheckpointNotFoundError(f"JSON checkpoint not found: {path}")
+            msg = f"JSON checkpoint not found: {path}"
+            raise CheckpointNotFoundError(msg)
 
         def _read_json():
             with open(path, encoding="utf-8") as f:
-                return json.load(f)
+                content = f.read().strip()
+                if not content:
+                    msg = "Checkpoint file is empty"
+                    raise CheckpointCorruptedError(msg)
+                return json.loads(content)
 
         try:
-            checkpoint_dict = await asyncio.get_event_loop().run_in_executor(None, _read_json)
+            checkpoint_dict = await asyncio.get_event_loop().run_in_executor(
+                None,
+                _read_json,
+            )
 
             # Convert hex string back to bytes
             checkpoint_dict["info_hash"] = bytes.fromhex(checkpoint_dict["info_hash"])
@@ -322,31 +377,44 @@ class CheckpointManager:
             # Convert string values back to PieceState enums
             if "piece_states" in checkpoint_dict:
                 checkpoint_dict["piece_states"] = {
-                    int(k): PieceState(v) for k, v in checkpoint_dict["piece_states"].items()
+                    int(k): PieceState(v)
+                    for k, v in checkpoint_dict["piece_states"].items()
                 }
 
             # Validate version
             if checkpoint_dict.get("version", "1.0") != "1.0":
-                raise CheckpointVersionError(f"Incompatible checkpoint version: {checkpoint_dict.get('version')}")
+                msg = (
+                    f"Incompatible checkpoint version: {checkpoint_dict.get('version')}"
+                )
+                raise CheckpointVersionError(
+                    msg,
+                )
 
             checkpoint = TorrentCheckpoint(**checkpoint_dict)
-            self.logger.debug(f"Loaded JSON checkpoint: {path}")
+            self.logger.debug("Loaded JSON checkpoint: %s", path)
+        except json.JSONDecodeError as e:
+            msg = f"Invalid JSON in checkpoint file: {e}"
+            raise CheckpointCorruptedError(msg) from e
+        except Exception as e:
+            msg = f"Failed to parse checkpoint: {e}"
+            raise CheckpointCorruptedError(msg) from e
+        else:
             return checkpoint
 
-        except json.JSONDecodeError as e:
-            raise CheckpointCorruptedError(f"Invalid JSON in checkpoint file: {e}")
-        except Exception as e:
-            raise CheckpointCorruptedError(f"Failed to parse checkpoint: {e}")
-
-    async def _load_binary_checkpoint(self, info_hash: bytes) -> Optional[TorrentCheckpoint]:
-        """Load checkpoint from binary format."""
+    async def _load_binary_checkpoint(
+        self,
+        info_hash: bytes,
+    ) -> TorrentCheckpoint | None:
+        """Load checkpoint from binary checkpoint_format."""
         if not HAS_MSGPACK:
-            raise CheckpointError("msgpack is required for binary checkpoint format")
+            msg = "msgpack is required for binary checkpoint checkpoint_format"
+            raise CheckpointError(msg)
 
         path = self._get_checkpoint_path(info_hash, CheckpointFormat.BINARY)
 
         if not path.exists():
-            raise CheckpointNotFoundError(f"Binary checkpoint not found: {path}")
+            msg = f"Binary checkpoint not found: {path}"
+            raise CheckpointNotFoundError(msg)
 
         def _read_binary():
             with open(path, "rb") as f:
@@ -360,15 +428,20 @@ class CheckpointManager:
             # Read header
             magic = f.read(4)
             if magic != self.MAGIC_BYTES:
-                raise CheckpointCorruptedError("Invalid magic bytes in checkpoint file")
+                msg = "Invalid magic bytes in checkpoint file"
+                raise CheckpointCorruptedError(msg)
 
             version = struct.unpack("B", f.read(1))[0]
             if version != self.VERSION:
-                raise CheckpointVersionError(f"Incompatible checkpoint version: {version}")
+                msg = f"Incompatible checkpoint version: {version}"
+                raise CheckpointVersionError(
+                    msg,
+                )
 
             file_info_hash = f.read(20)
             if file_info_hash != info_hash:
-                raise CheckpointCorruptedError("Info hash mismatch in checkpoint file")
+                msg = "Info hash mismatch in checkpoint file"
+                raise CheckpointCorruptedError(msg)
 
             timestamp = struct.unpack("Q", f.read(8))[0]
             total_pieces = struct.unpack("I", f.read(4))[0]
@@ -389,7 +462,10 @@ class CheckpointManager:
             metadata_len = struct.unpack("I", f.read(4))[0]
             metadata_bytes = f.read(metadata_len)
             if not HAS_MSGPACK or msgpack is None:
-                raise CheckpointError("msgpack not available for binary checkpoint read")
+                msg = "msgpack not available for binary checkpoint read"
+                raise CheckpointError(
+                    msg,
+                )
             metadata = msgpack.unpackb(metadata_bytes, raw=False)  # type: ignore[attr-defined]
 
             # Convert string values back to PieceState enums
@@ -414,34 +490,40 @@ class CheckpointManager:
             }
 
             # Add required fields from metadata
-            checkpoint_dict.update({
-                "torrent_name": metadata.get("torrent_name", "Unknown"),
-                "piece_length": metadata.get("piece_length", 0),
-                "total_length": metadata.get("total_length", 0),
-                "output_dir": metadata.get("output_dir", "."),
-                "torrent_file_path": metadata.get("torrent_file_path"),
-                "magnet_uri": metadata.get("magnet_uri"),
-                "announce_urls": metadata.get("announce_urls", []),
-                "display_name": metadata.get("display_name"),
-            })
+            checkpoint_dict.update(
+                {
+                    "torrent_name": metadata.get("torrent_name", "Unknown"),
+                    "piece_length": metadata.get("piece_length", 0),
+                    "total_length": metadata.get("total_length", 0),
+                    "output_dir": metadata.get("output_dir", "."),
+                    "torrent_file_path": metadata.get("torrent_file_path"),
+                    "magnet_uri": metadata.get("magnet_uri"),
+                    "announce_urls": metadata.get("announce_urls", []),
+                    "display_name": metadata.get("display_name"),
+                },
+            )
 
             return checkpoint_dict
 
         try:
-            checkpoint_dict = await asyncio.get_event_loop().run_in_executor(None, _read_binary)
+            checkpoint_dict = await asyncio.get_event_loop().run_in_executor(
+                None,
+                _read_binary,
+            )
             checkpoint = TorrentCheckpoint(**checkpoint_dict)
-            self.logger.debug(f"Loaded binary checkpoint: {path}")
-            return checkpoint
-
+            self.logger.debug("Loaded binary checkpoint: %s", path)
         except Exception as e:
-            raise CheckpointCorruptedError(f"Failed to parse binary checkpoint: {e}")
+            msg = f"Failed to parse binary checkpoint: {e}"
+            raise CheckpointCorruptedError(msg) from e
+        else:
+            return checkpoint
 
     async def delete_checkpoint(self, info_hash: bytes) -> bool:
         """Delete checkpoint files for given info hash.
-        
+
         Args:
             info_hash: Torrent info hash
-            
+
         Returns:
             True if any files were deleted, False otherwise
         """
@@ -452,22 +534,22 @@ class CheckpointManager:
         if json_path.exists():
             json_path.unlink()
             deleted = True
-            self.logger.debug(f"Deleted JSON checkpoint: {json_path}")
+            self.logger.debug("Deleted JSON checkpoint: %s", json_path)
 
         # Delete binary checkpoint
         bin_path = self._get_checkpoint_path(info_hash, CheckpointFormat.BINARY)
         if bin_path.exists():
             bin_path.unlink()
             deleted = True
-            self.logger.debug(f"Deleted binary checkpoint: {bin_path}")
+            self.logger.debug("Deleted binary checkpoint: %s", bin_path)
 
         return deleted
 
-    async def list_checkpoints(self) -> List[CheckpointFileInfo]:
+    async def list_checkpoints(self) -> list[CheckpointFileInfo]:
         """List all available checkpoints.
-        
+
         Returns:
-            List of checkpoint file information
+            List of checkpoint file incheckpoint_formation
         """
         checkpoints = []
 
@@ -484,66 +566,78 @@ class CheckpointManager:
                 else:
                     continue
 
-                # Determine format
+                # Determine checkpoint_format
                 if file_path.suffix == ".json":
-                    format_type = CheckpointFormat.JSON
+                    checkpoint_format_type = CheckpointFormat.JSON
                 elif file_path.suffix in [".bin", ".gz"]:
-                    format_type = CheckpointFormat.BINARY
+                    checkpoint_format_type = CheckpointFormat.BINARY
                 else:
                     continue
 
                 stat = file_path.stat()
-                checkpoints.append(CheckpointFileInfo(
-                    path=file_path,
-                    info_hash=info_hash,
-                    created_at=stat.st_ctime,
-                    updated_at=stat.st_mtime,
-                    size=stat.st_size,
-                    format=format_type,
-                ))
+                checkpoints.append(
+                    CheckpointFileInfo(
+                        path=file_path,
+                        info_hash=info_hash,
+                        created_at=stat.st_ctime,
+                        updated_at=stat.st_mtime,
+                        size=stat.st_size,
+                        checkpoint_format=checkpoint_format_type,
+                    ),
+                )
 
             except Exception as e:
-                self.logger.warning(f"Failed to process checkpoint file {file_path}: {e}")
+                self.logger.warning(
+                    "Failed to process checkpoint file %s: %s",
+                    file_path,
+                    e,
+                )
                 continue
 
         return sorted(checkpoints, key=lambda x: x.updated_at, reverse=True)
-    
+
     async def verify_checkpoint(self, info_hash: bytes) -> bool:
         """Verify that a checkpoint exists and is structurally valid."""
         cp = await self.load_checkpoint(info_hash)
         if cp is None:
             return False
         # basic invariants
-        if len(cp.verified_pieces) > cp.total_pieces:
-            return False
-        return True
-    
+        return not len(cp.verified_pieces) > cp.total_pieces
+
     async def export_checkpoint(self, info_hash: bytes, fmt: str = "json") -> bytes:
-        """Export checkpoint in the desired format and return bytes."""
+        """Export checkpoint in the desired checkpoint_format and return bytes."""
         cp = await self.load_checkpoint(info_hash)
         if cp is None:
-            raise CheckpointNotFoundError(f"No checkpoint for {info_hash.hex()}")
+            msg = f"No checkpoint for {info_hash.hex()}"
+            raise CheckpointNotFoundError(msg)
         fmt = (fmt or "json").lower()
         if fmt == "json":
             cp_dict = cp.model_dump()
-            cp_dict['info_hash'] = cp.info_hash.hex()
-            return json.dumps(cp_dict, indent=2).encode('utf-8')
-        elif fmt == "binary":
+            cp_dict["info_hash"] = cp.info_hash.hex()
+            return json.dumps(cp_dict, indent=2).encode("utf-8")
+        if fmt == "binary":
             # Save to temp path using binary writer and read back
             path = await self._save_binary_checkpoint(cp)
-            data = path.read_bytes()
-            return data
-        else:
-            raise CheckpointError(f"Unsupported export format: {fmt}")
-    
-    async def backup_checkpoint(self, info_hash: bytes, destination: Path, *, compress: bool = True, encrypt: bool = False) -> Path:
+            return path.read_bytes()
+        msg = f"Unsupported export checkpoint_format: {fmt}"
+        raise CheckpointError(msg)
+
+    async def backup_checkpoint(
+        self,
+        info_hash: bytes,
+        destination: Path,
+        *,
+        compress: bool = True,
+        encrypt: bool = False,
+    ) -> Path:
         """Create a portable backup of the checkpoint at destination.
 
-        Backup format is JSON optionally gzipped and optionally encrypted if cryptography is available.
+        Backup checkpoint_format is JSON optionally gzipped and optionally encrypted if cryptography is available.
         """
         cp = await self.load_checkpoint(info_hash)
         if cp is None:
-            raise CheckpointNotFoundError(f"No checkpoint for {info_hash.hex()}")
+            msg = f"No checkpoint for {info_hash.hex()}"
+            raise CheckpointNotFoundError(msg)
 
         # Serialize JSON
         data = await self.export_checkpoint(info_hash, fmt="json")
@@ -555,9 +649,12 @@ class CheckpointManager:
         # Optional encryption
         if encrypt:
             try:
-                from cryptography.fernet import Fernet  # type: ignore
+                from cryptography.fernet import Fernet  # type: ignore[import-untyped]
             except Exception:
-                raise CheckpointError("Encryption requested but cryptography is not installed")
+                msg = "Encryption requested but cryptography is not installed"
+                raise CheckpointError(
+                    msg,
+                ) from None
             key_path = destination.with_suffix(destination.suffix + ".key")
             key = Fernet.generate_key()
             f = Fernet(key)
@@ -566,54 +663,62 @@ class CheckpointManager:
 
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
-        self.logger.info(f"Wrote checkpoint backup to {destination}")
+        self.logger.info("Wrote checkpoint backup to %s", destination)
         return destination
 
-    async def restore_checkpoint(self, backup_file: Path, *, info_hash: Optional[bytes] = None) -> TorrentCheckpoint:
+    async def restore_checkpoint(
+        self,
+        backup_file: Path,
+        *,
+        info_hash: bytes | None = None,
+    ) -> TorrentCheckpoint:
         """Restore a checkpoint from a backup file. Returns the restored checkpoint model."""
         data = backup_file.read_bytes()
         # Try decrypt if a .key file exists
         key_file = backup_file.with_suffix(backup_file.suffix + ".key")
         if key_file.exists():
             try:
-                from cryptography.fernet import Fernet  # type: ignore
+                from cryptography.fernet import Fernet  # type: ignore[import-untyped]
+
                 key = key_file.read_bytes()
                 f = Fernet(key)
                 data = f.decrypt(data)
             except Exception as e:
-                raise CheckpointError(f"Failed to decrypt backup: {e}")
+                msg = f"Failed to decrypt backup: {e}"
+                raise CheckpointError(msg) from e
 
         # Try decompress
-        try:
+        with contextlib.suppress(OSError):
             data = gzip.decompress(data)
-        except OSError:
-            # Not compressed, proceed
-            pass
 
         try:
-            cp_dict = json.loads(data.decode('utf-8'))
+            cp_dict = json.loads(data.decode("utf-8"))
         except Exception as e:
-            raise CheckpointError(f"Invalid backup content: {e}")
+            msg = f"Invalid backup content: {e}"
+            raise CheckpointError(msg) from e
 
         # Convert back types
-        cp_dict['info_hash'] = bytes.fromhex(cp_dict['info_hash'])
-        if info_hash and cp_dict['info_hash'] != info_hash:
-            raise CheckpointError("Backup info hash does not match provided info hash")
-        if 'piece_states' in cp_dict:
-            cp_dict['piece_states'] = {int(k): PieceState(v) for k, v in cp_dict['piece_states'].items()}
+        cp_dict["info_hash"] = bytes.fromhex(cp_dict["info_hash"])
+        if info_hash and cp_dict["info_hash"] != info_hash:
+            msg = "Backup info hash does not match provided info hash"
+            raise CheckpointError(msg)
+        if "piece_states" in cp_dict:
+            cp_dict["piece_states"] = {
+                int(k): PieceState(v) for k, v in cp_dict["piece_states"].items()
+            }
 
         cp = TorrentCheckpoint(**cp_dict)
 
-        # Save to disk using configured format(s)
+        # Save to disk using configured checkpoint_format(s)
         await self.save_checkpoint(cp, self.config.checkpoint_format)
         return cp
 
     async def cleanup_old_checkpoints(self, max_age_days: int = 30) -> int:
         """Clean up old checkpoint files.
-        
+
         Args:
             max_age_days: Maximum age in days before cleanup
-            
+
         Returns:
             Number of files deleted
         """
@@ -628,37 +733,41 @@ class CheckpointManager:
                 if file_path.stat().st_mtime < cutoff_time:
                     file_path.unlink()
                     deleted_count += 1
-                    self.logger.debug(f"Cleaned up old checkpoint: {file_path}")
+                    self.logger.debug("Cleaned up old checkpoint: %s", file_path)
             except Exception as e:
-                self.logger.warning(f"Failed to cleanup checkpoint {file_path}: {e}")
+                self.logger.warning("Failed to cleanup checkpoint %s: %s", file_path, e)
 
         if deleted_count > 0:
-            self.logger.info(f"Cleaned up {deleted_count} old checkpoint files")
+            self.logger.info("Cleaned up %s old checkpoint files", deleted_count)
 
         return deleted_count
 
-    async def convert_checkpoint_format(self, info_hash: bytes,
-                                      from_format: CheckpointFormat,
-                                      to_format: CheckpointFormat) -> Path:
-        """Convert checkpoint between formats.
-        
+    async def convert_checkpoint_checkpoint_format(
+        self,
+        info_hash: bytes,
+        from_checkpoint_format: CheckpointFormat,
+        to_checkpoint_format: CheckpointFormat,
+    ) -> Path:
+        """Convert checkpoint between checkpoint_formats.
+
         Args:
             info_hash: Torrent info hash
-            from_format: Source format
-            to_format: Target format
-            
+            from_checkpoint_format: Source checkpoint_format
+            to_checkpoint_format: Target checkpoint_format
+
         Returns:
             Path to converted checkpoint file
         """
-        # Load from source format
-        checkpoint = await self.load_checkpoint(info_hash, from_format)
+        # Load from source checkpoint_format
+        checkpoint = await self.load_checkpoint(info_hash, from_checkpoint_format)
         if checkpoint is None:
-            raise CheckpointNotFoundError(f"No checkpoint found for {info_hash.hex()}")
+            msg = f"No checkpoint found for {info_hash.hex()}"
+            raise CheckpointNotFoundError(msg)
 
-        # Save in target format
-        return await self.save_checkpoint(checkpoint, to_format)
+        # Save in target checkpoint_format
+        return await self.save_checkpoint(checkpoint, to_checkpoint_format)
 
-    def get_checkpoint_stats(self) -> Dict[str, Any]:
+    def get_checkpoint_stats(self) -> dict[str, Any]:
         """Get checkpoint directory statistics."""
         if not self.checkpoint_dir.exists():
             return {
@@ -688,3 +797,32 @@ class CheckpointManager:
             "oldest_checkpoint": oldest_checkpoint,
             "newest_checkpoint": newest_checkpoint,
         }
+
+    async def convert_checkpoint_format(
+        self,
+        info_hash: bytes,
+        from_format: CheckpointFormat,
+        to_format: CheckpointFormat,
+    ) -> Path:
+        """Convert checkpoint from one format to another.
+
+        Args:
+            info_hash: Info hash of the checkpoint
+            from_format: Source format
+            to_format: Target format
+
+        Returns:
+            Path to the converted checkpoint file
+
+        Raises:
+            CheckpointNotFoundError: If source checkpoint doesn't exist
+            CheckpointError: If conversion fails
+        """
+        # Load checkpoint from source format
+        checkpoint = await self.load_checkpoint(info_hash, from_format)
+        if checkpoint is None:
+            msg = f"Checkpoint not found for info hash {info_hash.hex()}"
+            raise CheckpointNotFoundError(msg)
+
+        # Save checkpoint in target format
+        return await self.save_checkpoint(checkpoint, to_format)

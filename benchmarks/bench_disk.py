@@ -4,14 +4,17 @@ Tests the performance of async disk I/O operations including
 preallocation, write batching, mmap, and hash verification.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
+import contextlib
 import hashlib
 import os
 import statistics
 import tempfile
 import time
-from typing import Any, Dict
+from typing import Any
 
 from ccbt.config import get_config
 from ccbt.disk_io import (
@@ -27,7 +30,7 @@ class DiskIOBenchmark:
         self.results = {}
         self.temp_files = []
 
-    async def setup_benchmark(self) -> Dict[str, Any]:
+    async def setup_benchmark(self) -> dict[str, Any]:
         """Set up benchmark environment."""
         # Create disk I/O manager
         disk_io = DiskIOManager(asyncio.get_event_loop(), self.config)
@@ -37,16 +40,14 @@ class DiskIOBenchmark:
             "disk_io": disk_io,
         }
 
-    async def cleanup_benchmark(self, setup_data: Dict[str, Any]):
+    async def cleanup_benchmark(self, setup_data: dict[str, Any]):
         """Clean up benchmark environment."""
         await setup_data["disk_io"].stop()
 
         # Clean up temp files
         for temp_file in self.temp_files:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 os.unlink(temp_file)
-            except FileNotFoundError:
-                pass
 
     def create_temp_file(self, size: int) -> str:
         """Create temporary file for benchmarking."""
@@ -56,7 +57,10 @@ class DiskIOBenchmark:
         self.temp_files.append(temp_path)
         return temp_path
 
-    async def benchmark_preallocation(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_preallocation(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark file preallocation performance."""
         disk_io = setup_data["disk_io"]
 
@@ -75,7 +79,7 @@ class DiskIOBenchmark:
             duration = end_time - start_time
             speed_mb_s = (size / 1024 / 1024) / duration
 
-            results[f"{size // (1024*1024)}MB"] = {
+            results[f"{size // (1024 * 1024)}MB"] = {
                 "duration": duration,
                 "speed_mb_s": speed_mb_s,
                 "size_mb": size / 1024 / 1024,
@@ -83,7 +87,10 @@ class DiskIOBenchmark:
 
         return results
 
-    async def benchmark_write_performance(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_write_performance(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark write performance with different strategies."""
         disk_io = setup_data["disk_io"]
 
@@ -108,7 +115,7 @@ class DiskIOBenchmark:
             start_time = time.time()
 
             for i in range(0, data_size, batch_size):
-                chunk = test_data[i:i + batch_size]
+                chunk = test_data[i : i + batch_size]
                 await disk_io.write_block(temp_file, i, chunk)
 
             end_time = time.time()
@@ -125,7 +132,10 @@ class DiskIOBenchmark:
 
         return results
 
-    async def benchmark_read_performance(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_read_performance(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark read performance with mmap vs regular reads."""
         disk_io = setup_data["disk_io"]
 
@@ -141,7 +151,7 @@ class DiskIOBenchmark:
         for read_size in read_sizes:
             # Benchmark regular read
             start_time = time.time()
-            read_data = await disk_io.read_block(temp_file, 0, read_size)
+            await disk_io.read_block(temp_file, 0, read_size)
             end_time = time.time()
 
             regular_read_time = end_time - start_time
@@ -149,7 +159,7 @@ class DiskIOBenchmark:
 
             # Benchmark mmap read
             start_time = time.time()
-            mmap_data = await disk_io.read_block_mmap(temp_file, 0, read_size)
+            await disk_io.read_block_mmap(temp_file, 0, read_size)
             end_time = time.time()
 
             mmap_read_time = end_time - start_time
@@ -164,7 +174,10 @@ class DiskIOBenchmark:
 
         return results
 
-    async def benchmark_hash_verification(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_hash_verification(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark hash verification performance."""
         disk_io = setup_data["disk_io"]
 
@@ -186,7 +199,7 @@ class DiskIOBenchmark:
             read_data = await disk_io.read_block_mmap(temp_file, 0, piece_size)
             hasher = hashlib.sha1()
             hasher.update(read_data)
-            hash_result = hasher.digest()
+            hasher.digest()
 
             end_time = time.time()
 
@@ -201,7 +214,10 @@ class DiskIOBenchmark:
 
         return results
 
-    async def benchmark_concurrent_operations(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_concurrent_operations(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark concurrent disk operations."""
         disk_io = setup_data["disk_io"]
 
@@ -224,7 +240,9 @@ class DiskIOBenchmark:
         end_time = time.time()
 
         concurrent_write_time = end_time - start_time
-        concurrent_write_speed = (num_files * 1024 * 1024) / concurrent_write_time / 1024 / 1024  # MB/s
+        concurrent_write_speed = (
+            (num_files * 1024 * 1024) / concurrent_write_time / 1024 / 1024
+        )  # MB/s
 
         # Benchmark concurrent reads
         start_time = time.time()
@@ -240,7 +258,9 @@ class DiskIOBenchmark:
         end_time = time.time()
 
         concurrent_read_time = end_time - start_time
-        concurrent_read_speed = (num_files * 1024 * 1024) / concurrent_read_time / 1024 / 1024  # MB/s
+        concurrent_read_speed = (
+            (num_files * 1024 * 1024) / concurrent_read_time / 1024 / 1024
+        )  # MB/s
 
         return {
             "concurrent_write_speed_mb_s": concurrent_write_speed,
@@ -250,7 +270,10 @@ class DiskIOBenchmark:
             "num_files": num_files,
         }
 
-    async def benchmark_memory_usage(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_memory_usage(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark memory usage during disk operations."""
         import gc
 
@@ -277,7 +300,7 @@ class DiskIOBenchmark:
         after_write_memory = process.memory_info().rss / 1024 / 1024  # MB
 
         # Read large file
-        read_data = await disk_io.read_block_mmap(temp_file, 0, 100 * 1024 * 1024)
+        await disk_io.read_block_mmap(temp_file, 0, 100 * 1024 * 1024)
 
         # Get memory after read
         gc.collect()
@@ -291,10 +314,12 @@ class DiskIOBenchmark:
             "read_memory_increase_mb": after_read_memory - after_write_memory,
         }
 
-    async def run_benchmark(self, benchmark_name: str, benchmark_func) -> Dict[str, Any]:
+    async def run_benchmark(
+        self,
+        benchmark_name: str,
+        benchmark_func,
+    ) -> dict[str, Any]:
         """Run a single benchmark."""
-        print(f"Running {benchmark_name}...")
-
         setup_data = await self.setup_benchmark()
 
         try:
@@ -308,16 +333,18 @@ class DiskIOBenchmark:
             if isinstance(results[0], dict):
                 # Handle nested results
                 final_result = {}
-                for key in results[0].keys():
+                for key in results[0]:
                     if isinstance(results[0][key], dict):
                         # Nested dictionary
                         nested_result = {}
-                        for nested_key in results[0][key].keys():
+                        for nested_key in results[0][key]:
                             if isinstance(results[0][key][nested_key], (int, float)):
                                 values = [r[key][nested_key] for r in results]
                                 nested_result[nested_key] = {
                                     "mean": statistics.mean(values),
-                                    "std": statistics.stdev(values) if len(values) > 1 else 0,
+                                    "std": statistics.stdev(values)
+                                    if len(values) > 1
+                                    else 0,
                                 }
                             else:
                                 nested_result[nested_key] = results[0][key][nested_key]
@@ -348,35 +375,28 @@ class DiskIOBenchmark:
             ("Memory Usage", self.benchmark_memory_usage),
         ]
 
-        print("Starting Disk I/O Benchmarks")
-        print("=" * 50)
-
         for name, func in benchmarks:
             try:
                 result = await self.run_benchmark(name, func)
                 self.results[name] = result
 
-                print(f"\n{name} Results:")
                 if isinstance(result, dict):
-                    for key, value in result.items():
+                    for value in result.values():
                         if isinstance(value, dict) and "mean" in value:
-                            print(f"  {key}: {value['mean']:.2f} ± {value['std']:.2f}")
+                            pass
                         else:
-                            print(f"  {key}: {value}")
+                            pass
                 else:
-                    print(f"  {result}")
+                    pass
 
             except Exception as e:
-                print(f"Benchmark {name} failed: {e}")
                 self.results[name] = {"error": str(e)}
 
-        print("\n" + "=" * 50)
-        print("Benchmark Summary:")
         for name, result in self.results.items():
             if "error" in result:
-                print(f"  {name}: ERROR - {result['error']}")
+                pass
             else:
-                print(f"  {name}: Completed")
+                pass
 
     def save_results(self, filename: str):
         """Save benchmark results to file."""
@@ -385,14 +405,16 @@ class DiskIOBenchmark:
         with open(filename, "w") as f:
             json.dump(self.results, f, indent=2)
 
-        print(f"Results saved to {filename}")
-
 
 async def main():
     """Main benchmark function."""
     parser = argparse.ArgumentParser(description="Disk I/O Performance Benchmark")
-    parser.add_argument("--output", "-o", default="disk_results.json",
-                      help="Output file for results")
+    parser.add_argument(
+        "--output",
+        "-o",
+        default="disk_results.json",
+        help="Output file for results",
+    )
     args = parser.parse_args()
 
     benchmark = DiskIOBenchmark()

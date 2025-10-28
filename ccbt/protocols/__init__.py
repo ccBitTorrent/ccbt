@@ -1,5 +1,7 @@
 """Modern protocol support for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides support for:
 - WebTorrent (WebRTC-based)
 - IPFS integration
@@ -7,10 +9,10 @@ Provides support for:
 - Multi-protocol support
 """
 
-from .base import Protocol, ProtocolManager, ProtocolType
-from .bittorrent import BitTorrentProtocol
-from .ipfs import IPFSProtocol
-from .webtorrent import WebTorrentProtocol
+from ccbt.protocols.base import Protocol, ProtocolManager, ProtocolType
+from ccbt.protocols.bittorrent import BitTorrentProtocol
+from ccbt.protocols.ipfs import IPFSProtocol
+from ccbt.protocols.webtorrent import WebTorrentProtocol
 
 __all__ = [
     "BitTorrentProtocol",

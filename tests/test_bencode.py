@@ -1,5 +1,4 @@
-"""
-Tests for Bencoding implementation.
+"""Tests for Bencoding implementation.
 """
 
 import pytest
@@ -68,7 +67,9 @@ class TestBencodeDecoder:
     def test_decode_dict(self):
         """Test decoding bencoded dictionaries."""
         # Simple dictionary
-        decoder = BencodeDecoder(b"d6:Coding10:Challenges8:website:20:codingchallenges.fyie")
+        decoder = BencodeDecoder(
+            b"d6:Coding10:Challenges8:website:20:codingchallenges.fyie",
+        )
         expected = {
             b"Coding": b"Challenges",
             b"website:": b"codingchallenges.fyi",
@@ -80,7 +81,9 @@ class TestBencodeDecoder:
         assert decoder.decode() == {}
 
         # Nested dictionary
-        decoder = BencodeDecoder(b"d17:Coding Challengesd6:Rating7:Awesome8:website:20:codingchallenges.fyieee")
+        decoder = BencodeDecoder(
+            b"d17:Coding Challengesd6:Rating7:Awesome8:website:20:codingchallenges.fyieee",
+        )
         expected = {
             b"Coding Challenges": {
                 b"Rating": b"Awesome",
@@ -92,28 +95,28 @@ class TestBencodeDecoder:
     def test_decode_errors(self):
         """Test decoding error cases."""
         # Invalid integer (no 'e')
+        decoder = BencodeDecoder(b"i100")
         with pytest.raises(BencodeDecodeError):
-            decoder = BencodeDecoder(b"i100")
             decoder.decode()
 
         # Invalid integer (leading zero)
+        decoder = BencodeDecoder(b"i03e")
         with pytest.raises(BencodeDecodeError):
-            decoder = BencodeDecoder(b"i03e")
             decoder.decode()
 
         # Invalid negative integer
+        decoder = BencodeDecoder(b"i-e")
         with pytest.raises(BencodeDecodeError):
-            decoder = BencodeDecoder(b"i-e")
             decoder.decode()
 
         # Missing colon in string
+        decoder = BencodeDecoder(b"6coding")
         with pytest.raises(BencodeDecodeError):
-            decoder = BencodeDecoder(b"6coding")
             decoder.decode()
 
         # Invalid string length
+        decoder = BencodeDecoder(b"6:code")  # Only 4 chars but claims 6
         with pytest.raises(BencodeDecodeError):
-            decoder = BencodeDecoder(b"6:code")  # Only 4 chars but claims 6
             decoder.decode()
 
     def test_decode_complex_nested(self):

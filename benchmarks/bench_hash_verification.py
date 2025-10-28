@@ -4,13 +4,15 @@ Tests the performance of parallel hash verification with different
 worker pool sizes and piece sizes.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import hashlib
 import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict
+from typing import Any
 
 from ccbt.async_piece_manager import AsyncPieceManager
 from ccbt.config import get_config
@@ -23,7 +25,7 @@ class HashVerificationBenchmark:
         self.config = get_config()
         self.results = {}
 
-    async def setup_benchmark(self, num_pieces: int, piece_size: int) -> Dict[str, Any]:
+    async def setup_benchmark(self, num_pieces: int, piece_size: int) -> dict[str, Any]:
         """Set up benchmark environment."""
         # Create torrent data
         torrent_data = {
@@ -49,13 +51,16 @@ class HashVerificationBenchmark:
             "piece_manager": piece_manager,
         }
 
-    async def cleanup_benchmark(self, setup_data: Dict[str, Any]):
+    async def cleanup_benchmark(self, setup_data: dict[str, Any]):
         """Clean up benchmark environment."""
         await setup_data["piece_manager"].stop()
 
-    async def benchmark_sequential_hashing(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_sequential_hashing(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark sequential hash verification."""
-        piece_manager = setup_data["piece_manager"]
+        setup_data["piece_manager"]
         num_pieces = setup_data["torrent_data"]["pieces_info"]["num_pieces"]
         piece_size = setup_data["torrent_data"]["pieces_info"]["piece_length"]
 
@@ -65,10 +70,10 @@ class HashVerificationBenchmark:
         # Benchmark sequential hashing
         start_time = time.time()
 
-        for i in range(num_pieces):
+        for _i in range(num_pieces):
             hasher = hashlib.sha1()
             hasher.update(test_data)
-            hash_result = hasher.digest()
+            hasher.digest()
 
         end_time = time.time()
 
@@ -84,9 +89,13 @@ class HashVerificationBenchmark:
             "piece_size_mb": piece_size / 1024 / 1024,
         }
 
-    async def benchmark_parallel_hashing(self, setup_data: Dict[str, Any], num_workers: int) -> Dict[str, float]:
+    async def benchmark_parallel_hashing(
+        self,
+        setup_data: dict[str, Any],
+        num_workers: int,
+    ) -> dict[str, float]:
         """Benchmark parallel hash verification with specified worker count."""
-        piece_manager = setup_data["piece_manager"]
+        setup_data["piece_manager"]
         num_pieces = setup_data["torrent_data"]["pieces_info"]["num_pieces"]
         piece_size = setup_data["torrent_data"]["pieces_info"]["piece_length"]
 
@@ -100,12 +109,12 @@ class HashVerificationBenchmark:
 
             # Create tasks
             tasks = []
-            for i in range(num_pieces):
+            for _i in range(num_pieces):
                 task = executor.submit(self._hash_piece, test_data)
                 tasks.append(task)
 
             # Wait for all tasks
-            results = [task.result() for task in tasks]
+            [task.result() for task in tasks]
 
             end_time = time.time()
 
@@ -128,7 +137,10 @@ class HashVerificationBenchmark:
         hasher.update(data)
         return hasher.digest()
 
-    async def benchmark_worker_scaling(self, setup_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def benchmark_worker_scaling(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """Benchmark hash verification with different worker counts."""
         worker_counts = [1, 2, 4, 8, 16]
         results = {}
@@ -139,7 +151,7 @@ class HashVerificationBenchmark:
 
         return results
 
-    async def benchmark_piece_size_scaling(self, num_pieces: int) -> Dict[str, Any]:
+    async def benchmark_piece_size_scaling(self, num_pieces: int) -> dict[str, Any]:
         """Benchmark hash verification with different piece sizes."""
         piece_sizes = [16384, 32768, 65536, 131072]  # 16KB, 32KB, 64KB, 128KB
         results = {}
@@ -156,13 +168,16 @@ class HashVerificationBenchmark:
 
         return results
 
-    async def benchmark_memory_efficiency(self, setup_data: Dict[str, Any]) -> Dict[str, float]:
+    async def benchmark_memory_efficiency(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, float]:
         """Benchmark memory efficiency during hash verification."""
         import gc
 
         import psutil
 
-        piece_manager = setup_data["piece_manager"]
+        setup_data["piece_manager"]
         num_pieces = setup_data["torrent_data"]["pieces_info"]["num_pieces"]
         piece_size = setup_data["torrent_data"]["pieces_info"]["piece_length"]
 
@@ -180,8 +195,10 @@ class HashVerificationBenchmark:
         start_time = time.time()
 
         with ThreadPoolExecutor(max_workers=4) as executor:
-            tasks = [executor.submit(self._hash_piece, test_data) for _ in range(num_pieces)]
-            results = [task.result() for task in tasks]
+            tasks = [
+                executor.submit(self._hash_piece, test_data) for _ in range(num_pieces)
+            ]
+            [task.result() for task in tasks]
 
         end_time = time.time()
 
@@ -201,9 +218,12 @@ class HashVerificationBenchmark:
             "piece_size_mb": piece_size / 1024 / 1024,
         }
 
-    async def benchmark_batch_processing(self, setup_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def benchmark_batch_processing(
+        self,
+        setup_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """Benchmark batch processing of hash verification."""
-        piece_manager = setup_data["piece_manager"]
+        setup_data["piece_manager"]
         num_pieces = setup_data["torrent_data"]["pieces_info"]["num_pieces"]
         piece_size = setup_data["torrent_data"]["pieces_info"]["piece_length"]
 
@@ -221,11 +241,10 @@ class HashVerificationBenchmark:
                 batch_end = min(i + batch_size, num_pieces)
                 batch_tasks = []
 
-                for j in range(i, batch_end):
+                for _j in range(i, batch_end):
                     batch_tasks.append(self._hash_piece(test_data))
 
                 # Process batch
-                batch_results = batch_tasks
 
             end_time = time.time()
 
@@ -240,10 +259,13 @@ class HashVerificationBenchmark:
 
         return results
 
-    async def run_benchmark(self, benchmark_name: str, benchmark_func, *args) -> Dict[str, Any]:
+    async def run_benchmark(
+        self,
+        benchmark_name: str,
+        benchmark_func,
+        *args,
+    ) -> dict[str, Any]:
         """Run a single benchmark."""
-        print(f"Running {benchmark_name}...")
-
         try:
             # Run benchmark multiple times for accuracy
             results = []
@@ -254,7 +276,7 @@ class HashVerificationBenchmark:
             # Calculate statistics
             if isinstance(results[0], dict):
                 final_result = {}
-                for key in results[0].keys():
+                for key in results[0]:
                     if isinstance(results[0][key], (int, float)):
                         values = [r[key] for r in results]
                         final_result[key] = {
@@ -272,9 +294,6 @@ class HashVerificationBenchmark:
 
     async def run_all_benchmarks(self):
         """Run all benchmarks."""
-        print("Starting Hash Verification Benchmarks")
-        print("=" * 50)
-
         # Setup for main benchmarks
         setup_data = await self.setup_benchmark(1000, 16384)  # 1000 pieces, 16KB each
 
@@ -330,13 +349,11 @@ class HashVerificationBenchmark:
         finally:
             await self.cleanup_benchmark(setup_data)
 
-        print("\n" + "=" * 50)
-        print("Benchmark Summary:")
-        for name, result in self.results.items():
+        for result in self.results.values():
             if "error" in result:
-                print(f"  {name}: ERROR - {result['error']}")
+                pass
             else:
-                print(f"  {name}: Completed")
+                pass
 
     def save_results(self, filename: str):
         """Save benchmark results to file."""
@@ -345,14 +362,18 @@ class HashVerificationBenchmark:
         with open(filename, "w") as f:
             json.dump(self.results, f, indent=2)
 
-        print(f"Results saved to {filename}")
-
 
 async def main():
     """Main benchmark function."""
-    parser = argparse.ArgumentParser(description="Hash Verification Performance Benchmark")
-    parser.add_argument("--output", "-o", default="hash_results.json",
-                      help="Output file for results")
+    parser = argparse.ArgumentParser(
+        description="Hash Verification Performance Benchmark",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        default="hash_results.json",
+        help="Output file for results",
+    )
     args = parser.parse_args()
 
     benchmark = HashVerificationBenchmark()

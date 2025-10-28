@@ -1,5 +1,4 @@
-"""
-Tests for modern protocol support.
+"""Tests for modern protocol support.
 
 Tests all protocol implementations including:
 - BitTorrent protocol

@@ -1,8 +1,12 @@
 """Metrics and observability for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides comprehensive performance monitoring with Prometheus metrics,
 structured logging, and real-time statistics tracking.
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
@@ -11,25 +15,28 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable
 
 try:
     from prometheus_client import (
         CollectorRegistry,
         Counter,
         Gauge,
-        Histogram,
         start_http_server,
     )
+
     HAS_PROMETHEUS = True
 except ImportError:
     HAS_PROMETHEUS = False
 
-from .config import get_config
+import contextlib
+
+from ccbt.config import get_config
 
 
 class MetricType(Enum):
     """Types of metrics."""
+
     COUNTER = "counter"
     GAUGE = "gauge"
     HISTOGRAM = "histogram"
@@ -38,19 +45,21 @@ class MetricType(Enum):
 @dataclass
 class MetricValue:
     """A metric value with timestamp."""
+
     value: float
     timestamp: float
-    labels: Dict[str, str] = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class PeerMetrics:
     """Metrics for a single peer connection."""
+
     peer_key: str
     bytes_downloaded: int = 0
     bytes_uploaded: int = 0
     download_rate: float = 0.0  # bytes/second
-    upload_rate: float = 0.0     # bytes/second
+    upload_rate: float = 0.0  # bytes/second
     request_latency: float = 0.0  # average latency in seconds
     consecutive_failures: int = 0
     last_activity: float = field(default_factory=time.time)
@@ -62,6 +71,7 @@ class PeerMetrics:
 @dataclass
 class TorrentMetrics:
     """Metrics for a single torrent."""
+
     torrent_id: str
     bytes_downloaded: int = 0
     bytes_uploaded: int = 0
@@ -89,10 +99,10 @@ class MetricsCollector:
         self.global_bytes_uploaded = 0
 
         # Per-torrent metrics
-        self.torrent_metrics: Dict[str, TorrentMetrics] = {}
+        self.torrent_metrics: dict[str, TorrentMetrics] = {}
 
         # Per-peer metrics
-        self.peer_metrics: Dict[str, PeerMetrics] = {}
+        self.peer_metrics: dict[str, PeerMetrics] = {}
 
         # System metrics
         self.disk_queue_depth = 0
@@ -108,11 +118,11 @@ class MetricsCollector:
             self._setup_prometheus_metrics()
 
         # Background tasks
-        self._metrics_task: Optional[asyncio.Task] = None
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._metrics_task: asyncio.Task | None = None
+        self._cleanup_task: asyncio.Task | None = None
 
         # Callbacks
-        self.on_metrics_update: Optional[Callable[[Dict[str, Any]], None]] = None
+        self.on_metrics_update: Callable[[dict[str, Any]], None] | None = None
 
         self.logger = logging.getLogger(__name__)
 
@@ -154,15 +164,17 @@ class MetricsCollector:
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
         # Start Prometheus server if enabled
-        if (HAS_PROMETHEUS and
-            self.config.observability.enable_metrics and
-            hasattr(self, "registry")):
+        if (
+            HAS_PROMETHEUS
+            and self.config.observability.enable_metrics
+            and hasattr(self, "registry")
+        ):
             try:
                 port = self.config.observability.metrics_port
                 start_http_server(port, registry=self.registry)
-                self.logger.info(f"Prometheus metrics server started on port {port}")
-            except Exception as e:
-                self.logger.error(f"Failed to start Prometheus server: {e}")
+                self.logger.info("Prometheus metrics server started on port %s", port)
+            except Exception:
+                self.logger.exception("Failed to start Prometheus server")
 
         self.logger.info("Metrics collector started")
 
@@ -170,17 +182,13 @@ class MetricsCollector:
         """Stop metrics collection."""
         if self._metrics_task:
             self._metrics_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._metrics_task
-            except asyncio.CancelledError:
-                pass
 
         if self._cleanup_task:
             self._cleanup_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
 
         self.logger.info("Metrics collector stopped")
 
@@ -193,8 +201,8 @@ class MetricsCollector:
                 await self._update_metrics()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Error in metrics loop: {e}")
+            except Exception:
+                self.logger.exception("Error in metrics loop")
 
     async def _cleanup_loop(self) -> None:
         """Background task for cleanup operations."""
@@ -204,8 +212,8 @@ class MetricsCollector:
                 await self._cleanup_old_metrics()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Error in cleanup loop: {e}")
+            except Exception:
+                self.logger.exception("Error in cleanup loop")
 
     async def _update_metrics(self) -> None:
         """Update all metrics."""
@@ -219,11 +227,13 @@ class MetricsCollector:
             await self._update_prometheus_metrics()
 
         # Store rate history
-        self.rate_history.append({
-            "timestamp": current_time,
-            "download_rate": self.global_download_rate,
-            "upload_rate": self.global_upload_rate,
-        })
+        self.rate_history.append(
+            {
+                "timestamp": current_time,
+                "download_rate": self.global_download_rate,
+                "upload_rate": self.global_upload_rate,
+            },
+        )
 
         # Notify callbacks
         if self.on_metrics_update:
@@ -244,8 +254,8 @@ class MetricsCollector:
 
         self.prom_download_rate.set(self.global_download_rate)
         self.prom_upload_rate.set(self.global_upload_rate)
-        self.prom_bytes_downloaded._value._value = self.global_bytes_downloaded
-        self.prom_bytes_uploaded._value._value = self.global_bytes_uploaded
+        self.prom_bytes_downloaded._value._value = self.global_bytes_downloaded  # noqa: SLF001
+        self.prom_bytes_uploaded._value._value = self.global_bytes_uploaded  # noqa: SLF001
 
     async def _cleanup_old_metrics(self) -> None:
         """Clean up old metric data."""
@@ -261,7 +271,7 @@ class MetricsCollector:
         for peer_key in to_remove:
             del self.peer_metrics[peer_key]
 
-    def update_torrent_status(self, torrent_id: str, status: Dict[str, Any]) -> None:
+    def update_torrent_status(self, torrent_id: str, status: dict[str, Any]) -> None:
         """Update metrics for a specific torrent."""
         if torrent_id not in self.torrent_metrics:
             self.torrent_metrics[torrent_id] = TorrentMetrics(torrent_id=torrent_id)
@@ -277,7 +287,7 @@ class MetricsCollector:
         metrics.connected_peers = status.get("connected_peers", 0)
         metrics.active_peers = status.get("active_peers", 0)
 
-    def update_peer_metrics(self, peer_key: str, metrics_data: Dict[str, Any]) -> None:
+    def update_peer_metrics(self, peer_key: str, metrics_data: dict[str, Any]) -> None:
         """Update metrics for a specific peer."""
         if peer_key not in self.peer_metrics:
             self.peer_metrics[peer_key] = PeerMetrics(peer_key=peer_key)
@@ -291,7 +301,7 @@ class MetricsCollector:
         metrics.consecutive_failures = metrics_data.get("consecutive_failures", 0)
         metrics.last_activity = time.time()
 
-    def get_metrics_summary(self) -> Dict[str, Any]:
+    def get_metrics_summary(self) -> dict[str, Any]:
         """Get a summary of all metrics."""
         return {
             "global": {
@@ -310,11 +320,11 @@ class MetricsCollector:
             "peers": len(self.peer_metrics),
         }
 
-    def get_torrent_metrics(self, torrent_id: str) -> Optional[TorrentMetrics]:
+    def get_torrent_metrics(self, torrent_id: str) -> TorrentMetrics | None:
         """Get metrics for a specific torrent."""
         return self.torrent_metrics.get(torrent_id)
 
-    def get_peer_metrics(self, peer_key: str) -> Optional[PeerMetrics]:
+    def get_peer_metrics(self, peer_key: str) -> PeerMetrics | None:
         """Get metrics for a specific peer."""
         return self.peer_metrics.get(peer_key)
 

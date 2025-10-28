@@ -1,26 +1,37 @@
 """Extension Manager for coordinating all BitTorrent extensions.
 
+from __future__ import annotations
+
 Provides a unified interface for managing and coordinating
 all BitTorrent protocol extensions.
 """
 
+from __future__ import annotations
+
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
-from ..events import Event, EventType, emit_event
-from ..models import PeerInfo, PieceInfo
-from .compact import CompactPeerLists
-from .dht import DHTExtension
-from .fast import FastExtension
-from .pex import PeerExchange
-from .protocol import ExtensionProtocol
-from .webseed import WebSeedExtension
+# from ccbt.compact import CompactPeerLists  # Module doesn't exist yet
+# from ccbt.dht import DHTExtension  # DHTExtension doesn't exist in dht module
+from ccbt.events import Event, EventType, emit_event
+
+# Error message constants
+_ERROR_COMPACT_PEER_LISTS_NOT_AVAILABLE = "CompactPeerLists not available"
+
+# from ccbt.fast import FastExtension  # Module doesn't exist yet
+# from ccbt.pex import PeerExchange  # PeerExchange doesn't exist in pex module
+# from ccbt.protocol import ExtensionProtocol  # Module doesn't exist yet
+# from ccbt.webseed import WebSeedExtension  # Module doesn't exist yet
+
+if TYPE_CHECKING:
+    from ccbt.models import PeerInfo, PieceInfo
 
 
 class ExtensionStatus(Enum):
     """Extension status."""
+
     DISABLED = "disabled"
     ENABLED = "enabled"
     ACTIVE = "active"
@@ -30,71 +41,75 @@ class ExtensionStatus(Enum):
 @dataclass
 class ExtensionState:
     """Extension state information."""
+
     name: str
     status: ExtensionStatus
-    capabilities: Dict[str, Any]
+    capabilities: dict[str, Any]
     last_activity: float
     error_count: int = 0
-    last_error: Optional[str] = None
+    last_error: str | None = None
 
 
 class ExtensionManager:
     """Manages all BitTorrent extensions."""
 
     def __init__(self):
-        self.extensions: Dict[str, Any] = {}
-        self.extension_states: Dict[str, ExtensionState] = {}
-        self.peer_extensions: Dict[str, Dict[str, Any]] = {}  # peer_id -> extensions
+        """Initialize extension manager."""
+        self.extensions: dict[str, Any] = {}
+        self.extension_states: dict[str, ExtensionState] = {}
+        self.peer_extensions: dict[str, dict[str, Any]] = {}  # peer_id -> extensions
 
         # Initialize extensions
         self._initialize_extensions()
 
     def _initialize_extensions(self) -> None:
         """Initialize all extensions."""
+        # TODO: Initialize extensions when classes are available
         # Fast Extension
-        self.extensions["fast"] = FastExtension()
-        self.extension_states["fast"] = ExtensionState(
-            name="fast",
-            status=ExtensionStatus.ENABLED,
-            capabilities={"suggest": True, "have_all": True, "have_none": True, "reject": True, "allow_fast": True},
-            last_activity=0.0,
-        )
+        # self.extensions["fast"] = FastExtension()
+        # self.extension_states["fast"] = ExtensionState(
+        #     name="fast",
+        #     status=ExtensionStatus.ENABLED,
+        #     capabilities={
+        #         "suggest": True,
+        #         "have_all": True,
+        #         "have_none": True,
+        #         "reject": True,
+        #         "allow_fast": True,
+        #     },
+        #     last_activity=0.0,
+        # )
 
         # Extension Protocol
-        self.extensions["protocol"] = ExtensionProtocol()
-        self.extension_states["protocol"] = ExtensionState(
-            name="protocol",
-            status=ExtensionStatus.ENABLED,
-            capabilities={"extensions": {}},
-            last_activity=0.0,
-        )
+        # self.extensions["protocol"] = ExtensionProtocol()
+        # self.extension_states["protocol"] = ExtensionState(
+        #     name="protocol",
+        #     status=ExtensionStatus.ENABLED,
+        #     capabilities={"extensions": {}},
+        #     last_activity=0.0,
+        # )
 
         # Peer Exchange
-        self.extensions["pex"] = PeerExchange()
-        self.extension_states["pex"] = ExtensionState(
-            name="pex",
-            status=ExtensionStatus.ENABLED,
-            capabilities={"added_peers": 0, "dropped_peers": 0},
-            last_activity=0.0,
-        )
+        # self.extensions["pex"] = PeerExchange()
+        # )
 
         # DHT
-        self.extensions["dht"] = DHTExtension()
-        self.extension_states["dht"] = ExtensionState(
-            name="dht",
-            status=ExtensionStatus.ENABLED,
-            capabilities={"nodes": 0, "buckets": 0},
-            last_activity=0.0,
-        )
+        # self.extensions["dht"] = DHTExtension()
+        # self.extension_states["dht"] = ExtensionState(
+        #     name="dht",
+        #     status=ExtensionStatus.ENABLED,
+        #     capabilities={"nodes": 0, "buckets": 0},
+        #     last_activity=0.0,
+        # )
 
         # WebSeed
-        self.extensions["webseed"] = WebSeedExtension()
-        self.extension_states["webseed"] = ExtensionState(
-            name="webseed",
-            status=ExtensionStatus.ENABLED,
-            capabilities={"webseeds": 0, "active_webseeds": 0},
-            last_activity=0.0,
-        )
+        # self.extensions["webseed"] = WebSeedExtension()
+        # self.extension_states["webseed"] = ExtensionState(
+        #     name="webseed",
+        #     status=ExtensionStatus.ENABLED,
+        #     capabilities={"webseeds": 0, "active_webseeds": 0},
+        #     last_activity=0.0,
+        # )
 
     async def start(self) -> None:
         """Start all extensions."""
@@ -107,13 +122,15 @@ class ExtensionManager:
                 self.extension_states[name].last_activity = time.time()
 
                 # Emit event for extension started
-                await emit_event(Event(
-                    event_type=EventType.EXTENSION_STARTED.value,
-                    data={
-                        "extension_name": name,
-                        "timestamp": time.time(),
-                    },
-                ))
+                await emit_event(
+                    Event(
+                        event_type=EventType.EXTENSION_STARTED.value,
+                        data={
+                            "extension_name": name,
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
             except Exception as e:
                 self.extension_states[name].status = ExtensionStatus.ERROR
@@ -121,14 +138,16 @@ class ExtensionManager:
                 self.extension_states[name].last_error = str(e)
 
                 # Emit event for extension error
-                await emit_event(Event(
-                    event_type=EventType.EXTENSION_ERROR.value,
-                    data={
-                        "extension_name": name,
-                        "error": str(e),
-                        "timestamp": time.time(),
-                    },
-                ))
+                await emit_event(
+                    Event(
+                        event_type=EventType.EXTENSION_ERROR.value,
+                        data={
+                            "extension_name": name,
+                            "error": str(e),
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
     async def stop(self) -> None:
         """Stop all extensions."""
@@ -140,41 +159,48 @@ class ExtensionManager:
                 self.extension_states[name].status = ExtensionStatus.DISABLED
 
                 # Emit event for extension stopped
-                await emit_event(Event(
-                    event_type=EventType.EXTENSION_STOPPED.value,
-                    data={
-                        "extension_name": name,
-                        "timestamp": time.time(),
-                    },
-                ))
+                await emit_event(
+                    Event(
+                        event_type=EventType.EXTENSION_STOPPED.value,
+                        data={
+                            "extension_name": name,
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
             except Exception as e:
                 # Emit event for extension error
-                await emit_event(Event(
-                    event_type=EventType.EXTENSION_ERROR.value,
-                    data={
-                        "extension_name": name,
-                        "error": str(e),
-                        "timestamp": time.time(),
-                    },
-                ))
+                await emit_event(
+                    Event(
+                        event_type=EventType.EXTENSION_ERROR.value,
+                        data={
+                            "extension_name": name,
+                            "error": str(e),
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
-    def get_extension(self, name: str) -> Optional[Any]:
+    def get_extension(self, name: str) -> Any | None:
         """Get extension by name."""
         return self.extensions.get(name)
 
-    def get_extension_state(self, name: str) -> Optional[ExtensionState]:
+    def get_extension_state(self, name: str) -> ExtensionState | None:
         """Get extension state."""
         return self.extension_states.get(name)
 
-    def list_extensions(self) -> List[str]:
+    def list_extensions(self) -> list[str]:
         """List all extension names."""
         return list(self.extensions.keys())
 
-    def list_active_extensions(self) -> List[str]:
+    def list_active_extensions(self) -> list[str]:
         """List active extension names."""
-        return [name for name, state in self.extension_states.items()
-                if state.status == ExtensionStatus.ACTIVE]
+        return [
+            name
+            for name, state in self.extension_states.items()
+            if state.status == ExtensionStatus.ACTIVE
+        ]
 
     def is_extension_active(self, name: str) -> bool:
         """Check if extension is active."""
@@ -196,7 +222,12 @@ class ExtensionManager:
         return False
 
     # Fast Extension methods
-    async def handle_fast_extension(self, peer_id: str, message_type: int, data: bytes) -> None:
+    async def handle_fast_extension(
+        self,
+        peer_id: str,
+        message_type: int,
+        data: bytes,
+    ) -> None:
         """Handle Fast Extension message."""
         if not self.is_extension_active("fast"):
             return
@@ -225,7 +256,12 @@ class ExtensionManager:
             self.extension_states["fast"].last_error = str(e)
 
     # Extension Protocol methods
-    async def handle_extension_protocol(self, peer_id: str, message_type: int, data: bytes) -> None:
+    async def handle_extension_protocol(
+        self,
+        peer_id: str,
+        message_type: int,
+        data: bytes,
+    ) -> None:
         """Handle Extension Protocol message."""
         if not self.is_extension_active("protocol"):
             return
@@ -241,7 +277,12 @@ class ExtensionManager:
             self.extension_states["protocol"].last_error = str(e)
 
     # PEX methods
-    async def handle_pex_message(self, peer_id: str, message_type: int, data: bytes) -> None:
+    async def handle_pex_message(
+        self,
+        peer_id: str,
+        message_type: int,
+        data: bytes,
+    ) -> None:
         """Handle PEX message."""
         if not self.is_extension_active("pex"):
             return
@@ -263,7 +304,12 @@ class ExtensionManager:
             self.extension_states["pex"].last_error = str(e)
 
     # DHT methods
-    async def handle_dht_message(self, peer_ip: str, peer_port: int, data: bytes) -> Optional[bytes]:
+    async def handle_dht_message(
+        self,
+        peer_ip: str,
+        peer_port: int,
+        data: bytes,
+    ) -> bytes | None:
         """Handle DHT message."""
         if not self.is_extension_active("dht"):
             return None
@@ -273,15 +319,19 @@ class ExtensionManager:
         try:
             response = await dht_ext.handle_dht_message(peer_ip, peer_port, data)
             self.extension_states["dht"].last_activity = time.time()
-            return response
-
         except Exception as e:
             self.extension_states["dht"].error_count += 1
             self.extension_states["dht"].last_error = str(e)
             return None
+        else:
+            return response
 
     # WebSeed methods
-    async def download_piece_from_webseed(self, webseed_id: str, piece_info: PieceInfo) -> Optional[bytes]:
+    async def download_piece_from_webseed(
+        self,
+        webseed_id: str,
+        piece_info: PieceInfo,
+    ) -> bytes | None:
         """Download piece from WebSeed."""
         if not self.is_extension_active("webseed"):
             return None
@@ -291,17 +341,18 @@ class ExtensionManager:
         try:
             data = await webseed_ext.download_piece(webseed_id, piece_info, b"")
             self.extension_states["webseed"].last_activity = time.time()
-            return data
-
         except Exception as e:
             self.extension_states["webseed"].error_count += 1
             self.extension_states["webseed"].last_error = str(e)
             return None
+        else:
+            return data
 
-    def add_webseed(self, url: str, name: Optional[str] = None) -> str:
+    def add_webseed(self, url: str, name: str | None = None) -> str:
         """Add WebSeed."""
         if not self.is_extension_active("webseed"):
-            raise RuntimeError("WebSeed extension not active")
+            msg = "WebSeed extension not active"
+            raise RuntimeError(msg)
 
         webseed_ext = self.extensions["webseed"]
         return webseed_ext.add_webseed(url, name)
@@ -315,18 +366,30 @@ class ExtensionManager:
         webseed_ext.remove_webseed(webseed_id)
 
     # Compact Peer Lists methods
-    def encode_peers_compact(self, peers: List[PeerInfo]) -> bytes:
+    def encode_peers_compact(self, _peers: list[PeerInfo]) -> bytes:
         """Encode peers in compact format."""
-        compact_peers = [CompactPeerLists.convert_peer_info_to_compact(peer) for peer in peers]
-        return CompactPeerLists.encode_peers_list(compact_peers)
+        # TODO: Implement when CompactPeerLists is available
+        # compact_peers = [
+        #     CompactPeerLists.convert_peer_info_to_compact(peer) for peer in peers
+        # ]
+        # return CompactPeerLists.encode_peers_list(compact_peers)
+        msg = _ERROR_COMPACT_PEER_LISTS_NOT_AVAILABLE
+        raise NotImplementedError(msg)
 
-    def decode_peers_compact(self, data: bytes, is_ipv6: bool = False) -> List[PeerInfo]:
+    def decode_peers_compact(
+        self,
+        _data: bytes,
+        _is_ipv6: bool = False,
+    ) -> list[PeerInfo]:
         """Decode peers from compact format."""
-        compact_peers = CompactPeerLists.decode_peers_list(data, is_ipv6)
-        return [peer.to_peer_info() for peer in compact_peers]
+        # TODO: Implement when CompactPeerLists is available
+        # compact_peers = CompactPeerLists.decode_peers_list(data, is_ipv6)
+        # return [peer.to_peer_info() for peer in compact_peers]
+        msg = _ERROR_COMPACT_PEER_LISTS_NOT_AVAILABLE
+        raise NotImplementedError(msg)
 
     # Statistics and monitoring
-    def get_extension_statistics(self) -> Dict[str, Any]:
+    def get_extension_statistics(self) -> dict[str, Any]:
         """Get extension statistics."""
         stats = {}
 
@@ -341,11 +404,11 @@ class ExtensionManager:
 
         return stats
 
-    def get_peer_extensions(self, peer_id: str) -> Dict[str, Any]:
+    def get_peer_extensions(self, peer_id: str) -> dict[str, Any]:
         """Get extensions supported by peer."""
         return self.peer_extensions.get(peer_id, {})
 
-    def set_peer_extensions(self, peer_id: str, extensions: Dict[str, Any]) -> None:
+    def set_peer_extensions(self, peer_id: str, extensions: dict[str, Any]) -> None:
         """Set peer extensions."""
         self.peer_extensions[peer_id] = extensions
 
@@ -354,7 +417,7 @@ class ExtensionManager:
         peer_extensions = self.peer_extensions.get(peer_id, {})
         return extension_name in peer_extensions
 
-    def get_extension_capabilities(self, extension_name: str) -> Dict[str, Any]:
+    def get_extension_capabilities(self, extension_name: str) -> dict[str, Any]:
         """Get extension capabilities."""
         if extension_name in self.extensions:
             ext = self.extensions[extension_name]
@@ -365,7 +428,7 @@ class ExtensionManager:
 
         return {}
 
-    def get_all_statistics(self) -> Dict[str, Any]:
+    def get_all_statistics(self) -> dict[str, Any]:
         """Get comprehensive statistics for all extensions."""
         stats = {
             "total_extensions": len(self.extensions),
@@ -385,7 +448,7 @@ class ExtensionManager:
 
 
 # Global extension manager instance
-_extension_manager: Optional[ExtensionManager] = None
+_extension_manager: ExtensionManager | None = None
 
 
 def get_extension_manager() -> ExtensionManager:

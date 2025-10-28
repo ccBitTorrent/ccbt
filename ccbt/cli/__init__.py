@@ -1,5 +1,7 @@
 """Enhanced CLI for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides comprehensive CLI functionality including:
 - Rich interactive interface
 - Progress bars and live stats
@@ -8,9 +10,9 @@ Provides comprehensive CLI functionality including:
 - Debug tools
 """
 
-from .interactive import InteractiveCLI
-from .main import main
-from .progress import ProgressManager
+from ccbt.cli.interactive import InteractiveCLI
+from ccbt.cli.main import main
+from ccbt.cli.progress import ProgressManager
 
 __all__ = [
     "InteractiveCLI",

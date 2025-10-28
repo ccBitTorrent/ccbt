@@ -1,21 +1,29 @@
-"""Async file assembler for BitTorrent downloads.
-"""
+"""Async file assembler for BitTorrent downloads."""
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
-from .config import get_config
-from .disk_io import DiskIOManager
-from .models import TorrentCheckpoint, TorrentInfo
+from ccbt.config import get_config
+from ccbt.disk_io import DiskIOManager
+from ccbt.models import TorrentCheckpoint, TorrentInfo
 
 
 class FileSegment:
     """Represents a segment of a file that belongs to a specific piece."""
 
-    def __init__(self, file_path: str, start_offset: int, end_offset: int,
-                 piece_index: int, piece_offset: int):
+    def __init__(
+        self,
+        file_path: str,
+        start_offset: int,
+        end_offset: int,
+        piece_index: int,
+        piece_offset: int,
+    ):
+        """Initialize file block for piece assembly."""
         self.file_path = file_path
         self.start_offset = start_offset
         self.end_offset = end_offset
@@ -30,8 +38,12 @@ class FileAssemblerError(Exception):
 class AsyncDownloadManager:
     """High-level async download manager that coordinates multiple file assemblers."""
 
-    def __init__(self, torrent_data: Optional[Union[Dict[str, Any], TorrentInfo]] = None,
-                 output_dir: str = ".", config: Optional[Any] = None):
+    def __init__(
+        self,
+        torrent_data: dict[str, Any] | TorrentInfo | None = None,
+        output_dir: str = ".",
+        config: Any | None = None,
+    ):
         """Initialize async download manager.
 
         Args:
@@ -40,7 +52,7 @@ class AsyncDownloadManager:
             config: Configuration object (uses default if None)
         """
         self.config = config or get_config()
-        self.assemblers: Dict[str, AsyncFileAssembler] = {}
+        self.assemblers: dict[str, AsyncFileAssembler] = {}
         self.lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
 
@@ -54,8 +66,11 @@ class AsyncDownloadManager:
         self.on_download_complete = None
         self.on_piece_verified = None
 
-    async def start_download(self, torrent_data: Union[Dict[str, Any], TorrentInfo],
-                           output_dir: str = ".") -> "AsyncFileAssembler":
+    async def start_download(
+        self,
+        torrent_data: dict[str, Any] | TorrentInfo,
+        output_dir: str = ".",
+    ) -> AsyncFileAssembler:
         """Start a new download for the given torrent.
 
         Args:
@@ -85,7 +100,10 @@ class AsyncDownloadManager:
 
             return assembler
 
-    async def stop_download(self, torrent_data: Union[Dict[str, Any], TorrentInfo]) -> None:
+    async def stop_download(
+        self,
+        torrent_data: dict[str, Any] | TorrentInfo,
+    ) -> None:
         """Stop a download and clean up resources.
 
         Args:
@@ -105,7 +123,10 @@ class AsyncDownloadManager:
                 await assembler.__aexit__(None, None, None)
                 del self.assemblers[info_hash]
 
-    def get_assembler(self, torrent_data: Union[Dict[str, Any], TorrentInfo]) -> Optional["AsyncFileAssembler"]:
+    def get_assembler(
+        self,
+        torrent_data: dict[str, Any] | TorrentInfo,
+    ) -> AsyncFileAssembler | None:
         """Get the assembler for a torrent.
 
         Args:
@@ -135,13 +156,16 @@ class AsyncDownloadManager:
     async def start(self) -> None:
         """Start the download manager (for session compatibility)."""
         if self.file_assembler is None and hasattr(self, "torrent_data"):
-            self.file_assembler = await self.start_download(self.torrent_data, self.output_dir)
+            self.file_assembler = await self.start_download(
+                self.torrent_data,
+                self.output_dir,
+            )
 
     async def stop(self) -> None:
         """Stop the download manager (for session compatibility)."""
         await self.stop_all()
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get download status (for session compatibility)."""
         if self.file_assembler:
             return {
@@ -180,15 +204,22 @@ class AsyncDownloadManager:
     def download_complete(self) -> bool:
         """Check if download is complete (for session compatibility)."""
         if self.file_assembler:
-            return len(self.file_assembler.written_pieces) == self.file_assembler.num_pieces
+            return (
+                len(self.file_assembler.written_pieces)
+                == self.file_assembler.num_pieces
+            )
         return False
 
 
 class AsyncFileAssembler:
     """High-performance async file assembler with disk I/O optimizations."""
 
-    def __init__(self, torrent_data: Union[Dict[str, Any], TorrentInfo], output_dir: str = ".",
-                 disk_io_manager: Optional[DiskIOManager] = None):
+    def __init__(
+        self,
+        torrent_data: dict[str, Any] | TorrentInfo,
+        output_dir: str = ".",
+        disk_io_manager: DiskIOManager | None = None,
+    ):
         """Initialize async file assembler.
 
         Args:
@@ -252,7 +283,7 @@ class AsyncFileAssembler:
             await self.disk_io.stop()
             self._disk_io_started = False
 
-    def _build_file_segments(self) -> List[FileSegment]:
+    def _build_file_segments(self) -> list[FileSegment]:
         """Build mapping of file segments to pieces."""
         segments = []
 
@@ -274,13 +305,15 @@ class AsyncFileAssembler:
                 else:
                     piece_end = current_offset + piece_length
 
-                segments.append(FileSegment(
-                    file_path=file_path,
-                    start_offset=current_offset,
-                    end_offset=piece_end,
-                    piece_index=piece_index,
-                    piece_offset=0,
-                ))
+                segments.append(
+                    FileSegment(
+                        file_path=file_path,
+                        start_offset=current_offset,
+                        end_offset=piece_end,
+                        piece_index=piece_index,
+                        piece_offset=0,
+                    ),
+                )
                 current_offset = piece_end
         else:
             # Multi-file torrent
@@ -304,13 +337,15 @@ class AsyncFileAssembler:
 
                     if overlap_start < overlap_end:
                         # Piece overlaps with file
-                        segments.append(FileSegment(
-                            file_path=file_path,
-                            start_offset=overlap_start - file_start,
-                            end_offset=overlap_end - file_start,
-                            piece_index=current_piece,
-                            piece_offset=overlap_start - piece_start,
-                        ))
+                        segments.append(
+                            FileSegment(
+                                file_path=file_path,
+                                start_offset=overlap_start - file_start,
+                                end_offset=overlap_end - file_start,
+                                piece_index=current_piece,
+                                piece_offset=overlap_start - piece_start,
+                            ),
+                        )
 
                     if piece_end >= file_end:
                         break
@@ -320,7 +355,11 @@ class AsyncFileAssembler:
 
         return segments
 
-    async def write_piece_to_file(self, piece_index: int, piece_data: Union[bytes, memoryview]) -> None:
+    async def write_piece_to_file(
+        self,
+        piece_index: int,
+        piece_data: bytes | memoryview,
+    ) -> None:
         """Write a verified piece to its corresponding file(s) asynchronously.
 
         Args:
@@ -333,7 +372,7 @@ class AsyncFileAssembler:
         # Ensure disk I/O manager is started
         if not self._disk_io_started:
             # Check if disk_io is a mock (for testing)
-            if hasattr(self.disk_io, "start") and hasattr(self.disk_io.start, "__call__"):
+            if hasattr(self.disk_io, "start") and callable(self.disk_io.start):
                 if asyncio.iscoroutinefunction(self.disk_io.start):
                     await self.disk_io.start()
                 else:
@@ -345,10 +384,13 @@ class AsyncFileAssembler:
                 return  # Already written
 
         # Find all file segments that belong to this piece
-        piece_segments = [seg for seg in self.file_segments if seg.piece_index == piece_index]
+        piece_segments = [
+            seg for seg in self.file_segments if seg.piece_index == piece_index
+        ]
 
         if not piece_segments:
-            raise FileAssemblerError(f"No file segments found for piece {piece_index}")
+            msg = f"No file segments found for piece {piece_index}"
+            raise FileAssemblerError(msg)
 
         # Write each segment to its file
         for segment in piece_segments:
@@ -360,7 +402,11 @@ class AsyncFileAssembler:
         async with self.lock:
             self.written_pieces.add(piece_index)
 
-    async def _write_segment_to_file_async(self, segment: FileSegment, piece_data: Union[bytes, memoryview]) -> None:
+    async def _write_segment_to_file_async(
+        self,
+        segment: FileSegment,
+        piece_data: bytes | memoryview,
+    ) -> None:
         """Write a segment of piece data to a file asynchronously.
 
         Args:
@@ -380,12 +426,25 @@ class AsyncFileAssembler:
 
             # Use DiskIOManager for async writing
             from pathlib import Path
-            await self.disk_io.write_block(Path(segment.file_path), segment.start_offset, segment_data)
+
+            await self.disk_io.write_block(
+                Path(segment.file_path),
+                segment.start_offset,
+                segment_data,
+            )
 
         except Exception as e:
-            raise FileAssemblerError(f"Failed to write segment for {segment.file_path}: {e}")
+            msg = f"Failed to write segment for {segment.file_path}: {e}"
+            raise FileAssemblerError(
+                msg,
+            ) from e
 
-    async def read_block(self, piece_index: int, begin: int, length: int) -> Optional[bytes]:
+    async def read_block(
+        self,
+        piece_index: int,
+        begin: int,
+        length: int,
+    ) -> bytes | None:
         """Read a block of data for a given piece directly from files asynchronously.
 
         Args:
@@ -399,7 +458,7 @@ class AsyncFileAssembler:
         # Ensure disk I/O manager is started
         if not self._disk_io_started:
             # Check if disk_io is a mock (for testing)
-            if hasattr(self.disk_io, "start") and hasattr(self.disk_io.start, "__call__"):
+            if hasattr(self.disk_io, "start") and callable(self.disk_io.start):
                 if asyncio.iscoroutinefunction(self.disk_io.start):
                     await self.disk_io.start()
                 else:
@@ -410,7 +469,9 @@ class AsyncFileAssembler:
             return None
 
         # Find the file segment for this piece
-        piece_segments = [seg for seg in self.file_segments if seg.piece_index == piece_index]
+        piece_segments = [
+            seg for seg in self.file_segments if seg.piece_index == piece_index
+        ]
 
         if not piece_segments:
             return None
@@ -421,14 +482,19 @@ class AsyncFileAssembler:
             file_offset = seg.start_offset + begin
             try:
                 from pathlib import Path
-                return await self.disk_io.read_block(Path(seg.file_path), file_offset, length)
+
+                return await self.disk_io.read_block(
+                    Path(seg.file_path),
+                    file_offset,
+                    length,
+                )
             except Exception:
                 return None
 
         # For multi-file torrents, combine segments
         remaining = length
         current_offset_in_piece = begin
-        parts: List[bytes] = []
+        parts: list[bytes] = []
 
         for seg in sorted(piece_segments, key=lambda s: s.piece_offset):
             if remaining <= 0:
@@ -449,7 +515,12 @@ class AsyncFileAssembler:
 
                 try:
                     from pathlib import Path
-                    chunk = await self.disk_io.read_block(Path(seg.file_path), file_offset, read_len)
+
+                    chunk = await self.disk_io.read_block(
+                        Path(seg.file_path),
+                        file_offset,
+                        read_len,
+                    )
                     if len(chunk) != read_len:
                         return None
                     parts.append(chunk)
@@ -464,9 +535,9 @@ class AsyncFileAssembler:
 
         return b"".join(parts)
 
-    def get_file_paths(self) -> List[str]:
+    def get_file_paths(self) -> list[str]:
         """Get list of all file paths that will be created."""
-        return list(set(seg.file_path for seg in self.file_segments))
+        return list({seg.file_path for seg in self.file_segments})
 
     def is_piece_written(self, piece_index: int) -> bool:
         """Check if a piece has been written to disk."""
@@ -476,7 +547,10 @@ class AsyncFileAssembler:
         """Get set of written piece indices."""
         return self.written_pieces.copy()
 
-    async def verify_existing_pieces(self, checkpoint: TorrentCheckpoint) -> Dict[str, Any]:
+    async def verify_existing_pieces(
+        self,
+        checkpoint: TorrentCheckpoint,
+    ) -> dict[str, Any]:
         """Verify that pieces mentioned in checkpoint actually exist and are valid.
 
         Args:
@@ -485,17 +559,17 @@ class AsyncFileAssembler:
         Returns:
             Dict with validation results
         """
-        validation_results = {
+        validation_results: dict[str, Any] = {
             "valid": True,
-            "missing_files": [],
-            "corrupted_pieces": [],
-            "missing_pieces": [],
+            "missing_files": [],  # type: list[str]
+            "corrupted_pieces": [],  # type: list[str]
+            "missing_pieces": [],  # type: list[int]
         }
 
         # Ensure disk I/O manager is started
         if not self._disk_io_started:
             # Check if disk_io is a mock (for testing)
-            if hasattr(self.disk_io, "start") and hasattr(self.disk_io.start, "__call__"):
+            if hasattr(self.disk_io, "start") and callable(self.disk_io.start):
                 if asyncio.iscoroutinefunction(self.disk_io.start):
                     await self.disk_io.start()
                 else:
@@ -511,11 +585,17 @@ class AsyncFileAssembler:
                 # Check file size
                 actual_size = os.path.getsize(file_checkpoint.path)
                 if actual_size != file_checkpoint.size:
-                    validation_results["corrupted_pieces"].extend([
-                        piece for piece in checkpoint.verified_pieces
-                        if any(seg.file_path == file_checkpoint.path for seg in self.file_segments
-                              if seg.piece_index == piece)
-                    ])
+                    validation_results["corrupted_pieces"].extend(
+                        [
+                            piece
+                            for piece in checkpoint.verified_pieces
+                            if any(
+                                seg.file_path == file_checkpoint.path
+                                for seg in self.file_segments
+                                if seg.piece_index == piece
+                            )
+                        ],
+                    )
                     validation_results["valid"] = False
 
         # Check if all verified pieces are actually written
@@ -536,7 +616,11 @@ class AsyncFileAssembler:
                     expected_size = self.total_length
 
                     if actual_size != expected_size:
-                        self.logger.warning(f"Removing incomplete file: {file_path}")
+                        self.logger.warning("Removing incomplete file: %s", file_path)
                         os.remove(file_path)
-            except Exception as e:
-                self.logger.error(f"Error cleaning up file {file_path}: {e}")
+            except Exception:
+                self.logger.exception("Error cleaning up file %s", file_path)
+
+
+# Export the main download manager class
+DownloadManager = AsyncDownloadManager

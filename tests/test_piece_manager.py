@@ -1,5 +1,4 @@
-"""
-Tests for piece management functionality.
+"""Tests for piece management functionality.
 """
 
 import hashlib
@@ -125,7 +124,7 @@ class TestPieceData:
         piece.state = PieceState.COMPLETE
 
         # Calculate expected hash
-        expected_hash = hashlib.sha1(test_data).digest()
+        expected_hash = hashlib.sha1(test_data).digest()  # nosec B324
 
         # Verify hash
         assert piece.verify_hash(expected_hash)
@@ -142,7 +141,7 @@ class TestPieceData:
         piece.state = PieceState.COMPLETE
 
         # Wrong hash
-        wrong_hash = hashlib.sha1(b"y" * 10).digest()
+        wrong_hash = hashlib.sha1(b"y" * 10).digest()  # nosec B324
 
         assert not piece.verify_hash(wrong_hash)
         assert not piece.hash_verified
@@ -159,10 +158,10 @@ class TestPieceManager:
                 "num_pieces": 4,
                 "piece_length": 16384,
                 "piece_hashes": [
-                    hashlib.sha1(b"piece0_data").digest(),
-                    hashlib.sha1(b"piece1_data").digest(),
-                    hashlib.sha1(b"piece2_data").digest(),
-                    hashlib.sha1(b"piece3_data").digest(),
+                    hashlib.sha1(b"piece0_data").digest(),  # nosec B324
+                    hashlib.sha1(b"piece1_data").digest(),  # nosec B324
+                    hashlib.sha1(b"piece2_data").digest(),  # nosec B324
+                    hashlib.sha1(b"piece3_data").digest(),  # nosec B324
                 ],
             },
             "file_info": {
@@ -215,7 +214,7 @@ class TestPieceManager:
         piece_data = b"piece0_data" + b"x" * (16384 - 11)  # Pad to match piece length
 
         # Update the expected hash to match the actual piece data
-        expected_hash = hashlib.sha1(piece_data).digest()
+        expected_hash = hashlib.sha1(piece_data).digest()  # nosec B324
         self.manager.piece_hashes[0] = expected_hash
 
         # Should complete the piece
@@ -238,7 +237,7 @@ class TestPieceManager:
         self.manager.pieces[0] = piece
 
         # Update the expected hash to match the actual piece data
-        expected_hash = hashlib.sha1(piece_data).digest()
+        expected_hash = hashlib.sha1(piece_data).digest()  # nosec B324
         self.manager.piece_hashes[0] = expected_hash
 
         # Add first block (16KB)
@@ -382,7 +381,7 @@ class TestPieceManager:
         piece_data = b"piece0_data" + b"x" * (16384 - 11)
 
         # Update the expected hash to match the actual piece data
-        expected_hash = hashlib.sha1(piece_data).digest()
+        expected_hash = hashlib.sha1(piece_data).digest()  # nosec B324
         self.manager.piece_hashes[0] = expected_hash
 
         self.manager.handle_piece_block(0, 0, piece_data)
@@ -395,7 +394,7 @@ class TestPieceManager:
         for i in range(1, 4):
             piece_data = f"piece{i}_data".encode() + b"x" * (16384 - 11)
             # Update the expected hash to match the actual piece data
-            expected_hash = hashlib.sha1(piece_data).digest()
+            expected_hash = hashlib.sha1(piece_data).digest()  # nosec B324
             self.manager.piece_hashes[i] = expected_hash
             self.manager.handle_piece_block(i, 0, piece_data)
 
@@ -453,5 +452,3 @@ class TestPieceManager:
         # Stop download
         self.manager.stop_download()
         assert not self.manager.is_downloading
-
-

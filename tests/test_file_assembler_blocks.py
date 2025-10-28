@@ -11,11 +11,13 @@ def make_td_single():
     return {
         "name": "t.txt",
         "info_hash": b"x" * 20,
-        "files": [FileInfo(
-            name="t.txt",
-            length=1024,
-            path=["t.txt"],
-        )],
+        "files": [
+            FileInfo(
+                name="t.txt",
+                length=1024,
+                path=["t.txt"],
+            ),
+        ],
         "total_length": 1024,
         "piece_length": 512,
         "pieces": [b"x" * 20, b"x" * 20],
@@ -35,6 +37,7 @@ async def test_read_block_roundtrip(tmp_path):
     # Mock write_block to write synchronously to files
     async def mock_write_block(file_path, offset, data):
         import os
+
         os.makedirs(file_path.parent, exist_ok=True)
         with open(file_path, "r+b" if file_path.exists() else "wb") as f:
             f.seek(offset)
@@ -57,7 +60,11 @@ async def test_read_block_roundtrip(tmp_path):
 
     mock_disk_io.read_block = AsyncMock(side_effect=mock_read_block)
 
-    async with AsyncFileAssembler(td, output_dir=str(tmp_path), disk_io_manager=mock_disk_io) as asm:
+    async with AsyncFileAssembler(
+        td,
+        output_dir=str(tmp_path),
+        disk_io_manager=mock_disk_io,
+    ) as asm:
         # write two pieces
         await asm.write_piece_to_file(0, b"A" * 512)
         await asm.write_piece_to_file(1, b"B" * 512)
@@ -65,4 +72,3 @@ async def test_read_block_roundtrip(tmp_path):
         # read across piece boundary
         data = await asm.read_block(0, 256, 512)
         assert data == b"A" * 256 + b"B" * 256
-

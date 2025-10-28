@@ -1,5 +1,7 @@
 """ML-based Peer Selector for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides intelligent peer selection using machine learning:
 - Peer quality prediction
 - Feature extraction from peer behavior
@@ -7,19 +9,24 @@ Provides intelligent peer selection using machine learning:
 - Performance-based ranking
 """
 
+from __future__ import annotations
+
 import statistics
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
-from ..events import Event, EventType, emit_event
-from ..models import PeerInfo
+from ccbt.events import Event, EventType, emit_event
+
+if TYPE_CHECKING:
+    from ccbt.models import PeerInfo
 
 
 class PeerQuality(Enum):
     """Peer quality levels."""
+
     EXCELLENT = "excellent"
     GOOD = "good"
     AVERAGE = "average"
@@ -30,6 +37,7 @@ class PeerQuality(Enum):
 @dataclass
 class PeerFeatures:
     """Features extracted from peer behavior."""
+
     peer_id: str
     ip: str
 
@@ -73,6 +81,7 @@ class PeerFeatures:
 @dataclass
 class PeerPrediction:
     """Peer quality prediction."""
+
     peer_id: str
     predicted_quality: PeerQuality
     confidence: float
@@ -84,9 +93,10 @@ class PeerSelector:
     """ML-based peer selector."""
 
     def __init__(self):
-        self.peer_features: Dict[str, PeerFeatures] = {}
-        self.quality_models: Dict[str, Any] = {}
-        self.feature_weights: Dict[str, float] = {}
+        """Initialize ML-based peer selector."""
+        self.peer_features: dict[str, PeerFeatures] = {}
+        self.quality_models: dict[str, Any] = {}
+        self.feature_weights: dict[str, float] = {}
 
         # Initialize feature weights
         self._initialize_feature_weights()
@@ -97,8 +107,8 @@ class PeerSelector:
         self.max_samples = 1000
 
         # Performance tracking
-        self.performance_history: Dict[str, List[float]] = defaultdict(list)
-        self.prediction_accuracy: Dict[str, List[bool]] = defaultdict(list)
+        self.performance_history: dict[str, list[float]] = defaultdict(list)
+        self.prediction_accuracy: dict[str, list[bool]] = defaultdict(list)
 
         # Statistics
         self.stats = {
@@ -110,10 +120,10 @@ class PeerSelector:
 
     async def predict_peer_quality(self, peer_info: PeerInfo) -> PeerPrediction:
         """Predict peer quality using ML.
-        
+
         Args:
             peer_info: Peer information
-            
+
         Returns:
             Peer quality prediction
         """
@@ -141,30 +151,32 @@ class PeerSelector:
         self.stats["total_predictions"] += 1
 
         # Emit prediction event
-        await emit_event(Event(
-            event_type=EventType.ML_PEER_PREDICTION.value,
-            data={
-                "peer_id": peer_id,
-                "predicted_quality": predicted_quality.value,
-                "confidence": confidence,
-                "features": {
-                    "connection_count": features.connection_count,
-                    "avg_download_speed": features.avg_download_speed,
-                    "error_rate": features.error_rate,
-                    "latency": features.latency,
+        await emit_event(
+            Event(
+                event_type=EventType.ML_PEER_PREDICTION.value,
+                data={
+                    "peer_id": peer_id,
+                    "predicted_quality": predicted_quality.value,
+                    "confidence": confidence,
+                    "features": {
+                        "connection_count": features.connection_count,
+                        "avg_download_speed": features.avg_download_speed,
+                        "error_rate": features.error_rate,
+                        "latency": features.latency,
+                    },
+                    "timestamp": time.time(),
                 },
-                "timestamp": time.time(),
-            },
-        ))
+            ),
+        )
 
         return prediction
 
-    async def rank_peers(self, peers: List[PeerInfo]) -> List[Tuple[PeerInfo, float]]:
+    async def rank_peers(self, peers: list[PeerInfo]) -> list[tuple[PeerInfo, float]]:
         """Rank peers by predicted quality.
-        
+
         Args:
             peers: List of peers to rank
-            
+
         Returns:
             List of (peer, score) tuples sorted by score
         """
@@ -191,9 +203,13 @@ class PeerSelector:
 
         return peer_scores
 
-    async def update_peer_performance(self, peer_id: str, performance_data: Dict[str, Any]) -> None:
+    async def update_peer_performance(
+        self,
+        peer_id: str,
+        performance_data: dict[str, Any],
+    ) -> None:
         """Update peer performance data for learning.
-        
+
         Args:
             peer_id: Peer identifier
             performance_data: Performance metrics
@@ -207,7 +223,9 @@ class PeerSelector:
         await self._update_features(features, performance_data)
 
         # Record performance for learning
-        self.performance_history[peer_id].append(performance_data.get("quality_score", 0.5))
+        self.performance_history[peer_id].append(
+            performance_data.get("quality_score", 0.5),
+        )
 
         # Update prediction accuracy
         if "actual_quality" in performance_data:
@@ -224,13 +242,17 @@ class PeerSelector:
         # Trigger online learning
         await self._online_learning(peer_id, performance_data)
 
-    async def get_best_peers(self, peers: List[PeerInfo], count: int = 10) -> List[PeerInfo]:
+    async def get_best_peers(
+        self,
+        peers: list[PeerInfo],
+        count: int = 10,
+    ) -> list[PeerInfo]:
         """Get the best peers based on ML predictions.
-        
+
         Args:
             peers: List of available peers
             count: Number of best peers to return
-            
+
         Returns:
             List of best peers
         """
@@ -238,19 +260,17 @@ class PeerSelector:
         ranked_peers = await self.rank_peers(peers)
 
         # Return top N peers
-        best_peers = [peer for peer, _ in ranked_peers[:count]]
+        return [peer for peer, _ in ranked_peers[:count]]
 
-        return best_peers
-
-    def get_peer_features(self, peer_id: str) -> Optional[PeerFeatures]:
+    def get_peer_features(self, peer_id: str) -> PeerFeatures | None:
         """Get features for a specific peer."""
         return self.peer_features.get(peer_id)
 
-    def get_all_peer_features(self) -> Dict[str, PeerFeatures]:
+    def get_all_peer_features(self) -> dict[str, PeerFeatures]:
         """Get features for all peers."""
         return self.peer_features.copy()
 
-    def get_ml_statistics(self) -> Dict[str, Any]:
+    def get_ml_statistics(self) -> dict[str, Any]:
         """Get ML statistics."""
         total_predictions = self.stats["total_predictions"]
         accurate_predictions = self.stats["accurate_predictions"]
@@ -286,7 +306,11 @@ class PeerSelector:
             if peer_id not in self.peer_features:
                 del self.performance_history[peer_id]
 
-    async def _extract_features(self, peer_id: str, peer_info: PeerInfo) -> PeerFeatures:
+    async def _extract_features(
+        self,
+        peer_id: str,
+        peer_info: PeerInfo,
+    ) -> PeerFeatures:
         """Extract features from peer information."""
         current_time = time.time()
 
@@ -325,7 +349,10 @@ class PeerSelector:
 
         return features
 
-    async def _predict_quality(self, features: PeerFeatures) -> Tuple[PeerQuality, float]:
+    async def _predict_quality(
+        self,
+        features: PeerFeatures,
+    ) -> tuple[PeerQuality, float]:
         """Predict peer quality using ML model."""
         # This is a simplified prediction
         # In a real implementation, this would use a trained ML model
@@ -352,7 +379,11 @@ class PeerSelector:
 
         return predicted_quality, confidence
 
-    async def _update_features(self, features: PeerFeatures, performance_data: Dict[str, Any]) -> None:
+    async def _update_features(
+        self,
+        features: PeerFeatures,
+        performance_data: dict[str, Any],
+    ) -> None:
         """Update features with new performance data."""
         current_time = time.time()
 
@@ -416,12 +447,18 @@ class PeerSelector:
 
         # Network quality (15%)
         # Lower latency is better
-        latency_score = max(0.0, 1.0 - (features.latency / 1000.0))  # Assume max 1s latency
+        latency_score = max(
+            0.0,
+            1.0 - (features.latency / 1000.0),
+        )  # Assume max 1s latency
         score += latency_score * 0.15
 
         # Activity (10%)
         # More activity is better
-        activity_score = min(1.0, features.activity_duration / 3600.0)  # Normalize to 1 hour
+        activity_score = min(
+            1.0,
+            features.activity_duration / 3600.0,
+        )  # Normalize to 1 hour
         score += activity_score * 0.1
 
         return max(0.0, min(1.0, score))
@@ -443,25 +480,31 @@ class PeerSelector:
         alpha = 0.1
         return alpha * new_value + (1 - alpha) * current_avg
 
-    async def _estimate_latency(self, ip: str) -> float:
+    async def _estimate_latency(self, _ip: str) -> float:
         """Estimate network latency to peer."""
         # This is a placeholder implementation
         # In a real implementation, this would ping the peer
 
         # For now, return a random latency between 10ms and 500ms
         import random
-        return random.uniform(0.01, 0.5)
 
-    async def _estimate_bandwidth(self, ip: str) -> float:
+        return random.uniform(0.01, 0.5)  # nosec B311 - ML randomization is not security-sensitive
+
+    async def _estimate_bandwidth(self, _ip: str) -> float:
         """Estimate available bandwidth to peer."""
         # This is a placeholder implementation
         # In a real implementation, this would measure bandwidth
 
         # For now, return a random bandwidth between 100KB/s and 10MB/s
         import random
-        return random.uniform(100 * 1024, 10 * 1024 * 1024)
 
-    async def _online_learning(self, peer_id: str, performance_data: Dict[str, Any]) -> None:
+        return random.uniform(100 * 1024, 10 * 1024 * 1024)  # nosec B311 - ML randomization is not security-sensitive
+
+    async def _online_learning(
+        self,
+        peer_id: str,
+        _performance_data: dict[str, Any],
+    ) -> None:
         """Perform online learning to improve predictions."""
         if peer_id not in self.performance_history:
             return
@@ -470,11 +513,13 @@ class PeerSelector:
             return
 
         # Get recent performance data
-        recent_performance = self.performance_history[peer_id][-self.min_samples:]
+        recent_performance = self.performance_history[peer_id][-self.min_samples :]
 
         # Calculate performance trend
         if len(recent_performance) >= 2:
-            trend = statistics.mean(recent_performance[-5:]) - statistics.mean(recent_performance[-10:-5])
+            trend = statistics.mean(recent_performance[-5:]) - statistics.mean(
+                recent_performance[-10:-5],
+            )
 
             # Adjust feature weights based on performance
             if trend > 0.1:  # Performance improving
@@ -482,19 +527,29 @@ class PeerSelector:
             elif trend < -0.1:  # Performance degrading
                 self._adjust_weights_negative(peer_id)
 
-    def _adjust_weights_positive(self, peer_id: str) -> None:
+    def _adjust_weights_positive(self, _peer_id: str) -> None:
         """Adjust weights positively for good performance."""
         # Increase weights for features that correlate with good performance
-        for feature in ["avg_download_speed", "successful_connections", "response_time"]:
+        for feature in [
+            "avg_download_speed",
+            "successful_connections",
+            "response_time",
+        ]:
             if feature in self.feature_weights:
-                self.feature_weights[feature] = min(1.0, self.feature_weights[feature] + 0.01)
+                self.feature_weights[feature] = min(
+                    1.0,
+                    self.feature_weights[feature] + 0.01,
+                )
 
-    def _adjust_weights_negative(self, peer_id: str) -> None:
+    def _adjust_weights_negative(self, _peer_id: str) -> None:
         """Adjust weights negatively for poor performance."""
         # Decrease weights for features that correlate with poor performance
         for feature in ["error_rate", "timeout_rate", "latency"]:
             if feature in self.feature_weights:
-                self.feature_weights[feature] = max(0.0, self.feature_weights[feature] - 0.01)
+                self.feature_weights[feature] = max(
+                    0.0,
+                    self.feature_weights[feature] - 0.01,
+                )
 
     def _initialize_feature_weights(self) -> None:
         """Initialize feature weights."""

@@ -1,5 +1,7 @@
 """Encryption Manager for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides encryption support including:
 - MSE/PE encryption (BEP 3)
 - Protocol encryption
@@ -7,18 +9,21 @@ Provides encryption support including:
 - Encrypted handshake
 """
 
+from __future__ import annotations
+
 import secrets
 import struct
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from ..events import Event, EventType, emit_event
+from ccbt.events import Event, EventType, emit_event
 
 
 class EncryptionType(Enum):
     """Types of encryption."""
+
     NONE = "none"
     RC4 = "rc4"
     AES = "aes"
@@ -27,6 +32,7 @@ class EncryptionType(Enum):
 
 class EncryptionMode(Enum):
     """Encryption modes."""
+
     DISABLED = "disabled"
     PREFERRED = "preferred"
     REQUIRED = "required"
@@ -35,19 +41,22 @@ class EncryptionMode(Enum):
 @dataclass
 class EncryptionConfig:
     """Encryption configuration."""
+
     mode: EncryptionMode = EncryptionMode.PREFERRED
-    allowed_ciphers: List[EncryptionType] = None
+    allowed_ciphers: list[EncryptionType] = field(default_factory=list)
     key_size: int = 16  # 128-bit keys
     handshake_timeout: float = 10.0
 
     def __post_init__(self):
-        if self.allowed_ciphers is None:
+        """Initialize allowed ciphers after object creation."""
+        if not self.allowed_ciphers:
             self.allowed_ciphers = [EncryptionType.RC4, EncryptionType.AES]
 
 
 @dataclass
 class EncryptionSession:
     """Encryption session information."""
+
     peer_id: str
     ip: str
     encryption_type: EncryptionType
@@ -62,10 +71,11 @@ class EncryptionSession:
 class EncryptionManager:
     """Encryption management system."""
 
-    def __init__(self, config: Optional[EncryptionConfig] = None):
+    def __init__(self, config: EncryptionConfig | None = None):
+        """Initialize encryption manager."""
         self.config = config or EncryptionConfig()
-        self.encryption_sessions: Dict[str, EncryptionSession] = {}
-        self.cipher_suites: Dict[EncryptionType, Any] = {}
+        self.encryption_sessions: dict[str, EncryptionSession] = {}
+        self.cipher_suites: dict[EncryptionType, Any] = {}
 
         # Initialize cipher suites
         self._initialize_cipher_suites()
@@ -79,13 +89,13 @@ class EncryptionManager:
             "handshake_failures": 0,
         }
 
-    async def initiate_encryption(self, peer_id: str, ip: str) -> Tuple[bool, bytes]:
+    async def initiate_encryption(self, peer_id: str, ip: str) -> tuple[bool, bytes]:
         """Initiate encryption with a peer.
-        
+
         Args:
             peer_id: Peer identifier
             ip: Peer IP address
-            
+
         Returns:
             Tuple of (success, handshake_data)
         """
@@ -102,41 +112,45 @@ class EncryptionManager:
             self.stats["sessions_created"] += 1
 
             # Emit encryption initiated event
-            await emit_event(Event(
-                event_type=EventType.ENCRYPTION_INITIATED.value,
-                data={
-                    "peer_id": peer_id,
-                    "ip": ip,
-                    "encryption_type": session.encryption_type.value,
-                    "timestamp": time.time(),
-                },
-            ))
-
-            return True, handshake_data
+            await emit_event(
+                Event(
+                    event_type=EventType.ENCRYPTION_INITIATED.value,
+                    data={
+                        "peer_id": peer_id,
+                        "ip": ip,
+                        "encryption_type": session.encryption_type.value,
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
         except Exception as e:
             self.stats["sessions_failed"] += 1
 
             # Emit encryption error event
-            await emit_event(Event(
-                event_type=EventType.ENCRYPTION_ERROR.value,
-                data={
-                    "peer_id": peer_id,
-                    "ip": ip,
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.ENCRYPTION_ERROR.value,
+                    data={
+                        "peer_id": peer_id,
+                        "ip": ip,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
             return False, b""
+        else:
+            return True, handshake_data
 
     async def complete_handshake(self, peer_id: str, handshake_response: bytes) -> bool:
         """Complete encryption handshake.
-        
+
         Args:
             peer_id: Peer identifier
             handshake_response: Handshake response from peer
-            
+
         Returns:
             True if handshake successful
         """
@@ -152,41 +166,43 @@ class EncryptionManager:
                 session.last_activity = time.time()
 
                 # Emit handshake completed event
-                await emit_event(Event(
-                    event_type=EventType.ENCRYPTION_HANDSHAKE_COMPLETED.value,
-                    data={
-                        "peer_id": peer_id,
-                        "encryption_type": session.encryption_type.value,
-                        "timestamp": time.time(),
-                    },
-                ))
-
-                return True
-            self.stats["handshake_failures"] += 1
-            return False
+                await emit_event(
+                    Event(
+                        event_type=EventType.ENCRYPTION_HANDSHAKE_COMPLETED.value,
+                        data={
+                            "peer_id": peer_id,
+                            "encryption_type": session.encryption_type.value,
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
         except Exception as e:
             self.stats["handshake_failures"] += 1
 
             # Emit handshake error event
-            await emit_event(Event(
-                event_type=EventType.ENCRYPTION_HANDSHAKE_FAILED.value,
-                data={
-                    "peer_id": peer_id,
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.ENCRYPTION_HANDSHAKE_FAILED.value,
+                    data={
+                        "peer_id": peer_id,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
             return False
+        else:
+            return True
 
-    async def encrypt_data(self, peer_id: str, data: bytes) -> Tuple[bool, bytes]:
+    async def encrypt_data(self, peer_id: str, data: bytes) -> tuple[bool, bytes]:
         """Encrypt data for a peer.
-        
+
         Args:
             peer_id: Peer identifier
             data: Data to encrypt
-            
+
         Returns:
             Tuple of (success, encrypted_data)
         """
@@ -212,28 +228,34 @@ class EncryptionManager:
             session.last_activity = time.time()
             self.stats["bytes_encrypted"] += len(encrypted_data)
 
-            return True, encrypted_data
-
         except Exception as e:
             # Emit encryption error event
-            await emit_event(Event(
-                event_type=EventType.ENCRYPTION_ERROR.value,
-                data={
-                    "peer_id": peer_id,
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.ENCRYPTION_ERROR.value,
+                    data={
+                        "peer_id": peer_id,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
             return False, data
+        else:
+            return True, encrypted_data
 
-    async def decrypt_data(self, peer_id: str, encrypted_data: bytes) -> Tuple[bool, bytes]:
+    async def decrypt_data(
+        self,
+        peer_id: str,
+        encrypted_data: bytes,
+    ) -> tuple[bool, bytes]:
         """Decrypt data from a peer.
-        
+
         Args:
             peer_id: Peer identifier
             encrypted_data: Encrypted data to decrypt
-            
+
         Returns:
             Tuple of (success, decrypted_data)
         """
@@ -252,27 +274,33 @@ class EncryptionManager:
                 return False, encrypted_data
 
             # Decrypt data
-            decrypted_data = await self._decrypt_with_cipher(cipher, session.key, encrypted_data)
+            decrypted_data = await self._decrypt_with_cipher(
+                cipher,
+                session.key,
+                encrypted_data,
+            )
 
             # Update statistics
             session.bytes_decrypted += len(decrypted_data)
             session.last_activity = time.time()
             self.stats["bytes_decrypted"] += len(decrypted_data)
 
-            return True, decrypted_data
-
         except Exception as e:
             # Emit decryption error event
-            await emit_event(Event(
-                event_type=EventType.ENCRYPTION_ERROR.value,
-                data={
-                    "peer_id": peer_id,
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.ENCRYPTION_ERROR.value,
+                    data={
+                        "peer_id": peer_id,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
             return False, encrypted_data
+        else:
+            return True, decrypted_data
 
     def is_peer_encrypted(self, peer_id: str) -> bool:
         """Check if peer has active encryption."""
@@ -282,14 +310,14 @@ class EncryptionManager:
         session = self.encryption_sessions[peer_id]
         return session.handshake_complete
 
-    def get_encryption_type(self, peer_id: str) -> Optional[EncryptionType]:
+    def get_encryption_type(self, peer_id: str) -> EncryptionType | None:
         """Get encryption type for a peer."""
         if peer_id not in self.encryption_sessions:
             return None
 
         return self.encryption_sessions[peer_id].encryption_type
 
-    def get_encryption_statistics(self) -> Dict[str, Any]:
+    def get_encryption_statistics(self) -> dict[str, Any]:
         """Get encryption statistics."""
         return {
             "sessions_created": self.stats["sessions_created"],
@@ -298,10 +326,11 @@ class EncryptionManager:
             "bytes_decrypted": self.stats["bytes_decrypted"],
             "handshake_failures": self.stats["handshake_failures"],
             "active_sessions": len(self.encryption_sessions),
-            "encryption_rate": self.stats["bytes_encrypted"] / max(1, self.stats["bytes_encrypted"] + self.stats["bytes_decrypted"]),
+            "encryption_rate": self.stats["bytes_encrypted"]
+            / max(1, self.stats["bytes_encrypted"] + self.stats["bytes_decrypted"]),
         }
 
-    def get_peer_encryption_info(self, peer_id: str) -> Optional[Dict[str, Any]]:
+    def get_peer_encryption_info(self, peer_id: str) -> dict[str, Any] | None:
         """Get encryption information for a peer."""
         if peer_id not in self.encryption_sessions:
             return None
@@ -339,7 +368,11 @@ class EncryptionManager:
         self.cipher_suites[EncryptionType.AES] = "aes_cipher"
         self.cipher_suites[EncryptionType.CHACHA20] = "chacha20_cipher"
 
-    async def _create_encryption_session(self, peer_id: str, ip: str) -> EncryptionSession:
+    async def _create_encryption_session(
+        self,
+        peer_id: str,
+        ip: str,
+    ) -> EncryptionSession:
         """Create a new encryption session."""
         # Select encryption type
         encryption_type = self._select_encryption_type()
@@ -347,7 +380,7 @@ class EncryptionManager:
         # Generate encryption key
         key = self._generate_encryption_key()
 
-        session = EncryptionSession(
+        return EncryptionSession(
             peer_id=peer_id,
             ip=ip,
             encryption_type=encryption_type,
@@ -355,8 +388,6 @@ class EncryptionManager:
             created_at=time.time(),
             last_activity=time.time(),
         )
-
-        return session
 
     def _select_encryption_type(self) -> EncryptionType:
         """Select encryption type based on configuration."""
@@ -387,7 +418,11 @@ class EncryptionManager:
 
         return handshake_data
 
-    async def _verify_handshake_response(self, session: EncryptionSession, response: bytes) -> bool:
+    async def _verify_handshake_response(
+        self,
+        session: EncryptionSession,
+        response: bytes,
+    ) -> bool:
         """Verify handshake response from peer."""
         # This is a simplified verification
         # In a real implementation, this would verify the peer's response
@@ -407,7 +442,9 @@ class EncryptionManager:
         expected_encryption_type = list(EncryptionType)[encryption_type_index]
         return expected_encryption_type == session.encryption_type
 
-    async def _encrypt_with_cipher(self, cipher: Any, key: bytes, data: bytes) -> bytes:
+    async def _encrypt_with_cipher(
+        self, _cipher: Any, _key: bytes, data: bytes
+    ) -> bytes:
         """Encrypt data with specified cipher."""
         # This is a placeholder implementation
         # In a real implementation, this would use actual encryption
@@ -415,7 +452,12 @@ class EncryptionManager:
         # For now, just return the data (no encryption)
         return data
 
-    async def _decrypt_with_cipher(self, cipher: Any, key: bytes, encrypted_data: bytes) -> bytes:
+    async def _decrypt_with_cipher(
+        self,
+        _cipher: Any,
+        _key: bytes,
+        encrypted_data: bytes,
+    ) -> bytes:
         """Decrypt data with specified cipher."""
         # This is a placeholder implementation
         # In a real implementation, this would use actual decryption

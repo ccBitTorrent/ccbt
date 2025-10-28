@@ -1,5 +1,4 @@
-"""
-Property-based tests for piece selection algorithms.
+"""Property-based tests for piece selection algorithms.
 
 Tests invariants and properties of piece selection strategies
 using Hypothesis for automatic test case generation.
@@ -23,12 +22,16 @@ class TestPieceSelectionProperties:
         # Create piece info list
         pieces = []
         for i in range(len(bitfield)):
-            pieces.append(PieceInfo(
-                index=i,
-                length=16384,  # 16KB pieces
-                hash=b"\x00" * 20,
-                state=PieceState.MISSING if not bitfield[i] else PieceState.COMPLETE,
-            ))
+            pieces.append(
+                PieceInfo(
+                    index=i,
+                    length=16384,  # 16KB pieces
+                    hash=b"\x00" * 20,
+                    state=PieceState.MISSING
+                    if not bitfield[i]
+                    else PieceState.COMPLETE,
+                ),
+            )
 
         # Rarest first should select pieces we don't have
         missing_pieces = [p for p in pieces if p.state == PieceState.MISSING]
@@ -48,12 +51,16 @@ class TestPieceSelectionProperties:
         # Create piece info list
         pieces = []
         for i in range(len(bitfield)):
-            pieces.append(PieceInfo(
-                index=i,
-                length=16384,
-                hash=b"\x00" * 20,
-                state=PieceState.MISSING if not bitfield[i] else PieceState.COMPLETE,
-            ))
+            pieces.append(
+                PieceInfo(
+                    index=i,
+                    length=16384,
+                    hash=b"\x00" * 20,
+                    state=PieceState.MISSING
+                    if not bitfield[i]
+                    else PieceState.COMPLETE,
+                ),
+            )
 
         # Sequential should select pieces in order
         missing_pieces = [p for p in pieces if p.state == PieceState.MISSING]
@@ -74,12 +81,16 @@ class TestPieceSelectionProperties:
         # Create piece info list
         pieces = []
         for i in range(len(bitfield)):
-            pieces.append(PieceInfo(
-                index=i,
-                length=16384,
-                hash=b"\x00" * 20,
-                state=PieceState.MISSING if not bitfield[i] else PieceState.COMPLETE,
-            ))
+            pieces.append(
+                PieceInfo(
+                    index=i,
+                    length=16384,
+                    hash=b"\x00" * 20,
+                    state=PieceState.MISSING
+                    if not bitfield[i]
+                    else PieceState.COMPLETE,
+                ),
+            )
 
         # Round robin should cycle through pieces
         missing_pieces = [p for p in pieces if p.state == PieceState.MISSING]
@@ -100,12 +111,16 @@ class TestPieceSelectionProperties:
         # Create piece info list
         pieces = []
         for i in range(len(bitfield)):
-            pieces.append(PieceInfo(
-                index=i,
-                length=16384,
-                hash=b"\x00" * 20,
-                state=PieceState.MISSING if not bitfield[i] else PieceState.COMPLETE,
-            ))
+            pieces.append(
+                PieceInfo(
+                    index=i,
+                    length=16384,
+                    hash=b"\x00" * 20,
+                    state=PieceState.MISSING
+                    if not bitfield[i]
+                    else PieceState.COMPLETE,
+                ),
+            )
 
         missing_pieces = [p for p in pieces if p.state == PieceState.MISSING]
         complete_pieces = [p for p in pieces if p.state == PieceState.COMPLETE]
@@ -128,19 +143,25 @@ class TestPieceSelectionProperties:
         # Create piece info list
         pieces = []
         for i in range(len(bitfield)):
-            pieces.append(PieceInfo(
-                index=i,
-                length=16384,
-                hash=b"\x00" * 20,
-                state=PieceState.MISSING if not bitfield[i] else PieceState.COMPLETE,
-            ))
+            pieces.append(
+                PieceInfo(
+                    index=i,
+                    length=16384,
+                    hash=b"\x00" * 20,
+                    state=PieceState.MISSING
+                    if not bitfield[i]
+                    else PieceState.COMPLETE,
+                ),
+            )
 
         # Same bitfield should produce same missing pieces
         missing_pieces1 = [p for p in pieces if p.state == PieceState.MISSING]
         missing_pieces2 = [p for p in pieces if p.state == PieceState.MISSING]
 
         assert len(missing_pieces1) == len(missing_pieces2)
-        assert all(p1.index == p2.index for p1, p2 in zip(missing_pieces1, missing_pieces2))
+        assert all(
+            p1.index == p2.index for p1, p2 in zip(missing_pieces1, missing_pieces2)
+        )
 
     @given(
         st.lists(st.booleans(), min_size=1, max_size=100),
@@ -151,15 +172,19 @@ class TestPieceSelectionProperties:
         # Create piece info list
         pieces = []
         for i in range(len(bitfield)):
-            pieces.append(PieceInfo(
-                index=i,
-                length=16384,
-                hash=b"\x00" * 20,
-                state=PieceState.MISSING if not bitfield[i] else PieceState.COMPLETE,
-            ))
+            pieces.append(
+                PieceInfo(
+                    index=i,
+                    length=16384,
+                    hash=b"\x00" * 20,
+                    state=PieceState.MISSING
+                    if not bitfield[i]
+                    else PieceState.COMPLETE,
+                ),
+            )
 
-        missing_pieces = [p for p in pieces if p.state == PieceState.MISSING]
-        complete_pieces = [p for p in pieces if p.state == PieceState.COMPLETE]
+        [p for p in pieces if p.state == PieceState.MISSING]
+        [p for p in pieces if p.state == PieceState.COMPLETE]
 
         # Invariant: all pieces should be either missing or complete
         for piece in pieces:
@@ -182,20 +207,26 @@ class TestPieceSelectionProperties:
         # Create piece info list
         pieces = []
         for i in range(len(bitfield)):
-            pieces.append(PieceInfo(
-                index=i,
-                length=16384,
-                hash=b"\x00" * 20,
-                state=PieceState.MISSING if not bitfield[i] else PieceState.COMPLETE,
-            ))
+            pieces.append(
+                PieceInfo(
+                    index=i,
+                    length=16384,
+                    hash=b"\x00" * 20,
+                    state=PieceState.MISSING
+                    if not bitfield[i]
+                    else PieceState.COMPLETE,
+                ),
+            )
 
         missing_pieces = [p for p in pieces if p.state == PieceState.MISSING]
 
         if len(missing_pieces) > 1:
             # Sequential selection should maintain order
             sequential_pieces = sorted(missing_pieces, key=lambda p: p.index)
-            assert all(sequential_pieces[i].index < sequential_pieces[i+1].index
-                      for i in range(len(sequential_pieces)-1))
+            assert all(
+                sequential_pieces[i].index < sequential_pieces[i + 1].index
+                for i in range(len(sequential_pieces) - 1)
+            )
 
     @given(
         st.lists(st.booleans(), min_size=1, max_size=100),
@@ -206,12 +237,16 @@ class TestPieceSelectionProperties:
         # Create piece info list
         pieces = []
         for i in range(len(bitfield)):
-            pieces.append(PieceInfo(
-                index=i,
-                length=16384,
-                hash=b"\x00" * 20,
-                state=PieceState.MISSING if not bitfield[i] else PieceState.COMPLETE,
-            ))
+            pieces.append(
+                PieceInfo(
+                    index=i,
+                    length=16384,
+                    hash=b"\x00" * 20,
+                    state=PieceState.MISSING
+                    if not bitfield[i]
+                    else PieceState.COMPLETE,
+                ),
+            )
 
         missing_pieces = [p for p in pieces if p.state == PieceState.MISSING]
 
@@ -231,12 +266,16 @@ class TestPieceSelectionProperties:
         # Create piece info list
         pieces = []
         for i in range(len(bitfield)):
-            pieces.append(PieceInfo(
-                index=i,
-                length=16384,
-                hash=b"\x00" * 20,
-                state=PieceState.MISSING if not bitfield[i] else PieceState.COMPLETE,
-            ))
+            pieces.append(
+                PieceInfo(
+                    index=i,
+                    length=16384,
+                    hash=b"\x00" * 20,
+                    state=PieceState.MISSING
+                    if not bitfield[i]
+                    else PieceState.COMPLETE,
+                ),
+            )
 
         # Should handle empty bitfield
         if not bitfield:
@@ -261,12 +300,16 @@ class TestPieceSelectionProperties:
         # Create piece info list
         pieces = []
         for i in range(len(bitfield)):
-            pieces.append(PieceInfo(
-                index=i,
-                length=16384,
-                hash=b"\x00" * 20,
-                state=PieceState.MISSING if not bitfield[i] else PieceState.COMPLETE,
-            ))
+            pieces.append(
+                PieceInfo(
+                    index=i,
+                    length=16384,
+                    hash=b"\x00" * 20,
+                    state=PieceState.MISSING
+                    if not bitfield[i]
+                    else PieceState.COMPLETE,
+                ),
+            )
 
         missing_pieces = [p for p in pieces if p.state == PieceState.MISSING]
 

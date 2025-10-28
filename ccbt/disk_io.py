@@ -1,8 +1,12 @@
 """High-performance disk I/O layer for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides cross-platform file preallocation, write batching, memory-mapped I/O,
 and async disk operations with thread pool execution.
 """
+
+from __future__ import annotations
 
 import asyncio
 import mmap
@@ -13,14 +17,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 # Platform-specific imports
 if sys.platform == "win32":
     try:
-        import pywintypes  # type: ignore[import-not-found]
         import win32con  # type: ignore[import-not-found]
         import win32file  # type: ignore[import-not-found]
+
         HAS_WIN32 = True
     except Exception:
         HAS_WIN32 = False
@@ -30,18 +34,19 @@ else:
 # Linux-specific imports for io_uring
 if sys.platform.startswith("linux"):
     try:
-        import io_uring  # type: ignore[import-not-found]
         HAS_IO_URING = True
     except Exception:
         HAS_IO_URING = False
 else:
     HAS_IO_URING = False
 
-from .config import get_config
-from .exceptions import DiskError
-from .logging_config import get_logger
-from .models import PreallocationStrategy
-from .buffers import get_buffer_manager
+import contextlib
+
+from ccbt.buffers import get_buffer_manager
+from ccbt.config import get_config
+from ccbt.exceptions import DiskError
+from ccbt.logging_config import get_logger
+from ccbt.models import PreallocationStrategy
 
 # DiskIOError is now imported from exceptions.py
 DiskIOError = DiskError  # Alias for backward compatibility
@@ -50,6 +55,7 @@ DiskIOError = DiskError  # Alias for backward compatibility
 @dataclass
 class WriteRequest:
     """Represents a write request to be batched."""
+
     file_path: Path
     offset: int
     data: bytes
@@ -75,6 +81,7 @@ class WriteRequest:
 @dataclass
 class MmapCache:
     """Memory-mapped file cache entry."""
+
     file_path: Path
     mmap_obj: mmap.mmap
     file_obj: Any
@@ -85,7 +92,12 @@ class MmapCache:
 class DiskIOManager:
     """High-performance disk I/O manager with preallocation, batching, and mmap."""
 
-    def __init__(self, max_workers: int = 2, queue_size: int = 200, cache_size_mb: int = 256):
+    def __init__(
+        self,
+        max_workers: int = 2,
+        queue_size: int = 200,
+        cache_size_mb: int = 256,
+    ):
         """Initialize disk I/O manager.
 
         Args:
@@ -100,20 +112,31 @@ class DiskIOManager:
         self.cache_size_bytes = cache_size_mb * 1024 * 1024
 
         # Thread pool for disk I/O
-        self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="disk-io")
+        self.executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="disk-io",
+        )
 
         # Write batching
         self.write_queue: asyncio.Queue = asyncio.Queue(maxsize=queue_size)
-        self.write_requests: Dict[Path, List[WriteRequest]] = {}
+        self.write_requests: dict[Path, list[WriteRequest]] = {}
         self.write_lock = threading.Lock()
 
         # Memory-mapped file cache
-        self.mmap_cache: Dict[Path, MmapCache] = {}
+        self.mmap_cache: dict[Path, MmapCache] = {}
         self.cache_lock = threading.Lock()
         self.cache_size = 0
         # Zero-copy staging buffer (simple ring buffer)
         try:
-            self.ring_buffer = get_buffer_manager().create_ring_buffer(max(1024 * 1024, self.write_buffer_kib * 1024 if hasattr(self, 'write_buffer_kib') else 1024 * 1024))  # type: ignore[attr-defined]
+            self.ring_buffer = get_buffer_manager().create_ring_buffer(
+                max(
+                    1024 * 1024,
+                    int(self.write_buffer_kib) * 1024
+                    if hasattr(self, "write_buffer_kib")
+                    and isinstance(self.write_buffer_kib, (int, float))
+                    else 1024 * 1024,
+                ),
+            )  # type: ignore[attr-defined]
         except Exception:
             self.ring_buffer = None
         # Thread-local staging buffers to avoid per-call allocation and avoid contention
@@ -122,15 +145,17 @@ class DiskIOManager:
         # Advanced I/O features
         # Respect config toggles: enable_io_uring, direct_io
         try:
-            self.io_uring_enabled = bool(self.config.disk.enable_io_uring) and HAS_IO_URING
+            self.io_uring_enabled = (
+                bool(self.config.disk.enable_io_uring) and HAS_IO_URING
+            )
         except Exception:
             self.io_uring_enabled = HAS_IO_URING
         self.direct_io_enabled = bool(self.config.disk.direct_io)
         self.nvme_optimized = False
 
         # Background tasks
-        self._write_batcher_task: Optional[asyncio.Task[None]] = None
-        self._cache_cleaner_task: Optional[asyncio.Task[None]] = None
+        self._write_batcher_task: asyncio.Task[None] | None = None
+        self._cache_cleaner_task: asyncio.Task[None] | None = None
 
         # Statistics
         self.stats = {
@@ -150,8 +175,11 @@ class DiskIOManager:
 
     def _get_thread_staging_buffer(self, min_size: int) -> bytearray:
         """Get or create a thread-local staging buffer of at least min_size bytes."""
-        default_size = max(min_size, int(getattr(self.config.disk, "write_buffer_kib", 256)) * 1024)
-        buf: Optional[bytearray] = getattr(self._thread_local, "staging_buffer", None)
+        default_size = max(
+            min_size,
+            int(getattr(self.config.disk, "write_buffer_kib", 256)) * 1024,
+        )
+        buf: bytearray | None = getattr(self._thread_local, "staging_buffer", None)
         if buf is None or len(buf) < default_size:
             buf = bytearray(default_size)
             self._thread_local.staging_buffer = buf
@@ -159,8 +187,12 @@ class DiskIOManager:
 
     def _get_thread_ring_buffer(self, min_size: int):
         """Get or create a thread-local ring buffer sized for disk staging."""
-        from .buffers import RingBuffer, get_buffer_manager  # local import to avoid cycles
-        default_size = max(min_size, int(getattr(self.config.disk, "write_buffer_kib", 256)) * 1024)
+        from ccbt.buffers import RingBuffer, get_buffer_manager
+
+        default_size = max(
+            min_size,
+            int(getattr(self.config.disk, "write_buffer_kib", 256)) * 1024,
+        )
         rb = getattr(self._thread_local, "ring_buffer", None)
         if rb is None or not isinstance(rb, RingBuffer) or rb.size < default_size:  # type: ignore[attr-defined]
             rb = get_buffer_manager().create_ring_buffer(default_size)
@@ -191,29 +223,25 @@ class DiskIOManager:
                 self.logger.info("io_uring not available, using fallback I/O")
 
         except Exception as e:
-            self.logger.warning(f"Failed to detect platform capabilities: {e}")
+            self.logger.warning("Failed to detect platform capabilities: %s", e)
 
     async def start(self) -> None:
         """Start background tasks."""
         self._write_batcher_task = asyncio.create_task(self._write_batcher())
         self._cache_cleaner_task = asyncio.create_task(self._cache_cleaner())
-        self.logger.info(f"Disk I/O manager started with {self.max_workers} workers")
+        self.logger.info("Disk I/O manager started with %s workers", self.max_workers)
 
     async def stop(self) -> None:
         """Stop background tasks and cleanup."""
         if self._write_batcher_task:
             self._write_batcher_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._write_batcher_task
-            except asyncio.CancelledError:
-                pass
 
         if self._cache_cleaner_task:
             self._cache_cleaner_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._cache_cleaner_task
-            except asyncio.CancelledError:
-                pass
 
         # Flush remaining writes and wait for completion
         await self._flush_all_writes()
@@ -221,10 +249,14 @@ class DiskIOManager:
         # Check if any futures are still pending (shouldn't happen after flush)
         with self.write_lock:
             pending_futures = []
-            for file_path, requests in self.write_requests.items():
-                for req in requests:
-                    if not req.future.done():
-                        pending_futures.append(req.future)
+            pending_futures.extend(
+                [
+                    req.future
+                    for requests in self.write_requests.values()
+                    for req in requests
+                    if not req.future.done()
+                ]
+            )
 
             # Cancel any futures that are still pending (indicates they weren't processed)
             for future in pending_futures:
@@ -234,32 +266,42 @@ class DiskIOManager:
         # Close mmap cache (ensure handles are closed so Windows can delete files)
         with self.cache_lock:
             for cache_entry in self.mmap_cache.values():
-                try:
-                    cache_entry.mmap_obj.close()
-                    cache_entry.file_obj.close()
-                except Exception:
-                    pass
+                self._close_cache_entry_safely(cache_entry)
             self.mmap_cache.clear()
         # On Windows, give the OS a brief moment to release file handles
         if sys.platform == "win32":
-            try:
-                import gc
-                gc.collect()
-                await asyncio.sleep(0.25)
-            except Exception:
-                pass
+            await self._windows_cleanup_delay()
 
         # Shutdown executor with timeout to prevent hanging
+        await self._shutdown_executor_safely()
+        self.logger.info("Disk I/O manager stopped")
+
+    def _close_cache_entry_safely(self, cache_entry: MmapCache) -> None:
+        try:
+            cache_entry.mmap_obj.close()
+            cache_entry.file_obj.close()
+        except (OSError, RuntimeError):
+            # Cleanup during shutdown, failure is acceptable
+            pass  # Cache cleanup errors are expected
+
+    async def _windows_cleanup_delay(self) -> None:
+        try:
+            import gc
+
+            gc.collect()
+            await asyncio.sleep(0.25)
+        except (OSError, RuntimeError, ImportError):
+            # Ignore Windows-specific cleanup errors
+            pass  # Windows cleanup errors are expected
+
+    async def _shutdown_executor_safely(self) -> None:
         try:
             # Backwards-compatible shutdown without timeout parameter
             self.executor.shutdown(wait=True)
         except Exception:
             # Force shutdown if graceful shutdown fails
-            try:
+            with contextlib.suppress(Exception):
                 self.executor.shutdown(wait=False)
-            except Exception:
-                pass
-        self.logger.info("Disk I/O manager stopped")
 
     async def preallocate_file(self, file_path: Path, size: int) -> None:
         """Preallocate file space.
@@ -284,10 +326,16 @@ class DiskIOManager:
             )
             self.stats["preallocations"] += 1
         except Exception as e:
-            self.logger.error(f"Failed to preallocate {file_path}: {e}")
-            raise DiskIOError(f"Preallocation failed: {e}")
+            self.logger.exception("Failed to preallocate %s", file_path)
+            msg = f"Preallocation failed: {e}"
+            raise DiskIOError(msg) from e
 
-    def _preallocate_file_sync(self, file_path: Path, size: int, strategy: PreallocationStrategy) -> None:
+    def _preallocate_file_sync(
+        self,
+        file_path: Path,
+        size: int,
+        strategy: PreallocationStrategy,
+    ) -> None:
         """Synchronous file preallocation."""
         # Ensure parent directory exists
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -331,9 +379,19 @@ class DiskIOManager:
                     f.seek(size - 1)
                     f.write(b"\x00")
 
-        self.logger.debug(f"Preallocated {size} bytes for {file_path} using {strategy.name}")
+        self.logger.debug(
+            "Preallocated %s bytes for %s using %s",
+            size,
+            file_path,
+            strategy.name,
+        )
 
-    async def write_block(self, file_path: Path, offset: int, data: bytes) -> asyncio.Future:
+    async def write_block(
+        self,
+        file_path: Path,
+        offset: int,
+        data: bytes,
+    ) -> asyncio.Future:
         """Asynchronously write a block of data to a file.
 
         Args:
@@ -377,7 +435,7 @@ class DiskIOManager:
                     cache_entry.last_access = time.time()
                     return await asyncio.get_event_loop().run_in_executor(
                         self.executor,
-                        lambda: cache_entry.mmap_obj[offset:offset + length],
+                        lambda: cache_entry.mmap_obj[offset : offset + length],
                     )
                 self.stats["cache_misses"] += 1
 
@@ -390,7 +448,12 @@ class DiskIOManager:
             length,
         )
 
-    async def read_block_mmap(self, file_path: Union[str, Path], offset: int, length: int) -> bytes:
+    async def read_block_mmap(
+        self,
+        file_path: str | Path,
+        offset: int,
+        length: int,
+    ) -> bytes:
         """Read a block of data using memory mapping for better performance.
 
         Uses an ephemeral read-only mmap to avoid persisting OS file locks.
@@ -414,16 +477,16 @@ class DiskIOManager:
                 try:
                     # Count as a cache hit for stats visibility in tests
                     self.stats["cache_hits"] = self.stats.get("cache_hits", 0) + 1
-                    return mm[offset:offset + length]
+                    return mm[offset : offset + length]
                 finally:
                     mm.close()
         except FileNotFoundError:
             raise
-        except Exception as e:
+        except Exception:
             # Fallback to normal read path
             return await self.read_block(Path(file_path), offset, length)
 
-    def get_cache_stats(self) -> Dict[str, int]:
+    def get_cache_stats(self) -> dict[str, int]:
         """Return mmap cache statistics."""
         with self.cache_lock:
             return {
@@ -443,7 +506,8 @@ class DiskIOManager:
             # Propagate to allow callers/tests to handle FileNotFoundError
             raise
         except Exception as e:
-            raise DiskIOError(f"Failed to read from {file_path}: {e}")
+            msg = f"Failed to read from {file_path}: {e}"
+            raise DiskIOError(msg) from e
 
     async def _write_batcher(self) -> None:
         """Background task to batch and flush writes."""
@@ -462,16 +526,29 @@ class DiskIOManager:
 
                 # Flush if batch size reached, total bytes exceed threshold, or timeout
                 config = get_config()
-                batch_size_threshold = max(1, config.disk.write_batch_kib * 1024 // 16384)  # At least 1 request
-                byte_threshold = max(64 * 1024, int(getattr(config.disk, "write_buffer_kib", 256)) * 1024)
+                batch_size_threshold = max(
+                    1,
+                    config.disk.write_batch_kib * 1024 // 16384,
+                )  # At least 1 request
+                byte_threshold = max(
+                    64 * 1024,
+                    int(getattr(config.disk, "write_buffer_kib", 256)) * 1024,
+                )
                 # Use a shorter timeout for more responsive batching
                 timeout_threshold = 0.005  # 5ms timeout for quick processing
-                should_flush = len(self.write_requests[request.file_path]) >= batch_size_threshold
+                should_flush = (
+                    len(self.write_requests[request.file_path]) >= batch_size_threshold
+                )
                 if not should_flush:
-                    total_bytes = sum(len(r.data) for r in self.write_requests[request.file_path])
+                    total_bytes = sum(
+                        len(r.data) for r in self.write_requests[request.file_path]
+                    )
                     if total_bytes >= byte_threshold:
                         should_flush = True
-                if not should_flush and (time.time() - request.timestamp) > timeout_threshold:
+                if (
+                    not should_flush
+                    and (time.time() - request.timestamp) > timeout_threshold
+                ):
                     should_flush = True
                 if should_flush:
                     await self._flush_file_writes(request.file_path)
@@ -483,21 +560,21 @@ class DiskIOManager:
             except asyncio.CancelledError:
                 # Clean up any pending requests before exiting
                 with self.write_lock:
-                    for file_path, requests in self.write_requests.items():
+                    for requests in self.write_requests.values():
                         for req in requests:
                             if not req.future.done():
                                 req.future.set_exception(asyncio.CancelledError())
                 break
-            except Exception as e:
-                self.logger.error(f"Error in write batcher: {e}")
+            except Exception:
+                self.logger.exception("Error in write batcher")
 
     async def _flush_stale_writes(self) -> None:
         """Flush files whose pending writes exceeded the batching timeout."""
         try:
             now = time.time()
-            config = get_config()
+            get_config()
             timeout_threshold = 0.005
-            to_flush: List[Path] = []
+            to_flush: list[Path] = []
             with self.write_lock:
                 for file_path, requests in list(self.write_requests.items()):
                     if not requests:
@@ -508,7 +585,7 @@ class DiskIOManager:
             for fp in to_flush:
                 await self._flush_file_writes(fp)
         except Exception as e:
-            self.logger.debug(f"flush_stale_writes error: {e}")
+            self.logger.debug("flush_stale_writes error: %s", e)
 
     async def _flush_all_writes(self) -> None:
         """Flush all pending writes to disk."""
@@ -519,7 +596,7 @@ class DiskIOManager:
 
     async def _flush_file_writes(self, file_path: Path) -> None:
         """Flush writes for a specific file."""
-        writes_to_process: List[WriteRequest] = []
+        writes_to_process: list[WriteRequest] = []
         with self.write_lock:
             if file_path in self.write_requests:
                 writes_to_process = self.write_requests.pop(file_path)
@@ -533,11 +610,13 @@ class DiskIOManager:
         if self.ring_buffer is not None:
             try:
                 for req in writes_to_process:
-                    if len(req.data) <= 32 * 1024 and self.ring_buffer.available() >= len(req.data):
+                    if len(
+                        req.data,
+                    ) <= 32 * 1024 and self.ring_buffer.available() >= len(req.data):
                         self.ring_buffer.write(req.data)
-            except Exception:
+            except (OSError, RuntimeError):
                 # Non-fatal; continue without staging
-                pass
+                pass  # Ring buffer staging errors are expected
 
         # Combine contiguous writes, including data staged in ring buffers
         combined_writes = self._combine_contiguous_writes(writes_to_process)
@@ -556,10 +635,13 @@ class DiskIOManager:
                 if len(views) == 1:
                     combined_writes.append((next_offset, bytes(views[0])))
                 elif len(views) == 2:
-                    combined_writes.append((next_offset, bytes(views[0]) + bytes(views[1])))
+                    combined_writes.append(
+                        (next_offset, bytes(views[0]) + bytes(views[1])),
+                    )
                 rb.consume(total_rb)
-        except Exception:
-            pass
+        except (OSError, RuntimeError):
+            # Ignore ring buffer processing errors
+            pass  # Ring buffer processing errors are expected
 
         # Execute writes in thread pool (best effort)
         await asyncio.get_event_loop().run_in_executor(
@@ -574,13 +656,20 @@ class DiskIOManager:
             if not req.future.done():
                 req.future.set_result(None)
 
-    def _combine_contiguous_writes(self, writes: List[WriteRequest]) -> List[Tuple[int, bytes]]:
+    def _combine_contiguous_writes(
+        self,
+        writes: list[WriteRequest],
+    ) -> list[tuple[int, bytes]]:
         """Return sorted writes without concatenating data to avoid extra copies."""
         if not writes:
             return []
         return [(req.offset, req.data) for req in writes]
 
-    def _write_combined_sync(self, file_path: Path, combined_writes: List[Tuple[int, bytes]]) -> None:
+    def _write_combined_sync(
+        self,
+        file_path: Path,
+        combined_writes: list[tuple[int, bytes]],
+    ) -> None:
         """Synchronously write combined blocks to disk."""
         try:
             # Ensure parent directory exists
@@ -596,13 +685,17 @@ class DiskIOManager:
             # Optimize contiguous writes by coalescing into a per-call staging buffer
             try:
                 import os
+
                 fd = os.open(file_path, os.O_RDWR)
                 try:
-                    staging_threshold = max(64 * 1024, getattr(self.config.disk, "write_buffer_kib", 128) * 1024)
+                    staging_threshold = max(
+                        64 * 1024,
+                        getattr(self.config.disk, "write_buffer_kib", 128) * 1024,
+                    )
                     buffer = self._get_thread_staging_buffer(staging_threshold)
                     buf_pos = 0
-                    run_start: Optional[int] = None
-                    prev_end: Optional[int] = None
+                    run_start: int | None = None
+                    prev_end: int | None = None
 
                     def flush_run() -> None:
                         nonlocal run_start, buf_pos
@@ -647,7 +740,7 @@ class DiskIOManager:
                             prev_end = offset
 
                         # Copy into staging buffer
-                        buffer[buf_pos:buf_pos + data_len] = data
+                        buffer[buf_pos : buf_pos + data_len] = data
                         buf_pos += data_len
                         prev_end = offset + data_len
 
@@ -664,9 +757,11 @@ class DiskIOManager:
                         self.stats["writes"] += 1
                         self.stats["bytes_written"] += len(data)
         except FileNotFoundError:
-            raise DiskIOError(f"File not found: {file_path}")
+            msg = f"File not found: {file_path}"
+            raise DiskIOError(msg) from None
         except Exception as e:
-            raise DiskIOError(f"Failed to write to {file_path}: {e}")
+            msg = f"Failed to write to {file_path}: {e}"
+            raise DiskIOError(msg) from e
 
     async def _cache_cleaner(self) -> None:
         """Background task to clean up mmap cache."""
@@ -678,7 +773,10 @@ class DiskIOManager:
                 with self.cache_lock:
                     # Remove oldest/least recently used entries if cache exceeds size limit
                     if self.cache_size > self.cache_size_bytes:
-                        sorted_entries = sorted(self.mmap_cache.items(), key=lambda item: item[1].last_access)
+                        sorted_entries = sorted(
+                            self.mmap_cache.items(),
+                            key=lambda item: item[1].last_access,
+                        )
 
                         for file_path, cache_entry in sorted_entries:
                             if self.cache_size <= self.cache_size_bytes:
@@ -689,19 +787,26 @@ class DiskIOManager:
                                 cache_entry.file_obj.close()
                                 self.cache_size -= cache_entry.size
                                 del self.mmap_cache[file_path]
-                                self.logger.debug(f"Evicted {file_path} from mmap cache.")
+                                self.logger.debug(
+                                    "Evicted %s from mmap cache.",
+                                    file_path,
+                                )
                             except Exception as e:
-                                self.logger.warning(f"Error closing mmap for {file_path}: {e}")
+                                self.logger.warning(
+                                    "Error closing mmap for %s: %s",
+                                    file_path,
+                                    e,
+                                )
                                 # If closing fails, remove it anyway to prevent further issues
                                 self.cache_size -= cache_entry.size
                                 del self.mmap_cache[file_path]
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Error in mmap cache cleaner: {e}")
+            except Exception:
+                self.logger.exception("Error in mmap cache cleaner")
 
-    def _get_mmap_entry(self, file_path: Path) -> Optional[MmapCache]:
+    def _get_mmap_entry(self, file_path: Path) -> MmapCache | None:
         """Get or create a memory-mapped file entry."""
         if file_path in self.mmap_cache:
             return self.mmap_cache[file_path]
@@ -712,27 +817,42 @@ class DiskIOManager:
             if file_size == 0:
                 return None
 
-            file_obj = open(file_path, "r+b")
+            file_obj = open(file_path, "r+b")  # nosec SIM115 - File must stay open for mmap
             mmap_obj = mmap.mmap(file_obj.fileno(), 0, access=mmap.ACCESS_READ)
 
-            cache_entry = MmapCache(file_path, mmap_obj, file_obj, time.time(), file_size)
+            cache_entry = MmapCache(
+                file_path,
+                mmap_obj,
+                file_obj,
+                time.time(),
+                file_size,
+            )
             self.mmap_cache[file_path] = cache_entry
             self.cache_size += file_size
-            self.logger.debug(f"Created mmap for {file_path}, size {file_size} bytes.")
-            return cache_entry
+            self.logger.debug(
+                "Created mmap for %s, size %s bytes.",
+                file_path,
+                file_size,
+            )
         except FileNotFoundError:
-            self.logger.warning(f"File not found for mmap: {file_path}")
+            self.logger.warning("File not found for mmap: %s", file_path)
             return None
-        except Exception as e:
-            self.logger.error(f"Failed to create mmap for {file_path}: {e}")
+        except Exception:
+            self.logger.exception("Failed to create mmap for %s", file_path)
             return None
+        else:
+            return cache_entry
 
 
 # Convenience functions for direct use
 async def preallocate_file(file_path: str, size: int) -> None:
     """Preallocate a file with the specified size."""
     config = get_config()
-    manager = DiskIOManager(config.disk.disk_workers, config.disk.disk_queue_size, config.disk.mmap_cache_mb)
+    manager = DiskIOManager(
+        config.disk.disk_workers,
+        config.disk.disk_queue_size,
+        config.disk.mmap_cache_mb,
+    )
     await manager.start()
     try:
         await manager.preallocate_file(Path(file_path), size)
@@ -743,7 +863,11 @@ async def preallocate_file(file_path: str, size: int) -> None:
 async def write_block_async(file_path: str, offset: int, data: bytes) -> None:
     """Write a block of data to a file asynchronously."""
     config = get_config()
-    manager = DiskIOManager(config.disk.disk_workers, config.disk.disk_queue_size, config.disk.mmap_cache_mb)
+    manager = DiskIOManager(
+        config.disk.disk_workers,
+        config.disk.disk_queue_size,
+        config.disk.mmap_cache_mb,
+    )
     await manager.start()
     try:
         await manager.write_block(Path(file_path), offset, data)
@@ -754,7 +878,11 @@ async def write_block_async(file_path: str, offset: int, data: bytes) -> None:
 async def read_block_async(file_path: str, offset: int, length: int) -> bytes:
     """Read a block of data from a file asynchronously."""
     config = get_config()
-    manager = DiskIOManager(config.disk.disk_workers, config.disk.disk_queue_size, config.disk.mmap_cache_mb)
+    manager = DiskIOManager(
+        config.disk.disk_workers,
+        config.disk.disk_queue_size,
+        config.disk.mmap_cache_mb,
+    )
     await manager.start()
     try:
         return await manager.read_block(Path(file_path), offset, length)

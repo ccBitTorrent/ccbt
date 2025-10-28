@@ -1,5 +1,7 @@
 """Adaptive Rate Limiter for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides ML-based adaptive rate limiting including:
 - Bandwidth estimation
 - Congestion control algorithms
@@ -7,18 +9,21 @@ Provides ML-based adaptive rate limiting including:
 - Dynamic rate adjustment
 """
 
+from __future__ import annotations
+
 import statistics
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from ..events import Event, EventType, emit_event
+from ccbt.events import Event, EventType, emit_event
 
 
 class LimiterType(Enum):
     """Types of rate limiters."""
+
     GLOBAL = "global"
     PER_PEER = "per_peer"
     PER_TORRENT = "per_torrent"
@@ -27,6 +32,7 @@ class LimiterType(Enum):
 
 class CongestionControl(Enum):
     """Congestion control algorithms."""
+
     TCP_RENO = "tcp_reno"
     TCP_CUBIC = "tcp_cubic"
     BBR = "bbr"
@@ -36,6 +42,7 @@ class CongestionControl(Enum):
 @dataclass
 class RateLimit:
     """Rate limit configuration."""
+
     limiter_type: LimiterType
     max_rate: float  # bytes per second
     current_rate: float = 0.0
@@ -49,6 +56,7 @@ class RateLimit:
 @dataclass
 class BandwidthEstimate:
     """Bandwidth estimation."""
+
     estimated_bandwidth: float
     confidence: float
     measurement_time: float
@@ -59,6 +67,7 @@ class BandwidthEstimate:
 @dataclass
 class CongestionState:
     """Congestion control state."""
+
     cwnd: float  # Congestion window
     ssthresh: float  # Slow start threshold
     rtt: float  # Round trip time
@@ -73,14 +82,15 @@ class AdaptiveLimiter:
     """ML-based adaptive rate limiter."""
 
     def __init__(self):
-        self.rate_limits: Dict[str, RateLimit] = {}
-        self.bandwidth_estimates: Dict[str, BandwidthEstimate] = {}
-        self.congestion_states: Dict[str, CongestionState] = {}
+        """Initialize adaptive rate limiter."""
+        self.rate_limits: dict[str, RateLimit] = {}
+        self.bandwidth_estimates: dict[str, BandwidthEstimate] = {}
+        self.congestion_states: dict[str, CongestionState] = {}
 
         # ML models
-        self.bandwidth_model: Dict[str, Any] = {}
-        self.congestion_model: Dict[str, Any] = {}
-        self.fairness_model: Dict[str, Any] = {}
+        self.bandwidth_model: dict[str, Any] = {}
+        self.congestion_model: dict[str, Any] = {}
+        self.fairness_model: dict[str, Any] = {}
 
         # Learning parameters
         self.learning_rate = 0.01
@@ -88,8 +98,8 @@ class AdaptiveLimiter:
         self.max_samples = 1000
 
         # Performance tracking
-        self.performance_history: Dict[str, List[float]] = defaultdict(list)
-        self.rate_adjustments: Dict[str, List[float]] = defaultdict(list)
+        self.performance_history: dict[str, list[float]] = defaultdict(list)
+        self.rate_adjustments: dict[str, list[float]] = defaultdict(list)
 
         # Statistics
         self.stats = {
@@ -99,13 +109,17 @@ class AdaptiveLimiter:
             "congestion_events": 0,
         }
 
-    async def estimate_bandwidth(self, peer_id: str, samples: List[Tuple[float, float]]) -> BandwidthEstimate:
+    async def estimate_bandwidth(
+        self,
+        peer_id: str,
+        samples: list[tuple[float, float]],
+    ) -> BandwidthEstimate:
         """Estimate bandwidth using ML.
-        
+
         Args:
             peer_id: Peer identifier
             samples: List of (time, bytes) samples
-            
+
         Returns:
             Bandwidth estimate
         """
@@ -121,8 +135,8 @@ class AdaptiveLimiter:
         # Calculate bandwidth from samples
         bandwidths = []
         for i in range(1, len(samples)):
-            time_diff = samples[i][0] - samples[i-1][0]
-            bytes_diff = samples[i][1] - samples[i-1][1]
+            time_diff = samples[i][0] - samples[i - 1][0]
+            bytes_diff = samples[i][1] - samples[i - 1][1]
 
             if time_diff > 0:
                 bandwidth = bytes_diff / time_diff
@@ -140,7 +154,10 @@ class AdaptiveLimiter:
         # Calculate statistics
         estimated_bandwidth = statistics.mean(bandwidths)
         variance = statistics.variance(bandwidths) if len(bandwidths) > 1 else 0.0
-        confidence = min(1.0, len(bandwidths) / 10.0)  # More samples = higher confidence
+        confidence = min(
+            1.0,
+            len(bandwidths) / 10.0,
+        )  # More samples = higher confidence
 
         # Create bandwidth estimate
         estimate = BandwidthEstimate(
@@ -158,29 +175,35 @@ class AdaptiveLimiter:
         self.stats["bandwidth_estimates"] += 1
 
         # Emit bandwidth estimate event
-        await emit_event(Event(
-            event_type=EventType.ML_BANDWIDTH_ESTIMATED.value,
-            data={
-                "peer_id": peer_id,
-                "estimated_bandwidth": estimated_bandwidth,
-                "confidence": confidence,
-                "sample_count": len(bandwidths),
-                "variance": variance,
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.ML_BANDWIDTH_ESTIMATED.value,
+                data={
+                    "peer_id": peer_id,
+                    "estimated_bandwidth": estimated_bandwidth,
+                    "confidence": confidence,
+                    "sample_count": len(bandwidths),
+                    "variance": variance,
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
         return estimate
 
-    async def adjust_rate_limit(self, peer_id: str, limiter_type: LimiterType,
-                              current_performance: Dict[str, Any]) -> float:
+    async def adjust_rate_limit(
+        self,
+        peer_id: str,
+        limiter_type: LimiterType,
+        current_performance: dict[str, Any],
+    ) -> float:
         """Adjust rate limit using ML.
-        
+
         Args:
             peer_id: Peer identifier
             limiter_type: Type of rate limiter
             current_performance: Current performance metrics
-            
+
         Returns:
             New rate limit
         """
@@ -217,7 +240,10 @@ class AdaptiveLimiter:
 
         # Calculate new rate limit
         new_rate = await self._calculate_adaptive_rate(
-            rate_limit, bandwidth_estimate, congestion_state, current_performance,
+            rate_limit,
+            bandwidth_estimate,
+            congestion_state,
+            current_performance,
         )
 
         # Update rate limit
@@ -228,30 +254,38 @@ class AdaptiveLimiter:
         # Record rate adjustment
         self.rate_adjustments[peer_id].append(new_rate)
         if len(self.rate_adjustments[peer_id]) > self.max_samples:
-            self.rate_adjustments[peer_id] = self.rate_adjustments[peer_id][-self.max_samples:]
+            self.rate_adjustments[peer_id] = self.rate_adjustments[peer_id][
+                -self.max_samples :
+            ]
 
         # Update statistics
         self.stats["total_adjustments"] += 1
 
         # Emit rate adjustment event
-        await emit_event(Event(
-            event_type=EventType.ML_RATE_ADJUSTED.value,
-            data={
-                "peer_id": peer_id,
-                "limiter_type": limiter_type.value,
-                "old_rate": old_rate,
-                "new_rate": new_rate,
-                "bandwidth_estimate": bandwidth_estimate.estimated_bandwidth,
-                "congestion_window": congestion_state.cwnd,
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.ML_RATE_ADJUSTED.value,
+                data={
+                    "peer_id": peer_id,
+                    "limiter_type": limiter_type.value,
+                    "old_rate": old_rate,
+                    "new_rate": new_rate,
+                    "bandwidth_estimate": bandwidth_estimate.estimated_bandwidth,
+                    "congestion_window": congestion_state.cwnd,
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
         return new_rate
 
-    async def update_congestion_control(self, peer_id: str, congestion_data: Dict[str, Any]) -> None:
+    async def update_congestion_control(
+        self,
+        peer_id: str,
+        congestion_data: dict[str, Any],
+    ) -> None:
         """Update congestion control state.
-        
+
         Args:
             peer_id: Peer identifier
             congestion_data: Congestion control data
@@ -282,7 +316,11 @@ class AdaptiveLimiter:
 
         # Handle congestion events
         if "congestion_event" in congestion_data:
-            await self._handle_congestion_event(peer_id, state, congestion_data["congestion_event"])
+            await self._handle_congestion_event(
+                peer_id,
+                state,
+                congestion_data["congestion_event"],
+            )
 
         # Update congestion window
         await self._update_congestion_window(peer_id, state, congestion_data)
@@ -290,13 +328,17 @@ class AdaptiveLimiter:
         # Update statistics
         self.stats["congestion_events"] += 1
 
-    async def implement_fair_queuing(self, peers: List[str], total_bandwidth: float) -> Dict[str, float]:
+    async def implement_fair_queuing(
+        self,
+        peers: list[str],
+        total_bandwidth: float,
+    ) -> dict[str, float]:
         """Implement fair queuing across peers.
-        
+
         Args:
             peers: List of peer identifiers
             total_bandwidth: Total available bandwidth
-            
+
         Returns:
             Dictionary of peer_id -> allocated_bandwidth
         """
@@ -317,7 +359,11 @@ class AdaptiveLimiter:
                 continue
 
             # Calculate performance score
-            avg_performance = statistics.mean(performance[-10:]) if len(performance) >= 10 else statistics.mean(performance)
+            avg_performance = (
+                statistics.mean(performance[-10:])
+                if len(performance) >= 10
+                else statistics.mean(performance)
+            )
             performance_score = min(1.0, avg_performance / 1000.0)  # Normalize to 0-1
 
             # Allocate bandwidth based on performance
@@ -333,20 +379,24 @@ class AdaptiveLimiter:
 
         return allocations
 
-    def get_rate_limit(self, peer_id: str, limiter_type: LimiterType) -> Optional[RateLimit]:
+    def get_rate_limit(
+        self,
+        peer_id: str,
+        limiter_type: LimiterType,
+    ) -> RateLimit | None:
         """Get rate limit for a peer."""
         limiter_key = f"{peer_id}_{limiter_type.value}"
         return self.rate_limits.get(limiter_key)
 
-    def get_bandwidth_estimate(self, peer_id: str) -> Optional[BandwidthEstimate]:
+    def get_bandwidth_estimate(self, peer_id: str) -> BandwidthEstimate | None:
         """Get bandwidth estimate for a peer."""
         return self.bandwidth_estimates.get(peer_id)
 
-    def get_congestion_state(self, peer_id: str) -> Optional[CongestionState]:
+    def get_congestion_state(self, peer_id: str) -> CongestionState | None:
         """Get congestion state for a peer."""
         return self.congestion_states.get(peer_id)
 
-    def get_ml_statistics(self) -> Dict[str, Any]:
+    def get_ml_statistics(self) -> dict[str, Any]:
         """Get ML statistics."""
         return {
             "total_adjustments": self.stats["total_adjustments"],
@@ -376,11 +426,18 @@ class AdaptiveLimiter:
             if peer_id not in self.bandwidth_estimates:
                 del self.performance_history[peer_id]
 
-    async def _calculate_adaptive_rate(self, rate_limit: RateLimit, bandwidth_estimate: BandwidthEstimate,
-                                     congestion_state: CongestionState, performance: Dict[str, Any]) -> float:
+    async def _calculate_adaptive_rate(
+        self,
+        rate_limit: RateLimit,
+        bandwidth_estimate: BandwidthEstimate,
+        congestion_state: CongestionState,
+        performance: dict[str, Any],
+    ) -> float:
         """Calculate adaptive rate limit."""
         # Base rate from bandwidth estimate
-        base_rate = bandwidth_estimate.estimated_bandwidth * bandwidth_estimate.confidence
+        base_rate = (
+            bandwidth_estimate.estimated_bandwidth * bandwidth_estimate.confidence
+        )
 
         # Apply congestion control
         congestion_factor = self._calculate_congestion_factor(congestion_state)
@@ -412,7 +469,7 @@ class AdaptiveLimiter:
         # Congestion avoidance phase
         return 0.8
 
-    def _calculate_performance_factor(self, performance: Dict[str, Any]) -> float:
+    def _calculate_performance_factor(self, performance: dict[str, Any]) -> float:
         """Calculate performance-based adjustment factor."""
         # This is a simplified calculation
         # In a real implementation, this would use more sophisticated ML
@@ -450,7 +507,12 @@ class AdaptiveLimiter:
 
         return max(0.5, min(1.5, fairness_factor))
 
-    async def _handle_congestion_event(self, peer_id: str, state: CongestionState, event_type: str) -> None:
+    async def _handle_congestion_event(
+        self,
+        _peer_id: str,
+        state: CongestionState,
+        event_type: str,
+    ) -> None:
         """Handle congestion events."""
         if event_type == "packet_loss":
             # Reduce congestion window
@@ -473,8 +535,12 @@ class AdaptiveLimiter:
             state.in_recovery = True
             state.recovery_start_time = time.time()
 
-    async def _update_congestion_window(self, peer_id: str, state: CongestionState,
-                                      congestion_data: Dict[str, Any]) -> None:
+    async def _update_congestion_window(
+        self,
+        _peer_id: str,
+        state: CongestionState,
+        _congestion_data: dict[str, Any],
+    ) -> None:
         """Update congestion window."""
         if state.in_recovery:
             # Check if recovery period is over

@@ -1,8 +1,30 @@
-"""
-Pytest configuration and shared fixtures for ccBitTorrent tests.
+"""Pytest configuration and shared fixtures for ccBitTorrent tests.
 """
 
-from typing import Any, Dict
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def cleanup_logging():
+    """Clean up logging handlers after each test to prevent closed file errors."""
+    yield
+    # Clean up all handlers to prevent "I/O operation on closed file" errors
+    for logger_name in list(logging.Logger.manager.loggerDict.keys()):
+        logger = logging.getLogger(logger_name)
+        for handler in logger.handlers[:]:
+            handler.close()
+            logger.removeHandler(handler)
+
+    # Also clean up root logger
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        handler.close()
+        root_logger.removeHandler(handler)
 
 
 def create_test_torrent_dict(
@@ -12,7 +34,7 @@ def create_test_torrent_dict(
     file_length: int = 1024,
     piece_length: int = 16384,
     num_pieces: int = 1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create properly formatted torrent dictionary for tests.
 
     This helper creates torrent data that matches the expected format
@@ -35,11 +57,13 @@ def create_test_torrent_dict(
         "name": name,
         "info_hash": info_hash,
         "announce": announce,
-        "files": [{
-            "name": f"{name}.txt",
-            "length": file_length,
-            "path": [f"{name}.txt"],
-        }],
+        "files": [
+            {
+                "name": f"{name}.txt",
+                "length": file_length,
+                "path": [f"{name}.txt"],
+            },
+        ],
         "total_length": file_length,
         "piece_length": piece_length,
         "pieces": piece_hashes,
@@ -55,10 +79,12 @@ def create_test_torrent_dict(
             "type": "single",
             "name": name,
             "total_length": file_length,
-            "files": [{
-                "name": f"{name}.txt",
-                "length": file_length,
-                "path": [f"{name}.txt"],
-            }],
+            "files": [
+                {
+                    "name": f"{name}.txt",
+                    "length": file_length,
+                    "path": [f"{name}.txt"],
+                },
+            ],
         },
     }

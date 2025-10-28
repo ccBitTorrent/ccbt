@@ -1,5 +1,7 @@
 """Security enhancements for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides comprehensive security features including:
 - Peer validation and reputation system
 - Rate limiting and DDoS protection
@@ -8,11 +10,11 @@ Provides comprehensive security features including:
 - IP blacklist/whitelist management
 """
 
-from .anomaly_detector import AnomalyDetector
-from .encryption import EncryptionManager
-from .peer_validator import PeerValidator
-from .rate_limiter import RateLimiter
-from .security_manager import SecurityManager
+from ccbt.security.anomaly_detector import AnomalyDetector
+from ccbt.security.encryption import EncryptionManager
+from ccbt.security.peer_validator import PeerValidator
+from ccbt.security.rate_limiter import RateLimiter
+from ccbt.security.security_manager import SecurityManager
 
 __all__ = [
     "AnomalyDetector",

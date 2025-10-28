@@ -1,5 +1,7 @@
 """Enhanced CLI for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides rich CLI interface with:
 - Interactive TUI
 - Progress bars
@@ -8,34 +10,61 @@ Provides rich CLI interface with:
 - Debug tools
 """
 
+from __future__ import annotations
+
 import asyncio
+import contextlib
+import logging
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import click
 from rich.console import Console
 from rich.table import Table
 
-from ..config import ConfigManager, init_config
-from ..monitoring import (
+from ccbt.cli.advanced_commands import performance as performance_cmd
+from ccbt.cli.advanced_commands import recover as recover_cmd
+from ccbt.cli.advanced_commands import security as security_cmd
+from ccbt.cli.advanced_commands import test as test_cmd
+from ccbt.cli.config_commands import config as config_group
+from ccbt.cli.interactive import InteractiveCLI
+from ccbt.cli.monitoring_commands import alerts as alerts_cmd
+from ccbt.cli.monitoring_commands import dashboard as dashboard_cmd
+from ccbt.cli.monitoring_commands import metrics as metrics_cmd
+from ccbt.cli.progress import ProgressManager
+from ccbt.config import Config, ConfigManager, init_config
+from ccbt.monitoring import (
     AlertManager,
     DashboardManager,
     MetricsCollector,
     TracingManager,
 )
-from ..session import AsyncSessionManager
-from .config_commands import config as config_group
-from .monitoring_commands import dashboard as dashboard_cmd, alerts as alerts_cmd, metrics as metrics_cmd
-from .advanced_commands import performance as performance_cmd, security as security_cmd, recover as recover_cmd, test as test_cmd
-from .interactive import InteractiveCLI
-from .progress import ProgressManager
+from ccbt.session import AsyncSessionManager
+
+logger = logging.getLogger(__name__)
+
+
+def _raise_cli_error(message: str) -> None:
+    """Raise a ClickException with the given message."""
+    raise click.ClickException(message) from None
 
 
 # Helper to apply CLI overrides to the runtime config
-def _apply_cli_overrides(cfg_mgr: ConfigManager, options: Dict[str, Any]) -> None:
+def _apply_cli_overrides(cfg_mgr: ConfigManager, options: dict[str, Any]) -> None:
+    """Apply CLI overrides to configuration."""
     cfg = cfg_mgr.config
-    # Network
+
+    _apply_network_overrides(cfg, options)
+    _apply_discovery_overrides(cfg, options)
+    _apply_strategy_overrides(cfg, options)
+    _apply_disk_overrides(cfg, options)
+    _apply_observability_overrides(cfg, options)
+    _apply_limit_overrides(cfg, options)
+
+
+def _apply_network_overrides(cfg: Config, options: dict[str, Any]) -> None:
+    """Apply network-related CLI overrides."""
     if options.get("listen_port") is not None:
         cfg.network.listen_port = int(options["listen_port"])
     if options.get("max_peers") is not None:
@@ -89,7 +118,9 @@ def _apply_cli_overrides(cfg_mgr: ConfigManager, options: Dict[str, Any]) -> Non
     if options.get("max_block_size_kib") is not None:
         cfg.network.max_block_size_kib = int(options["max_block_size_kib"])  # type: ignore[attr-defined]
 
-    # Discovery
+
+def _apply_discovery_overrides(cfg: Config, options: dict[str, Any]) -> None:
+    """Apply discovery-related CLI overrides."""
     if options.get("enable_dht"):
         cfg.discovery.enable_dht = True
     if options.get("disable_dht"):
@@ -105,13 +136,19 @@ def _apply_cli_overrides(cfg_mgr: ConfigManager, options: Dict[str, Any]) -> Non
     if options.get("disable_udp_trackers"):
         cfg.discovery.enable_udp_trackers = False
     if options.get("tracker_announce_interval") is not None:
-        cfg.discovery.tracker_announce_interval = float(options["tracker_announce_interval"])  # type: ignore[attr-defined]
+        cfg.discovery.tracker_announce_interval = float(
+            options["tracker_announce_interval"],
+        )  # type: ignore[attr-defined]
     if options.get("tracker_scrape_interval") is not None:
-        cfg.discovery.tracker_scrape_interval = float(options["tracker_scrape_interval"])  # type: ignore[attr-defined]
+        cfg.discovery.tracker_scrape_interval = float(
+            options["tracker_scrape_interval"],
+        )  # type: ignore[attr-defined]
     if options.get("pex_interval") is not None:
         cfg.discovery.pex_interval = float(options["pex_interval"])  # type: ignore[attr-defined]
 
-    # Strategy
+
+def _apply_strategy_overrides(cfg: Config, options: dict[str, Any]) -> None:
+    """Apply strategy-related CLI overrides."""
     if options.get("piece_selection") is not None:
         cfg.strategy.piece_selection = options["piece_selection"]
     if options.get("endgame_threshold") is not None:
@@ -123,19 +160,23 @@ def _apply_cli_overrides(cfg_mgr: ConfigManager, options: Dict[str, Any]) -> Non
     if options.get("first_piece_priority"):
         try:
             cfg.strategy.first_piece_priority = True  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to set first piece priority: %s", e)
     if options.get("last_piece_priority"):
         try:
             cfg.strategy.last_piece_priority = True  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to set last piece priority: %s", e)
     if options.get("optimistic_unchoke_interval") is not None:
-        cfg.network.optimistic_unchoke_interval = float(options["optimistic_unchoke_interval"])  # type: ignore[attr-defined]
+        cfg.network.optimistic_unchoke_interval = float(
+            options["optimistic_unchoke_interval"],
+        )  # type: ignore[attr-defined]
     if options.get("unchoke_interval") is not None:
         cfg.network.unchoke_interval = float(options["unchoke_interval"])  # type: ignore[attr-defined]
 
-    # Disk
+
+def _apply_disk_overrides(cfg: Config, options: dict[str, Any]) -> None:
+    """Apply disk-related CLI overrides."""
     if options.get("hash_workers") is not None:
         cfg.disk.hash_workers = int(options["hash_workers"])
     if options.get("disk_workers") is not None:
@@ -159,19 +200,21 @@ def _apply_cli_overrides(cfg_mgr: ConfigManager, options: Dict[str, Any]) -> Non
     if options.get("enable_io_uring"):
         try:
             cfg.disk.enable_io_uring = True  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to enable io_uring: %s", e)
     if options.get("disable_io_uring"):
         try:
             cfg.disk.enable_io_uring = False  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to disable io_uring: %s", e)
     if options.get("direct_io"):
         cfg.disk.direct_io = True
     if options.get("sync_writes"):
         cfg.disk.sync_writes = True
 
-    # Observability
+
+def _apply_observability_overrides(cfg: Config, options: dict[str, Any]) -> None:
+    """Apply observability-related CLI overrides."""
     if options.get("log_level") is not None:
         cfg.observability.log_level = options["log_level"]
     if options.get("enable_metrics"):
@@ -187,7 +230,9 @@ def _apply_cli_overrides(cfg_mgr: ConfigManager, options: Dict[str, Any]) -> Non
     if options.get("log_correlation_id"):
         cfg.observability.log_correlation_id = True  # type: ignore[attr-defined]
 
-    # Limits shortcuts
+
+def _apply_limit_overrides(cfg: Config, options: dict[str, Any]) -> None:
+    """Apply limit-related CLI overrides."""
     if options.get("download_limit") is not None:
         cfg.network.global_down_kib = int(options["download_limit"])
     if options.get("upload_limit") is not None:
@@ -195,7 +240,12 @@ def _apply_cli_overrides(cfg_mgr: ConfigManager, options: Dict[str, Any]) -> Non
 
 
 @click.group()
-@click.option("--config", "-c", type=click.Path(exists=True), help="Configuration file path")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True),
+    help="Configuration file path",
+)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option("--debug", "-d", is_flag=True, help="Enable debug mode")
 @click.pass_context
@@ -207,10 +257,8 @@ def cli(ctx, config, verbose, debug):
     ctx.obj["debug"] = debug
 
     # Initialize global configuration early
-    try:
+    with contextlib.suppress(Exception):
         init_config(config)
-    except Exception:
-        pass
 
     # Attach sub-groups added in separate modules
     cli.add_command(config_group)
@@ -229,7 +277,12 @@ def cli(ctx, config, verbose, debug):
 @click.option("--output", "-o", type=click.Path(), help="Output directory")
 @click.option("--interactive", "-i", is_flag=True, help="Start interactive mode")
 @click.option("--monitor", "-m", is_flag=True, help="Enable monitoring")
-@click.option("--resume", "-r", is_flag=True, help="Resume from checkpoint if available")
+@click.option(
+    "--resume",
+    "-r",
+    is_flag=True,
+    help="Resume from checkpoint if available",
+)
 @click.option("--no-checkpoint", is_flag=True, help="Disable checkpointing")
 @click.option("--checkpoint-dir", type=click.Path(), help="Checkpoint directory")
 @click.option("--listen-port", type=int, help="Listen port")
@@ -243,7 +296,10 @@ def cli(ctx, config, verbose, debug):
 @click.option("--dht-port", type=int, help="DHT port")
 @click.option("--enable-dht", is_flag=True, help="Enable DHT")
 @click.option("--disable-dht", is_flag=True, help="Disable DHT")
-@click.option("--piece-selection", type=click.Choice(["round_robin", "rarest_first", "sequential"]))
+@click.option(
+    "--piece-selection",
+    type=click.Choice(["round_robin", "rarest_first", "sequential"]),
+)
 @click.option("--endgame-threshold", type=float, help="Endgame threshold (0..1)")
 @click.option("--hash-workers", type=int, help="Hash verification workers")
 @click.option("--disk-workers", type=int, help="Disk I/O workers")
@@ -255,11 +311,22 @@ def cli(ctx, config, verbose, debug):
 @click.option("--preallocate", type=click.Choice(["none", "sparse", "full"]))
 @click.option("--sparse-files", is_flag=True, help="Enable sparse files")
 @click.option("--no-sparse-files", is_flag=True, help="Disable sparse files")
-@click.option("--enable-io-uring", is_flag=True, help="Enable io_uring on Linux if available")
+@click.option(
+    "--enable-io-uring",
+    is_flag=True,
+    help="Enable io_uring on Linux if available",
+)
 @click.option("--disable-io-uring", is_flag=True, help="Disable io_uring usage")
-@click.option("--direct-io", is_flag=True, help="Enable direct I/O for writes when supported")
+@click.option(
+    "--direct-io",
+    is_flag=True,
+    help="Enable direct I/O for writes when supported",
+)
 @click.option("--sync-writes", is_flag=True, help="Enable fsync after batched writes")
-@click.option("--log-level", type=click.Choice(["DEBUG","INFO","WARNING","ERROR","CRITICAL"]))
+@click.option(
+    "--log-level",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+)
 @click.option("--enable-metrics", is_flag=True, help="Enable metrics")
 @click.option("--disable-metrics", is_flag=True, help="Disable metrics")
 @click.option("--metrics-port", type=int, help="Metrics port")
@@ -284,18 +351,40 @@ def cli(ctx, config, verbose, debug):
 @click.option("--disable-http-trackers", is_flag=True, help="Disable HTTP trackers")
 @click.option("--enable-udp-trackers", is_flag=True, help="Enable UDP trackers")
 @click.option("--disable-udp-trackers", is_flag=True, help="Disable UDP trackers")
-@click.option("--tracker-announce-interval", type=float, help="Tracker announce interval (s)")
-@click.option("--tracker-scrape-interval", type=float, help="Tracker scrape interval (s)")
+@click.option(
+    "--tracker-announce-interval",
+    type=float,
+    help="Tracker announce interval (s)",
+)
+@click.option(
+    "--tracker-scrape-interval",
+    type=float,
+    help="Tracker scrape interval (s)",
+)
 @click.option("--pex-interval", type=float, help="PEX interval (s)")
 @click.option("--endgame-duplicates", type=int, help="Endgame duplicate requests")
 @click.option("--streaming-mode", is_flag=True, help="Enable streaming mode")
 @click.option("--first-piece-priority", is_flag=True, help="Prioritize first piece")
 @click.option("--last-piece-priority", is_flag=True, help="Prioritize last piece")
-@click.option("--optimistic-unchoke-interval", type=float, help="Optimistic unchoke interval (s)")
+@click.option(
+    "--optimistic-unchoke-interval",
+    type=float,
+    help="Optimistic unchoke interval (s)",
+)
 @click.option("--unchoke-interval", type=float, help="Unchoke interval (s)")
 @click.option("--metrics-interval", type=float, help="Metrics interval (s)")
 @click.pass_context
-def download(ctx, torrent_file, output, interactive, monitor, resume, no_checkpoint, checkpoint_dir, **kwargs):
+def download(
+    ctx,
+    torrent_file,
+    output,
+    interactive,
+    monitor,
+    resume,
+    no_checkpoint,
+    checkpoint_dir,
+    **kwargs,
+):
     """Download a torrent file."""
     console = Console()
 
@@ -320,38 +409,71 @@ def download(ctx, torrent_file, output, interactive, monitor, resume, no_checkpo
         torrent_data = session.load_torrent(torrent_path)
 
         if not torrent_data:
-            console.print(f"[red]Error: Could not load torrent file {torrent_file}[/red]")
-            raise click.ClickException("Command failed")
+            console.print(
+                f"[red]Error: Could not load torrent file {torrent_file}[/red]",
+            )
+            msg = "Command failed"
+            _raise_cli_error(msg)
 
         # Check for existing checkpoint
         if config.disk.checkpoint_enabled and not resume:
-            from ..checkpoint import CheckpointManager
+            from ccbt.checkpoint import CheckpointManager
+
             checkpoint_manager = CheckpointManager(config.disk)
-            checkpoint = asyncio.run(checkpoint_manager.load_checkpoint(torrent_data["info_hash"]))
+            # Handle both dict and TorrentInfo types
+            info_hash = (
+                torrent_data["info_hash"]
+                if isinstance(torrent_data, dict)
+                else torrent_data.info_hash
+                if torrent_data is not None
+                else None
+            )
+            checkpoint = None
+            if info_hash is not None:
+                checkpoint = asyncio.run(
+                    checkpoint_manager.load_checkpoint(info_hash),
+                )
 
             if checkpoint:
-                console.print(f"[yellow]Found checkpoint for: {checkpoint.torrent_name}[/yellow]")
-                console.print(f"[blue]Progress: {len(checkpoint.verified_pieces)}/{checkpoint.total_pieces} pieces verified[/blue]")
+                console.print(
+                    f"[yellow]Found checkpoint for: {getattr(checkpoint, 'torrent_name', 'Unknown')}[/yellow]",
+                )
+                console.print(
+                    f"[blue]Progress: {len(getattr(checkpoint, 'verified_pieces', []))}/{getattr(checkpoint, 'total_pieces', 0)} pieces verified[/blue]",
+                )
 
                 # Prompt user if not in non-interactive mode
                 import sys
+
                 if sys.stdin.isatty():
                     from rich.prompt import Confirm
+
                     try:
-                        should_resume = Confirm.ask("Resume from checkpoint?", default=True)
+                        should_resume = Confirm.ask(
+                            "Resume from checkpoint?",
+                            default=True,
+                        )
                         if should_resume:
                             resume = True
                             console.print("[green]Resuming from checkpoint[/green]")
                         else:
                             console.print("[yellow]Starting fresh download[/yellow]")
                     except ImportError:
-                        console.print("[yellow]Rich not available, starting fresh download[/yellow]")
+                        console.print(
+                            "[yellow]Rich not available, starting fresh download[/yellow]",
+                        )
                 else:
-                    console.print("[yellow]Non-interactive mode, starting fresh download[/yellow]")
+                    console.print(
+                        "[yellow]Non-interactive mode, starting fresh download[/yellow]",
+                    )
 
         # Set output directory
         if output:
-            torrent_data["download_path"] = Path(output)
+            if isinstance(torrent_data, dict):
+                torrent_data["download_path"] = Path(output)
+            else:
+                # For TorrentInfo, we'll pass output_dir separately
+                pass
 
         # Start monitoring if requested
         if monitor:
@@ -359,26 +481,47 @@ def download(ctx, torrent_file, output, interactive, monitor, resume, no_checkpo
 
         # Start download
         if interactive:
-            asyncio.run(start_interactive_download(session, torrent_data, console, resume=resume))
+            asyncio.run(
+                start_interactive_download(
+                    session,
+                    torrent_data if torrent_data is not None else {},
+                    console,
+                    resume=resume,
+                ),
+            )
         else:
-            asyncio.run(start_basic_download(session, torrent_data, console, resume=resume))
+            asyncio.run(
+                start_basic_download(
+                    session,
+                    torrent_data if torrent_data is not None else {},
+                    console,
+                    resume=resume,
+                ),
+            )
 
     except FileNotFoundError as e:
         console.print(f"[red]File not found: {e}[/red]")
-        raise click.ClickException("Torrent file not found")
+        msg = "Torrent file not found"
+        raise click.ClickException(msg) from e
     except ValueError as e:
         console.print(f"[red]Invalid torrent file: {e}[/red]")
-        raise click.ClickException("Invalid torrent file format")
+        msg = "Invalid torrent file format"
+        raise click.ClickException(msg) from e
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @cli.command()
 @click.argument("magnet_link")
 @click.option("--output", "-o", type=click.Path(), help="Output directory")
 @click.option("--interactive", "-i", is_flag=True, help="Start interactive mode")
-@click.option("--resume", "-r", is_flag=True, help="Resume from checkpoint if available")
+@click.option(
+    "--resume",
+    "-r",
+    is_flag=True,
+    help="Resume from checkpoint if available",
+)
 @click.option("--no-checkpoint", is_flag=True, help="Disable checkpointing")
 @click.option("--checkpoint-dir", type=click.Path(), help="Checkpoint directory")
 @click.option("--listen-port", type=int, help="Listen port")
@@ -392,7 +535,10 @@ def download(ctx, torrent_file, output, interactive, monitor, resume, no_checkpo
 @click.option("--dht-port", type=int, help="DHT port")
 @click.option("--enable-dht", is_flag=True, help="Enable DHT")
 @click.option("--disable-dht", is_flag=True, help="Disable DHT")
-@click.option("--piece-selection", type=click.Choice(["round_robin", "rarest_first", "sequential"]))
+@click.option(
+    "--piece-selection",
+    type=click.Choice(["round_robin", "rarest_first", "sequential"]),
+)
 @click.option("--endgame-threshold", type=float, help="Endgame threshold (0..1)")
 @click.option("--hash-workers", type=int, help="Hash verification workers")
 @click.option("--disk-workers", type=int, help="Disk I/O workers")
@@ -404,11 +550,22 @@ def download(ctx, torrent_file, output, interactive, monitor, resume, no_checkpo
 @click.option("--preallocate", type=click.Choice(["none", "sparse", "full"]))
 @click.option("--sparse-files", is_flag=True, help="Enable sparse files")
 @click.option("--no-sparse-files", is_flag=True, help="Disable sparse files")
-@click.option("--enable-io-uring", is_flag=True, help="Enable io_uring on Linux if available")
+@click.option(
+    "--enable-io-uring",
+    is_flag=True,
+    help="Enable io_uring on Linux if available",
+)
 @click.option("--disable-io-uring", is_flag=True, help="Disable io_uring usage")
-@click.option("--direct-io", is_flag=True, help="Enable direct I/O for writes when supported")
+@click.option(
+    "--direct-io",
+    is_flag=True,
+    help="Enable direct I/O for writes when supported",
+)
 @click.option("--sync-writes", is_flag=True, help="Enable fsync after batched writes")
-@click.option("--log-level", type=click.Choice(["DEBUG","INFO","WARNING","ERROR","CRITICAL"]))
+@click.option(
+    "--log-level",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+)
 @click.option("--enable-metrics", is_flag=True, help="Enable metrics")
 @click.option("--disable-metrics", is_flag=True, help="Disable metrics")
 @click.option("--metrics-port", type=int, help="Metrics port")
@@ -433,18 +590,39 @@ def download(ctx, torrent_file, output, interactive, monitor, resume, no_checkpo
 @click.option("--disable-http-trackers", is_flag=True, help="Disable HTTP trackers")
 @click.option("--enable-udp-trackers", is_flag=True, help="Enable UDP trackers")
 @click.option("--disable-udp-trackers", is_flag=True, help="Disable UDP trackers")
-@click.option("--tracker-announce-interval", type=float, help="Tracker announce interval (s)")
-@click.option("--tracker-scrape-interval", type=float, help="Tracker scrape interval (s)")
+@click.option(
+    "--tracker-announce-interval",
+    type=float,
+    help="Tracker announce interval (s)",
+)
+@click.option(
+    "--tracker-scrape-interval",
+    type=float,
+    help="Tracker scrape interval (s)",
+)
 @click.option("--pex-interval", type=float, help="PEX interval (s)")
 @click.option("--endgame-duplicates", type=int, help="Endgame duplicate requests")
 @click.option("--streaming-mode", is_flag=True, help="Enable streaming mode")
 @click.option("--first-piece-priority", is_flag=True, help="Prioritize first piece")
 @click.option("--last-piece-priority", is_flag=True, help="Prioritize last piece")
-@click.option("--optimistic-unchoke-interval", type=float, help="Optimistic unchoke interval (s)")
+@click.option(
+    "--optimistic-unchoke-interval",
+    type=float,
+    help="Optimistic unchoke interval (s)",
+)
 @click.option("--unchoke-interval", type=float, help="Unchoke interval (s)")
 @click.option("--metrics-interval", type=float, help="Metrics interval (s)")
 @click.pass_context
-def magnet(ctx, magnet_link, output, interactive, resume, no_checkpoint, checkpoint_dir, **kwargs):
+def magnet(
+    ctx,
+    magnet_link,
+    output,
+    interactive,
+    resume,
+    no_checkpoint,
+    checkpoint_dir,
+    **kwargs,
+):
     """Download from magnet link."""
     console = Console()
 
@@ -468,50 +646,96 @@ def magnet(ctx, magnet_link, output, interactive, resume, no_checkpoint, checkpo
 
         if not torrent_data:
             console.print("[red]Error: Could not parse magnet link[/red]")
-            raise click.ClickException("Command failed")
+            msg = "Command failed"
+            _raise_cli_error(msg)
 
         # Check for existing checkpoint
         if config.disk.checkpoint_enabled and not resume:
-            from ..checkpoint import CheckpointManager
+            from ccbt.checkpoint import CheckpointManager
+
             checkpoint_manager = CheckpointManager(config.disk)
-            checkpoint = asyncio.run(checkpoint_manager.load_checkpoint(torrent_data["info_hash"]))
+            # Handle both dict and TorrentInfo types
+            info_hash = (
+                torrent_data["info_hash"]
+                if isinstance(torrent_data, dict)
+                else torrent_data.info_hash
+                if torrent_data is not None
+                else None
+            )
+            checkpoint = None
+            if info_hash is not None:
+                checkpoint = asyncio.run(
+                    checkpoint_manager.load_checkpoint(info_hash),
+                )
 
             if checkpoint:
-                console.print(f"[yellow]Found checkpoint for: {checkpoint.torrent_name}[/yellow]")
-                console.print(f"[blue]Progress: {len(checkpoint.verified_pieces)}/{checkpoint.total_pieces} pieces verified[/blue]")
+                console.print(
+                    f"[yellow]Found checkpoint for: {getattr(checkpoint, 'torrent_name', 'Unknown')}[/yellow]",
+                )
+                console.print(
+                    f"[blue]Progress: {len(getattr(checkpoint, 'verified_pieces', []))}/{getattr(checkpoint, 'total_pieces', 0)} pieces verified[/blue]",
+                )
 
                 # Prompt user if not in non-interactive mode
                 import sys
+
                 if sys.stdin.isatty():
                     from rich.prompt import Confirm
+
                     try:
-                        should_resume = Confirm.ask("Resume from checkpoint?", default=True)
+                        should_resume = Confirm.ask(
+                            "Resume from checkpoint?",
+                            default=True,
+                        )
                         if should_resume:
                             resume = True
                             console.print("[green]Resuming from checkpoint[/green]")
                         else:
                             console.print("[yellow]Starting fresh download[/yellow]")
                     except ImportError:
-                        console.print("[yellow]Rich not available, starting fresh download[/yellow]")
+                        console.print(
+                            "[yellow]Rich not available, starting fresh download[/yellow]",
+                        )
                 else:
-                    console.print("[yellow]Non-interactive mode, starting fresh download[/yellow]")
+                    console.print(
+                        "[yellow]Non-interactive mode, starting fresh download[/yellow]",
+                    )
 
         # Set output directory
         if output:
-            torrent_data["download_path"] = Path(output)
+            if isinstance(torrent_data, dict):
+                torrent_data["download_path"] = Path(output)
+            else:
+                # For TorrentInfo, we'll pass output_dir separately
+                pass
 
         # Start download
         if interactive:
-            asyncio.run(start_interactive_download(session, torrent_data, console, resume=resume))
+            asyncio.run(
+                start_interactive_download(
+                    session,
+                    torrent_data if torrent_data is not None else {},
+                    console,
+                    resume=resume,
+                ),
+            )
         else:
-            asyncio.run(start_basic_download(session, torrent_data, console, resume=resume))
+            asyncio.run(
+                start_basic_download(
+                    session,
+                    torrent_data if torrent_data is not None else {},
+                    console,
+                    resume=resume,
+                ),
+            )
 
     except ValueError as e:
         console.print(f"[red]Invalid magnet link: {e}[/red]")
-        raise click.ClickException("Invalid magnet link format")
+        msg = "Invalid magnet link format"
+        raise click.ClickException(msg) from e
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @cli.command()
@@ -524,8 +748,7 @@ def web(ctx, port, host):
 
     try:
         # Load configuration
-        config_manager = ConfigManager(ctx.obj["config"])
-        config = config_manager.config
+        ConfigManager(ctx.obj["config"])
 
         # Create session
         session = AsyncSessionManager(".")
@@ -536,7 +759,7 @@ def web(ctx, port, host):
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @cli.command()
@@ -547,8 +770,7 @@ def interactive(ctx):
 
     try:
         # Load configuration
-        config_manager = ConfigManager(ctx.obj["config"])
-        config = config_manager.config
+        ConfigManager(ctx.obj["config"])
 
         # Create session
         session = AsyncSessionManager(".")
@@ -559,7 +781,7 @@ def interactive(ctx):
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @cli.command()
@@ -570,8 +792,7 @@ def status(ctx):
 
     try:
         # Load configuration
-        config_manager = ConfigManager(ctx.obj["config"])
-        config = config_manager.config
+        ConfigManager(ctx.obj["config"])
 
         # Create session
         session = AsyncSessionManager(".")
@@ -581,7 +802,7 @@ def status(ctx):
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @cli.command()
@@ -600,7 +821,7 @@ def config(ctx):
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @cli.command()
@@ -611,8 +832,7 @@ def debug(ctx):
 
     try:
         # Load configuration
-        config_manager = ConfigManager(ctx.obj["config"])
-        config = config_manager.config
+        ConfigManager(ctx.obj["config"])
 
         # Create session
         session = AsyncSessionManager(".")
@@ -622,7 +842,7 @@ def debug(ctx):
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @cli.group()
@@ -631,10 +851,15 @@ def checkpoints():
 
 
 @checkpoints.command("list")
-@click.option("--format", "-f", type=click.Choice(["json", "binary", "both"]),
-              default="both", help="Show checkpoints in specific format")
+@click.option(
+    "--format",
+    "-f",
+    type=click.Choice(["json", "binary", "both"]),
+    default="both",
+    help="Show checkpoints in specific format",
+)
 @click.pass_context
-def list_checkpoints(ctx, format):
+def list_checkpoints(ctx, _checkpoint_format):
     """List available checkpoints."""
     console = Console()
 
@@ -644,7 +869,8 @@ def list_checkpoints(ctx, format):
         config = config_manager.config
 
         # Create checkpoint manager
-        from ..checkpoint import CheckpointManager
+        from ccbt.checkpoint import CheckpointManager
+
         checkpoint_manager = CheckpointManager(config.disk)
 
         # List checkpoints
@@ -665,22 +891,38 @@ def list_checkpoints(ctx, format):
         for checkpoint in checkpoints:
             table.add_row(
                 checkpoint.info_hash.hex()[:16] + "...",
-                checkpoint.format.value,
+                checkpoint.checkpoint_format.value,
                 f"{checkpoint.size:,} bytes",
-                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(checkpoint.created_at)),
-                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(checkpoint.updated_at)),
+                time.strftime(
+                    "%Y-%m-%d %H:%M:%S",
+                    time.localtime(checkpoint.created_at),
+                ),
+                time.strftime(
+                    "%Y-%m-%d %H:%M:%S",
+                    time.localtime(checkpoint.updated_at),
+                ),
             )
 
         console.print(table)
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @checkpoints.command("clean")
-@click.option("--days", "-d", type=int, default=30, help="Remove checkpoints older than N days")
-@click.option("--dry-run", is_flag=True, help="Show what would be deleted without actually deleting")
+@click.option(
+    "--days",
+    "-d",
+    type=int,
+    default=30,
+    help="Remove checkpoints older than N days",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be deleted without actually deleting",
+)
 @click.pass_context
 def clean_checkpoints(ctx, days, dry_run):
     """Clean up old checkpoints."""
@@ -692,7 +934,8 @@ def clean_checkpoints(ctx, days, dry_run):
         config = config_manager.config
 
         # Create checkpoint manager
-        from ..checkpoint import CheckpointManager
+        from ccbt.checkpoint import CheckpointManager
+
         checkpoint_manager = CheckpointManager(config.disk)
 
         if dry_run:
@@ -702,20 +945,28 @@ def clean_checkpoints(ctx, days, dry_run):
             old_checkpoints = [cp for cp in checkpoints if cp.updated_at < cutoff_time]
 
             if not old_checkpoints:
-                console.print(f"[green]No checkpoints older than {days} days found[/green]")
+                console.print(
+                    f"[green]No checkpoints older than {days} days found[/green]",
+                )
                 return
 
-            console.print(f"[yellow]Would delete {len(old_checkpoints)} checkpoints older than {days} days:[/yellow]")
+            console.print(
+                f"[yellow]Would delete {len(old_checkpoints)} checkpoints older than {days} days:[/yellow]",
+            )
             for checkpoint in old_checkpoints:
-                console.print(f"  - {checkpoint.info_hash.hex()[:16]}... ({checkpoint.format.value})")
+                console.print(
+                    f"  - {checkpoint.info_hash.hex()[:16]}... ({checkpoint.format.value})",
+                )
         else:
             # Actually clean up
-            deleted_count = asyncio.run(checkpoint_manager.cleanup_old_checkpoints(days))
+            deleted_count = asyncio.run(
+                checkpoint_manager.cleanup_old_checkpoints(days),
+            )
             console.print(f"[green]Cleaned up {deleted_count} old checkpoints[/green]")
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @checkpoints.command("delete")
@@ -731,7 +982,8 @@ def delete_checkpoint(ctx, info_hash):
         config = config_manager.config
 
         # Create checkpoint manager
-        from ..checkpoint import CheckpointManager
+        from ccbt.checkpoint import CheckpointManager
+
         checkpoint_manager = CheckpointManager(config.disk)
 
         # Convert hex string to bytes
@@ -739,7 +991,8 @@ def delete_checkpoint(ctx, info_hash):
             info_hash_bytes = bytes.fromhex(info_hash)
         except ValueError:
             console.print(f"[red]Invalid info hash format: {info_hash}[/red]")
-            raise click.ClickException("Command failed")
+            msg = "Command failed"
+            _raise_cli_error(msg)
 
         # Delete checkpoint
         deleted = asyncio.run(checkpoint_manager.delete_checkpoint(info_hash_bytes))
@@ -751,7 +1004,7 @@ def delete_checkpoint(ctx, info_hash):
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @checkpoints.command("verify")
@@ -762,52 +1015,82 @@ def verify_checkpoint_cmd(ctx, info_hash):
     console = Console()
     try:
         config_manager = ConfigManager(ctx.obj["config"])
-        from ..checkpoint import CheckpointManager
+        from ccbt.checkpoint import CheckpointManager
+
         checkpoint_manager = CheckpointManager(config_manager.config.disk)
         try:
             info_hash_bytes = bytes.fromhex(info_hash)
         except ValueError:
             console.print(f"[red]Invalid info hash format: {info_hash}[/red]")
-            raise click.ClickException("Command failed")
+            msg = "Command failed"
+            _raise_cli_error(msg)
         valid = asyncio.run(checkpoint_manager.verify_checkpoint(info_hash_bytes))
         if valid:
             console.print(f"[green]Checkpoint for {info_hash} is valid[/green]")
         else:
-            console.print(f"[yellow]Checkpoint for {info_hash} is missing or invalid[/yellow]")
+            console.print(
+                f"[yellow]Checkpoint for {info_hash} is missing or invalid[/yellow]",
+            )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @checkpoints.command("export")
 @click.argument("info_hash")
-@click.option("--format", "format_", type=click.Choice(["json", "binary"]), default="json")
-@click.option("--output", "output_path", type=click.Path(), required=True, help="Output file path")
+@click.option(
+    "--format",
+    "format_",
+    type=click.Choice(["json", "binary"]),
+    default="json",
+)
+@click.option(
+    "--output",
+    "output_path",
+    type=click.Path(),
+    required=True,
+    help="Output file path",
+)
 @click.pass_context
 def export_checkpoint_cmd(ctx, info_hash, format_, output_path):
     """Export a checkpoint to a file in the given format."""
     console = Console()
     try:
         config_manager = ConfigManager(ctx.obj["config"])
-        from ..checkpoint import CheckpointManager
+        from ccbt.checkpoint import CheckpointManager
+
         checkpoint_manager = CheckpointManager(config_manager.config.disk)
         try:
             info_hash_bytes = bytes.fromhex(info_hash)
         except ValueError:
             console.print(f"[red]Invalid info hash format: {info_hash}[/red]")
-            raise click.ClickException("Command failed")
-        data = asyncio.run(checkpoint_manager.export_checkpoint(info_hash_bytes, fmt=format_))
+            msg = "Command failed"
+            _raise_cli_error(msg)
+        data = asyncio.run(
+            checkpoint_manager.export_checkpoint(info_hash_bytes, fmt=format_),
+        )
         Path(output_path).write_bytes(data)
         console.print(f"[green]Exported checkpoint to {output_path}[/green]")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @checkpoints.command("backup")
 @click.argument("info_hash")
-@click.option("--destination", "destination", type=click.Path(), required=True, help="Backup destination path")
-@click.option("--compress", is_flag=True, default=True, help="Compress backup (default: yes)")
+@click.option(
+    "--destination",
+    "destination",
+    type=click.Path(),
+    required=True,
+    help="Backup destination path",
+)
+@click.option(
+    "--compress",
+    is_flag=True,
+    default=True,
+    help="Compress backup (default: yes)",
+)
 @click.option("--encrypt", is_flag=True, help="Encrypt backup with generated key")
 @click.pass_context
 def backup_checkpoint_cmd(ctx, info_hash, destination, compress, encrypt):
@@ -815,31 +1098,47 @@ def backup_checkpoint_cmd(ctx, info_hash, destination, compress, encrypt):
     console = Console()
     try:
         config_manager = ConfigManager(ctx.obj["config"])
-        from ..checkpoint import CheckpointManager
+        from ccbt.checkpoint import CheckpointManager
+
         checkpoint_manager = CheckpointManager(config_manager.config.disk)
         try:
             info_hash_bytes = bytes.fromhex(info_hash)
         except ValueError:
             console.print(f"[red]Invalid info hash format: {info_hash}[/red]")
-            raise click.ClickException("Command failed")
+            msg = "Command failed"
+            _raise_cli_error(msg)
         dest_path = Path(destination)
-        final_path = asyncio.run(checkpoint_manager.backup_checkpoint(info_hash_bytes, dest_path, compress=compress, encrypt=encrypt))
+        final_path = asyncio.run(
+            checkpoint_manager.backup_checkpoint(
+                info_hash_bytes,
+                dest_path,
+                compress=compress,
+                encrypt=encrypt,
+            ),
+        )
         console.print(f"[green]Backup created: {final_path}[/green]")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @checkpoints.command("restore")
 @click.argument("backup_file", type=click.Path(exists=True))
-@click.option("--info-hash", "info_hash", type=str, default=None, help="Expected info hash (hex)")
+@click.option(
+    "--info-hash",
+    "info_hash",
+    type=str,
+    default=None,
+    help="Expected info hash (hex)",
+)
 @click.pass_context
 def restore_checkpoint_cmd(ctx, backup_file, info_hash):
     """Restore a checkpoint from a backup file."""
     console = Console()
     try:
         config_manager = ConfigManager(ctx.obj["config"])
-        from ..checkpoint import CheckpointManager
+        from ccbt.checkpoint import CheckpointManager
+
         checkpoint_manager = CheckpointManager(config_manager.config.disk)
         ih_bytes = None
         if info_hash:
@@ -847,12 +1146,20 @@ def restore_checkpoint_cmd(ctx, backup_file, info_hash):
                 ih_bytes = bytes.fromhex(info_hash)
             except ValueError:
                 console.print(f"[red]Invalid info hash format: {info_hash}[/red]")
-                raise click.ClickException("Command failed")
-        cp = asyncio.run(checkpoint_manager.restore_checkpoint(Path(backup_file), info_hash=ih_bytes))
-        console.print(f"[green]Restored checkpoint for: {cp.torrent_name}[/green]\nInfo hash: {cp.info_hash.hex()}")
+                msg = "Command failed"
+                _raise_cli_error(msg)
+        cp = asyncio.run(
+            checkpoint_manager.restore_checkpoint(
+                Path(backup_file),
+                info_hash=ih_bytes,
+            ),
+        )
+        console.print(
+            f"[green]Restored checkpoint for: {cp.torrent_name}[/green]\nInfo hash: {cp.info_hash.hex()}",
+        )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @checkpoints.command("migrate")
@@ -865,21 +1172,25 @@ def migrate_checkpoint_cmd(ctx, info_hash, from_format, to_format):
     console = Console()
     try:
         config_manager = ConfigManager(ctx.obj["config"])
-        from ..checkpoint import CheckpointManager
-        from ..models import CheckpointFormat
+        from ccbt.checkpoint import CheckpointManager
+        from ccbt.models import CheckpointFormat
+
         checkpoint_manager = CheckpointManager(config_manager.config.disk)
         try:
             info_hash_bytes = bytes.fromhex(info_hash)
         except ValueError:
             console.print(f"[red]Invalid info hash format: {info_hash}[/red]")
-            raise click.ClickException("Command failed")
+            msg = "Command failed"
+            _raise_cli_error(msg)
         src = CheckpointFormat[from_format.upper()]
         dst = CheckpointFormat[to_format.upper()]
-        new_path = asyncio.run(checkpoint_manager.convert_checkpoint_format(info_hash_bytes, src, dst))
+        new_path = asyncio.run(
+            checkpoint_manager.convert_checkpoint_format(info_hash_bytes, src, dst),
+        )
         console.print(f"[green]Migrated checkpoint to {new_path}[/green]")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @cli.command()
@@ -887,7 +1198,7 @@ def migrate_checkpoint_cmd(ctx, info_hash, from_format, to_format):
 @click.option("--output", "-o", type=click.Path(), help="Output directory")
 @click.option("--interactive", "-i", is_flag=True, help="Start interactive mode")
 @click.pass_context
-def resume(ctx, info_hash, output, interactive):
+def resume(ctx, info_hash, _output, interactive):
     """Resume download from checkpoint."""
     console = Console()
 
@@ -904,47 +1215,74 @@ def resume(ctx, info_hash, output, interactive):
             info_hash_bytes = bytes.fromhex(info_hash)
         except ValueError:
             console.print(f"[red]Invalid info hash format: {info_hash}[/red]")
-            raise click.ClickException("Command failed")
+            msg = "Command failed"
+            _raise_cli_error(msg)
 
         # Load checkpoint
-        from ..checkpoint import CheckpointManager
+        from ccbt.checkpoint import CheckpointManager
+
         checkpoint_manager = CheckpointManager(config.disk)
         checkpoint = asyncio.run(checkpoint_manager.load_checkpoint(info_hash_bytes))
 
         if not checkpoint:
             console.print(f"[red]No checkpoint found for {info_hash}[/red]")
-            raise click.ClickException("Command failed")
+            msg = "Command failed"
+            _raise_cli_error(msg)
 
-        console.print(f"[green]Found checkpoint for: {checkpoint.torrent_name}[/green]")
-        console.print(f"[blue]Progress: {len(checkpoint.verified_pieces)}/{checkpoint.total_pieces} pieces verified[/blue]")
+        console.print(
+            f"[green]Found checkpoint for: {getattr(checkpoint, 'torrent_name', 'Unknown')}[/green]"
+        )
+        console.print(
+            f"[blue]Progress: {len(getattr(checkpoint, 'verified_pieces', []))}/{getattr(checkpoint, 'total_pieces', 0)} pieces verified[/blue]",
+        )
 
         # Check if checkpoint can be auto-resumed
-        can_auto_resume = bool(checkpoint.torrent_file_path or checkpoint.magnet_uri)
+        can_auto_resume = bool(
+            getattr(checkpoint, "torrent_file_path", None)
+            or getattr(checkpoint, "magnet_uri", None)
+        )
 
         if not can_auto_resume:
-            console.print("[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]")
-            console.print("[yellow]Please provide the original torrent file or magnet link[/yellow]")
-            raise click.ClickException("Cannot auto-resume checkpoint")
+            console.print(
+                "[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]",
+            )
+            console.print(
+                "[yellow]Please provide the original torrent file or magnet link[/yellow]",
+            )
+            msg = "Cannot auto-resume checkpoint"
+            _raise_cli_error(msg)
 
         # Start session manager and resume
-        asyncio.run(resume_download(session, info_hash_bytes, checkpoint, interactive, console))
+        asyncio.run(
+            resume_download(session, info_hash_bytes, checkpoint, interactive, console),
+        )
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
-async def resume_download(session: AsyncSessionManager, info_hash_bytes: bytes,
-                         checkpoint, interactive: bool, console: Console) -> None:
+async def resume_download(
+    session: AsyncSessionManager,
+    info_hash_bytes: bytes,
+    checkpoint,
+    interactive: bool,
+    console: Console,
+) -> None:
     """Async helper for resume command."""
     try:
         await session.start()
 
         # Attempt to resume from checkpoint
         console.print("[green]Resuming download from checkpoint...[/green]")
-        resumed_info_hash = await session.resume_from_checkpoint(info_hash_bytes, checkpoint)
+        resumed_info_hash = await session.resume_from_checkpoint(
+            info_hash_bytes,
+            checkpoint,
+        )
 
-        console.print(f"[green]Successfully resumed download: {resumed_info_hash}[/green]")
+        console.print(
+            f"[green]Successfully resumed download: {resumed_info_hash}[/green]",
+        )
 
         if interactive:
             # Start interactive mode
@@ -955,7 +1293,10 @@ async def resume_download(session: AsyncSessionManager, info_hash_bytes: bytes,
             progress_manager = ProgressManager(console)
 
             with progress_manager.create_progress() as progress:
-                task = progress.add_task(f"Resuming {checkpoint.torrent_name}", total=100)
+                task = progress.add_task(
+                    f"Resuming {checkpoint.torrent_name}",
+                    total=100,
+                )
 
                 # Monitor until completion
                 while True:
@@ -964,23 +1305,31 @@ async def resume_download(session: AsyncSessionManager, info_hash_bytes: bytes,
                         console.print("[yellow]Torrent session ended[/yellow]")
                         break
 
-                    progress.update(task, completed=torrent_status.get("progress", 0) * 100)
+                    progress.update(
+                        task,
+                        completed=torrent_status.get("progress", 0) * 100,
+                    )
 
                     if torrent_status.get("status") == "seeding":
-                        console.print(f"[green]Download completed: {checkpoint.torrent_name}[/green]")
+                        console.print(
+                            f"[green]Download completed: {checkpoint.torrent_name}[/green]",
+                        )
                         break
 
                     await asyncio.sleep(1)
 
     except ValueError as e:
         console.print(f"[red]Validation error: {e}[/red]")
-        raise click.ClickException("Resume failed due to validation error")
+        msg = "Resume failed due to validation error"
+        raise click.ClickException(msg) from e
     except FileNotFoundError as e:
         console.print(f"[red]File not found: {e}[/red]")
-        raise click.ClickException("Resume failed - torrent file not found")
+        msg = "Resume failed - torrent file not found"
+        raise click.ClickException(msg) from e
     except Exception as e:
         console.print(f"[red]Unexpected error during resume: {e}[/red]")
-        raise click.ClickException("Resume failed due to unexpected error")
+        msg = "Resume failed due to unexpected error"
+        raise click.ClickException(msg) from e
     finally:
         try:
             await session.stop()
@@ -988,13 +1337,13 @@ async def resume_download(session: AsyncSessionManager, info_hash_bytes: bytes,
             console.print(f"[yellow]Warning: Error stopping session: {e}[/yellow]")
 
 
-async def start_monitoring(session: AsyncSessionManager, console: Console) -> None:
+async def start_monitoring(_session: AsyncSessionManager, console: Console) -> None:
     """Start monitoring components."""
     # Initialize monitoring
     metrics_collector = MetricsCollector()
-    alert_manager = AlertManager()
-    tracing_manager = TracingManager()
-    dashboard_manager = DashboardManager()
+    AlertManager()
+    TracingManager()
+    DashboardManager()
 
     # Start monitoring
     asyncio.run(metrics_collector.start())
@@ -1002,18 +1351,32 @@ async def start_monitoring(session: AsyncSessionManager, console: Console) -> No
     console.print("[green]Monitoring started[/green]")
 
 
-async def start_interactive_download(session: AsyncSessionManager, torrent_data: Dict[str, Any], console: Console, resume: bool = False) -> None:
+async def start_interactive_download(
+    session: AsyncSessionManager,
+    torrent_data: dict[str, Any],
+    console: Console,
+    resume: bool = False,
+) -> None:
     """Start interactive download."""
     interactive_cli = InteractiveCLI(session, console)
     await interactive_cli.download_torrent(torrent_data, resume=resume)
 
 
-async def start_basic_download(session: AsyncSessionManager, torrent_data: Dict[str, Any], console: Console, resume: bool = False) -> None:
+async def start_basic_download(
+    session: AsyncSessionManager,
+    torrent_data: dict[str, Any],
+    console: Console,
+    resume: bool = False,
+) -> None:
     """Start basic download with progress bar."""
     progress_manager = ProgressManager(console)
 
     with progress_manager.create_progress() as progress:
-        torrent_name = torrent_data.get("name", "Unknown")
+        torrent_name = (
+            torrent_data.get("name", "Unknown")
+            if isinstance(torrent_data, dict)
+            else getattr(torrent_data, "name", "Unknown")
+        )
         task = progress.add_task(f"Downloading {torrent_name}", total=100)
 
         # Add torrent to session with resume option
@@ -1046,7 +1409,11 @@ async def show_status(session: AsyncSessionManager, console: Console) -> None:
     table.add_row("Session", "Running", f"Port: {session.config.network.listen_port}")
     table.add_row("Peers", "Connected", f"Active: {len(session.peers)}")
     table.add_row("Torrents", "Active", f"Count: {len(session.torrents)}")
-    table.add_row("DHT", "Enabled", f"Nodes: {session.dht.node_count if session.dht else 0}")
+    table.add_row(
+        "DHT",
+        "Enabled",
+        f"Nodes: {session.dht.node_count if session.dht else 0}",
+    )
 
     console.print(table)
 
@@ -1063,12 +1430,15 @@ def show_config(config, console: Console) -> None:
     table.add_row("Max Peers", str(config.network.max_global_peers))
     table.add_row("Download Path", str(config.disk.download_path))
     table.add_row("Log Level", config.observability.log_level.value)
-    table.add_row("Metrics", "Enabled" if config.observability.enable_metrics else "Disabled")
+    table.add_row(
+        "Metrics",
+        "Enabled" if config.observability.enable_metrics else "Disabled",
+    )
 
     console.print(table)
 
 
-async def start_debug_mode(session: AsyncSessionManager, console: Console) -> None:
+async def start_debug_mode(_session: AsyncSessionManager, console: Console) -> None:
     """Start debug mode."""
     console.print("[yellow]Debug mode not yet implemented[/yellow]")
 

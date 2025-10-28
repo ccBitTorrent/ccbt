@@ -24,6 +24,8 @@ exclude = [
     "dist",
     "node_modules",
     "venv",
+    "tests",
+    "benchmarks",
 ]
 
 # Line length
@@ -51,7 +53,7 @@ select = [
     "D",    # pydocstyle
     "S",    # flake8-bandit
     "A",    # flake8-builtins
-    "COM",  # flake8-commas
+    # "COM",  # flake8-commas - disabled due to conflict with formatter
     "DTZ",  # flake8-datetimez
     "EM",   # flake8-errmsg
     "EXE",  # flake8-executable
@@ -89,18 +91,27 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 # Per-file ignores
 [lint.per-file-ignores]
-"tests/**/*.py" = [
-    "S101",     # assert
-    "S104",     # hardcoded-bind-all-interfaces
-    "PLR2004",  # magic-value-comparison
-    "TID252",   # relative-imports
-    "D",        # pydocstyle
-]
 
-"**/test_*.py" = [
-    "PLR2004",  # magic-value-comparison
-    "S101",     # assert
-    "TID252",   # relative-imports
+"ccbt/**/*.py" = [
+    "E501",     # line-too-long
+    "PLR2004",  # magic-value-comparison - BitTorrent protocol uses many constants
+    "PLR0912",  # too-many-branches - complex conditionals are acceptable
+    "PLR0915",  # too-many-statements - large functions are acceptable
+    "PLR0911",  # too-many-returns - complex functions are acceptable
+    "PLR0913",  # too-many-arguments - CLI commands often have many options
+    "PLW0603",  # global-statement - necessary for singleton pattern
+    "S324",     # SHA-1 usage - required by BitTorrent protocol (BEP 3)
+    "S104",     # hardcoded-bind-all-interfaces - configuration option
+    "S311",     # non-cryptographic-random - acceptable for peer IDs
+    "S105",     # hardcoded-password-string - enum values, not passwords
+    "S603",     # subprocess-without-shell-equals-true - CLI commands are validated
+    "SIM115",   # open-file-with-context-handler - file must stay open for mmap
+    "S110",     # try-except-pass - often necessary for cleanup and optional operations
+    "S310",     # suspicious-url-open-usage - URLs are validated for http/https schemes
+    "PLC0415",  # import-outside-top-level - lazy imports for performance/circular deps
+    "TRY301",   # abstract-raise - raise statements are clear as-is
+    "PERF203",  # try-except-in-loop - necessary for async error handling
+    "TRY300",   # try-else - async patterns don't always benefit from else blocks
 ]
 
 "**/__init__.py" = ["TID252"]

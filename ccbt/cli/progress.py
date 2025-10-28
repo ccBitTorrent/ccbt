@@ -1,5 +1,7 @@
 """Progress Manager for ccBitTorrent CLI.
 
+from __future__ import annotations
+
 Provides comprehensive progress tracking including:
 - Download progress bars
 - Upload progress bars
@@ -8,9 +10,10 @@ Provides comprehensive progress tracking including:
 - ETA calculation
 """
 
-from typing import Any, Dict
+from __future__ import annotations
 
-from rich.console import Console
+from typing import TYPE_CHECKING, Any, Mapping
+
 from rich.progress import (
     BarColumn,
     Progress,
@@ -20,16 +23,24 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from ..models import TorrentInfo
+if TYPE_CHECKING:
+    from rich.console import Console
+
+    from ccbt.models import TorrentInfo
 
 
 class ProgressManager:
     """Progress manager for CLI."""
 
     def __init__(self, console: Console):
+        """Initialize progress manager.
+
+        Args:
+            console: Rich console for output
+        """
         self.console = console
-        self.active_progress: Dict[str, Progress] = {}
-        self.progress_tasks: Dict[str, Any] = {}
+        self.active_progress: dict[str, Progress] = {}
+        self.progress_tasks: dict[str, Any] = {}
 
     def create_progress(self) -> Progress:
         """Create a new progress bar."""
@@ -42,9 +53,11 @@ class ProgressManager:
             TimeRemainingColumn(),
         )
 
-    def create_download_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_download_progress(
+        self, _torrent: TorrentInfo | Mapping[str, Any]
+    ) -> Progress:
         """Create download progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -55,11 +68,11 @@ class ProgressManager:
             TimeRemainingColumn(),
         )
 
-        return progress
-
-    def create_upload_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_upload_progress(
+        self, _torrent: TorrentInfo | Mapping[str, Any]
+    ) -> Progress:
         """Create upload progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -69,11 +82,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_piece_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_piece_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create piece completion progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -82,11 +93,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_speed_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_speed_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create speed monitoring progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -96,11 +105,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_peer_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_peer_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create peer connection progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -109,11 +116,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_verification_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_verification_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create hash verification progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -122,11 +127,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_metadata_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_metadata_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create metadata download progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -135,11 +138,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_tracker_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_tracker_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create tracker communication progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -148,11 +149,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_dht_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_dht_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create DHT progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -161,11 +160,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_pex_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_pex_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create PEX progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -174,11 +171,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_webseed_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_webseed_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create WebSeed progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -187,11 +182,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_encryption_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_encryption_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create encryption progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -200,11 +193,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_security_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_security_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create security progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -213,11 +204,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_ml_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_ml_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create ML progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -226,11 +215,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_monitoring_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_monitoring_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create monitoring progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -239,11 +226,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_observability_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_observability_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create observability progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -252,11 +237,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_dashboard_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_dashboard_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create dashboard progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -265,11 +248,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_alert_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_alert_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create alert progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -278,11 +259,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_tracing_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_tracing_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create tracing progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -291,11 +270,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_profiling_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_profiling_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create profiling progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -304,11 +281,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_debug_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_debug_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create debug progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -317,11 +292,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_completion_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_completion_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create completion progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -330,11 +303,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_cleanup_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_cleanup_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create cleanup progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -343,11 +314,9 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_finalization_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_finalization_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create finalization progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -356,24 +325,22 @@ class ProgressManager:
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_verification_final_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_verification_final_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create final verification progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TextColumn("[progress.final_verification]{task.fields[final_verification]}"),
+            TextColumn(
+                "[progress.final_verification]{task.fields[final_verification]}",
+            ),
             TimeElapsedColumn(),
         )
 
-        return progress
-
-    def create_success_progress(self, torrent: TorrentInfo) -> Progress:
+    def create_success_progress(self, _torrent: TorrentInfo) -> Progress:
         """Create success progress bar."""
-        progress = Progress(
+        return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -381,5 +348,3 @@ class ProgressManager:
             TextColumn("[progress.success]{task.fields[success]}"),
             TimeElapsedColumn(),
         )
-
-        return progress

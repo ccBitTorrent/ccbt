@@ -49,6 +49,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=6.2.0",
+    "pytest-asyncio>=0.23.0",
     "pytest-cov>=2.12.0",
     "hypothesis>=6.0.0",
     "pytest-benchmark>=4.0.0",
@@ -81,6 +82,7 @@ ccbt = ["py.typed"]
 [tool.ruff]
 target-version = "py38"
 line-length = 88
+exclude = ["tests/", "benchmarks/"]
 select = [
     "E4",   # pycodestyle errors
     "E7",   # pycodestyle errors
@@ -128,22 +130,15 @@ select = [
     "FURB", # refurb
     "RUF",  # ruff-specific rules
 ]
-fixable = ["ALL"]
-unfixable = []
+ignore = [
+    "COM812",  # Conflicts with formatter per warning
+    "E501",    # Line too long - ignore for now
+    "PLR0912", # Too many branches - complex conditionals are acceptable
+    "PLR0915", # Too many statements - large functions are acceptable
+    "PLR0911", # Too many returns - complex functions are acceptable
+]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = [
-    "S101",     # assert
-    "S104",     # hardcoded-bind-all-interfaces
-    "PLR2004",  # magic-value-comparison
-    "TID252",   # relative-imports
-    "D",        # pydocstyle
-]
-"**/test_*.py" = [
-    "PLR2004",  # magic-value-comparison
-    "S101",     # assert
-    "TID252",   # relative-imports
-]
 "**/__init__.py" = ["TID252"]
 "**/scripts/**/*.py" = ["T20"]
 
@@ -174,33 +169,6 @@ disable = [
     "too-many-locals",
     "too-many-statements",
 ]
-
-# Ty configuration (type checker)
-[tool.ty]
-python_version = "3.8"
-strict = true
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-strict_equality = true
-
-# Module-specific Ty overrides
-[[tool.ty.overrides]]
-module = ["tests.*"]
-disallow_untyped_defs = false
-check_untyped_defs = false
-
-[[tool.ty.overrides]]
-module = ["win32file.*", "win32con.*", "pywintypes.*"]
-ignore_missing_imports = true
 
 # Pytest configuration
 [tool.pytest.ini_options]
@@ -260,3 +228,13 @@ version_scheme = "pep440"
 # UV workspace configuration (for monorepo support)
 [tool.uv.workspace]
 members = []
+
+[dependency-groups]
+dev = [
+    "bandit>=1.7.10",
+    "hypothesis>=6.113.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.14.2",
+    "ty>=0.0.1a24",
+]

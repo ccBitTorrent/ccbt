@@ -1,12 +1,16 @@
 """Bencoding implementation for BitTorrent protocol.
 
+from __future__ import annotations
+
 Bencoding is the encoding used in BitTorrent for torrent files and peer communication.
 This module provides encoding and decoding functionality according to the BitTorrent specification.
 """
 
-from typing import Any, Dict, List
+from __future__ import annotations
 
-from .exceptions import BencodeError
+from typing import Any
+
+from ccbt.exceptions import BencodeError
 
 
 class BencodeDecodeError(BencodeError):
@@ -28,7 +32,8 @@ class BencodeDecoder:
     def decode(self) -> Any:
         """Decode the bencoded data and return Python object."""
         if self.pos >= len(self.data):
-            raise BencodeDecodeError("Unexpected end of data")
+            msg = "Unexpected end of data"
+            raise BencodeDecodeError(msg)
 
         char = chr(self.data[self.pos])
 
@@ -41,7 +46,8 @@ class BencodeDecoder:
         elif char.isdigit():
             result = self._decode_string()
         else:
-            raise BencodeDecodeError(f"Invalid bencode character: {char}")
+            msg = f"Invalid bencode character: {char}"
+            raise BencodeDecodeError(msg)
 
         return result
 
@@ -55,19 +61,22 @@ class BencodeDecoder:
             self.pos += 1
 
         if self.pos >= len(self.data):
-            raise BencodeDecodeError("Missing 'e' terminator for integer")
+            msg = "Missing 'e' terminator for integer"
+            raise BencodeDecodeError(msg)
 
         # Extract the number string
-        number_str = self.data[start:self.pos].decode("utf-8")
+        number_str = self.data[start : self.pos].decode("utf-8")
         self.pos += 1  # Skip 'e'
 
         # Handle negative numbers
         if number_str.startswith("-"):
             if len(number_str) == 1:
-                raise BencodeDecodeError("Invalid negative integer")
+                msg = "Invalid negative integer"
+                raise BencodeDecodeError(msg)
             return -int(number_str[1:])
         if number_str.startswith("0") and len(number_str) > 1:
-            raise BencodeDecodeError("Invalid integer with leading zero")
+            msg = "Invalid integer with leading zero"
+            raise BencodeDecodeError(msg)
         return int(number_str)
 
     def _decode_string(self) -> bytes:
@@ -78,29 +87,32 @@ class BencodeDecoder:
             self.pos += 1
 
         if self.pos >= len(self.data):
-            raise BencodeDecodeError("Missing colon in string")
+            msg = "Missing colon in string"
+            raise BencodeDecodeError(msg)
 
         # Extract length
-        length_str = self.data[start:self.pos].decode("utf-8")
+        length_str = self.data[start : self.pos].decode("utf-8")
         try:
             length = int(length_str)
-        except ValueError:
-            raise BencodeDecodeError(f"Invalid string length: {length_str}")
+        except ValueError as e:
+            msg = f"Invalid string length: {length_str}"
+            raise BencodeDecodeError(msg) from e
 
         self.pos += 1  # Skip colon
         start = self.pos
 
         # Check if we have enough data
         if self.pos + length > len(self.data):
-            raise BencodeDecodeError("String length exceeds available data")
+            msg = "String length exceeds available data"
+            raise BencodeDecodeError(msg)
 
         # Extract string data
-        string_data = self.data[self.pos:self.pos + length]
+        string_data = self.data[self.pos : self.pos + length]
         self.pos += length
 
         return string_data
 
-    def _decode_list(self) -> List[Any]:
+    def _decode_list(self) -> list[Any]:
         """Decode a bencoded list."""
         self.pos += 1  # Skip 'l'
         result = []
@@ -109,12 +121,13 @@ class BencodeDecoder:
             result.append(self.decode())
 
         if self.pos >= len(self.data):
-            raise BencodeDecodeError("Missing 'e' terminator for list")
+            msg = "Missing 'e' terminator for list"
+            raise BencodeDecodeError(msg)
 
         self.pos += 1  # Skip 'e'
         return result
 
-    def _decode_dict(self) -> Dict[bytes, Any]:
+    def _decode_dict(self) -> dict[bytes, Any]:
         """Decode a bencoded dictionary."""
         self.pos += 1  # Skip 'd'
         result = {}
@@ -129,7 +142,8 @@ class BencodeDecoder:
             result[key] = value
 
         if self.pos >= len(self.data):
-            raise BencodeDecodeError("Missing 'e' terminator for dictionary")
+            msg = "Missing 'e' terminator for dictionary"
+            raise BencodeDecodeError(msg)
 
         self.pos += 1  # Skip 'e'
         return result
@@ -150,7 +164,8 @@ class BencodeEncoder:
             return self._encode_list(obj)
         if isinstance(obj, dict):
             return self._encode_dict(obj)
-        raise BencodeEncodeError(f"Cannot encode type: {type(obj)}")
+        msg = f"Cannot encode type: {type(obj)}"
+        raise BencodeEncodeError(msg)
 
     def _encode_string(self, data: bytes) -> bytes:
         """Encode bytes as bencoded string."""
@@ -160,7 +175,7 @@ class BencodeEncoder:
         """Encode integer as bencoded integer."""
         return f"i{num}e".encode()
 
-    def _encode_list(self, lst: List[Any]) -> bytes:
+    def _encode_list(self, lst: list[Any]) -> bytes:
         """Encode list as bencoded list."""
         result = b"l"
         for item in lst:
@@ -168,18 +183,27 @@ class BencodeEncoder:
         result += b"e"
         return result
 
-    def _encode_dict(self, dct: Dict[Any, Any]) -> bytes:
+    def _encode_dict(self, dct: dict[Any, Any]) -> bytes:
         """Encode dictionary as bencoded dictionary."""
         # Sort keys for bencode specification compliance
         try:
-            sorted_items = sorted(dct.items(), key=lambda x: x[0] if isinstance(x[0], bytes) else x[0].encode("utf-8"))
-        except AttributeError:
-            raise BencodeEncodeError(f"Dictionary key must be string or bytes, got {type(list(dct.keys())[0])}")
+            sorted_items = sorted(
+                dct.items(),
+                key=lambda x: x[0] if isinstance(x[0], bytes) else x[0].encode("utf-8"),
+            )
+        except AttributeError as e:
+            msg = f"Dictionary key must be string or bytes, got {type(next(iter(dct.keys())))}"
+            raise BencodeEncodeError(
+                msg,
+            ) from e
 
         result = b"d"
         for key, value in sorted_items:
             if not isinstance(key, (str, bytes)):
-                raise BencodeEncodeError(f"Dictionary key must be string or bytes, got {type(key)}")
+                msg = f"Dictionary key must be string or bytes, got {type(key)}"
+                raise BencodeEncodeError(
+                    msg,
+                )
             result += self.encode(key)
             result += self.encode(value)
         result += b"e"

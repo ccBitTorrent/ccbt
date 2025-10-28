@@ -1,22 +1,28 @@
 """Base plugin system for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides the foundation for a flexible plugin architecture that allows
 extending functionality with custom plugins.
 """
 
+from __future__ import annotations
+
 import asyncio
+import contextlib
 import importlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable
 
-from ..exceptions import CCBTException
-from ..logging_config import get_logger
+from ccbt.exceptions import CCBTError
+from ccbt.logging_config import get_logger
 
 
 class PluginState(Enum):
     """Plugin lifecycle states."""
+
     UNLOADED = "unloaded"
     LOADING = "loading"
     LOADED = "loaded"
@@ -27,21 +33,22 @@ class PluginState(Enum):
     ERROR = "error"
 
 
-class PluginError(CCBTException):
+class PluginError(CCBTError):
     """Exception raised for plugin-related errors."""
 
 
 @dataclass
 class PluginInfo:
     """Information about a plugin."""
+
     name: str
     version: str
     description: str
     author: str
-    dependencies: List[str] = field(default_factory=list)
-    hooks: List[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
+    hooks: list[str] = field(default_factory=list)
     state: PluginState = PluginState.UNLOADED
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class Plugin(ABC):
@@ -49,7 +56,7 @@ class Plugin(ABC):
 
     def __init__(self, name: str, version: str = "1.0.0", description: str = ""):
         """Initialize plugin.
-        
+
         Args:
             name: Plugin name
             version: Plugin version
@@ -59,9 +66,10 @@ class Plugin(ABC):
         self.version = version
         self.description = description
         self.state = PluginState.UNLOADED
+        self.error: str | None = None
         self.logger = get_logger(f"plugin.{name}")
-        self._hooks: Dict[str, List[Callable]] = {}
-        self._dependencies: List[str] = []
+        self._hooks: dict[str, list[Callable]] = {}
+        self._dependencies: list[str] = []
 
     @abstractmethod
     async def initialize(self) -> None:
@@ -96,18 +104,18 @@ class Plugin(ABC):
         if hook_name not in self._hooks:
             self._hooks[hook_name] = []
         self._hooks[hook_name].append(callback)
-        self.logger.debug(f"Registered hook '{hook_name}'")
+        self.logger.debug("Registered hook '%s'", hook_name)
 
     def unregister_hook(self, hook_name: str, callback: Callable) -> None:
         """Unregister a hook callback."""
         if hook_name in self._hooks:
             try:
                 self._hooks[hook_name].remove(callback)
-                self.logger.debug(f"Unregistered hook '{hook_name}'")
+                self.logger.debug("Unregistered hook '%s'", hook_name)
             except ValueError:
                 pass
 
-    async def emit_hook(self, hook_name: str, *args, **kwargs) -> List[Any]:
+    async def emit_hook(self, hook_name: str, *args, **kwargs) -> list[Any]:
         """Emit a hook and collect results."""
         results = []
         if hook_name in self._hooks:
@@ -118,8 +126,8 @@ class Plugin(ABC):
                     else:
                         result = callback(*args, **kwargs)
                     results.append(result)
-                except Exception as e:
-                    self.logger.error(f"Hook '{hook_name}' failed: {e}")
+                except Exception:
+                    self.logger.exception("Hook '%s' failed", hook_name)
         return results
 
     def add_dependency(self, dependency: str) -> None:
@@ -137,31 +145,35 @@ class PluginManager:
 
     def __init__(self) -> None:
         """Initialize plugin manager."""
-        self.plugins: Dict[str, Plugin] = {}
-        self.plugin_info: Dict[str, PluginInfo] = {}
-        self.global_hooks: Dict[str, List[Callable]] = {}
+        self.plugins: dict[str, Plugin] = {}
+        self.plugin_info: dict[str, PluginInfo] = {}
+        self.global_hooks: dict[str, list[Callable]] = {}
         self.logger = get_logger(__name__)
 
-    async def load_plugin(self, plugin_class: Type[Plugin],
-                         config: Optional[Dict[str, Any]] = None) -> str:
+    async def load_plugin(
+        self,
+        plugin_class: type[Plugin],
+        config: dict[str, Any] | None = None,
+    ) -> str:
         """Load a plugin.
-        
+
         Args:
             plugin_class: Plugin class to load
             config: Plugin configuration
-            
+
         Returns:
             Plugin name
         """
-        plugin = plugin_class()
+        plugin = plugin_class(name=plugin_class.__name__)
         plugin_name = plugin.name
 
         if plugin_name in self.plugins:
-            raise PluginError(f"Plugin '{plugin_name}' is already loaded")
+            msg = f"Plugin '{plugin_name}' is already loaded"
+            raise PluginError(msg)
 
         try:
             plugin.state = PluginState.LOADING
-            self.logger.info(f"Loading plugin: {plugin_name}")
+            self.logger.info("Loading plugin: %s", plugin_name)
 
             # Set configuration if provided
             if config:
@@ -172,7 +184,7 @@ class PluginManager:
             await plugin.initialize()
 
             # Register global hooks
-            for hook_name, callbacks in plugin._hooks.items():
+            for hook_name, callbacks in plugin._hooks.items():  # noqa: SLF001
                 if hook_name not in self.global_hooks:
                     self.global_hooks[hook_name] = []
                 self.global_hooks[hook_name].extend(callbacks)
@@ -182,23 +194,25 @@ class PluginManager:
             self.plugin_info[plugin_name] = plugin.get_info()
             plugin.state = PluginState.LOADED
 
-            self.logger.info(f"Plugin '{plugin_name}' loaded successfully")
-            return plugin_name
-
+            self.logger.info("Plugin '%s' loaded successfully", plugin_name)
         except Exception as e:
             plugin.state = PluginState.ERROR
             plugin.error = str(e)
-            self.logger.error(f"Failed to load plugin '{plugin_name}': {e}")
-            raise PluginError(f"Failed to load plugin '{plugin_name}': {e}")
+            self.logger.exception("Failed to load plugin '%s'", plugin_name)
+            msg = f"Failed to load plugin '{plugin_name}': {e}"
+            raise PluginError(msg) from e
+        else:
+            return plugin_name
 
     async def unload_plugin(self, plugin_name: str) -> None:
         """Unload a plugin.
-        
+
         Args:
             plugin_name: Name of plugin to unload
         """
         if plugin_name not in self.plugins:
-            raise PluginError(f"Plugin '{plugin_name}' is not loaded")
+            msg = f"Plugin '{plugin_name}' is not loaded"
+            raise PluginError(msg)
 
         plugin = self.plugins[plugin_name]
 
@@ -211,85 +225,90 @@ class PluginManager:
             await plugin.cleanup()
 
             # Remove global hooks
-            for hook_name, callbacks in plugin._hooks.items():
+            for hook_name, callbacks in plugin._hooks.items():  # noqa: SLF001
                 if hook_name in self.global_hooks:
                     for callback in callbacks:
-                        try:
+                        with contextlib.suppress(ValueError):
                             self.global_hooks[hook_name].remove(callback)
-                        except ValueError:
-                            pass
 
             # Remove plugin
             del self.plugins[plugin_name]
             del self.plugin_info[plugin_name]
             plugin.state = PluginState.UNLOADED
 
-            self.logger.info(f"Plugin '{plugin_name}' unloaded successfully")
+            self.logger.info("Plugin '%s' unloaded successfully", plugin_name)
 
         except Exception as e:
-            self.logger.error(f"Failed to unload plugin '{plugin_name}': {e}")
-            raise PluginError(f"Failed to unload plugin '{plugin_name}': {e}")
+            self.logger.exception("Failed to unload plugin '%s'", plugin_name)
+            msg = f"Failed to unload plugin '{plugin_name}': {e}"
+            raise PluginError(msg) from e
 
     async def start_plugin(self, plugin_name: str) -> None:
         """Start a plugin.
-        
+
         Args:
             plugin_name: Name of plugin to start
         """
         if plugin_name not in self.plugins:
-            raise PluginError(f"Plugin '{plugin_name}' is not loaded")
+            msg = f"Plugin '{plugin_name}' is not loaded"
+            raise PluginError(msg)
 
         plugin = self.plugins[plugin_name]
 
         if plugin.state != PluginState.LOADED:
-            raise PluginError(f"Plugin '{plugin_name}' is not in loaded state")
+            msg = f"Plugin '{plugin_name}' is not in loaded state"
+            raise PluginError(msg)
 
         try:
             plugin.state = PluginState.STARTING
             await plugin.start()
             plugin.state = PluginState.RUNNING
-            self.logger.info(f"Plugin '{plugin_name}' started successfully")
+            self.logger.info("Plugin '%s' started successfully", plugin_name)
 
         except Exception as e:
             plugin.state = PluginState.ERROR
             plugin.error = str(e)
-            self.logger.error(f"Failed to start plugin '{plugin_name}': {e}")
-            raise PluginError(f"Failed to start plugin '{plugin_name}': {e}")
+            self.logger.exception("Failed to start plugin '%s'", plugin_name)
+            msg = f"Failed to start plugin '{plugin_name}': {e}"
+            raise PluginError(msg) from e
 
     async def stop_plugin(self, plugin_name: str) -> None:
         """Stop a plugin.
-        
+
         Args:
             plugin_name: Name of plugin to stop
         """
         if plugin_name not in self.plugins:
-            raise PluginError(f"Plugin '{plugin_name}' is not loaded")
+            msg = f"Plugin '{plugin_name}' is not loaded"
+            raise PluginError(msg)
 
         plugin = self.plugins[plugin_name]
 
         if plugin.state != PluginState.RUNNING:
-            raise PluginError(f"Plugin '{plugin_name}' is not running")
+            msg = f"Plugin '{plugin_name}' is not running"
+            raise PluginError(msg)
 
         try:
             plugin.state = PluginState.STOPPING
             await plugin.stop()
             plugin.state = PluginState.STOPPED
-            self.logger.info(f"Plugin '{plugin_name}' stopped successfully")
+            self.logger.info("Plugin '%s' stopped successfully", plugin_name)
 
         except Exception as e:
             plugin.state = PluginState.ERROR
             plugin.error = str(e)
-            self.logger.error(f"Failed to stop plugin '{plugin_name}': {e}")
-            raise PluginError(f"Failed to stop plugin '{plugin_name}': {e}")
+            self.logger.exception("Failed to stop plugin '%s'", plugin_name)
+            msg = f"Failed to stop plugin '{plugin_name}': {e}"
+            raise PluginError(msg) from e
 
-    async def emit_hook(self, hook_name: str, *args, **kwargs) -> List[Any]:
+    async def emit_hook(self, hook_name: str, *args, **kwargs) -> list[Any]:
         """Emit a global hook.
-        
+
         Args:
             hook_name: Name of hook to emit
             *args: Hook arguments
             **kwargs: Hook keyword arguments
-            
+
         Returns:
             List of hook results
         """
@@ -302,38 +321,41 @@ class PluginManager:
                     else:
                         result = callback(*args, **kwargs)
                     results.append(result)
-                except Exception as e:
-                    self.logger.error(f"Global hook '{hook_name}' failed: {e}")
+                except Exception:
+                    self.logger.exception("Global hook '%s' failed", hook_name)
         return results
 
-    def get_plugin(self, plugin_name: str) -> Optional[Plugin]:
+    def get_plugin(self, plugin_name: str) -> Plugin | None:
         """Get a plugin by name."""
         return self.plugins.get(plugin_name)
 
-    def get_plugin_info(self, plugin_name: str) -> Optional[PluginInfo]:
+    def get_plugin_info(self, plugin_name: str) -> PluginInfo | None:
         """Get plugin information."""
         return self.plugin_info.get(plugin_name)
 
-    def list_plugins(self) -> List[PluginInfo]:
+    def list_plugins(self) -> list[PluginInfo]:
         """List all loaded plugins."""
         return list(self.plugin_info.values())
 
-    def get_plugin_dependencies(self, plugin_name: str) -> List[str]:
+    def get_plugin_dependencies(self, plugin_name: str) -> list[str]:
         """Get plugin dependencies."""
         if plugin_name in self.plugin_info:
             return self.plugin_info[plugin_name].dependencies
         return []
 
-    async def load_plugin_from_module(self, module_path: str,
-                                    plugin_class_name: str = "Plugin",
-                                    config: Optional[Dict[str, Any]] = None) -> str:
+    async def load_plugin_from_module(
+        self,
+        module_path: str,
+        plugin_class_name: str = "Plugin",
+        config: dict[str, Any] | None = None,
+    ) -> str:
         """Load a plugin from a module.
-        
+
         Args:
             module_path: Path to plugin module
             plugin_class_name: Name of plugin class
             config: Plugin configuration
-            
+
         Returns:
             Plugin name
         """
@@ -342,13 +364,18 @@ class PluginManager:
             plugin_class = getattr(module, plugin_class_name)
 
             if not issubclass(plugin_class, Plugin):
-                raise PluginError(f"Class '{plugin_class_name}' is not a Plugin")
+                msg = f"Class '{plugin_class_name}' is not a Plugin"
+                raise PluginError(msg)
 
             return await self.load_plugin(plugin_class, config)
 
         except Exception as e:
-            self.logger.error(f"Failed to load plugin from module '{module_path}': {e}")
-            raise PluginError(f"Failed to load plugin from module '{module_path}': {e}")
+            self.logger.exception(
+                "Failed to load plugin from module '%s'",
+                module_path,
+            )
+            msg = f"Failed to load plugin from module '{module_path}': {e}"
+            raise PluginError(msg) from e
 
     async def shutdown(self) -> None:
         """Shutdown all plugins."""
@@ -360,7 +387,10 @@ class PluginManager:
                 if self.plugins[plugin_name].state == PluginState.RUNNING:
                     await self.stop_plugin(plugin_name)
                 await self.unload_plugin(plugin_name)
-            except Exception as e:
-                self.logger.error(f"Error shutting down plugin '{plugin_name}': {e}")
+            except Exception:
+                self.logger.exception(
+                    "Error shutting down plugin '%s'",
+                    plugin_name,
+                )
 
         self.logger.info("Plugin manager shutdown complete")

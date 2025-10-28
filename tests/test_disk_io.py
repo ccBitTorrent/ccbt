@@ -1,11 +1,11 @@
-"""
-Integration tests for disk I/O optimizations.
+"""Integration tests for disk I/O optimizations.
 
 Tests cross-platform preallocation, write batching, mmap cache,
 and async thread pool functionality.
 """
 
 import asyncio
+import contextlib
 import os
 import tempfile
 from pathlib import Path
@@ -43,10 +43,8 @@ class TestDiskIO:
         with tempfile.NamedTemporaryFile(delete=False) as f:
             temp_path = f.name
         yield temp_path
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temp_path)
-        except FileNotFoundError:
-            pass
 
     @pytest.mark.asyncio
     async def test_file_preallocation(self, temp_file):
@@ -82,7 +80,7 @@ class TestDiskIO:
         # Write data in batches
         batch_size = 1024  # 1KB batches
         for i in range(0, len(test_data), batch_size):
-            chunk = test_data[i:i + batch_size]
+            chunk = test_data[i : i + batch_size]
             future = await disk_io_manager.write_block(Path(temp_file), i, chunk)
             await future  # Wait for the write to complete
 
@@ -138,9 +136,15 @@ class TestDiskIO:
         tasks = []
         for i in range(10):
             data = f"Task {i} data".encode() * 100
+
             async def write_task(offset=i, write_data=data):
-                future = await disk_io_manager.write_block(Path(temp_file), offset * 1000, write_data)
+                future = await disk_io_manager.write_block(
+                    Path(temp_file),
+                    offset * 1000,
+                    write_data,
+                )
                 await future
+
             task = asyncio.create_task(write_task())
             tasks.append(task)
 
@@ -268,9 +272,15 @@ class TestDiskIO:
         # Write tasks
         for i in range(5):
             data = f"Write {i}".encode() * 100
+
             async def write_task(offset=i, write_data=data):
-                future = await disk_io_manager.write_block(Path(temp_file), (offset + 1) * 1000, write_data)
+                future = await disk_io_manager.write_block(
+                    Path(temp_file),
+                    (offset + 1) * 1000,
+                    write_data,
+                )
                 await future
+
             task = asyncio.create_task(write_task())
             tasks.append(task)
 
@@ -291,7 +301,11 @@ class TestDiskIO:
             await disk_io_manager.read_block(Path("/nonexistent/file.txt"), 0, 100)
 
         # Test writing should succeed (creates directory)
-        future = await disk_io_manager.write_block(Path("/tmp/test/file.txt"), 0, b"data")
+        future = await disk_io_manager.write_block(
+            Path("/tmp/test/file.txt"),
+            0,
+            b"data",
+        )
         await future  # Wait for completion
 
     @pytest.mark.asyncio
@@ -305,7 +319,11 @@ class TestDiskIO:
 
         # Read multiple times to test cache
         for _ in range(5):
-            read_data = await disk_io_manager.read_block_mmap(temp_file, 0, len(test_data))
+            read_data = await disk_io_manager.read_block_mmap(
+                temp_file,
+                0,
+                len(test_data),
+            )
             assert read_data == test_data
 
         # Test cache statistics
@@ -343,9 +361,11 @@ class TestDiskIO:
         for i in range(20):  # 20 concurrent operations
             temp_file = f"test_{i}.txt"
             data = f"Concurrent data {i}".encode() * 1000
+
             async def write_task():
                 future = await disk_io_manager.write_block(Path(temp_file), 0, data)
                 await future
+
             task = asyncio.create_task(write_task())
             tasks.append(task)
 
@@ -354,7 +374,5 @@ class TestDiskIO:
 
         # Clean up
         for i in range(20):
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 os.unlink(f"test_{i}.txt")
-            except FileNotFoundError:
-                pass

@@ -1,5 +1,4 @@
-"""
-Simple functionality tests for the high-performance BitTorrent client.
+"""Simple functionality tests for the high-performance BitTorrent client.
 
 These tests verify basic functionality without complex async operations.
 """
@@ -18,6 +17,7 @@ class TestSimpleFunctionality:
     def test_config_loading(self):
         """Test that configuration can be loaded."""
         from ccbt.config import get_config
+
         config = get_config()
         assert config is not None
         assert hasattr(config, "network")
@@ -26,6 +26,7 @@ class TestSimpleFunctionality:
     def test_config_values(self):
         """Test that configuration has expected values."""
         from ccbt.config import get_config
+
         config = get_config()
 
         # Test some basic config values
@@ -36,6 +37,7 @@ class TestSimpleFunctionality:
     def test_peer_info_creation(self):
         """Test PeerInfo creation."""
         from ccbt.peer import PeerInfo
+
         peer = PeerInfo(ip="127.0.0.1", port=6881)
         assert peer.ip == "127.0.0.1"
         assert peer.port == 6881
@@ -43,6 +45,7 @@ class TestSimpleFunctionality:
     def test_message_types(self):
         """Test message type constants."""
         from ccbt.peer import MessageType
+
         assert MessageType.CHOKE == 0
         assert MessageType.UNCHOKE == 1
         assert MessageType.INTERESTED == 2
@@ -56,6 +59,7 @@ class TestSimpleFunctionality:
     def test_piece_state_enum(self):
         """Test PieceState enum."""
         from ccbt.async_piece_manager import PieceState
+
         assert PieceState.MISSING.value == "missing"
         assert PieceState.DOWNLOADING.value == "downloading"
         assert PieceState.COMPLETE.value == "complete"
@@ -66,14 +70,6 @@ class TestSimpleFunctionality:
         from ccbt.torrent import TorrentParser
 
         # Create a minimal test torrent data
-        test_data = {
-            "info": {
-                "name": "test.txt",
-                "length": 1024,
-                "piece length": 16384,
-                "pieces": b"x" * 20,  # Single piece hash
-            },
-        }
 
         parser = TorrentParser()
         # This would normally parse a file, but we'll just test the class exists
@@ -118,10 +114,15 @@ class TestSimpleFunctionality:
         from ccbt.magnet import parse_magnet
 
         # Test with a simple magnet link
-        magnet_uri = "magnet:?xt=urn:btih:1234567890123456789012345678901234567890&dn=test"
+        magnet_uri = (
+            "magnet:?xt=urn:btih:1234567890123456789012345678901234567890&dn=test"
+        )
         magnet_info = parse_magnet(magnet_uri)
 
-        assert magnet_info.info_hash == b"\x12\x34\x56\x78\x90\x12\x34\x56\x78\x90\x12\x34\x56\x78\x90\x12\x34\x56\x78\x90"
+        assert (
+            magnet_info.info_hash
+            == b"\x12\x34\x56\x78\x90\x12\x34\x56\x78\x90\x12\x34\x56\x78\x90\x12\x34\x56\x78\x90"
+        )
         assert magnet_info.display_name == "test"
 
     def test_metrics_collector_creation(self):

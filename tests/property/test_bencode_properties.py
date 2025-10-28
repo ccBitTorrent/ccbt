@@ -1,5 +1,4 @@
-"""
-Property-based tests for bencode encoding/decoding.
+"""Property-based tests for bencode encoding/decoding.
 
 Tests invariants and properties of the bencode implementation
 using Hypothesis for automatic test case generation.
@@ -51,12 +50,14 @@ class TestBencodeProperties:
         decoded = decode(encoded)
         assert decoded == dct
 
-    @given(st.one_of(
-        st.binary(),
-        st.integers(),
-        st.lists(st.binary()),
-        st.dictionaries(st.binary(), st.binary()),
-    ))
+    @given(
+        st.one_of(
+            st.binary(),
+            st.integers(),
+            st.lists(st.binary()),
+            st.dictionaries(st.binary(), st.binary()),
+        ),
+    )
     def test_nested_roundtrip(self, obj):
         """Test that encoding and decoding nested structures preserves them."""
         encoded = encode(obj)
@@ -70,27 +71,33 @@ class TestBencodeProperties:
         decoded = decode(encoded)
         assert decoded == data
 
-    @given(st.lists(st.one_of(
-        st.binary(),
-        st.integers(),
-        st.lists(st.binary()),
-        st.dictionaries(st.binary(), st.binary()),
-    )))
+    @given(
+        st.lists(
+            st.one_of(
+                st.binary(),
+                st.integers(),
+                st.lists(st.binary()),
+                st.dictionaries(st.binary(), st.binary()),
+            ),
+        ),
+    )
     def test_complex_list_roundtrip(self, lst):
         """Test that encoding and decoding complex lists preserves them."""
         encoded = encode(lst)
         decoded = decode(encoded)
         assert decoded == lst
 
-    @given(st.dictionaries(
-        st.binary(),
-        st.one_of(
+    @given(
+        st.dictionaries(
             st.binary(),
-            st.integers(),
-            st.lists(st.binary()),
-            st.dictionaries(st.binary(), st.binary()),
+            st.one_of(
+                st.binary(),
+                st.integers(),
+                st.lists(st.binary()),
+                st.dictionaries(st.binary(), st.binary()),
+            ),
         ),
-    ))
+    )
     def test_complex_dict_roundtrip(self, dct):
         """Test that encoding and decoding complex dictionaries preserves them."""
         encoded = encode(dct)
@@ -112,7 +119,7 @@ class TestBencodeProperties:
         assert length == len(data)
 
         # Data part should be the original data
-        data_part = encoded[colon_pos + 1:]
+        data_part = encoded[colon_pos + 1 :]
         assert data_part == data
 
     @given(st.integers())
@@ -212,7 +219,9 @@ class TestBencodeProperties:
         encoded = encode(dct)
 
         # Encoded size should be at least the sum of key-value sizes plus overhead
-        min_size = sum(len(encode(k)) + len(encode(v)) for k, v in dct.items()) + 2  # d and e
+        min_size = (
+            sum(len(encode(k)) + len(encode(v)) for k, v in dct.items()) + 2
+        )  # d and e
         assert len(encoded) >= min_size
 
     @given(st.binary())

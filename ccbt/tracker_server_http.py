@@ -1,24 +1,31 @@
 """Simple HTTP tracker server (BEP 3 style) for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides /announce endpoint with compact peer lists and minimal state.
 """
+
+from __future__ import annotations
 
 import socket
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Dict, Tuple
 from urllib.parse import parse_qs, unquote_to_bytes, urlparse
 
-from .bencode import encode
+from ccbt.bencode import encode
 
 
 class InMemoryTrackerStore:
+    """In-memory tracker store for HTTP tracker server."""
+
     def __init__(self):
+        """Initialize in-memory tracker store."""
         # info_hash -> {peer_key -> (ip, port, last_seen)}
-        self.torrents: Dict[bytes, Dict[Tuple[str, int], float]] = {}
+        self.torrents: dict[bytes, dict[tuple[str, int], float]] = {}
         self.interval = 1800  # 30 minutes
 
     def announce(self, info_hash: bytes, ip: str, port: int, event: str) -> bytes:
+        """Handle peer announce request."""
         now = time.time()
         peers = self.torrents.setdefault(info_hash, {})
 
@@ -36,7 +43,7 @@ class InMemoryTrackerStore:
 
         # Build compact peers
         compact = bytearray()
-        for (peer_ip, peer_port) in peers.keys():
+        for peer_ip, peer_port in peers:
             try:
                 compact.extend(socket.inet_aton(peer_ip))
                 compact.extend(peer_port.to_bytes(2, "big"))
@@ -51,9 +58,12 @@ class InMemoryTrackerStore:
 
 
 class AnnounceHandler(BaseHTTPRequestHandler):
+    """HTTP request handler for BitTorrent tracker announce requests."""
+
     store = InMemoryTrackerStore()
 
     def do_GET(self):
+        """Handle HTTP GET requests for tracker announce."""
         parsed = urlparse(self.path)
         if parsed.path != "/announce":
             self.send_error(404)
@@ -67,7 +77,8 @@ class AnnounceHandler(BaseHTTPRequestHandler):
             event = params.get("event", [""])[0]
 
             if info_hash_enc is None or peer_id_enc is None:
-                raise ValueError("missing info_hash or peer_id")
+                msg = "missing info_hash or peer_id"
+                raise ValueError(msg)
 
             # Decode binary params as raw percent-decoded bytes
             info_hash = unquote_to_bytes(info_hash_enc)
@@ -92,14 +103,14 @@ class AnnounceHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
 
-def run_http_tracker(host: str = "0.0.0.0", port: int = 6969):
+def run_http_tracker(host: str = "0.0.0.0", port: int = 6969):  # nosec B104
+    """Run HTTP tracker server."""
     server = HTTPServer((host, port), AnnounceHandler)
     try:
         server.serve_forever()
     finally:
         server.server_close()
 
+
 if __name__ == "__main__":
     run_http_tracker()
-
-

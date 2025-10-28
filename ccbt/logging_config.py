@@ -1,8 +1,12 @@
 """Structured logging configuration for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides comprehensive logging setup with correlation IDs, structured output,
 and configurable log levels.
 """
+
+from __future__ import annotations
 
 import json
 import logging
@@ -12,19 +16,26 @@ import time
 import uuid
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from .exceptions import CCBTException
-from .models import ObservabilityConfig
+from ccbt.exceptions import CCBTError
+
+if TYPE_CHECKING:
+    from ccbt.models import ObservabilityConfig
 
 # Context variable for correlation ID
-correlation_id: ContextVar[Optional[str]] = ContextVar("correlation_id", default=None)
+# Help type checker understand the ContextVar generic with a None default
+correlation_id: ContextVar[str | None] = cast(
+    "ContextVar[str | None]",
+    ContextVar("correlation_id", default=None),
+)
 
 
 class CorrelationFilter(logging.Filter):
     """Filter to add correlation ID to log records."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Add correlation ID to log record."""
         record.correlation_id = correlation_id.get() or "no-correlation-id"
         return True
 
@@ -33,6 +44,7 @@ class StructuredFormatter(logging.Formatter):
     """Structured JSON formatter for logs."""
 
     def format(self, record: logging.LogRecord) -> str:
+        """Format log record as structured JSON."""
         log_entry = {
             "timestamp": time.time(),
             "level": record.levelname,
@@ -52,13 +64,37 @@ class StructuredFormatter(logging.Formatter):
             log_entry["exception"] = self.formatException(record.exc_info)
 
         # Add extra fields
-        for key, value in record.__dict__.items():
-            if key not in ("name", "msg", "args", "levelname", "levelno", "pathname",
-                          "filename", "module", "exc_info", "exc_text", "stack_info",
-                          "lineno", "funcName", "created", "msecs", "relativeCreated",
-                          "thread", "threadName", "processName", "process", "getMessage",
-                          "correlation_id"):
-                log_entry[key] = value
+        excluded_keys = {
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "getMessage",
+            "correlation_id",
+        }
+        log_entry.update(
+            {
+                key: value
+                for key, value in record.__dict__.items()
+                if key not in excluded_keys
+            }
+        )
 
         return json.dumps(log_entry, default=str)
 
@@ -66,19 +102,22 @@ class StructuredFormatter(logging.Formatter):
 class ColoredFormatter(logging.Formatter):
     """Colored formatter for console output."""
 
-    COLORS = {
-        "DEBUG": "\033[36m",    # Cyan
-        "INFO": "\033[32m",     # Green
+    COLORS: ClassVar[dict[str, str]] = {
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
         "WARNING": "\033[33m",  # Yellow
-        "ERROR": "\033[31m",    # Red
-        "CRITICAL": "\033[35m", # Magenta
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
     }
-    RESET = "\033[0m"
+    RESET: ClassVar[str] = "\033[0m"
 
     def format(self, record: logging.LogRecord) -> str:
+        """Format log record with color coding."""
         # Add color to level name
         if record.levelname in self.COLORS:
-            record.levelname = f"{self.COLORS[record.levelname]}{record.levelname}{self.RESET}"
+            record.levelname = (
+                f"{self.COLORS[record.levelname]}{record.levelname}{self.RESET}"
+            )
 
         # Add correlation ID if available
         if hasattr(record, "correlation_id"):
@@ -97,7 +136,7 @@ def setup_logging(config: ObservabilityConfig) -> None:
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Configure logging
-    logging_config = {
+    logging_config: dict[str, Any] = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
@@ -123,7 +162,9 @@ def setup_logging(config: ObservabilityConfig) -> None:
             "console": {
                 "class": "logging.StreamHandler",
                 "level": config.log_level.value,
-                "formatter": "colored" if not config.structured_logging else "structured",
+                "formatter": "colored"
+                if not config.structured_logging
+                else "structured",
                 "filters": ["correlation"],
                 "stream": sys.stdout,
             },
@@ -167,7 +208,7 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"ccbt.{name}")
 
 
-def set_correlation_id(corr_id: Optional[str] = None) -> str:
+def set_correlation_id(corr_id: str | None = None) -> str:
     """Set correlation ID for the current context."""
     if corr_id is None:
         corr_id = str(uuid.uuid4())
@@ -175,7 +216,7 @@ def set_correlation_id(corr_id: Optional[str] = None) -> str:
     return corr_id
 
 
-def get_correlation_id() -> Optional[str]:
+def get_correlation_id() -> str | None:
     """Get the current correlation ID."""
     return correlation_id.get()
 
@@ -184,32 +225,52 @@ class LoggingContext:
     """Context manager for logging operations."""
 
     def __init__(self, operation: str, **kwargs):
+        """Initialize operation context manager."""
         self.operation = operation
         self.kwargs = kwargs
         self.logger = get_logger(self.__class__.__module__)
         self.start_time = None
 
     def __enter__(self):
+        """Enter the context manager."""
         self.start_time = time.time()
-        corr_id = set_correlation_id()
-        self.logger.info(f"Starting {self.operation}", extra=self.kwargs)
+        set_correlation_id()
+        self.logger.info("Starting %s", self.operation, extra=self.kwargs)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager."""
         duration = time.time() - self.start_time if self.start_time else 0
 
         if exc_type is None:
-            self.logger.info(f"Completed {self.operation} in {duration:.3f}s", extra=self.kwargs)
+            self.logger.info(
+                "Completed %s in %.3fs",
+                self.operation,
+                duration,
+                extra=self.kwargs,
+            )
         else:
-            self.logger.error(f"Failed {self.operation} in {duration:.3f}s: {exc_val}",
-                            extra=self.kwargs, exc_info=exc_val is not None)
+            self.logger.error(
+                "Failed %s in %.3fs: %s",
+                self.operation,
+                duration,
+                exc_val,
+                extra=self.kwargs,
+                exc_info=exc_val is not None,
+            )
 
         return False  # Don't suppress exceptions
 
 
 def log_exception(logger: logging.Logger, exc: Exception, context: str = "") -> None:
     """Log an exception with context."""
-    if isinstance(exc, CCBTException):
-        logger.error(f"{context}: {exc.message}", extra={"details": exc.details}, exc_info=True)
+    if isinstance(exc, CCBTError):
+        logger.error(
+            "%s: %s",
+            context,
+            exc.message,
+            extra={"details": exc.details},
+            exc_info=True,
+        )
     else:
-        logger.error(f"{context}: {exc}", exc_info=True)
+        logger.error("%s: %s", context, exc, exc_info=True)

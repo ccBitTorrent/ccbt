@@ -1,20 +1,32 @@
 """BitTorrent protocol wrapper.
 
+from __future__ import annotations
+
 Provides a protocol abstraction for the existing BitTorrent implementation.
 """
 
-import time
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
 
-from ..events import Event, EventType, emit_event
-from ..models import PeerInfo, TorrentInfo
-from .base import Protocol, ProtocolCapabilities, ProtocolState, ProtocolType
+import time
+from typing import TYPE_CHECKING, Any
+
+from ccbt.events import Event, EventType, emit_event
+from ccbt.protocols.base import (
+    Protocol,
+    ProtocolCapabilities,
+    ProtocolState,
+    ProtocolType,
+)
+
+if TYPE_CHECKING:
+    from ccbt.models import PeerInfo, TorrentInfo
 
 
 class BitTorrentProtocol(Protocol):
     """BitTorrent protocol wrapper."""
 
     def __init__(self):
+        """Initialize BitTorrent protocol."""
         super().__init__(ProtocolType.BITTORRENT)
 
         # BitTorrent-specific capabilities
@@ -45,13 +57,15 @@ class BitTorrentProtocol(Protocol):
             self.set_state(ProtocolState.CONNECTED)
 
             # Emit protocol started event
-            await emit_event(Event(
-                event_type=EventType.PROTOCOL_STARTED.value,
-                data={
-                    "protocol_type": "bittorrent",
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PROTOCOL_STARTED.value,
+                    data={
+                        "protocol_type": "bittorrent",
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
         except Exception:
             self.set_state(ProtocolState.ERROR)
@@ -67,13 +81,15 @@ class BitTorrentProtocol(Protocol):
             self.set_state(ProtocolState.DISCONNECTED)
 
             # Emit protocol stopped event
-            await emit_event(Event(
-                event_type=EventType.PROTOCOL_STOPPED.value,
-                data={
-                    "protocol_type": "bittorrent",
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PROTOCOL_STOPPED.value,
+                    data={
+                        "protocol_type": "bittorrent",
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
         except Exception:
             self.set_state(ProtocolState.ERROR)
@@ -88,31 +104,35 @@ class BitTorrentProtocol(Protocol):
             self.stats.connections_established += 1
             self.update_stats()
 
-            return True
-
         except Exception as e:
             self.stats.connections_failed += 1
             self.update_stats(errors=1)
 
             # Emit connection error event
-            await emit_event(Event(
-                event_type=EventType.PEER_CONNECTION_FAILED.value,
-                data={
-                    "protocol_type": "bittorrent",
-                    "peer_id": peer_info.peer_id.hex() if peer_info.peer_id else None,
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PEER_CONNECTION_FAILED.value,
+                    data={
+                        "protocol_type": "bittorrent",
+                        "peer_id": peer_info.peer_id.hex()
+                        if peer_info.peer_id
+                        else None,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
             return False
+        else:
+            return True
 
     async def disconnect_peer(self, peer_id: str) -> None:
         """Disconnect from a BitTorrent peer."""
         # TODO: Implement BitTorrent peer disconnection
         self.remove_peer(peer_id)
 
-    async def send_message(self, peer_id: str, message: bytes) -> bool:
+    async def send_message(self, _peer_id: str, message: bytes) -> bool:
         """Send message to BitTorrent peer."""
         try:
             # TODO: Implement BitTorrent message sending
@@ -120,13 +140,13 @@ class BitTorrentProtocol(Protocol):
 
             self.update_stats(bytes_sent=len(message), messages_sent=1)
 
-            return True
-
         except Exception:
             self.update_stats(errors=1)
             return False
+        else:
+            return True
 
-    async def receive_message(self, peer_id: str) -> Optional[bytes]:
+    async def receive_message(self, _peer_id: str) -> bytes | None:
         """Receive message from BitTorrent peer."""
         try:
             # TODO: Implement BitTorrent message receiving
@@ -134,13 +154,13 @@ class BitTorrentProtocol(Protocol):
 
             self.update_stats(messages_received=1)
 
-            return None  # Placeholder
-
         except Exception:
             self.update_stats(errors=1)
             return None
+        else:
+            return None  # Placeholder
 
-    async def announce_torrent(self, torrent_info: TorrentInfo) -> List[PeerInfo]:
+    async def announce_torrent(self, _torrent_info: TorrentInfo) -> list[PeerInfo]:
         """Announce torrent to BitTorrent trackers."""
         peers = []
 
@@ -153,18 +173,20 @@ class BitTorrentProtocol(Protocol):
 
         except Exception as e:
             # Emit tracker error event
-            await emit_event(Event(
-                event_type=EventType.TRACKER_ERROR.value,
-                data={
-                    "protocol_type": "bittorrent",
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.TRACKER_ERROR.value,
+                    data={
+                        "protocol_type": "bittorrent",
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
             return peers
 
-    async def scrape_torrent(self, torrent_info: TorrentInfo) -> Dict[str, int]:
+    async def scrape_torrent(self, _torrent_info: TorrentInfo) -> dict[str, int]:
         """Scrape torrent statistics from BitTorrent trackers."""
         stats = {
             "seeders": 0,
@@ -180,18 +202,20 @@ class BitTorrentProtocol(Protocol):
 
         except Exception as e:
             # Emit error event
-            await emit_event(Event(
-                event_type=EventType.PROTOCOL_ERROR.value,
-                data={
-                    "protocol_type": "bittorrent",
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PROTOCOL_ERROR.value,
+                    data={
+                        "protocol_type": "bittorrent",
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
             return stats
 
-    def get_bitTorrent_stats(self) -> Dict[str, Any]:
+    def get_bittorrent_stats(self) -> dict[str, Any]:
         """Get BitTorrent-specific statistics."""
         return {
             "protocol_type": "bittorrent",

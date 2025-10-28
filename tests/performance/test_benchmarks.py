@@ -1,11 +1,11 @@
-"""
-Performance benchmarks for ccBitTorrent.
+"""Performance benchmarks for ccBitTorrent.
 
 Tests performance characteristics and benchmarks
 using pytest-benchmark for regression detection.
 """
 
 import asyncio
+import contextlib
 import tempfile
 from pathlib import Path
 
@@ -20,6 +20,7 @@ from ccbt.torrent import TorrentParser
 # Check if pytest-benchmark is available
 try:
     import pytest_benchmark
+
     HAS_BENCHMARK = True
 except ImportError:
     HAS_BENCHMARK = False
@@ -276,7 +277,11 @@ class TestDiskIOPerformance:
                     # Write multiple blocks
                     futures = []
                     for i in range(10):
-                        future = await manager.write_block(test_file, i * 1024, test_data)
+                        future = await manager.write_block(
+                            test_file,
+                            i * 1024,
+                            test_data,
+                        )
                         futures.append(future)
 
                     # Wait for all writes to complete
@@ -538,13 +543,16 @@ class TestConcurrencyPerformance:
         await manager.start()
 
         try:
+
             async def concurrent_write():
                 # Write to multiple files concurrently
                 tasks = []
                 for i in range(10):
                     test_file = Path(f"test_{i}.bin")
                     test_data = b"x" * 1024
-                    task = asyncio.create_task(manager.write_block(test_file, 0, test_data))
+                    task = asyncio.create_task(
+                        manager.write_block(test_file, 0, test_data),
+                    )
                     tasks.append(task)
 
                 await asyncio.gather(*tasks)
@@ -555,7 +563,5 @@ class TestConcurrencyPerformance:
             await manager.stop()
             # Clean up test files
             for i in range(10):
-                try:
+                with contextlib.suppress(FileNotFoundError):
                     Path(f"test_{i}.bin").unlink()
-                except FileNotFoundError:
-                    pass

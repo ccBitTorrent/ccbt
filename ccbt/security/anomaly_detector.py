@@ -1,5 +1,7 @@
 """Anomaly Detector for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides anomaly detection including:
 - Statistical anomaly detection
 - Behavioral pattern analysis
@@ -7,19 +9,22 @@ Provides anomaly detection including:
 - Machine learning-based detection
 """
 
+from __future__ import annotations
+
 import math
 import statistics
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, TypedDict
 
-from ..events import Event, EventType, emit_event
+from ccbt.events import Event, EventType, emit_event
 
 
 class AnomalyType(Enum):
     """Types of anomalies."""
+
     STATISTICAL = "statistical"
     BEHAVIORAL = "behavioral"
     NETWORK = "network"
@@ -29,6 +34,7 @@ class AnomalyType(Enum):
 
 class AnomalySeverity(Enum):
     """Anomaly severity levels."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -38,6 +44,7 @@ class AnomalySeverity(Enum):
 @dataclass
 class AnomalyDetection:
     """Anomaly detection result."""
+
     anomaly_type: AnomalyType
     severity: AnomalySeverity
     peer_id: str
@@ -45,28 +52,45 @@ class AnomalyDetection:
     description: str
     confidence: float  # 0.0 to 1.0
     timestamp: float
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class BehavioralPattern:
     """Behavioral pattern for a peer."""
+
     peer_id: str
     ip: str
-    message_frequency: List[float]  # Messages per minute over time
-    bytes_per_message: List[float]  # Average bytes per message
-    connection_duration: List[float]  # Connection durations
-    error_rate: List[float]  # Error rates over time
-    request_patterns: List[str]  # Types of requests made
+    message_frequency: list[float]  # Messages per minute over time
+    bytes_per_message: list[float]  # Average bytes per message
+    connection_duration: list[float]  # Connection durations
+    error_rate: list[float]  # Error rates over time
+    request_patterns: list[str]  # Types of requests made
     last_updated: float
 
 
 class AnomalyDetector:
     """Anomaly detection system."""
 
+    class _BaselineStats(TypedDict):
+        mean: float
+        std: float
+        count: int
+
+    class _Stats(TypedDict):
+        total_anomalies: int
+        anomalies_by_type: dict[str, int]
+        anomalies_by_severity: dict[str, int]
+        false_positives: int
+        true_positives: int
+
     def __init__(self):
-        self.behavioral_patterns: Dict[str, BehavioralPattern] = {}
-        self.statistical_baselines: Dict[str, Dict[str, float]] = defaultdict(dict)
+        """Initialize anomaly detector."""
+        self.behavioral_patterns: dict[str, BehavioralPattern] = {}
+        # peer_id -> metric_name -> baseline stats
+        self.statistical_baselines: dict[
+            str, dict[str, AnomalyDetector._BaselineStats]
+        ] = defaultdict(dict)
         self.anomaly_history: deque = deque(maxlen=10000)
 
         # Detection thresholds
@@ -83,26 +107,31 @@ class AnomalyDetector:
         self.behavioral_window = 1800  # 30 minutes window for behavioral analysis
 
         # Machine learning features
-        self.feature_vectors: Dict[str, List[float]] = defaultdict(list)
-        self.cluster_centers: Dict[str, List[float]] = {}
+        self.feature_vectors: dict[str, list[float]] = defaultdict(list)
+        self.cluster_centers: dict[str, list[float]] = {}
 
         # Anomaly statistics
-        self.stats = {
+        self.stats: AnomalyDetector._Stats = {
             "total_anomalies": 0,
-            "anomalies_by_type": defaultdict(int),
-            "anomalies_by_severity": defaultdict(int),
+            "anomalies_by_type": {},
+            "anomalies_by_severity": {},
             "false_positives": 0,
             "true_positives": 0,
         }
 
-    async def detect_anomalies(self, peer_id: str, ip: str, data: Dict[str, Any]) -> List[AnomalyDetection]:
+    async def detect_anomalies(
+        self,
+        peer_id: str,
+        ip: str,
+        data: dict[str, Any],
+    ) -> list[AnomalyDetection]:
         """Detect anomalies for a peer.
-        
+
         Args:
             peer_id: Peer identifier
             ip: Peer IP address
             data: Peer activity data
-            
+
         Returns:
             List of detected anomalies
         """
@@ -112,11 +141,19 @@ class AnomalyDetector:
         await self._update_behavioral_pattern(peer_id, ip, data)
 
         # Statistical anomaly detection
-        statistical_anomalies = await self._detect_statistical_anomalies(peer_id, ip, data)
+        statistical_anomalies = await self._detect_statistical_anomalies(
+            peer_id,
+            ip,
+            data,
+        )
         anomalies.extend(statistical_anomalies)
 
         # Behavioral anomaly detection
-        behavioral_anomalies = await self._detect_behavioral_anomalies(peer_id, ip, data)
+        behavioral_anomalies = await self._detect_behavioral_anomalies(
+            peer_id,
+            ip,
+            data,
+        )
         anomalies.extend(behavioral_anomalies)
 
         # Network anomaly detection
@@ -128,34 +165,56 @@ class AnomalyDetector:
         anomalies.extend(protocol_anomalies)
 
         # Performance anomaly detection
-        performance_anomalies = await self._detect_performance_anomalies(peer_id, ip, data)
+        performance_anomalies = await self._detect_performance_anomalies(
+            peer_id,
+            ip,
+            data,
+        )
         anomalies.extend(performance_anomalies)
 
         # Record anomalies
         for anomaly in anomalies:
             self.anomaly_history.append(anomaly)
             self.stats["total_anomalies"] += 1
-            self.stats["anomalies_by_type"][anomaly.anomaly_type.value] += 1
-            self.stats["anomalies_by_severity"][anomaly.severity.value] += 1
+            # Update type/severity counters using setdefault to avoid defaultdict typing issues
+            self.stats["anomalies_by_type"][anomaly.anomaly_type.value] = (
+                self.stats["anomalies_by_type"].setdefault(
+                    anomaly.anomaly_type.value, 0
+                )
+                + 1
+            )
+            self.stats["anomalies_by_severity"][anomaly.severity.value] = (
+                self.stats["anomalies_by_severity"].setdefault(
+                    anomaly.severity.value, 0
+                )
+                + 1
+            )
 
             # Emit anomaly event
-            await emit_event(Event(
-                event_type=EventType.ANOMALY_DETECTED.value,
-                data={
-                    "anomaly_type": anomaly.anomaly_type.value,
-                    "severity": anomaly.severity.value,
-                    "peer_id": peer_id,
-                    "ip": ip,
-                    "description": anomaly.description,
-                    "confidence": anomaly.confidence,
-                    "metadata": anomaly.metadata,
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.ANOMALY_DETECTED.value,
+                    data={
+                        "anomaly_type": anomaly.anomaly_type.value,
+                        "severity": anomaly.severity.value,
+                        "peer_id": peer_id,
+                        "ip": ip,
+                        "description": anomaly.description,
+                        "confidence": anomaly.confidence,
+                        "metadata": anomaly.metadata,
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
         return anomalies
 
-    async def _detect_statistical_anomalies(self, peer_id: str, ip: str, data: Dict[str, Any]) -> List[AnomalyDetection]:
+    async def _detect_statistical_anomalies(
+        self,
+        peer_id: str,
+        ip: str,
+        data: dict[str, Any],
+    ) -> list[AnomalyDetection]:
         """Detect statistical anomalies."""
         anomalies = []
 
@@ -194,7 +253,10 @@ class AnomalyDetector:
                         peer_id=peer_id,
                         ip=ip,
                         description=f"Statistical anomaly in {metric_name}: z-score={z_score:.2f}",
-                        confidence=min(1.0, z_score / self.thresholds["statistical_z_score"]),
+                        confidence=min(
+                            1.0,
+                            z_score / self.thresholds["statistical_z_score"],
+                        ),
                         timestamp=time.time(),
                         metadata={
                             "metric": metric_name,
@@ -211,7 +273,12 @@ class AnomalyDetector:
 
         return anomalies
 
-    async def _detect_behavioral_anomalies(self, peer_id: str, ip: str, data: Dict[str, Any]) -> List[AnomalyDetection]:
+    async def _detect_behavioral_anomalies(
+        self,
+        peer_id: str,
+        ip: str,
+        data: dict[str, Any],
+    ) -> list[AnomalyDetection]:
         """Detect behavioral anomalies."""
         anomalies = []
 
@@ -225,7 +292,9 @@ class AnomalyDetector:
         if pattern.message_frequency:
             avg_frequency = statistics.mean(pattern.message_frequency)
             if avg_frequency > 0:
-                frequency_deviation = abs(current_frequency - avg_frequency) / avg_frequency
+                frequency_deviation = (
+                    abs(current_frequency - avg_frequency) / avg_frequency
+                )
 
                 if frequency_deviation > self.thresholds["behavioral_deviation"]:
                     severity = self._determine_severity(frequency_deviation)
@@ -236,7 +305,11 @@ class AnomalyDetector:
                         peer_id=peer_id,
                         ip=ip,
                         description=f"Behavioral anomaly: message frequency deviation={frequency_deviation:.2f}",
-                        confidence=min(1.0, frequency_deviation / self.thresholds["behavioral_deviation"]),
+                        confidence=min(
+                            1.0,
+                            frequency_deviation
+                            / self.thresholds["behavioral_deviation"],
+                        ),
                         timestamp=time.time(),
                         metadata={
                             "metric": "message_frequency",
@@ -252,7 +325,10 @@ class AnomalyDetector:
         if pattern.bytes_per_message:
             avg_bytes_per_message = statistics.mean(pattern.bytes_per_message)
             if avg_bytes_per_message > 0:
-                bytes_deviation = abs(current_bytes_per_message - avg_bytes_per_message) / avg_bytes_per_message
+                bytes_deviation = (
+                    abs(current_bytes_per_message - avg_bytes_per_message)
+                    / avg_bytes_per_message
+                )
 
                 if bytes_deviation > self.thresholds["behavioral_deviation"]:
                     severity = self._determine_severity(bytes_deviation)
@@ -263,7 +339,10 @@ class AnomalyDetector:
                         peer_id=peer_id,
                         ip=ip,
                         description=f"Behavioral anomaly: bytes per message deviation={bytes_deviation:.2f}",
-                        confidence=min(1.0, bytes_deviation / self.thresholds["behavioral_deviation"]),
+                        confidence=min(
+                            1.0,
+                            bytes_deviation / self.thresholds["behavioral_deviation"],
+                        ),
                         timestamp=time.time(),
                         metadata={
                             "metric": "bytes_per_message",
@@ -276,7 +355,12 @@ class AnomalyDetector:
 
         return anomalies
 
-    async def _detect_network_anomalies(self, peer_id: str, ip: str, data: Dict[str, Any]) -> List[AnomalyDetection]:
+    async def _detect_network_anomalies(
+        self,
+        peer_id: str,
+        ip: str,
+        data: dict[str, Any],
+    ) -> list[AnomalyDetection]:
         """Detect network anomalies."""
         anomalies = []
 
@@ -287,9 +371,16 @@ class AnomalyDetector:
 
         # Check for asymmetric traffic (potential attack)
         if bytes_sent > 0 and bytes_received > 0:
-            traffic_ratio = max(bytes_sent, bytes_received) / min(bytes_sent, bytes_received)
+            traffic_ratio = max(bytes_sent, bytes_received) / min(
+                bytes_sent,
+                bytes_received,
+            )
             if traffic_ratio > 10:  # 10:1 ratio is suspicious
-                severity = AnomalySeverity.MEDIUM if traffic_ratio < 50 else AnomalySeverity.HIGH
+                severity = (
+                    AnomalySeverity.MEDIUM
+                    if traffic_ratio < 50
+                    else AnomalySeverity.HIGH
+                )
 
                 anomaly = AnomalyDetection(
                     anomaly_type=AnomalyType.NETWORK,
@@ -325,7 +416,12 @@ class AnomalyDetector:
 
         return anomalies
 
-    async def _detect_protocol_anomalies(self, peer_id: str, ip: str, data: Dict[str, Any]) -> List[AnomalyDetection]:
+    async def _detect_protocol_anomalies(
+        self,
+        peer_id: str,
+        ip: str,
+        data: dict[str, Any],
+    ) -> list[AnomalyDetection]:
         """Detect protocol anomalies."""
         anomalies = []
 
@@ -337,7 +433,9 @@ class AnomalyDetector:
             error_rate = error_count / message_count
 
             if error_rate > self.thresholds["protocol_violation_rate"]:
-                severity = self._determine_severity(error_rate / self.thresholds["protocol_violation_rate"])
+                severity = self._determine_severity(
+                    error_rate / self.thresholds["protocol_violation_rate"],
+                )
 
                 anomaly = AnomalyDetection(
                     anomaly_type=AnomalyType.PROTOCOL,
@@ -345,7 +443,10 @@ class AnomalyDetector:
                     peer_id=peer_id,
                     ip=ip,
                     description=f"Protocol anomaly: high error rate={error_rate:.2f}",
-                    confidence=min(1.0, error_rate / self.thresholds["protocol_violation_rate"]),
+                    confidence=min(
+                        1.0,
+                        error_rate / self.thresholds["protocol_violation_rate"],
+                    ),
                     timestamp=time.time(),
                     metadata={
                         "error_count": error_count,
@@ -357,7 +458,12 @@ class AnomalyDetector:
 
         return anomalies
 
-    async def _detect_performance_anomalies(self, peer_id: str, ip: str, data: Dict[str, Any]) -> List[AnomalyDetection]:
+    async def _detect_performance_anomalies(
+        self,
+        peer_id: str,
+        ip: str,
+        data: dict[str, Any],
+    ) -> list[AnomalyDetection]:
         """Detect performance anomalies."""
         anomalies = []
 
@@ -365,7 +471,9 @@ class AnomalyDetector:
         connection_quality = data.get("connection_quality", 1.0)
 
         if connection_quality < (1.0 - self.thresholds["performance_degradation"]):
-            severity = self._determine_severity((1.0 - connection_quality) / self.thresholds["performance_degradation"])
+            severity = self._determine_severity(
+                (1.0 - connection_quality) / self.thresholds["performance_degradation"],
+            )
 
             anomaly = AnomalyDetection(
                 anomaly_type=AnomalyType.PERFORMANCE,
@@ -373,7 +481,11 @@ class AnomalyDetector:
                 peer_id=peer_id,
                 ip=ip,
                 description=f"Performance anomaly: low connection quality={connection_quality:.2f}",
-                confidence=min(1.0, (1.0 - connection_quality) / self.thresholds["performance_degradation"]),
+                confidence=min(
+                    1.0,
+                    (1.0 - connection_quality)
+                    / self.thresholds["performance_degradation"],
+                ),
                 timestamp=time.time(),
                 metadata={
                     "connection_quality": connection_quality,
@@ -383,7 +495,12 @@ class AnomalyDetector:
 
         return anomalies
 
-    async def _update_behavioral_pattern(self, peer_id: str, ip: str, data: Dict[str, Any]) -> None:
+    async def _update_behavioral_pattern(
+        self,
+        peer_id: str,
+        ip: str,
+        data: dict[str, Any],
+    ) -> None:
         """Update behavioral pattern for a peer."""
         if peer_id not in self.behavioral_patterns:
             self.behavioral_patterns[peer_id] = BehavioralPattern(
@@ -433,7 +550,12 @@ class AnomalyDetector:
 
         pattern.last_updated = current_time
 
-    def _update_statistical_baseline(self, peer_id: str, metric_name: str, value: float) -> None:
+    def _update_statistical_baseline(
+        self,
+        peer_id: str,
+        metric_name: str,
+        value: float,
+    ) -> None:
         """Update statistical baseline for a metric."""
         if metric_name not in self.statistical_baselines[peer_id]:
             self.statistical_baselines[peer_id][metric_name] = {
@@ -473,11 +595,11 @@ class AnomalyDetector:
             return AnomalySeverity.HIGH
         return AnomalySeverity.CRITICAL
 
-    def get_anomaly_history(self, limit: int = 100) -> List[AnomalyDetection]:
+    def get_anomaly_history(self, limit: int = 100) -> list[AnomalyDetection]:
         """Get recent anomaly history."""
         return list(self.anomaly_history)[-limit:]
 
-    def get_anomaly_statistics(self) -> Dict[str, Any]:
+    def get_anomaly_statistics(self) -> dict[str, Any]:
         """Get anomaly detection statistics."""
         return {
             "total_anomalies": self.stats["total_anomalies"],
@@ -485,15 +607,21 @@ class AnomalyDetector:
             "anomalies_by_severity": dict(self.stats["anomalies_by_severity"]),
             "false_positives": self.stats["false_positives"],
             "true_positives": self.stats["true_positives"],
-            "detection_rate": self.stats["true_positives"] / max(1, self.stats["total_anomalies"]),
-            "false_positive_rate": self.stats["false_positives"] / max(1, self.stats["total_anomalies"]),
+            "detection_rate": self.stats["true_positives"]
+            / max(1, self.stats["total_anomalies"]),
+            "false_positive_rate": self.stats["false_positives"]
+            / max(1, self.stats["total_anomalies"]),
         }
 
-    def get_behavioral_pattern(self, peer_id: str) -> Optional[BehavioralPattern]:
+    def get_behavioral_pattern(self, peer_id: str) -> BehavioralPattern | None:
         """Get behavioral pattern for a peer."""
         return self.behavioral_patterns.get(peer_id)
 
-    def get_statistical_baseline(self, peer_id: str, metric_name: str) -> Optional[Dict[str, float]]:
+    def get_statistical_baseline(
+        self,
+        peer_id: str,
+        metric_name: str,
+    ) -> dict[str, float] | None:
         """Get statistical baseline for a peer metric."""
         return self.statistical_baselines.get(peer_id, {}).get(metric_name)
 
@@ -520,10 +648,10 @@ class AnomalyDetector:
         while self.anomaly_history and self.anomaly_history[0].timestamp < cutoff_time:
             self.anomaly_history.popleft()
 
-    def report_false_positive(self, anomaly_id: str) -> None:
+    def report_false_positive(self, _anomaly_id: str) -> None:
         """Report a false positive for learning."""
         self.stats["false_positives"] += 1
 
-    def report_true_positive(self, anomaly_id: str) -> None:
+    def report_true_positive(self, _anomaly_id: str) -> None:
         """Report a true positive for learning."""
         self.stats["true_positives"] += 1

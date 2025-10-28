@@ -1,34 +1,48 @@
 """Hybrid protocol implementation.
 
+from __future__ import annotations
+
 Combines multiple protocols (BitTorrent, WebTorrent, IPFS) for
 optimal peer discovery and content distribution.
 """
 
-import time
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
 
-from ..events import Event, EventType, emit_event
-from ..models import PeerInfo, TorrentInfo
-from .base import Protocol, ProtocolCapabilities, ProtocolState, ProtocolType
-from .bittorrent import BitTorrentProtocol
-from .ipfs import IPFSProtocol
-from .webtorrent import WebTorrentProtocol
+import contextlib
+import time
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+from ccbt.events import Event, EventType, emit_event
+from ccbt.protocols.base import (
+    Protocol,
+    ProtocolCapabilities,
+    ProtocolState,
+    ProtocolType,
+)
+from ccbt.protocols.bittorrent import BitTorrentProtocol
+from ccbt.protocols.ipfs import IPFSProtocol
+from ccbt.protocols.webtorrent import WebTorrentProtocol
+
+if TYPE_CHECKING:
+    from ccbt.models import PeerInfo, TorrentInfo
 
 
 @dataclass
 class HybridStrategy:
     """Hybrid protocol strategy configuration."""
+
     use_bittorrent: bool = True
     use_webtorrent: bool = True
     use_ipfs: bool = True
     bittorrent_weight: float = 0.6
     webtorrent_weight: float = 0.3
     ipfs_weight: float = 0.1
-    fallback_order: List[ProtocolType] = None
+    fallback_order: list[ProtocolType] = field(default_factory=list)
 
     def __post_init__(self):
-        if self.fallback_order is None:
+        """Initialize fallback order after object creation."""
+        if not self.fallback_order:
             self.fallback_order = [
                 ProtocolType.BITTORRENT,
                 ProtocolType.WEBTORRENT,
@@ -39,7 +53,8 @@ class HybridStrategy:
 class HybridProtocol(Protocol):
     """Hybrid protocol combining multiple protocols."""
 
-    def __init__(self, strategy: Optional[HybridStrategy] = None):
+    def __init__(self, strategy: HybridStrategy | None = None):
+        """Initialize hybrid protocol."""
         super().__init__(ProtocolType.HYBRID)
 
         # Hybrid-specific capabilities
@@ -58,9 +73,9 @@ class HybridProtocol(Protocol):
         self.strategy = strategy or HybridStrategy()
 
         # Sub-protocols
-        self.sub_protocols: Dict[ProtocolType, Protocol] = {}
-        self.protocol_weights: Dict[ProtocolType, float] = {}
-        self.protocol_performance: Dict[ProtocolType, float] = {}
+        self.sub_protocols: dict[ProtocolType, Protocol] = {}
+        self.protocol_weights: dict[ProtocolType, float] = {}
+        self.protocol_performance: dict[ProtocolType, float] = {}
 
         # Initialize sub-protocols
         self._initialize_sub_protocols()
@@ -69,11 +84,15 @@ class HybridProtocol(Protocol):
         """Initialize sub-protocols based on strategy."""
         if self.strategy.use_bittorrent:
             self.sub_protocols[ProtocolType.BITTORRENT] = BitTorrentProtocol()
-            self.protocol_weights[ProtocolType.BITTORRENT] = self.strategy.bittorrent_weight
+            self.protocol_weights[ProtocolType.BITTORRENT] = (
+                self.strategy.bittorrent_weight
+            )
 
         if self.strategy.use_webtorrent:
             self.sub_protocols[ProtocolType.WEBTORRENT] = WebTorrentProtocol()
-            self.protocol_weights[ProtocolType.WEBTORRENT] = self.strategy.webtorrent_weight
+            self.protocol_weights[ProtocolType.WEBTORRENT] = (
+                self.strategy.webtorrent_weight
+            )
 
         if self.strategy.use_ipfs:
             self.sub_protocols[ProtocolType.IPFS] = IPFSProtocol()
@@ -92,39 +111,45 @@ class HybridProtocol(Protocol):
                     await protocol.start()
 
                     # Emit sub-protocol started event
-                    await emit_event(Event(
-                        event_type=EventType.SUB_PROTOCOL_STARTED.value,
-                        data={
-                            "hybrid_protocol": "hybrid",
-                            "sub_protocol": protocol_type.value,
-                            "timestamp": time.time(),
-                        },
-                    ))
+                    await emit_event(
+                        Event(
+                            event_type=EventType.SUB_PROTOCOL_STARTED.value,
+                            data={
+                                "hybrid_protocol": "hybrid",
+                                "sub_protocol": protocol_type.value,
+                                "timestamp": time.time(),
+                            },
+                        ),
+                    )
 
                 except Exception as e:
                     # Emit sub-protocol error event
-                    await emit_event(Event(
-                        event_type=EventType.SUB_PROTOCOL_ERROR.value,
-                        data={
-                            "hybrid_protocol": "hybrid",
-                            "sub_protocol": protocol_type.value,
-                            "error": str(e),
-                            "timestamp": time.time(),
-                        },
-                    ))
+                    await emit_event(
+                        Event(
+                            event_type=EventType.SUB_PROTOCOL_ERROR.value,
+                            data={
+                                "hybrid_protocol": "hybrid",
+                                "sub_protocol": protocol_type.value,
+                                "error": str(e),
+                                "timestamp": time.time(),
+                            },
+                        ),
+                    )
 
             # Set state to connected
             self.set_state(ProtocolState.CONNECTED)
 
             # Emit protocol started event
-            await emit_event(Event(
-                event_type=EventType.PROTOCOL_STARTED.value,
-                data={
-                    "protocol_type": "hybrid",
-                    "sub_protocols": list(self.sub_protocols.keys()),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PROTOCOL_STARTED.value,
+                    data={
+                        "protocol_type": "hybrid",
+                        "sub_protocols": list(self.sub_protocols.keys()),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
         except Exception:
             self.set_state(ProtocolState.ERROR)
@@ -139,38 +164,44 @@ class HybridProtocol(Protocol):
                     await protocol.stop()
 
                     # Emit sub-protocol stopped event
-                    await emit_event(Event(
-                        event_type=EventType.SUB_PROTOCOL_STOPPED.value,
-                        data={
-                            "hybrid_protocol": "hybrid",
-                            "sub_protocol": protocol_type.value,
-                            "timestamp": time.time(),
-                        },
-                    ))
+                    await emit_event(
+                        Event(
+                            event_type=EventType.SUB_PROTOCOL_STOPPED.value,
+                            data={
+                                "hybrid_protocol": "hybrid",
+                                "sub_protocol": protocol_type.value,
+                                "timestamp": time.time(),
+                            },
+                        ),
+                    )
 
                 except Exception as e:
                     # Emit sub-protocol error event
-                    await emit_event(Event(
-                        event_type=EventType.SUB_PROTOCOL_ERROR.value,
-                        data={
-                            "hybrid_protocol": "hybrid",
-                            "sub_protocol": protocol_type.value,
-                            "error": str(e),
-                            "timestamp": time.time(),
-                        },
-                    ))
+                    await emit_event(
+                        Event(
+                            event_type=EventType.SUB_PROTOCOL_ERROR.value,
+                            data={
+                                "hybrid_protocol": "hybrid",
+                                "sub_protocol": protocol_type.value,
+                                "error": str(e),
+                                "timestamp": time.time(),
+                            },
+                        ),
+                    )
 
             # Set state to disconnected
             self.set_state(ProtocolState.DISCONNECTED)
 
             # Emit protocol stopped event
-            await emit_event(Event(
-                event_type=EventType.PROTOCOL_STOPPED.value,
-                data={
-                    "protocol_type": "hybrid",
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PROTOCOL_STOPPED.value,
+                    data={
+                        "protocol_type": "hybrid",
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
         except Exception:
             self.set_state(ProtocolState.ERROR)
@@ -199,34 +230,36 @@ class HybridProtocol(Protocol):
                 self.stats.connections_established += 1
                 self.update_stats()
 
-            return success
-
         except Exception as e:
             # Update performance score
             self._update_protocol_performance(best_protocol.protocol_type, False)
 
             # Emit connection error event
-            await emit_event(Event(
-                event_type=EventType.PEER_CONNECTION_FAILED.value,
-                data={
-                    "protocol_type": "hybrid",
-                    "sub_protocol": best_protocol.protocol_type.value,
-                    "peer_id": peer_info.peer_id.hex() if peer_info.peer_id else None,
-                    "error": str(e),
-                    "timestamp": time.time(),
-                },
-            ))
+            await emit_event(
+                Event(
+                    event_type=EventType.PEER_CONNECTION_FAILED.value,
+                    data={
+                        "protocol_type": "hybrid",
+                        "sub_protocol": best_protocol.protocol_type.value,
+                        "peer_id": peer_info.peer_id.hex()
+                        if peer_info.peer_id
+                        else None,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
 
             return False
+        else:
+            return success
 
     async def disconnect_peer(self, peer_id: str) -> None:
         """Disconnect from a peer."""
         # Disconnect from all sub-protocols
         for protocol in self.sub_protocols.values():
-            try:
+            with contextlib.suppress(Exception):
                 await protocol.disconnect_peer(peer_id)
-            except Exception:
-                pass
 
         # Remove from hybrid protocol
         self.remove_peer(peer_id)
@@ -247,13 +280,13 @@ class HybridProtocol(Protocol):
                 # Update stats
                 self.update_stats(bytes_sent=len(message), messages_sent=1)
 
-            return success
-
         except Exception:
             self.update_stats(errors=1)
             return False
+        else:
+            return success
 
-    async def receive_message(self, peer_id: str) -> Optional[bytes]:
+    async def receive_message(self, peer_id: str) -> bytes | None:
         """Receive message from peer using the best available protocol."""
         # Find which protocol has this peer
         best_protocol = self._find_protocol_for_peer(peer_id)
@@ -269,13 +302,13 @@ class HybridProtocol(Protocol):
                 # Update stats
                 self.update_stats(bytes_received=len(message), messages_received=1)
 
-            return message
-
         except Exception:
             self.update_stats(errors=1)
             return None
+        else:
+            return message
 
-    async def announce_torrent(self, torrent_info: TorrentInfo) -> List[PeerInfo]:
+    async def announce_torrent(self, torrent_info: TorrentInfo) -> list[PeerInfo]:
         """Announce torrent using all available protocols."""
         all_peers = []
 
@@ -286,45 +319,51 @@ class HybridProtocol(Protocol):
                 all_peers.extend(peers)
 
                 # Emit sub-protocol announce event
-                await emit_event(Event(
-                    event_type=EventType.SUB_PROTOCOL_ANNOUNCE.value,
-                    data={
-                        "hybrid_protocol": "hybrid",
-                        "sub_protocol": protocol_type.value,
-                        "peers_found": len(peers),
-                        "timestamp": time.time(),
-                    },
-                ))
+                await emit_event(
+                    Event(
+                        event_type=EventType.SUB_PROTOCOL_ANNOUNCE.value,
+                        data={
+                            "hybrid_protocol": "hybrid",
+                            "sub_protocol": protocol_type.value,
+                            "peers_found": len(peers),
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
             except Exception as e:
                 # Emit sub-protocol error event
-                await emit_event(Event(
-                    event_type=EventType.SUB_PROTOCOL_ERROR.value,
-                    data={
-                        "hybrid_protocol": "hybrid",
-                        "sub_protocol": protocol_type.value,
-                        "error": str(e),
-                        "timestamp": time.time(),
-                    },
-                ))
+                await emit_event(
+                    Event(
+                        event_type=EventType.SUB_PROTOCOL_ERROR.value,
+                        data={
+                            "hybrid_protocol": "hybrid",
+                            "sub_protocol": protocol_type.value,
+                            "error": str(e),
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
         # Remove duplicate peers
         unique_peers = self._deduplicate_peers(all_peers)
 
         # Emit hybrid announce event
-        await emit_event(Event(
-            event_type=EventType.HYBRID_ANNOUNCE.value,
-            data={
-                "protocol_type": "hybrid",
-                "total_peers": len(unique_peers),
-                "sub_protocols_used": len(self.sub_protocols),
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.HYBRID_ANNOUNCE.value,
+                data={
+                    "protocol_type": "hybrid",
+                    "total_peers": len(unique_peers),
+                    "sub_protocols_used": len(self.sub_protocols),
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
         return unique_peers
 
-    async def scrape_torrent(self, torrent_info: TorrentInfo) -> Dict[str, int]:
+    async def scrape_torrent(self, torrent_info: TorrentInfo) -> dict[str, int]:
         """Scrape torrent statistics using all available protocols."""
         combined_stats = {
             "seeders": 0,
@@ -344,24 +383,26 @@ class HybridProtocol(Protocol):
 
             except Exception as e:
                 # Emit sub-protocol error event
-                await emit_event(Event(
-                    event_type=EventType.SUB_PROTOCOL_ERROR.value,
-                    data={
-                        "hybrid_protocol": "hybrid",
-                        "sub_protocol": protocol_type.value,
-                        "error": str(e),
-                        "timestamp": time.time(),
-                    },
-                ))
+                await emit_event(
+                    Event(
+                        event_type=EventType.SUB_PROTOCOL_ERROR.value,
+                        data={
+                            "hybrid_protocol": "hybrid",
+                            "sub_protocol": protocol_type.value,
+                            "error": str(e),
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
 
         return combined_stats
 
-    def _select_best_protocol(self, peer_info: PeerInfo) -> Optional[Protocol]:
+    def _select_best_protocol(self, _peer_info: PeerInfo) -> Protocol | None:
         """Select the best protocol for a peer."""
         # Calculate scores for each protocol
         protocol_scores = {}
 
-        for protocol_type, protocol in self.sub_protocols.items():
+        for protocol_type in self.sub_protocols:
             # Base score from weight
             base_score = self.protocol_weights.get(protocol_type, 0.0)
 
@@ -379,7 +420,7 @@ class HybridProtocol(Protocol):
 
         return None
 
-    def _find_protocol_for_peer(self, peer_id: str) -> Optional[Protocol]:
+    def _find_protocol_for_peer(self, peer_id: str) -> Protocol | None:
         """Find which protocol has a specific peer."""
         for protocol in self.sub_protocols.values():
             if protocol.is_connected(peer_id):
@@ -387,7 +428,11 @@ class HybridProtocol(Protocol):
 
         return None
 
-    def _update_protocol_performance(self, protocol_type: ProtocolType, success: bool) -> None:
+    def _update_protocol_performance(
+        self,
+        protocol_type: ProtocolType,
+        success: bool,
+    ) -> None:
         """Update protocol performance score."""
         if protocol_type not in self.protocol_performance:
             self.protocol_performance[protocol_type] = 1.0
@@ -396,15 +441,17 @@ class HybridProtocol(Protocol):
         if success:
             # Increase performance score
             self.protocol_performance[protocol_type] = min(
-                self.protocol_performance[protocol_type] * 1.1, 2.0,
+                self.protocol_performance[protocol_type] * 1.1,
+                2.0,
             )
         else:
             # Decrease performance score
             self.protocol_performance[protocol_type] = max(
-                self.protocol_performance[protocol_type] * 0.9, 0.1,
+                self.protocol_performance[protocol_type] * 0.9,
+                0.1,
             )
 
-    def _deduplicate_peers(self, peers: List[PeerInfo]) -> List[PeerInfo]:
+    def _deduplicate_peers(self, peers: list[PeerInfo]) -> list[PeerInfo]:
         """Remove duplicate peers."""
         seen = set()
         unique_peers = []
@@ -417,15 +464,15 @@ class HybridProtocol(Protocol):
 
         return unique_peers
 
-    def get_sub_protocols(self) -> Dict[ProtocolType, Protocol]:
+    def get_sub_protocols(self) -> dict[ProtocolType, Protocol]:
         """Get sub-protocols."""
         return self.sub_protocols.copy()
 
-    def get_protocol_weights(self) -> Dict[ProtocolType, float]:
+    def get_protocol_weights(self) -> dict[ProtocolType, float]:
         """Get protocol weights."""
         return self.protocol_weights.copy()
 
-    def get_protocol_performance(self) -> Dict[ProtocolType, float]:
+    def get_protocol_performance(self) -> dict[ProtocolType, float]:
         """Get protocol performance scores."""
         return self.protocol_performance.copy()
 
@@ -436,7 +483,7 @@ class HybridProtocol(Protocol):
         # Reinitialize sub-protocols if needed
         self._initialize_sub_protocols()
 
-    def get_hybrid_stats(self) -> Dict[str, Any]:
+    def get_hybrid_stats(self) -> dict[str, Any]:
         """Get hybrid protocol statistics."""
         sub_protocol_stats = {}
 
@@ -455,7 +502,9 @@ class HybridProtocol(Protocol):
                 "ipfs_weight": self.strategy.ipfs_weight,
             },
             "protocol_weights": {k.value: v for k, v in self.protocol_weights.items()},
-            "protocol_performance": {k.value: v for k, v in self.protocol_performance.items()},
+            "protocol_performance": {
+                k.value: v for k, v in self.protocol_performance.items()
+            },
             "sub_protocols": sub_protocol_stats,
             "total_peers": len(self.peers),
             "active_connections": len(self.active_connections),

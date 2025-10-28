@@ -1,5 +1,4 @@
-"""
-Tests for BitTorrent extensions.
+"""Tests for BitTorrent extensions.
 
 Tests all BitTorrent protocol extensions including:
 - Fast Extension (BEP 6)

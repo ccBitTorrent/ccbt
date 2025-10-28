@@ -1,8 +1,8 @@
-"""
-Tests for Compact Peer Lists (BEP 23).
+"""Tests for Compact Peer Lists (BEP 23).
 """
 
 import socket
+import struct
 
 import pytest
 
@@ -263,7 +263,7 @@ class TestCompactPeerLists:
         assert len(merged) == len(sample_peers)
 
         # Check uniqueness
-        peer_keys = set((peer.ip, peer.port, peer.is_ipv6) for peer in merged)
+        peer_keys = {(peer.ip, peer.port, peer.is_ipv6) for peer in merged}
         assert len(peer_keys) == len(merged)
 
     def test_filter_peers_by_ip_version(self, sample_peers, sample_ipv6_peers):
@@ -271,13 +271,19 @@ class TestCompactPeerLists:
         all_peers = sample_peers + sample_ipv6_peers
 
         # Filter IPv4 only
-        ipv4_peers = CompactPeerLists.filter_peers_by_ip_version(all_peers, ipv6_only=False)
+        ipv4_peers = CompactPeerLists.filter_peers_by_ip_version(
+            all_peers,
+            ipv6_only=False,
+        )
         assert len(ipv4_peers) == len(sample_peers)
         for peer in ipv4_peers:
             assert not peer.is_ipv6
 
         # Filter IPv6 only
-        ipv6_peers = CompactPeerLists.filter_peers_by_ip_version(all_peers, ipv6_only=True)
+        ipv6_peers = CompactPeerLists.filter_peers_by_ip_version(
+            all_peers,
+            ipv6_only=True,
+        )
         assert len(ipv6_peers) == len(sample_ipv6_peers)
         for peer in ipv6_peers:
             assert peer.is_ipv6
@@ -327,12 +333,16 @@ class TestCompactPeerLists:
     def test_invalid_ip_address(self):
         """Test handling invalid IP addresses."""
         # Invalid IPv4
-        with pytest.raises(ValueError):
-            CompactPeerLists.encode_peer(CompactPeer(ip="invalid", port=6881, is_ipv6=False))
+        with pytest.raises(ValueError, match="Invalid IP address"):
+            CompactPeerLists.encode_peer(
+                CompactPeer(ip="invalid", port=6881, is_ipv6=False),
+            )
 
         # Invalid IPv6
-        with pytest.raises(ValueError):
-            CompactPeerLists.encode_peer(CompactPeer(ip="invalid", port=6881, is_ipv6=True))
+        with pytest.raises(ValueError, match="Invalid IP address"):
+            CompactPeerLists.encode_peer(
+                CompactPeer(ip="invalid", port=6881, is_ipv6=True),
+            )
 
     def test_empty_peers_list(self):
         """Test handling empty peers list."""
@@ -343,6 +353,3 @@ class TestCompactPeerLists:
         decoded = CompactPeerLists.decode_peers_list(data, is_ipv6=False)
         assert decoded == []
 
-
-# Import struct for testing
-import struct

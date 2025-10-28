@@ -10,4 +10,3 @@ def test_http_tracker_compact_peers_encoding(monkeypatch):
     body = store.announce(ih, "127.0.0.1", 6881, "")
     # bencoded dict
     assert body.startswith(b"d")
-

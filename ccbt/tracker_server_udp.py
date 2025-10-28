@@ -1,25 +1,33 @@
 """Minimal UDP tracker server (BEP 15) for ccBitTorrent.
 
+from __future__ import annotations
+
 Implements connection and announce actions with an in-memory peer store.
 This is a simplified implementation for development/testing.
 """
 
+from __future__ import annotations
+
+import contextlib
 import os
 import socket
 import struct
 import time
-from typing import Dict, Tuple
 
 MAGIC_CONNECTION_ID = 0x41727101980  # initial magic
 
 
 class InMemoryPeerStore:
+    """In-memory peer store for UDP tracker server."""
+
     def __init__(self):
+        """Initialize in-memory peer store."""
         # info_hash (bytes) -> { (ip, port) -> last_seen }
-        self.torrents: Dict[bytes, Dict[Tuple[str, int], float]] = {}
+        self.torrents: dict[bytes, dict[tuple[str, int], float]] = {}
         self.interval = 1800
 
     def announce(self, info_hash: bytes, ip: str, port: int, event: int) -> bytes:
+        """Handle peer announce request."""
         now = time.time()
         peers = self.torrents.setdefault(info_hash, {})
 
@@ -38,7 +46,7 @@ class InMemoryPeerStore:
 
         # build compact peers
         compact = bytearray()
-        for (peer_ip, peer_port) in peers.keys():
+        for peer_ip, peer_port in peers:
             try:
                 compact.extend(socket.inet_aton(peer_ip))
                 compact.extend(peer_port.to_bytes(2, "big"))
@@ -49,7 +57,10 @@ class InMemoryPeerStore:
 
 
 class UDPTracker:
-    def __init__(self, host: str = "0.0.0.0", port: int = 6969):
+    """UDP tracker server implementation."""
+
+    def __init__(self, host: str = "0.0.0.0", port: int = 6969):  # nosec B104
+        """Initialize UDP tracker server."""
         self.host = host
         self.port = port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -57,11 +68,12 @@ class UDPTracker:
         self.store = InMemoryPeerStore()
 
     def serve_forever(self):
+        """Start UDP tracker server loop."""
         while True:
             data, addr = self.sock.recvfrom(2048)
             if len(data) < 16:
                 continue
-            try:
+            with contextlib.suppress(Exception):
                 action, transaction_id = struct.unpack("!II", data[8:16])
                 if action == 0:
                     self._handle_connect(data, addr, transaction_id)
@@ -70,11 +82,8 @@ class UDPTracker:
                 else:
                     # unsupported; send error
                     self._send_error(addr, transaction_id, b"Unsupported action")
-            except Exception:
-                # ignore malformed
-                pass
 
-    def _handle_connect(self, data: bytes, addr, transaction_id: int):
+    def _handle_connect(self, _data: bytes, addr, transaction_id: int):
         # response: action(0), transaction_id, connection_id (random 64-bit)
         connection_id = struct.unpack("!Q", os.urandom(8))[0]
         resp = struct.pack("!IIQ", 0, transaction_id, connection_id)
@@ -109,12 +118,11 @@ class UDPTracker:
         self.sock.sendto(resp, addr)
 
 
-def run_udp_tracker(host: str = "0.0.0.0", port: int = 6969):
+def run_udp_tracker(host: str = "0.0.0.0", port: int = 6969):  # nosec B104
+    """Run UDP tracker server."""
     srv = UDPTracker(host, port)
     srv.serve_forever()
 
 
 if __name__ == "__main__":
     run_udp_tracker()
-
-

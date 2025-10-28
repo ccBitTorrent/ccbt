@@ -1,5 +1,7 @@
 """Advanced monitoring for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides comprehensive monitoring including:
 - Custom metrics collection
 - Alert rule engine
@@ -8,10 +10,12 @@ Provides comprehensive monitoring including:
 - Distributed tracing
 """
 
-from .alert_manager import AlertManager
-from .dashboard import DashboardManager
-from .metrics_collector import MetricsCollector
-from .tracing import TracingManager
+from __future__ import annotations
+
+from ccbt.monitoring.alert_manager import AlertManager
+from ccbt.monitoring.dashboard import DashboardManager
+from ccbt.monitoring.metrics_collector import MetricsCollector
+from ccbt.monitoring.tracing import TracingManager
 
 __all__ = [
     "AlertManager",
@@ -23,6 +27,7 @@ __all__ = [
 
 # Global alert manager singleton for CLI/UI integration
 _GLOBAL_ALERT_MANAGER: AlertManager | None = None
+
 
 def get_alert_manager() -> AlertManager:
     """Return a process-global AlertManager to share rules/alerts across components."""

@@ -1,22 +1,31 @@
 """UDP Tracker Client (BEP 15) for BitTorrent.
 
+from __future__ import annotations
+
 High-performance async UDP tracker communication with retry logic,
 concurrent announces across multiple tracker tiers, and proper error handling.
 """
 
+from __future__ import annotations
+
 import asyncio
+import contextlib
 import logging
 import struct
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from .config import get_config
+from ccbt.config import get_config
+
+# Error message constants
+_ERROR_UDP_TRANSPORT_NOT_INITIALIZED = "UDP transport is not initialized"
 
 
 class TrackerAction(Enum):
     """UDP tracker actions."""
+
     CONNECT = 0
     ANNOUNCE = 1
     SCRAPE = 2
@@ -25,6 +34,7 @@ class TrackerAction(Enum):
 
 class TrackerEvent(Enum):
     """Tracker announce events."""
+
     NONE = 0
     COMPLETED = 1
     STARTED = 2
@@ -34,25 +44,29 @@ class TrackerEvent(Enum):
 @dataclass
 class TrackerResponse:
     """UDP tracker response."""
+
     action: TrackerAction
     transaction_id: int
-    connection_id: Optional[int] = None
-    interval: Optional[int] = None
-    leechers: Optional[int] = None
-    seeders: Optional[int] = None
-    peers: Optional[List[Dict[str, Any]]] = None
-    error_message: Optional[str] = None
+    connection_id: int | None = None
+    interval: int | None = None
+    leechers: int | None = None
+    seeders: int | None = None
+    peers: list[dict[str, Any]] | None = None
+    error_message: str | None = None
 
 
 @dataclass
 class TrackerSession:
     """UDP tracker session state."""
+
     url: str
     host: str
     port: int
-    connection_id: Optional[int] = None
+    connection_id: int | None = None
     connection_time: float = 0.0
     last_announce: float = 0.0
+    # Interval suggested by tracker for next announce (seconds)
+    interval: int | None = None
     retry_count: int = 0
     backoff_delay: float = 1.0
     max_retries: int = 3
@@ -62,9 +76,9 @@ class TrackerSession:
 class AsyncUDPTrackerClient:
     """High-performance async UDP tracker client."""
 
-    def __init__(self, peer_id: Optional[bytes] = None):
+    def __init__(self, peer_id: bytes | None = None):
         """Initialize UDP tracker client.
-        
+
         Args:
             peer_id: Our peer ID (20 bytes)
         """
@@ -75,20 +89,25 @@ class AsyncUDPTrackerClient:
         self.our_peer_id = peer_id
 
         # Tracker sessions
-        self.sessions: Dict[str, TrackerSession] = {}
+        self.sessions: dict[str, TrackerSession] = {}
 
         # UDP socket
-        self.socket: Optional[asyncio.DatagramProtocol] = None
-        self.transport: Optional[asyncio.DatagramTransport] = None
+        self.socket: asyncio.DatagramProtocol | None = None
+        self.transport: asyncio.DatagramTransport | None = None
         self.transaction_counter = 0
 
         # Pending requests
-        self.pending_requests: Dict[int, asyncio.Future] = {}
+        self.pending_requests: dict[int, asyncio.Future] = {}
 
         # Background tasks
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_task: asyncio.Task | None = None
 
         self.logger = logging.getLogger(__name__)
+
+    def _raise_connection_failed(self) -> None:
+        """Raise ConnectionError for failed tracker connection."""
+        msg = "Failed to connect to tracker"
+        raise ConnectionError(msg)
 
     async def start(self) -> None:
         """Start the UDP tracker client."""
@@ -96,7 +115,7 @@ class AsyncUDPTrackerClient:
         loop = asyncio.get_event_loop()
         self.transport, self.socket = await loop.create_datagram_endpoint(
             lambda: UDPTrackerProtocol(self),
-            local_addr=("0.0.0.0", 0),
+            local_addr=("0.0.0.0", 0),  # nosec B104 - Bind to all interfaces for tracker communication
         )
 
         # Start cleanup task
@@ -108,10 +127,8 @@ class AsyncUDPTrackerClient:
         """Stop the UDP tracker client."""
         if self._cleanup_task:
             self._cleanup_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
 
         if self.transport:
             self.transport.close()
@@ -123,18 +140,23 @@ class AsyncUDPTrackerClient:
 
         self.logger.info("UDP tracker client stopped")
 
-    async def announce(self, torrent_data: Dict[str, Any],
-                      uploaded: int = 0, downloaded: int = 0, left: Optional[int] = None,
-                      event: TrackerEvent = TrackerEvent.STARTED) -> List[Dict[str, Any]]:
+    async def announce(
+        self,
+        torrent_data: dict[str, Any],
+        uploaded: int = 0,
+        downloaded: int = 0,
+        left: int | None = None,
+        event: TrackerEvent = TrackerEvent.STARTED,
+    ) -> list[dict[str, Any]]:
         """Announce to UDP trackers and get peer list.
-        
+
         Args:
             torrent_data: Parsed torrent data
             uploaded: Bytes uploaded
             downloaded: Bytes downloaded
             left: Bytes left to download
             event: Announce event
-            
+
         Returns:
             List of peer dictionaries
         """
@@ -150,9 +172,16 @@ class AsyncUDPTrackerClient:
         # Announce to all trackers concurrently
         tasks = []
         for url in tracker_urls:
-            task = asyncio.create_task(self._announce_to_tracker(
-                url, torrent_data, uploaded, downloaded, left, event,
-            ))
+            task = asyncio.create_task(
+                self._announce_to_tracker(
+                    url,
+                    torrent_data,
+                    uploaded,
+                    downloaded,
+                    left,
+                    event,
+                ),
+            )
             tasks.append(task)
 
         # Wait for all announces to complete
@@ -164,7 +193,7 @@ class AsyncUDPTrackerClient:
             if isinstance(result, list):
                 all_peers.extend(result)
             elif isinstance(result, Exception):
-                self.logger.debug(f"Tracker announce failed: {result}")
+                self.logger.debug("Tracker announce failed: %s", result)
 
         # Deduplicate peers
         peer_set = set()
@@ -175,10 +204,14 @@ class AsyncUDPTrackerClient:
                 peer_set.add(peer_key)
                 unique_peers.append(peer)
 
-        self.logger.info(f"Got {len(unique_peers)} unique peers from {len(tracker_urls)} trackers")
+        self.logger.info(
+            "Got %s unique peers from %s trackers",
+            len(unique_peers),
+            len(tracker_urls),
+        )
         return unique_peers
 
-    def _extract_tracker_urls(self, torrent_data: Dict[str, Any]) -> List[str]:
+    def _extract_tracker_urls(self, torrent_data: dict[str, Any]) -> list[str]:
         """Extract UDP tracker URLs from torrent data."""
         urls = []
 
@@ -190,16 +223,24 @@ class AsyncUDPTrackerClient:
 
         # Announce list
         if "announce_list" in torrent_data:
-            for tier in torrent_data["announce_list"]:
-                for url in tier:
-                    if url.startswith("udp://"):
-                        urls.append(url)
+            urls.extend(
+                url
+                for tier in torrent_data["announce_list"]
+                for url in tier
+                if url.startswith("udp://")
+            )
 
         return urls
 
-    async def _announce_to_tracker(self, url: str, torrent_data: Dict[str, Any],
-                                 uploaded: int, downloaded: int, left: int,
-                                 event: TrackerEvent) -> List[Dict[str, Any]]:
+    async def _announce_to_tracker(
+        self,
+        url: str,
+        torrent_data: dict[str, Any],
+        uploaded: int,
+        downloaded: int,
+        left: int,
+        event: TrackerEvent,
+    ) -> list[dict[str, Any]]:
         """Announce to a single UDP tracker."""
         try:
             # Parse URL
@@ -220,14 +261,20 @@ class AsyncUDPTrackerClient:
                 return []
 
             # Send announce
-            peers = await self._send_announce(session, torrent_data, uploaded, downloaded, left, event)
-            return peers
+            return await self._send_announce(
+                session,
+                torrent_data,
+                uploaded,
+                downloaded,
+                left,
+                event,
+            )
 
         except Exception as e:
-            self.logger.debug(f"Failed to announce to {url}: {e}")
+            self.logger.debug("Failed to announce to %s: %s", url, e)
             return []
 
-    def _parse_udp_url(self, url: str) -> Tuple[str, int]:
+    def _parse_udp_url(self, url: str) -> tuple[str, int]:
         """Parse UDP tracker URL."""
         # Remove udp:// prefix
         if url.startswith("udp://"):
@@ -248,9 +295,17 @@ class AsyncUDPTrackerClient:
         try:
             # Send connect request
             transaction_id = self._get_transaction_id()
-            connect_data = struct.pack("!QII", 0x41727101980, TrackerAction.CONNECT.value, transaction_id)
+            connect_data = struct.pack(
+                "!QII",
+                0x41727101980,
+                TrackerAction.CONNECT.value,
+                transaction_id,
+            )
 
             # Send request
+            if self.transport is None:
+                msg = _ERROR_UDP_TRANSPORT_NOT_INITIALIZED
+                raise RuntimeError(msg)
             self.transport.sendto(connect_data, (session.host, session.port))
 
             # Wait for response
@@ -262,25 +317,39 @@ class AsyncUDPTrackerClient:
                 session.is_connected = True
                 session.retry_count = 0
                 session.backoff_delay = 1.0
-                self.logger.debug(f"Connected to tracker {session.host}:{session.port}")
+                self.logger.debug(
+                    "Connected to tracker %s:%s",
+                    session.host,
+                    session.port,
+                )
             else:
-                raise ConnectionError("Failed to connect to tracker")
+                self._raise_connection_failed()
 
         except Exception as e:
             session.is_connected = False
             session.retry_count += 1
             session.backoff_delay = min(session.backoff_delay * 2, 60.0)
-            self.logger.debug(f"Failed to connect to {session.host}:{session.port}: {e}")
+            self.logger.debug(
+                "Failed to connect to %s:%s: %s",
+                session.host,
+                session.port,
+                e,
+            )
             raise
 
-    async def _send_announce(self, session: TrackerSession, torrent_data: Dict[str, Any],
-                           uploaded: int, downloaded: int, left: int,
-                           event: TrackerEvent) -> List[Dict[str, Any]]:
+    async def _send_announce(
+        self,
+        session: TrackerSession,
+        torrent_data: dict[str, Any],
+        uploaded: int,
+        downloaded: int,
+        left: int,
+        event: TrackerEvent,
+    ) -> list[dict[str, Any]]:
         """Send announce request to tracker."""
         try:
             # Check if we need to reconnect
-            if (time.time() - session.connection_time > 60.0 or
-                not session.is_connected):
+            if time.time() - session.connection_time > 60.0 or not session.is_connected:
                 await self._connect_to_tracker(session)
 
             if not session.is_connected:
@@ -307,6 +376,9 @@ class AsyncUDPTrackerClient:
             )
 
             # Send request
+            if self.transport is None:
+                msg = _ERROR_UDP_TRANSPORT_NOT_INITIALIZED
+                raise RuntimeError(msg)
             self.transport.sendto(announce_data, (session.host, session.port))
 
             # Wait for response
@@ -316,11 +388,17 @@ class AsyncUDPTrackerClient:
                 session.last_announce = time.time()
                 session.interval = response.interval
                 return response.peers or []
-            self.logger.debug(f"Announce failed for {session.host}:{session.port}")
-            return []
+            self.logger.debug("Announce failed for %s:%s", session.host, session.port)
 
         except Exception as e:
-            self.logger.debug(f"Announce error for {session.host}:{session.port}: {e}")
+            self.logger.debug(
+                "Announce error for %s:%s: %s",
+                session.host,
+                session.port,
+                e,
+            )
+            return []
+        else:
             return []
 
     def _get_transaction_id(self) -> int:
@@ -328,21 +406,24 @@ class AsyncUDPTrackerClient:
         self.transaction_counter = (self.transaction_counter + 1) % 65536
         return self.transaction_counter
 
-    async def _wait_for_response(self, transaction_id: int, timeout: float) -> Optional[TrackerResponse]:
+    async def _wait_for_response(
+        self,
+        transaction_id: int,
+        timeout: float,
+    ) -> TrackerResponse | None:
         """Wait for UDP tracker response."""
         future = asyncio.Future()
         self.pending_requests[transaction_id] = future
 
         try:
-            response = await asyncio.wait_for(future, timeout=timeout)
-            return response
+            return await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError:
-            self.logger.debug(f"Timeout waiting for tracker response {transaction_id}")
+            self.logger.debug("Timeout waiting for tracker response %s", transaction_id)
             return None
         finally:
             self.pending_requests.pop(transaction_id, None)
 
-    def handle_response(self, data: bytes, addr: Tuple[str, int]) -> None:
+    def handle_response(self, data: bytes, _addr: tuple[str, int]) -> None:
         """Handle incoming UDP response."""
         try:
             if len(data) < 8:
@@ -383,7 +464,7 @@ class AsyncUDPTrackerClient:
                         peer_data = data[20:]
                         for i in range(0, len(peer_data), 6):
                             if i + 6 <= len(peer_data):
-                                peer_bytes = peer_data[i:i+6]
+                                peer_bytes = peer_data[i : i + 6]
                                 ip = ".".join(str(b) for b in peer_bytes[:4])
                                 port = int.from_bytes(peer_bytes[4:6], "big")
                                 peers.append({"ip": ip, "port": port})
@@ -408,7 +489,7 @@ class AsyncUDPTrackerClient:
                 future.set_result(response)
 
         except Exception as e:
-            self.logger.debug(f"Error parsing tracker response: {e}")
+            self.logger.debug("Error parsing tracker response: %s", e)
 
     async def _cleanup_loop(self) -> None:
         """Background task to clean up old sessions."""
@@ -418,8 +499,8 @@ class AsyncUDPTrackerClient:
                 await self._cleanup_sessions()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Error in cleanup loop: {e}")
+            except Exception:
+                self.logger.exception("Error in cleanup loop")
 
     async def _cleanup_sessions(self) -> None:
         """Clean up old tracker sessions."""
@@ -428,18 +509,21 @@ class AsyncUDPTrackerClient:
 
         for session_key, session in self.sessions.items():
             # Remove sessions that haven't been used for 1 hour
-            if current_time - session.last_announce > 3600.0 or session.retry_count >= session.max_retries:
+            if (
+                current_time - session.last_announce > 3600.0
+                or session.retry_count >= session.max_retries
+            ):
                 to_remove.append(session_key)
 
         for session_key in to_remove:
             del self.sessions[session_key]
 
-    async def scrape(self, torrent_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def scrape(self, _torrent_data: dict[str, Any]) -> dict[str, Any]:
         """Scrape tracker for statistics.
-        
+
         Args:
             torrent_data: Parsed torrent data
-            
+
         Returns:
             Scraped statistics
         """
@@ -451,19 +535,20 @@ class UDPTrackerProtocol(asyncio.DatagramProtocol):
     """UDP protocol handler for tracker communication."""
 
     def __init__(self, client: AsyncUDPTrackerClient):
+        """Initialize UDP protocol handler."""
         self.client = client
 
-    def datagram_received(self, data: bytes, addr: Tuple[str, int]) -> None:
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         """Handle incoming UDP datagram."""
         self.client.handle_response(data, addr)
 
     def error_received(self, exc: Exception) -> None:
         """Handle UDP error."""
-        self.client.logger.debug(f"UDP error: {exc}")
+        self.client.logger.debug("UDP error: %s", exc)
 
 
 # Global UDP tracker client instance
-_udp_tracker_client: Optional[AsyncUDPTrackerClient] = None
+_udp_tracker_client: AsyncUDPTrackerClient | None = None
 
 
 def get_udp_tracker_client() -> AsyncUDPTrackerClient:
@@ -476,7 +561,6 @@ def get_udp_tracker_client() -> AsyncUDPTrackerClient:
 
 async def init_udp_tracker() -> AsyncUDPTrackerClient:
     """Initialize global UDP tracker client."""
-    global _udp_tracker_client
     _udp_tracker_client = AsyncUDPTrackerClient()
     await _udp_tracker_client.start()
     return _udp_tracker_client

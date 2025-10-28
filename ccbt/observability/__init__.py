@@ -1,5 +1,7 @@
 """Observability module for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides comprehensive observability including:
 - Request tracing
 - Performance profiling
@@ -8,7 +10,7 @@ Provides comprehensive observability including:
 - Log aggregation
 """
 
-from .profiler import Profiler
+from ccbt.observability.profiler import Profiler
 
 __all__ = [
     "Profiler",

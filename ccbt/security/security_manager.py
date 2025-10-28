@@ -1,5 +1,7 @@
 """Security Manager for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides centralized security management including:
 - Peer validation and reputation tracking
 - Rate limiting and DDoS protection
@@ -7,18 +9,24 @@ Provides centralized security management including:
 - IP blacklist/whitelist management
 """
 
+from __future__ import annotations
+
+import asyncio
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any
 
-from ..events import Event, EventType, emit_event
-from ..models import PeerInfo
+from ccbt.events import Event, EventType, emit_event
+
+if TYPE_CHECKING:
+    from ccbt.models import PeerInfo
 
 
 class SecurityLevel(Enum):
     """Security levels."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -27,6 +35,7 @@ class SecurityLevel(Enum):
 
 class ThreatType(Enum):
     """Types of security threats."""
+
     DDOS_ATTACK = "ddos_attack"
     MALICIOUS_PEER = "malicious_peer"
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
@@ -38,6 +47,7 @@ class ThreatType(Enum):
 @dataclass
 class PeerReputation:
     """Peer reputation information."""
+
     peer_id: str
     ip: str
     reputation_score: float = 0.5  # 0.0 (bad) to 1.0 (good)
@@ -48,11 +58,16 @@ class PeerReputation:
     bytes_received: int = 0
     last_seen: float = 0.0
     first_seen: float = 0.0
-    violations: List[ThreatType] = field(default_factory=list)
+    violations: list[ThreatType] = field(default_factory=list)
     is_blacklisted: bool = False
     is_whitelisted: bool = False
 
-    def update_reputation(self, success: bool, bytes_sent: int = 0, bytes_received: int = 0) -> None:
+    def update_reputation(
+        self,
+        success: bool,
+        bytes_sent: int = 0,
+        bytes_received: int = 0,
+    ) -> None:
         """Update peer reputation based on activity."""
         self.connection_count += 1
         if success:
@@ -82,28 +97,30 @@ class PeerReputation:
 @dataclass
 class SecurityEvent:
     """Security event information."""
+
     event_type: ThreatType
     peer_id: str
     ip: str
     severity: SecurityLevel
     description: str
     timestamp: float
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class SecurityManager:
     """Centralized security management."""
 
     def __init__(self):
-        self.peer_reputations: Dict[str, PeerReputation] = {}
-        self.ip_blacklist: Set[str] = set()
-        self.ip_whitelist: Set[str] = set()
+        """Initialize security manager."""
+        self.peer_reputations: dict[str, PeerReputation] = {}
+        self.ip_blacklist: set[str] = set()
+        self.ip_whitelist: set[str] = set()
         self.security_events: deque = deque(maxlen=10000)
 
         # Rate limiting
-        self.connection_rates: Dict[str, deque] = defaultdict(lambda: deque())
-        self.message_rates: Dict[str, deque] = defaultdict(lambda: deque())
-        self.bytes_rates: Dict[str, deque] = defaultdict(lambda: deque())
+        self.connection_rates: dict[str, deque] = defaultdict(lambda: deque())
+        self.message_rates: dict[str, deque] = defaultdict(lambda: deque())
+        self.bytes_rates: dict[str, deque] = defaultdict(lambda: deque())
 
         # Configuration
         self.max_connections_per_minute = 10
@@ -121,9 +138,9 @@ class SecurityManager:
             "whitelisted_peers": 0,
         }
 
-    async def validate_peer(self, peer_info: PeerInfo) -> Tuple[bool, str]:
+    async def validate_peer(self, peer_info: PeerInfo) -> tuple[bool, str]:
         """Validate a peer connection.
-        
+
         Returns:
             Tuple of (is_valid, reason)
         """
@@ -172,8 +189,14 @@ class SecurityManager:
 
         return True, "Valid peer"
 
-    async def record_peer_activity(self, peer_id: str, ip: str, success: bool,
-                                 bytes_sent: int = 0, bytes_received: int = 0) -> None:
+    async def record_peer_activity(
+        self,
+        peer_id: str,
+        ip: str,
+        success: bool,
+        bytes_sent: int = 0,
+        bytes_received: int = 0,
+    ) -> None:
         """Record peer activity for reputation tracking."""
         reputation = self._get_peer_reputation(peer_id, ip)
         reputation.update_reputation(success, bytes_sent, bytes_received)
@@ -196,8 +219,14 @@ class SecurityManager:
                 f"Peer auto-blacklisted due to low reputation: {reputation.reputation_score:.2f}",
             )
 
-    async def report_violation(self, peer_id: str, ip: str, violation: ThreatType,
-                            description: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    async def report_violation(
+        self,
+        peer_id: str,
+        ip: str,
+        violation: ThreatType,
+        description: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         """Report a security violation."""
         reputation = self._get_peer_reputation(peer_id, ip)
         reputation.add_violation(violation)
@@ -230,27 +259,45 @@ class SecurityManager:
         self.stats["blacklisted_peers"] += 1
 
         # Emit blacklist event
-        emit_event(Event(
-            event_type=EventType.SECURITY_BLACKLIST_ADDED.value,
-            data={
-                "ip": ip,
-                "reason": reason,
-                "timestamp": time.time(),
-            },
-        ))
+        try:
+            loop = asyncio.get_running_loop()
+            _ = loop.create_task(  # noqa: RUF006
+                emit_event(
+                    Event(
+                        event_type=EventType.SECURITY_BLACKLIST_ADDED.value,
+                        data={
+                            "ip": ip,
+                            "reason": reason,
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
+            )
+        except RuntimeError:
+            # No event loop running, skip event emission
+            pass
 
     def remove_from_blacklist(self, ip: str) -> None:
         """Remove IP from blacklist."""
         self.ip_blacklist.discard(ip)
 
         # Emit blacklist removal event
-        emit_event(Event(
-            event_type=EventType.SECURITY_BLACKLIST_REMOVED.value,
-            data={
-                "ip": ip,
-                "timestamp": time.time(),
-            },
-        ))
+        try:
+            loop = asyncio.get_running_loop()
+            _ = loop.create_task(  # noqa: RUF006
+                emit_event(
+                    Event(
+                        event_type=EventType.SECURITY_BLACKLIST_REMOVED.value,
+                        data={
+                            "ip": ip,
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
+            )
+        except RuntimeError:
+            # No event loop running, skip event emission
+            pass
 
     def add_to_whitelist(self, ip: str, reason: str = "") -> None:
         """Add IP to whitelist."""
@@ -258,37 +305,55 @@ class SecurityManager:
         self.stats["whitelisted_peers"] += 1
 
         # Emit whitelist event
-        emit_event(Event(
-            event_type=EventType.SECURITY_WHITELIST_ADDED.value,
-            data={
-                "ip": ip,
-                "reason": reason,
-                "timestamp": time.time(),
-            },
-        ))
+        try:
+            loop = asyncio.get_running_loop()
+            _ = loop.create_task(  # noqa: RUF006
+                emit_event(
+                    Event(
+                        event_type=EventType.SECURITY_WHITELIST_ADDED.value,
+                        data={
+                            "ip": ip,
+                            "reason": reason,
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
+            )
+        except RuntimeError:
+            # No event loop running, skip event emission
+            pass
 
     def remove_from_whitelist(self, ip: str) -> None:
         """Remove IP from whitelist."""
         self.ip_whitelist.discard(ip)
 
         # Emit whitelist removal event
-        emit_event(Event(
-            event_type=EventType.SECURITY_WHITELIST_REMOVED.value,
-            data={
-                "ip": ip,
-                "timestamp": time.time(),
-            },
-        ))
+        try:
+            loop = asyncio.get_running_loop()
+            _ = loop.create_task(  # noqa: RUF006
+                emit_event(
+                    Event(
+                        event_type=EventType.SECURITY_WHITELIST_REMOVED.value,
+                        data={
+                            "ip": ip,
+                            "timestamp": time.time(),
+                        },
+                    ),
+                )
+            )
+        except RuntimeError:
+            # No event loop running, skip event emission
+            pass
 
-    def get_peer_reputation(self, peer_id: str, ip: str) -> Optional[PeerReputation]:
+    def get_peer_reputation(self, peer_id: str, _ip: str) -> PeerReputation | None:
         """Get peer reputation."""
         return self.peer_reputations.get(peer_id)
 
-    def get_blacklisted_ips(self) -> Set[str]:
+    def get_blacklisted_ips(self) -> set[str]:
         """Get blacklisted IPs."""
         return self.ip_blacklist.copy()
 
-    def get_whitelisted_ips(self) -> Set[str]:
+    def get_whitelisted_ips(self) -> set[str]:
         """Get whitelisted IPs."""
         return self.ip_whitelist.copy()
 
@@ -300,11 +365,11 @@ class SecurityManager:
         """Check if IP is whitelisted."""
         return ip in self.ip_whitelist
 
-    def get_security_events(self, limit: int = 100) -> List[SecurityEvent]:
+    def get_security_events(self, limit: int = 100) -> list[SecurityEvent]:
         """Get recent security events."""
         return list(self.security_events)[-limit:]
 
-    def get_security_statistics(self) -> Dict[str, Any]:
+    def get_security_statistics(self) -> dict[str, Any]:
         """Get security statistics."""
         return {
             "total_connections": self.stats["total_connections"],
@@ -354,10 +419,7 @@ class SecurityManager:
             bytes_rate.popleft()
 
         total_bytes = sum(bytes_rate)
-        if total_bytes >= self.max_bytes_per_minute:
-            return False
-
-        return True
+        return not total_bytes >= self.max_bytes_per_minute
 
     def _update_connection_rate(self, ip: str) -> None:
         """Update connection rate tracking."""
@@ -371,9 +433,15 @@ class SecurityManager:
         """Update bytes rate tracking."""
         self.bytes_rates[ip].append(bytes_count)
 
-    async def _log_security_event(self, event_type: ThreatType, peer_id: str, ip: str,
-                                severity: SecurityLevel, description: str,
-                                metadata: Dict[str, Any] = None) -> None:
+    async def _log_security_event(
+        self,
+        event_type: ThreatType,
+        peer_id: str,
+        ip: str,
+        severity: SecurityLevel,
+        description: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         """Log a security event."""
         event = SecurityEvent(
             event_type=event_type,
@@ -389,18 +457,20 @@ class SecurityManager:
         self.stats["security_events"] += 1
 
         # Emit security event
-        await emit_event(Event(
-            event_type=EventType.SECURITY_EVENT.value,
-            data={
-                "threat_type": event_type.value,
-                "peer_id": peer_id,
-                "ip": ip,
-                "severity": severity.value,
-                "description": description,
-                "metadata": metadata or {},
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.SECURITY_EVENT.value,
+                data={
+                    "threat_type": event_type.value,
+                    "peer_id": peer_id,
+                    "ip": ip,
+                    "severity": severity.value,
+                    "description": description,
+                    "metadata": metadata or {},
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
     def cleanup_old_data(self, max_age_seconds: int = 3600) -> None:
         """Clean up old reputation and rate data."""

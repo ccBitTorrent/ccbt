@@ -1,5 +1,4 @@
-"""
-Tests for torrent file parsing functionality.
+"""Tests for torrent file parsing functionality.
 """
 
 import os
@@ -171,7 +170,10 @@ class TestTorrentParser:
 
         try:
             parser = TorrentParser()
-            with pytest.raises(TorrentError, match="Torrent must specify either length"):
+            with pytest.raises(
+                TorrentError,
+                match="Torrent must specify either length",
+            ):
                 parser.parse(temp_path)
         finally:
             os.unlink(temp_path)
@@ -307,7 +309,10 @@ class TestTorrentParser:
             result = parser.parse(temp_path)
 
             # Test utility methods
-            assert parser.get_announce_url(result) == "http://tracker.example.com:6969/announce"
+            assert (
+                parser.get_announce_url(result)
+                == "http://tracker.example.com:6969/announce"
+            )
             assert parser.get_total_length(result) == 1000
             assert parser.get_piece_length(result) == 16384
             assert parser.get_num_pieces(result) == 2

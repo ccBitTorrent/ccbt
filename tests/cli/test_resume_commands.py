@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-CLI-specific tests for resume functionality.
+"""CLI-specific tests for resume functionality.
 
 Tests the command-line interface interactions for resume commands,
 including user prompts, error handling, and command execution.
@@ -35,6 +34,7 @@ class TestResumeCLI:
     def teardown_method(self):
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     @pytest.mark.asyncio
@@ -70,7 +70,6 @@ class TestResumeCLI:
             )
 
             assert result == "test_hash_1234567890"
-            print("OK: Resume command auto-resume test passed")
 
     @pytest.mark.asyncio
     async def test_resume_command_missing_checkpoint(self):
@@ -83,10 +82,11 @@ class TestResumeCLI:
                 b"nonexistent_hash_1234567890",
                 None,
             )
-            assert False, "Should have raised an error"
+            msg = "Should have raised an error"
+            raise AssertionError(msg)
         except Exception:
             # Should handle missing checkpoint gracefully
-            print("OK: Resume command missing checkpoint test passed")
+            pass
 
     @pytest.mark.asyncio
     async def test_download_command_checkpoint_detection(self):
@@ -99,9 +99,8 @@ class TestResumeCLI:
         session_manager = AsyncSessionManager(str(self.temp_path))
 
         # Test torrent loading
-        torrent_data = session_manager.load_torrent(str(test_torrent_path))
+        session_manager.load_torrent(str(test_torrent_path))
         # This will fail with real torrent parsing, but we're testing the method exists
-        print("OK: Download command checkpoint detection test passed")
 
     @pytest.mark.asyncio
     async def test_magnet_command_checkpoint_detection(self):
@@ -112,9 +111,8 @@ class TestResumeCLI:
         session_manager = AsyncSessionManager(str(self.temp_path))
 
         # Test magnet parsing
-        torrent_data = session_manager.parse_magnet_link(magnet_link)
+        session_manager.parse_magnet_link(magnet_link)
         # This will fail with real magnet parsing, but we're testing the method exists
-        print("OK: Magnet command checkpoint detection test passed")
 
     @pytest.mark.asyncio
     async def test_resume_command_error_handling(self):
@@ -136,11 +134,14 @@ class TestResumeCLI:
 
         # Test resume with missing source
         try:
-            await session_manager.resume_from_checkpoint(b"test_hash_1234567890", checkpoint)
-            assert False, "Should have raised ValueError"
+            await session_manager.resume_from_checkpoint(
+                b"test_hash_1234567890",
+                checkpoint,
+            )
+            msg = "Should have raised ValueError"
+            raise AssertionError(msg)
         except ValueError as e:
             assert "No valid torrent source found" in str(e)
-            print("OK: Resume command error handling test passed")
 
     @pytest.mark.asyncio
     async def test_checkpoints_list_command(self):
@@ -150,7 +151,6 @@ class TestResumeCLI:
         # Test checkpoint listing functionality
         checkpoints = await session_manager.list_resumable_checkpoints()
         assert isinstance(checkpoints, list)
-        print("OK: Checkpoints list command test passed")
 
     @pytest.mark.asyncio
     async def test_checkpoints_clean_command(self):
@@ -160,7 +160,6 @@ class TestResumeCLI:
         # Test cleanup functionality
         cleaned = await session_manager.cleanup_completed_checkpoints()
         assert isinstance(cleaned, int)
-        print("OK: Checkpoints clean command test passed")
 
     def test_cli_command_structure(self):
         """Test that CLI commands are properly structured."""
@@ -179,8 +178,6 @@ class TestResumeCLI:
         assert "clean" in result.output
         assert "delete" in result.output
 
-        print("OK: CLI command structure test passed")
-
 
 if __name__ == "__main__":
     # Run tests directly for development
@@ -198,16 +195,16 @@ if __name__ == "__main__":
             await test_instance.test_checkpoints_clean_command()
             test_instance.test_cli_command_structure()
 
-            print("\nCLI resume functionality test completed successfully!")
             return 0
-        except Exception as e:
-            print(f"\nTest failed: {e}")
+        except Exception:
             import traceback
+
             traceback.print_exc()
             return 1
         finally:
             test_instance.teardown_method()
 
     import sys
+
     exit_code = asyncio.run(main())
     sys.exit(exit_code)

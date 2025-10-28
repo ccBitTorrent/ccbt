@@ -1,25 +1,31 @@
 """Peer Exchange (PEX) implementation for BitTorrent (BEP 11).
 
+from __future__ import annotations
+
 Provides peer discovery through connected peers using ut_pex extended messages,
 with deduplication, throttling, and reliability scoring.
 """
 
+from __future__ import annotations
+
 import asyncio
+import contextlib
 import logging
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Callable
 
-from .config import get_config
+from ccbt.config import get_config
 
 
 @dataclass
 class PexPeer:
     """Represents a peer in PEX."""
+
     ip: str
     port: int
-    peer_id: Optional[bytes] = None
+    peer_id: bytes | None = None
     added_time: float = field(default_factory=time.time)
     source: str = "pex"  # Source of this peer (pex, tracker, dht, etc.)
     reliability_score: float = 1.0
@@ -28,8 +34,9 @@ class PexPeer:
 @dataclass
 class PexSession:
     """PEX session with a single peer."""
+
     peer_key: str
-    ut_pex_id: Optional[int] = None
+    ut_pex_id: int | None = None
     last_pex_time: float = 0.0
     pex_interval: float = 30.0
     is_supported: bool = False
@@ -45,14 +52,14 @@ class AsyncPexManager:
         self.config = get_config()
 
         # PEX sessions per peer
-        self.sessions: Dict[str, PexSession] = {}
+        self.sessions: dict[str, PexSession] = {}
 
         # Peer tracking
-        self.known_peers: Dict[Tuple[str, int], PexPeer] = {}
-        self.peer_sources: Dict[Tuple[str, int], Set[str]] = defaultdict(set)
+        self.known_peers: dict[tuple[str, int], PexPeer] = {}
+        self.peer_sources: dict[tuple[str, int], set[str]] = defaultdict(set)
 
         # PEX message handling
-        self.pex_callbacks: List[Callable[[List[PexPeer]], None]] = []
+        self.pex_callbacks: list[Callable[[list[PexPeer]], None]] = []
 
         # Throttling
         self.peer_add_throttle: deque = deque(maxlen=100)
@@ -60,8 +67,8 @@ class AsyncPexManager:
         self.throttle_interval = 10.0
 
         # Background tasks
-        self._pex_task: Optional[asyncio.Task] = None
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._pex_task: asyncio.Task | None = None
+        self._cleanup_task: asyncio.Task | None = None
 
         self.logger = logging.getLogger(__name__)
 
@@ -75,17 +82,13 @@ class AsyncPexManager:
         """Stop PEX manager."""
         if self._pex_task:
             self._pex_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._pex_task
-            except asyncio.CancelledError:
-                pass
 
         if self._cleanup_task:
             self._cleanup_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
 
         self.logger.info("PEX manager stopped")
 
@@ -97,8 +100,8 @@ class AsyncPexManager:
                 await self._send_pex_messages()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"PEX loop error: {e}")
+            except Exception:
+                self.logger.exception("PEX loop error")
 
     async def _cleanup_loop(self) -> None:
         """Background task for cleanup operations."""
@@ -108,8 +111,8 @@ class AsyncPexManager:
                 await self._cleanup_old_peers()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self.logger.error(f"Cleanup loop error: {e}")
+            except Exception:
+                self.logger.exception("Cleanup loop error")
 
     async def _send_pex_messages(self) -> None:
         """Send PEX messages to supported peers."""
@@ -128,14 +131,14 @@ class AsyncPexManager:
                 await self._send_pex_to_peer(session)
                 session.last_pex_time = current_time
             except Exception as e:
-                self.logger.warning(f"Failed to send PEX to {session.peer_key}: {e}")
+                self.logger.warning("Failed to send PEX to %s: %s", session.peer_key, e)
                 session.consecutive_failures += 1
 
     async def _send_pex_to_peer(self, session: PexSession) -> None:
         """Send PEX message to a specific peer."""
         # This would be implemented to send actual PEX messages
         # For now, just log the action
-        self.logger.debug(f"Sending PEX to {session.peer_key}")
+        self.logger.debug("Sending PEX to %s", session.peer_key)
 
     async def _cleanup_old_peers(self) -> None:
         """Clean up old peer entries."""
@@ -152,11 +155,11 @@ class AsyncPexManager:
             if peer_key in self.peer_sources:
                 del self.peer_sources[peer_key]
 
-    def add_peer_callback(self, callback: Callable[[List[PexPeer]], None]) -> None:
+    def add_peer_callback(self, callback: Callable[[list[PexPeer]], None]) -> None:
         """Add callback for new peers discovered via PEX."""
         self.pex_callbacks.append(callback)
 
-    def get_known_peers(self) -> List[PexPeer]:
+    def get_known_peers(self) -> list[PexPeer]:
         """Get list of known peers from PEX."""
         return list(self.known_peers.values())
 

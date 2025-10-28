@@ -1,15 +1,17 @@
-"""Piece management for BitTorrent client.
-"""
+"""Piece management for BitTorrent client."""
+
+from __future__ import annotations
 
 import hashlib
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable
 
 
 class PieceState(Enum):
     """States of a piece download."""
+
     MISSING = "missing"
     REQUESTED = "requested"
     DOWNLOADING = "downloading"
@@ -20,6 +22,7 @@ class PieceState(Enum):
 @dataclass
 class PieceBlock:
     """Represents a block within a piece."""
+
     piece_index: int
     begin: int
     length: int
@@ -46,12 +49,13 @@ class PieceBlock:
 @dataclass
 class PieceData:
     """Represents a complete piece with all its blocks."""
+
     piece_index: int
     length: int
-    blocks: List[PieceBlock] = field(default_factory=list)
+    blocks: list[PieceBlock] = field(default_factory=list)
     state: PieceState = PieceState.MISSING
     hash_verified: bool = False
-    data_buffer: Optional[bytearray] = None
+    data_buffer: bytearray | None = None
 
     def __post_init__(self):
         """Initialize blocks after creation."""
@@ -65,11 +69,14 @@ class PieceData:
     def add_block(self, begin: int, data: bytes) -> bool:
         """Add a block of data to this piece."""
         for block in self.blocks:
-            if block.begin == begin and not block.received:
-                if block.add_block(begin, data):
-                    if self.is_complete():
-                        self.state = PieceState.COMPLETE
-                    return True
+            if (
+                block.begin == begin
+                and not block.received
+                and block.add_block(begin, data)
+            ):
+                if self.is_complete():
+                    self.state = PieceState.COMPLETE
+                return True
         return False
 
     def is_complete(self) -> bool:
@@ -79,7 +86,8 @@ class PieceData:
     def get_data(self) -> bytes:
         """Get the complete piece data."""
         if not self.is_complete():
-            raise ValueError(f"Piece {self.piece_index} is not complete")
+            msg = f"Piece {self.piece_index} is not complete"
+            raise ValueError(msg)
 
         if self.data_buffer is not None:
             return bytes(self.data_buffer)
@@ -95,9 +103,9 @@ class PieceData:
             return False
 
         data = self.get_data()
-        actual_hash = hashlib.sha1(data).digest()
+        actual_hash = hashlib.sha1(data).digest()  # nosec B324 - SHA-1 required by BitTorrent protocol (BEP 3)
 
-        self.hash_verified = (actual_hash == expected_hash)
+        self.hash_verified = actual_hash == expected_hash
 
         if self.hash_verified:
             self.state = PieceState.VERIFIED
@@ -114,7 +122,7 @@ class PieceData:
 class PieceManager:
     """Manages piece downloads and verification."""
 
-    def __init__(self, torrent_data: Dict[str, Any]):
+    def __init__(self, torrent_data: dict[str, Any]):
         """Initialize piece manager."""
         self.torrent_data = torrent_data
         self.pieces_info = torrent_data["pieces_info"]
@@ -128,13 +136,16 @@ class PieceManager:
         # Initialize pieces
         self.pieces = []
         for i in range(self.num_pieces):
-            actual_length = min(self.piece_length, self.total_length - i * self.piece_length)
+            actual_length = min(
+                self.piece_length,
+                self.total_length - i * self.piece_length,
+            )
             piece = PieceData(i, actual_length)
             self.pieces.append(piece)
 
         # State tracking
-        self.completed_pieces: Set[int] = set()
-        self.verified_pieces: Set[int] = set()
+        self.completed_pieces: set[int] = set()
+        self.verified_pieces: set[int] = set()
         self.is_downloading = False
         self.download_complete = False
 
@@ -142,10 +153,10 @@ class PieceManager:
         self.lock = threading.Lock()
 
         # Callbacks
-        self.on_piece_completed: Optional[Callable[[int], None]] = None
-        self.on_piece_verified: Optional[Callable[[int], None]] = None
-        self.on_file_assembled: Optional[Callable[[int], None]] = None
-        self.on_download_complete: Optional[Callable[[], None]] = None
+        self.on_piece_completed: Callable[[int], None] | None = None
+        self.on_piece_verified: Callable[[int], None] | None = None
+        self.on_file_assembled: Callable[[int], None] | None = None
+        self.on_download_complete: Callable[[], None] | None = None
 
         # File assembler
         self.file_assembler = None
@@ -153,19 +164,23 @@ class PieceManager:
         # Test mode for synchronous verification
         self.test_mode = False
 
-    def get_missing_pieces(self) -> List[int]:
+    def get_missing_pieces(self) -> list[int]:
         """Get list of missing piece indices."""
         with self.lock:
-            return [i for i, piece in enumerate(self.pieces)
-                   if piece.state == PieceState.MISSING]
+            return [
+                i
+                for i, piece in enumerate(self.pieces)
+                if piece.state == PieceState.MISSING
+            ]
 
-    def get_random_missing_piece(self) -> Optional[int]:
+    def get_random_missing_piece(self) -> int | None:
         """Get a random missing piece index."""
         missing = self.get_missing_pieces()
         if not missing:
             return None
         import random
-        return random.choice(missing)
+
+        return random.choice(missing)  # nosec B311 - Piece selection is not security-sensitive
 
     def handle_piece_block(self, piece_index: int, begin: int, data: bytes) -> bool:
         """Handle incoming piece block data."""
@@ -197,6 +212,7 @@ class PieceManager:
 
     def _verify_piece_hash(self, piece: PieceData) -> None:
         """Verify piece hash in background thread."""
+
         def verify():
             expected_hash = self.piece_hashes[piece.piece_index]
             if piece.verify_hash(expected_hash):
@@ -235,7 +251,7 @@ class PieceManager:
                 data_bytes = piece.get_data()
                 data_view = memoryview(data_bytes)
 
-            hasher = hashlib.sha1()
+            hasher = hashlib.sha1()  # nosec B324 - SHA-1 required by BitTorrent protocol (BEP 3)
 
             # For small pieces (< 1MB), use more appropriate chunk size for testing
             if piece.length < 1024 * 1024:  # 1MB
@@ -244,11 +260,11 @@ class PieceManager:
                 chunk_size = 64 * 1024  # 64KB for larger data
 
             for i in range(0, len(data_view), chunk_size):
-                chunk = data_view[i:i + chunk_size]
+                chunk = data_view[i : i + chunk_size]
                 hasher.update(chunk)
 
             actual_hash = hasher.digest()
-            piece.hash_verified = (actual_hash == expected_hash)
+            piece.hash_verified = actual_hash == expected_hash
 
             if piece.hash_verified:
                 piece.state = PieceState.VERIFIED
@@ -259,21 +275,23 @@ class PieceManager:
                     block.received = False
                 piece.data_buffer = None
 
-            return piece.hash_verified
-
-        except Exception as e:
-            print(f"Error in hash verification: {e}")
+        except Exception:
             return False
+        else:
+            return piece.hash_verified
 
     def _check_download_complete(self) -> None:
         """Check if all pieces have been downloaded and verified."""
         with self.lock:
-            if len(self.verified_pieces) == self.num_pieces and not self.download_complete:
+            if (
+                len(self.verified_pieces) == self.num_pieces
+                and not self.download_complete
+            ):
                 self.download_complete = True
                 if self.on_download_complete:
                     self.on_download_complete()
 
-    def get_piece_data(self, piece_index: int) -> Optional[bytes]:
+    def get_piece_data(self, piece_index: int) -> bytes | None:
         """Get data for a verified piece."""
         if piece_index >= self.num_pieces:
             return None
@@ -298,7 +316,7 @@ class PieceManager:
             return 1.0
         return len(self.verified_pieces) / self.num_pieces
 
-    def get_piece_status(self) -> Dict[str, int]:
+    def get_piece_status(self) -> dict[str, int]:
         """Get status counts for pieces."""
         missing = 0
         complete = 0
@@ -353,10 +371,15 @@ class PieceManager:
             if not block.received:
                 for peer in active_peers:
                     if hasattr(peer, "peer_state") and not peer.peer_state.am_choking:
-                        peer_manager.request_piece(piece_index, block.begin, block.length, peer)
+                        peer_manager.request_piece(
+                            piece_index,
+                            block.begin,
+                            block.length,
+                            peer,
+                        )
                         break
 
-    def start_download(self, peer_manager) -> None:
+    def start_download(self, _peer_manager) -> None:
         """Start the download process."""
         self.is_downloading = True
 

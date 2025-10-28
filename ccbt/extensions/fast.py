@@ -8,16 +8,19 @@ Provides support for:
 - Allow Fast
 """
 
+from __future__ import annotations
+
 import struct
+import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Set, Tuple
 
-from ..events import Event, EventType, emit_event
+from ccbt.events import Event, EventType, emit_event
 
 
 class FastMessageType(IntEnum):
     """Fast Extension message types."""
+
     SUGGEST = 0x0D
     HAVE_ALL = 0x0E
     HAVE_NONE = 0x0F
@@ -28,6 +31,7 @@ class FastMessageType(IntEnum):
 @dataclass
 class FastCapabilities:
     """Fast Extension capabilities."""
+
     suggest: bool = False
     have_all: bool = False
     have_none: bool = False
@@ -39,10 +43,13 @@ class FastExtension:
     """Fast Extension implementation (BEP 6)."""
 
     def __init__(self):
+        """Initialize Fast Extension."""
         self.capabilities = FastCapabilities()
-        self.suggested_pieces: Set[int] = set()
-        self.allowed_fast: Set[int] = set()
-        self.rejected_requests: Set[Tuple[int, int, int]] = set()  # (index, begin, length)
+        self.suggested_pieces: set[int] = set()
+        self.allowed_fast: set[int] = set()
+        self.rejected_requests: set[tuple[int, int, int]] = (
+            set()
+        )  # (index, begin, length)
 
     def supports_fast_extension(self, peer_capabilities: bytes) -> bool:
         """Check if peer supports Fast Extension."""
@@ -77,11 +84,13 @@ class FastExtension:
     def decode_suggest(self, data: bytes) -> int:
         """Decode Suggest message."""
         if len(data) < 5:
-            raise ValueError("Invalid Suggest message")
+            msg = "Invalid Suggest message"
+            raise ValueError(msg)
 
         message_type, piece_index = struct.unpack("!BI", data[:5])
         if message_type != FastMessageType.SUGGEST:
-            raise ValueError("Invalid message type for Suggest")
+            msg = "Invalid message type for Suggest"
+            raise ValueError(msg)
 
         return piece_index
 
@@ -111,14 +120,16 @@ class FastExtension:
         """Encode Reject message."""
         return struct.pack("!BIII", FastMessageType.REJECT, index, begin, length)
 
-    def decode_reject(self, data: bytes) -> Tuple[int, int, int]:
+    def decode_reject(self, data: bytes) -> tuple[int, int, int]:
         """Decode Reject message."""
         if len(data) < 13:
-            raise ValueError("Invalid Reject message")
+            msg = "Invalid Reject message"
+            raise ValueError(msg)
 
         message_type, index, begin, length = struct.unpack("!BIII", data[:13])
         if message_type != FastMessageType.REJECT:
-            raise ValueError("Invalid message type for Reject")
+            msg = "Invalid message type for Reject"
+            raise ValueError(msg)
 
         return index, begin, length
 
@@ -129,11 +140,13 @@ class FastExtension:
     def decode_allow_fast(self, data: bytes) -> int:
         """Decode Allow Fast message."""
         if len(data) < 5:
-            raise ValueError("Invalid Allow Fast message")
+            msg = "Invalid Allow Fast message"
+            raise ValueError(msg)
 
         message_type, piece_index = struct.unpack("!BI", data[:5])
         if message_type != FastMessageType.ALLOW_FAST:
-            raise ValueError("Invalid message type for Allow Fast")
+            msg = "Invalid message type for Allow Fast"
+            raise ValueError(msg)
 
         return piece_index
 
@@ -142,76 +155,92 @@ class FastExtension:
         self.suggested_pieces.add(piece_index)
 
         # Emit event for piece suggestion
-        await emit_event(Event(
-            event_type=EventType.PIECE_SUGGESTED.value,
-            data={
-                "peer_id": peer_id,
-                "piece_index": piece_index,
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.PIECE_SUGGESTED.value,
+                data={
+                    "peer_id": peer_id,
+                    "piece_index": piece_index,
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
     async def handle_have_all(self, peer_id: str) -> None:
         """Handle Have All message from peer."""
         # Emit event for have all
-        await emit_event(Event(
-            event_type=EventType.PEER_HAVE_ALL.value,
-            data={
-                "peer_id": peer_id,
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.PEER_HAVE_ALL.value,
+                data={
+                    "peer_id": peer_id,
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
     async def handle_have_none(self, peer_id: str) -> None:
         """Handle Have None message from peer."""
         # Emit event for have none
-        await emit_event(Event(
-            event_type=EventType.PEER_HAVE_NONE.value,
-            data={
-                "peer_id": peer_id,
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.PEER_HAVE_NONE.value,
+                data={
+                    "peer_id": peer_id,
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
-    async def handle_reject(self, peer_id: str, index: int, begin: int, length: int) -> None:
+    async def handle_reject(
+        self,
+        peer_id: str,
+        index: int,
+        begin: int,
+        length: int,
+    ) -> None:
         """Handle Reject message from peer."""
         self.rejected_requests.add((index, begin, length))
 
         # Emit event for request rejection
-        await emit_event(Event(
-            event_type=EventType.REQUEST_REJECTED.value,
-            data={
-                "peer_id": peer_id,
-                "index": index,
-                "begin": begin,
-                "length": length,
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.REQUEST_REJECTED.value,
+                data={
+                    "peer_id": peer_id,
+                    "index": index,
+                    "begin": begin,
+                    "length": length,
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
     async def handle_allow_fast(self, peer_id: str, piece_index: int) -> None:
         """Handle Allow Fast message from peer."""
         self.allowed_fast.add(piece_index)
 
         # Emit event for allow fast
-        await emit_event(Event(
-            event_type=EventType.PIECE_ALLOWED_FAST.value,
-            data={
-                "peer_id": peer_id,
-                "piece_index": piece_index,
-                "timestamp": time.time(),
-            },
-        ))
+        await emit_event(
+            Event(
+                event_type=EventType.PIECE_ALLOWED_FAST.value,
+                data={
+                    "peer_id": peer_id,
+                    "piece_index": piece_index,
+                    "timestamp": time.time(),
+                },
+            ),
+        )
 
-    def get_suggested_pieces(self) -> Set[int]:
+    def get_suggested_pieces(self) -> set[int]:
         """Get set of suggested pieces."""
         return self.suggested_pieces.copy()
 
-    def get_allowed_fast_pieces(self) -> Set[int]:
+    def get_allowed_fast_pieces(self) -> set[int]:
         """Get set of allowed fast pieces."""
         return self.allowed_fast.copy()
 
-    def get_rejected_requests(self) -> Set[Tuple[int, int, int]]:
+    def get_rejected_requests(self) -> set[tuple[int, int, int]]:
         """Get set of rejected requests."""
         return self.rejected_requests.copy()
 
@@ -242,7 +271,3 @@ class FastExtension:
     def set_capabilities(self, capabilities: FastCapabilities) -> None:
         """Set capabilities."""
         self.capabilities = capabilities
-
-
-# Import time module for timestamps
-import time

@@ -1,3 +1,10 @@
+.pre-commit-cache/
+.pre-commit-home/
+bandit-s324.json
+bandit-report.json
+bandit-report-updated.json
+bandit-*.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

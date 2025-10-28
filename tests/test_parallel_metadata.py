@@ -1,5 +1,4 @@
-"""
-Integration tests for parallel metadata exchange.
+"""Integration tests for parallel metadata exchange.
 
 Tests the async metadata exchange with parallel peer connections,
 pipelined requests, and reliability scoring.
@@ -21,7 +20,7 @@ class TestParallelMetadataExchange:
         """Create mock peers for testing."""
         peers = []
         for i in range(5):
-            peer_info = PeerInfo(ip=f"127.0.0.{i+1}", port=6881)
+            peer_info = PeerInfo(ip=f"127.0.0.{i + 1}", port=6881)
             peers.append(peer_info)
         return peers
 
@@ -62,7 +61,8 @@ class TestParallelMetadataExchange:
             b"\x13BitTorrent protocol"  # Protocol string
             + b"\x00" * 8  # Reserved bytes
             + b"\x00" * 20  # Info hash
-            + b"-CC0101-" + b"x" * 12  # Peer ID
+            + b"-CC0101-"
+            + b"x" * 12  # Peer ID
         )
 
         for mock_connection in mock_connections:
@@ -73,9 +73,9 @@ class TestParallelMetadataExchange:
             mock_connect.side_effect = mock_connections
 
             # Should connect to multiple peers in parallel
-            connections = await asyncio.gather(*[
-                mock_connect(peer) for peer in mock_peers
-            ])
+            connections = await asyncio.gather(
+                *[mock_connect(peer) for peer in mock_peers],
+            )
 
             assert len(connections) == len(mock_peers)
 
@@ -84,7 +84,7 @@ class TestParallelMetadataExchange:
         """Test pipelined metadata piece requests."""
         # Mock peer connection
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        AsyncMock()
 
         # Mock extended handshake response
         extended_handshake = {
@@ -211,14 +211,18 @@ class TestParallelMetadataExchange:
         # Mock successful metadata fetch
         mock_metadata = b'{"name": "test_torrent", "files": []}'
 
-        with patch("ccbt.async_metadata_exchange._fetch_metadata_from_peer") as mock_fetch:
+        with patch(
+            "ccbt.async_metadata_exchange._fetch_metadata_from_peer",
+        ) as mock_fetch:
             mock_fetch.return_value = mock_metadata
 
             # Test concurrent fetching
-            results = await asyncio.gather(*[
-                mock_fetch(peer, mock_torrent_data["info_hash"])
-                for peer in mock_peers
-            ])
+            results = await asyncio.gather(
+                *[
+                    mock_fetch(peer, mock_torrent_data["info_hash"])
+                    for peer in mock_peers
+                ],
+            )
 
             # Should get metadata from all peers
             assert len(results) == len(mock_peers)
@@ -244,7 +248,7 @@ class TestParallelMetadataExchange:
         """Test peer connection timeout handling."""
         # Mock slow peer connection
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        AsyncMock()
 
         # Mock slow response
         async def slow_read():
@@ -283,7 +287,7 @@ class TestParallelMetadataExchange:
         """Test error handling in metadata exchange."""
         # Mock peer that fails
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        AsyncMock()
         mock_reader.read.side_effect = Exception("Connection error")
 
         # Test error handling

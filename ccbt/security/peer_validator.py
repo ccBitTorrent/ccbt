@@ -1,5 +1,7 @@
 """Peer Validator for ccBitTorrent.
 
+from __future__ import annotations
+
 Provides peer validation including:
 - Handshake validation
 - Peer ID validation
@@ -7,16 +9,20 @@ Provides peer validation including:
 - Connection quality assessment
 """
 
+from __future__ import annotations
+
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
-from ..models import PeerInfo
+if TYPE_CHECKING:
+    from ccbt.models import PeerInfo
 
 
 class ValidationResult(Enum):
     """Validation result types."""
+
     VALID = "valid"
     INVALID_HANDSHAKE = "invalid_handshake"
     INVALID_PEER_ID = "invalid_peer_id"
@@ -28,6 +34,7 @@ class ValidationResult(Enum):
 @dataclass
 class ValidationMetrics:
     """Validation metrics for a peer."""
+
     peer_id: str
     ip: str
     handshake_time: float
@@ -44,9 +51,10 @@ class PeerValidator:
     """Peer validation and quality assessment."""
 
     def __init__(self):
-        self.validation_metrics: Dict[str, ValidationMetrics] = {}
-        self.peer_id_patterns: Dict[str, int] = {}
-        self.suspicious_patterns: List[str] = []
+        """Initialize peer validator."""
+        self.validation_metrics: dict[str, ValidationMetrics] = {}
+        self.peer_id_patterns: dict[str, int] = {}
+        self.suspicious_patterns: list[str] = []
 
         # Configuration
         self.max_handshake_time = 10.0  # seconds
@@ -70,13 +78,17 @@ class PeerValidator:
             "AAAAAAAAAAAAAAAAAAAA",  # All As
         ]
 
-    async def validate_handshake(self, peer_info: PeerInfo, handshake_data: bytes) -> Tuple[bool, str]:
+    async def validate_handshake(
+        self,
+        peer_info: PeerInfo,
+        handshake_data: bytes,
+    ) -> tuple[bool, str]:
         """Validate peer handshake.
-        
+
         Args:
             peer_info: Peer information
             handshake_data: Raw handshake data
-            
+
         Returns:
             Tuple of (is_valid, reason)
         """
@@ -108,19 +120,23 @@ class PeerValidator:
             # Update validation metrics
             self._update_validation_metrics(peer_info, True, len(handshake_data))
 
-            return True, "Valid handshake"
-
         except Exception as e:
             self._update_validation_metrics(peer_info, False, 0)
             return False, f"Handshake validation error: {e!s}"
+        else:
+            return True, "Valid handshake"
 
-    async def validate_message(self, peer_info: PeerInfo, message: bytes) -> Tuple[bool, str]:
+    async def validate_message(
+        self,
+        peer_info: PeerInfo,
+        message: bytes,
+    ) -> tuple[bool, str]:
         """Validate peer message.
-        
+
         Args:
             peer_info: Peer information
             message: Raw message data
-            
+
         Returns:
             Tuple of (is_valid, reason)
         """
@@ -139,18 +155,21 @@ class PeerValidator:
             # Update validation metrics
             self._update_validation_metrics(peer_info, True, len(message))
 
-            return True, "Valid message"
-
         except Exception as e:
             self._update_validation_metrics(peer_info, False, 0)
             return False, f"Message validation error: {e!s}"
+        else:
+            return True, "Valid message"
 
-    async def assess_peer_quality(self, peer_info: PeerInfo) -> Tuple[float, Dict[str, Any]]:
+    async def assess_peer_quality(
+        self,
+        peer_info: PeerInfo,
+    ) -> tuple[float, dict[str, Any]]:
         """Assess peer connection quality.
-        
+
         Args:
             peer_info: Peer information
-            
+
         Returns:
             Tuple of (quality_score, assessment_details)
         """
@@ -180,8 +199,7 @@ class PeerValidator:
         }
 
         quality_score = sum(
-            quality_factors[factor] * weights[factor]
-            for factor in quality_factors
+            quality_factors[factor] * weights[factor] for factor in quality_factors
         )
 
         # Update metrics
@@ -202,11 +220,11 @@ class PeerValidator:
 
         return quality_score, assessment_details
 
-    def get_validation_metrics(self, peer_id: str) -> Optional[ValidationMetrics]:
+    def get_validation_metrics(self, peer_id: str) -> ValidationMetrics | None:
         """Get validation metrics for a peer."""
         return self.validation_metrics.get(peer_id)
 
-    def get_all_validation_metrics(self) -> Dict[str, ValidationMetrics]:
+    def get_all_validation_metrics(self) -> dict[str, ValidationMetrics]:
         """Get all validation metrics."""
         return self.validation_metrics.copy()
 
@@ -223,7 +241,7 @@ class PeerValidator:
         for peer_id in to_remove:
             del self.validation_metrics[peer_id]
 
-    def _validate_reserved_bytes(self, reserved_bytes: bytes) -> bool:
+    def _validate_reserved_bytes(self, _reserved_bytes: bytes) -> bool:
         """Validate reserved bytes in handshake."""
         # Check for known extension flags
         # Bit 0: DHT support
@@ -242,10 +260,7 @@ class PeerValidator:
             return False
 
         # Check if it's not all zeros or all Fs
-        if info_hash == b"\x00" * 20 or info_hash == b"\xFF" * 20:
-            return False
-
-        return True
+        return info_hash not in (b"\x00" * 20, b"\xff" * 20)
 
     def _validate_peer_id(self, peer_id: bytes) -> bool:
         """Validate peer ID."""
@@ -285,12 +300,17 @@ class PeerValidator:
             message_length = int.from_bytes(message[:4], "big")
             if message_length < 0 or message_length > len(message) - 4:
                 return False
-        except:
+        except (ValueError, IndexError):
             return False
 
         return True
 
-    def _update_validation_metrics(self, peer_info: PeerInfo, success: bool, bytes_count: int) -> None:
+    def _update_validation_metrics(
+        self,
+        peer_info: PeerInfo,
+        success: bool,
+        bytes_count: int,
+    ) -> None:
         """Update validation metrics for a peer."""
         peer_id = peer_info.peer_id.hex() if peer_info.peer_id else ""
 
