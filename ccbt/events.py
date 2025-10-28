@@ -192,6 +192,9 @@ class EventType(Enum):
     PROFILING_STOPPED = "profiling_stopped"
     BOTTLENECK_DETECTED = "bottleneck_detected"
 
+    # Global metrics events
+    GLOBAL_METRICS_UPDATE = "global_metrics_update"
+
 
 class EventError(CCBTError):
     """Exception raised for event-related errors."""

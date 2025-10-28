@@ -484,7 +484,7 @@ class AsyncTrackerClient:
 
         return peers
 
-    async def scrape(self, _torrent_data: dict[str, Any]) -> dict[str, Any]:
+    async def scrape(self, torrent_data: dict[str, Any]) -> dict[str, Any]:
         """Scrape tracker for statistics asynchronously (if supported).
 
         Note: Not all trackers support scraping.
@@ -495,9 +495,76 @@ class AsyncTrackerClient:
         Returns:
             Scraped statistics or empty dict if not supported
         """
-        # TODO: Implement scraping functionality
-        # This would require building a scrape URL and parsing the response
-        return {}
+        try:
+            # Extract info hash from torrent data
+            info_hash = torrent_data.get("info_hash")
+            if not info_hash:
+                return {}
+
+            # Build scrape URL
+            announce_url = torrent_data.get("announce")
+            if not announce_url:
+                return {}
+
+            scrape_url = self._build_scrape_url(info_hash, announce_url)
+            if not scrape_url:
+                return {}
+
+            # Make HTTP request
+            async with aiohttp.ClientSession() as session, session.get(
+                scrape_url
+            ) as response:
+                if response.status == 200:
+                    data = await response.read()
+                    return self._parse_scrape_response(data)
+
+            return {}
+
+        except Exception:
+            self.logger.exception("HTTP scrape failed")
+            return {}
+
+    def _build_scrape_url(self, info_hash: bytes, announce_url: str) -> str | None:
+        """Build scrape URL from tracker URL."""
+        try:
+            # Convert tracker announce URL to scrape URL
+            if announce_url.endswith("/announce"):
+                scrape_url = announce_url.replace("/announce", "/scrape")
+            else:
+                scrape_url = announce_url.rstrip("/") + "/scrape"
+
+            # Add info hash parameter
+            info_hash_hex = info_hash.hex()
+            scrape_url += f"?info_hash={info_hash_hex}"
+
+            return scrape_url
+
+        except Exception:
+            return None
+
+    def _parse_scrape_response(self, data: bytes) -> dict[str, Any]:
+        """Parse scrape response."""
+        try:
+            # Parse bencoded response
+            from ccbt import bencode
+
+            response = bencode.decode(data)
+
+            if "files" in response:
+                files = response["files"]
+                if files:
+                    # Get first file's statistics
+                    file_stats = next(iter(files.values()))
+                    return {
+                        "complete": file_stats.get("complete", 0),
+                        "downloaded": file_stats.get("downloaded", 0),
+                        "incomplete": file_stats.get("incomplete", 0),
+                    }
+
+            return {}
+
+        except Exception:
+            return {}
 
 
 # Backward compatibility

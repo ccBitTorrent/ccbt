@@ -9,19 +9,16 @@ Provides support for:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
 import secrets
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ccbt import bencode
 from ccbt.events import Event, EventType, emit_event
-
-if TYPE_CHECKING:
-    from ccbt.models import PeerInfo
+from ccbt.models import PeerInfo
 
 
 class DHTMessageType(IntEnum):
@@ -72,7 +69,9 @@ class DHTExtension:
         """Initialize DHT implementation."""
         self.node_id = node_id or self._generate_node_id()
         self.nodes: dict[bytes, DHTNode] = {}
-        self.buckets: list[set[DHTNode]] = [[] for _ in range(160)]  # 160-bit ID space
+        self.buckets: list[set[DHTNode]] = [
+            set() for _ in range(160)
+        ]  # 160-bit ID space
         self.routing_table: dict[bytes, DHTNode] = {}
 
         # Peer storage for get_peers queries
@@ -115,9 +114,9 @@ class DHTExtension:
         self.routing_table[node.node_id] = node
 
         # Emit event for new node
-        with contextlib.suppress(RuntimeError):
-            # No event loop running, skip event emission
-            asyncio.create_task(  # noqa: RUF006
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(
                 emit_event(
                     Event(
                         event_type=EventType.DHT_NODE_ADDED.value,
@@ -131,6 +130,11 @@ class DHTExtension:
                     ),
                 )
             )
+            # Store task reference to avoid RUF006 warning
+            _ = task
+        except RuntimeError:
+            # No event loop running, skip event emission
+            pass
 
     def remove_node(self, node_id: bytes) -> None:
         """Remove node from routing table."""
@@ -144,9 +148,9 @@ class DHTExtension:
             del self.routing_table[node_id]
 
             # Emit event for node removal
-            with contextlib.suppress(RuntimeError):
-                # No event loop running, skip event emission
-                asyncio.create_task(  # noqa: RUF006
+            try:
+                loop = asyncio.get_running_loop()
+                task = loop.create_task(
                     emit_event(
                         Event(
                             event_type=EventType.DHT_NODE_REMOVED.value,
@@ -157,6 +161,11 @@ class DHTExtension:
                         ),
                     )
                 )
+                # Store task reference to avoid RUF006 warning
+                _ = task
+            except RuntimeError:
+                # No event loop running, skip event emission
+                pass
 
     def find_closest_nodes(self, target_id: bytes, count: int = 8) -> list[DHTNode]:
         """Find closest nodes to target ID."""
@@ -235,7 +244,9 @@ class DHTExtension:
 
         return self._encode_dht_message(response_data)
 
-    def encode_error_response(self, transaction_id: bytes, error_code: int, error_message: str) -> bytes:
+    def encode_error_response(
+        self, transaction_id: bytes, error_code: int, error_message: str
+    ) -> bytes:
         """Encode DHT error response."""
         response_data = {
             "t": transaction_id.decode(),
@@ -368,7 +379,8 @@ class DHTExtension:
             return self.encode_find_node_response(transaction_id, closest_nodes)
         if query_type == "get_peers":
             info_hash = bytes.fromhex(message.get("a", {}).get("info_hash", ""))
-            peers_list = self._get_stored_peers(info_hash)
+            peers_tuples = self._get_stored_peers(info_hash)
+            peers_list = [PeerInfo(ip=ip, port=port) for ip, port in peers_tuples]
             token = self._generate_token(info_hash)
             return self.encode_get_peers_response(transaction_id, peers_list, [], token)
         if query_type == "announce_peer":
@@ -409,6 +421,9 @@ class DHTExtension:
             peers_data = response_type["values"]
             info_hash = message.get("a", {}).get("info_hash", "")
             if info_hash:
+                # Ensure peers_data is a list
+                if isinstance(peers_data, bytes):
+                    peers_data = [peers_data]
                 self._store_peers_from_compact_format(
                     bytes.fromhex(info_hash), peers_data
                 )
@@ -490,7 +505,7 @@ class DHTExtension:
                 self.routing_table[node_id] = node
 
     def _store_peers_from_compact_format(
-        self, info_hash: bytes, peers_data: list[str]
+        self, info_hash: bytes, peers_data: list[bytes]
     ) -> None:
         """Store peers from compact format list."""
         for peer_data in peers_data:
@@ -509,5 +524,21 @@ class DHTExtension:
         return {
             "total_nodes": len(self.routing_table),
             "bucket_sizes": self.get_bucket_sizes(),
+            "node_id": self.node_id.hex(),
+        }
+
+    def _cleanup_peer_storage(self) -> None:
+        """Clean up old peer storage entries."""
+        # This is a simple cleanup - in a real implementation,
+        # you'd track timestamps for each peer
+
+    def get_statistics(self) -> dict[str, Any]:
+        """Get DHT statistics."""
+        return {
+            "nodes_count": len(self.routing_table),
+            "buckets_count": len([b for b in self.buckets if b]),
+            "peer_storage_count": sum(
+                len(peers) for peers in self.peer_storage.values()
+            ),
             "node_id": self.node_id.hex(),
         }

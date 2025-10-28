@@ -168,13 +168,20 @@ class AsyncDownloadManager:
     def get_status(self) -> dict[str, Any]:
         """Get download status (for session compatibility)."""
         if self.file_assembler:
+            # Calculate actual progress
+            total_pieces = len(self.file_assembler.pieces)
+            completed_pieces = sum(
+                1 for piece in self.file_assembler.pieces if piece.completed
+            )
+            progress = completed_pieces / total_pieces if total_pieces > 0 else 0.0
+
             return {
-                "progress": 0.0,  # TODO: implement actual progress calculation
-                "download_rate": 0.0,
-                "upload_rate": 0.0,
-                "peers": 0,
-                "pieces": 0,
-                "completed": False,
+                "progress": progress,
+                "download_rate": self.file_assembler.download_rate,
+                "upload_rate": self.file_assembler.upload_rate,
+                "peers": len(self.file_assembler.peers),
+                "pieces": total_pieces,
+                "completed": total_pieces in {0, completed_pieces},
             }
         return {
             "progress": 0.0,

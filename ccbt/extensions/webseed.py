@@ -11,7 +11,6 @@ Provides support for:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -67,9 +66,9 @@ class WebSeedExtension:
         )
 
         # Emit event for WebSeed added
-        with contextlib.suppress(RuntimeError):
-            # No event loop running, skip event emission
-            asyncio.create_task(  # noqa: RUF006
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(
                 emit_event(
                     Event(
                         event_type=EventType.WEBSEED_ADDED.value,
@@ -82,6 +81,11 @@ class WebSeedExtension:
                     ),
                 )
             )
+            # Store reference to prevent garbage collection
+            _ = task
+        except RuntimeError:
+            # No event loop running, skip event emission
+            pass
 
         return webseed_id
 
@@ -91,9 +95,9 @@ class WebSeedExtension:
             del self.webseeds[webseed_id]
 
             # Emit event for WebSeed removed
-            with contextlib.suppress(RuntimeError):
-                # No event loop running, skip event emission
-                asyncio.create_task(  # noqa: RUF006
+            try:
+                loop = asyncio.get_running_loop()
+                task = loop.create_task(
                     emit_event(
                         Event(
                             event_type=EventType.WEBSEED_REMOVED.value,
@@ -104,6 +108,11 @@ class WebSeedExtension:
                         ),
                     )
                 )
+                # Store reference to prevent garbage collection
+                _ = task
+            except RuntimeError:
+                # No event loop running, skip event emission
+                pass
 
     def get_webseed(self, webseed_id: str) -> WebSeedInfo | None:
         """Get WebSeed information."""

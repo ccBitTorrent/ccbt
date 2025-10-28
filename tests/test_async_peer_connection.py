@@ -67,6 +67,7 @@ async def test_connect_to_peers_success(peer_manager, peer_info):
     # Mock the connection process
     mock_reader = AsyncMock()
     mock_writer = AsyncMock()
+    mock_writer.drain = AsyncMock()
     mock_reader.readexactly = AsyncMock(return_value=b"handshake_data" + b"x" * 54)  # 68 bytes total
 
     with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
@@ -94,6 +95,7 @@ async def test_connect_to_peers_handshake_mismatch(peer_manager, peer_info):
     # Mock the connection process
     mock_reader = AsyncMock()
     mock_writer = AsyncMock()
+    mock_writer.drain = AsyncMock()
     mock_reader.readexactly = AsyncMock(return_value=b"handshake_data")
 
     with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
@@ -130,10 +132,12 @@ async def test_handle_bitfield_message(peer_manager, peer_info):
     connection = PeerConnection(peer_info, peer_manager.torrent_data)
     connection.state = ConnectionState.HANDSHAKE_RECEIVED
     connection.reader = AsyncMock()
-    connection.writer = AsyncMock()
-    connection.writer.write = AsyncMock()
+    connection.writer = MagicMock()
     connection.writer.drain = AsyncMock()
-    connection.writer.close = AsyncMock()
+    connection.writer.wait_closed = AsyncMock()
+    connection.writer.write = MagicMock()
+    connection.writer.drain = AsyncMock()
+    connection.writer.close = MagicMock()
 
     # Add to manager
     peer_manager.connections[str(peer_info)] = connection
@@ -247,10 +251,12 @@ async def test_send_interested_message(peer_manager, peer_info):
     # Create a connection
     connection = PeerConnection(peer_info, peer_manager.torrent_data)
     connection.state = ConnectionState.ACTIVE
-    connection.writer = AsyncMock()
-    connection.writer.write = AsyncMock()
+    connection.writer = MagicMock()
     connection.writer.drain = AsyncMock()
-    connection.writer.close = AsyncMock()
+    connection.writer.wait_closed = AsyncMock()
+    connection.writer.write = MagicMock()
+    connection.writer.drain = AsyncMock()
+    connection.writer.close = MagicMock()
 
     # Add to manager
     peer_manager.connections[str(peer_info)] = connection
@@ -269,10 +275,12 @@ async def test_request_piece(peer_manager, peer_info):
     connection = PeerConnection(peer_info, peer_manager.torrent_data)
     connection.state = ConnectionState.ACTIVE
     connection.peer_state.am_choking = False
-    connection.writer = AsyncMock()
-    connection.writer.write = AsyncMock()
+    connection.writer = MagicMock()
     connection.writer.drain = AsyncMock()
-    connection.writer.close = AsyncMock()
+    connection.writer.wait_closed = AsyncMock()
+    connection.writer.write = MagicMock()
+    connection.writer.drain = AsyncMock()
+    connection.writer.close = MagicMock()
 
     # Add to manager
     peer_manager.connections[str(peer_info)] = connection
@@ -445,8 +453,9 @@ async def test_shutdown(peer_manager):
     peer_info = PeerInfo(ip="127.0.0.1", port=6881)
     connection = PeerConnection(peer_info, peer_manager.torrent_data)
     connection.writer = AsyncMock()
-    connection.writer.write = AsyncMock()
     connection.writer.drain = AsyncMock()
+    connection.writer.wait_closed = AsyncMock()
+    connection.writer.write = AsyncMock()
     connection.writer.close = AsyncMock()
     connection.connection_task = asyncio.create_task(asyncio.sleep(0))
 

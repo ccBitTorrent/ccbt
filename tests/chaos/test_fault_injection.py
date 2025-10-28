@@ -9,7 +9,7 @@ import random
 import tempfile
 from contextlib import suppress
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 import pytest
 
@@ -81,32 +81,38 @@ class TestFaultInjection:
     @pytest.mark.asyncio
     async def test_disk_failure_injection(self, temp_dir):
         """Test system behavior under disk failures."""
-        session_manager = AsyncSessionManager(str(temp_dir))
+        # Mock DHT client to avoid bootstrapping delays
+        with patch("ccbt.session.AsyncDHTClient") as mock_dht_class:
+            mock_dht = mock_dht_class.return_value
+            mock_dht.start = AsyncMock()
+            mock_dht.stop = AsyncMock()
+            
+            session_manager = AsyncSessionManager(str(temp_dir))
 
-        try:
-            await session_manager.start()
+            try:
+                await session_manager.start()
 
-            # Create torrent session
-            torrent_data = create_test_torrent_dict(
-                name="test_torrent",
-                file_length=1024,
-            )
+                # Create torrent session
+                torrent_data = create_test_torrent_dict(
+                    name="test_torrent",
+                    file_length=1024,
+                )
 
-            await session_manager.add_torrent(torrent_data, resume=False)
-            session = next(iter(session_manager.torrents.values()))
+                await session_manager.add_torrent(torrent_data, resume=False)
+                session = next(iter(session_manager.torrents.values()))
 
-            # Inject disk failure
-            with patch("ccbt.disk_io.DiskIOManager.write_block") as mock_write:
-                mock_write.side_effect = Exception("Disk I/O failure")
+                # Inject disk failure
+                with patch("ccbt.disk_io.DiskIOManager.write_block") as mock_write:
+                    mock_write.side_effect = Exception("Disk I/O failure")
 
-                # Start session (should handle disk failure gracefully)
-                await session.start()
+                    # Start session (should handle disk failure gracefully)
+                    await session.start()
 
-                # Check session is still functional
-                assert session.info.status in ["downloading", "error"]
+                    # Check session is still functional
+                    assert session.info.status in ["downloading", "error"]
 
-        finally:
-            await session_manager.stop()
+            finally:
+                await session_manager.stop()
 
     @pytest.mark.asyncio
     async def test_memory_pressure_injection(self, temp_dir):

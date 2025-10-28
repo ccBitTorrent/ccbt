@@ -326,10 +326,9 @@ class AsyncTorrentSession:
                     td = self.torrent_data
                 response = await self.tracker.announce(td)
 
-                if response.peers:
+                if response.peers and self.download_manager:
                     # Update peer list in download manager
-                    # TODO: Implement peer connection for file_assembler AsyncDownloadManager
-                    pass
+                    await self.download_manager.add_peers(response.peers)
 
                 # Wait for next announce
                 await asyncio.sleep(announce_interval)
@@ -352,9 +351,7 @@ class AsyncTorrentSession:
                     await self.on_status_update(status)
 
                 # Update session manager metrics
-                if self.session_manager:
-                    # TODO: Implement metrics update for file_assembler AsyncDownloadManager
-                    pass
+                # Note: update_torrent_metrics method doesn't exist in AsyncSessionManager
 
                 # Wait before next status check
                 await asyncio.sleep(5)
@@ -540,6 +537,47 @@ class AsyncTorrentSession:
         except Exception:
             self.logger.exception("Failed to delete checkpoint")
             return False
+
+    @property
+    def downloaded_bytes(self) -> int:
+        """Get downloaded bytes."""
+        status = self.download_manager.get_status()
+        return status.get("downloaded", 0)
+
+    @property
+    def uploaded_bytes(self) -> int:
+        """Get uploaded bytes."""
+        status = self.download_manager.get_status()
+        return status.get("uploaded", 0)
+
+    @property
+    def left_bytes(self) -> int:
+        """Get remaining bytes."""
+        status = self.download_manager.get_status()
+        return status.get("left", 0)
+
+    @property
+    def peers(self) -> dict[str, Any]:
+        """Get connected peers."""
+        status = self.download_manager.get_status()
+        return {"count": status.get("peers", 0)}
+
+    @property
+    def download_rate(self) -> float:
+        """Get download rate."""
+        status = self.download_manager.get_status()
+        return status.get("download_rate", 0.0)
+
+    @property
+    def upload_rate(self) -> float:
+        """Get upload rate."""
+        status = self.download_manager.get_status()
+        return status.get("upload_rate", 0.0)
+
+    @property
+    def info_hash_hex(self) -> str:
+        """Get info hash as hex string."""
+        return self.info.info_hash.hex()
 
 
 class AsyncSessionManager:
@@ -963,13 +1001,18 @@ class AsyncSessionManager:
             return True
 
     async def rehash_torrent(self, info_hash_hex: str) -> bool:
-        """Rehash all pieces (placeholder)."""
+        """Rehash all pieces."""
         try:
-            _ = bytes.fromhex(info_hash_hex)
+            bytes.fromhex(info_hash_hex)
         except ValueError:
             return False
-        # TODO: integrate with piece manager to re-verify data
-        return True
+
+        # Integrate with piece manager to re-verify data
+        torrent = self._get_torrent(info_hash_hex)
+        if torrent and torrent.piece_manager:
+            return await torrent.piece_manager.verify_all_pieces()
+
+        return False
 
     async def force_scrape(self, info_hash_hex: str) -> bool:
         """Force tracker scrape (placeholder)."""
@@ -1051,12 +1094,52 @@ class AsyncSessionManager:
                 await asyncio.sleep(10)  # Update every 10 seconds
 
                 # Collect global metrics
-                # TODO: Implement global status update for metrics
+                global_stats = self._aggregate_torrent_stats()
+                await self._emit_global_metrics(global_stats)
 
             except asyncio.CancelledError:
                 break
             except Exception:
                 self.logger.exception("Metrics loop error")
+
+    def _aggregate_torrent_stats(self) -> dict[str, Any]:
+        """Aggregate statistics from all torrents."""
+        total_downloaded = 0
+        total_uploaded = 0
+        total_left = 0
+        total_peers = 0
+        total_download_rate = 0.0
+        total_upload_rate = 0.0
+
+        for torrent in self.torrents.values():
+            total_downloaded += torrent.downloaded_bytes
+            total_uploaded += torrent.uploaded_bytes
+            total_left += torrent.left_bytes
+            total_peers += len(torrent.peers)
+            total_download_rate += torrent.download_rate
+            total_upload_rate += torrent.upload_rate
+
+        return {
+            "total_torrents": len(self.torrents),
+            "total_downloaded": total_downloaded,
+            "total_uploaded": total_uploaded,
+            "total_left": total_left,
+            "total_peers": total_peers,
+            "total_download_rate": total_download_rate,
+            "total_upload_rate": total_upload_rate,
+            "timestamp": time.time(),
+        }
+
+    async def _emit_global_metrics(self, stats: dict[str, Any]) -> None:
+        """Emit global metrics event."""
+        from ccbt.events import Event, EventType, emit_event
+
+        await emit_event(
+            Event(
+                event_type=EventType.GLOBAL_METRICS_UPDATE.value,
+                data=stats,
+            ),
+        )
 
     async def resume_from_checkpoint(
         self,

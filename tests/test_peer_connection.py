@@ -143,10 +143,12 @@ class TestPeerConnectionManager:
         """Test connecting to a list of peers."""
         # Mock the connection
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
-        mock_writer.write = AsyncMock()
+        mock_writer = MagicMock()
         mock_writer.drain = AsyncMock()
-        mock_writer.close = AsyncMock()
+        mock_writer.wait_closed = AsyncMock()
+        mock_writer.write = MagicMock()
+        mock_writer.drain = AsyncMock()
+        mock_writer.close = MagicMock()
         mock_open_connection.return_value = (mock_reader, mock_writer)
 
         # Create proper BitTorrent handshake response
@@ -177,7 +179,9 @@ class TestPeerConnectionManager:
         """Test connecting respects max connections limit."""
         # Mock the connection
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.drain = AsyncMock()
+        mock_writer.wait_closed = AsyncMock()
         mock_writer.write = MagicMock()  # Synchronous operation
         mock_writer.drain = AsyncMock()  # Async operation
         mock_writer.close = MagicMock()  # Synchronous operation
@@ -213,7 +217,9 @@ class TestPeerConnectionManager:
         """Test connecting to same peer twice."""
         # Mock the connection
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.drain = AsyncMock()
+        mock_writer.wait_closed = AsyncMock()
         mock_writer.write = MagicMock()  # Synchronous operation
         mock_writer.drain = AsyncMock()  # Async operation
         mock_writer.close = MagicMock()  # Synchronous operation
@@ -244,7 +250,9 @@ class TestPeerConnectionManager:
         """Test sending interested message."""
         # Mock the connection
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.drain = AsyncMock()
+        mock_writer.wait_closed = AsyncMock()
         mock_writer.write = MagicMock()  # Synchronous operation
         mock_writer.drain = AsyncMock()  # Async operation
         mock_writer.close = MagicMock()  # Synchronous operation
@@ -289,7 +297,9 @@ class TestPeerConnectionManager:
         """Test sending not interested message."""
         # Mock the connection
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.drain = AsyncMock()
+        mock_writer.wait_closed = AsyncMock()
         mock_writer.write = MagicMock()  # Synchronous operation
         mock_writer.drain = AsyncMock()  # Async operation
         mock_writer.close = MagicMock()  # Synchronous operation
@@ -334,7 +344,9 @@ class TestPeerConnectionManager:
         """Test requesting a piece from peer."""
         # Mock the connection
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.drain = AsyncMock()
+        mock_writer.wait_closed = AsyncMock()
         mock_writer.write = MagicMock()  # Synchronous operation
         mock_writer.drain = AsyncMock()  # Async operation
         mock_writer.close = MagicMock()  # Synchronous operation
@@ -389,7 +401,9 @@ class TestPeerConnectionManager:
         """Test requesting piece from choked peer."""
         # Mock the connection
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.drain = AsyncMock()
+        mock_writer.wait_closed = AsyncMock()
         mock_writer.write = MagicMock()  # Synchronous operation
         mock_writer.drain = AsyncMock()  # Async operation
         mock_writer.close = MagicMock()  # Synchronous operation

@@ -25,9 +25,12 @@ if TYPE_CHECKING:
 class BitTorrentProtocol(Protocol):
     """BitTorrent protocol wrapper."""
 
-    def __init__(self):
+    def __init__(self, session_manager=None):
         """Initialize BitTorrent protocol."""
         super().__init__(ProtocolType.BITTORRENT)
+        self.session_manager = session_manager
+        self.peer_manager = None
+        self.tracker_manager = None
 
         # BitTorrent-specific capabilities
         self.capabilities = ProtocolCapabilities(
@@ -45,13 +48,21 @@ class BitTorrentProtocol(Protocol):
         self.peer_manager = None
         self.tracker_manager = None
         self.dht_manager = None
-        self.session_manager = None
 
     async def start(self) -> None:
         """Start BitTorrent protocol."""
         try:
-            # TODO: Initialize BitTorrent components
-            # This would involve starting the existing BitTorrent implementation
+            # Initialize BitTorrent components
+            if self.session_manager:
+                await self.session_manager.start()
+
+            # Initialize peer manager if available
+            if hasattr(self.session_manager, "peer_manager"):
+                self.peer_manager = self.session_manager.peer_manager
+
+            # Initialize tracker manager if available
+            if hasattr(self.session_manager, "tracker_manager"):
+                self.tracker_manager = self.session_manager.tracker_manager
 
             # Set state to connected
             self.set_state(ProtocolState.CONNECTED)
@@ -74,8 +85,9 @@ class BitTorrentProtocol(Protocol):
     async def stop(self) -> None:
         """Stop BitTorrent protocol."""
         try:
-            # TODO: Stop BitTorrent components
-            # This would involve stopping the existing BitTorrent implementation
+            # Stop BitTorrent components
+            if self.session_manager:
+                await self.session_manager.stop()
 
             # Set state to disconnected
             self.set_state(ProtocolState.DISCONNECTED)
@@ -98,11 +110,23 @@ class BitTorrentProtocol(Protocol):
     async def connect_peer(self, peer_info: PeerInfo) -> bool:
         """Connect to a BitTorrent peer."""
         try:
-            # TODO: Implement BitTorrent peer connection
-            # This would involve using the existing peer connection logic
+            # Use peer manager if available
+            if self.peer_manager and hasattr(self.peer_manager, "connect_peer"):
+                success = await self.peer_manager.connect_peer(peer_info)
+                if success:
+                    self.stats.connections_established += 1
+                    self.update_stats()
+                    return True
 
-            self.stats.connections_established += 1
-            self.update_stats()
+            # Fallback to session manager
+            if self.session_manager and hasattr(self.session_manager, "connect_peer"):
+                success = await self.session_manager.connect_peer(peer_info)
+                if success:
+                    self.stats.connections_established += 1
+                    self.update_stats()
+                    return True
+
+            return False
 
         except Exception as e:
             self.stats.connections_failed += 1
@@ -124,51 +148,75 @@ class BitTorrentProtocol(Protocol):
             )
 
             return False
-        else:
-            return True
 
     async def disconnect_peer(self, peer_id: str) -> None:
         """Disconnect from a BitTorrent peer."""
         # TODO: Implement BitTorrent peer disconnection
         self.remove_peer(peer_id)
 
-    async def send_message(self, _peer_id: str, message: bytes) -> bool:
+    async def send_message(self, peer_id: str, message: bytes) -> bool:
         """Send message to BitTorrent peer."""
         try:
-            # TODO: Implement BitTorrent message sending
-            # This would involve using the existing message sending logic
+            # Use peer manager if available
+            if self.peer_manager and hasattr(self.peer_manager, "send_message"):
+                success = await self.peer_manager.send_message(peer_id, message)
+                if success:
+                    self.update_stats(bytes_sent=len(message), messages_sent=1)
+                    return True
 
-            self.update_stats(bytes_sent=len(message), messages_sent=1)
+            # Fallback to session manager
+            if self.session_manager and hasattr(self.session_manager, "send_message"):
+                success = await self.session_manager.send_message(peer_id, message)
+                if success:
+                    self.update_stats(bytes_sent=len(message), messages_sent=1)
+                    return True
+
+            return False
 
         except Exception:
             self.update_stats(errors=1)
             return False
-        else:
-            return True
 
-    async def receive_message(self, _peer_id: str) -> bytes | None:
+    async def receive_message(self, peer_id: str) -> bytes | None:
         """Receive message from BitTorrent peer."""
         try:
-            # TODO: Implement BitTorrent message receiving
-            # This would involve using the existing message receiving logic
+            # Use peer manager if available
+            if self.peer_manager and hasattr(self.peer_manager, "receive_message"):
+                message = await self.peer_manager.receive_message(peer_id)
+                if message:
+                    self.update_stats(bytes_received=len(message), messages_received=1)
+                    return message
 
-            self.update_stats(messages_received=1)
+            # Fallback to session manager
+            if self.session_manager and hasattr(
+                self.session_manager, "receive_message"
+            ):
+                message = await self.session_manager.receive_message(peer_id)
+                if message:
+                    self.update_stats(bytes_received=len(message), messages_received=1)
+                    return message
+
+            return None
 
         except Exception:
             self.update_stats(errors=1)
             return None
-        else:
-            return None  # Placeholder
 
-    async def announce_torrent(self, _torrent_info: TorrentInfo) -> list[PeerInfo]:
+    async def announce_torrent(self, torrent_info: TorrentInfo) -> list[PeerInfo]:
         """Announce torrent to BitTorrent trackers."""
         peers = []
 
         try:
-            # TODO: Implement BitTorrent tracker announcement
-            # This would involve using the existing tracker logic
+            # Use tracker manager if available
+            if self.tracker_manager and hasattr(self.tracker_manager, "announce"):
+                peers = await self.tracker_manager.announce(torrent_info)
 
-            # For now, return empty list
+            # Fallback to session manager
+            elif self.session_manager and hasattr(
+                self.session_manager, "announce_torrent"
+            ):
+                peers = await self.session_manager.announce_torrent(torrent_info)
+
             return peers
 
         except Exception as e:

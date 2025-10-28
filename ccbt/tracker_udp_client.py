@@ -518,7 +518,7 @@ class AsyncUDPTrackerClient:
         for session_key in to_remove:
             del self.sessions[session_key]
 
-    async def scrape(self, _torrent_data: dict[str, Any]) -> dict[str, Any]:
+    async def scrape(self, torrent_data: dict[str, Any]) -> dict[str, Any]:
         """Scrape tracker for statistics.
 
         Args:
@@ -527,8 +527,83 @@ class AsyncUDPTrackerClient:
         Returns:
             Scraped statistics
         """
-        # TODO: Implement UDP scrape
-        return {}
+        try:
+            # Extract info hash from torrent data
+            info_hash = torrent_data.get("info_hash")
+            if not info_hash:
+                return {}
+
+            # Get tracker URLs
+            tracker_urls = self._extract_tracker_urls(torrent_data)
+            if not tracker_urls:
+                return {}
+
+            # Use first UDP tracker
+            tracker_url = tracker_urls[0]
+            host, port = self._parse_udp_url(tracker_url)
+            tracker_address = (host, port)
+
+            # Create scrape request
+            transaction_id = self._get_transaction_id()
+            scrape_request = {
+                "action": 2,  # Scrape action
+                "transaction_id": transaction_id,
+                "info_hash": info_hash,
+            }
+
+            # Send scrape request
+            request_data = self._encode_scrape_request(scrape_request)
+            if self.transport:
+                self.transport.sendto(request_data, tracker_address)
+
+            # Wait for response
+            response_data = await self._wait_for_response(transaction_id, timeout=10.0)
+
+            if response_data:
+                # Extract scrape data from response
+                return {
+                    "seeders": response_data.seeders or 0,
+                    "leechers": response_data.leechers or 0,
+                    "downloaded": 0,  # Not available in UDP scrape
+                    "incomplete": response_data.leechers or 0,
+                }
+
+            return {}
+
+        except Exception:
+            self.logger.exception("UDP scrape failed")
+            return {}
+
+    def _encode_scrape_request(self, request: dict[str, Any]) -> bytes:
+        """Encode scrape request."""
+        data = struct.pack("!II", request["action"], request["transaction_id"])
+        data += request["info_hash"]
+        return data
+
+    def _decode_scrape_response(self, data: bytes) -> dict[str, Any]:
+        """Decode scrape response."""
+        if len(data) < 8:
+            return {}
+
+        action, transaction_id = struct.unpack("!II", data[:8])
+
+        if action != 2:  # Scrape response
+            return {}
+
+        # Parse scrape data (complete, downloaded, incomplete for each info hash)
+        scrape_data = data[8:]
+        if len(scrape_data) < 12:  # At least 12 bytes per torrent
+            return {}
+
+        complete, downloaded, incomplete = struct.unpack("!III", scrape_data[:12])
+
+        return {
+            "action": action,
+            "transaction_id": transaction_id,
+            "complete": complete,
+            "downloaded": downloaded,
+            "incomplete": incomplete,
+        }
 
 
 class UDPTrackerProtocol(asyncio.DatagramProtocol):

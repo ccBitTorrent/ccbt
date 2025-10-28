@@ -129,10 +129,37 @@ def with_timeout(seconds: float) -> Callable[[Func[T]], Func[T]]:
 
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> T:
-            # For sync functions, we can't easily add timeout without threading
-            # This is a placeholder - in practice, sync functions should be
-            # converted to async or use threading for timeout
-            return func(*args, **kwargs)
+            # Use threading for synchronous function timeout
+            import queue
+            import threading
+
+            result_queue = queue.Queue()
+            exception_queue = queue.Queue()
+
+            def target():
+                try:
+                    result = func(*args, **kwargs)
+                    result_queue.put(result)
+                except Exception as e:
+                    exception_queue.put(e)
+
+            thread = threading.Thread(target=target)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=seconds)
+
+            if thread.is_alive():
+                error_msg = f"Operation timed out after {seconds} seconds"
+                raise TimeoutError(error_msg) from None
+
+            if not exception_queue.empty():
+                raise exception_queue.get()
+
+            if not result_queue.empty():
+                return result_queue.get()
+
+            error_msg = f"Operation timed out after {seconds} seconds"
+            raise TimeoutError(error_msg) from None
 
         if asyncio.iscoroutinefunction(func):
             return async_wrapper

@@ -249,3 +249,15 @@ class CompactPeerLists:
 
         peer_size = CompactPeerLists.get_peer_size(is_ipv6)
         return len(data) // peer_size
+
+    @staticmethod
+    def encode_peers(peers: list[PeerInfo]) -> bytes:
+        """Encode PeerInfo list to compact format."""
+        compact_peers = CompactPeerLists.convert_peer_info_list_to_compact(peers)
+        return CompactPeerLists.encode_peers_list(compact_peers)
+
+    @staticmethod
+    def decode_peers(data: bytes, is_ipv6: bool = False) -> list[PeerInfo]:
+        """Decode compact format to PeerInfo list."""
+        compact_peers = CompactPeerLists.decode_peers_list(data, is_ipv6)
+        return CompactPeerLists.convert_compact_list_to_peer_info(compact_peers)

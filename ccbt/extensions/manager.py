@@ -13,17 +13,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-# from ccbt.compact import CompactPeerLists  # Module doesn't exist yet
-# from ccbt.dht import DHTExtension  # DHTExtension doesn't exist in dht module
 from ccbt.events import Event, EventType, emit_event
-
-# Error message constants
-_ERROR_COMPACT_PEER_LISTS_NOT_AVAILABLE = "CompactPeerLists not available"
-
-# from ccbt.fast import FastExtension  # Module doesn't exist yet
-# from ccbt.pex import PeerExchange  # PeerExchange doesn't exist in pex module
-# from ccbt.protocol import ExtensionProtocol  # Module doesn't exist yet
-# from ccbt.webseed import WebSeedExtension  # Module doesn't exist yet
+from ccbt.extensions.compact import CompactPeerLists
+from ccbt.extensions.dht import DHTExtension
+from ccbt.extensions.fast import FastExtension
+from ccbt.extensions.pex import PeerExchange
+from ccbt.extensions.protocol import ExtensionProtocol
+from ccbt.extensions.webseed import WebSeedExtension
 
 if TYPE_CHECKING:
     from ccbt.models import PeerInfo, PieceInfo
@@ -64,52 +60,73 @@ class ExtensionManager:
 
     def _initialize_extensions(self) -> None:
         """Initialize all extensions."""
-        # TODO: Initialize extensions when classes are available
-        # Fast Extension
-        # self.extensions["fast"] = FastExtension()
-        # self.extension_states["fast"] = ExtensionState(
-        #     name="fast",
-        #     status=ExtensionStatus.ENABLED,
-        #     capabilities={
-        #         "suggest": True,
-        #         "have_all": True,
-        #         "have_none": True,
-        #         "reject": True,
-        #         "allow_fast": True,
-        #     },
-        #     last_activity=0.0,
-        # )
-
         # Extension Protocol
-        # self.extensions["protocol"] = ExtensionProtocol()
-        # self.extension_states["protocol"] = ExtensionState(
-        #     name="protocol",
-        #     status=ExtensionStatus.ENABLED,
-        #     capabilities={"extensions": {}},
-        #     last_activity=0.0,
-        # )
+        self.extensions["protocol"] = ExtensionProtocol()
+        self.extension_states["protocol"] = ExtensionState(
+            name="protocol",
+            status=ExtensionStatus.ENABLED,
+            capabilities={"extensions": {}},
+            last_activity=0.0,
+        )
+
+        # Fast Extension
+        self.extensions["fast"] = FastExtension()
+        self.extension_states["fast"] = ExtensionState(
+            name="fast",
+            status=ExtensionStatus.ENABLED,
+            capabilities={
+                "suggest": True,
+                "have_all": True,
+                "have_none": True,
+                "reject": True,
+                "allow_fast": True,
+            },
+            last_activity=0.0,
+        )
 
         # Peer Exchange
-        # self.extensions["pex"] = PeerExchange()
-        # )
+        self.extensions["pex"] = PeerExchange()
+        self.extension_states["pex"] = ExtensionState(
+            name="pex",
+            status=ExtensionStatus.ENABLED,
+            capabilities={
+                "added": True,
+                "added.f": True,
+                "dropped": True,
+                "dropped.f": True,
+            },
+            last_activity=0.0,
+        )
 
         # DHT
-        # self.extensions["dht"] = DHTExtension()
-        # self.extension_states["dht"] = ExtensionState(
-        #     name="dht",
-        #     status=ExtensionStatus.ENABLED,
-        #     capabilities={"nodes": 0, "buckets": 0},
-        #     last_activity=0.0,
-        # )
+        self.extensions["dht"] = DHTExtension()
+        self.extension_states["dht"] = ExtensionState(
+            name="dht",
+            status=ExtensionStatus.ENABLED,
+            capabilities={"nodes": 0, "buckets": 0},
+            last_activity=0.0,
+        )
 
         # WebSeed
-        # self.extensions["webseed"] = WebSeedExtension()
-        # self.extension_states["webseed"] = ExtensionState(
-        #     name="webseed",
-        #     status=ExtensionStatus.ENABLED,
-        #     capabilities={"webseeds": 0, "active_webseeds": 0},
-        #     last_activity=0.0,
-        # )
+        self.extensions["webseed"] = WebSeedExtension()
+        self.extension_states["webseed"] = ExtensionState(
+            name="webseed",
+            status=ExtensionStatus.ENABLED,
+            capabilities={"webseeds": 0, "active_webseeds": 0},
+            last_activity=0.0,
+        )
+
+        # Compact Peer Lists
+        self.extensions["compact"] = CompactPeerLists()
+        self.extension_states["compact"] = ExtensionState(
+            name="compact",
+            status=ExtensionStatus.ENABLED,
+            capabilities={
+                "compact_peer_format": True,
+                "compact_peer_format_ipv6": True,
+            },
+            last_activity=0.0,
+        )
 
     async def start(self) -> None:
         """Start all extensions."""
@@ -366,27 +383,27 @@ class ExtensionManager:
         webseed_ext.remove_webseed(webseed_id)
 
     # Compact Peer Lists methods
-    def encode_peers_compact(self, _peers: list[PeerInfo]) -> bytes:
+    def encode_peers_compact(self, peers: list[PeerInfo]) -> bytes:
         """Encode peers in compact format."""
-        # TODO: Implement when CompactPeerLists is available
-        # compact_peers = [
-        #     CompactPeerLists.convert_peer_info_to_compact(peer) for peer in peers
-        # ]
-        # return CompactPeerLists.encode_peers_list(compact_peers)
-        msg = _ERROR_COMPACT_PEER_LISTS_NOT_AVAILABLE
-        raise NotImplementedError(msg)
+        if not self.is_extension_active("compact"):
+            msg = "Compact extension not active"
+            raise RuntimeError(msg)
+
+        compact_ext = self.extensions["compact"]
+        return compact_ext.encode_peers(peers)
 
     def decode_peers_compact(
         self,
-        _data: bytes,
-        _is_ipv6: bool = False,
+        data: bytes,
+        is_ipv6: bool = False,
     ) -> list[PeerInfo]:
         """Decode peers from compact format."""
-        # TODO: Implement when CompactPeerLists is available
-        # compact_peers = CompactPeerLists.decode_peers_list(data, is_ipv6)
-        # return [peer.to_peer_info() for peer in compact_peers]
-        msg = _ERROR_COMPACT_PEER_LISTS_NOT_AVAILABLE
-        raise NotImplementedError(msg)
+        if not self.is_extension_active("compact"):
+            msg = "Compact extension not active"
+            raise RuntimeError(msg)
+
+        compact_ext = self.extensions["compact"]
+        return compact_ext.decode_peers(data, is_ipv6)
 
     # Statistics and monitoring
     def get_extension_statistics(self) -> dict[str, Any]:

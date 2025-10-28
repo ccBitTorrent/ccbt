@@ -242,10 +242,31 @@ class PeerConnectionPool:
         """
         try:
             # This would be implemented by the actual connection manager
-            # For now, return a placeholder
-            return {"peer_info": peer_info, "created_at": time.time()}
+            # Create actual connection
+            connection = await self._create_peer_connection(peer_info)
+            if connection:
+                return {
+                    "peer_info": peer_info,
+                    "connection": connection,
+                    "created_at": time.time(),
+                }
+            return None
         except Exception:
             self.logger.exception("Failed to create connection")
+            return None
+
+    async def _create_peer_connection(self, peer_info: PeerInfo) -> Any:
+        """Create a peer connection."""
+        try:
+            # Import here to avoid circular imports
+            from ccbt.peer_connection import AsyncPeerConnection
+
+            connection = AsyncPeerConnection(peer_info)
+            await connection.connect()
+            return connection
+
+        except Exception:
+            self.logger.exception("Failed to create peer connection")
             return None
 
     def _is_connection_valid(self, connection: Any) -> bool:  # noqa: ARG002
