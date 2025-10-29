@@ -197,7 +197,8 @@ class AsyncPieceManager:
             max_workers=self.config.disk.hash_workers,
             thread_name_prefix="hash-verify",
         )
-        self.hash_queue = asyncio.Queue(maxsize=self.config.disk.hash_queue_size)
+        # No background queue; verify hashes via scheduled tasks on completion
+        self.hash_queue = None  # kept for backward compatibility, not used
 
         # Initialize pieces
         for i in range(self.num_pieces):
@@ -241,22 +242,18 @@ class AsyncPieceManager:
         # Background tasks
         self._hash_worker_task: asyncio.Task | None = None
         self._piece_selector_task: asyncio.Task | None = None
+        self._background_tasks: set[asyncio.Task] = set()
 
         self.logger = logging.getLogger(__name__)
 
     async def start(self) -> None:
         """Start background tasks."""
-        self._hash_worker_task = asyncio.create_task(self._hash_worker())
+        # No hash worker; schedule verifications per piece completion
         self._piece_selector_task = asyncio.create_task(self._piece_selector())
         self.logger.info("Async piece manager started")
 
     async def stop(self) -> None:
         """Stop background tasks."""
-        if self._hash_worker_task:
-            self._hash_worker_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._hash_worker_task
-
         if self._piece_selector_task:
             self._piece_selector_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -554,16 +551,24 @@ class AsyncPieceManager:
                 if self.on_piece_completed:
                     self.on_piece_completed(piece_index)
 
-                    # Queue for hash verification
-                    await self.hash_queue.put((piece_index, piece))
+                    # Schedule hash verification and keep a strong reference
+                    _task = asyncio.create_task(
+                        self._verify_piece_hash(piece_index, piece),
+                    )
+                    self._background_tasks.add(_task)
+                    _task.add_done_callback(self._background_tasks.discard)
 
     async def _hash_worker(self) -> None:
         """Background task for hash verification."""
+        # Ensure queue is initialized in this event loop
+        if self.hash_queue is None:
+            self.logger.error("Hash queue not initialized before starting worker")
+            return
         while True:
             try:
                 piece_index, piece = await self.hash_queue.get()
                 await self._verify_piece_hash(piece_index, piece)
-                self.hash_queue.task_done()
+                # SimpleQueue has no task_done
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -1010,9 +1015,12 @@ class AsyncPieceManager:
                 last_update=current_time,
             )
 
+            # Ensure info_hash is exactly 20 bytes for checkpoint schema
+            safe_info_hash = info_hash[:20]
+
             # Create checkpoint
             return TorrentCheckpoint(
-                info_hash=info_hash,
+                info_hash=safe_info_hash,
                 torrent_name=torrent_name,
                 created_at=self.download_start_time,
                 updated_at=current_time,

@@ -97,6 +97,16 @@ class InteractiveCLI:
             "import": self.cmd_import,
             "backup": self.cmd_backup,
             "restore": self.cmd_restore,
+            # Extended configuration management
+            "capabilities": self.cmd_capabilities,
+            "auto_tune": self.cmd_auto_tune,
+            "template": self.cmd_template,
+            "profile": self.cmd_profile,
+            "config_backup": self.cmd_config_backup,
+            "config_diff": self.cmd_config_diff,
+            "config_export": self.cmd_config_export,
+            "config_import": self.cmd_config_import,
+            "config_schema": self.cmd_config_schema,
         }
 
     async def run(self) -> None:
@@ -297,7 +307,7 @@ class InteractiveCLI:
         status_text.append(" | ")
         status_text.append("Commands: ", style="bold")
         status_text.append(
-            "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore",
+            "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema",
             style="white",
         )
 
@@ -927,6 +937,319 @@ Available Commands:
         self.console.print(
             {"restored": cp.torrent_name, "info_hash": cp.info_hash.hex()},
         )
+
+    async def cmd_capabilities(self, args: list[str]) -> None:
+        """Show system capabilities or summary.
+
+        Usage:
+          capabilities [show|summary]
+        """
+        from rich.table import Table
+
+        from ccbt.config_capabilities import SystemCapabilities
+
+        sub = args[0] if args else "show"
+        sc = SystemCapabilities()
+        if sub == "summary":
+            summary = sc.get_capability_summary()
+            table = Table(title="System Capabilities Summary")
+            table.add_column("Capability", style="cyan")
+            table.add_column("Supported", style="green")
+            for k, v in summary.items():
+                table.add_row(k, "Yes" if v else "No")
+            self.console.print(table)
+            return
+        caps = sc.get_all_capabilities()
+        table = Table(title="System Capabilities")
+        table.add_column("Capability", style="cyan")
+        table.add_column("Status", style="green")
+        table.add_column("Details", style="blue")
+        for name, value in caps.items():
+            if isinstance(value, bool):
+                status = "Yes" if value else "No"
+                details = "Supported" if value else "Not supported"
+            elif isinstance(value, dict):
+                status = "Yes" if any(value.values()) else "No"
+                details = f"{len(value)} features"
+            elif isinstance(value, list):
+                status = "Yes" if value else "No"
+                details = f"{len(value)} items"
+            else:
+                status = "Yes"
+                details = str(value)
+            table.add_row(name, status, details)
+        self.console.print(table)
+
+    async def cmd_auto_tune(self, args: list[str]) -> None:
+        """Auto-tune configuration based on system capabilities.
+
+        Usage:
+          auto_tune preview
+          auto_tune apply
+        """
+        from ccbt.config import set_config
+        from ccbt.config_conditional import ConditionalConfig
+
+        action = args[0] if args else "preview"
+        cm = ConfigManager(None)
+        cc = ConditionalConfig()
+        tuned, warnings = cc.adjust_for_system(cm.config)
+        if warnings:
+            for w in warnings:
+                self.console.print(f"[yellow]{w}[/yellow]")
+        if action == "apply":
+            set_config(tuned)
+            cm.config = tuned
+            self.console.print("[green]Applied auto-tuned configuration[/green]")
+        else:
+            from rich.pretty import Pretty
+
+            self.console.print(Pretty(tuned.model_dump(mode="json")))
+
+    async def cmd_template(self, args: list[str]) -> None:
+        """List or apply configuration templates.
+
+        Usage:
+          template list
+          template apply <name> [deep|shallow|replace]
+        """
+        from ccbt.config_templates import ConfigTemplates
+
+        sub = args[0] if args else "list"
+        if sub == "list":
+            items = ConfigTemplates.list_templates()
+            if not items:
+                self.console.print("No templates available")
+                return
+            table = Table(title="Templates")
+            table.add_column("Key", style="cyan")
+            table.add_column("Name")
+            table.add_column("Description")
+            for it in items:
+                table.add_row(it["key"], it["name"], it["description"])
+            self.console.print(table)
+            return
+        if sub == "apply" and len(args) >= 2:
+            name = args[1]
+            strategy = args[2] if len(args) > 2 else "deep"
+            cm = ConfigManager(None)
+            cfg_dict = cm.config.model_dump(mode="json")
+            new_dict = ConfigTemplates.apply_template(cfg_dict, name, strategy)
+            from ccbt.models import Config as ConfigModel
+
+            new_model = ConfigModel.model_validate(new_dict)
+            from ccbt.config import set_config
+
+            set_config(new_model)
+            cm.config = new_model
+            self.console.print(f"[green]Applied template {name}[/green]")
+            return
+        self.console.print("Usage: template list | template apply <name> [merge]")
+
+    async def cmd_profile(self, args: list[str]) -> None:
+        """List or apply configuration profiles.
+
+        Usage:
+          profile list
+          profile apply <name>
+        """
+        from ccbt.config_templates import ConfigProfiles
+
+        sub = args[0] if args else "list"
+        if sub == "list":
+            items = ConfigProfiles.list_profiles()
+            if not items:
+                self.console.print("No profiles available")
+                return
+            table = Table(title="Profiles")
+            table.add_column("Key", style="cyan")
+            table.add_column("Name")
+            table.add_column("Templates")
+            for it in items:
+                table.add_row(it["key"], it["name"], ", ".join(it["templates"]))
+            self.console.print(table)
+            return
+        if sub == "apply" and len(args) >= 2:
+            name = args[1]
+            cm = ConfigManager(None)
+            cfg_dict = cm.config.model_dump(mode="json")
+            new_dict = ConfigProfiles.apply_profile(cfg_dict, name)
+            from ccbt.models import Config as ConfigModel
+
+            new_model = ConfigModel.model_validate(new_dict)
+            from ccbt.config import set_config
+
+            set_config(new_model)
+            cm.config = new_model
+            self.console.print(f"[green]Applied profile {name}[/green]")
+            return
+        self.console.print("Usage: profile list | profile apply <name>")
+
+    async def cmd_config_backup(self, args: list[str]) -> None:
+        """Create/list/restore configuration backups.
+
+        Usage:
+          config_backup list
+          config_backup create [description]
+          config_backup restore <file>
+        """
+        from pathlib import Path
+
+        from ccbt.config_backup import ConfigBackup
+
+        sub = args[0] if args else "list"
+        cm = ConfigManager(None)
+        # Be defensive for type checker; provide a default backup path
+        backup_root = getattr(
+            cm.config.disk, "backup_dir", str(Path.cwd() / ".ccbt" / "backups")
+        )
+        cb = ConfigBackup(backup_root)
+        if sub == "list":
+            items = cb.list_backups()
+            if not items:
+                self.console.print("No backups found")
+                return
+            table = Table(title="Config Backups")
+            table.add_column("Timestamp")
+            table.add_column("Type")
+            table.add_column("Description")
+            table.add_column("File")
+            for b in items:
+                table.add_row(
+                    b["timestamp"], b["backup_type"], b["description"], str(b["file"])
+                )
+            self.console.print(table)
+            return
+        if sub == "create":
+            if not cm.config_file:
+                self.console.print("No config file to backup")
+                return
+            desc = args[1] if len(args) > 1 else "Interactive backup"
+            ok, path_out, msgs = cb.create_backup(
+                cm.config_file, description=desc, compress=True
+            )
+            if ok:
+                self.console.print(f"[green]Backup created: {path_out}[/green]")
+            else:
+                self.console.print(f"[red]Backup failed: {', '.join(msgs)}[/red]")
+            return
+        if sub == "restore" and len(args) >= 2:
+            ok, msgs = cb.restore_backup(Path(args[1]), target_file=cm.config_file)
+            if ok:
+                self.console.print("[green]Configuration restored[/green]")
+            else:
+                self.console.print(f"[red]Restore failed: {', '.join(msgs)}[/red]")
+            return
+        self.console.print("Usage: config_backup list|create [desc]|restore <file>")
+
+    async def cmd_config_diff(self, args: list[str]) -> None:
+        """Compare two configuration files.
+
+        Usage:
+          config_diff <file1> <file2>
+        """
+        if len(args) < 2:
+            self.console.print("Usage: config_diff <file1> <file2>")
+            return
+        from pathlib import Path
+
+        from ccbt.config_diff import ConfigDiff
+
+        result = ConfigDiff.compare_files(Path(args[0]), Path(args[1]))
+        from rich.pretty import Pretty
+
+        self.console.print(Pretty(result))
+
+    async def cmd_config_export(self, args: list[str]) -> None:
+        """Export current configuration to a file.
+
+        Usage:
+          config_export <toml|json|yaml> <output>
+        """
+        if len(args) < 2:
+            self.console.print("Usage: config_export <toml|json|yaml> <output>")
+            return
+        fmt, out = args[0], args[1]
+        data = ConfigManager(None).config.model_dump(mode="json")
+        content = ""
+        if fmt == "json":
+            import json
+
+            content = json.dumps(data, indent=2)
+        elif fmt == "yaml":
+            try:
+                import yaml  # type: ignore[import-untyped]
+            except Exception:
+                self.console.print("[red]PyYAML not installed[/red]")
+                return
+            content = yaml.safe_dump(data, sort_keys=False)
+        else:
+            import toml as _toml
+
+            content = _toml.dumps(data)
+        from pathlib import Path
+
+        Path(out).write_text(content, encoding="utf-8")
+        self.console.print(f"[green]Exported configuration to {out}[/green]")
+
+    async def cmd_config_import(self, args: list[str]) -> None:
+        """Import configuration from a file (deep merge).
+
+        Usage:
+          config_import <toml|json|yaml> <input>
+        """
+        if len(args) < 2:
+            self.console.print("Usage: config_import <toml|json|yaml> <input>")
+            return
+        fmt, inp = args[0], args[1]
+        from pathlib import Path
+
+        text = Path(inp).read_text(encoding="utf-8")
+        if fmt == "json":
+            import json
+
+            incoming = json.loads(text)
+        elif fmt == "yaml":
+            try:
+                import yaml  # type: ignore[import-untyped]
+            except Exception:
+                self.console.print("[red]PyYAML not installed[/red]")
+                return
+            incoming = yaml.safe_load(text)
+        else:
+            import toml as _toml
+
+            incoming = _toml.loads(text)
+        cm = ConfigManager(None)
+        current = cm.config.model_dump(mode="json")
+        # deep merge via templates util
+        from ccbt.config_templates import ConfigTemplates
+
+        merged = ConfigTemplates._deep_merge(current, incoming)  # noqa: SLF001
+        from ccbt.models import Config as ConfigModel
+
+        new_model = ConfigModel.model_validate(merged)
+        from ccbt.config import set_config
+
+        set_config(new_model)
+        cm.config = new_model
+        self.console.print("[green]Imported configuration[/green]")
+
+    async def cmd_config_schema(self, args: list[str]) -> None:
+        """Show configuration JSON schema.
+
+        Usage:
+          config_schema [model]
+        """
+        import json
+
+        from ccbt.config_schema import ConfigSchema
+
+        if args:
+            # specific model name is not directly supported here; show full schema
+            pass
+        data = ConfigSchema.generate_full_schema()
+        self.console.print_json(data=json.loads(json.dumps(data)))
 
     async def cmd_config(self, args: list[str]) -> None:
         """Show or modify configuration at runtime.

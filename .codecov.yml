@@ -1,0 +1,182 @@
+# Codecov configuration for CCBT BitTorrent Client
+# Updated to match pytest.ini markers and 99% coverage target
+coverage:
+  status:
+    project:
+      default:
+        target: 99%
+        threshold: 1%
+    patch:
+      default:
+        target: 90%
+        threshold: 2%
+    changes:
+      default:
+        target: 80%
+        threshold: 5%
+
+comment:
+  layout: "header,diff,files,footer"
+  behavior: default
+  require_changes: false
+  require_base: no
+  require_head: yes
+
+github_checks:
+  annotations: true
+
+# Additional configuration keys
+codecov:
+  require_ci_to_pass: yes
+  notify:
+    wait_for_ci: yes
+
+# Branch configuration
+branches:
+  - master
+  - main
+  - develop
+
+# PR configuration - aligned with 99% project-wide target
+pr:
+  target: 90%
+  threshold: 2%
+
+ignore:
+  - "tests/"
+  - "benchmarks/"
+  - "docs/"
+  - "site/"
+  - "*.pyc"
+  - "__pycache__/"
+  - ".pytest_cache/"
+  - ".ruff_cache/"
+  - ".mypy_cache/"
+  - ".github/"
+  - ".cursor/"
+  - ".pre-commit-cache/"
+  - ".hypothesis/"
+  - ".pre-commit-home/"
+  - ".benchmarks"
+  - ".ccbt"
+  - ".venv/"
+
+flags:
+  # Core functionality tests (matches pytest.mark.core)
+  core:
+    paths:
+      - ccbt/bencode.py
+      - ccbt/torrent.py
+      - ccbt/magnet.py
+      - ccbt/models.py
+    carryforward: true
+  # Peer protocol tests (matches pytest.mark.peer)
+  peer:
+    paths:
+      - ccbt/peer.py
+      - ccbt/peer_connection.py
+      - ccbt/async_peer_connection.py
+    carryforward: true
+  # Piece management tests (matches pytest.mark.piece)
+  piece:
+    paths:
+      - ccbt/piece_manager.py
+      - ccbt/async_piece_manager.py
+    carryforward: true
+  # Tracker tests (matches pytest.mark.tracker)
+  tracker:
+    paths:
+      - ccbt/tracker.py
+      - ccbt/tracker_udp_client.py
+      - ccbt/tracker_server_udp.py
+      - ccbt/tracker_server_http.py
+    carryforward: true
+  # Network optimization tests (matches pytest.mark.network)
+  network:
+    paths:
+      - ccbt/network_optimizer.py
+      - ccbt/connection_pool.py
+    carryforward: true
+  # Metadata exchange tests (matches pytest.mark.metadata)
+  metadata:
+    paths:
+      - ccbt/metadata_exchange.py
+      - ccbt/async_metadata_exchange.py
+    carryforward: true
+  # Disk I/O tests (matches pytest.mark.disk)
+  disk:
+    paths:
+      - ccbt/disk_io.py
+    carryforward: true
+  # File assembly tests (matches pytest.mark.file)
+  file:
+    paths:
+      - ccbt/file_assembler.py
+    carryforward: true
+  # Session management tests (matches pytest.mark.session)
+  session:
+    paths:
+      - ccbt/session.py
+      - ccbt/__main__.py
+      - ccbt/async_main.py
+    carryforward: true
+  # Resilience pattern tests (matches pytest.mark.resilience)
+  resilience:
+    paths:
+      - ccbt/resilience.py
+    carryforward: true
+  # Connection pool tests (matches pytest.mark.connection)
+  connection:
+    paths:
+      - ccbt/connection_pool.py
+    carryforward: true
+  # Checkpoint tests (matches pytest.mark.checkpoint)
+  checkpoint:
+    paths:
+      - ccbt/checkpoint.py
+    carryforward: true
+  # CLI tests (matches pytest.mark.cli)
+  cli:
+    paths:
+      - ccbt/cli/
+    carryforward: true
+  # Unit tests (matches pytest.mark.unit)
+  unittests:
+    paths:
+      - ccbt/
+    carryforward: true
+  # Integration tests (matches pytest.mark.integration)
+  integration:
+    paths:
+      - tests/integration/
+    carryforward: false
+  # Security tests
+  security:
+    paths:
+      - ccbt/security/
+    carryforward: true
+  # ML tests
+  ml:
+    paths:
+      - ccbt/ml/
+    carryforward: true
+  # Monitoring tests
+  monitoring:
+    paths:
+      - ccbt/monitoring/
+    carryforward: true
+  # Observability tests
+  observability:
+    paths:
+      - ccbt/observability/
+    carryforward: true
+  # Protocols tests
+  protocols:
+    paths:
+      - ccbt/protocols/
+    carryforward: true
+  # Extensions tests
+  extensions:
+    paths:
+      - ccbt/extensions/
+    carryforward: true

@@ -62,7 +62,7 @@ class TestResumeIntegration:
                     start_time=1234567890.0,
                     last_update=1234567890.0,
                 ),
-                torrent_file_path=str(temp_path / "test.torrent"),
+                torrent_file_path=str(temp_path / "tests/data/test.torrent"),
                 magnet_uri="magnet:?xt=urn:btih:test_hash_1234567890&dn=test_torrent",
                 announce_urls=["http://tracker.example.com/announce"],
                 display_name="Test Torrent",
@@ -83,7 +83,7 @@ class TestResumeIntegration:
             assert loaded_checkpoint is not None
             assert loaded_checkpoint.torrent_name == "test_torrent"
             assert loaded_checkpoint.torrent_file_path == str(
-                temp_path / "test.torrent",
+                temp_path / "tests/data/test.torrent",
             )
             assert (
                 loaded_checkpoint.magnet_uri
@@ -178,7 +178,7 @@ class TestResumeIntegration:
                 piece_length=16384,
                 total_length=1024,
                 output_dir=str(temp_path),
-                torrent_file_path="/path/to/test.torrent",
+                torrent_file_path="/path/to/tests/data/test.torrent",
                 magnet_uri="magnet:?xt=urn:btih:test_hash_1234567890&dn=metadata_test",
                 announce_urls=[
                     "http://tracker1.example.com",
@@ -198,7 +198,7 @@ class TestResumeIntegration:
             )
 
             # Verify metadata persistence
-            assert loaded_checkpoint.torrent_file_path == "/path/to/test.torrent"
+            assert loaded_checkpoint.torrent_file_path == "/path/to/tests/data/test.torrent"
             assert (
                 loaded_checkpoint.magnet_uri
                 == "magnet:?xt=urn:btih:test_hash_1234567890&dn=metadata_test"

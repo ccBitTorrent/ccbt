@@ -186,6 +186,21 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+    "asyncio: marks tests as async (deselect with '-m \"not asyncio\"')",
+    "timeout: marks tests with timeout requirements",
+    "core: marks tests as core functionality tests",
+    "peer: marks tests as peer protocol tests",
+    "piece: marks tests as piece management tests",
+    "tracker: marks tests as tracker tests",
+    "network: marks tests as network optimization tests",
+    "metadata: marks tests as metadata exchange tests",
+    "disk: marks tests as disk I/O tests",
+    "file: marks tests as file assembly tests",
+    "session: marks tests as session management tests",
+    "resilience: marks tests as resilience pattern tests",
+    "connection: marks tests as connection pool tests",
+    "checkpoint: marks tests as checkpoint tests",
+    "cli: marks tests as CLI tests",
 ]
 
 # Coverage configuration
@@ -232,6 +247,7 @@ members = []
 [dependency-groups]
 dev = [
     "bandit>=1.7.10",
+    "codecov>=2.1.13",
     "hypothesis>=6.113.0",
     "mkdocs>=1.6.1",
     "mkdocs-git-revision-date-localized-plugin>=1.4.7",
@@ -239,6 +255,7 @@ dev = [
     "mkdocstrings[python]>=0.26.1",
     "pymdown-extensions>=10.15",
     "pytest-asyncio>=0.24.0",
+    "pytest-benchmark>=4.0.0",
     "pytest-cov>=5.0.0",
     "pytest-timeout>=2.4.0",
     "ruff>=0.14.2",

@@ -80,7 +80,9 @@ class TestEndToEnd:
     async def test_torrent_parsing_integration(self, temp_dir, sample_torrent_data):
         """Test torrent parsing integration."""
         # Create a sample torrent file
-        torrent_file = temp_dir / "test.torrent"
+        test_data_dir = temp_dir / "tests" / "data"
+        test_data_dir.mkdir(parents=True, exist_ok=True)
+        torrent_file = test_data_dir / "test.torrent"
 
         # Use proper bencode encoding instead of manual bytestring
         from ccbt.bencode import encode

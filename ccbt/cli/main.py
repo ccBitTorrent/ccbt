@@ -28,6 +28,7 @@ from ccbt.cli.advanced_commands import recover as recover_cmd
 from ccbt.cli.advanced_commands import security as security_cmd
 from ccbt.cli.advanced_commands import test as test_cmd
 from ccbt.cli.config_commands import config as config_group
+from ccbt.cli.config_commands_extended import config_extended
 from ccbt.cli.interactive import InteractiveCLI
 from ccbt.cli.monitoring_commands import alerts as alerts_cmd
 from ccbt.cli.monitoring_commands import dashboard as dashboard_cmd
@@ -260,15 +261,6 @@ def cli(ctx, config, verbose, debug):
     with contextlib.suppress(Exception):
         init_config(config)
 
-    # Attach sub-groups added in separate modules
-    cli.add_command(config_group)
-    cli.add_command(dashboard_cmd)
-    cli.add_command(alerts_cmd)
-    cli.add_command(metrics_cmd)
-    cli.add_command(performance_cmd)
-    cli.add_command(security_cmd)
-    cli.add_command(recover_cmd)
-    cli.add_command(test_cmd)
     # docs command removed; docs are maintained in repository
 
 
@@ -1441,6 +1433,18 @@ def show_config(config, console: Console) -> None:
 async def start_debug_mode(_session: AsyncSessionManager, console: Console) -> None:
     """Start debug mode."""
     console.print("[yellow]Debug mode not yet implemented[/yellow]")
+
+
+# Register external command groups at import time so they appear in --help
+cli.add_command(config_group)
+cli.add_command(config_extended)
+cli.add_command(dashboard_cmd)
+cli.add_command(alerts_cmd)
+cli.add_command(metrics_cmd)
+cli.add_command(performance_cmd)
+cli.add_command(security_cmd)
+cli.add_command(recover_cmd)
+cli.add_command(test_cmd)
 
 
 def main():

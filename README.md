@@ -1,5 +1,13 @@
 # ccBitTorrent - High-Performance BitTorrent Client
 
+[![codecov](https://codecov.io/gh/yourusername/ccbt/branch/master/graph/badge.svg)](https://codecov.io/gh/yourusername/ccbt)
+[![codecov](https://codecov.io/gh/yourusername/ccbt/branch/master/graph/badge.svg?flag=unittests)](https://codecov.io/gh/yourusername/ccbt?flag=unittests)
+[![codecov](https://codecov.io/gh/yourusername/ccbt/branch/master/graph/badge.svg?flag=security)](https://codecov.io/gh/yourusername/ccbt?flag=security)
+[![codecov](https://codecov.io/gh/yourusername/ccbt/branch/master/graph/badge.svg?flag=ml)](https://codecov.io/gh/yourusername/ccbt?flag=ml)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+
 A modern, high-performance BitTorrent client built with Python asyncio, featuring advanced piece selection algorithms, parallel metadata exchange, and optimized disk I/O.
 
 ## Quick Start

@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
+import random
 from typing import Any
 
 import pytest
@@ -25,6 +28,57 @@ def cleanup_logging():
     for handler in root_logger.handlers[:]:
         handler.close()
         root_logger.removeHandler(handler)
+
+
+@pytest.fixture(autouse=True)
+async def cleanup_async_resources():
+    """Clean up async resources after each test to prevent event loop issues."""
+    yield
+    
+    # Get all running tasks
+    current_task = asyncio.current_task()
+    all_tasks = [task for task in asyncio.all_tasks() if task != current_task]
+    
+    # Cancel all other tasks
+    for task in all_tasks:
+        if not task.done():
+            task.cancel()
+    
+    # Wait for all tasks to complete cancellation
+    if all_tasks:
+        await asyncio.gather(*all_tasks, return_exceptions=True)
+    
+    # Give the event loop a chance to clean up
+    await asyncio.sleep(0)
+
+
+@pytest.fixture
+def event_loop():
+    """Create a new event loop for each test to ensure isolation."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield loop
+    loop.close()
+
+
+@pytest.fixture(autouse=True)
+def seed_rng() -> None:
+    """Deterministically seed RNGs to make tests reproducible."""
+    seed = int(os.environ.get("CCBT_TEST_SEED", "123456"))
+    random.seed(seed)
+    try:
+        import numpy as _np  # type: ignore
+
+        _np.random.seed(seed)
+    except Exception:
+        # Numpy is optional; ignore if unavailable
+        pass
+
+
+@pytest.fixture
+def tmp_storage(tmp_path):
+    """Provide a temporary storage directory for file/disk tests."""
+    return tmp_path
 
 
 def create_test_torrent_dict(

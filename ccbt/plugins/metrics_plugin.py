@@ -50,6 +50,7 @@ class MetricsCollector(EventHandler):
         self.metrics: deque = deque(maxlen=max_metrics)
         self.aggregates: dict[str, MetricAggregate] = {}
         self.logger = get_logger(__name__)
+        self.name = "metrics_collector"  # Required by EventHandler interface
 
     async def handle(self, event: Event) -> None:
         """Collect metrics from events."""

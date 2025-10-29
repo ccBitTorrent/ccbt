@@ -1,0 +1,2 @@
+"""File assembly unit tests."""
+

@@ -50,7 +50,7 @@ class TestResumeCLI:
             piece_length=16384,
             total_length=1024,
             output_dir=str(self.temp_path),
-            torrent_file_path=str(self.temp_path / "test.torrent"),
+            torrent_file_path=str(self.temp_path / "tests/data/test.torrent"),
             magnet_uri="magnet:?xt=urn:btih:test_hash_1234567890&dn=auto_resume_test",
             announce_urls=["http://tracker.example.com"],
             display_name="Auto Resume Test",
@@ -92,7 +92,9 @@ class TestResumeCLI:
     async def test_download_command_checkpoint_detection(self):
         """Test download command checkpoint detection and prompt."""
         # Create a test torrent file
-        test_torrent_path = self.temp_path / "test.torrent"
+        test_data_dir = self.temp_path / "tests" / "data"
+        test_data_dir.mkdir(parents=True, exist_ok=True)
+        test_torrent_path = test_data_dir / "test.torrent"
         test_torrent_path.write_bytes(b"dummy torrent content")
 
         # Test session manager functionality

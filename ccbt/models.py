@@ -632,6 +632,39 @@ class ObservabilityConfig(BaseModel):
     )
 
 
+class DashboardConfig(BaseModel):
+    """Dashboard and web UI configuration."""
+
+    enable_dashboard: bool = Field(
+        default=True,
+        description="Enable built-in dashboard/web UI",
+    )
+    host: str = Field(
+        default="127.0.0.1",
+        description="Dashboard bind host",
+    )
+    port: int = Field(
+        default=9090,
+        ge=1024,
+        le=65535,
+        description="Dashboard HTTP port",
+    )
+    refresh_interval: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="UI refresh interval in seconds",
+    )
+    default_view: str = Field(
+        default="overview",
+        description="Default dashboard view (overview|performance|network|security|alerts)",
+    )
+    enable_grafana_export: bool = Field(
+        default=False,
+        description="Enable Grafana dashboard JSON export endpoints",
+    )
+
+
 class LimitsConfig(BaseModel):
     """Global and per-scope rate limits and scheduler settings."""
 
@@ -853,6 +886,10 @@ class Config(BaseModel):
     ml: MLConfig = Field(
         default_factory=MLConfig,
         description="Machine learning configuration",
+    )
+    dashboard: DashboardConfig = Field(
+        default_factory=DashboardConfig,
+        description="Dashboard/web UI configuration",
     )
 
     @model_validator(mode="after")

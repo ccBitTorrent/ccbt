@@ -9,7 +9,6 @@ retry logic, and out-of-order piece handling.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
 import logging
 import math
@@ -118,6 +117,15 @@ class AsyncMetadataExchange:
 
         self.logger = logging.getLogger(__name__)
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with proper cleanup."""
+        await self.stop()
+
     def _raise_connection_error(self, message: str) -> None:
         """Raise a ConnectionError with the given message."""
         raise ConnectionError(message)
@@ -128,17 +136,32 @@ class AsyncMetadataExchange:
         self.logger.info("Async metadata exchange started")
 
     async def stop(self) -> None:
-        """Stop background tasks and cleanup."""
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._cleanup_task
+        """Stop background tasks and cleanup all async resources."""
+        # Cancel and await background tasks
+        tasks_to_cancel = []
+        if self._cleanup_task and not self._cleanup_task.done():
+            tasks_to_cancel.append(self._cleanup_task)
+
+        # Cancel all tasks
+        for task in tasks_to_cancel:
+            task.cancel()
+
+        # Wait for all tasks to complete cancellation
+        if tasks_to_cancel:
+            await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
 
         # Close all sessions
         for session in list(self.sessions.values()):
             await self._close_session(session)
 
-        self.logger.info("Async metadata exchange stopped")
+        # Clear all data structures
+        self.sessions.clear()
+        self.metadata_pieces.clear()
+
+        # Reset task references
+        self._cleanup_task = None
+
+        self.logger.info("Async metadata exchange stopped and cleaned up")
 
     async def fetch_metadata(
         self,
@@ -160,6 +183,11 @@ class AsyncMetadataExchange:
             "Starting metadata fetch from %s peers",
             min(len(peers), max_peers),
         )
+
+        # If no peers, return None immediately
+        if not peers or max_peers <= 0:
+            self.logger.warning("No peers available for metadata fetch")
+            return None
 
         # Create connection tasks
         tasks = []

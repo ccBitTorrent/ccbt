@@ -152,6 +152,12 @@ class ConfigManager:
             "CCBT_ENABLE_METRICS": "observability.enable_metrics",
             "CCBT_METRICS_PORT": "observability.metrics_port",
             "CCBT_ENABLE_PEER_TRACING": "observability.enable_peer_tracing",
+            # Dashboard
+            "CCBT_DASHBOARD_ENABLE": "dashboard.enable_dashboard",
+            "CCBT_DASHBOARD_HOST": "dashboard.host",
+            "CCBT_DASHBOARD_PORT": "dashboard.port",
+            "CCBT_DASHBOARD_REFRESH_INTERVAL": "dashboard.refresh_interval",
+            "CCBT_DASHBOARD_DEFAULT_VIEW": "dashboard.default_view",
         }
 
         def _parse_env_value(raw: str) -> bool | int | float | str:
@@ -275,6 +281,100 @@ class ConfigManager:
         """Stop hot-reload monitoring."""
         if hasattr(self, "_hot_reload_task") and self._hot_reload_task:
             self._hot_reload_task.cancel()
+
+    def validate_detailed(self) -> tuple[bool, list[str]]:
+        """Validate configuration with detailed error messages.
+
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+        """
+        from ccbt.config_schema import ConfigValidator
+
+        config_data = self.config.model_dump(mode="json")
+
+        # Basic validation
+        is_valid, errors = ConfigValidator.validate_with_details(config_data)
+
+        # Cross-field validation
+        if is_valid:
+            cross_field_errors = ConfigValidator.validate_cross_field_rules(config_data)
+            errors.extend(cross_field_errors)
+            is_valid = len(cross_field_errors) == 0
+
+        return is_valid, errors
+
+    def get_schema(self) -> dict[str, Any]:
+        """Get configuration schema.
+
+        Returns:
+            JSON Schema for the configuration
+        """
+        from ccbt.config_schema import ConfigSchema
+
+        return ConfigSchema.generate_full_schema()
+
+    def get_section_schema(self, section_name: str) -> dict[str, Any] | None:
+        """Get schema for a specific configuration section.
+
+        Args:
+            section_name: Name of the configuration section
+
+        Returns:
+            Schema for the section or None if not found
+        """
+        from ccbt.config_schema import ConfigSchema
+
+        return ConfigSchema.get_schema_for_section(section_name)
+
+    def list_options(self) -> list[dict[str, Any]]:
+        """List all configuration options with metadata.
+
+        Returns:
+            List of configuration options with metadata
+        """
+        from ccbt.config_schema import ConfigDiscovery
+
+        return ConfigDiscovery.list_all_options()
+
+    def get_option_metadata(self, key_path: str) -> dict[str, Any] | None:
+        """Get metadata for a specific configuration option.
+
+        Args:
+            key_path: Dot-separated path to the option
+
+        Returns:
+            Metadata for the option or None if not found
+        """
+        from ccbt.config_schema import ConfigDiscovery
+
+        return ConfigDiscovery.get_option_metadata(key_path)
+
+    def validate_option(self, key_path: str, value: Any) -> tuple[bool, str]:
+        """Validate a single configuration option.
+
+        Args:
+            key_path: Dot-separated path to the option
+            value: Value to validate
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        from ccbt.config_schema import ConfigValidator
+
+        return ConfigValidator.validate_option(key_path, value)
+
+    def export_schema(self, format_type: str = "json") -> str:
+        """Export configuration schema in specified format.
+
+        Args:
+            format_type: Output format ("json" or "yaml")
+
+        Returns:
+            Schema as string in specified format
+        """
+        from ccbt.config_schema import ConfigSchema
+
+        return ConfigSchema.export_schema(format_type)
 
 
 def get_config() -> Config:

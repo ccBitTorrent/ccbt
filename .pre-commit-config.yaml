@@ -35,6 +35,15 @@
         files: ^ccbt/.*\.py$
         exclude: ^(tests/|benchmarks/|.*/__pycache__/)
         pass_filenames: false
+      - id: pytest-coverage
+        name: pytest-coverage
+        entry: uv run pytest tests/ --cov=ccbt --cov-report=term-missing --cov-report=xml --cov-fail-under=40
+        language: system
+        types: [python]
+        files: ^ccbt/.*\.py$
+        exclude: ^(tests/|benchmarks/|.*/__pycache__/)
+        pass_filenames: false
+        stages: [pre-push]
       - id: mkdocs-build
         name: mkdocs-build
         entry: uv run mkdocs build --strict
