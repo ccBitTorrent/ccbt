@@ -1,39 +1,66 @@
 ---
-alwaysApply: true
 description: Project structure and architecture overview
+alwaysApply: false
 ---
-
 # ccBitTorrent Project Structure
 
 ## Core Architecture
 This is a high-performance BitTorrent client with modern architecture:
 
-- **Main Entry**: [ccbt/__main__.py](mdc:ccbt/__main__.py) - CLI entry point
-- **Session Management**: [ccbt/session.py](mdc:ccbt/session.py) - Main client session
-- **Configuration**: [ccbt/config.py](mdc:ccbt/config.py) - Configuration management with Pydantic models
-- **Models**: [ccbt/models.py](mdc:ccbt/models.py) - Pydantic data models and validation
+- **Main Entry**: [ccbt/__main__.py](mdc:ccbt/__main__.py) — CLI entry point
+- **Session Management**: [ccbt/session/session.py](mdc:ccbt/session/session.py), [ccbt/session/async_main.py](mdc:ccbt/session/async_main.py)
+- **Configuration**: [ccbt/config/config.py](mdc:ccbt/config/config.py) — Pydantic-backed configuration package
+- **Models**: [ccbt/models.py](mdc:ccbt/models.py) — Pydantic data models and validation
+- **Typing Marker**: [ccbt/py.typed](mdc:ccbt/py.typed)
 
 ## Key Components
 
 ### Core BitTorrent Implementation
-- [ccbt/torrent.py](mdc:ccbt/torrent.py) - Torrent file handling and metadata
-- [ccbt/peer.py](mdc:ccbt/peer.py) - Peer connection management
-- [ccbt/peer_connection.py](mdc:ccbt/peer_connection.py) - Peer connection logic
-- [ccbt/async_peer_connection.py](mdc:ccbt/async_peer_connection.py) - Async peer connections
-- [ccbt/piece_manager.py](mdc:ccbt/piece_manager.py) - Piece selection and management
-- [ccbt/tracker.py](mdc:ccbt/tracker.py) - Tracker communication
-- [ccbt/dht.py](mdc:ccbt/dht.py) - Distributed Hash Table implementation
+- [ccbt/core/torrent.py](mdc:ccbt/core/torrent.py) — Torrent metadata handling
+- [ccbt/core/bencode.py](mdc:ccbt/core/bencode.py) — Bencode codec
+- [ccbt/core/magnet.py](mdc:ccbt/core/magnet.py) — Magnet URI parsing
 
-### Advanced Features
-- [ccbt/security/](mdc:ccbt/security/) - Security enhancements and ML features
-- [ccbt/ml/](mdc:ccbt/ml/) - Machine learning optimizations
-- [ccbt/monitoring/](mdc:ccbt/monitoring/) - Advanced monitoring and observability
-- [ccbt/observability/](mdc:ccbt/observability/) - Performance profiling and debugging
+### Discovery and Trackers
+- [ccbt/discovery/tracker.py](mdc:ccbt/discovery/tracker.py)
+- [ccbt/discovery/tracker_udp_client.py](mdc:ccbt/discovery/tracker_udp_client.py)
+- [ccbt/discovery/tracker_server_http.py](mdc:ccbt/discovery/tracker_server_http.py)
+- [ccbt/discovery/tracker_server_udp.py](mdc:ccbt/discovery/tracker_server_udp.py)
+- [ccbt/discovery/dht.py](mdc:ccbt/discovery/dht.py)
+- [ccbt/discovery/pex.py](mdc:ccbt/discovery/pex.py)
 
-### CLI and Interface
-- [ccbt/cli/](mdc:ccbt/cli/) - Enhanced CLI with Rich interface
-- [ccbt/events.py](mdc:ccbt/events.py) - Event-driven architecture
-- [ccbt/exceptions.py](mdc:ccbt/exceptions.py) - Exception hierarchy
+### Protocols
+- [ccbt/protocols/base.py](mdc:ccbt/protocols/base.py)
+- [ccbt/protocols/bittorrent.py](mdc:ccbt/protocols/bittorrent.py)
+- [ccbt/protocols/hybrid.py](mdc:ccbt/protocols/hybrid.py)
+- [ccbt/protocols/ipfs.py](mdc:ccbt/protocols/ipfs.py)
+- [ccbt/protocols/webtorrent.py](mdc:ccbt/protocols/webtorrent.py)
+
+### Peer and Piece Management
+- Peer: [ccbt/peer/peer.py](mdc:ccbt/peer/peer.py), [ccbt/peer/peer_connection.py](mdc:ccbt/peer/peer_connection.py), [ccbt/peer/async_peer_connection.py](mdc:ccbt/peer/async_peer_connection.py), [ccbt/peer/connection_pool.py](mdc:ccbt/peer/connection_pool.py)
+- Piece: [ccbt/piece/piece_manager.py](mdc:ccbt/piece/piece_manager.py), [ccbt/piece/async_piece_manager.py](mdc:ccbt/piece/async_piece_manager.py), [ccbt/piece/metadata_exchange.py](mdc:ccbt/piece/metadata_exchange.py), [ccbt/piece/async_metadata_exchange.py](mdc:ccbt/piece/async_metadata_exchange.py)
+
+### Services and Storage
+- Services: [ccbt/services/base.py](mdc:ccbt/services/base.py), [ccbt/services/peer_service.py](mdc:ccbt/services/peer_service.py), [ccbt/services/storage_service.py](mdc:ccbt/services/storage_service.py), [ccbt/services/tracker_service.py](mdc:ccbt/services/tracker_service.py)
+- Storage: [ccbt/storage/disk_io.py](mdc:ccbt/storage/disk_io.py), [ccbt/storage/file_assembler.py](mdc:ccbt/storage/file_assembler.py), [ccbt/storage/buffers.py](mdc:ccbt/storage/buffers.py), [ccbt/storage/checkpoint.py](mdc:ccbt/storage/checkpoint.py)
+
+### Extensions
+- [ccbt/extensions/protocol.py](mdc:ccbt/extensions/protocol.py), [ccbt/extensions/manager.py](mdc:ccbt/extensions/manager.py)
+- Features: [ccbt/extensions/fast.py](mdc:ccbt/extensions/fast.py), [ccbt/extensions/webseed.py](mdc:ccbt/extensions/webseed.py), [ccbt/extensions/compact.py](mdc:ccbt/extensions/compact.py), [ccbt/extensions/dht.py](mdc:ccbt/extensions/dht.py), [ccbt/extensions/pex.py](mdc:ccbt/extensions/pex.py)
+
+### Security and ML
+- Security: [ccbt/security/security_manager.py](mdc:ccbt/security/security_manager.py), [ccbt/security/encryption.py](mdc:ccbt/security/encryption.py), [ccbt/security/peer_validator.py](mdc:ccbt/security/peer_validator.py), [ccbt/security/rate_limiter.py](mdc:ccbt/security/rate_limiter.py), [ccbt/security/anomaly_detector.py](mdc:ccbt/security/anomaly_detector.py)
+- ML: [ccbt/ml/adaptive_limiter.py](mdc:ccbt/ml/adaptive_limiter.py), [ccbt/ml/peer_selector.py](mdc:ccbt/ml/peer_selector.py), [ccbt/ml/piece_predictor.py](mdc:ccbt/ml/piece_predictor.py)
+
+### Monitoring and Observability
+- Monitoring: [ccbt/monitoring/metrics_collector.py](mdc:ccbt/monitoring/metrics_collector.py), [ccbt/monitoring/alert_manager.py](mdc:ccbt/monitoring/alert_manager.py), [ccbt/monitoring/dashboard.py](mdc:ccbt/monitoring/dashboard.py), [ccbt/monitoring/tracing.py](mdc:ccbt/monitoring/tracing.py)
+- Observability: [ccbt/observability/profiler.py](mdc:ccbt/observability/profiler.py)
+
+### Interface and CLI
+- Interface: [ccbt/interface/terminal_dashboard.py](mdc:ccbt/interface/terminal_dashboard.py)
+- CLI: [ccbt/cli/main.py](mdc:ccbt/cli/main.py), [ccbt/cli/interactive.py](mdc:ccbt/cli/interactive.py), [ccbt/cli/advanced_commands.py](mdc:ccbt/cli/advanced_commands.py), [ccbt/cli/monitoring_commands.py](mdc:ccbt/cli/monitoring_commands.py), [ccbt/cli/progress.py](mdc:ccbt/cli/progress.py), [ccbt/cli/config_commands.py](mdc:ccbt/cli/config_commands.py), [ccbt/cli/config_commands_extended.py](mdc:ccbt/cli/config_commands_extended.py)
+
+### Utilities
+- [ccbt/utils/events.py](mdc:ccbt/utils/events.py), [ccbt/utils/exceptions.py](mdc:ccbt/utils/exceptions.py), [ccbt/utils/logging_config.py](mdc:ccbt/utils/logging_config.py), [ccbt/utils/metrics.py](mdc:ccbt/utils/metrics.py), [ccbt/utils/network_optimizer.py](mdc:ccbt/utils/network_optimizer.py), [ccbt/utils/resilience.py](mdc:ccbt/utils/resilience.py)
 
 ## Development Patterns
 - **Async/Await**: All I/O operations are asynchronous
@@ -41,3 +68,11 @@ This is a high-performance BitTorrent client with modern architecture:
 - **Service-Oriented**: Modular service architecture
 - **Plugin System**: Extensible plugin architecture
 - **Type Safety**: Comprehensive type hints with Pydantic validation
+
+## Testing and Benchmarks
+- **Tests**: [tests/](mdc:tests/) organized by domain: `unit/`, `integration/`, `property/`, `cli/`, `protocols/`, `security/`, `performance/`, `monitoring/`, `observability/`, plus helper [tests/scripts/](mdc:tests/scripts/) and sample data in [tests/data/](mdc:tests/data/)
+- **Benchmarks**: [benchmarks/bench_disk.py](mdc:benchmarks/bench_disk.py), [benchmarks/bench_hash_verification.py](mdc:benchmarks/bench_hash_verification.py), [benchmarks/bench_throughput.py](mdc:benchmarks/bench_throughput.py)
+
+## Documentation and Tooling
+- **Docs**: [docs/](mdc:docs/) — architecture, API, configuration, monitoring, performance, dashboard guide, getting started, and examples
+- **Tooling/Configs**: [pyproject.toml](mdc:pyproject.toml), [uv.toml](mdc:uv.toml), [uv.lock](mdc:uv.lock), [ruff.toml](mdc:ruff.toml), [pytest.ini](mdc:pytest.ini), [ccbt.toml](mdc:ccbt.toml), [env.example](mdc:env.example), [Makefile](mdc:Makefile)

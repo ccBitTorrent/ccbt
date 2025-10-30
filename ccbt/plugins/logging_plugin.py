@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ccbt.events import Event, EventHandler, EventType
-from ccbt.logging_config import get_logger
 from ccbt.plugins.base import Plugin
+from ccbt.utils.events import Event, EventHandler, EventType
+from ccbt.utils.logging_config import get_logger
 
 
 class EventLoggingHandler(EventHandler):
@@ -88,7 +88,7 @@ class LoggingPlugin(Plugin):
         self.handler = EventLoggingHandler(self.log_file)
 
         # Register for all events
-        from ccbt.events import get_event_bus
+        from ccbt.utils.events import get_event_bus
 
         event_bus = get_event_bus()
 
@@ -104,7 +104,7 @@ class LoggingPlugin(Plugin):
         self.logger.info("Stopping logging plugin")
 
         if self.handler:
-            from ccbt.events import get_event_bus
+            from ccbt.utils.events import get_event_bus
 
             event_bus = get_event_bus()
 

@@ -65,80 +65,76 @@ flags:
   # Core functionality tests (matches pytest.mark.core)
   core:
     paths:
-      - ccbt/bencode.py
-      - ccbt/torrent.py
-      - ccbt/magnet.py
+      - ccbt/core/
       - ccbt/models.py
     carryforward: true
   # Peer protocol tests (matches pytest.mark.peer)
   peer:
     paths:
-      - ccbt/peer.py
-      - ccbt/peer_connection.py
-      - ccbt/async_peer_connection.py
+      - ccbt/peer/
     carryforward: true
   # Piece management tests (matches pytest.mark.piece)
   piece:
     paths:
-      - ccbt/piece_manager.py
-      - ccbt/async_piece_manager.py
+      - ccbt/piece/
     carryforward: true
   # Tracker tests (matches pytest.mark.tracker)
   tracker:
     paths:
-      - ccbt/tracker.py
-      - ccbt/tracker_udp_client.py
-      - ccbt/tracker_server_udp.py
-      - ccbt/tracker_server_http.py
+      - ccbt/discovery/tracker.py
+      - ccbt/discovery/tracker_udp_client.py
+      - ccbt/discovery/tracker_server_udp.py
+      - ccbt/discovery/tracker_server_http.py
     carryforward: true
   # Network optimization tests (matches pytest.mark.network)
   network:
     paths:
-      - ccbt/network_optimizer.py
-      - ccbt/connection_pool.py
+      - ccbt/utils/network_optimizer.py
+      - ccbt/peer/connection_pool.py
     carryforward: true
   # Metadata exchange tests (matches pytest.mark.metadata)
   metadata:
     paths:
-      - ccbt/metadata_exchange.py
-      - ccbt/async_metadata_exchange.py
+      - ccbt/piece/metadata_exchange.py
+      - ccbt/piece/async_metadata_exchange.py
     carryforward: true
   # Disk I/O tests (matches pytest.mark.disk)
   disk:
     paths:
-      - ccbt/disk_io.py
+      - ccbt/storage/disk_io.py
     carryforward: true
   # File assembly tests (matches pytest.mark.file)
   file:
     paths:
-      - ccbt/file_assembler.py
+      - ccbt/storage/file_assembler.py
     carryforward: true
   # Session management tests (matches pytest.mark.session)
   session:
     paths:
-      - ccbt/session.py
+      - ccbt/session/
       - ccbt/__main__.py
       - ccbt/async_main.py
     carryforward: true
   # Resilience pattern tests (matches pytest.mark.resilience)
   resilience:
     paths:
-      - ccbt/resilience.py
+      - ccbt/utils/resilience.py
     carryforward: true
   # Connection pool tests (matches pytest.mark.connection)
   connection:
     paths:
-      - ccbt/connection_pool.py
+      - ccbt/peer/connection_pool.py
     carryforward: true
   # Checkpoint tests (matches pytest.mark.checkpoint)
   checkpoint:
     paths:
-      - ccbt/checkpoint.py
+      - ccbt/storage/checkpoint.py
     carryforward: true
   # CLI tests (matches pytest.mark.cli)
   cli:
     paths:
       - ccbt/cli/
+      - ccbt/interface/
     carryforward: true
   # Unit tests (matches pytest.mark.unit)
   unittests:

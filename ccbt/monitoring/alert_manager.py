@@ -24,7 +24,7 @@ from email.mime.text import MIMEText
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
-from ccbt.events import Event, EventType, emit_event
+from ccbt.utils.events import Event, EventType, emit_event
 
 logger = logging.getLogger(__name__)
 

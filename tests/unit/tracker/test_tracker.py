@@ -8,8 +8,8 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
 
-from ccbt.bencode import encode
-from ccbt.tracker import TrackerClient, TrackerError
+from ccbt.core.bencode import encode
+from ccbt.discovery.tracker import TrackerClient, TrackerError
 
 
 class TestTrackerClient:

@@ -67,3 +67,139 @@ try:
 except Exception:  # nosec B110 - If asyncio is unavailable or any error occurs, silently continue.
     # If asyncio is unavailable or any error occurs, silently continue.
     pass
+
+# Backward compatibility: Re-export commonly used modules from new locations
+# This allows old imports like "from ccbt.bencode import ..." to continue working
+from ccbt.config import config
+from ccbt.config.config import Config, ConfigManager, get_config, init_config
+from ccbt.core import bencode, magnet, torrent
+
+# Re-export commonly used classes/functions for backward compatibility
+from ccbt.core.bencode import BencodeDecoder, BencodeEncoder, decode, encode
+from ccbt.core.magnet import (
+    MagnetInfo,
+    build_minimal_torrent_data,
+    build_torrent_data_from_metadata,
+    parse_magnet,
+)
+from ccbt.core.torrent import TorrentParser
+from ccbt.discovery import dht, pex, tracker
+from ccbt.peer import async_peer_connection, peer, peer_connection
+from ccbt.piece import (
+    async_metadata_exchange,
+    async_piece_manager,
+    metadata_exchange,
+    piece_manager,
+)
+from ccbt.session.session import AsyncSessionManager, SessionManager
+from ccbt.storage import checkpoint, file_assembler
+from ccbt.utils import (
+    events,
+    exceptions,
+    logging_config,
+    metrics,
+    network_optimizer,
+    resilience,
+)
+
+# Note: For complete backward compatibility, importing as modules
+# (e.g., "from ccbt import bencode") will work via the imports above
+
+__all__ = [
+    "AsyncSessionManager",
+    "BencodeDecoder",
+    "BencodeEncoder",
+    "Config",
+    "ConfigManager",
+    "MagnetInfo",
+    "SessionManager",
+    "TorrentParser",
+    "__version__",
+    # Piece
+    "async_metadata_exchange",
+    "async_peer_connection",
+    "async_piece_manager",
+    # Core
+    "bencode",
+    "build_minimal_torrent_data",
+    "build_torrent_data_from_metadata",
+    # Storage
+    "checkpoint",
+    # Config
+    "config",
+    "decode",
+    # Discovery
+    "dht",
+    "encode",
+    # Utils
+    "events",
+    "exceptions",
+    "file_assembler",
+    "get_config",
+    "init_config",
+    "logging_config",
+    "magnet",
+    "metadata_exchange",
+    "metrics",
+    "network_optimizer",
+    "parse_magnet",
+    # Peer
+    "peer",
+    "peer_connection",
+    "pex",
+    "piece_manager",
+    "resilience",
+    # Session
+    "session",
+    "torrent",
+    "tracker",
+]
+
+
+# Lazy attribute access to prefer submodules over similarly named attributes
+def __getattr__(name: str):  # pragma: no cover - import-time plumbing
+    if name == "async_main":
+        import importlib
+
+        return importlib.import_module("ccbt.async_main")
+    msg = f"module '{__name__}' has no attribute '{name}'"
+    raise AttributeError(msg)
+
+
+# Ensure attribute binding prefers submodule even in long-lived interpreters
+try:  # pragma: no cover - import-time plumbing
+    import importlib as _importlib
+
+    async_main = _importlib.import_module("ccbt.async_main")
+except Exception:
+    pass
+
+# Backward compat: if async_main was imported as a function elsewhere, attach
+# commonly patched attributes so patch('ccbt.async_main.X') works.
+try:  # pragma: no cover - import-time plumbing
+    import types as _types
+
+    if isinstance(globals().get("async_main"), _types.FunctionType):
+        import ccbt.session.async_main as _am
+        from ccbt.config.config import get_config as _get_config
+        from ccbt.core.magnet import (
+            build_minimal_torrent_data as _build_min,
+        )
+        from ccbt.core.magnet import (
+            parse_magnet as _parse_magnet,
+        )
+        from ccbt.peer.async_peer_connection import (
+            AsyncPeerConnectionManager as _APCM,  # noqa: N814
+        )
+        from ccbt.piece.async_piece_manager import (
+            AsyncPieceManager as _APM,  # noqa: N814
+        )
+
+        async_main.get_config = _get_config
+        async_main.AsyncPeerConnectionManager = _APCM
+        async_main.AsyncPieceManager = _APM
+        async_main.parse_magnet = _parse_magnet
+        async_main.build_minimal_torrent_data = _build_min
+        async_main.AsyncDownloadManager = _am.AsyncDownloadManager
+except Exception:
+    pass

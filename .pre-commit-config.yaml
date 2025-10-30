@@ -9,6 +9,7 @@
         files: ^ccbt/.*\.py$
         exclude: ^(tests/|benchmarks/|.*/__pycache__/)
         pass_filenames: false
+        timeout: 120  # 2 minutes max for linting
       - id: ruff-format
         name: ruff-format
         entry: uv run ruff format ccbt/
@@ -17,33 +18,38 @@
         files: ^ccbt/.*\.py$
         exclude: ^(tests/|benchmarks/|.*/__pycache__/)
         pass_filenames: false
+        timeout: 60  # 1 minute max for formatting
       - id: ty
         name: ty
         entry: uv run ty check --config-file=ty.toml --output-format=concise
         language: system
         pass_filenames: false
+        timeout: 180  # 3 minutes max for type checking
       - id: bandit
         name: bandit
         entry: uv run bandit -r ccbt/ -f json -o bandit-report.json --severity-level medium --exclude tests/
         language: system
         pass_filenames: false
+        timeout: 120  # 2 minutes max for security scanning
       - id: pytest
         name: pytest
-        entry: uv run pytest tests/ -v --tb=short --maxfail=5 --timeout=60
+        entry: uv run python tests/scripts/run_pytest_selective.py
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
         exclude: ^(tests/|benchmarks/|.*/__pycache__/)
-        pass_filenames: false
+        pass_filenames: true
+        timeout: 600  # 10 minutes max for test suite
       - id: pytest-coverage
         name: pytest-coverage
-        entry: uv run pytest tests/ --cov=ccbt --cov-report=term-missing --cov-report=xml --cov-fail-under=40
+        entry: uv run python tests/scripts/run_pytest_selective.py --coverage
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
         exclude: ^(tests/|benchmarks/|.*/__pycache__/)
-        pass_filenames: false
+        pass_filenames: true
         stages: [pre-push]
+        timeout: 900  # 15 minutes max for coverage run
       - id: mkdocs-build
         name: mkdocs-build
         entry: uv run mkdocs build --strict
@@ -51,3 +57,4 @@
         types: [markdown]
         files: ^(docs/.*\.md|README\.md|mkdocs\.yml)$
         pass_filenames: false
+        timeout: 300  # 5 minutes max for docs build

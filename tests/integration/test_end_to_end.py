@@ -11,11 +11,11 @@ from unittest.mock import patch, AsyncMock
 import pytest
 import pytest_asyncio
 
-from ccbt.events import EventType, get_event_bus
+from ccbt.utils.events import EventType, get_event_bus
 from ccbt.plugins import PluginManager
 from ccbt.services import get_service_manager
 from ccbt.session import AsyncSessionManager
-from ccbt.torrent import TorrentParser
+from ccbt.core.torrent import TorrentParser
 from tests.conftest import create_test_torrent_dict
 
 
@@ -168,7 +168,7 @@ class TestEndToEnd:
         event_bus.register_handler(EventType.PEER_CONNECTED.value, handler)
 
         # Emit test event
-        from ccbt.events import emit_peer_connected
+        from ccbt.utils.events import emit_peer_connected
 
         await emit_peer_connected("192.168.1.1", 6881, "test_peer_id")
 

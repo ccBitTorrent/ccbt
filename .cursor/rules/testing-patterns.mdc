@@ -5,53 +5,66 @@ description: Testing patterns and requirements for ccBitTorrent
 
 # Testing Patterns
 
-## Testing Requirements
-- **90%+ test coverage** for all new code
-- **Unit tests** for all functions and methods
-- **Integration tests** for component interactions
-- **Property-based tests** for algorithms using Hypothesis
-- **Performance tests** for optimizations
+### Testing Requirements
+- **Coverage targets**: Project 99% (Codecov), Patch 90%
+- **Unit tests** for all functions/methods
+- **Integration tests** for component workflows
+- **Property-based tests** for algorithms with Hypothesis
+- **Performance tests** using pytest-benchmark
 - **Chaos tests** for resilience and fault tolerance
 
-## Test Structure
-Located in [tests/](mdc:tests/) directory:
+### Suite Layout
+Tests live in `tests/` and are organized by domain:
+- `tests/unit/` with subpackages: `core/`, `disk/`, `file/`, `metadata/`, `network/`, `peer/`, `piece/`, `resilience/`, `session/`, `tracker/`
+- `tests/integration/`
+- `tests/property/`
+- `tests/performance/`
+- `tests/chaos/`
+- `tests/extensions/`, `tests/protocols/`, `tests/monitoring/`, `tests/observability/`, `tests/plugins/`, `tests/ml/`, `tests/cli/`, `tests/config/`
+- Shared config/fixtures in `tests/conftest.py`
 
-### Unit Tests
-- **Core Components**: [tests/test_bencode.py](mdc:tests/test_bencode.py), [tests/test_torrent.py](mdc:tests/test_torrent.py)
-- **Peer Management**: [tests/test_peer.py](mdc:tests/test_peer.py), [tests/test_peer_connection.py](mdc:tests/test_peer_connection.py)
-- **Piece Management**: [tests/test_piece_manager.py](mdc:tests/test_piece_manager.py)
-- **Security**: [tests/security/](mdc:tests/security/) - Security component tests
+### Pytest Configuration
+- Markers (from `pytest.ini` / `pyproject.toml`):
+  - `asyncio`, `slow`, `timeout`, `integration`, `unit`, `core`, `peer`, `piece`, `tracker`, `network`, `metadata`, `disk`, `file`, `session`, `resilience`, `connection`, `checkpoint`, `cli`
+- Async mode: `asyncio_mode = auto`
+- Default addopts (CI/coverage runs, from `pyproject.toml`):
+  - `--cov=ccbt --cov-report=term-missing --cov-report=html --cov-report=xml`
 
-### Integration Tests
-- **End-to-End**: Complete download workflows
-- **Network Simulation**: Mock network conditions
-- **Component Interaction**: Service integration testing
+### Core Test Fixtures and Hygiene
+Defined in `tests/conftest.py`:
+- Global logging handler cleanup after each test (prevents closed-file I/O errors)
+- Async resource cleanup: cancel and gather pending tasks, yield to loop
+- Per-test event loop via `event_loop` fixture
+- Deterministic RNG seeding (env `CCBT_TEST_SEED`, defaults to 123456); optional NumPy support
+- `tmp_storage` fixture for temp file/disk operations
 
-### Property-Based Tests
-- **Bencode**: Encoding/decoding properties
-- **Piece Selection**: Algorithm properties
-- **Message Serialization**: Protocol message properties
+### Running Tests
+- Full suite: `uv run pytest -v`
+- By marker: `uv run pytest -m "unit and not slow"`
+- With coverage (local): `uv run pytest --cov=ccbt --cov-report=term-missing --cov-report=xml`
+- Timeouts: default 300s per test (`--timeout=300 --timeout-method=thread` in hooks). Coverage hook uses 600s.
 
-### Performance Tests
-- **Benchmarks**: Performance regression detection
-- **Load Testing**: High-load scenarios
-- **Memory Usage**: Memory leak detection
+### Selective Test Execution (Pre-commit)
+Pre-commit runs selective tests via `tests/scripts/run_pytest_selective.py`:
+- Maps changed `ccbt/` files to markers using `tests/scripts/get_test_markers.py`
+- Marker mapping derives from `.codecov.yml` flags → paths
+- Critical files (`pytest.ini`, `.codecov.yml`, `.pre-commit-config.yaml`, `tests/conftest.py`, `ccbt/config.py`) force running the entire suite
+- Regular hook: `-v --tb=short --maxfail=5 --timeout=300 --timeout-method=thread`
+- Coverage hook (pre-push): `--cov=ccbt --cov-report=term-missing --cov-report=xml --cov-fail-under=40 --timeout=600 --timeout-method=thread`
 
-### Chaos Engineering
-- **Fault Injection**: Network and disk failures
-- **Partition Testing**: Network partition scenarios
-- **Peer Behavior**: Malicious peer simulation
+### Coverage and Codecov
+- CI targets in `.codecov.yml`: project 99% (±1%), patch 90% (±2%)
+- Flags categorize coverage by domain. Ensure paths reflect real modules:
+  - Example corrections: use `ccbt/peer/`, `ccbt/piece/`, `ccbt/protocols/`, etc., rather than single-file roots
+- Local HTML/XML reports are enabled via pytest addopts; artifacts used by Codecov
 
-## Testing Patterns
-
-### Async Testing
+### Async Testing Pattern
 ```python
 import pytest
-import asyncio
 
 @pytest.mark.asyncio
-async def test_async_function():
-    result = await async_function()
+async def test_async_operation():
+    result = await some_async_fn()
     assert result is not None
 ```
 
@@ -60,40 +73,38 @@ async def test_async_function():
 from hypothesis import given, strategies as st
 
 @given(st.binary())
-def test_bencode_properties(data):
-    encoded = bencode.encode(data)
-    decoded = bencode.decode(encoded)
+def test_bencode_roundtrip(data: bytes) -> None:
+    encoded = ccbt.core.bencode.encode(data)
+    decoded = ccbt.core.bencode.decode(encoded)
     assert decoded == data
-```
-
-### Mock Testing
-```python
-from unittest.mock import AsyncMock, patch
-
-@patch('ccbt.network.socket')
-async def test_network_operation(mock_socket):
-    mock_socket.return_value = AsyncMock()
-    # Test implementation
 ```
 
 ### Performance Testing
 ```python
-import pytest
-import time
-
 def test_performance(benchmark):
-    result = benchmark(expensive_function)
-    assert result < 1.0  # 1 second threshold
+    result = benchmark(target_function)
+    assert result is not None  # add domain-specific threshold if applicable
 ```
 
-## Test Data Management
-- **Fixtures**: Use pytest fixtures for test data
-- **Mock Objects**: Mock external dependencies
-- **Test Databases**: In-memory databases for testing
-- **Temporary Files**: Use tempfile for file operations
+### Chaos and Resilience Testing
+- Fault injection and resilience under timeouts in `tests/chaos/` and `tests/unit/resilience/`
+- Use markers `chaos`/`resilience` and thread-based timeouts to avoid event-loop deadlocks
 
-## Continuous Integration
-- **Pre-commit Hooks**: Automatic testing before commits
-- **Coverage Reports**: Track test coverage
-- **Performance Regression**: Detect performance regressions
-- **Security Scanning**: Automated security testing
+### CLI and Docs Hooks (Pre-commit)
+- Lint: `uv run ruff check ccbt/ --fix`
+- Format: `uv run ruff format ccbt/`
+- Type check: `uv run ty check --config-file=ty.toml`
+- Security: `uv run bandit -r ccbt/ -f json -o bandit-report.json --exclude tests/`
+- Tests: `uv run python tests/scripts/run_pytest_selective.py`
+- Coverage (pre-push): `uv run python tests/scripts/run_pytest_selective.py --coverage`
+- Docs: `uv run mkdocs build --strict`
+
+### Expectations for New Tests
+- Include unit tests for new functions and methods
+- Add integration tests when behavior spans multiple services/components
+- Add property tests for serialization, selection, or algorithmic logic
+- Add performance tests for optimizations or critical paths
+- Respect markers and directory conventions to integrate with selective runs
+- Keep tests deterministic (use provided fixtures), avoid uncontrolled sleeps
+
+

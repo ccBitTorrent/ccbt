@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ccbt.config_conditional import ConditionalConfig
-from ccbt.config_capabilities import SystemCapabilities
+from ccbt.config.config_conditional import ConditionalConfig
+from ccbt.config.config_capabilities import SystemCapabilities
 from ccbt.models import Config
 
 

@@ -29,8 +29,8 @@ import asyncio
 
 import pytest
 
-from ccbt.monitoring.terminal_dashboard import TerminalDashboard
-from ccbt.session import AsyncSessionManager
+from ccbt.interface.terminal_dashboard import TerminalDashboard
+from ccbt.session.session import AsyncSessionManager
 
 
 @pytest.mark.asyncio
@@ -49,8 +49,8 @@ async def test_dashboard_poll_once(monkeypatch):
         mock_dht.start = AsyncMock()
         mock_dht.stop = AsyncMock()
         
-        from ccbt.monitoring.terminal_dashboard import TerminalDashboard
-        from ccbt.session import AsyncSessionManager
+        from ccbt.interface.terminal_dashboard import TerminalDashboard
+        from ccbt.session.session import AsyncSessionManager
         
         session = AsyncSessionManager(".")
         app = TerminalDashboard(session, refresh_interval=0.5)

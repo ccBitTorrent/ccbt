@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import patch
 
 from ccbt.config import ConfigManager
-from ccbt.config_schema import ConfigValidator
+from ccbt.config.config_schema import ConfigValidator
 from ccbt.models import Config
 
 

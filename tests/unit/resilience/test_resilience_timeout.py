@@ -9,7 +9,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.resilience]
 
-from ccbt.resilience import with_timeout, with_retry, CircuitBreaker, RateLimiter
+from ccbt.utils.resilience import with_timeout, with_retry, CircuitBreaker, RateLimiter
 
 
 class TestResilienceTimeout:

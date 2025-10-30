@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
-from ccbt.async_main import (
+from ccbt.session.async_main import (
     AsyncDownloadManager,
     download_magnet,
     download_torrent,
@@ -71,8 +71,8 @@ class TestAsyncDownloadManager:
             files=[FileInfo(name="file1.txt", length=1024, path=["file1.txt"])],
         )
         
-        with patch('ccbt.async_main.get_config') as mock_get_config, \
-             patch('ccbt.async_main.AsyncPieceManager') as mock_piece_manager_class:
+        with patch('ccbt.session.async_main.get_config') as mock_get_config, \
+             patch('ccbt.session.async_main.AsyncPieceManager') as mock_piece_manager_class:
             
             mock_config = MagicMock()
             mock_get_config.return_value = mock_config
@@ -89,8 +89,8 @@ class TestAsyncDownloadManager:
         """Test AsyncDownloadManager initialization with custom parameters."""
         custom_peer_id = b"-TEST01-" + b"y" * 12
         
-        with patch('ccbt.async_main.get_config') as mock_get_config, \
-             patch('ccbt.async_main.AsyncPieceManager') as mock_piece_manager_class:
+        with patch('ccbt.session.async_main.get_config') as mock_get_config, \
+             patch('ccbt.session.async_main.AsyncPieceManager') as mock_piece_manager_class:
             
             mock_config = MagicMock()
             mock_get_config.return_value = mock_config
@@ -145,7 +145,7 @@ class TestAsyncDownloadManager:
             {"ip": "192.168.1.2", "port": 6881},
         ]
         
-        with patch('ccbt.async_main.AsyncPeerConnectionManager') as mock_peer_manager_class, \
+        with patch('ccbt.session.async_main.AsyncPeerConnectionManager') as mock_peer_manager_class, \
              patch.object(download_manager.piece_manager, 'start_download', new_callable=AsyncMock):
             
             mock_peer_manager = MagicMock()
@@ -253,10 +253,10 @@ class TestAsyncMainFunctions:
             ],
         }
         
-        with patch('ccbt.async_main.parse_magnet') as mock_parse_magnet, \
-             patch('ccbt.async_main.build_minimal_torrent_data') as mock_build_minimal, \
+        with patch('ccbt.session.async_main.parse_magnet') as mock_parse_magnet, \
+             patch('ccbt.session.async_main.build_minimal_torrent_data') as mock_build_minimal, \
              patch('ccbt.tracker.AsyncTrackerClient') as mock_tracker_class, \
-             patch('ccbt.async_main.AsyncDownloadManager') as mock_dm_class:
+             patch('ccbt.session.async_main.AsyncDownloadManager') as mock_dm_class:
             
             # Setup mocks
             mock_magnet_info = MagicMock()
@@ -309,9 +309,9 @@ class TestAsyncMainFunctions:
             ],
         }
         
-        with patch('ccbt.async_main.TorrentParser') as mock_parser_class, \
+        with patch('ccbt.session.async_main.TorrentParser') as mock_parser_class, \
              patch('ccbt.tracker.AsyncTrackerClient') as mock_tracker_class, \
-             patch('ccbt.async_main.AsyncDownloadManager') as mock_dm_class:
+             patch('ccbt.session.async_main.AsyncDownloadManager') as mock_dm_class:
             
             # Setup mocks
             mock_parser = MagicMock()
@@ -349,7 +349,7 @@ class TestAsyncMainFunctions:
         
         args = MockArgs()
         
-        with patch('ccbt.async_main.AsyncSessionManager') as mock_session_class:
+        with patch('ccbt.session.AsyncSessionManager') as mock_session_class:
             mock_session = MagicMock()
             mock_session_class.return_value = mock_session
             
@@ -375,7 +375,7 @@ class TestAsyncMainFunctions:
         
         args = MockArgs()
         
-        with patch('ccbt.async_main.AsyncSessionManager') as mock_session_class:
+        with patch('ccbt.session.AsyncSessionManager') as mock_session_class:
             mock_session = MagicMock()
             mock_session_class.return_value = mock_session
             
@@ -403,8 +403,8 @@ class TestAsyncMainFunctions:
         ]
         
         with patch('sys.argv', test_args), \
-             patch('ccbt.async_main.init_config') as mock_init_config, \
-             patch('ccbt.async_main.run_daemon', new_callable=AsyncMock) as mock_run_daemon:
+             patch('ccbt.session.async_main.init_config') as mock_init_config, \
+             patch('ccbt.session.async_main.run_daemon', new_callable=AsyncMock) as mock_run_daemon:
             
             mock_config_manager = MagicMock()
             mock_config_manager.config = MagicMock()
@@ -430,8 +430,8 @@ class TestAsyncMainFunctions:
         ]
         
         with patch('sys.argv', test_args), \
-             patch('ccbt.async_main.init_config') as mock_init_config, \
-             patch('ccbt.async_main.download_torrent', new_callable=AsyncMock) as mock_download_torrent:
+             patch('ccbt.session.async_main.init_config') as mock_init_config, \
+             patch('ccbt.session.async_main.download_torrent', new_callable=AsyncMock) as mock_download_torrent:
             
             mock_config_manager = MagicMock()
             mock_config_manager.config = MagicMock()
@@ -457,8 +457,8 @@ class TestAsyncMainFunctions:
         ]
         
         with patch('sys.argv', test_args), \
-             patch('ccbt.async_main.init_config') as mock_init_config, \
-             patch('ccbt.async_main.download_magnet', new_callable=AsyncMock) as mock_download_magnet:
+             patch('ccbt.session.async_main.init_config') as mock_init_config, \
+             patch('ccbt.session.async_main.download_magnet', new_callable=AsyncMock) as mock_download_magnet:
             
             mock_config_manager = MagicMock()
             mock_config_manager.config = MagicMock()
@@ -484,8 +484,8 @@ class TestAsyncMainFunctions:
         ]
         
         with patch('sys.argv', test_args), \
-             patch('ccbt.async_main.init_config') as mock_init_config, \
-             patch('ccbt.async_main.download_magnet', new_callable=AsyncMock) as mock_download_magnet:
+             patch('ccbt.session.async_main.init_config') as mock_init_config, \
+             patch('ccbt.session.async_main.download_magnet', new_callable=AsyncMock) as mock_download_magnet:
             
             mock_config_manager = MagicMock()
             mock_config_manager.config = MagicMock()
@@ -564,15 +564,32 @@ class TestAsyncMainFunctions:
         ]
         
         with patch('sys.argv', test_args), \
-             patch('ccbt.async_main.init_config') as mock_init_config, \
-             patch('ccbt.async_main.download_torrent', new_callable=AsyncMock):
+             patch('ccbt.session.async_main.init_config') as mock_init_config, \
+             patch('ccbt.session.async_main.download_torrent', new_callable=AsyncMock):
+            
+            # Create mock config structure that properly supports attribute assignment
+            mock_network = MagicMock()
+            mock_network.listen_port = None
+            mock_network.max_global_peers = None
+            
+            mock_limits = MagicMock()
+            mock_limits.global_down_kib = None
+            mock_limits.global_up_kib = None
+            
+            mock_observability = MagicMock()
+            mock_observability.log_level = None
+            
+            mock_strategy = MagicMock()
+            mock_strategy.streaming_mode = False
+            
+            mock_config = MagicMock()
+            mock_config.network = mock_network
+            mock_config.limits = mock_limits
+            mock_config.observability = mock_observability
+            mock_config.strategy = mock_strategy
             
             mock_config_manager = MagicMock()
-            mock_config_manager.config = MagicMock()
-            mock_config_manager.config.network = MagicMock()
-            mock_config_manager.config.limits = MagicMock()
-            mock_config_manager.config.observability = MagicMock()
-            mock_config_manager.config.strategy = MagicMock()
+            mock_config_manager.config = mock_config
             mock_init_config.return_value = mock_config_manager
             
             with patch.object(mock_config_manager, 'start_hot_reload', new_callable=AsyncMock):

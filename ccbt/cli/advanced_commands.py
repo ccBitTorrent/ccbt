@@ -16,9 +16,9 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from ccbt.checkpoint import CheckpointManager
-from ccbt.config import get_config
-from ccbt.disk_io import DiskIOManager
+from ccbt.config.config import get_config
+from ccbt.storage.checkpoint import CheckpointManager
+from ccbt.storage.disk_io import DiskIOManager
 
 
 async def _quick_disk_benchmark() -> dict:

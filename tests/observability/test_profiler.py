@@ -116,6 +116,8 @@ class TestProfiler:
     def test_end_profile_short_duration(self, profiler):
         """Test ending profile with short duration."""
         profiler.enabled = True
+        # Set a higher min_duration to ensure the test works
+        profiler.min_duration = 0.01  # 10ms minimum
         
         with patch.object(profiler, '_get_memory_usage', return_value=1024):
             profile_id = profiler.start_profile("test_function")

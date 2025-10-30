@@ -12,8 +12,8 @@ import statistics
 import time
 from typing import Any
 
-from ccbt.async_peer_connection import AsyncPeerConnectionManager
-from ccbt.async_piece_manager import AsyncPieceManager
+from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
+from ccbt.piece.async_piece_manager import AsyncPieceManager
 from ccbt.config import get_config
 from ccbt.peer import PeerInfo
 

@@ -55,7 +55,7 @@ ccBitTorrent provides comprehensive resume functionality for interrupted downloa
 #### Checkpoint Management
 
 ```python
-from ccbt.checkpoint import CheckpointManager
+from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.models import DiskConfig
 
 # Create checkpoint manager
@@ -829,7 +829,7 @@ session = AsyncSessionManager(config=config)
 ```python
 import asyncio
 from ccbt.session import AsyncSessionManager
-from ccbt.checkpoint import CheckpointManager
+from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.models import DiskConfig
 
 async def resume_example():
@@ -879,7 +879,7 @@ asyncio.run(resume_example())
 ### Checkpoint Management
 
 ```python
-from ccbt.checkpoint import CheckpointManager
+from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.models import TorrentCheckpoint, DiskConfig
 
 async def checkpoint_management():
@@ -914,7 +914,7 @@ asyncio.run(checkpoint_management())
 
 ```python
 from ccbt.session import AsyncSessionManager
-from ccbt.checkpoint import CheckpointManager
+from ccbt.storage.checkpoint import CheckpointManager
 
 async def interactive_resume():
     session = AsyncSessionManager()

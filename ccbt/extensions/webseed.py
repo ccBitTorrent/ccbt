@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 
-from ccbt.events import Event, EventType, emit_event
+from ccbt.utils.events import Event, EventType, emit_event
 
 if TYPE_CHECKING:
     from ccbt.models import PieceInfo

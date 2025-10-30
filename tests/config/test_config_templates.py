@@ -7,7 +7,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from ccbt.config_templates import ConfigTemplates, ConfigProfiles
+from ccbt.config.config_templates import ConfigTemplates, ConfigProfiles
 from ccbt.models import Config
 
 

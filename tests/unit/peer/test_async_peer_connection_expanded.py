@@ -11,7 +11,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
-from ccbt.async_peer_connection import (
+from ccbt.peer.async_peer_connection import (
     AsyncPeerConnection,
     AsyncPeerConnectionManager,
     ConnectionState,
@@ -19,7 +19,7 @@ from ccbt.async_peer_connection import (
     PeerStats,
     RequestInfo,
 )
-from ccbt.peer import (
+from ccbt.peer.peer import (
     BitfieldMessage,
     CancelMessage,
     ChokeMessage,

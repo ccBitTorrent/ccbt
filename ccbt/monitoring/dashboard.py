@@ -22,7 +22,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from ccbt.events import Event, EventType, emit_event
+from ccbt.utils.events import Event, EventType, emit_event
 
 logger = logging.getLogger(__name__)
 MIN_MAGNET_PARTS = 2

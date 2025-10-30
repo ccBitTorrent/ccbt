@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from enum import IntEnum
 
-from ccbt.events import Event, EventType, emit_event
+from ccbt.utils.events import Event, EventType, emit_event
 
 
 class FastMessageType(IntEnum):

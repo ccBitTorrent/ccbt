@@ -70,7 +70,7 @@ def main():
 
     # Step 2: Parse torrent or magnet (single-run mode)
     if args.magnet or args.torrent.startswith("magnet:"):
-        from ccbt import magnet as _magnet_mod
+        from ccbt.core import magnet as _magnet_mod
 
         mi = _magnet_mod.parse_magnet(args.torrent)
         torrent_data = _magnet_mod.build_minimal_torrent_data(
@@ -79,13 +79,13 @@ def main():
             mi.trackers,
         )
     else:
-        from ccbt import torrent as _torrent_mod
+        from ccbt.core import torrent as _torrent_mod
 
         torrent_parser = _torrent_mod.TorrentParser()
         torrent_data = torrent_parser.parse(os.path.basename(args.torrent))
 
     # Step 3: Contact tracker
-    from ccbt import tracker as _tracker_mod
+    from ccbt.discovery import tracker as _tracker_mod
 
     tracker = _tracker_mod.TrackerClient()
     # TrackerClient.announce expects dict[str, Any]; convert if TorrentInfo
@@ -123,11 +123,12 @@ def main():
             else torrent_data.info_hash
         )
 
+        # DHT peer lookup
+        dht_peers = []
         try:
+            from ccbt.discovery import dht as _dht_mod
 
             async def _lookup_dht_peers() -> list[tuple[str, int]]:
-                from ccbt import dht as _dht_mod
-
                 dht = _dht_mod.DHTClient()
                 await dht.start()
                 try:
@@ -155,7 +156,7 @@ def main():
             if isinstance(torrent_data, dict)
             else torrent_data.info_hash
         )
-        from ccbt.metadata_exchange import fetch_metadata_from_peers as _fetch
+        from ccbt.piece.metadata_exchange import fetch_metadata_from_peers as _fetch
 
         try:
             info_dict = _fetch(
@@ -166,7 +167,7 @@ def main():
             logger.debug("Metadata fetch failed: %s", _e)
             info_dict = None
         if info_dict:
-            from ccbt import magnet as _magnet_mod2
+            from ccbt.core import magnet as _magnet_mod2
 
             torrent_data = _magnet_mod2.build_torrent_data_from_metadata(
                 info_hash,
@@ -182,7 +183,7 @@ def main():
     if not isinstance(dm_input, dict):
         msg = f"Expected dict for dm_input, got {type(dm_input)}"
         raise TypeError(msg)
-    from ccbt import file_assembler as _fa_mod
+    from ccbt.storage import file_assembler as _fa_mod
 
     download_manager = _fa_mod.DownloadManager(cast("dict[str, Any]", dm_input))
 

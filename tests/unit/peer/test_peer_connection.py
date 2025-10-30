@@ -8,9 +8,9 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
-from ccbt.exceptions import PeerConnectionError
-from ccbt.peer import create_message
-from ccbt.peer_connection import (
+from ccbt.utils.exceptions import PeerConnectionError
+from ccbt.peer.peer import create_message
+from ccbt.peer.peer_connection import (
     ConnectionState,
     PeerConnection,
     PeerConnectionManager,
@@ -118,7 +118,7 @@ class TestPeerConnectionManager:
     def test_connect_to_peer_handshake_validation(self):
         """Test handshake validation logic."""
         # Test that handshake validation works correctly
-        from ccbt.peer import Handshake
+        from ccbt.peer.peer import Handshake
 
         # Matching handshake should validate
         info_hash = b"info_hash_20_bytes__"
@@ -154,7 +154,7 @@ class TestPeerConnectionManager:
         mock_open_connection.return_value = (mock_reader, mock_writer)
 
         # Create proper BitTorrent handshake response
-        from ccbt.peer import Handshake
+        from ccbt.peer.peer import Handshake
         info_hash = self.torrent_data["info_hash"]  # Use the same info_hash as torrent_data
         peer_id = b"test_peer_id_20_byte"  # 20 bytes (exactly)
         handshake = Handshake(info_hash, peer_id)
@@ -191,7 +191,7 @@ class TestPeerConnectionManager:
         mock_open_connection.return_value = (mock_reader, mock_writer)
 
         # Create proper BitTorrent handshake response
-        from ccbt.peer import Handshake
+        from ccbt.peer.peer import Handshake
         info_hash = self.torrent_data["info_hash"]  # Use the same info_hash as torrent_data
         peer_id = b"test_peer_id_20_byte"  # 20 bytes (exactly)
         handshake = Handshake(info_hash, peer_id)
@@ -229,7 +229,7 @@ class TestPeerConnectionManager:
         mock_open_connection.return_value = (mock_reader, mock_writer)
 
         # Create proper BitTorrent handshake response
-        from ccbt.peer import Handshake
+        from ccbt.peer.peer import Handshake
         info_hash = self.torrent_data["info_hash"]  # Use the same info_hash as torrent_data
         peer_id = b"test_peer_id_20_byte"  # 20 bytes (exactly)
         handshake = Handshake(info_hash, peer_id)
@@ -262,7 +262,7 @@ class TestPeerConnectionManager:
         mock_open_connection.return_value = (mock_reader, mock_writer)
 
         # Create proper BitTorrent handshake response
-        from ccbt.peer import Handshake
+        from ccbt.peer.peer import Handshake
         info_hash = self.torrent_data["info_hash"]  # Use the same info_hash as torrent_data
         peer_id = b"test_peer_id_20_byte"  # 20 bytes (exactly)
         handshake = Handshake(info_hash, peer_id)
@@ -309,7 +309,7 @@ class TestPeerConnectionManager:
         mock_open_connection.return_value = (mock_reader, mock_writer)
 
         # Create proper BitTorrent handshake response
-        from ccbt.peer import Handshake
+        from ccbt.peer.peer import Handshake
         info_hash = self.torrent_data["info_hash"]  # Use the same info_hash as torrent_data
         peer_id = b"test_peer_id_20_byte"  # 20 bytes (exactly)
         handshake = Handshake(info_hash, peer_id)
@@ -356,7 +356,7 @@ class TestPeerConnectionManager:
         mock_open_connection.return_value = (mock_reader, mock_writer)
 
         # Create proper BitTorrent handshake response
-        from ccbt.peer import Handshake
+        from ccbt.peer.peer import Handshake
         info_hash = self.torrent_data["info_hash"]  # Use the same info_hash as torrent_data
         peer_id = b"test_peer_id_20_byte"  # 20 bytes (exactly)
         handshake = Handshake(info_hash, peer_id)
@@ -413,7 +413,7 @@ class TestPeerConnectionManager:
         mock_open_connection.return_value = (mock_reader, mock_writer)
 
         # Create proper BitTorrent handshake response
-        from ccbt.peer import Handshake
+        from ccbt.peer.peer import Handshake
         info_hash = self.torrent_data["info_hash"]  # Use the same info_hash as torrent_data
         peer_id = b"test_peer_id_20_byte"  # 20 bytes (exactly)
         handshake = Handshake(info_hash, peer_id)

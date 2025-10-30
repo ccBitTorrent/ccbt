@@ -8,7 +8,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.piece]
 
-from ccbt.piece_manager import PieceBlock, PieceData, PieceManager, PieceState
+from ccbt.piece.piece_manager import PieceBlock, PieceData, PieceManager, PieceState
 
 
 class TestPieceBlock:

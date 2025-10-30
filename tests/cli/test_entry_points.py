@@ -26,7 +26,7 @@ def test___main___daemon_status_quick_exit(monkeypatch):
 @pytest.mark.asyncio
 async def test_async_main_sync_wrapper_daemon_status(monkeypatch):
     """Smoke-test ccbt.async_main.sync_main via main() with --daemon --status."""
-    import ccbt.async_main as am
+    import ccbt.session.async_main as am
 
     # Make parse_args return desired args without touching argparse internals
     fake_args = SimpleNamespace(
@@ -58,11 +58,14 @@ async def test_async_main_sync_wrapper_daemon_status(monkeypatch):
         def stop_hot_reload(self):  # pragma: no cover
             pass
 
-    monkeypatch.setattr(am, "init_config", lambda _p: _FakeConfigMgr())
-    monkeypatch.setattr(am.argparse.ArgumentParser, "parse_args", lambda self: fake_args)
+    from ccbt.config import config as config_module
+    import argparse
+    monkeypatch.setattr(config_module, "init_config", lambda _p: _FakeConfigMgr())
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self: fake_args)
 
     # Run main() directly to avoid creating a new event loop via sync_main
-    rc = await am.main()
+    from ccbt.session.async_main import main
+    rc = await main()
     assert rc == 0
 
 

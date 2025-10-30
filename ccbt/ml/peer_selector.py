@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from ccbt.events import Event, EventType, emit_event
+from ccbt.utils.events import Event, EventType, emit_event
 
 if TYPE_CHECKING:
     from ccbt.models import PeerInfo

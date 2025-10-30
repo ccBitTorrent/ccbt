@@ -8,9 +8,9 @@ import pytest
 
 pytestmark = [pytest.mark.integration]
 
-from ccbt.session import AsyncSessionManager, AsyncTorrentSession
+from ccbt.session.session import AsyncSessionManager, AsyncTorrentSession
 from ccbt.models import PeerInfo, TorrentInfo
-from ccbt.metrics import Metrics
+from ccbt.utils.metrics import Metrics
 
 
 class TestSessionManagerIntegration:

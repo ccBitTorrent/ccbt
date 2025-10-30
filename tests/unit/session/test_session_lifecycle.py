@@ -10,7 +10,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
-from ccbt.session import AsyncSessionManager, AsyncTorrentSession
+from ccbt.session.session import AsyncSessionManager, AsyncTorrentSession
 
 
 class TestSessionManagerLifecycle:
@@ -171,7 +171,7 @@ class TestSessionManagerAddTorrent:
             "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
         }
         
-        with patch("ccbt.session.TorrentParser") as mock_parser:
+        with patch("ccbt.session.session.TorrentParser") as mock_parser:
             mock_parser_instance = MagicMock()
             mock_parser.return_value = mock_parser_instance
             mock_parser_instance.parse.return_value = torrent_data
@@ -199,7 +199,7 @@ class TestSessionManagerAddTorrent:
             total_length=1000,
         )
         
-        with patch("ccbt.session.TorrentParser") as mock_parser:
+        with patch("ccbt.session.session.TorrentParser") as mock_parser:
             mock_parser_instance = MagicMock()
             mock_parser.return_value = mock_parser_instance
             mock_parser_instance.parse.return_value = torrent_model
@@ -252,7 +252,7 @@ class TestSessionManagerAddMagnet:
         with patch("ccbt.session.parse_magnet") as mock_parse, patch(
             "ccbt.session.build_minimal_torrent_data"
         ) as mock_build:
-            from ccbt.magnet import MagnetInfo
+            from ccbt.core.magnet import MagnetInfo
             
             mock_parse.return_value = MagnetInfo(
                 info_hash=info_hash,
@@ -284,7 +284,7 @@ class TestSessionManagerAddMagnet:
         with patch("ccbt.session.parse_magnet") as mock_parse, patch(
             "ccbt.session.build_minimal_torrent_data"
         ) as mock_build:
-            from ccbt.magnet import MagnetInfo
+            from ccbt.core.magnet import MagnetInfo
             
             mock_parse.return_value = MagnetInfo(
                 info_hash=info_hash,
@@ -316,7 +316,7 @@ class TestSessionManagerAddMagnet:
         with patch("ccbt.session.parse_magnet") as mock_parse, patch(
             "ccbt.session.build_minimal_torrent_data"
         ) as mock_build:
-            from ccbt.magnet import MagnetInfo
+            from ccbt.core.magnet import MagnetInfo
             
             mock_parse.return_value = MagnetInfo(
                 info_hash=info_hash,
@@ -357,7 +357,7 @@ class TestSessionManagerAddMagnet:
         with patch("ccbt.session.parse_magnet") as mock_parse, patch(
             "ccbt.session.build_minimal_torrent_data"
         ) as mock_build:
-            from ccbt.magnet import MagnetInfo
+            from ccbt.core.magnet import MagnetInfo
             
             mock_parse.return_value = MagnetInfo(
                 info_hash=info_hash,

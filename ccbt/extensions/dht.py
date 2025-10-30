@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any
 
-from ccbt import bencode
-from ccbt.events import Event, EventType, emit_event
+from ccbt.core import bencode
 from ccbt.models import PeerInfo
+from ccbt.utils.events import Event, EventType, emit_event
 
 
 class DHTMessageType(IntEnum):

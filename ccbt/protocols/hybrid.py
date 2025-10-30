@@ -13,7 +13,6 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from ccbt.events import Event, EventType, emit_event
 from ccbt.protocols.base import (
     Protocol,
     ProtocolCapabilities,
@@ -23,6 +22,7 @@ from ccbt.protocols.base import (
 from ccbt.protocols.bittorrent import BitTorrentProtocol
 from ccbt.protocols.ipfs import IPFSProtocol
 from ccbt.protocols.webtorrent import WebTorrentProtocol
+from ccbt.utils.events import Event, EventType, emit_event
 
 if TYPE_CHECKING:
     from ccbt.models import PeerInfo, TorrentInfo

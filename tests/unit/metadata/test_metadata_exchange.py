@@ -8,7 +8,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.metadata]
 
-from ccbt.metadata_exchange import (
+from ccbt.piece.metadata_exchange import (
     fetch_metadata_from_peers,
     _handshake,
     _read_exact,

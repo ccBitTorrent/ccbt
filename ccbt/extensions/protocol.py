@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Callable
 
-from ccbt.events import Event, EventType, emit_event
+from ccbt.utils.events import Event, EventType, emit_event
 
 
 class ExtensionMessageType(IntEnum):

@@ -8,8 +8,8 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.core]
 
-from ccbt.bencode import encode
-from ccbt.torrent import TorrentError, TorrentParser
+from ccbt.core.bencode import encode
+from ccbt.core.torrent import TorrentError, TorrentParser
 
 
 class TestTorrentParser:

@@ -14,8 +14,8 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.piece]
 
-from ccbt.async_piece_manager import AsyncPieceManager, PieceBlock, PieceData, PieceState
-from ccbt.peer import PeerInfo
+from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceBlock, PieceData, PieceState
+from ccbt.peer.peer import PeerInfo
 
 
 @pytest.fixture

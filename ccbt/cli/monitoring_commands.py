@@ -10,9 +10,9 @@ from typing import Any
 import click
 from rich.console import Console
 
+from ccbt.interface.terminal_dashboard import run_dashboard
 from ccbt.monitoring import get_alert_manager
-from ccbt.monitoring.terminal_dashboard import run_dashboard
-from ccbt.session import AsyncSessionManager
+from ccbt.session.session import AsyncSessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ def alerts(
     if load or save:
         # Resolve default path from config if not provided
         try:
-            from ccbt.config import get_config  # type: ignore[import-untyped]
+            from ccbt.config.config import get_config  # type: ignore[import-untyped]
 
             default_path = getattr(
                 get_config().observability,
@@ -310,7 +310,7 @@ def metrics(
         cfg_iv = 5.0
         try:
             # lazy import to avoid cycles
-            from ccbt.config import get_config  # type: ignore[import-untyped]
+            from ccbt.config.config import get_config  # type: ignore[import-untyped]
 
             cfg_iv = float(get_config().observability.metrics_interval)
         except Exception as e:

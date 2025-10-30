@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ccbt.checkpoint import CheckpointManager
+from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.config import get_config
 
 

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 pytestmark = [pytest.mark.unit, pytest.mark.network]
 
-from ccbt.network_optimizer import (
+from ccbt.utils.network_optimizer import (
     ConnectionPool,
     ConnectionStats,
     NetworkOptimizer,

@@ -5,7 +5,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.file]
 
-from ccbt.file_assembler import AsyncFileAssembler
+from ccbt.storage.file_assembler import AsyncFileAssembler
 from ccbt.models import FileInfo
 
 

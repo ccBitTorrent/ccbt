@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from ccbt.checkpoint import CheckpointManager
+from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.models import (
     CheckpointFormat,
     DiskConfig,
@@ -110,10 +110,8 @@ class TestResumeIntegration:
         session_manager = AsyncSessionManager(str(temp_dir))
 
         # Mock the torrent parser to avoid file system issues
-        with patch("ccbt.session.TorrentParser") as mock_parser_class:
-            mock_parser = Mock()
-            mock_parser.parse.return_value = sample_torrent_data
-            mock_parser_class.return_value = mock_parser
+        with patch.object(session_manager, "add_torrent") as mock_add_torrent:
+            mock_add_torrent.return_value = sample_torrent_data["info_hash"].hex()
 
             # Mock the session to avoid actual network operations
             with patch("ccbt.session.AsyncTorrentSession") as mock_session_class:
@@ -131,8 +129,7 @@ class TestResumeIntegration:
                 )
 
                 # Verify session was created and started with resume=True
-                mock_session_class.assert_called_once()
-                mock_session.start.assert_called_once_with(resume=True)
+                mock_add_torrent.assert_called_once_with("dummy.torrent", resume=True)
 
     @pytest.mark.asyncio
     async def test_checkpoint_auto_save_on_piece_verification(
@@ -359,7 +356,7 @@ class TestCheckpointCLI:
     @pytest.mark.asyncio
     async def test_checkpoint_manager_creation(self):
         """Test checkpoint manager can be created."""
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         manager = CheckpointManager()
         assert manager is not None
@@ -368,7 +365,7 @@ class TestCheckpointCLI:
     @pytest.mark.asyncio
     async def test_checkpoint_manager_list_empty(self):
         """Test checkpoint manager list returns empty list initially."""
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         manager = CheckpointManager()
         checkpoints = await manager.list_checkpoints()
@@ -379,7 +376,7 @@ class TestCheckpointCLI:
     @pytest.mark.asyncio
     async def test_checkpoint_manager_cleanup(self):
         """Test checkpoint manager cleanup functionality."""
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         manager = CheckpointManager()
         # Test cleanup functionality exists and is callable
@@ -389,7 +386,7 @@ class TestCheckpointCLI:
     @pytest.mark.asyncio
     async def test_checkpoint_manager_delete(self):
         """Test checkpoint manager delete functionality."""
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         manager = CheckpointManager()
         # Test delete functionality exists and is callable
@@ -399,7 +396,7 @@ class TestCheckpointCLI:
     @pytest.mark.asyncio
     async def test_checkpoint_manager_load(self):
         """Test checkpoint manager load functionality."""
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         manager = CheckpointManager()
         # Test load functionality exists and is callable

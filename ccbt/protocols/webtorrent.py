@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 from aiohttp import web
 
-from ccbt.events import Event, EventType, emit_event
 from ccbt.models import PeerInfo, TorrentInfo
 from ccbt.protocols.base import (
     Protocol,
@@ -26,6 +25,7 @@ from ccbt.protocols.base import (
     ProtocolState,
     ProtocolType,
 )
+from ccbt.utils.events import Event, EventType, emit_event
 
 if TYPE_CHECKING:
     from aiohttp.web import Application, WebSocketResponse

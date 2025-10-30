@@ -13,13 +13,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from ccbt.events import Event, EventType, emit_event
 from ccbt.extensions.compact import CompactPeerLists
 from ccbt.extensions.dht import DHTExtension
 from ccbt.extensions.fast import FastExtension
 from ccbt.extensions.pex import PeerExchange
 from ccbt.extensions.protocol import ExtensionProtocol
 from ccbt.extensions.webseed import WebSeedExtension
+from ccbt.utils.events import Event, EventType, emit_event
 
 if TYPE_CHECKING:
     from ccbt.models import PeerInfo, PieceInfo

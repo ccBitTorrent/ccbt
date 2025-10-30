@@ -1,0 +1,97 @@
+---
+globs: ccbt/interface/terminal_dashboard.py
+description: Guidance and constraints for Textual-based terminal dashboard implementation
+---
+
+# Terminal Dashboard Rules
+
+These rules apply to the Textual dashboard in [ccbt/interface/terminal_dashboard.py](mdc:ccbt/interface/terminal_dashboard.py) and align with the roadmap in [textualinterface](mdc:textualinterface).
+
+## Architecture and Composition
+- Prefer compose()/yield over imperative mount during layout construction.
+  - Build the layout tree in `compose()` using `with` blocks and `yield`.
+  - Use `on_mount()` only for wiring, background tasks, intervals, and querying refs.
+- Query widgets after compose using `query_one` with explicit types.
+- Keep I/O async and non-blocking. Use `set_interval()` for periodic UI updates.
+- Use `App.BINDINGS` for key actions; implement corresponding `action_*` methods.
+
+## Rendering with Textual and Rich
+- Only pass Rich renderables, text, or Content objects to `Static.update()`.
+  - Valid: `str`, `rich.table.Table`, `rich.panel.Panel`, etc.
+  - Invalid: Textual widgets such as `Container`, `Horizontal`, `Vertical`, `DataTable`, `Sparkline`, `Static` instances.
+- Never wrap Textual widgets inside Rich renderables (e.g., `Panel(Container(...))`).
+- To show multiple renderables in one area, compose a Rich layout (e.g., `Table.grid`) and update the `Static` with that renderable.
+- For errors, display a short Rich `Panel` with a message (avoid raising inside the UI loop).
+
+References:
+- Content and rendering: [Content guide](https://textual.textualize.io/guide/content/)
+- Widgets overview: [Widgets guide](https://textual.textualize.io/guide/widgets/)
+- Styles and layout: [Layout](https://textual.textualize.io/guide/layout/), [Styles reference](https://textual.textualize.io/reference/styles/)
+
+## Containers and Layout
+- Use `Horizontal`/`Container` for structure; manage sizing via CSS only.
+- Use fractional sizing and min-heights in CSS for predictable layout:
+  - `#body { layout: horizontal; }
+     #left, #right { width: 1fr; }
+     #overview { height: 1fr; min-height: 8 }
+     #speeds { height: 1fr; min-height: 5 }`
+- Do not attempt to render container widgets; they are not Rich renderables.
+
+Docs:
+- Containers API: [textual.containers](https://textual.textualize.io/api/textual.containers/)
+- Grid and size properties: [Grid styles](https://textual.textualize.io/reference/styles/#grid), [Width/Height](https://textual.textualize.io/reference/styles/#width)
+
+## Widget-Specific Guidance
+- Overview (`Static` subclass): generate a `rich.table.Table` and wrap in `rich.panel.Panel`.
+- Torrents/Peers (`DataTable`):
+  - Add columns in `on_mount()`.
+  - Keep the selection model stable across refresh by reusing row keys.
+  - Clear and repopulate rows on update; avoid heavy per-row formatting in the UI loop.
+- Speeds (`Sparkline` widgets):
+  - Mount `Sparkline` children directly as Textual widgets; do not place them inside a `Panel`.
+  - The label/title for the area should be a `Static.update("Speeds")` or a Rich renderable on the parent `Static`.
+- Logs (`RichLog`): write short, concise messages; avoid high-frequency spam.
+- Input: rely on `Input.Submitted` for command/filter handling; hide input after processing.
+
+Docs:
+- DataTable: https://textual.textualize.io/reference/widgets/#datatable
+- Sparkline: https://textual.textualize.io/reference/widgets/#sparkline
+- RichLog: https://textual.textualize.io/reference/widgets/#richlog
+- Input events: https://textual.textualize.io/reference/widgets/#input
+
+## Events, Actions, and Key Handling
+- Use `BINDINGS` for common actions and implement `action_*` methods.
+- For raw key handling, use `on_key` sparingly; prefer actions for discoverability.
+- For inputs, handle `on_input_submitted` with id-based routing.
+
+Docs:
+- Actions & bindings: https://textual.textualize.io/guide/actions/
+- Key event: https://textual.textualize.io/reference/events/#key
+
+## Async and Background Work
+- All I/O must be `async` and awaited.
+- Use `set_interval()` to schedule periodic updates; gate concurrent polls with a task guard.
+- Avoid long operations in UI thread; prefer service calls (`AsyncSessionManager`) and lightweight UI updates.
+
+## Error Handling and Resilience
+- Wrap external/service calls with `contextlib.suppress` where failure is non-critical.
+- On exceptions during refresh, update a visible area (`#overview` or status bar) with a red `Panel` containing a concise message; keep the app responsive.
+- Never crash the UI due to a non-renderable content; ensure `Static.update()` receives only renderables/text.
+
+## Metrics and Alerts
+- Metrics collection should be optional and failure-tolerant.
+- When showing alert rules/active alerts, build Rich tables and combine via `Table.grid`, then `Static.update(Panel(grid, title="Alerts"))`.
+
+## Theming and Compact Mode
+- Toggle theme via `self.dark` boolean; reflect state in status bar.
+- For compact mode, adjust `.styles.height` and `.display` of panels; call `refresh(layout=True)` afterward.
+
+## Testing and Docs
+- Add unit tests for composition, bindings, and basic refresh cycle.
+- Document user interactions (keys, command palette) and troubleshooting.
+
+## Prohibited Patterns (lint-level rules)
+- Do not pass Textual widgets to Rich containers (e.g., `Panel(Container(...))`).
+- Do not block the event loop with synchronous I/O.
+- Do not modify layout tree in the refresh loop unless necessary (prefer state updates).
+

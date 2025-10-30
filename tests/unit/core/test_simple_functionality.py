@@ -20,7 +20,7 @@ class TestSimpleFunctionality:
 
     def test_config_loading(self):
         """Test that configuration can be loaded."""
-        from ccbt.config import get_config
+        from ccbt.config.config import get_config
 
         config = get_config()
         assert config is not None
@@ -29,7 +29,7 @@ class TestSimpleFunctionality:
 
     def test_config_values(self):
         """Test that configuration has expected values."""
-        from ccbt.config import get_config
+        from ccbt.config.config import get_config
 
         config = get_config()
 
@@ -40,7 +40,7 @@ class TestSimpleFunctionality:
 
     def test_peer_info_creation(self):
         """Test PeerInfo creation."""
-        from ccbt.peer import PeerInfo
+        from ccbt.models import PeerInfo
 
         peer = PeerInfo(ip="127.0.0.1", port=6881)
         assert peer.ip == "127.0.0.1"
@@ -48,7 +48,7 @@ class TestSimpleFunctionality:
 
     def test_message_types(self):
         """Test message type constants."""
-        from ccbt.peer import MessageType
+        from ccbt.peer.peer import MessageType
 
         assert MessageType.CHOKE == 0
         assert MessageType.UNCHOKE == 1
@@ -62,7 +62,7 @@ class TestSimpleFunctionality:
 
     def test_piece_state_enum(self):
         """Test PieceState enum."""
-        from ccbt.async_piece_manager import PieceState
+        from ccbt.piece.async_piece_manager import PieceState
 
         assert PieceState.MISSING.value == "missing"
         assert PieceState.DOWNLOADING.value == "downloading"
@@ -71,7 +71,7 @@ class TestSimpleFunctionality:
 
     def test_torrent_parser_basic(self):
         """Test basic torrent parsing functionality."""
-        from ccbt.torrent import TorrentParser
+        from ccbt.core.torrent import TorrentParser
 
         # Create a minimal test torrent data
 
@@ -81,7 +81,7 @@ class TestSimpleFunctionality:
 
     def test_bencode_encoding(self):
         """Test bencode encoding."""
-        from ccbt.bencode import BencodeEncoder
+        from ccbt.core.bencode import BencodeEncoder
 
         encoder = BencodeEncoder()
 
@@ -99,7 +99,7 @@ class TestSimpleFunctionality:
 
     def test_bencode_decoding(self):
         """Test bencode decoding."""
-        from ccbt.bencode import BencodeDecoder
+        from ccbt.core.bencode import BencodeDecoder
 
         decoder = BencodeDecoder(b"5:hello")
         result = decoder.decode()
@@ -115,7 +115,7 @@ class TestSimpleFunctionality:
 
     def test_magnet_parsing(self):
         """Test magnet link parsing."""
-        from ccbt.magnet import parse_magnet
+        from ccbt.core.magnet import parse_magnet
 
         # Test with a simple magnet link
         magnet_uri = (
@@ -131,7 +131,7 @@ class TestSimpleFunctionality:
 
     def test_metrics_collector_creation(self):
         """Test metrics collector creation."""
-        from ccbt.metrics import MetricsCollector
+        from ccbt.utils.metrics import MetricsCollector
 
         collector = MetricsCollector()
         assert collector is not None
@@ -140,7 +140,7 @@ class TestSimpleFunctionality:
 
     def test_metrics_summary(self):
         """Test metrics summary generation."""
-        from ccbt.metrics import MetricsCollector
+        from ccbt.utils.metrics import MetricsCollector
 
         collector = MetricsCollector()
         summary = collector.get_metrics_summary()
@@ -152,16 +152,16 @@ class TestSimpleFunctionality:
 
     def test_pex_manager_creation(self):
         """Test PEX manager creation."""
-        from ccbt.pex import AsyncPexManager
+        from ccbt.extensions.pex import PeerExchange
 
-        manager = AsyncPexManager()
+        manager = PeerExchange()
         assert manager is not None
-        assert hasattr(manager, "known_peers")
-        assert hasattr(manager, "sessions")
+        assert hasattr(manager, "added_peers")
+        assert hasattr(manager, "dropped_peers")
 
     def test_dht_client_creation(self):
         """Test DHT client creation."""
-        from ccbt.dht import AsyncDHTClient
+        from ccbt.discovery.dht import AsyncDHTClient
 
         client = AsyncDHTClient()
         assert client is not None
@@ -169,13 +169,17 @@ class TestSimpleFunctionality:
 
     def test_tracker_response_creation(self):
         """Test tracker response creation."""
-        from ccbt.tracker import TrackerResponse
+        from ccbt.discovery.tracker_udp_client import TrackerResponse, TrackerAction
 
         response = TrackerResponse(
+            action=TrackerAction.ANNOUNCE,
+            transaction_id=12345,
             interval=1800,
             peers=[{"ip": "127.0.0.1", "port": 6881}],
         )
 
+        assert response.action == TrackerAction.ANNOUNCE
+        assert response.transaction_id == 12345
         assert response.interval == 1800
         assert len(response.peers) == 1
         assert response.peers[0]["ip"] == "127.0.0.1"
@@ -183,7 +187,7 @@ class TestSimpleFunctionality:
 
     def test_socket_optimizer_creation(self):
         """Test socket optimizer creation."""
-        from ccbt.peer import SocketOptimizer
+        from ccbt.peer.peer import SocketOptimizer
 
         optimizer = SocketOptimizer()
         assert optimizer is not None
@@ -192,7 +196,7 @@ class TestSimpleFunctionality:
 
     def test_file_segment_creation(self):
         """Test file segment creation."""
-        from ccbt.file_assembler import FileSegment
+        from ccbt.storage.file_assembler import FileSegment
 
         segment = FileSegment(
             file_path="tests/data/test.txt",
@@ -212,7 +216,7 @@ class TestSimpleFunctionality:
         """Test write request creation."""
         from pathlib import Path
 
-        from ccbt.disk_io import WriteRequest
+        from ccbt.storage.disk_io import WriteRequest
 
         request = WriteRequest(
             file_path=Path("tests/data/test.txt"),
@@ -228,7 +232,7 @@ class TestSimpleFunctionality:
 
     def test_pex_peer_creation(self):
         """Test PEX peer creation."""
-        from ccbt.pex import PexPeer
+        from ccbt.discovery.pex import PexPeer
 
         peer = PexPeer(ip="127.0.0.1", port=6881)
         assert peer.ip == "127.0.0.1"
@@ -238,7 +242,7 @@ class TestSimpleFunctionality:
 
     def test_peer_metrics_creation(self):
         """Test peer metrics creation."""
-        from ccbt.metrics import PeerMetrics
+        from ccbt.utils.metrics import PeerMetrics
 
         metrics = PeerMetrics(peer_key="test_peer")
         assert metrics.peer_key == "test_peer"
@@ -249,7 +253,7 @@ class TestSimpleFunctionality:
 
     def test_torrent_metrics_creation(self):
         """Test torrent metrics creation."""
-        from ccbt.metrics import TorrentMetrics
+        from ccbt.utils.metrics import TorrentMetrics
 
         metrics = TorrentMetrics(torrent_id="test_torrent")
         assert metrics.torrent_id == "test_torrent"
@@ -264,14 +268,14 @@ class TestSimpleFunctionality:
         # Test that we can create instances of main classes
         from pathlib import Path
 
-        from ccbt.config import Config
-        from ccbt.dht import AsyncDHTClient
-        from ccbt.disk_io import WriteRequest
-        from ccbt.file_assembler import FileSegment
-        from ccbt.metrics import MetricsCollector, PeerMetrics, TorrentMetrics
-        from ccbt.peer import PeerInfo, SocketOptimizer
-        from ccbt.pex import AsyncPexManager, PexPeer
-        from ccbt.tracker import TrackerResponse
+        from ccbt.config.config import Config
+        from ccbt.discovery.dht import AsyncDHTClient
+        from ccbt.storage.disk_io import WriteRequest
+        from ccbt.storage.file_assembler import FileSegment
+        from ccbt.utils.metrics import MetricsCollector, PeerMetrics, TorrentMetrics
+        from ccbt.peer.peer import PeerInfo, SocketOptimizer
+        from ccbt.discovery.pex import AsyncPexManager, PexPeer
+        from ccbt.discovery.tracker import TrackerResponse
 
         # Create instances
         config = Config()

@@ -5,7 +5,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.core]
 
-from ccbt.bencode import (
+from ccbt.core.bencode import (
     BencodeDecodeError,
     BencodeDecoder,
     BencodeEncodeError,

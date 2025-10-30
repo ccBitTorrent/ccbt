@@ -10,7 +10,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
 
-from ccbt.tracker_udp_client import (
+from ccbt.discovery.tracker_udp_client import (
     AsyncUDPTrackerClient,
     TrackerAction,
     TrackerEvent,

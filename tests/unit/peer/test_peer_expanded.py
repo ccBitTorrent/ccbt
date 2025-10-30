@@ -10,9 +10,9 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
-from ccbt.exceptions import MessageError
+from ccbt.utils.exceptions import MessageError
 from ccbt.models import MessageType
-from ccbt.peer import (
+from ccbt.peer.peer import (
     AsyncMessageDecoder,
     BitfieldMessage,
     CancelMessage,

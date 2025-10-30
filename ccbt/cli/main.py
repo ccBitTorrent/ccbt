@@ -34,14 +34,14 @@ from ccbt.cli.monitoring_commands import alerts as alerts_cmd
 from ccbt.cli.monitoring_commands import dashboard as dashboard_cmd
 from ccbt.cli.monitoring_commands import metrics as metrics_cmd
 from ccbt.cli.progress import ProgressManager
-from ccbt.config import Config, ConfigManager, init_config
+from ccbt.config.config import Config, ConfigManager, init_config
 from ccbt.monitoring import (
     AlertManager,
     DashboardManager,
     MetricsCollector,
     TracingManager,
 )
-from ccbt.session import AsyncSessionManager
+from ccbt.session.session import AsyncSessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -409,7 +409,7 @@ def download(
 
         # Check for existing checkpoint
         if config.disk.checkpoint_enabled and not resume:
-            from ccbt.checkpoint import CheckpointManager
+            from ccbt.storage.checkpoint import CheckpointManager
 
             checkpoint_manager = CheckpointManager(config.disk)
             # Handle both dict and TorrentInfo types
@@ -643,7 +643,7 @@ def magnet(
 
         # Check for existing checkpoint
         if config.disk.checkpoint_enabled and not resume:
-            from ccbt.checkpoint import CheckpointManager
+            from ccbt.storage.checkpoint import CheckpointManager
 
             checkpoint_manager = CheckpointManager(config.disk)
             # Handle both dict and TorrentInfo types
@@ -861,7 +861,7 @@ def list_checkpoints(ctx, _checkpoint_format):
         config = config_manager.config
 
         # Create checkpoint manager
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         checkpoint_manager = CheckpointManager(config.disk)
 
@@ -926,7 +926,7 @@ def clean_checkpoints(ctx, days, dry_run):
         config = config_manager.config
 
         # Create checkpoint manager
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         checkpoint_manager = CheckpointManager(config.disk)
 
@@ -974,7 +974,7 @@ def delete_checkpoint(ctx, info_hash):
         config = config_manager.config
 
         # Create checkpoint manager
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         checkpoint_manager = CheckpointManager(config.disk)
 
@@ -1007,7 +1007,7 @@ def verify_checkpoint_cmd(ctx, info_hash):
     console = Console()
     try:
         config_manager = ConfigManager(ctx.obj["config"])
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         checkpoint_manager = CheckpointManager(config_manager.config.disk)
         try:
@@ -1049,7 +1049,7 @@ def export_checkpoint_cmd(ctx, info_hash, format_, output_path):
     console = Console()
     try:
         config_manager = ConfigManager(ctx.obj["config"])
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         checkpoint_manager = CheckpointManager(config_manager.config.disk)
         try:
@@ -1090,7 +1090,7 @@ def backup_checkpoint_cmd(ctx, info_hash, destination, compress, encrypt):
     console = Console()
     try:
         config_manager = ConfigManager(ctx.obj["config"])
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         checkpoint_manager = CheckpointManager(config_manager.config.disk)
         try:
@@ -1129,7 +1129,7 @@ def restore_checkpoint_cmd(ctx, backup_file, info_hash):
     console = Console()
     try:
         config_manager = ConfigManager(ctx.obj["config"])
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         checkpoint_manager = CheckpointManager(config_manager.config.disk)
         ih_bytes = None
@@ -1164,8 +1164,8 @@ def migrate_checkpoint_cmd(ctx, info_hash, from_format, to_format):
     console = Console()
     try:
         config_manager = ConfigManager(ctx.obj["config"])
-        from ccbt.checkpoint import CheckpointManager
         from ccbt.models import CheckpointFormat
+        from ccbt.storage.checkpoint import CheckpointManager
 
         checkpoint_manager = CheckpointManager(config_manager.config.disk)
         try:
@@ -1211,7 +1211,7 @@ def resume(ctx, info_hash, _output, interactive):
             _raise_cli_error(msg)
 
         # Load checkpoint
-        from ccbt.checkpoint import CheckpointManager
+        from ccbt.storage.checkpoint import CheckpointManager
 
         checkpoint_manager = CheckpointManager(config.disk)
         checkpoint = asyncio.run(checkpoint_manager.load_checkpoint(info_hash_bytes))

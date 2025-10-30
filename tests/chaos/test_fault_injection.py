@@ -13,7 +13,7 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 
-from ccbt.events import Event, EventBus, EventType
+from ccbt.utils.events import Event, EventBus, EventType
 from ccbt.plugins import PluginManager
 from ccbt.services import get_service_manager
 from ccbt.session import AsyncSessionManager
@@ -82,7 +82,7 @@ class TestFaultInjection:
     async def test_disk_failure_injection(self, temp_dir):
         """Test system behavior under disk failures."""
         # Mock DHT client to avoid bootstrapping delays
-        with patch("ccbt.session.AsyncDHTClient") as mock_dht_class:
+        with patch("ccbt.discovery.dht.AsyncDHTClient") as mock_dht_class:
             mock_dht = mock_dht_class.return_value
             mock_dht.start = AsyncMock()
             mock_dht.stop = AsyncMock()
@@ -102,7 +102,7 @@ class TestFaultInjection:
                 session = next(iter(session_manager.torrents.values()))
 
                 # Inject disk failure
-                with patch("ccbt.disk_io.DiskIOManager.write_block") as mock_write:
+                with patch("ccbt.storage.disk_io.DiskIOManager.write_block") as mock_write:
                     mock_write.side_effect = Exception("Disk I/O failure")
 
                     # Start session (should handle disk failure gracefully)

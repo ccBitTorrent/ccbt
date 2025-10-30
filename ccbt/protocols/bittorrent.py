@@ -10,13 +10,13 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from ccbt.events import Event, EventType, emit_event
 from ccbt.protocols.base import (
     Protocol,
     ProtocolCapabilities,
     ProtocolState,
     ProtocolType,
 )
+from ccbt.utils.events import Event, EventType, emit_event
 
 if TYPE_CHECKING:
     from ccbt.models import PeerInfo, TorrentInfo

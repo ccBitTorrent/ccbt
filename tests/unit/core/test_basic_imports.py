@@ -20,14 +20,14 @@ class TestBasicImports:
 
     def test_config_import(self):
         """Test config module import."""
-        from ccbt.config import get_config
+        from ccbt.config.config import get_config
 
         config = get_config()
         assert config is not None
 
     def test_disk_io_import(self):
         """Test disk I/O module import."""
-        from ccbt.disk_io import (
+        from ccbt.storage.disk_io import (
             DiskIOManager,
             preallocate_file,
             read_block_async,
@@ -41,50 +41,50 @@ class TestBasicImports:
 
     def test_async_peer_connection_import(self):
         """Test async peer connection module import."""
-        from ccbt.async_peer_connection import AsyncPeerConnectionManager
+        from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
 
         assert AsyncPeerConnectionManager is not None
 
     def test_async_piece_manager_import(self):
         """Test async piece manager module import."""
-        from ccbt.async_piece_manager import AsyncPieceManager, PieceState
+        from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceState
 
         assert AsyncPieceManager is not None
         assert PieceState is not None
 
     def test_async_metadata_exchange_import(self):
         """Test async metadata exchange module import."""
-        from ccbt.async_metadata_exchange import fetch_metadata_from_peers_async
+        from ccbt.piece.async_metadata_exchange import fetch_metadata_from_peers_async
 
         assert fetch_metadata_from_peers_async is not None
 
     def test_tracker_udp_client_import(self):
         """Test UDP tracker client module import."""
-        from ccbt.tracker_udp_client import AsyncUDPTrackerClient
+        from ccbt.discovery.tracker_udp_client import AsyncUDPTrackerClient
 
         assert AsyncUDPTrackerClient is not None
 
     def test_dht_import(self):
         """Test DHT module import."""
-        from ccbt.dht import AsyncDHTClient
+        from ccbt.discovery.dht import AsyncDHTClient
 
         assert AsyncDHTClient is not None
 
     def test_pex_import(self):
         """Test PEX module import."""
-        from ccbt.pex import AsyncPexManager
+        from ccbt.discovery.pex import AsyncPexManager
 
         assert AsyncPexManager is not None
 
     def test_metrics_import(self):
         """Test metrics module import."""
-        from ccbt.metrics import MetricsCollector
+        from ccbt.utils.metrics import MetricsCollector
 
         assert MetricsCollector is not None
 
     def test_peer_import(self):
         """Test peer module import."""
-        from ccbt.peer import MessageType, PeerInfo, SocketOptimizer
+        from ccbt.peer.peer import MessageType, PeerInfo, SocketOptimizer
 
         assert PeerInfo is not None
         assert MessageType is not None
@@ -92,41 +92,41 @@ class TestBasicImports:
 
     def test_file_assembler_import(self):
         """Test file assembler module import."""
-        from ccbt.file_assembler import AsyncDownloadManager, AsyncFileAssembler
+        from ccbt.storage.file_assembler import AsyncDownloadManager, AsyncFileAssembler
 
         assert AsyncFileAssembler is not None
         assert AsyncDownloadManager is not None
 
     def test_tracker_import(self):
         """Test tracker module import."""
-        from ccbt.tracker import AsyncTrackerClient, TrackerResponse
+        from ccbt.discovery.tracker import AsyncTrackerClient, TrackerResponse
 
         assert AsyncTrackerClient is not None
         assert TrackerResponse is not None
 
     def test_session_import(self):
         """Test session module import."""
-        from ccbt.session import AsyncSessionManager, AsyncTorrentSession
+        from ccbt.session.session import AsyncSessionManager, AsyncTorrentSession
 
         assert AsyncSessionManager is not None
         assert AsyncTorrentSession is not None
 
     def test_magnet_import(self):
         """Test magnet module import."""
-        from ccbt.magnet import build_minimal_torrent_data, parse_magnet
+        from ccbt.core.magnet import build_minimal_torrent_data, parse_magnet
 
         assert parse_magnet is not None
         assert build_minimal_torrent_data is not None
 
     def test_torrent_import(self):
         """Test torrent module import."""
-        from ccbt.torrent import TorrentParser
+        from ccbt.core.torrent import TorrentParser
 
         assert TorrentParser is not None
 
     def test_bencode_import(self):
         """Test bencode module import."""
-        from ccbt.bencode import BencodeDecoder, BencodeEncoder
+        from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
 
         assert BencodeDecoder is not None
         assert BencodeEncoder is not None
@@ -137,25 +137,25 @@ class TestBasicImports:
         # without syntax errors or missing dependencies
         try:
             import ccbt
-            import ccbt.async_metadata_exchange
-            import ccbt.async_peer_connection
-            import ccbt.async_piece_manager
-            import ccbt.bencode
-            import ccbt.config
-            import ccbt.dht
-            import ccbt.disk_io
-            import ccbt.file_assembler
-            import ccbt.magnet
-            import ccbt.metrics
-            import ccbt.peer
-            import ccbt.pex
-            import ccbt.session
-            import ccbt.torrent
-            import ccbt.tracker
-            import ccbt.tracker_udp_client
+            import ccbt.piece.async_metadata_exchange
+            import ccbt.peer.async_peer_connection
+            import ccbt.piece.async_piece_manager
+            import ccbt.core.bencode
+            import ccbt.config.config
+            import ccbt.discovery.dht
+            import ccbt.storage.disk_io
+            import ccbt.storage.file_assembler
+            import ccbt.core.magnet
+            import ccbt.utils.metrics
+            import ccbt.peer.peer
+            import ccbt.discovery.pex
+            import ccbt.session.session
+            import ccbt.core.torrent
+            import ccbt.discovery.tracker
+            import ccbt.discovery.tracker_udp_client
 
             # Verify tracker_udp_client is importable
-            assert ccbt.tracker_udp_client is not None
+            assert ccbt.discovery.tracker_udp_client is not None
         except ImportError as e:
             pytest.fail(f"Failed to import module: {e}")
         except SyntaxError as e:

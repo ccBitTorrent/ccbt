@@ -12,14 +12,14 @@ import asyncio
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 # Add the project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from ccbt.checkpoint import CheckpointManager
+from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.config import get_config
 from ccbt.models import DownloadStats, FileCheckpoint, TorrentCheckpoint
 from ccbt.session import AsyncSessionManager
@@ -224,35 +224,37 @@ class TestResumeIntegration:
             total_length=1024,
             output_dir=".",
             torrent_file_path="/path/to/original.torrent",
-            magnet_uri="magnet:?xt=urn:btih:test_hash_1234567890&dn=priority_test",
+            magnet_uri="magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&dn=priority_test",
             announce_urls=["http://tracker.example.com"],
             display_name="Priority Test",
         )
 
         # Test priority order with explicit torrent path
-        with patch("ccbt.session.Path") as mock_path:
-            mock_path.return_value.exists.return_value = True
-
-            with patch("ccbt.session.TorrentParser") as mock_parser:
-                mock_parser.return_value.parse.return_value = {
-                    "info_hash": b"test_hash_1234567890",
+        with patch("ccbt.session.session.Path") as mock_path_class:
+            mock_path_instance = Mock()
+            mock_path_instance.exists.return_value = True
+            mock_path_class.return_value = mock_path_instance
+            
+            with patch("ccbt.session.session.TorrentParser") as mock_parser_class:
+                mock_parser = Mock()
+                mock_parser.parse.return_value = {
+                    "info_hash": bytes.fromhex("0123456789ABCDEF0123456789ABCDEF01234567"),
                     "name": "priority_test",
                 }
+                mock_parser_class.return_value = mock_parser
+                
+                with patch.object(session_manager, "add_torrent") as mock_add_torrent:
+                    mock_add_torrent.return_value = "0123456789ABCDEF0123456789ABCDEF01234567"
 
-                with patch.object(
-                    session_manager,
-                    "add_torrent",
-                    return_value="test_hash_1234567890",
-                ) as mock_add:
                     result = await session_manager.resume_from_checkpoint(
-                        b"test_hash_1234567890",
+                        bytes.fromhex("0123456789ABCDEF0123456789ABCDEF01234567"),
                         checkpoint,
                         torrent_path="/explicit/path.torrent",
                     )
 
                     # Should use explicit path
-                    mock_add.assert_called_once()
-                    assert result == "test_hash_1234567890"
+                    mock_add_torrent.assert_called_once_with("/explicit/path.torrent", resume=True)
+                    assert result == "0123456789ABCDEF0123456789ABCDEF01234567"
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.resilience]
 
-from ccbt.resilience import (
+from ccbt.utils.resilience import (
     BulkOperationManager,
     CircuitBreaker,
     CircuitBreakerError,

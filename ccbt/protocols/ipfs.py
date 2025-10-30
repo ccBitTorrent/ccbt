@@ -13,7 +13,6 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from ccbt.events import Event, EventType, emit_event
 from ccbt.models import PeerInfo, TorrentInfo
 from ccbt.protocols.base import (
     Protocol,
@@ -21,6 +20,7 @@ from ccbt.protocols.base import (
     ProtocolState,
     ProtocolType,
 )
+from ccbt.utils.events import Event, EventType, emit_event
 
 
 @dataclass

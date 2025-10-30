@@ -14,8 +14,8 @@ import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.piece]
 
-from ccbt.async_piece_manager import AsyncPieceManager, PieceState
-from ccbt.peer import PeerInfo
+from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceState
+from ccbt.peer.peer import PeerInfo
 
 
 class TestRarestFirstSelection:

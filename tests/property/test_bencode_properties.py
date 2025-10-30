@@ -7,7 +7,7 @@ using Hypothesis for automatic test case generation.
 from hypothesis import given
 from hypothesis import strategies as st
 
-from ccbt.bencode import BencodeDecoder, decode, encode
+from ccbt.core.bencode import BencodeDecoder, decode, encode
 
 
 class TestBencodeProperties:

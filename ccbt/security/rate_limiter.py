@@ -17,7 +17,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from enum import Enum
 
-from ccbt.events import Event, EventType, emit_event
+from ccbt.utils.events import Event, EventType, emit_event
 
 
 class RateLimitType(Enum):

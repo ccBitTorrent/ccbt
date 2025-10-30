@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 pytestmark = [pytest.mark.unit, pytest.mark.file]
 
-from ccbt.file_assembler import AsyncDownloadManager, FileAssemblerError
+from ccbt.storage.file_assembler import AsyncDownloadManager, FileAssemblerError
 from ccbt.models import TorrentInfo
 
 

@@ -15,8 +15,8 @@ import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.disk]
 
-from ccbt.config import get_config
-from ccbt.disk_io import (
+from ccbt.config.config import get_config
+from ccbt.storage.disk_io import (
     DiskIOManager,
     preallocate_file,
 )

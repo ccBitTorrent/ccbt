@@ -297,6 +297,7 @@ htmlcov/
 .pytest_cache/
 test-results/
 test-reports/
+tests/.reports/
 
 # Benchmark outputs
 benchmarks/output/

@@ -24,7 +24,7 @@ from typing import Any, Callable, TypedDict
 
 import psutil
 
-from ccbt.events import Event, EventType, emit_event
+from ccbt.utils.events import Event, EventType, emit_event
 
 logger = logging.getLogger(__name__)
 

@@ -17,7 +17,7 @@ import time
 from typing import Any
 
 from ccbt.config import get_config
-from ccbt.disk_io import (
+from ccbt.storage.disk_io import (
     DiskIOManager,
 )
 

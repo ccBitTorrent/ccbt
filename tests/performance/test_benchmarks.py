@@ -11,11 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from ccbt.bencode import decode, encode
-from ccbt.buffers import MemoryPool, RingBuffer, ZeroCopyBuffer
-from ccbt.disk_io import DiskIOManager
-from ccbt.events import Event, EventBus, EventHandler, EventType
-from ccbt.torrent import TorrentParser
+from ccbt.core.bencode import decode, encode
+from ccbt.storage.buffers import MemoryPool, RingBuffer, ZeroCopyBuffer
+from ccbt.storage.disk_io import DiskIOManager
+from ccbt.utils.events import Event, EventBus, EventHandler, EventType
+from ccbt.core.torrent import TorrentParser
 
 # Check if pytest-benchmark is available
 try:

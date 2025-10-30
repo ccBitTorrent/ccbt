@@ -18,7 +18,7 @@ from pathlib import Path
 import click
 import toml
 
-from ccbt.config import ConfigManager
+from ccbt.config.config import ConfigManager
 
 logger = logging.getLogger(__name__)
 

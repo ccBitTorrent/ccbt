@@ -26,7 +26,7 @@ from rich.table import Table
 from rich.text import Text
 
 from ccbt.cli.progress import ProgressManager
-from ccbt.config import ConfigManager, get_config, reload_config
+from ccbt.config.config import ConfigManager, get_config, reload_config
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
         Progress,
     )
 
-    from ccbt.session import AsyncSessionManager
+    from ccbt.session.session import AsyncSessionManager
 
 
 class InteractiveCLI:
@@ -696,8 +696,8 @@ Available Commands:
         if not args or args[0] != "list":
             self.console.print("Usage: checkpoint list")
             return
-        from ccbt.checkpoint import CheckpointManager
-        from ccbt.config import get_config
+        from ccbt.config.config import get_config
+        from ccbt.storage.checkpoint import CheckpointManager
 
         cm = CheckpointManager(get_config().disk)
         items = await cm.list_checkpoints()
@@ -911,8 +911,8 @@ Available Commands:
             return
         from pathlib import Path
 
-        from ccbt.checkpoint import CheckpointManager
-        from ccbt.config import get_config
+        from ccbt.config.config import get_config
+        from ccbt.storage.checkpoint import CheckpointManager
 
         cm = CheckpointManager(get_config().disk)
         await cm.backup_checkpoint(bytes.fromhex(args[0]), Path(args[1]))
@@ -929,8 +929,8 @@ Available Commands:
             return
         from pathlib import Path
 
-        from ccbt.checkpoint import CheckpointManager
-        from ccbt.config import get_config
+        from ccbt.config.config import get_config
+        from ccbt.storage.checkpoint import CheckpointManager
 
         cm = CheckpointManager(get_config().disk)
         cp = await cm.restore_checkpoint(Path(args[0]))
@@ -946,7 +946,7 @@ Available Commands:
         """
         from rich.table import Table
 
-        from ccbt.config_capabilities import SystemCapabilities
+        from ccbt.config.config_capabilities import SystemCapabilities
 
         sub = args[0] if args else "show"
         sc = SystemCapabilities()
@@ -987,8 +987,8 @@ Available Commands:
           auto_tune preview
           auto_tune apply
         """
-        from ccbt.config import set_config
-        from ccbt.config_conditional import ConditionalConfig
+        from ccbt.config.config import set_config
+        from ccbt.config.config_conditional import ConditionalConfig
 
         action = args[0] if args else "preview"
         cm = ConfigManager(None)
@@ -1013,7 +1013,7 @@ Available Commands:
           template list
           template apply <name> [deep|shallow|replace]
         """
-        from ccbt.config_templates import ConfigTemplates
+        from ccbt.config.config_templates import ConfigTemplates
 
         sub = args[0] if args else "list"
         if sub == "list":
@@ -1038,7 +1038,7 @@ Available Commands:
             from ccbt.models import Config as ConfigModel
 
             new_model = ConfigModel.model_validate(new_dict)
-            from ccbt.config import set_config
+            from ccbt.config.config import set_config
 
             set_config(new_model)
             cm.config = new_model
@@ -1053,7 +1053,7 @@ Available Commands:
           profile list
           profile apply <name>
         """
-        from ccbt.config_templates import ConfigProfiles
+        from ccbt.config.config_templates import ConfigProfiles
 
         sub = args[0] if args else "list"
         if sub == "list":
@@ -1077,7 +1077,7 @@ Available Commands:
             from ccbt.models import Config as ConfigModel
 
             new_model = ConfigModel.model_validate(new_dict)
-            from ccbt.config import set_config
+            from ccbt.config.config import set_config
 
             set_config(new_model)
             cm.config = new_model
@@ -1095,7 +1095,7 @@ Available Commands:
         """
         from pathlib import Path
 
-        from ccbt.config_backup import ConfigBackup
+        from ccbt.config.config_backup import ConfigBackup
 
         sub = args[0] if args else "list"
         cm = ConfigManager(None)
@@ -1153,7 +1153,7 @@ Available Commands:
             return
         from pathlib import Path
 
-        from ccbt.config_diff import ConfigDiff
+        from ccbt.config.config_diff import ConfigDiff
 
         result = ConfigDiff.compare_files(Path(args[0]), Path(args[1]))
         from rich.pretty import Pretty
@@ -1223,13 +1223,13 @@ Available Commands:
         cm = ConfigManager(None)
         current = cm.config.model_dump(mode="json")
         # deep merge via templates util
-        from ccbt.config_templates import ConfigTemplates
+        from ccbt.config.config_templates import ConfigTemplates
 
         merged = ConfigTemplates._deep_merge(current, incoming)  # noqa: SLF001
         from ccbt.models import Config as ConfigModel
 
         new_model = ConfigModel.model_validate(merged)
-        from ccbt.config import set_config
+        from ccbt.config.config import set_config
 
         set_config(new_model)
         cm.config = new_model
@@ -1243,7 +1243,7 @@ Available Commands:
         """
         import json
 
-        from ccbt.config_schema import ConfigSchema
+        from ccbt.config.config_schema import ConfigSchema
 
         if args:
             # specific model name is not directly supported here; show full schema
@@ -1327,7 +1327,7 @@ Available Commands:
                 new_cfg = ConfigModel(**cfg)
                 cm.config = new_cfg
                 # publish to global runtime
-                from ccbt.config import set_config
+                from ccbt.config.config import set_config
 
                 set_config(new_cfg)
                 self.console.print("[green]Updated runtime configuration[/green]")

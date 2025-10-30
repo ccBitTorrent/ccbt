@@ -58,35 +58,43 @@ class TestResumeCLI:
 
         # Test the underlying functionality rather than CLI execution
         session_manager = AsyncSessionManager(str(self.temp_path))
+        
+        try:
+            # Mock the resume operation
+            with patch.object(session_manager, "resume_from_checkpoint") as mock_resume:
+                mock_resume.return_value = "test_hash_1234567890"
 
-        # Mock the resume operation
-        with patch.object(session_manager, "resume_from_checkpoint") as mock_resume:
-            mock_resume.return_value = "test_hash_1234567890"
+                # Test the resume functionality
+                result = await session_manager.resume_from_checkpoint(
+                    b"test_hash_1234567890",
+                    checkpoint,
+                )
 
-            # Test the resume functionality
-            result = await session_manager.resume_from_checkpoint(
-                b"test_hash_1234567890",
-                checkpoint,
-            )
-
-            assert result == "test_hash_1234567890"
+                assert result == "test_hash_1234567890"
+        finally:
+            # Properly clean up the session manager
+            await session_manager.stop()
 
     @pytest.mark.asyncio
     async def test_resume_command_missing_checkpoint(self):
         """Test resume command when checkpoint doesn't exist."""
         session_manager = AsyncSessionManager(".")
-
-        # Test with None checkpoint
+        
         try:
-            await session_manager.resume_from_checkpoint(
-                b"nonexistent_hash_1234567890",
-                None,
-            )
-            msg = "Should have raised an error"
-            raise AssertionError(msg)
-        except Exception:
-            # Should handle missing checkpoint gracefully
-            pass
+            # Test with None checkpoint
+            try:
+                await session_manager.resume_from_checkpoint(
+                    b"nonexistent_hash_1234567890",
+                    None,
+                )
+                msg = "Should have raised an error"
+                raise AssertionError(msg)
+            except Exception:
+                # Should handle missing checkpoint gracefully
+                pass
+        finally:
+            # Properly clean up the session manager
+            await session_manager.stop()
 
     @pytest.mark.asyncio
     async def test_download_command_checkpoint_detection(self):
@@ -99,10 +107,14 @@ class TestResumeCLI:
 
         # Test session manager functionality
         session_manager = AsyncSessionManager(str(self.temp_path))
-
-        # Test torrent loading
-        session_manager.load_torrent(str(test_torrent_path))
-        # This will fail with real torrent parsing, but we're testing the method exists
+        
+        try:
+            # Test torrent loading
+            session_manager.load_torrent(str(test_torrent_path))
+            # This will fail with real torrent parsing, but we're testing the method exists
+        finally:
+            # Properly clean up the session manager
+            await session_manager.stop()
 
     @pytest.mark.asyncio
     async def test_magnet_command_checkpoint_detection(self):
@@ -111,10 +123,14 @@ class TestResumeCLI:
 
         # Test session manager functionality
         session_manager = AsyncSessionManager(str(self.temp_path))
-
-        # Test magnet parsing
-        session_manager.parse_magnet_link(magnet_link)
-        # This will fail with real magnet parsing, but we're testing the method exists
+        
+        try:
+            # Test magnet parsing
+            session_manager.parse_magnet_link(magnet_link)
+            # This will fail with real magnet parsing, but we're testing the method exists
+        finally:
+            # Properly clean up the session manager
+            await session_manager.stop()
 
     @pytest.mark.asyncio
     async def test_resume_command_error_handling(self):
@@ -133,35 +149,47 @@ class TestResumeCLI:
         )
 
         session_manager = AsyncSessionManager(str(self.temp_path))
-
-        # Test resume with missing source
+        
         try:
-            await session_manager.resume_from_checkpoint(
-                b"test_hash_1234567890",
-                checkpoint,
-            )
-            msg = "Should have raised ValueError"
-            raise AssertionError(msg)
-        except ValueError as e:
-            assert "No valid torrent source found" in str(e)
+            # Test resume with missing source
+            try:
+                await session_manager.resume_from_checkpoint(
+                    b"test_hash_1234567890",
+                    checkpoint,
+                )
+                msg = "Should have raised ValueError"
+                raise AssertionError(msg)
+            except ValueError as e:
+                assert "No valid torrent source found" in str(e)
+        finally:
+            # Properly clean up the session manager
+            await session_manager.stop()
 
     @pytest.mark.asyncio
     async def test_checkpoints_list_command(self):
         """Test checkpoints list command."""
         session_manager = AsyncSessionManager(str(self.temp_path))
-
-        # Test checkpoint listing functionality
-        checkpoints = await session_manager.list_resumable_checkpoints()
-        assert isinstance(checkpoints, list)
+        
+        try:
+            # Test checkpoint listing functionality
+            checkpoints = await session_manager.list_resumable_checkpoints()
+            assert isinstance(checkpoints, list)
+        finally:
+            # Properly clean up the session manager
+            await session_manager.stop()
 
     @pytest.mark.asyncio
     async def test_checkpoints_clean_command(self):
         """Test checkpoints clean command."""
         session_manager = AsyncSessionManager(str(self.temp_path))
-
-        # Test cleanup functionality
-        cleaned = await session_manager.cleanup_completed_checkpoints()
-        assert isinstance(cleaned, int)
+        
+        try:
+            # Test cleanup functionality
+            cleaned = await session_manager.cleanup_completed_checkpoints()
+            assert isinstance(cleaned, int)
+        finally:
+            # Properly clean up the session manager
+            await session_manager.stop()
 
     def test_cli_command_structure(self):
         """Test that CLI commands are properly structured."""

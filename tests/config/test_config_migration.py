@@ -7,9 +7,9 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from ccbt.config_migration import ConfigMigrator
-from ccbt.config_backup import ConfigBackup
-from ccbt.config_diff import ConfigDiff
+from ccbt.config.config_migration import ConfigMigrator
+from ccbt.config.config_backup import ConfigBackup
+from ccbt.config.config_diff import ConfigDiff
 from ccbt.models import Config
 
 

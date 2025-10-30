@@ -13,8 +13,8 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from ccbt.logging_config import LoggingContext
 from ccbt.services.base import HealthCheck, Service
+from ccbt.utils.logging_config import LoggingContext
 
 # Constants
 MAX_FAILURE_COUNT = 5

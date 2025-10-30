@@ -29,3 +29,13 @@ Start the terminal dashboard:
 ```bash
 ccbt dashboard --refresh 1.0
 ```
+
+## Test Artifacts and Coverage (CI)
+
+During pre-push and CI runs, pytest writes artifacts for analysis:
+
+- JUnit XML: `tests/.reports/junit.xml`
+- Pytest Log: `tests/.reports/pytest.log`
+- Coverage XML: `coverage.xml` (consumed by Codecov)
+
+Selective pre-commit runs remain fast and log to stderr only. Coverage thresholds are enforced via `CCBT_COV_FAIL_UNDER` (default 80) on pre-push.

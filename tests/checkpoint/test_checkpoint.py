@@ -14,8 +14,8 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.checkpoint]
 
-from ccbt.checkpoint import CheckpointFileInfo, CheckpointManager
-from ccbt.exceptions import CheckpointError
+from ccbt.storage.checkpoint import CheckpointFileInfo, CheckpointManager
+from ccbt.utils.exceptions import CheckpointError
 from ccbt.models import (
     CheckpointFormat,
     DiskConfig,
@@ -393,7 +393,7 @@ class TestCheckpointIntegration:
     @pytest.mark.asyncio
     async def test_piece_manager_checkpoint_state(self):
         """Test piece manager checkpoint state generation."""
-        from ccbt.async_piece_manager import AsyncPieceManager
+        from ccbt.piece.async_piece_manager import AsyncPieceManager
 
         # Mock torrent data
         torrent_data = {
@@ -428,7 +428,7 @@ class TestCheckpointIntegration:
     @pytest.mark.asyncio
     async def test_file_assembler_resume_validation(self):
         """Test file assembler resume validation."""
-        from ccbt.file_assembler import AsyncFileAssembler
+        from ccbt.storage.file_assembler import AsyncFileAssembler
 
         # Mock torrent data
         torrent_data = {

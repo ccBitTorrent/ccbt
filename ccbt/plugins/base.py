@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
-from ccbt.exceptions import CCBTError
-from ccbt.logging_config import get_logger
+from ccbt.utils.exceptions import CCBTError
+from ccbt.utils.logging_config import get_logger
 
 
 class PluginState(Enum):

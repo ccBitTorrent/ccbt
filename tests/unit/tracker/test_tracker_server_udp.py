@@ -10,7 +10,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
 
-from ccbt.tracker_server_udp import InMemoryPeerStore, UDPTracker
+from ccbt.discovery.tracker_server_udp import InMemoryPeerStore, UDPTracker
 
 
 class TestInMemoryPeerStore:
@@ -71,7 +71,7 @@ class TestUDPTracker:
         tracker = UDPTracker(host="127.0.0.1", port=0)
         assert tracker.host == "127.0.0.1"
         assert tracker.sock is not None
-        tracker.sock.close()
+        tracker.shutdown()
 
     def test_handle_connect(self):
         """Test handling connection request."""
@@ -100,7 +100,7 @@ class TestUDPTracker:
         assert conn_id != 0
 
         test_sock.close()
-        tracker.sock.close()
+        tracker.shutdown()
 
     def test_handle_announce(self):
         """Test handling announce request."""
@@ -131,7 +131,7 @@ class TestUDPTracker:
 
         tracker._handle_announce(request, addr, transaction_id)
 
-        tracker.sock.close()
+        tracker.shutdown()
 
     def test_handle_announce_short_packet(self):
         """Test handling announce with too short packet."""
@@ -158,7 +158,7 @@ class TestUDPTracker:
         assert resp_trans_id == transaction_id
 
         test_sock.close()
-        tracker.sock.close()
+        tracker.shutdown()
 
     def test_send_error(self):
         """Test sending error response."""
@@ -180,7 +180,7 @@ class TestUDPTracker:
         assert transaction_id == 12345
 
         test_sock.close()
-        tracker.sock.close()
+        tracker.shutdown()
 
     @pytest.mark.asyncio
     async def test_serve_forever_connect_request(self):
@@ -211,7 +211,7 @@ class TestUDPTracker:
         assert conn_id != 0
 
         sock.close()
-        tracker.sock.close()
+        tracker.shutdown()
 
     @pytest.mark.asyncio
     async def test_serve_forever_unsupported_action(self):
@@ -238,7 +238,7 @@ class TestUDPTracker:
         assert resp_trans_id == transaction_id
 
         sock.close()
-        tracker.sock.close()
+        tracker.shutdown()
 
     def test_serve_forever_short_packet(self):
         """Test serve_forever ignores short packets."""
@@ -256,7 +256,7 @@ class TestUDPTracker:
 
         # Should not crash, no response expected
         sock.close()
-        tracker.sock.close()
+        tracker.shutdown()
 
 
 if __name__ == "__main__":

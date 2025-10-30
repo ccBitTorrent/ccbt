@@ -14,7 +14,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from ccbt.async_piece_manager import AsyncPieceManager
+from ccbt.piece.async_piece_manager import AsyncPieceManager
 from ccbt.config import get_config
 
 

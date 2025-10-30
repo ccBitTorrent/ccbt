@@ -23,13 +23,13 @@ import toml
 from rich.console import Console
 from rich.table import Table
 
-from ccbt.config import ConfigManager
-from ccbt.config_backup import ConfigBackup
-from ccbt.config_capabilities import SystemCapabilities
-from ccbt.config_conditional import ConditionalConfig
-from ccbt.config_diff import ConfigDiff
-from ccbt.config_schema import ConfigSchema
-from ccbt.config_templates import ConfigProfiles, ConfigTemplates
+from ccbt.config.config import ConfigManager
+from ccbt.config.config_backup import ConfigBackup
+from ccbt.config.config_capabilities import SystemCapabilities
+from ccbt.config.config_conditional import ConditionalConfig
+from ccbt.config.config_diff import ConfigDiff
+from ccbt.config.config_schema import ConfigSchema
+from ccbt.config.config_templates import ConfigProfiles, ConfigTemplates
 
 logger = logging.getLogger(__name__)
 console = Console()

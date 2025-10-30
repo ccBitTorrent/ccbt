@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import pytest
 
-from ccbt.config_schema import ConfigSchema, ConfigDiscovery, ConfigValidator
+from ccbt.config.config_schema import ConfigSchema, ConfigDiscovery, ConfigValidator
 from ccbt.models import Config, NetworkConfig, DiskConfig, StrategyConfig
 
 

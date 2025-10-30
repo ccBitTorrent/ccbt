@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ccbt.events import Event, EventType, get_event_bus
+from ccbt.utils.events import Event, EventType, get_event_bus
 from ccbt.plugins.metrics_plugin import Metric, MetricAggregate, MetricsCollector, MetricsPlugin
 
 

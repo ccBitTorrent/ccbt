@@ -11,9 +11,9 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
-from ccbt.events import Event, EventHandler, EventType
-from ccbt.logging_config import get_logger
 from ccbt.plugins.base import Plugin
+from ccbt.utils.events import Event, EventHandler, EventType
+from ccbt.utils.logging_config import get_logger
 
 
 @dataclass
@@ -192,7 +192,7 @@ class MetricsPlugin(Plugin):
         self.collector = MetricsCollector(self.max_metrics)
 
         # Register event handler
-        from ccbt.events import get_event_bus
+        from ccbt.utils.events import get_event_bus
 
         event_bus = get_event_bus()
 
@@ -206,7 +206,7 @@ class MetricsPlugin(Plugin):
         self.logger.info("Stopping metrics plugin")
 
         if self.collector:
-            from ccbt.events import get_event_bus
+            from ccbt.utils.events import get_event_bus
 
             event_bus = get_event_bus()
 

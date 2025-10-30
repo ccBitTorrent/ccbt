@@ -7,7 +7,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
-from ccbt.peer import (
+from ccbt.peer.peer import (
     BitfieldMessage,
     CancelMessage,
     ChokeMessage,

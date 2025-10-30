@@ -11,7 +11,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.metadata]
 
-from ccbt.peer import PeerInfo
+from ccbt.peer.peer import PeerInfo
 
 
 class TestParallelMetadataExchange:
@@ -108,7 +108,7 @@ class TestParallelMetadataExchange:
 
         # Test pipelined requests - the implementation uses different internal methods
         # Since the internal API has changed, we'll test the public interface instead
-        from ccbt.async_metadata_exchange import AsyncMetadataExchange
+        from ccbt.piece.async_metadata_exchange import AsyncMetadataExchange
 
         exchange = AsyncMetadataExchange(mock_torrent_data["info_hash"])
         try:
@@ -123,7 +123,7 @@ class TestParallelMetadataExchange:
     @pytest.mark.asyncio
     async def test_reliability_scoring(self, mock_peers, mock_torrent_data):
         """Test peer reliability scoring system."""
-        from ccbt.async_metadata_exchange import PeerReliabilityTracker
+        from ccbt.piece.async_metadata_exchange import PeerReliabilityTracker
 
         # Create reliability tracker
         tracker = PeerReliabilityTracker()
@@ -153,7 +153,7 @@ class TestParallelMetadataExchange:
     @pytest.mark.asyncio
     async def test_out_of_order_piece_handling(self, mock_peers, mock_torrent_data):
         """Test handling of out-of-order metadata pieces."""
-        from ccbt.async_metadata_exchange import MetadataPieceManager
+        from ccbt.piece.async_metadata_exchange import MetadataPieceManager
 
         # Create piece manager
         piece_manager = MetadataPieceManager(4)  # 4 pieces
@@ -181,7 +181,7 @@ class TestParallelMetadataExchange:
     @pytest.mark.asyncio
     async def test_retry_logic(self, mock_peers, mock_torrent_data):
         """Test retry logic for failed requests."""
-        from ccbt.async_metadata_exchange import RetryManager
+        from ccbt.piece.async_metadata_exchange import RetryManager
 
         # Create retry manager
         retry_manager = RetryManager(max_retries=3, base_delay=1.0)
@@ -233,7 +233,7 @@ class TestParallelMetadataExchange:
     @pytest.mark.asyncio
     async def test_metadata_validation(self, mock_peers, mock_torrent_data):
         """Test metadata validation and SHA-1 verification."""
-        from ccbt.async_metadata_exchange import validate_metadata
+        from ccbt.piece.async_metadata_exchange import validate_metadata
 
         # Test valid metadata - use proper bencode format
         valid_metadata = b"d4:infod4:name4:test6:lengthi1024e6:pieces20:xxxxxxxxxxxxxxxxxxxxe8:announce20:http://example.com/ee"
@@ -269,7 +269,7 @@ class TestParallelMetadataExchange:
     @pytest.mark.asyncio
     async def test_metadata_assembly(self, mock_peers, mock_torrent_data):
         """Test metadata assembly from multiple pieces."""
-        from ccbt.async_metadata_exchange import MetadataPieceManager
+        from ccbt.piece.async_metadata_exchange import MetadataPieceManager
 
         # Create piece manager
         piece_manager = MetadataPieceManager(3)  # 3 pieces
@@ -299,7 +299,7 @@ class TestParallelMetadataExchange:
     @pytest.mark.asyncio
     async def test_metadata_caching(self, mock_peers, mock_torrent_data):
         """Test metadata caching functionality."""
-        from ccbt.async_metadata_exchange import MetadataCache
+        from ccbt.piece.async_metadata_exchange import MetadataCache
 
         # Create cache
         cache = MetadataCache()
@@ -322,7 +322,7 @@ class TestParallelMetadataExchange:
     @pytest.mark.asyncio
     async def test_performance_metrics(self, mock_peers, mock_torrent_data):
         """Test performance metrics collection."""
-        from ccbt.async_metadata_exchange import MetadataMetrics
+        from ccbt.piece.async_metadata_exchange import MetadataMetrics
 
         # Create metrics tracker
         metrics = MetadataMetrics()

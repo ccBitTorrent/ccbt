@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ccbt.logging_config import LoggingContext
 from ccbt.services.base import HealthCheck, Service
+from ccbt.utils.logging_config import LoggingContext
 
 
 @dataclass

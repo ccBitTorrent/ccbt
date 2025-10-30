@@ -4,7 +4,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.core]
 
-from ccbt.magnet import build_torrent_data_from_metadata, parse_magnet
+from ccbt.core.magnet import build_torrent_data_from_metadata, parse_magnet
 
 
 def test_parse_magnet_hex():

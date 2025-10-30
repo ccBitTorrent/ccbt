@@ -7,8 +7,8 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
-from ccbt.peer import BitfieldMessage, HaveMessage, PeerInfo
-from ccbt.peer_connection import (
+from ccbt.peer.peer import BitfieldMessage, HaveMessage, PeerInfo
+from ccbt.peer.peer_connection import (
     AsyncPeerConnectionManager,
     ConnectionState,
     PeerConnection,
@@ -197,7 +197,7 @@ async def test_handle_request_message(peer_manager, peer_info):
     peer_manager.connections[str(peer_info)] = connection
 
     # Create request message
-    from ccbt.peer import RequestMessage
+    from ccbt.peer.peer import RequestMessage
     request_message = RequestMessage(piece_index=0, begin=0, length=16384)
 
     # Mock piece manager to return data
@@ -227,7 +227,7 @@ async def test_handle_piece_message(peer_manager, peer_info):
     peer_manager.connections[str(peer_info)] = connection
 
     # Create piece message
-    from ccbt.peer import PieceMessage
+    from ccbt.peer.peer import PieceMessage
     piece_message = PieceMessage(piece_index=0, begin=0, block=b"test_data")
 
     # Mock callback

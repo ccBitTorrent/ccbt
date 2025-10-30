@@ -374,6 +374,16 @@ python benchmarks/bench_throughput.py
 python benchmarks/bench_disk.py
 ```
 
+### Test and Coverage Artifacts
+
+When running the full test suite (pre-push/CI), artifacts are emitted to:
+
+- `tests/.reports/junit.xml` (JUnit report)
+- `tests/.reports/pytest.log` (test logs)
+- `coverage.xml` and `htmlcov/` (coverage reports)
+
+These integrate with Codecov; flags in `.codecov.yml` are aligned to `ccbt/` subpackages to attribute coverage accurately (e.g., `peer`, `piece`, `protocols`, `extensions`).
+
 ## Best Practices
 
 1. **Start with defaults**: Begin with default settings

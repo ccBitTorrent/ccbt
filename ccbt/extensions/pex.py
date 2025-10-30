@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any
 
-from ccbt.events import Event, EventType, emit_event
 from ccbt.models import PeerInfo
+from ccbt.utils.events import Event, EventType, emit_event
 
 
 class PEXMessageType(IntEnum):
@@ -26,7 +26,7 @@ class PEXMessageType(IntEnum):
     DROPPED = 1
 
 
-@dataclass
+@dataclass(frozen=True)
 class PEXPeer:
     """PEX peer information."""
 

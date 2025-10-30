@@ -2,7 +2,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
 
-from ccbt.tracker_server_http import InMemoryTrackerStore
+from ccbt.discovery.tracker_server_http import InMemoryTrackerStore
 
 
 def test_http_tracker_compact_peers_encoding(monkeypatch):

@@ -24,10 +24,10 @@ class TestMainEntryPoint:
         ]
         
         with patch('sys.argv', test_args), \
-             patch('ccbt.session.SessionManager') as mock_session_class:
+             patch('ccbt.session.SessionManager') as mock_async_session_class:
             
             mock_session = MagicMock()
-            mock_session_class.return_value = mock_session
+            mock_async_session_class.return_value = mock_session
             
             result = main()
             
@@ -47,10 +47,10 @@ class TestMainEntryPoint:
         ]
         
         with patch('sys.argv', test_args), \
-             patch('ccbt.session.SessionManager') as mock_session_class:
+             patch('ccbt.session.SessionManager') as mock_async_session_class:
             
             mock_session = MagicMock()
-            mock_session_class.return_value = mock_session
+            mock_async_session_class.return_value = mock_session
             
             result = main()
             
