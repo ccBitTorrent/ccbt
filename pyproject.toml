@@ -221,4 +221,10 @@ version_scheme = "pep440"
 [tool.uv.workspace]
 members = []
 
+[dependency-groups]
+dev = [
+    "bandit>=1.7.10",
+    "pre-commit>=3.5.0",
+]
+
  
