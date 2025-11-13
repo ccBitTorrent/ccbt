@@ -13,6 +13,9 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from ccbt.protocols import (
+    WebTorrentProtocol,  # Import from protocols __init__ which handles the module/package conflict
+)
 from ccbt.protocols.base import (
     Protocol,
     ProtocolCapabilities,
@@ -21,10 +24,9 @@ from ccbt.protocols.base import (
 )
 from ccbt.protocols.bittorrent import BitTorrentProtocol
 from ccbt.protocols.ipfs import IPFSProtocol
-from ccbt.protocols.webtorrent import WebTorrentProtocol
 from ccbt.utils.events import Event, EventType, emit_event
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from ccbt.models import PeerInfo, TorrentInfo
 
 
@@ -35,9 +37,11 @@ class HybridStrategy:
     use_bittorrent: bool = True
     use_webtorrent: bool = True
     use_ipfs: bool = True
-    bittorrent_weight: float = 0.6
-    webtorrent_weight: float = 0.3
+    use_xet: bool = False
+    bittorrent_weight: float = 0.5
+    webtorrent_weight: float = 0.25
     ipfs_weight: float = 0.1
+    xet_weight: float = 0.15
     fallback_order: list[ProtocolType] = field(default_factory=list)
 
     def __post_init__(self):
@@ -48,14 +52,31 @@ class HybridStrategy:
                 ProtocolType.WEBTORRENT,
                 ProtocolType.IPFS,
             ]
+            if self.use_xet:
+                self.fallback_order.append(ProtocolType.XET)
 
 
 class HybridProtocol(Protocol):
     """Hybrid protocol combining multiple protocols."""
 
-    def __init__(self, strategy: HybridStrategy | None = None):
-        """Initialize hybrid protocol."""
+    def __init__(
+        self, strategy: HybridStrategy | None = None, session_manager: Any | None = None
+    ):
+        """Initialize hybrid protocol.
+
+        Args:
+            strategy: Optional hybrid strategy configuration
+            session_manager: Optional session manager reference for accessing shared components
+
+        """
         super().__init__(ProtocolType.HYBRID)
+
+        # CRITICAL FIX: Store session manager reference
+        # This allows protocols to use shared components (UDP tracker, DHT, WebRTC manager, etc.)
+        self.session_manager = session_manager
+
+        # Strategy configuration (must be set before capabilities)
+        self.strategy = strategy or HybridStrategy()
 
         # Hybrid-specific capabilities
         self.capabilities = ProtocolCapabilities(
@@ -65,12 +86,10 @@ class HybridProtocol(Protocol):
             supports_dht=True,
             supports_webrtc=True,
             supports_ipfs=True,
+            supports_xet=self.strategy.use_xet,
             max_connections=1000,
             supports_ipv6=True,
         )
-
-        # Strategy configuration
-        self.strategy = strategy or HybridStrategy()
 
         # Sub-protocols
         self.sub_protocols: dict[ProtocolType, Protocol] = {}
@@ -81,22 +100,50 @@ class HybridProtocol(Protocol):
         self._initialize_sub_protocols()
 
     def _initialize_sub_protocols(self) -> None:
-        """Initialize sub-protocols based on strategy."""
+        """Initialize sub-protocols based on strategy.
+
+        CRITICAL FIX: Pass session_manager to protocol constructors to ensure
+        they use shared components (UDP tracker, DHT, WebRTC manager, etc.)
+        """
         if self.strategy.use_bittorrent:
-            self.sub_protocols[ProtocolType.BITTORRENT] = BitTorrentProtocol()
+            self.sub_protocols[ProtocolType.BITTORRENT] = BitTorrentProtocol(
+                session_manager=self.session_manager
+            )
             self.protocol_weights[ProtocolType.BITTORRENT] = (
                 self.strategy.bittorrent_weight
             )
 
         if self.strategy.use_webtorrent:
-            self.sub_protocols[ProtocolType.WEBTORRENT] = WebTorrentProtocol()
+            if WebTorrentProtocol is None:
+                msg = "WebTorrentProtocol is not available. Install aiortc: uv sync --extra webrtc"
+                raise ImportError(msg)
+            # CRITICAL FIX: Pass session_manager to WebTorrentProtocol
+            # This ensures it uses shared WebSocket server and WebRTC manager
+            self.sub_protocols[ProtocolType.WEBTORRENT] = WebTorrentProtocol(
+                session_manager=self.session_manager
+            )
             self.protocol_weights[ProtocolType.WEBTORRENT] = (
                 self.strategy.webtorrent_weight
             )
 
         if self.strategy.use_ipfs:
-            self.sub_protocols[ProtocolType.IPFS] = IPFSProtocol()
+            # CRITICAL FIX: Pass session_manager to IPFSProtocol
+            # This ensures consistency and allows IPFS to use shared components if needed
+            self.sub_protocols[ProtocolType.IPFS] = IPFSProtocol(
+                session_manager=self.session_manager
+            )
             self.protocol_weights[ProtocolType.IPFS] = self.strategy.ipfs_weight
+
+        if self.strategy.use_xet:
+            try:
+                from ccbt.protocols.xet import XetProtocol
+
+                # CRITICAL FIX: Pass session_manager to XetProtocol if it supports it
+                self.sub_protocols[ProtocolType.XET] = XetProtocol()
+                self.protocol_weights[ProtocolType.XET] = self.strategy.xet_weight
+            except ImportError:
+                # Xet protocol not yet implemented, skip it
+                pass
 
         # Initialize performance scores
         for protocol_type in self.sub_protocols:
@@ -497,9 +544,11 @@ class HybridProtocol(Protocol):
                 "use_bittorrent": self.strategy.use_bittorrent,
                 "use_webtorrent": self.strategy.use_webtorrent,
                 "use_ipfs": self.strategy.use_ipfs,
+                "use_xet": self.strategy.use_xet,
                 "bittorrent_weight": self.strategy.bittorrent_weight,
                 "webtorrent_weight": self.strategy.webtorrent_weight,
                 "ipfs_weight": self.strategy.ipfs_weight,
+                "xet_weight": self.strategy.xet_weight,
             },
             "protocol_weights": {k.value: v for k, v in self.protocol_weights.items()},
             "protocol_performance": {

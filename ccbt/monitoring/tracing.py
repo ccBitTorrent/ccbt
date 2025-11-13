@@ -26,6 +26,9 @@ from typing import Any
 from typing_extensions import Self
 
 from ccbt.utils.events import Event, EventType, emit_event
+from ccbt.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class SpanStatus(Enum):

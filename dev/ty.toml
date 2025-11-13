@@ -1,0 +1,50 @@
+# Ty type checker configuration
+[environment]
+python-version = "3.12"
+
+# Exclude test directories and generated files only
+[src]
+exclude = [
+    ".benchmarks/",
+    ".ccbt/",
+    ".cursor/",
+    "tests/",
+    "benchmarks/",
+    "ccbt/interface/",
+    "dev/",
+    "dist/",
+    "docs/",
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/*.pyo",
+    "**/.venv/**",
+    "**/.github/**",
+    "**/.hypothesis/**",
+    "**/.pre-commit-cache/**",
+    "**/.pre-commit-home/**",
+    "**/.ruff_cache/**",
+    "**/.pytest_cache/**",
+    "**/.mypy_cache/**",
+    "**/.coverage",
+    "**/htmlcov/**",
+    "**/.tox/**",
+    "**/node_modules/**",
+    "**/site/**",
+    "**/.git/**",
+]
+
+
+[rules]
+# Treat these as warnings instead of errors for now
+possibly-missing-attribute = "warn"
+invalid-type-form = "warn"
+non-subscriptable = "warn"
+unresolved-attribute = "warn"
+
+unsupported-operator = "warn"
+too-many-positional-arguments = "warn"
+invalid-parameter-default = "warn"
+parameter-already-assigned = "warn"
+not-iterable = "warn"
+
+

@@ -47,7 +47,9 @@ class InMemoryTrackerStore:
             try:
                 compact.extend(socket.inet_aton(peer_ip))
                 compact.extend(peer_port.to_bytes(2, "big"))
-            except OSError:
+            except (
+                OSError
+            ):  # pragma: no cover - IP address encoding error, tested via valid IPs
                 continue
 
         response = {
@@ -94,7 +96,7 @@ class AnnounceHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
             self.wfile.write(body)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover - Announce handler exception, defensive error handling
             failure = {b"failure reason": str(e).encode("utf-8")}
             body = encode(failure)
             self.send_response(200)

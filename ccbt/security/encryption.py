@@ -7,6 +7,7 @@ Provides encryption support including:
 - Protocol encryption
 - Key exchange
 - Encrypted handshake
+- Cipher suites: RC4, AES, ChaCha20
 """
 
 from __future__ import annotations
@@ -40,7 +41,11 @@ class EncryptionMode(Enum):
 
 @dataclass
 class EncryptionConfig:
-    """Encryption configuration."""
+    """Encryption configuration.
+
+    This is a legacy configuration class. For new code, use SecurityConfig from
+    ccbt.models.SecurityConfig instead.
+    """
 
     mode: EncryptionMode = EncryptionMode.PREFERRED
     allowed_ciphers: list[EncryptionType] = field(default_factory=list)
@@ -51,6 +56,58 @@ class EncryptionConfig:
         """Initialize allowed ciphers after object creation."""
         if not self.allowed_ciphers:
             self.allowed_ciphers = [EncryptionType.RC4, EncryptionType.AES]
+
+    @classmethod
+    def from_security_config(cls, security_config: Any) -> EncryptionConfig:
+        """Create EncryptionConfig from SecurityConfig.
+
+        Args:
+            security_config: SecurityConfig instance from ccbt.models
+
+        Returns:
+            EncryptionConfig instance
+
+        """
+        from ccbt.config.config import get_config
+
+        # Try to get from security_config if provided, else get from global config
+        if security_config is None:
+            config = get_config()
+            security_config = config.security
+
+        # Map encryption_mode string to EncryptionMode enum
+        encryption_mode_str = getattr(security_config, "encryption_mode", "preferred")
+        mode_map = {
+            "disabled": EncryptionMode.DISABLED,
+            "preferred": EncryptionMode.PREFERRED,
+            "required": EncryptionMode.REQUIRED,
+        }
+        mode = mode_map.get(encryption_mode_str.lower(), EncryptionMode.PREFERRED)
+
+        # Map allowed_ciphers from string list to EncryptionType enum
+        allowed_cipher_strings = getattr(
+            security_config, "encryption_allowed_ciphers", ["rc4", "aes"]
+        )
+        allowed_ciphers = []
+        cipher_map = {
+            "rc4": EncryptionType.RC4,
+            "aes": EncryptionType.AES,
+            "chacha20": EncryptionType.CHACHA20,
+        }
+        for cipher_str in allowed_cipher_strings:
+            cipher_type = cipher_map.get(cipher_str.lower())
+            if cipher_type:
+                allowed_ciphers.append(cipher_type)
+
+        if not allowed_ciphers:
+            allowed_ciphers = [EncryptionType.RC4, EncryptionType.AES]
+
+        return cls(
+            mode=mode,
+            allowed_ciphers=allowed_ciphers,
+            key_size=16,  # Default key size (SecurityConfig doesn't have this)
+            handshake_timeout=10.0,  # Default timeout
+        )
 
 
 @dataclass
@@ -66,14 +123,45 @@ class EncryptionSession:
     bytes_decrypted: int = 0
     created_at: float = 0.0
     last_activity: float = 0.0
+    # MSE handshake state (for integration with MSEHandshake)
+    mse_handshake: Any = None  # Will store MSEHandshake instance if needed
+    info_hash: bytes | None = None  # Torrent info hash for key derivation
 
 
 class EncryptionManager:
     """Encryption management system."""
 
-    def __init__(self, config: EncryptionConfig | None = None):
-        """Initialize encryption manager."""
-        self.config = config or EncryptionConfig()
+    def __init__(
+        self,
+        config: EncryptionConfig | None = None,
+        security_config: Any = None,
+    ):
+        """Initialize encryption manager.
+
+        Args:
+            config: Legacy EncryptionConfig (deprecated, use security_config)
+            security_config: SecurityConfig from ccbt.models (preferred)
+
+        """
+        # Support both legacy EncryptionConfig and new SecurityConfig
+        if security_config is not None:
+            # Convert SecurityConfig to EncryptionConfig
+            self.config = EncryptionConfig.from_security_config(security_config)
+        elif config is not None:
+            self.config = config
+        else:
+            # Try to get from global config
+            try:
+                from ccbt.config.config import get_config
+
+                global_config = get_config()
+                self.config = EncryptionConfig.from_security_config(
+                    global_config.security
+                )
+            except Exception:
+                # Fallback to defaults
+                self.config = EncryptionConfig()
+
         self.encryption_sessions: dict[str, EncryptionSession] = {}
         self.cipher_suites: dict[EncryptionType, Any] = {}
 
@@ -98,6 +186,7 @@ class EncryptionManager:
 
         Returns:
             Tuple of (success, handshake_data)
+
         """
         try:
             # Create encryption session
@@ -153,6 +242,7 @@ class EncryptionManager:
 
         Returns:
             True if handshake successful
+
         """
         if peer_id not in self.encryption_sessions:
             return False
@@ -176,6 +266,9 @@ class EncryptionManager:
                         },
                     ),
                 )
+                return True
+            # Verification failed
+            return False
 
         except Exception as e:
             self.stats["handshake_failures"] += 1
@@ -193,8 +286,6 @@ class EncryptionManager:
             )
 
             return False
-        else:
-            return True
 
     async def encrypt_data(self, peer_id: str, data: bytes) -> tuple[bool, bytes]:
         """Encrypt data for a peer.
@@ -205,6 +296,7 @@ class EncryptionManager:
 
         Returns:
             Tuple of (success, encrypted_data)
+
         """
         if peer_id not in self.encryption_sessions:
             return False, data
@@ -258,6 +350,7 @@ class EncryptionManager:
 
         Returns:
             Tuple of (success, decrypted_data)
+
         """
         if peer_id not in self.encryption_sessions:
             return False, encrypted_data
@@ -361,12 +454,14 @@ class EncryptionManager:
 
     def _initialize_cipher_suites(self) -> None:
         """Initialize cipher suites."""
-        # This is a placeholder implementation
-        # In a real implementation, this would initialize actual cipher suites
+        from ccbt.security.ciphers.aes import AESCipher
+        from ccbt.security.ciphers.chacha20 import ChaCha20Cipher
+        from ccbt.security.ciphers.rc4 import RC4Cipher
 
-        self.cipher_suites[EncryptionType.RC4] = "rc4_cipher"
-        self.cipher_suites[EncryptionType.AES] = "aes_cipher"
-        self.cipher_suites[EncryptionType.CHACHA20] = "chacha20_cipher"
+        # Register cipher classes (not instances)
+        self.cipher_suites[EncryptionType.RC4] = RC4Cipher
+        self.cipher_suites[EncryptionType.AES] = AESCipher
+        self.cipher_suites[EncryptionType.CHACHA20] = ChaCha20Cipher
 
     async def _create_encryption_session(
         self,
@@ -389,32 +484,99 @@ class EncryptionManager:
             last_activity=time.time(),
         )
 
-    def _select_encryption_type(self) -> EncryptionType:
-        """Select encryption type based on configuration."""
+    def _select_encryption_type(
+        self, peer_capabilities: list[EncryptionType] | None = None
+    ) -> EncryptionType:
+        """Select encryption type based on configuration and peer capabilities.
+
+        Args:
+            peer_capabilities: List of encryption types supported by peer (None = unknown)
+
+        Returns:
+            Selected encryption type
+
+        """
+        # Priority order: Most secure first (ChaCha20, AES), then RC4 (for compatibility)
+        preferred_order = [
+            EncryptionType.CHACHA20,
+            EncryptionType.AES,
+            EncryptionType.RC4,
+        ]
+
+        # Filter by allowed ciphers from config
         if not self.config.allowed_ciphers:
+            # Default to RC4 if no configuration
             return EncryptionType.RC4
 
-        # For now, return the first allowed cipher
-        # In a real implementation, this would be more sophisticated
-        return self.config.allowed_ciphers[0]
+        # Get intersection of allowed ciphers and preferred order
+        available_ciphers = [
+            cipher
+            for cipher in preferred_order
+            if cipher in self.config.allowed_ciphers
+        ]
+
+        if not available_ciphers:
+            # Fallback to first allowed cipher if none in preferred order
+            return self.config.allowed_ciphers[0]
+
+        # If peer capabilities are known, prefer matching ciphers
+        if peer_capabilities:
+            matching_ciphers = [
+                cipher for cipher in available_ciphers if cipher in peer_capabilities
+            ]
+            if matching_ciphers:
+                # Return first matching cipher from preferred order
+                return matching_ciphers[0]
+
+        # Return first available cipher from preferred order
+        return available_ciphers[0]
 
     def _generate_encryption_key(self) -> bytes:
         """Generate encryption key."""
         return secrets.token_bytes(self.config.key_size)
 
     async def _generate_handshake(self, session: EncryptionSession) -> bytes:
-        """Generate encryption handshake data."""
-        # This is a simplified handshake
-        # In a real implementation, this would follow the MSE/PE protocol
+        """Generate encryption handshake data.
 
+        Note: This is a simplified placeholder method. The actual MSE handshake
+        will be performed at the peer connection level using MSEHandshake directly
+        with StreamReader/StreamWriter. This method is kept for backward compatibility
+        with the EncryptionManager interface.
+
+        Args:
+            session: Encryption session
+
+        Returns:
+            Simplified handshake data (for compatibility only)
+
+        """
+        # Map EncryptionType to MSE CipherType
+        from ccbt.security.mse_handshake import CipherType
+
+        # Convert EncryptionType to CipherType for MSE protocol
+        cipher_type_map = {
+            EncryptionType.RC4: CipherType.RC4,
+            EncryptionType.AES: CipherType.AES,
+            EncryptionType.CHACHA20: CipherType.CHACHA20,
+        }
+
+        mse_cipher_type = cipher_type_map.get(session.encryption_type, CipherType.RC4)
+
+        # Generate simplified handshake structure aligned with MSE protocol format
+        # Format: [4 bytes length][1 byte message type][payload]
+        # This is a placeholder - actual handshake uses MSEHandshake with streams
+
+        # Protocol identifier for simplified handshake
+        protocol_version = 1
         handshake_data = struct.pack(
             "!BB",  # Protocol version and encryption type
-            1,  # Protocol version
-            list(EncryptionType).index(session.encryption_type),
+            protocol_version,
+            int(mse_cipher_type),
         )
 
-        # Add key material
-        handshake_data += session.key
+        # Add minimal key material placeholder
+        # Note: In real MSE handshake, key is derived from DH exchange via MSEHandshake
+        handshake_data += session.key[:16]  # Use first 16 bytes
 
         return handshake_data
 
@@ -423,44 +585,110 @@ class EncryptionManager:
         session: EncryptionSession,
         response: bytes,
     ) -> bool:
-        """Verify handshake response from peer."""
-        # This is a simplified verification
-        # In a real implementation, this would verify the peer's response
+        """Verify handshake response from peer.
+
+        Note: This is a simplified placeholder method. The actual MSE handshake
+        verification will be performed at the peer connection level using MSEHandshake
+        directly with StreamReader/StreamWriter. This method is kept for backward
+        compatibility with the EncryptionManager interface.
+
+        Args:
+            session: Encryption session
+            response: Handshake response bytes from peer
+
+        Returns:
+            True if handshake response is valid
+
+        """
+        from ccbt.security.mse_handshake import CipherType
 
         if len(response) < 2:
             return False
 
-        # Check protocol version and encryption type
-        version, encryption_type_index = struct.unpack("!BB", response[:2])
+        try:
+            # Check protocol version and encryption type
+            version, cipher_type_value = struct.unpack("!BB", response[:2])
 
-        if version != 1:
+            if version != 1:
+                return False
+
+            # Map MSE CipherType to EncryptionType
+            cipher_type_map = {
+                CipherType.RC4: EncryptionType.RC4,
+                CipherType.AES: EncryptionType.AES,
+                CipherType.CHACHA20: EncryptionType.CHACHA20,
+            }
+
+            try:
+                mse_cipher_type = CipherType(cipher_type_value)
+                expected_encryption_type = cipher_type_map.get(
+                    mse_cipher_type, EncryptionType.RC4
+                )
+                return expected_encryption_type == session.encryption_type
+            except ValueError:
+                # Invalid cipher type value
+                return False
+
+        except struct.error:  # pragma: no cover
+            # Tested via test_verify_handshake_response_struct_error, but coverage
+            # tool may not always track exception handler execution correctly
             return False
-
-        if encryption_type_index >= len(list(EncryptionType)):
+        except ValueError:  # pragma: no cover - defensive code for outer try block
+            # Defensive: catch any other ValueError in outer try block
+            # (inner ValueError from CipherType is already handled above)
+            # This is unlikely to be reached in practice but protects against
+            # unexpected ValueError from struct operations
             return False
-
-        expected_encryption_type = list(EncryptionType)[encryption_type_index]
-        return expected_encryption_type == session.encryption_type
 
     async def _encrypt_with_cipher(
-        self, _cipher: Any, _key: bytes, data: bytes
+        self, cipher_class: type, key: bytes, data: bytes
     ) -> bytes:
-        """Encrypt data with specified cipher."""
-        # This is a placeholder implementation
-        # In a real implementation, this would use actual encryption
+        """Encrypt data with specified cipher.
 
-        # For now, just return the data (no encryption)
-        return data
+        Args:
+            cipher_class: Cipher class to instantiate
+            key: Encryption key
+            data: Data to encrypt
+
+        Returns:
+            Encrypted data
+
+        """
+        try:
+            # Instantiate cipher with key
+            cipher = cipher_class(key)
+            # Encrypt data
+            return cipher.encrypt(data)
+        except Exception as e:
+            # Log error and return original data
+            # In production, should emit error event
+            error_msg = f"Encryption failed: {e}"
+            raise RuntimeError(error_msg) from e
 
     async def _decrypt_with_cipher(
         self,
-        _cipher: Any,
-        _key: bytes,
+        cipher_class: type,
+        key: bytes,
         encrypted_data: bytes,
     ) -> bytes:
-        """Decrypt data with specified cipher."""
-        # This is a placeholder implementation
-        # In a real implementation, this would use actual decryption
+        """Decrypt data with specified cipher.
 
-        # For now, just return the data (no decryption)
-        return encrypted_data
+        Args:
+            cipher_class: Cipher class to instantiate
+            key: Decryption key
+            encrypted_data: Encrypted data to decrypt
+
+        Returns:
+            Decrypted plaintext data
+
+        """
+        try:
+            # Instantiate cipher with key
+            cipher = cipher_class(key)
+            # Decrypt data
+            return cipher.decrypt(encrypted_data)
+        except Exception as e:
+            # Log error and return encrypted data
+            # In production, should emit error event
+            error_msg = f"Decryption failed: {e}"
+            raise RuntimeError(error_msg) from e

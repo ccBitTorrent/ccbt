@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, cast
 
 if TYPE_CHECKING:
     from ccbt.discovery.dht import AsyncDHTClient
+    from ccbt.utils.di import DIContainer
 
 from ccbt import (
     session as _session_mod,
@@ -50,6 +51,10 @@ class TorrentSessionInfo:
     output_dir: str
     added_time: float
     status: str = "starting"  # starting, downloading, seeding, stopped, error
+    priority: str | None = None  # Queue priority (TorrentPriority enum value as string)
+    queue_position: int | None = (
+        None  # Position in queue (0 = highest priority position)
+    )
 
 
 class AsyncTorrentSession:
@@ -79,7 +84,13 @@ class AsyncTorrentSession:
         # Set the piece manager on the download manager for compatibility
         self.download_manager.piece_manager = self.piece_manager
 
+        # CRITICAL FIX: Pass session_manager to AsyncTrackerClient
+        # This ensures it uses the daemon's initialized UDP tracker client
+        # instead of creating a new one, preventing WinError 10048
         self.tracker = AsyncTrackerClient()
+        # Store session_manager reference so tracker can use initialized UDP client
+        if session_manager:
+            self.tracker._session_manager = session_manager  # type: ignore[attr-defined]
         self.pex_manager: PEXManager | None = None
         self.checkpoint_manager = CheckpointManager(self.config.disk)
 
@@ -121,6 +132,78 @@ class AsyncTorrentSession:
         self.on_error: Callable[[Exception], None] | None = None
 
         self.logger = get_logger(__name__)
+
+        # Extract is_private flag for DHT discovery
+        if isinstance(torrent_data, dict):
+            self.is_private = torrent_data.get("is_private", False)
+        elif hasattr(torrent_data, "is_private"):
+            self.is_private = getattr(torrent_data, "is_private", False)
+        else:
+            self.is_private = False
+
+        # Per-torrent configuration options (overrides global config for this torrent)
+        # These are set via UI or API and applied during session.start()
+        self.options: dict[str, Any] = {}
+
+    def _apply_per_torrent_options(self) -> None:
+        """Apply per-torrent configuration options, overriding global config.
+
+        This method applies per-torrent settings like piece_selection,
+        max_peers_per_torrent, streaming_mode, etc. to the appropriate components.
+        """
+        # Apply piece selection strategy if set
+        if "piece_selection" in self.options:
+            piece_selection = self.options["piece_selection"]
+            if hasattr(self.piece_manager, "selection_strategy"):
+                try:
+                    from ccbt.models import PieceSelectionStrategy
+
+                    # Convert string to enum if needed
+                    if isinstance(piece_selection, str):
+                        piece_selection = PieceSelectionStrategy(piece_selection)
+                    self.piece_manager.selection_strategy = piece_selection
+                    self.logger.debug(
+                        "Applied per-torrent piece_selection: %s", piece_selection
+                    )
+                except (ValueError, AttributeError) as e:
+                    self.logger.warning(
+                        "Invalid piece_selection '%s': %s, using global default",
+                        piece_selection,
+                        e,
+                    )
+            # Also try setting via config if available
+            if hasattr(self.piece_manager, "config") and hasattr(
+                self.piece_manager.config, "strategy"
+            ):
+                try:
+                    from ccbt.models import PieceSelectionStrategy
+
+                    if isinstance(piece_selection, str):
+                        piece_selection = PieceSelectionStrategy(piece_selection)
+                    self.piece_manager.config.strategy.piece_selection = piece_selection
+                except (ValueError, AttributeError):
+                    pass
+
+        # Apply streaming mode if set
+        if "streaming_mode" in self.options:
+            streaming_mode = bool(self.options["streaming_mode"])
+            if hasattr(self.piece_manager, "streaming_mode"):
+                self.piece_manager.streaming_mode = streaming_mode
+                self.logger.debug(
+                    "Applied per-torrent streaming_mode: %s", streaming_mode
+                )
+
+        # Apply sequential window size if set
+        if "sequential_window_size" in self.options:
+            seq_window = int(self.options["sequential_window_size"])
+            if seq_window > 0 and hasattr(self.piece_manager, "sequential_window_size"):
+                self.piece_manager.sequential_window_size = seq_window
+                self.logger.debug(
+                    "Applied per-torrent sequential_window_size: %s", seq_window
+                )
+
+        # Note: max_peers_per_torrent is applied when peer manager is created
+        # (see peer manager initialization below)
 
     def _normalize_torrent_data(
         self,
@@ -199,8 +282,144 @@ class AsyncTorrentSession:
             # Start tracker client
             await self.tracker.start()
 
+            # Apply per-torrent configuration options (override global config)
+            self._apply_per_torrent_options()
+
             # Start piece manager
-            await self.piece_manager.start()
+            self.logger.debug("Starting piece manager for torrent: %s", self.info.name)
+            try:
+                await self.piece_manager.start()
+                self.logger.debug("Piece manager started successfully")
+            except Exception as e:
+                self.logger.exception("Failed to start piece manager: %s", e)
+                raise  # Re-raise - piece manager is critical
+
+            # CRITICAL FIX: Initialize peer manager early, even without peers
+            # This ensures _peer_manager is set on piece manager before piece selection starts
+            # The peer manager can wait for peers to arrive from tracker/DHT/PEX
+            if (
+                not hasattr(self.download_manager, "peer_manager")
+                or self.download_manager.peer_manager is None
+            ):
+                from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
+
+                # Extract is_private flag
+                is_private = False
+                try:
+                    if isinstance(self.torrent_data, dict):
+                        is_private = self.torrent_data.get("is_private", False)
+                    elif hasattr(self.torrent_data, "is_private"):
+                        is_private = getattr(self.torrent_data, "is_private", False)
+                except Exception:
+                    pass
+
+                # Normalize torrent_data for peer manager
+                if isinstance(self.torrent_data, dict):
+                    td_for_peer = self.torrent_data
+                else:
+                    # Convert to dict format
+                    td_for_peer = {
+                        "info_hash": getattr(self.torrent_data, "info_hash", b""),
+                        "name": getattr(self.torrent_data, "name", "unknown"),
+                        "pieces_info": {
+                            "piece_hashes": getattr(self.torrent_data, "pieces", []),
+                            "piece_length": getattr(
+                                self.torrent_data, "piece_length", 0
+                            ),
+                            "num_pieces": getattr(self.torrent_data, "num_pieces", 0),
+                            "total_length": getattr(
+                                self.torrent_data, "total_length", 0
+                            ),
+                        },
+                    }
+
+                try:
+                    self.logger.debug(
+                        "Initializing peer manager for torrent: %s", self.info.name
+                    )
+                    our_peer_id = getattr(self.download_manager, "our_peer_id", None)
+                    peer_manager = AsyncPeerConnectionManager(
+                        td_for_peer,
+                        self.piece_manager,
+                        our_peer_id,
+                    )
+                    self.logger.debug(
+                        "Peer manager created, setting security manager and flags"
+                    )
+                    peer_manager._security_manager = getattr(
+                        self.download_manager, "security_manager", None
+                    )  # type: ignore[attr-defined]
+                    peer_manager._is_private = is_private  # type: ignore[attr-defined]
+
+                    # Apply per-torrent max_peers_per_torrent if set (overrides global)
+                    if "max_peers_per_torrent" in self.options:
+                        max_peers = self.options["max_peers_per_torrent"]
+                        if max_peers is not None and max_peers >= 0:
+                            # Override the config value for this peer manager
+                            # Store original and set per-torrent value
+                            original_max = self.config.network.max_peers_per_torrent
+                            self.config.network.max_peers_per_torrent = max_peers
+                            self.logger.debug(
+                                "Applied per-torrent max_peers_per_torrent: %s (global: %s)",
+                                max_peers,
+                                original_max,
+                            )
+                            # Note: This modifies the global config object, but only for this session
+                            # A better approach would be to pass it to peer manager directly
+                            # For now, we'll store it and peer manager will read from config
+                            # TODO: Refactor to pass max_peers directly to peer manager
+
+                    # Wire callbacks
+                    self.logger.debug("Wiring peer manager callbacks")
+                    if hasattr(self.download_manager, "_on_peer_connected"):
+                        peer_manager.on_peer_connected = (
+                            self.download_manager._on_peer_connected
+                        )  # type: ignore[attr-defined]
+                    if hasattr(self.download_manager, "_on_peer_disconnected"):
+                        peer_manager.on_peer_disconnected = (
+                            self.download_manager._on_peer_disconnected
+                        )  # type: ignore[attr-defined]
+                    if hasattr(self.download_manager, "_on_piece_received"):
+                        peer_manager.on_piece_received = (
+                            self.download_manager._on_piece_received
+                        )  # type: ignore[attr-defined]
+                    if hasattr(self.download_manager, "_on_bitfield_received"):
+                        peer_manager.on_bitfield_received = (
+                            self.download_manager._on_bitfield_received
+                        )  # type: ignore[attr-defined]
+
+                    # Set peer manager on download manager
+                    self.download_manager.peer_manager = peer_manager  # type: ignore[assignment]
+
+                    # Start peer manager
+                    self.logger.debug("Starting peer manager")
+                    if hasattr(peer_manager, "start"):
+                        await peer_manager.start()  # type: ignore[misc]
+
+                    # CRITICAL FIX: Set _peer_manager on piece manager immediately
+                    # This allows piece selection to work even before peers are connected
+                    self.piece_manager._peer_manager = peer_manager  # type: ignore[attr-defined]
+                    self.logger.info(
+                        "Peer manager initialized early (waiting for peers from tracker/DHT/PEX)"
+                    )
+
+                    # CRITICAL FIX: Start piece manager download with peer manager
+                    # This sets is_downloading=True and allows piece selection to work
+                    # CRITICAL FIX: For magnet links, this may set is_downloading=True even if num_pieces=0
+                    # This is intentional - allows piece selector to be ready when metadata arrives
+                    self.logger.debug("Starting piece manager download")
+                    await self.piece_manager.start_download(peer_manager)
+                    self.logger.info(
+                        "Piece manager download started (is_downloading=%s, num_pieces=%d, waiting for peers)",
+                        self.piece_manager.is_downloading,
+                        self.piece_manager.num_pieces,
+                    )
+                except Exception as e:
+                    self.logger.exception(
+                        "Failed to initialize peer manager early: %s", e
+                    )
+                    # Continue without early initialization - will be created when peers arrive
+                    # Don't re-raise - allow session to start even if peer manager init fails
 
             # Set up callbacks
             self.download_manager.on_download_complete = self._on_download_complete
@@ -221,13 +440,39 @@ class AsyncTorrentSession:
                 self.pex_manager = PEXManager()
                 await self.pex_manager.start()
 
-            # Start background tasks
-            self._announce_task = asyncio.create_task(self._announce_loop())
-            self._status_task = asyncio.create_task(self._status_loop())
+            # CRITICAL FIX: Set up DHT peer discovery for magnet links and regular torrents
+            # This must happen after session manager and DHT client are ready
+            if self.config.discovery.enable_dht and self.session_manager:
+                try:
+                    from ccbt.session.dht_setup import DHTDiscoverySetup
 
-            # Start checkpoint task if enabled
-            if self.config.disk.checkpoint_enabled:
-                self._checkpoint_task = asyncio.create_task(self._checkpoint_loop())
+                    dht_setup = DHTDiscoverySetup(self)
+                    await dht_setup.setup_dht_discovery()
+                except Exception as dht_error:
+                    # Log but don't fail session start - DHT is best-effort
+                    self.logger.warning(
+                        "Failed to set up DHT peer discovery: %s (peer discovery may be limited)",
+                        dht_error,
+                    )
+
+            # Start background tasks with error isolation
+            # CRITICAL FIX: Wrap task creation to ensure exceptions don't crash the daemon
+            # The event loop exception handler will catch any unhandled exceptions in these tasks
+            try:
+                self._announce_task = asyncio.create_task(self._announce_loop())
+                self._status_task = asyncio.create_task(self._status_loop())
+
+                # Start checkpoint task if enabled
+                if self.config.disk.checkpoint_enabled:
+                    self._checkpoint_task = asyncio.create_task(self._checkpoint_loop())
+            except Exception as task_error:
+                # Log error but don't fail session start - tasks will be handled by exception handler
+                self.logger.warning(
+                    "Error creating background tasks (will be handled by exception handler): %s",
+                    task_error,
+                )
+                # Re-raise only if critical - but task creation shouldn't fail
+                raise
 
             self.info.status = "downloading"
             self.logger.info("Started torrent session: %s", self.info.name)
@@ -267,7 +512,21 @@ class AsyncTorrentSession:
 
         await self.download_manager.stop()
         await self.piece_manager.stop()
-        await self.tracker.stop()
+
+        # CRITICAL FIX: Ensure tracker is properly stopped and session is closed
+        # This prevents "Unclosed client session" warnings
+        try:
+            await self.tracker.stop()
+        except Exception as e:
+            self.logger.warning("Error stopping tracker: %s", e)
+            # Try to force close session if stop() failed
+            if hasattr(self.tracker, "session") and self.tracker.session:
+                try:
+                    if not self.tracker.session.closed:
+                        await self.tracker.session.close()
+                except Exception:
+                    pass
+                self.tracker.session = None
 
         self.info.status = "stopped"
         self.logger.info("Stopped torrent session: %s", self.info.name)
@@ -332,6 +591,21 @@ class AsyncTorrentSession:
                     }
                 else:
                     td = self.torrent_data
+
+                # CRITICAL FIX: Check for trackers before attempting announce
+                # For magnet links without trackers, skip tracker announce and rely on DHT
+                tracker_urls = self._collect_trackers(td)
+                if not tracker_urls:
+                    # No trackers available - this is normal for magnet links without tracker URLs
+                    # Rely on DHT for peer discovery instead
+                    self.logger.debug(
+                        "No trackers found for %s; skipping tracker announce (relying on DHT)",
+                        td.get("name", "unknown"),
+                    )
+                    # Wait longer when no trackers (DHT discovery is slower)
+                    await asyncio.sleep(announce_interval * 2)
+                    continue
+
                 response = await self.tracker.announce(td)
 
                 if (
@@ -360,6 +634,50 @@ class AsyncTorrentSession:
             except Exception as e:
                 self.logger.warning("Tracker announce failed: %s", e)
                 await asyncio.sleep(60)  # Retry in 1 minute on error
+
+    def _collect_trackers(self, td: dict[str, Any]) -> list[str]:
+        """Collect and deduplicate tracker URLs from torrent_data.
+
+        Args:
+            td: Torrent data dictionary
+
+        Returns:
+            List of unique tracker URLs
+
+        """
+        urls: list[str] = []
+
+        # BEP 12 tiers or flat list from magnet parsing
+        announce_list = td.get("announce_list")
+        if isinstance(announce_list, list):
+            for item in announce_list:
+                if isinstance(item, list):
+                    urls.extend([u for u in item if isinstance(u, str)])
+                elif isinstance(item, str):
+                    urls.append(item)
+
+        # Additional trackers key (magnet parsing)
+        trackers = td.get("trackers")
+        if isinstance(trackers, list):
+            urls.extend([u for u in trackers if isinstance(u, str)])
+
+        # Fallback to single announce
+        announce = td.get("announce")
+        if isinstance(announce, str) and announce.strip():
+            urls.append(announce.strip())
+
+        # Deduplicate, basic validation
+        seen: set[str] = set()
+        unique: list[str] = []
+        for u in urls:
+            if not isinstance(u, str):
+                continue
+            v = u.strip()
+            if v and v not in seen:
+                seen.add(v)
+                unique.append(v)
+
+        return unique
 
     async def _status_loop(self) -> None:
         """Background task for status monitoring."""
@@ -436,6 +754,7 @@ class AsyncTorrentSession:
                 "status": self.info.status,
                 "added_time": self.info.added_time,
                 "uptime": time.time() - self.info.added_time,
+                "is_private": self.is_private,  # BEP 27: Include private flag in status
             },
         )
         return status
@@ -634,19 +953,309 @@ class AsyncSessionManager:
         # Simple per-torrent rate limits (not enforced yet, stored for reporting)
         self._per_torrent_limits: dict[bytes, dict[str, int]] = {}
 
+        # Optional dependency injection container
+        self._di: DIContainer | None = None
+
+        # Components initialized by startup functions
+        self.security_manager: Any | None = None
+        self.nat_manager: Any | None = None
+        self.tcp_server: Any | None = None
+        # CRITICAL FIX: Store reference to initialized UDP tracker client
+        # This ensures all torrent sessions use the same initialized socket
+        # The UDP tracker client is a singleton, but we store the reference
+        # to ensure it's accessible and to prevent any lazy initialization
+        self.udp_tracker_client: Any | None = None
+
+        # CRITICAL FIX: Store executor initialized at daemon startup
+        # This ensures executor uses the session manager's initialized components
+        # and prevents duplicate executor creation
+        self.executor: Any | None = None
+
+        # CRITICAL FIX: Store protocol manager initialized at daemon startup
+        # Singleton pattern removed - protocol manager is now managed via session manager
+        # This ensures proper lifecycle management and prevents conflicts
+        self.protocol_manager: Any | None = None
+
+        # CRITICAL FIX: Store WebTorrent WebSocket server initialized at daemon startup
+        # WebSocket server socket must be initialized once and never recreated
+        # This prevents port conflicts and socket recreation issues
+        self.webtorrent_websocket_server: Any | None = None
+
+        # CRITICAL FIX: Store WebRTC connection manager initialized at daemon startup
+        # WebRTC manager should be shared across all WebTorrent protocol instances
+        # This ensures proper resource management and prevents duplicate managers
+        self.webrtc_manager: Any | None = None
+
+        # CRITICAL FIX: Store uTP socket manager initialized at daemon startup
+        # Singleton pattern removed - uTP socket manager is now managed via session manager
+        # This ensures proper socket lifecycle management and prevents socket recreation
+        self.utp_socket_manager: Any | None = None
+
+        # CRITICAL FIX: Store extension manager initialized at daemon startup
+        # Singleton pattern removed - extension manager is now managed via session manager
+        # This ensures proper lifecycle management and prevents conflicts
+        self.extension_manager: Any | None = None
+
+        # CRITICAL FIX: Store disk I/O manager initialized at daemon startup
+        # Singleton pattern removed - disk I/O manager is now managed via session manager
+        # This ensures proper lifecycle management and prevents conflicts
+        self.disk_io_manager: Any | None = None
+
+        # Private torrents set (used by DHT client factory)
+        self.private_torrents: set[bytes] = set()
+
+    def _make_security_manager(self) -> Any | None:
+        """Create security manager using ComponentFactory."""
+        from ccbt.session.factories import ComponentFactory
+
+        factory = ComponentFactory(self)
+        return factory.create_security_manager()
+
+    def _make_dht_client(self, bind_ip: str, bind_port: int) -> Any | None:
+        """Create DHT client using ComponentFactory."""
+        from ccbt.session.factories import ComponentFactory
+
+        factory = ComponentFactory(self)
+        return factory.create_dht_client(bind_ip=bind_ip, bind_port=bind_port)
+
+    def _make_nat_manager(self) -> Any | None:
+        """Create NAT manager using ComponentFactory."""
+        from ccbt.session.factories import ComponentFactory
+
+        factory = ComponentFactory(self)
+        return factory.create_nat_manager()
+
+    def _make_tcp_server(self) -> Any | None:
+        """Create TCP server using ComponentFactory."""
+        from ccbt.session.factories import ComponentFactory
+
+        factory = ComponentFactory(self)
+        return factory.create_tcp_server()
+
     async def start(self) -> None:
-        """Start the async session manager."""
-        # Start DHT client if enabled
-        if self.config.discovery.enable_dht:
-            self.dht_client = _session_mod.AsyncDHTClient()
-            await self.dht_client.start()
-        # Start peer service
+        """Start the async session manager.
+
+        Startup order:
+        1. NAT manager:
+           a. Create NAT manager
+           b. UPnP/NAT-PMP discovery (MUST complete first)
+           c. Port mapping (only after discovery completes)
+        2. TCP server (waits for NAT port mapping to complete)
+        3. UDP tracker client (waits for NAT port mapping to complete)
+        4. DHT client (waits for NAT port mapping to complete, especially DHT UDP port)
+        5. Security manager (before peer service - used for IP filtering)
+        6. Peer service (after NAT, TCP server, DHT, and security manager are ready)
+        7. Queue manager (if enabled - manages torrent priorities)
+        8. Background tasks
+        """
+        from ccbt.session.manager_startup import start_nat, start_tcp_server
+
+        # CRITICAL: Start NAT manager first (UPnP/NAT-PMP discovery and port mapping)
+        # This must happen before services that need incoming connections
         try:
-            if self.peer_service:
-                await self.peer_service.start()
+            await start_nat(self)
+        except Exception:
+            # Best-effort: log and continue
+            self.logger.warning(
+                "NAT manager initialization failed. Port mapping may not work, which could prevent incoming connections.",
+                exc_info=True,
+            )
+
+        # Start TCP server for incoming peer connections if enabled
+        # TCP server waits for NAT port mapping to complete before starting
+        try:
+            await start_tcp_server(self)
+        except Exception:
+            # Best-effort: log and continue
+            self.logger.warning(
+                "TCP server initialization failed. Incoming peer connections may not work.",
+                exc_info=True,
+            )
+
+        # CRITICAL FIX: Initialize UDP tracker client during daemon startup
+        # This ensures the socket is created once and never recreated, preventing
+        # daemon/executor sync issues. The socket must be ready before the executor
+        # can use it, so initialize it here rather than lazily.
+        try:
+            from ccbt.session.manager_startup import start_udp_tracker_client
+
+            await start_udp_tracker_client(self)
+        except Exception:
+            # Best-effort: log and continue
+            self.logger.warning(
+                "UDP tracker client initialization failed. UDP tracker operations may not work.",
+                exc_info=True,
+            )
+
+        # Start DHT client if enabled (after NAT for better connectivity)
+        # CRITICAL FIX: Use start_dht() which properly waits for NAT port mapping
+        # and uses the correct factory method with proper bind_ip/bind_port
+        if self.config.discovery.enable_dht:
+            from ccbt.session.manager_startup import start_dht
+
+            try:
+                await start_dht(self)
+            except Exception:
+                # Best-effort: log and continue
+                self.logger.warning(
+                    "DHT client initialization failed. DHT peer discovery may not work.",
+                    exc_info=True,
+                )
+
+        # CRITICAL FIX: Initialize security manager early (before peer service)
+        # Security manager is used by peer managers for IP filtering and validation
+        # It should be initialized during daemon startup to ensure it's ready before
+        # any peer connections are established
+        try:
+            from ccbt.session.manager_startup import start_security_manager
+
+            await start_security_manager(self)
+        except Exception:
+            # Best-effort: log and continue
+            self.logger.warning(
+                "Security manager initialization failed. IP filtering and peer validation may not work.",
+                exc_info=True,
+            )
+
+        # Start peer service (after NAT, TCP server, and security manager are ready)
+        try:
+            from ccbt.session.manager_startup import start_peer_service
+
+            await start_peer_service(self)
         except Exception:
             # Best-effort: log and continue
             self.logger.debug("Peer service start failed", exc_info=True)
+
+        # CRITICAL FIX: Initialize queue manager if enabled
+        # Queue manager manages torrent priorities and bandwidth allocation
+        # It should be initialized during daemon startup to ensure it's ready before
+        # any torrents are added or managed
+        try:
+            from ccbt.session.manager_startup import start_queue_manager
+
+            await start_queue_manager(self)
+        except Exception:
+            # Best-effort: log and continue
+            self.logger.warning(
+                "Queue manager initialization failed. Queue management may not work.",
+                exc_info=True,
+            )
+
+        # CRITICAL FIX: Initialize executor after all components are ready
+        # This ensures executor has access to all initialized components (UDP tracker, DHT, etc.)
+        # The executor will be used by IPC server and other components
+        # Use ExecutorManager to ensure single executor instance per session manager
+        try:
+            from ccbt.executor.manager import ExecutorManager
+
+            executor_manager = ExecutorManager.get_instance()
+            self.executor = executor_manager.get_executor(session_manager=self)
+
+            # CRITICAL FIX: Verify executor is properly initialized
+            if not hasattr(self.executor, "adapter") or self.executor.adapter is None:
+                raise RuntimeError("Executor adapter not initialized")
+            if (
+                not hasattr(self.executor.adapter, "session_manager")
+                or self.executor.adapter.session_manager is None
+            ):
+                raise RuntimeError("Executor session_manager not initialized")
+            if self.executor.adapter.session_manager is not self:
+                raise RuntimeError("Executor session_manager reference mismatch")
+
+            self.logger.info(
+                "Command executor initialized successfully via ExecutorManager (adapter=%s, session_manager=%s)",
+                type(self.executor.adapter).__name__,
+                type(self.executor.adapter.session_manager).__name__,
+            )
+        except Exception as e:
+            self.logger.warning(
+                "Failed to initialize command executor: %s. "
+                "Some operations may not work correctly.",
+                e,
+                exc_info=True,
+            )
+            # Don't fail startup - executor may not be needed in all scenarios
+            self.executor = None
+
+        # CRITICAL FIX: Initialize disk I/O manager at daemon startup
+        # Singleton pattern removed - disk I/O manager is now managed via session manager
+        try:
+            from ccbt.config.config import get_config
+            from ccbt.storage.disk_io import DiskIOManager
+
+            config = get_config()
+            disk_io_manager = DiskIOManager(
+                max_workers=config.disk.disk_workers,
+                queue_size=config.disk.disk_queue_size,
+                cache_size_mb=getattr(config.disk, "cache_size_mb", 256),
+            )
+            await disk_io_manager.start()
+            self.disk_io_manager = disk_io_manager
+            self.logger.info(
+                "Disk I/O manager initialized successfully (workers: %d, queue_size: %d, cache_size_mb: %d)",
+                disk_io_manager.max_workers,
+                disk_io_manager.queue_size,
+                disk_io_manager.cache_size_mb,
+            )
+        except Exception as e:
+            self.logger.warning(
+                "Failed to initialize disk I/O manager: %s. "
+                "Disk operations may not work correctly.",
+                e,
+                exc_info=True,
+            )
+            # Don't fail startup - disk I/O may not be needed in all scenarios
+            self.disk_io_manager = None
+
+        # CRITICAL FIX: Initialize extension manager at daemon startup
+        # Singleton pattern removed - extension manager is now managed via session manager
+        try:
+            from ccbt.extensions.manager import ExtensionManager
+
+            self.extension_manager = ExtensionManager()
+            await self.extension_manager.start()
+            self.logger.info("Extension manager initialized successfully")
+        except Exception as e:
+            self.logger.warning(
+                "Failed to initialize extension manager: %s. "
+                "BitTorrent extensions may not work correctly.",
+                e,
+                exc_info=True,
+            )
+            # Don't fail startup - extensions may not be needed in all scenarios
+            self.extension_manager = None
+
+        # CRITICAL FIX: Initialize protocol manager at daemon startup
+        # Singleton pattern removed - protocol manager is now managed via session manager
+        try:
+            from ccbt.protocols.base import ProtocolManager
+
+            self.protocol_manager = ProtocolManager()
+            self.logger.info("Protocol manager initialized successfully")
+        except Exception as e:
+            self.logger.warning(
+                "Failed to initialize protocol manager: %s. "
+                "Protocol operations may not work correctly.",
+                e,
+                exc_info=True,
+            )
+            # Don't fail startup - protocol manager may not be needed in all scenarios
+            self.protocol_manager = None
+
+        # CRITICAL FIX: Initialize WebTorrent components at daemon startup if enabled
+        # This ensures WebSocket server and WebRTC manager are initialized once
+        if self.config.network.webtorrent.enable_webtorrent:
+            try:
+                from ccbt.session.manager_startup import start_webtorrent_components
+
+                await start_webtorrent_components(self)
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to initialize WebTorrent components: %s. "
+                    "WebTorrent operations may not work correctly.",
+                    e,
+                    exc_info=True,
+                )
 
         # Start background tasks
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
@@ -656,6 +1265,18 @@ class AsyncSessionManager:
 
     async def stop(self) -> None:
         """Stop the async session manager."""
+        # Clean up executor via ExecutorManager
+        if self.executor:
+            try:
+                from ccbt.executor.manager import ExecutorManager
+
+                executor_manager = ExecutorManager.get_instance()
+                executor_manager.remove_executor(session_manager=self)
+                self.executor = None
+                self.logger.debug("Removed executor from ExecutorManager")
+            except Exception as e:
+                self.logger.debug("Error removing executor: %s", e, exc_info=True)
+
         # Stop all torrents
         async with self.lock:
             for session in self.torrents.values():
@@ -668,9 +1289,40 @@ class AsyncSessionManager:
         if self._metrics_task:
             self._metrics_task.cancel()
 
-        # Stop DHT client
+        # Stop TCP server (releases TCP port)
+        if self.tcp_server:
+            try:
+                await self.tcp_server.stop()
+                self.logger.debug("TCP server stopped (port released)")
+            except Exception as e:
+                self.logger.debug("Error stopping TCP server: %s", e, exc_info=True)
+
+        # Stop UDP tracker client (releases UDP tracker port)
+        if self.udp_tracker_client:
+            try:
+                await self.udp_tracker_client.stop()
+                self.logger.debug("UDP tracker client stopped (port released)")
+            except Exception as e:
+                self.logger.debug(
+                    "Error stopping UDP tracker client: %s", e, exc_info=True
+                )
+
+        # Stop DHT client (releases DHT UDP port)
         if self.dht_client:
-            await self.dht_client.stop()
+            try:
+                await self.dht_client.stop()
+                self.logger.debug("DHT client stopped (port released)")
+            except Exception as e:
+                self.logger.debug("Error stopping DHT client: %s", e, exc_info=True)
+
+        # Stop NAT manager (unmaps all ports)
+        if self.nat_manager:
+            try:
+                await self.nat_manager.stop()
+                self.logger.debug("NAT manager stopped (ports unmapped)")
+            except Exception as e:
+                self.logger.debug("Error stopping NAT manager: %s", e, exc_info=True)
+
         # Stop peer service
         try:
             if self.peer_service:
@@ -679,7 +1331,146 @@ class AsyncSessionManager:
             # Best-effort: log and continue
             self.logger.debug("Peer service stop failed", exc_info=True)
 
-        self.logger.info("Async session manager stopped")
+        self.logger.info("Async session manager stopped (all ports released)")
+
+    async def reload_config(self, new_config: Any) -> None:
+        """Reload configuration and update affected components.
+
+        Args:
+            new_config: New Config instance to apply
+
+        """
+        old_config = self.config
+        self.config = new_config
+
+        reloaded_components = []
+
+        try:
+            # Reload security manager if IP filters changed
+            if (
+                old_config.security.ip_filter.filter_files
+                != new_config.security.ip_filter.filter_files
+                or old_config.security.ip_filter.enable_ip_filter
+                != new_config.security.ip_filter.enable_ip_filter
+            ) and self.security_manager:
+                try:
+                    await self.security_manager.load_ip_filter(new_config)
+                    reloaded_components.append("security_manager")
+                    self.logger.info("Reloaded security manager with new IP filters")
+                except Exception as e:
+                    self.logger.warning("Failed to reload security manager: %s", e)
+
+            # Reload DHT client if DHT config changed
+            dht_config_changed = (
+                old_config.discovery.enable_dht != new_config.discovery.enable_dht
+                or old_config.discovery.dht_port != new_config.discovery.dht_port
+            )
+            if dht_config_changed:
+                # Stop existing DHT client
+                if self.dht_client:
+                    try:
+                        await self.dht_client.stop()
+                        self.dht_client = None
+                        reloaded_components.append("dht_client (stopped)")
+                    except Exception as e:
+                        self.logger.warning("Failed to stop DHT client: %s", e)
+
+                # Start new DHT client if enabled
+                if new_config.discovery.enable_dht:
+                    from ccbt.session.manager_startup import start_dht
+
+                    try:
+                        await start_dht(self)
+                        reloaded_components.append("dht_client (started)")
+                        self.logger.info("Reloaded DHT client")
+                    except Exception as e:
+                        self.logger.warning("Failed to start DHT client: %s", e)
+
+            # Reload NAT manager if NAT config changed
+            nat_config_changed = (
+                old_config.nat.auto_map_ports != new_config.nat.auto_map_ports
+                or old_config.nat.enable_nat_pmp != new_config.nat.enable_nat_pmp
+                or old_config.nat.enable_upnp != new_config.nat.enable_upnp
+            )
+            if nat_config_changed:
+                # Stop existing NAT manager
+                if self.nat_manager:
+                    try:
+                        await self.nat_manager.stop()
+                        self.nat_manager = None
+                        reloaded_components.append("nat_manager (stopped)")
+                    except Exception as e:
+                        self.logger.warning("Failed to stop NAT manager: %s", e)
+
+                # Start new NAT manager if enabled
+                if new_config.nat.auto_map_ports:
+                    from ccbt.session.manager_startup import start_nat
+
+                    try:
+                        await start_nat(self)
+                        reloaded_components.append("nat_manager (started)")
+                        self.logger.info("Reloaded NAT manager")
+                    except Exception as e:
+                        self.logger.warning("Failed to start NAT manager: %s", e)
+
+            # Reload peer service if peer limits changed
+            peer_config_changed = (
+                old_config.network.max_global_peers
+                != new_config.network.max_global_peers
+                or old_config.network.connection_timeout
+                != new_config.network.connection_timeout
+            )
+            if peer_config_changed and self.peer_service:
+                try:
+                    # Update peer service config
+                    self.peer_service.max_peers = new_config.network.max_global_peers
+                    self.peer_service.connection_timeout = (
+                        new_config.network.connection_timeout
+                    )
+                    reloaded_components.append("peer_service")
+                    self.logger.info("Reloaded peer service configuration")
+                except Exception as e:
+                    self.logger.warning("Failed to reload peer service: %s", e)
+
+            # Reload TCP server if listen port changed
+            tcp_config_changed = (
+                old_config.network.listen_port != new_config.network.listen_port
+                or old_config.network.enable_tcp != new_config.network.enable_tcp
+            )
+            if tcp_config_changed:
+                # Stop existing TCP server
+                if hasattr(self, "tcp_server") and self.tcp_server:
+                    try:
+                        await self.tcp_server.stop()
+                        self.tcp_server = None
+                        reloaded_components.append("tcp_server (stopped)")
+                    except Exception as e:
+                        self.logger.warning("Failed to stop TCP server: %s", e)
+
+                # Start new TCP server if enabled
+                if new_config.network.enable_tcp:
+                    from ccbt.session.manager_startup import start_tcp_server
+
+                    try:
+                        await start_tcp_server(self)
+                        reloaded_components.append("tcp_server (started)")
+                        self.logger.info("Reloaded TCP server")
+                    except Exception as e:
+                        self.logger.warning("Failed to start TCP server: %s", e)
+
+            if reloaded_components:
+                self.logger.info(
+                    "Configuration reloaded successfully. Components reloaded: %s",
+                    ", ".join(reloaded_components),
+                )
+            else:
+                self.logger.info("Configuration updated (no component reloads needed)")
+
+        except Exception:
+            self.logger.exception("Error during config reload")
+            # Revert to old config on critical error
+            self.config = old_config
+            raise
 
     async def pause_torrent(self, info_hash_hex: str) -> bool:
         """Pause a torrent download by info hash.
@@ -720,12 +1511,47 @@ class AsyncSessionManager:
     ) -> bool:
         """Set per-torrent rate limits (stored for reporting).
 
-        Currently not enforced at I/O level.
+        Currently not enforced at I/O level, but stored for future enforcement
+        and reporting purposes.
+
+        Args:
+            info_hash_hex: Torrent info hash (hex string)
+            download_kib: Download limit in KiB/s (0 = unlimited)
+            upload_kib: Upload limit in KiB/s (0 = unlimited)
+
+        Returns:
+            True if limits were set, False if torrent not found
+
+        Note:
+            Per-torrent limits should not exceed global limits. Validation
+            is performed to ensure compliance.
         """
         try:
             info_hash = bytes.fromhex(info_hash_hex)
         except ValueError:
             return False
+
+        # Validate per-torrent limits against global limits
+        global_down = self.config.limits.global_down_kib
+        global_up = self.config.limits.global_up_kib
+
+        if download_kib > 0 and global_down > 0 and download_kib > global_down:
+            self.logger.warning(
+                "Per-torrent download limit %d KiB/s exceeds global limit %d KiB/s, "
+                "capping to global limit",
+                download_kib,
+                global_down,
+            )
+            download_kib = global_down
+
+        if upload_kib > 0 and global_up > 0 and upload_kib > global_up:
+            self.logger.warning(
+                "Per-torrent upload limit %d KiB/s exceeds global limit %d KiB/s, "
+                "capping to global limit",
+                upload_kib,
+                global_up,
+            )
+            upload_kib = global_up
 
         async with self.lock:
             if info_hash not in self.torrents:
@@ -734,6 +1560,12 @@ class AsyncSessionManager:
                 "down_kib": max(0, int(download_kib)),
                 "up_kib": max(0, int(upload_kib)),
             }
+            self.logger.debug(
+                "Set per-torrent rate limits for %s: down=%d KiB/s, up=%d KiB/s",
+                info_hash_hex[:8],
+                download_kib,
+                upload_kib,
+            )
         return True
 
     async def get_global_stats(self) -> dict[str, Any]:
@@ -865,6 +1697,14 @@ class AsyncSessionManager:
 
                 self.torrents[info_hash] = session
 
+                # BEP 27: Track private torrents for DHT/PEX/LSD enforcement
+                if session.is_private:
+                    self.private_torrents.add(info_hash)
+                    self.logger.debug(
+                        "Added private torrent %s to private_torrents set (BEP 27)",
+                        info_hash.hex()[:8],
+                    )
+
             # Start session
             await session.start(resume=resume)
 
@@ -884,6 +1724,8 @@ class AsyncSessionManager:
 
     async def add_magnet(self, uri: str, resume: bool = False) -> str:
         """Add a magnet link to the session."""
+        info_hash: bytes | None = None
+        session: AsyncTorrentSession | None = None
         try:
             mi = _session_mod.parse_magnet(uri)
             td = _session_mod.build_minimal_torrent_data(
@@ -910,8 +1752,38 @@ class AsyncSessionManager:
 
                 self.torrents[info_hash] = session
 
-            # Start session
-            await session.start(resume=resume)
+                # BEP 27: Track private torrents for DHT/PEX/LSD enforcement
+                if session.is_private:
+                    self.private_torrents.add(info_hash)
+                    self.logger.debug(
+                        "Added private magnet torrent %s to private_torrents set (BEP 27)",
+                        info_hash.hex()[:8],
+                    )
+
+            # CRITICAL FIX: Start session with cleanup on failure
+            # If session.start() fails, remove the session from torrents dict
+            # to prevent orphaned sessions that could cause issues
+            try:
+                await session.start(resume=resume)
+            except Exception as start_error:
+                # Clean up the session from torrents dict if start failed
+                self.logger.exception(
+                    "Failed to start session for magnet %s, cleaning up",
+                    uri,
+                )
+                async with self.lock:
+                    # Remove session from torrents dict if it's still there
+                    if info_hash and info_hash in self.torrents:
+                        removed_session = self.torrents.pop(info_hash, None)
+                        if removed_session:
+                            # Try to stop the session to clean up resources
+                            try:
+                                await removed_session.stop()
+                            except Exception:
+                                # Ignore errors during cleanup
+                                pass
+                # Re-raise the original error
+                raise start_error
 
             # Notify callback
             if self.on_torrent_added:
@@ -933,6 +1805,8 @@ class AsyncSessionManager:
 
         async with self.lock:
             session = self.torrents.pop(info_hash, None)
+            # BEP 27: Remove from private_torrents set when torrent is removed
+            self.private_torrents.discard(info_hash)
 
         if session:
             await session.stop()
@@ -1097,6 +1971,21 @@ class AsyncSessionManager:
 
         return None
 
+    async def get_session_for_info_hash(
+        self, info_hash: bytes
+    ) -> AsyncTorrentSession | None:
+        """Get torrent session by info hash.
+
+        Args:
+            info_hash: Torrent info hash (20 bytes)
+
+        Returns:
+            AsyncTorrentSession instance if found, None otherwise
+
+        """
+        async with self.lock:
+            return self.torrents.get(info_hash)
+
     async def _cleanup_loop(self) -> None:
         """Background task for cleanup operations."""
         while True:
@@ -1112,6 +2001,8 @@ class AsyncSessionManager:
 
                     for info_hash in to_remove:
                         session = self.torrents.pop(info_hash)
+                        # BEP 27: Remove from private_torrents set during cleanup
+                        self.private_torrents.discard(info_hash)
                         await session.stop()
                         if self.on_torrent_removed:
                             await self.on_torrent_removed(info_hash)
@@ -1195,6 +2086,7 @@ class AsyncSessionManager:
             ValueError: If torrent source cannot be determined
             FileNotFoundError: If torrent file doesn't exist
             ValidationError: If checkpoint is invalid
+
         """
         try:
             # Validate checkpoint
@@ -1475,7 +2367,7 @@ class SessionManager(AsyncSessionManager):
         self._session_started = False
 
     def add_torrent(self, path: str | dict[str, Any]) -> str:
-        """Synchronous add_torrent for backward compatibility."""
+        """Add torrent synchronously for backward compatibility."""
         if not self._session_started:
             loop = asyncio.get_event_loop()
             loop.run_until_complete(self.start())
@@ -1485,7 +2377,7 @@ class SessionManager(AsyncSessionManager):
         return loop.run_until_complete(super().add_torrent(path))
 
     def add_magnet(self, uri: str) -> str:
-        """Synchronous add_magnet for backward compatibility."""
+        """Add magnet synchronously for backward compatibility."""
         if not self._session_started:
             loop = asyncio.get_event_loop()
             loop.run_until_complete(self.start())
@@ -1495,11 +2387,11 @@ class SessionManager(AsyncSessionManager):
         return loop.run_until_complete(super().add_magnet(uri))
 
     def remove(self, info_hash_hex: str) -> bool:
-        """Synchronous remove for backward compatibility."""
+        """Remove torrent synchronously for backward compatibility."""
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(super().remove(info_hash_hex))
 
     def status(self) -> dict[str, Any]:
-        """Synchronous status for backward compatibility."""
+        """Get status synchronously for backward compatibility."""
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(super().get_status())

@@ -1,4 +1,31 @@
 ---
+alwaysApply: true
+description: Project structure and configuration locations for ccBitTorrent (dev, docs, uv usage)
+---
+# Project Structure and Config Locations
+
+- Config files live in `dev/`:
+  - `dev/pre-commit-config.yaml`
+  - `dev/pytest.ini`
+  - `dev/ruff.toml`
+  - `dev/ty.toml`
+  - `dev/mkdocs.yml`
+  - `dev/.codecov.yml` (if present)
+- Project root keeps `pyproject.toml` and `ccbt.toml`.
+- Makefile was removed. Prefer `uv` commands:
+  - Lint: `uv run ruff --config dev/ruff.toml check ccbt/ --fix --exit-non-zero-on-fix`
+  - Format: `uv run ruff --config dev/ruff.toml format ccbt/`
+  - Type check: `uv run ty check --config-file=dev/ty.toml --output-format=concise`
+  - Tests: `uv run pytest -c dev/pytest.ini tests/ ...`
+  - Pre-commit: `uv run pre-commit run --all-files -c dev/pre-commit-config.yaml`
+- Docs build uses MkDocs config at `dev/mkdocs.yml`.
+- Reports embedded in docs:
+  - Coverage HTML copied to `docs/reports/coverage/` (link in nav).
+  - Bandit JSON written to `docs/reports/bandit/bandit-report.json` and rendered via `docs/reports/bandit/index.md`.
+
+Key paths referenced across scripts/tests/docs must use the `dev/` versions (not root).
+
+---
 description: Project structure and architecture overview
 alwaysApply: false
 ---

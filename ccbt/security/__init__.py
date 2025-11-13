@@ -12,6 +12,7 @@ Provides comprehensive security features including:
 
 from ccbt.security.anomaly_detector import AnomalyDetector
 from ccbt.security.encryption import EncryptionManager
+from ccbt.security.ip_filter import FilterMode, IPFilter, IPFilterRule
 from ccbt.security.peer_validator import PeerValidator
 from ccbt.security.rate_limiter import RateLimiter
 from ccbt.security.security_manager import SecurityManager
@@ -19,6 +20,9 @@ from ccbt.security.security_manager import SecurityManager
 __all__ = [
     "AnomalyDetector",
     "EncryptionManager",
+    "FilterMode",
+    "IPFilter",
+    "IPFilterRule",
     "PeerValidator",
     "RateLimiter",
     "SecurityManager",

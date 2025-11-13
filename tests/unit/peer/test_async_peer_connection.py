@@ -4,12 +4,13 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
 from ccbt.peer.peer import BitfieldMessage, HaveMessage, PeerInfo
+from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
 from ccbt.peer.peer_connection import (
-    AsyncPeerConnectionManager,
     ConnectionState,
     PeerConnection,
 )
@@ -39,7 +40,7 @@ def peer_info():
     return PeerInfo(ip="127.0.0.1", port=6881)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def peer_manager(mock_torrent_data, mock_piece_manager):
     """Create async peer connection manager."""
     manager = AsyncPeerConnectionManager(

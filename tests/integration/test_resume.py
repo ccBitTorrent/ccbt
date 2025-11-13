@@ -149,8 +149,17 @@ class TestResumeIntegration:
         session.checkpoint_manager = checkpoint_manager
 
         # Mock piece manager
+        from ccbt.models import TorrentCheckpoint
+        
         piece_manager = Mock()
-        piece_manager.get_checkpoint_state = AsyncMock(return_value=Mock())
+        mock_checkpoint = TorrentCheckpoint(
+            info_hash=b"x" * 20,
+            torrent_name="test",
+            total_pieces=1,
+            verified_pieces=[0],
+            download_stats=None,
+        )
+        piece_manager.get_checkpoint_state = AsyncMock(return_value=mock_checkpoint)
         session.download_manager.piece_manager = piece_manager
 
         # Simulate piece verification
@@ -177,16 +186,31 @@ class TestResumeIntegration:
         checkpoint_manager.save_checkpoint = AsyncMock()
         session.checkpoint_manager = checkpoint_manager
 
-        # Mock piece manager
+        # Mock piece manager - return a valid checkpoint state
+        from ccbt.models import TorrentCheckpoint
+        
+        mock_checkpoint_state = TorrentCheckpoint(
+            info_hash=sample_torrent_data["info_hash"],
+            torrent_name=sample_torrent_data["file_info"]["name"],
+            total_pieces=1,
+            verified_pieces=[],
+            piece_states=[],
+            file_checkpoints=[],
+            download_stats=None,
+        )
+        
         piece_manager = Mock()
-        piece_manager.get_checkpoint_state = AsyncMock(return_value=Mock())
+        piece_manager.get_checkpoint_state = AsyncMock(return_value=mock_checkpoint_state)
         session.download_manager.piece_manager = piece_manager
+
+        # Ensure stop event is not set
+        session._stop_event.clear()
 
         # Start checkpoint loop
         checkpoint_task = asyncio.create_task(session._checkpoint_loop())
 
-        # Wait for at least one checkpoint save
-        await asyncio.sleep(0.2)
+        # Wait for at least one checkpoint save (interval is 0.1, wait 0.25 to ensure it runs)
+        await asyncio.sleep(0.25)
 
         # Stop the task
         checkpoint_task.cancel()

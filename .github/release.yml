@@ -1,0 +1,40 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+  categories:
+    - title: Breaking Changes 🚨
+      labels:
+        - Semver-Major
+        - breaking-change
+    - title: Exciting New Features 🎉
+      labels:
+        - Semver-Minor
+        - enhancement
+        - feature
+    - title: Bug Fixes 🐛
+      labels:
+        - Semver-Patch
+        - bug
+        - bugfix
+    - title: Security 🔒
+      labels:
+        - security
+    - title: Performance ⚡
+      labels:
+        - performance
+        - optimization
+    - title: Documentation 📚
+      labels:
+        - documentation
+        - docs
+    - title: Dependencies 📦
+      labels:
+        - dependencies
+        - dependencies-update
+    - title: Internal 🔧
+      labels:
+        - internal
+        - refactor
+        - maintenance
+

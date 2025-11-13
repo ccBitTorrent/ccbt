@@ -1,9 +1,17 @@
+# Project Ignores
 .pre-commit-cache/
 .pre-commit-home/
-bandit-s324.json
-bandit-report.json
-bandit-report-updated.json
 bandit-*.json
+tests/.reports
+.ccbt
+.benchmarks
+ccbt_tuned.toml 
+.cursor
+*.mdc 
+MagicMock
+.coverage_html 
+.cursor
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -298,6 +306,7 @@ htmlcov/
 test-results/
 test-reports/
 tests/.reports/
+tests/.dependency_cache.json
 
 # Benchmark outputs
 benchmarks/output/
@@ -312,11 +321,18 @@ mypy-report/
 # Security scan outputs
 safety-report.json
 bandit-report.json
+docs/reports/bandit/bandit-report.json
 
 # Documentation builds
 docs/build/
 docs/_build/
 site/
+docs/reports/coverage/
+# Benchmark tracking files are now tracked in git
+# docs/reports/benchmarks/runs/ (tracked)
+# docs/reports/benchmarks/timeseries/ (tracked)
+# Legacy artifacts directory (deprecated but kept for compatibility)
+docs/reports/benchmarks/artifacts/
 
 # Package builds
 *.tar.gz

@@ -1,72 +1,95 @@
 ---
-globs: *.py
+alwaysApply: true
 description: Development patterns and coding standards for ccBitTorrent
 ---
+# ccBitTorrent Development Patterns (uv + dev)
 
-# ccBitTorrent Development Patterns
+## Tooling & Configuration
+- **All configs in `dev/`**: [`dev/ruff.toml`](mdc:dev/ruff.toml), [`dev/ty.toml`](mdc:dev/ty.toml), [`dev/pytest.ini`](mdc:dev/pytest.ini), [`dev/mkdocs.yml`](mdc:dev/mkdocs.yml), [`dev/pre-commit-config.yaml`](mdc:dev/pre-commit-config.yaml), [`dev/.codecov.yml`](mdc:dev/.codecov.yml)
+- **Use `uv` for all commands** - No Makefile. Install pre-commit: `uv run pre-commit install --config dev/pre-commit-config.yaml` (also `--hook-type commit-msg`)
 
-## Type Safety Requirements
-- **All functions must have type hints** - Use `typing` module extensively
-- **Use Pydantic models** - Replace dataclasses with Pydantic BaseModel for validation
-- **Async functions** - Use `async def` for all I/O operations
-- **Return type annotations** - Always specify return types, use `-> None` for void functions
+## Standard Commands
+- **Lint**: `uv run ruff --config dev/ruff.toml check ccbt/ --fix --exit-non-zero-on-fix`
+- **Format**: `uv run ruff --config dev/ruff.toml format ccbt/`
+- **Types**: `uv run ty check --config-file=dev/ty.toml --output-format=concise`
+- **Tests**: `uv run pytest -c dev/pytest.ini tests/ -v --tb=short --maxfail=5 --timeout=60`
+- **Coverage**: `uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=term-missing --cov-report=xml --cov-report=html`
+- **Security**: `uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks`
+- **Docs**: `uv run mkdocs build --strict -f dev/mkdocs.yml`
 
-## Async Programming Patterns
-```python
-# Correct async pattern
-async def download_torrent(torrent: Torrent) -> None:
-    await session.start_download(torrent)
-    while not torrent.is_complete():
-        await asyncio.sleep(1)
+## Selective Testing
+- Use [`tests/scripts/run_pytest_selective.py`](mdc:tests/scripts/run_pytest_selective.py) with [`tests/scripts/get_test_markers.py`](mdc:tests/scripts/get_test_markers.py)
+- Critical files trigger full suite: `dev/pytest.ini`, `dev/pre-commit-config.yaml`, `dev/.codecov.yml`, `tests/conftest.py`, `ccbt/config/config.py`
 
-# Use context managers for resource cleanup
-async with session:
-    await session.start_download(torrent)
-```
+## Reports in Docs
+- Coverage HTML: `docs/reports/coverage/` (linked in nav)
+- Bandit JSON: `docs/reports/bandit/bandit-report.json` (rendered by [`docs/reports/bandit/index.md`](mdc:docs/reports/bandit/index.md))
 
-## Event-Driven Architecture
-- **Emit events** for all significant actions using [ccbt/events.py](mdc:ccbt/events.py)
-- **Subscribe to events** for component communication
-- **Use typed events** with proper data structures
+## Architecture & Separation of Concerns
 
-```python
-from ccbt.events import Event, EventType, emit_event
+### Module Boundaries
+- **CLI (`ccbt/cli/`)**: Command definitions, orchestration, UI output. Delegates to session.
+- **Session (`ccbt/session/`)**: Torrent lifecycle, component coordination. Delegates to specialized controllers.
+- **Core (`ccbt/core/`, `ccbt/peer/`, `ccbt/piece/`, `ccbt/storage/`)**: Domain logic, no CLI/session dependencies.
+- **Orchestration modules**: [`ccbt/cli/downloads.py`](mdc:ccbt/cli/downloads.py), [`ccbt/cli/status.py`](mdc:ccbt/cli/status.py), [`ccbt/cli/resume.py`](mdc:ccbt/cli/resume.py) bridge CLI→Session.
 
-# Emit events
-await emit_event(Event(
-    event_type=EventType.PEER_CONNECTED.value,
-    data={'peer_id': peer_id, 'ip': ip}
-))
-```
+### Session Delegation Pattern
+- `AsyncSessionManager` orchestrates; delegates to controllers:
+  - [`ccbt/session/announce.py`](mdc:ccbt/session/announce.py): Tracker announces
+  - [`ccbt/session/checkpointing.py`](mdc:ccbt/session/checkpointing.py): Checkpoint operations
+  - [`ccbt/session/download_startup.py`](mdc:ccbt/session/download_startup.py): Download initialization
+  - [`ccbt/session/torrent_addition.py`](mdc:ccbt/session/torrent_addition.py): Torrent addition flow
+  - [`ccbt/session/manager_startup.py`](mdc:ccbt/session/manager_startup.py): Component startup sequence
 
-## Error Handling
-- **Use custom exceptions** from [ccbt/exceptions.py](mdc:ccbt/exceptions.py)
-- **Proper error propagation** in async code
-- **Context managers** for resource cleanup
+### Dependency Injection
+- Optional DI via [`ccbt/utils/di.py`](mdc:ccbt/utils/di.py): `DIContainer` for factories (security, DHT, NAT, TCP server)
+- Falls back to concrete classes when DI not provided
+- Use `ComponentFactory` for component creation
 
-```python
-from ccbt.exceptions import NetworkError, DiskError
+## Type Safety & Code Quality
 
-try:
-    await peer.connect()
-except NetworkError as e:
-    logger.error(f"Network error: {e}")
-    raise
-```
+### Type Hints
+- **All functions require type hints** - Use `typing` module, `from __future__ import annotations`
+- **Pydantic models** - Use `BaseModel` for validation, not dataclasses
+- **Async functions** - `async def` for all I/O operations
+- **Return types** - Always specify, use `-> None` for void functions
 
-## Configuration Management
-- **Use Pydantic models** for configuration validation
-- **Environment variable overrides** with CCBT_ prefix
-- **Hot reload support** for configuration changes
+### Async/Await Patterns
+- **Always await async functions** - Never call async functions without `await`. Calling without await returns a coroutine object, not the result, causing race conditions and bugs.
+- **Correct**: `result = await async_function()`
+- **Incorrect**: `result = async_function()` then checking `if asyncio.iscoroutine(result)`
+- **Singleton async functions** - If a function returns a singleton (like `get_udp_tracker_client()`), always await it directly. Multiple concurrent calls without await can create multiple instances, causing resource conflicts.
+- **Error handling** - Use `try/except` around awaited calls. Use `asyncio.wait_for()` for timeouts.
 
-## Performance Optimization
+### Error Handling
+- **Custom exceptions** from [`ccbt/utils/exceptions.py`](mdc:ccbt/utils/exceptions.py)
+- **Timeout patterns** - Use `asyncio.wait_for()` with timeouts for blocking operations
+- **Graceful degradation** - Log warnings, continue when non-critical components fail
+
+### Configuration
+- **Pydantic models** in [`ccbt/config/config.py`](mdc:ccbt/config/config.py) for validation
+- **CLI overrides** via [`ccbt/cli/overrides.py`](mdc:ccbt/cli/overrides.py): `apply_cli_overrides(config_manager, kwargs)`
+- **Environment variables** with `CCBT_` prefix
+
+## Performance & Security
+
+### Performance
 - **Zero-copy operations** where possible
 - **Memory pools** for frequent allocations
 - **Ring buffers** for high-throughput operations
 - **SIMD-accelerated** hash verification
+- **Async I/O** - All disk/network operations are async
 
-## Security Patterns
-- **Validate all inputs** using Pydantic models
-- **Rate limiting** for all external interactions
+### Security
+- **Input validation** via Pydantic models
+- **Rate limiting** for external interactions
 - **Peer validation** before connections
 - **Encryption support** for sensitive data
+- **IP filtering** via [`ccbt/security/security_manager.py`](mdc:ccbt/security/security_manager.py)
+
+## Testing Patterns
+- **Markers**: Use pytest markers (`@pytest.mark.unit`, `@pytest.mark.integration`, etc.) defined in [`dev/pytest.ini`](mdc:dev/pytest.ini)
+- **Coverage target**: 99% project-wide, 90% patch (see [`dev/.codecov.yml`](mdc:dev/.codecov.yml))
+- **Selective runs**: Test only affected modules via selective test runner
+- **Mock patterns**: Handle `AttributeError`/`TypeError` gracefully for test mocks
+- **Pragma comments**: Use `# pragma: no cover` for UI-only paths, defensive error handlers

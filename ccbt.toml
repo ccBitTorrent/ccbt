@@ -1,0 +1,247 @@
+[network]
+max_global_peers = 200
+max_peers_per_torrent = 50
+max_connections_per_peer = 1
+pipeline_depth = 16
+block_size_kib = 16
+min_block_size_kib = 4
+max_block_size_kib = 64
+socket_rcvbuf_kib = 256
+socket_sndbuf_kib = 256
+tcp_nodelay = true
+connection_timeout = 30.0
+handshake_timeout = 10.0
+keep_alive_interval = 120.0
+peer_timeout = 60.0
+dht_timeout = 10.0
+listen_port = 64122
+listen_port_tcp = 64122
+listen_port_udp = 64122
+tracker_udp_port = 64123
+listen_interface = "0.0.0.0"
+enable_ipv6 = true
+enable_tcp = true
+enable_utp = false
+enable_encryption = false
+global_down_kib = 0
+global_up_kib = 0
+per_peer_down_kib = 0
+per_peer_up_kib = 0
+max_upload_slots = 4
+optimistic_unchoke_interval = 30.0
+unchoke_interval = 10.0
+tracker_timeout = 30.0
+tracker_connect_timeout = 10.0
+tracker_connection_limit = 50
+tracker_connections_per_host = 10
+dns_cache_ttl = 300
+
+[disk]
+preallocate = "full"
+sparse_files = false
+write_batch_kib = 64
+write_buffer_kib = 1024
+use_mmap = true
+mmap_cache_mb = 128
+mmap_cache_cleanup_interval = 30.0
+hash_workers = 4
+hash_chunk_size = 65536
+hash_batch_size = 4
+hash_queue_size = 100
+disk_workers = 2
+disk_queue_size = 200
+cache_size_mb = 256
+direct_io = false
+sync_writes = false
+read_ahead_kib = 64
+enable_io_uring = false
+checkpoint_enabled = true
+checkpoint_format = "both"
+checkpoint_interval = 30.0
+checkpoint_on_piece = true
+auto_resume = true
+checkpoint_compression = true
+auto_delete_checkpoint_on_complete = true
+checkpoint_retention_days = 30
+fast_resume_enabled = true
+resume_save_interval = 30.0
+resume_verify_on_load = true
+resume_verify_pieces = 10
+resume_data_format_version = 1
+
+[strategy]
+piece_selection = "rarest_first"
+endgame_duplicates = 2
+endgame_threshold = 0.95
+streaming_mode = false
+rarest_first_threshold = 0.1
+sequential_window = 10
+sequential_priority_files = []
+sequential_fallback_threshold = 0.1
+pipeline_capacity = 4
+first_piece_priority = true
+last_piece_priority = false
+
+[discovery]
+enable_dht = true
+dht_port = 64120
+dht_bootstrap_nodes = [ "router.bittorrent.com:6881", "dht.transmissionbt.com:6881", "router.utorrent.com:6881", "dht.libtorrent.org:25401", "dht.aelitis.com:6881", "router.silotis.us:6881", "router.bitcomet.com:6881", "dht.transmissionbt.com:6881",]
+dht_enable_ipv6 = true
+dht_prefer_ipv6 = false
+dht_ipv6_bootstrap_nodes = []
+dht_readonly_mode = false
+dht_enable_multiaddress = true
+dht_max_addresses_per_node = 4
+dht_enable_storage = false
+dht_storage_ttl = 3600
+dht_max_storage_size = 1000
+dht_enable_indexing = true
+dht_index_samples_per_key = 8
+enable_pex = true
+pex_interval = 5.0
+enable_http_trackers = true
+enable_udp_trackers = true
+tracker_announce_interval = 20.0
+tracker_scrape_interval = 20.0
+tracker_auto_scrape = true
+strict_private_mode = false
+
+[observability]
+log_level = "DEBUG"
+log_file = "logs/ccbt.log"
+log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+structured_logging = true
+log_correlation_id = true
+enable_metrics = true
+metrics_port = 64125
+metrics_interval = 5.0
+enable_peer_tracing = false
+alerts_rules_path = ".ccbt/alerts.json"
+
+[limits]
+global_down_kib = 0
+global_up_kib = 0
+per_torrent_down_kib = 0
+per_torrent_up_kib = 0
+per_peer_up_kib = 0
+scheduler_slice_ms = 100
+
+[security]
+enable_encryption = false
+encryption_mode = "preferred"
+encryption_dh_key_size = 768
+encryption_prefer_rc4 = true
+encryption_allowed_ciphers = [ "rc4", "aes",]
+encryption_allow_plain_fallback = true
+validate_peers = true
+rate_limit_enabled = true
+max_connections_per_peer = 1
+
+[proxy]
+enable_proxy = false
+proxy_type = "http"
+proxy_for_trackers = true
+proxy_for_peers = false
+proxy_for_webseeds = true
+proxy_bypass_list = []
+
+[ml]
+peer_selection_enabled = false
+piece_prediction_enabled = false
+
+[dashboard]
+enable_dashboard = true
+host = "127.0.0.1"
+port = 9090
+refresh_interval = 1.0
+default_view = "overview"
+
+[queue]
+max_active_torrents = 5
+max_active_downloading = 3
+max_active_seeding = 2
+default_priority = "normal"
+bandwidth_allocation_mode = "proportional"
+auto_manage_queue = true
+
+[nat]
+enable_nat_pmp = true
+enable_upnp = true
+nat_discovery_interval = 20.0
+port_mapping_lease_time = 3600
+auto_map_ports = true
+map_tcp_port = true
+map_udp_port = true
+map_dht_port = true
+
+[ipfs]
+api_url = "http://127.0.0.1:5001"
+gateway_urls = [ "https://ipfs.io/ipfs/", "https://gateway.pinata.cloud/ipfs/", "https://cloudflare-ipfs.com/ipfs/",]
+enable_pinning = false
+connection_timeout = 30
+request_timeout = 30
+enable_dht = true
+discovery_cache_ttl = 300
+
+[webtorrent]
+enable_webtorrent = false
+webtorrent_port = 64126
+webtorrent_host = "localhost"
+webtorrent_stun_servers = [ "stun:stun.l.google.com:19302",]
+webtorrent_turn_servers = []
+webtorrent_max_connections = 100
+webtorrent_connection_timeout = 30.0
+
+[daemon]
+api_key = "d6bcd3466885d118d1d73e896dfc154c83d511f658d8e542f8b3b654f42a63be"
+ipc_port = 64124
+ipc_host = "127.0.0.1"
+
+[network.protocol_v2]
+enable_protocol_v2 = true
+prefer_protocol_v2 = false
+support_hybrid = true
+v2_handshake_timeout = 30.0
+
+[network.utp]
+prefer_over_tcp = false
+connection_timeout = 45.0
+max_window_size = 65535
+mtu = 1500
+initial_rate = 2000
+min_rate = 1024
+max_rate = 2000000
+ack_interval = 0.2
+retransmit_timeout_factor = 5.0
+max_retransmits = 15
+
+[disk.attributes]
+preserve_attributes = true
+skip_padding_files = true
+verify_file_sha1 = false
+apply_symlinks = true
+apply_executable_bit = true
+apply_hidden_attr = true
+xet_enabled = false
+xet_chunk_min_size = 8192
+xet_chunk_max_size = 131072
+xet_chunk_target_size = 16384
+xet_deduplication_enabled = true
+xet_use_p2p_cas = true
+xet_compression_enabled = false
+
+[security.ip_filter]
+enable_ip_filter = false
+filter_mode = "block"
+filter_files = []
+filter_urls = []
+filter_update_interval = 86400.0
+filter_cache_dir = "~/.ccbt/filters"
+filter_log_blocked = true
+
+[security.ssl]
+enable_ssl_trackers = true
+enable_ssl_peers = false
+ssl_verify_certificates = true
+ssl_protocol_version = "TLSv1.2"
+ssl_allow_insecure_peers = true

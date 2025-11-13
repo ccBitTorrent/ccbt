@@ -2,153 +2,134 @@
 
 Welcome to ccBitTorrent! This guide will help you get up and running quickly with our high-performance BitTorrent client.
 
+!!! tip "Key Feature: BEP XET Protocol Extension"
+    ccBitTorrent includes the **Xet Protocol Extension (BEP XET)**, which enables content-defined chunking and cross-torrent deduplication. This transforms BitTorrent into a super-fast, updatable peer-to-peer file system optimized for collaboration. [Learn more about BEP XET →](bep_xet.md)
+
 ## Installation
 
 ### Prerequisites
 
 - Python 3.8 or higher
-- UV package manager (recommended)
+- [UV](https://astral.sh/uv) package manager (recommended)
 
-### Install UV (if not already installed)
+### Install UV
 
-```bash
-# On macOS and Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# On Windows
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
+Install UV from the official installation script:
+- macOS/Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Windows: `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`
 
 ### Install ccBitTorrent
 
+Install from PyPI:
 ```bash
-# Install from PyPI
 uv pip install ccbittorrent
+```
 
-# Or install from source
+Or install from source:
+```bash
 git clone https://github.com/yourusername/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-## Your First Download
+Entry points are defined in [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81).
 
-### Download from Torrent File
+## Main Entry Points
 
+ccBitTorrent provides three main entry points:
+
+### 1. Bitonic (Recommended)
+
+**Bitonic** is the main terminal dashboard interface. It provides a live, interactive view of all torrents, peers, and system metrics.
+
+- Entry point: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- Defined in: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- Launch: `uv run bitonic` or `uv run ccbt dashboard`
+
+See [Bitonic Guide](bitonic.md) for detailed usage.
+
+### 2. btbt CLI
+
+**btbt** is the enhanced command-line interface with rich features.
+
+- Entry point: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- Defined in: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- Launch: `uv run btbt`
+
+See [btbt CLI Reference](btbt-cli.md) for all available commands.
+
+### 3. ccbt (Basic CLI)
+
+**ccbt** is the basic command-line interface.
+
+- Entry point: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- Defined in: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- Launch: `uv run ccbt`
+
+## Quick Start
+
+### Launch Bitonic (Recommended)
+
+Start the terminal dashboard:
 ```bash
-# Basic download
-uv run ccbt download movie.torrent
-
-# Download to specific directory
-uv run ccbt download movie.torrent --output /path/to/downloads
-
-# Download with rate limits
-uv run ccbt download movie.torrent --download-limit 1024 --upload-limit 512
+uv run bitonic
 ```
 
-### Download from Magnet Link
-
+Or via the CLI:
 ```bash
-# Download from magnet link
-uv run ccbt magnet "magnet:?xt=urn:btih:..."
-
-# With output directory
-uv run ccbt magnet "magnet:?xt=urn:btih:..." --output /path/to/downloads
-```
-
-### Launch Terminal Dashboard
-
-The Terminal Dashboard provides a live view of all your downloads:
-
-```bash
-# Start the dashboard
 uv run ccbt dashboard
+```
 
-# With custom refresh rate
+With custom refresh rate:
+```bash
 uv run ccbt dashboard --refresh 2.0
 ```
 
-## Basic Usage Patterns
+### Download a Torrent
 
-### Interactive Mode
-
-For more control during downloads:
-
+Using the CLI:
 ```bash
-# Start interactive mode
-uv run ccbt interactive
+# Download from torrent file
+uv run btbt download movie.torrent
 
-# Download with interactive interface
-uv run ccbt download movie.torrent --interactive
+# Download from magnet link
+uv run btbt magnet "magnet:?xt=urn:btih:..."
+
+# With rate limits
+uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ```
 
-### Resume Downloads
+See [btbt CLI Reference](btbt-cli.md) for all download options.
 
-ccBitTorrent automatically saves your progress and can resume downloads:
+### Configure ccBitTorrent
 
-```bash
-# Resume from checkpoint (if available)
-uv run ccbt download movie.torrent --resume
+Create a `ccbt.toml` file in your working directory. Reference the example configuration:
+- Default config: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
+- Environment variables: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
+- Configuration system: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
 
-# List available checkpoints
-uv run ccbt checkpoints list
+See [Configuration Guide](configuration.md) for detailed configuration options.
 
-# Resume specific checkpoint
-uv run ccbt resume <info_hash>
-```
+## Project Reports
 
-### Monitor Downloads
+View project quality metrics and reports:
 
-```bash
-# Show current status
-uv run ccbt status
+- **Code Coverage**: [reports/coverage.md](reports/coverage.md) - Comprehensive code coverage analysis
+- **Security Report**: [reports/bandit/index.md](reports/bandit/index.md) - Security scanning results from Bandit
+- **Benchmarks**: [reports/benchmarks/index.md](reports/benchmarks/index.md) - Performance benchmark results
 
-# Start monitoring mode
-uv run ccbt download movie.torrent --monitor
-```
-
-## Configuration
-
-### Basic Configuration
-
-Create a `ccbt.toml` file in your working directory:
-
-```toml
-[network]
-max_global_peers = 200
-listen_port = 6881
-
-[disk]
-download_path = "/path/to/downloads"
-preallocate = "full"
-
-[limits]
-global_down_kib = 0  # 0 = unlimited
-global_up_kib = 0    # 0 = unlimited
-```
-
-### Environment Variables
-
-You can also use environment variables:
-
-```bash
-export CCBT_MAX_PEERS=100
-export CCBT_LISTEN_PORT=6881
-export CCBT_DOWN_LIMIT=1024
-export CCBT_UP_LIMIT=512
-```
+These reports are automatically generated and updated as part of our continuous integration process.
 
 ## Next Steps
 
-- [CLI Reference](cli-reference.md) - Complete command reference
-- [Terminal Dashboard](dashboard-guide.md) - Dashboard features and usage
+- [Bitonic](bitonic.md) - Learn about the terminal dashboard interface
+- [btbt CLI](btbt-cli.md) - Complete command-line interface reference
 - [Configuration](configuration.md) - Detailed configuration options
-- [Monitoring](monitoring.md) - Observability and metrics
-- [Checkpoints](checkpoints.md) - Resume functionality
+- [Performance Tuning](performance.md) - Optimization guide
+- [API Reference](API.md) - Python API documentation including monitoring features
 
 ## Getting Help
 
-- Use `uv run ccbt --help` for general help
-- Use `uv run ccbt <command> --help` for command-specific help
-- Check the [CLI Reference](cli-reference.md) for detailed options
+- Use `uv run bitonic --help` or `uv run btbt --help` for command help
+- Check the [btbt CLI Reference](btbt-cli.md) for detailed options
 - Visit our [GitHub repository](https://github.com/yourusername/ccbittorrent) for issues and discussions

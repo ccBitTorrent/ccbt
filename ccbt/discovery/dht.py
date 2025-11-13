@@ -80,6 +80,7 @@ class KademliaRoutingTable:
         Args:
             node_id: This node's ID
             k: Bucket size (default 8)
+
         """
         self.node_id = node_id
         self.k = k
@@ -220,6 +221,9 @@ class AsyncDHTClient:
         # Callbacks
         self.peer_callbacks: list[Callable[[list[tuple[str, int]]], None]] = []
 
+        # BEP 27: Callback to check if a torrent is private
+        self.is_private_torrent: Callable[[bytes], bool] | None = None
+
         self.logger = logging.getLogger(__name__)
 
     def _generate_node_id(self) -> bytes:
@@ -235,10 +239,58 @@ class AsyncDHTClient:
         """Start the DHT client."""
         # Create UDP socket
         loop = asyncio.get_event_loop()
-        self.transport, self.socket = await loop.create_datagram_endpoint(
-            lambda: DHTProtocol(self),
-            local_addr=(self.bind_ip, self.bind_port),
-        )
+        try:
+            self.transport, self.socket = await loop.create_datagram_endpoint(
+                lambda: DHTProtocol(self),
+                local_addr=(self.bind_ip, self.bind_port),
+            )
+        except OSError as e:
+            # CRITICAL FIX: Enhanced port conflict error handling
+            error_code = e.errno if hasattr(e, "errno") else None
+            import sys
+
+            if sys.platform == "win32":
+                if error_code == 10048:  # WSAEADDRINUSE
+                    from ccbt.utils.port_checker import get_port_conflict_resolution
+
+                    resolution = get_port_conflict_resolution(self.bind_port, "udp")
+                    error_msg = (
+                        f"DHT UDP port {self.bind_port} is already in use.\n"
+                        f"Error: {e}\n\n"
+                        f"{resolution}"
+                    )
+                    self.logger.error(error_msg)
+                    raise RuntimeError(error_msg) from e
+                elif error_code == 10013:  # WSAEACCES
+                    error_msg = (
+                        f"Permission denied binding to {self.bind_ip}:{self.bind_port}.\n"
+                        f"Error: {e}\n\n"
+                        f"Resolution: Run with administrator privileges or change the port."
+                    )
+                    self.logger.error(error_msg)
+                    raise RuntimeError(error_msg) from e
+            else:
+                if error_code == 98:  # EADDRINUSE
+                    from ccbt.utils.port_checker import get_port_conflict_resolution
+
+                    resolution = get_port_conflict_resolution(self.bind_port, "udp")
+                    error_msg = (
+                        f"DHT UDP port {self.bind_port} is already in use.\n"
+                        f"Error: {e}\n\n"
+                        f"{resolution}"
+                    )
+                    self.logger.error(error_msg)
+                    raise RuntimeError(error_msg) from e
+                elif error_code == 13:  # EACCES
+                    error_msg = (
+                        f"Permission denied binding to {self.bind_ip}:{self.bind_port}.\n"
+                        f"Error: {e}\n\n"
+                        f"Resolution: Run with root privileges or change the port to >= 1024."
+                    )
+                    self.logger.error(error_msg)
+                    raise RuntimeError(error_msg) from e
+            # Re-raise other OSErrors as-is
+            raise
 
         # Start background tasks
         self._refresh_task = asyncio.create_task(self._refresh_loop())
@@ -348,7 +400,16 @@ class AsyncDHTClient:
 
         Returns:
             List of (ip, port) tuples
+
         """
+        # BEP 27: Private torrents must not use DHT for peer discovery
+        if self.is_private_torrent and self.is_private_torrent(info_hash):
+            self.logger.debug(
+                "Skipping DHT get_peers for private torrent %s (BEP 27)",
+                info_hash.hex()[:8],
+            )
+            return []
+
         peers = []
         queried_nodes = set()
 
@@ -440,7 +501,16 @@ class AsyncDHTClient:
 
         Returns:
             True if announcement was successful
+
         """
+        # BEP 27: Private torrents must not use DHT for peer announcements
+        if self.is_private_torrent and self.is_private_torrent(info_hash):
+            self.logger.debug(
+                "Skipping DHT announce_peer for private torrent %s (BEP 27)",
+                info_hash.hex()[:8],
+            )
+            return False
+
         # Get token for this info hash
         if info_hash not in self.tokens:
             # Try to get token by doing a get_peers query

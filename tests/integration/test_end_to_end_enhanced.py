@@ -16,6 +16,7 @@ async def session_manager(tmp_path: Path):
     # Initialize config with a temp working directory
     init_config(None)
     sm = AsyncSessionManager(str(tmp_path))
+    sm.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
     try:
         await sm.start()
         yield sm

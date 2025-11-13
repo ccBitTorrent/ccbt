@@ -8,6 +8,7 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
@@ -66,7 +67,7 @@ def async_peer_connection(peer_info, mock_torrent_data):
     return AsyncPeerConnection(peer_info, mock_torrent_data)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def async_peer_manager(mock_torrent_data, mock_piece_manager):
     """Create async peer connection manager without starting background tasks."""
     manager = AsyncPeerConnectionManager(

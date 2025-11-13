@@ -5,9 +5,10 @@ This module contains user-facing interfaces including the terminal dashboard.
 
 from __future__ import annotations
 
-from ccbt.interface.terminal_dashboard import TerminalDashboard, run_dashboard
+from ccbt.interface.terminal_dashboard import TerminalDashboard, main, run_dashboard
 
 __all__ = [
     "TerminalDashboard",
+    "main",
     "run_dashboard",
 ]
