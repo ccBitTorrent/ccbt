@@ -5,6 +5,11 @@ This script reads changed file paths from stdin (provided by pre-commit)
 and outputs a pytest marker expression that should be used to run only
 tests relevant to the changed files.
 
+Enhanced with:
+- Dependency-aware marker detection (finds modules that depend on changed files)
+- Cross-cutting concern detection (config, models, events affect multiple modules)
+- Improved pattern matching (handles glob patterns like dht_*.py)
+
 Usage:
     echo "ccbt/peer.py" | python scripts/get_test_markers.py
     # Output: "peer"
@@ -15,6 +20,7 @@ Usage:
 
 from __future__ import annotations
 
+import fnmatch
 import logging
 import sys
 from pathlib import Path
@@ -34,17 +40,25 @@ logger = logging.getLogger(__name__)
 CRITICAL_FILES = {
     "ccbt/config.py",
     "tests/conftest.py",
-    "pytest.ini",
-    ".codecov.yml",
-    ".pre-commit-config.yaml",
+    "dev/pytest.ini",
+    "dev/.codecov.yml",
+    "dev/pre-commit-config.yaml",
 }
 
+# Cross-cutting concern patterns: (file_pattern, [markers])
+# Empty markers list means run all tests
+CRITICAL_PATTERNS = [
+    ("ccbt/config/config.py", ["cli", "session", "core"]),
+    ("ccbt/models.py", ["core", "piece", "tracker"]),
+    ("ccbt/utils/events.py", []),  # Empty = all tests
+]
 
-def load_codecov_config(config_path: Path = Path(".codecov.yml")) -> dict[str, Any]:
+
+def load_codecov_config(config_path: Path = Path("dev/.codecov.yml")) -> dict[str, Any]:
     """Load and parse .codecov.yml configuration file."""
     if not config_path.exists():
-        logger.error(f"Configuration file not found: {config_path}")
-        sys.exit(1)
+        logger.warning(f"Configuration file not found: {config_path}; defaulting to all tests")
+        return {}
 
     with config_path.open() as f:
         try:
@@ -105,10 +119,17 @@ def match_file_to_markers(
     if normalized_path in mapping:
         markers.update(mapping[normalized_path])
 
-    # Check for directory matches
+    # Check for directory matches and glob patterns
     for pattern_path, pattern_markers in mapping.items():
         # Skip if already matched as exact file
         if pattern_path == normalized_path:
+            continue
+
+        # Check for glob patterns (e.g., dht_*.py)
+        if "*" in pattern_path:
+            # Use fnmatch for glob pattern matching
+            if fnmatch.fnmatch(normalized_path, pattern_path):
+                markers.update(pattern_markers)
             continue
 
         # Check if file is in this directory pattern
@@ -130,8 +151,28 @@ def is_critical_file(file_path: str) -> bool:
     return normalized in CRITICAL_FILES
 
 
+def get_cross_cutting_markers(file_path: str) -> set[str] | None:
+    """Get markers for cross-cutting concern files.
+
+    Args:
+        file_path: Path to the changed file
+
+    Returns:
+        Set of markers if file is a cross-cutting concern, None otherwise.
+        Empty set means run all tests.
+    """
+    normalized = file_path.replace("\\", "/")
+    for pattern, markers in CRITICAL_PATTERNS:
+        if normalized == pattern or normalized.endswith("/" + pattern):
+            logger.info(f"Cross-cutting concern detected: {file_path} → {markers or 'all tests'}")
+            return set(markers) if markers else set()  # Empty set = all tests
+    return None
+
+
 def get_markers_for_files(file_paths: list[str]) -> set[str]:
     """Get all markers for a list of changed files.
+
+    Enhanced with dependency-aware detection and cross-cutting concerns.
 
     Args:
         file_paths: List of changed file paths
@@ -144,6 +185,35 @@ def get_markers_for_files(file_paths: list[str]) -> set[str]:
         logger.info("Critical file detected - running all tests")
         return set()  # Empty set means run all tests
 
+    # Check for cross-cutting concerns
+    cross_cutting_markers: set[str] | None = None
+    for file_path in file_paths:
+        cc_markers = get_cross_cutting_markers(file_path)
+        if cc_markers is not None:
+            if not cc_markers:  # Empty set = all tests
+                logger.info("Cross-cutting concern requires all tests")
+                return set()
+            cross_cutting_markers = cross_cutting_markers or set()
+            cross_cutting_markers.update(cc_markers)
+
+    # Load dependency graph for dependency-aware detection
+    try:
+        # Import with relative path handling
+        import sys
+        from pathlib import Path
+
+        script_dir = Path(__file__).parent
+        if str(script_dir) not in sys.path:
+            sys.path.insert(0, str(script_dir))
+
+        from get_dependent_modules import get_dependent_modules, load_or_build_graph  # type: ignore[import-untyped]
+
+        dependency_graph = load_or_build_graph()
+        logger.debug(f"Loaded dependency graph with {len(dependency_graph)} entries")
+    except Exception as e:
+        logger.warning(f"Failed to load dependency graph: {e}, continuing without dependency detection")
+        dependency_graph = None
+
     # Load configuration
     config = load_codecov_config()
     mapping = build_file_to_marker_mapping(config)
@@ -151,6 +221,7 @@ def get_markers_for_files(file_paths: list[str]) -> set[str]:
     # Collect all markers for all changed files
     all_markers: set[str] = set()
     matched_files: list[str] = []
+    dependent_modules: set[str] = set()
 
     for file_path in file_paths:
         # Skip test files and non-Python files
@@ -159,11 +230,39 @@ def get_markers_for_files(file_paths: list[str]) -> set[str]:
         if not file_path.endswith(".py"):
             continue
 
+        # Direct marker matching
         file_markers = match_file_to_markers(file_path, mapping)
         if file_markers:
             all_markers.update(file_markers)
             matched_files.append(file_path)
             logger.debug(f"File {file_path} → markers: {sorted(file_markers)}")
+
+        # Dependency-aware detection: find modules that depend on this file
+        if dependency_graph:
+            try:
+                dependents = get_dependent_modules([file_path], dependency_graph)
+                if dependents:
+                    dependent_modules.update(dependents)
+                    logger.debug(
+                        f"File {file_path} has {len(dependents)} dependent modules: "
+                        f"{sorted(list(dependents)[:5])}..."
+                    )
+            except Exception as e:
+                logger.debug(f"Failed to get dependents for {file_path}: {e}")
+
+    # Map dependent modules back to markers
+    if dependent_modules:
+        for module_path in dependent_modules:
+            # Convert module path to file path (e.g., "ccbt.peer.peer" -> "ccbt/peer/peer.py")
+            module_file_path = module_path.replace(".", "/") + ".py"
+            dep_markers = match_file_to_markers(module_file_path, mapping)
+            if dep_markers:
+                all_markers.update(dep_markers)
+                logger.debug(f"Dependent module {module_path} → markers: {sorted(dep_markers)}")
+
+    # Add cross-cutting markers
+    if cross_cutting_markers:
+        all_markers.update(cross_cutting_markers)
 
     # If no markers found, run all tests (safety fallback)
     if not all_markers:
@@ -171,6 +270,9 @@ def get_markers_for_files(file_paths: list[str]) -> set[str]:
         return set()
 
     logger.info(f"Matched {len(matched_files)} files to markers: {sorted(all_markers)}")
+    if dependent_modules:
+        logger.info(f"Found {len(dependent_modules)} dependent modules")
+
     return all_markers
 
 

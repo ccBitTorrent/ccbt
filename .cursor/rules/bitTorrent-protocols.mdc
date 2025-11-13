@@ -1,116 +1,83 @@
 ---
-globs: ccbt/torrent.py,ccbt/peer.py,ccbt/tracker.py,ccbt/dht.py,ccbt/extensions/*.py
-description: BitTorrent protocol implementation patterns
+globs: ccbt/protocols/**/*.py,ccbt/peer/**/*.py,ccbt/discovery/**/*.py,ccbt/extensions/**/*.py,ccbt/core/torrent*.py
+description: BitTorrent protocol implementation patterns and BEP compliance
 ---
 
 # BitTorrent Protocol Implementation
 
-## Core Protocols Implemented
+## Core Protocols (BEP 3, 5)
 
-### BitTorrent Protocol (BEP 5)
-- **Handshake**: 68-byte handshake with protocol string, reserved bytes, info hash, peer ID
-- **Message Types**: Keep-alive, choke, unchoke, interested, not interested, have, bitfield, request, piece, cancel, port
-- **Piece Management**: 16KB blocks, piece verification with SHA-1
-- **Peer Communication**: TCP connections with message framing
+**Base Protocol**: 68-byte handshake (protocol string, reserved bytes, 20-byte info hash, 20-byte peer ID). Message types: keep-alive, choke, unchoke, interested, not interested, have, bitfield, request, piece, cancel, port. SHA-1 hashing for v1 (BEP 3). See [`ccbt/protocols/bittorrent.py`](mdc:ccbt/protocols/bittorrent.py).
 
-### Fast Extension (BEP 6)
-- **Suggest Piece**: Suggest pieces to peers
-- **Have All**: Indicate having all pieces
-- **Have None**: Indicate having no pieces
-- **Reject Request**: Reject specific piece requests
-- **Allow Fast**: Allow fast piece requests
+**Protocol v2 (BEP 52)**: SHA-256 hashing, 32-byte info hash, Merkle tree structure, hybrid support. See [`ccbt/protocols/bittorrent_v2.py`](mdc:ccbt/protocols/bittorrent_v2.py), [`ccbt/core/torrent_v2.py`](mdc:ccbt/core/torrent_v2.py).
 
-### Extension Protocol (BEP 10)
-- **Extension Handshake**: Negotiate supported extensions
-- **Custom Extensions**: Support for custom extension messages
-- **Extension Messages**: Extended message format with message IDs
+## Discovery Protocols
 
-### WebSeed (BEP 19)
-- **HTTP Range Requests**: Download pieces via HTTP
-- **WebSeed Integration**: Combine BitTorrent and HTTP sources
-- **Fallback Support**: Use WebSeed when BitTorrent peers unavailable
+**DHT (BEP 5)**: Kademlia algorithm in [`ccbt/discovery/dht.py`](mdc:ccbt/discovery/dht.py). IPv6 support (BEP 32), read-only mode (BEP 43), storage (BEP 44), multi-address (BEP 45), indexing (BEP 51). Private torrents (BEP 27) disable DHT.
 
-### Compact Peer Lists (BEP 23)
-- **IPv4 Format**: 6-byte compact format (4 bytes IP + 2 bytes port)
-- **IPv6 Format**: 18-byte compact format (16 bytes IP + 2 bytes port)
-- **Efficient Parsing**: Optimized peer list parsing
+**Trackers**: HTTP/UDP trackers in [`ccbt/discovery/tracker.py`](mdc:ccbt/discovery/tracker.py), UDP client (BEP 15) in [`ccbt/discovery/tracker_udp_client.py`](mdc:ccbt/discovery/tracker_udp_client.py). Scrape support (BEP 48). Tiered announce lists (BEP 12).
 
-### DHT (BEP 5)
-- **Kademlia Algorithm**: Distributed hash table implementation
-- **Peer Discovery**: Find peers without trackers
-- **Bootstrap Nodes**: Connect to DHT network
-- **Node Management**: Maintain DHT node table
+**PEX (BEP 11)**: Peer exchange in [`ccbt/extensions/pex.py`](mdc:ccbt/extensions/pex.py), [`ccbt/discovery/pex.py`](mdc:ccbt/discovery/pex.py). Disabled for private torrents (BEP 27).
 
-### PEX (BEP 11)
-- **Peer Exchange**: Exchange peer lists between connected peers
-- **Efficient Discovery**: Reduce dependency on trackers
-- **Peer Lists**: Compact peer list exchange
+**Magnet Links (BEP 9)**: Parsing in [`ccbt/core/magnet.py`](mdc:ccbt/core/magnet.py). File selection (BEP 53) via `so` and `x.pe` parameters.
+
+## Extension Protocol (BEP 10)
+
+**Extension Manager**: [`ccbt/extensions/manager.py`](mdc:ccbt/extensions/manager.py) coordinates all extensions. Handshake negotiation in [`ccbt/extensions/protocol.py`](mdc:ccbt/extensions/protocol.py).
+
+**Fast Extension (BEP 6)**: [`ccbt/extensions/fast.py`](mdc:ccbt/extensions/fast.py) - suggest piece, have all/none, reject request, allow fast.
+
+**Compact Peer Lists (BEP 23)**: IPv4 (6 bytes), IPv6 (18 bytes) in [`ccbt/extensions/compact.py`](mdc:ccbt/extensions/compact.py).
+
+**WebSeed (BEP 19)**: HTTP range requests in [`ccbt/extensions/webseed.py`](mdc:ccbt/extensions/webseed.py).
+
+**SSL/TLS**: Peer/tracker encryption in [`ccbt/extensions/ssl.py`](mdc:ccbt/extensions/ssl.py).
+
+**XET Extension**: Content-defined chunking, deduplication, P2P CAS. See [`ccbt/extensions/xet.py`](mdc:ccbt/extensions/xet.py), [`docs/bep_xet.md`](mdc:docs/bep_xet.md).
+
+## File Attributes (BEP 47)
+
+**Preservation**: Symlinks, executable bits, hidden files. SHA-1 file verification. Padding file skipping. See [`ccbt/piece/async_piece_manager.py`](mdc:ccbt/piece/async_piece_manager.py) checkpoint handling.
+
+## Private Torrents (BEP 27)
+
+**Enforcement**: DHT, PEX, LSD disabled. Only tracker-provided peers accepted. Detection in [`ccbt/session/torrent_utils.py`](mdc:ccbt/session/torrent_utils.py), validation in [`ccbt/peer/async_peer_connection.py`](mdc:ccbt/peer/async_peer_connection.py).
+
+## Transport Protocols
+
+**uTP (BEP 29)**: uTorrent Transport Protocol for congestion control. See [`ccbt/transport/`](mdc:ccbt/transport/).
+
+**WebTorrent**: WebRTC data channels, WebSocket trackers in [`ccbt/protocols/webtorrent.py`](mdc:ccbt/protocols/webtorrent.py).
 
 ## Implementation Patterns
 
+### Session Delegation
+
+Session orchestrates via [`ccbt/session/session.py`](mdc:ccbt/session/session.py), delegates to controllers:
+- **Announce**: [`ccbt/session/announce.py`](mdc:ccbt/session/announce.py) - tracker announces
+- **Checkpointing**: [`ccbt/session/checkpointing.py`](mdc:ccbt/session/checkpointing.py) - state persistence
+- **Download Startup**: [`ccbt/session/download_startup.py`](mdc:ccbt/session/download_startup.py) - initialization
+- **Torrent Addition**: [`ccbt/session/torrent_addition.py`](mdc:ccbt/session/torrent_addition.py) - torrent/magnet handling
+
 ### Message Handling
-```python
-class PeerConnection:
-    async def handle_message(self, message: bytes) -> None:
-        if message[0] == MessageType.CHOKE:
-            await self.handle_choke()
-        elif message[0] == MessageType.UNCHOKE:
-            await self.handle_unchoke()
-        # ... other message types
-```
 
-### Piece Selection
-```python
-class PieceManager:
-    def get_next_piece(self) -> Optional[int]:
-        # Rarest-first algorithm
-        rarest_pieces = self.get_rarest_pieces()
-        return rarest_pieces[0] if rarest_pieces else None
-```
+Peer connections in [`ccbt/peer/async_peer_connection.py`](mdc:ccbt/peer/async_peer_connection.py). Extension messages (BEP 10) handled via `handle_extension_message()`. v2 messages (BEP 52) via `handle_v2_message()`.
 
-### Tracker Communication
-```python
-class Tracker:
-    async def announce(self, torrent: Torrent, peer_id: bytes) -> TrackerResponse:
-        params = {
-            'info_hash': torrent.info_hash,
-            'peer_id': peer_id,
-            'port': self.port,
-            'uploaded': torrent.uploaded_bytes,
-            'downloaded': torrent.downloaded_bytes,
-            'left': torrent.left_bytes
-        }
-        # HTTP GET request to tracker
-```
+### Piece Management
 
-### DHT Implementation
-```python
-class DHT:
-    async def find_peers(self, info_hash: bytes) -> List[PeerInfo]:
-        # Kademlia FIND_PEERS query
-        closest_nodes = self.get_closest_nodes(info_hash)
-        # Query nodes for peers
-```
+Piece manager in [`ccbt/piece/async_piece_manager.py`](mdc:ccbt/piece/async_piece_manager.py). Supports v1/v2/hybrid (BEP 52). Metadata exchange (BEP 10 + ut_metadata) in [`ccbt/piece/async_metadata_exchange.py`](mdc:ccbt/piece/async_metadata_exchange.py).
 
-## Protocol Extensions
+### Error Handling
 
-### MSE/PE (BEP 3)
-- **Message Stream Encryption**: Encrypt peer communication
-- **Protocol Encryption**: Encrypt handshake and messages
-- **Key Exchange**: Secure key exchange mechanism
+**Timeouts**: All async operations use `asyncio.wait_for()` with configurable timeouts. See session startup patterns.
 
-### WebTorrent Support
-- **WebRTC Data Channels**: Browser-based peer connections
-- **WebSocket Trackers**: WebSocket-based tracker communication
-- **Hybrid Mode**: Support both BitTorrent and WebTorrent peers
+**Protocol Violations**: Invalid messages logged and connection closed gracefully.
 
-### IPFS Integration
-- **Content Addressing**: Content-addressed storage
-- **IPFS Gateways**: HTTP gateway support
-- **Hybrid Protocol**: BitTorrent + IPFS hybrid mode
+**Retry Logic**: Exponential backoff for tracker announces, DHT queries. See [`ccbt/discovery/tracker.py`](mdc:ccbt/discovery/tracker.py).
 
-## Error Handling
-- **Protocol Violations**: Handle invalid protocol messages
-- **Connection Errors**: Handle network connection issues
-- **Timeout Handling**: Handle peer and tracker timeouts
-- **Retry Logic**: Implement exponential backoff for retries
+## References
+
+- Protocol v2: [`docs/bep52.md`](mdc:docs/bep52.md)
+- XET Extension: [`docs/bep_xet.md`](mdc:docs/bep_xet.md)
+- Session Architecture: [`ccbt/session/session.py`](mdc:ccbt/session/session.py)
+- Extension Manager: [`ccbt/extensions/manager.py`](mdc:ccbt/extensions/manager.py)

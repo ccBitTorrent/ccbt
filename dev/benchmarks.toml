@@ -1,0 +1,36 @@
+# Benchmarks defaults and matrix
+
+[global]
+output_dir = "site/reports/benchmarks/artifacts"
+repeat = 1
+min_runtime_s = 1.0
+
+[hash_verify]
+sizes = ["1MiB", "4MiB", "16MiB"]
+iterations = 64
+
+[disk_io]
+sizes = ["256KiB", "1MiB", "4MiB"]
+ops = 200
+patterns = ["seq-write", "seq-read", "rand-read"]
+
+[piece_assembly]
+piece_sizes = ["1MiB", "4MiB"]
+block_size = "16KiB"
+
+[loopback_throughput]
+payloads = ["16KiB", "64KiB"]
+pipelines = [8, 128]
+seconds = 3.0
+
+[matrix]
+# Reference example configs for labeling results; scripts only use these
+# for naming the artifacts (they do not load the client config).
+configs = [
+  "docs/examples/example-config-basic.toml",
+  "docs/examples/example-config-performance.toml",
+  "docs/examples/example-config-security.toml",
+  "docs/examples/example-config-advanced.toml",
+]
+
+

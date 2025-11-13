@@ -1,0 +1,110 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: uv run ruff --config dev/ruff.toml check ccbt/ --fix --exit-non-zero-on-fix
+        language: system
+        types: [python]
+        files: ^ccbt/.*\.py$
+        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        pass_filenames: false
+      - id: ruff-format
+        name: ruff-format
+        entry: uv run ruff --config dev/ruff.toml format ccbt/
+        language: system
+        types: [python]
+        files: ^ccbt/.*\.py$
+        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        pass_filenames: false
+      - id: ty
+        name: ty
+        entry: uv run ty check --config-file=dev/ty.toml --output-format=concise
+        language: system
+        pass_filenames: false
+      - id: bandit
+        name: bandit
+        entry: uv run python tests/scripts/ensure_bandit_dir.py
+        language: system
+        pass_filenames: false
+      - id: pytest-fast
+        name: pytest-fast
+        entry: uv run python tests/scripts/run_pytest_selective.py --coverage --full-suite
+        language: system
+        types: [python]
+        files: ^ccbt/.*\.py$
+        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        pass_filenames: true
+        stages: [pre-commit]
+      - id: pytest-coverage
+        name: pytest-coverage
+        entry: uv run python tests/scripts/run_pytest_selective.py --coverage --full-suite
+        language: system
+        types: [python]
+        files: ^ccbt/.*\.py$
+        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        pass_filenames: true
+        stages: [pre-push]
+      - id: codecov-upload
+        name: codecov-upload
+        entry: uv run python tests/scripts/upload_coverage.py --file site/reports/coverage.xml --flags unittests
+        language: system
+        types: [python]
+        files: ^ccbt/.*\.py$
+        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        pass_filenames: false
+        stages: [pre-push]
+        require_serial: true
+      - id: bench-smoke-hash
+        name: bench-smoke-hash
+        entry: uv run python tests/performance/bench_hash_verify.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: bench-smoke-disk
+        name: bench-smoke-disk
+        entry: uv run python tests/performance/bench_disk_io.py --quick --sizes 256KiB 1MiB --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: bench-smoke-piece
+        name: bench-smoke-piece
+        entry: uv run python tests/performance/bench_piece_assembly.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: bench-smoke-loopback
+        name: bench-smoke-loopback
+        entry: uv run python tests/performance/bench_loopback_throughput.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: bench-smoke-encryption
+        name: bench-smoke-encryption
+        entry: uv run python tests/performance/bench_encryption.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: bench-smoke-all
+        name: bench-smoke-all
+        entry: uv run python tests/scripts/run_benchmarks_selective.py
+        language: system
+        types: [python]
+        files: ^ccbt/.*\.py$
+        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        pass_filenames: true
+        stages: [pre-commit]
+      - id: mkdocs-build
+        name: mkdocs-build
+        entry: uv run mkdocs build -f dev/mkdocs.yml
+        language: system
+        types: [markdown]
+        files: ^(docs/.*\.md|README\.md|dev/mkdocs\.yml)$
+        pass_filenames: false
+
+

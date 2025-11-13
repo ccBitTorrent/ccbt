@@ -1,0 +1,844 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: ccBitTorrent 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-11-10 21:20\n"
+"PO-Revision-Date: 2025-11-10 21:20\n"
+"Last-Translator: ccBitTorrent Team\n"
+"Language-Team: Japanese Team\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+
+msgid "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+msgstr "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+
+msgid "\\n[bold cyan]File Selection[/bold cyan]"
+msgstr "\\n[bold cyan]File Selection[/bold cyan]"
+
+msgid "\\n[bold]File selection[/bold]"
+msgstr "\\n[bold]File selection[/bold]"
+
+msgid "\\n[yellow]Commands:[/yellow]"
+msgstr "\\n[yellow]Commands:[/yellow]"
+
+msgid "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgstr "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+
+msgid "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgstr "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+
+msgid "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgstr "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+
+msgid "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgstr "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+
+msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
+msgstr "  [cyan]deselect <インデックス>[/cyan] - ファイルの選択を解除"
+
+msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
+msgstr "  [cyan]deselect-all[/cyan] - すべてのファイルの選択を解除"
+
+msgid "  [cyan]done[/cyan] - Finish selection and start download"
+msgstr "  [cyan]done[/cyan] - 選択を完了してダウンロードを開始"
+
+msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
+msgstr "  [cyan]priority <インデックス> <優先度>[/cyan] - 優先度を設定（do_not_download/low/normal/high/maximum）"
+
+msgid "  [cyan]select <index>[/cyan] - Select a file"
+msgstr "  [cyan]select <インデックス>[/cyan] - ファイルを選択"
+
+msgid "  [cyan]select-all[/cyan] - Select all files"
+msgstr "  [cyan]select-all[/cyan] - すべてのファイルを選択"
+
+msgid "  • Check if torrent has active seeders"
+msgstr "  • トレントにアクティブなシーダーがあるか確認"
+
+msgid "  • Ensure DHT is enabled: --enable-dht"
+msgstr "  • DHTが有効になっていることを確認：--enable-dht"
+
+msgid "  • Run 'btbt diagnose-connections' to check connection status"
+msgstr "  • 接続状態を確認するには 'btbt diagnose-connections' を実行"
+
+msgid "  • Verify NAT/firewall settings"
+msgstr "  • NAT/ファイアウォール設定を確認"
+
+msgid " | Files: {selected}/{total} selected"
+msgstr " | ファイル：{selected}/{total}が選択されました"
+
+msgid " | Private: {count}"
+msgstr " | プライベート：{count}"
+
+msgid "Active"
+msgstr "アクティブ"
+
+msgid "Active Alerts"
+msgstr "アクティブなアラート"
+
+msgid "Active: {count}"
+msgstr "アクティブ：{count}"
+
+msgid "Advanced Add"
+msgstr "高度な追加"
+
+msgid "Alert Rules"
+msgstr "アラートルール"
+
+msgid "Alerts"
+msgstr "アラート"
+
+msgid "Announce: Failed"
+msgstr "アナウンス：失敗"
+
+msgid "Announce: {status}"
+msgstr "アナウンス：{status}"
+
+msgid "Are you sure you want to quit?"
+msgstr "終了してもよろしいですか？"
+
+msgid "Automatically restart daemon if needed (without prompt)"
+msgstr "必要に応じてデーモンを自動再起動（プロンプトなし）"
+
+msgid "Browse"
+msgstr "閲覧"
+
+msgid "Capability"
+msgstr "機能"
+
+msgid "Commands: "
+msgstr "コマンド："
+
+msgid "Completed"
+msgstr "完了"
+
+msgid "Completed (Scrape)"
+msgstr "完了（スクレイプ）"
+
+msgid "Component"
+msgstr "コンポーネント"
+
+msgid "Condition"
+msgstr "条件"
+
+msgid "Config Backups"
+msgstr "設定バックアップ"
+
+msgid "Configuration file path"
+msgstr "設定ファイルパス"
+
+msgid "Confirm"
+msgstr "確認"
+
+msgid "Connected"
+msgstr "接続済み"
+
+msgid "Connected Peers"
+msgstr "接続済みピア"
+
+msgid "Count: {count}{file_info}{private_info}"
+msgstr "カウント：{count}{file_info}{private_info}"
+
+msgid "Create backup before migration"
+msgstr "移行前にバックアップを作成"
+
+msgid "DHT"
+msgstr "DHT"
+
+msgid "Description"
+msgstr "説明"
+
+msgid "Details"
+msgstr "詳細"
+
+msgid "Disabled"
+msgstr "無効"
+
+msgid "Download"
+msgstr "ダウンロード"
+
+msgid "Download Speed"
+msgstr "ダウンロード速度"
+
+msgid "Download paused"
+msgstr "ダウンロードが一時停止されました"
+
+msgid "Download resumed"
+msgstr "ダウンロードが再開されました"
+
+msgid "Download stopped"
+msgstr "ダウンロードが停止されました"
+
+msgid "Downloaded"
+msgstr "ダウンロード済み"
+
+msgid "Downloading {name}"
+msgstr "{name}をダウンロード中"
+
+msgid "ETA"
+msgstr "予想時間"
+
+msgid "Enable debug mode"
+msgstr "デバッグモードを有効化"
+
+msgid "Enable verbose output"
+msgstr "詳細出力を有効化"
+
+msgid "Enabled"
+msgstr "有効"
+
+msgid "Error reading scrape cache"
+msgstr "スクレイプキャッシュの読み取りエラー"
+
+msgid "Explore"
+msgstr "探索"
+
+msgid "Failed"
+msgstr "失敗"
+
+msgid "Failed to register torrent in session"
+msgstr "セッションにトレントを登録できませんでした"
+
+msgid "File"
+msgstr "File"
+
+msgid "File Name"
+msgstr "ファイル名"
+
+msgid "File selection not available for this torrent"
+msgstr "このトレントではファイル選択が利用できません"
+
+msgid "Files"
+msgstr "ファイル"
+
+msgid "Global Config"
+msgstr "グローバル設定"
+
+msgid "Help"
+msgstr "ヘルプ"
+
+msgid "History"
+msgstr "履歴"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "IP"
+msgstr "IP"
+
+msgid "IP Filter"
+msgstr "IPフィルター"
+
+msgid "IPFS"
+msgstr "IPFS"
+
+msgid "Info Hash"
+msgstr "情報ハッシュ"
+
+msgid "Interactive backup"
+msgstr "対話型バックアップ"
+
+msgid "Invalid torrent file format"
+msgstr "無効なトレントファイル形式"
+
+msgid "Key"
+msgstr "Key"
+
+msgid "Key not found: {key}"
+msgstr "キーが見つかりません：{key}"
+
+msgid "Last Scrape"
+msgstr "最後のスクレイプ"
+
+msgid "Leechers"
+msgstr "リーチャー"
+
+msgid "Leechers (Scrape)"
+msgstr "リーチャー（スクレイプ）"
+
+msgid "MIGRATED"
+msgstr "移行済み"
+
+msgid "Menu"
+msgstr "メニュー"
+
+msgid "Metric"
+msgstr "メトリック"
+
+msgid "NAT Management"
+msgstr "NAT管理"
+
+msgid "Name"
+msgstr "名前"
+
+msgid "Network"
+msgstr "ネットワーク"
+
+msgid "No"
+msgstr "いいえ"
+
+msgid "No active alerts"
+msgstr "アクティブなアラートなし"
+
+msgid "No alert rules"
+msgstr "アラートルールなし"
+
+msgid "No alert rules configured"
+msgstr "アラートルールが設定されていません"
+
+msgid "No backups found"
+msgstr "バックアップが見つかりません"
+
+msgid "No cached results"
+msgstr "キャッシュされた結果なし"
+
+msgid "No checkpoints"
+msgstr "チェックポイントなし"
+
+msgid "No config file to backup"
+msgstr "バックアップする設定ファイルなし"
+
+msgid "No peers connected"
+msgstr "接続されたピアなし"
+
+msgid "No profiles available"
+msgstr "利用可能なプロファイルなし"
+
+msgid "No templates available"
+msgstr "利用可能なテンプレートなし"
+
+msgid "No torrent active"
+msgstr "アクティブなトレントなし"
+
+msgid "Nodes: {count}"
+msgstr "ノード：{count}"
+
+msgid "Not available"
+msgstr "利用不可"
+
+msgid "Not configured"
+msgstr "未設定"
+
+msgid "Not supported"
+msgstr "サポートされていません"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "Operation not supported"
+msgstr "サポートされていない操作"
+
+msgid "PEX: {status}"
+msgstr "PEX：{status}"
+
+msgid "Pause"
+msgstr "一時停止"
+
+msgid "Peers"
+msgstr "ピア"
+
+msgid "Performance"
+msgstr "パフォーマンス"
+
+msgid "Pieces"
+msgstr "ピース"
+
+msgid "Port"
+msgstr "ポート"
+
+msgid "Port: {port}"
+msgstr "ポート：{port}"
+
+msgid "Priority"
+msgstr "優先度"
+
+msgid "Private"
+msgstr "プライベート"
+
+msgid "Profiles"
+msgstr "プロファイル"
+
+msgid "Progress"
+msgstr "進捗"
+
+msgid "Property"
+msgstr "プロパティ"
+
+msgid "Proxy Config"
+msgstr "プロキシ設定"
+
+msgid "PyYAML is required for YAML output"
+msgstr "YAML出力にはPyYAMLが必要です"
+
+msgid "Quick Add"
+msgstr "クイック追加"
+
+msgid "Quit"
+msgstr "終了"
+
+msgid "Rate limits disabled"
+msgstr "レート制限が無効"
+
+msgid "Rate limits set to 1024 KiB/s"
+msgstr "レート制限が1024 KiB/sに設定されました"
+
+msgid "Rehash: {status}"
+msgstr "再ハッシュ：{status}"
+
+msgid "Resume"
+msgstr "再開"
+
+msgid "Rule"
+msgstr "ルール"
+
+msgid "Rule not found: {name}"
+msgstr "ルールが見つかりません：{name}"
+
+msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
+msgstr "ルール：{rules}、IPv4：{ipv4}、IPv6：{ipv6}、ブロック：{blocks}"
+
+msgid "Running"
+msgstr "実行中"
+
+msgid "SSL Config"
+msgstr "SSL設定"
+
+msgid "Scrape Results"
+msgstr "スクレイプ結果"
+
+msgid "Scrape: {status}"
+msgstr "スクレイプ：{status}"
+
+msgid "Section not found: {section}"
+msgstr "セクションが見つかりません：{section}"
+
+msgid "Security Scan"
+msgstr "セキュリティスキャン"
+
+msgid "Seeders"
+msgstr "シーダー"
+
+msgid "Seeders (Scrape)"
+msgstr "シーダー（スクレイプ）"
+
+msgid "Select files to download"
+msgstr "ダウンロードするファイルを選択"
+
+msgid "Selected"
+msgstr "選択済み"
+
+msgid "Session"
+msgstr "セッション"
+
+msgid "Set value in global config file"
+msgstr "グローバル設定ファイルに値を設定"
+
+msgid "Set value in project local ccbt.toml"
+msgstr "プロジェクトローカルのccbt.tomlに値を設定"
+
+msgid "Severity"
+msgstr "重要度"
+
+msgid "Show specific key path (e.g. network.listen_port)"
+msgstr "特定のキーパスを表示（例：network.listen_port）"
+
+msgid "Show specific section key path (e.g. network)"
+msgstr "特定のセクションキーパスを表示（例：network）"
+
+msgid "Size"
+msgstr "サイズ"
+
+msgid "Skip confirmation prompt"
+msgstr "確認プロンプトをスキップ"
+
+msgid "Skip daemon restart even if needed"
+msgstr "必要でもデーモンの再起動をスキップ"
+
+msgid "Snapshot failed: {error}"
+msgstr "スナップショットが失敗しました：{error}"
+
+msgid "Snapshot saved to {path}"
+msgstr "スナップショットが{path}に保存されました"
+
+msgid "Status"
+msgstr "状態"
+
+msgid "Status: "
+msgstr "状態："
+
+msgid "Supported"
+msgstr "サポート済み"
+
+msgid "System Capabilities"
+msgstr "システム機能"
+
+msgid "System Capabilities Summary"
+msgstr "システム機能概要"
+
+msgid "System Resources"
+msgstr "システムリソース"
+
+msgid "Templates"
+msgstr "テンプレート"
+
+msgid "Timestamp"
+msgstr "タイムスタンプ"
+
+msgid "Torrent Config"
+msgstr "トレント設定"
+
+msgid "Torrent Status"
+msgstr "トレント状態"
+
+msgid "Torrent file not found"
+msgstr "トレントファイルが見つかりません"
+
+msgid "Torrent not found"
+msgstr "トレントが見つかりません"
+
+msgid "Torrents"
+msgstr "トレント"
+
+msgid "Torrents: {count}"
+msgstr "トレント：{count}"
+
+msgid "Tracker Scrape"
+msgstr "トラッカースクレイプ"
+
+msgid "Type"
+msgstr "タイプ"
+
+msgid "Unknown"
+msgstr "不明"
+
+msgid "Unknown subcommand"
+msgstr "不明なサブコマンド"
+
+msgid "Unknown subcommand: {sub}"
+msgstr "不明なサブコマンド：{sub}"
+
+msgid "Upload"
+msgstr "アップロード"
+
+msgid "Upload Speed"
+msgstr "アップロード速度"
+
+msgid "Uptime: {uptime:.1f}s"
+msgstr "稼働時間：{uptime:.1f}秒"
+
+msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr "使用：alerts list|list-active|add|remove|clear|load|save|test ..."
+
+msgid "Usage: backup <info_hash> <dest>"
+msgstr "使用：backup <情報ハッシュ> <宛先>"
+
+msgid "Usage: checkpoint list"
+msgstr "使用：checkpoint list"
+
+msgid "Usage: config [show|get|set|reload] ..."
+msgstr "使用：config [show|get|set|reload] ..."
+
+msgid "Usage: config get <key.path>"
+msgstr "使用：config get <キー.パス>"
+
+msgid "Usage: config set <key.path> <value>"
+msgstr "使用：config set <キー.パス> <値>"
+
+msgid "Usage: config_backup list|create [desc]|restore <file>"
+msgstr "使用：config_backup list|create [説明]|restore <ファイル>"
+
+msgid "Usage: config_diff <file1> <file2>"
+msgstr "使用：config_diff <ファイル1> <ファイル2>"
+
+msgid "Usage: config_export <toml|json|yaml> <output>"
+msgstr "使用：config_export <toml|json|yaml> <出力>"
+
+msgid "Usage: config_import <toml|json|yaml> <input>"
+msgstr "使用：config_import <toml|json|yaml> <入力>"
+
+msgid "Usage: export <path>"
+msgstr "使用：export <パス>"
+
+msgid "Usage: import <path>"
+msgstr "使用：import <パス>"
+
+msgid "Usage: limits [show|set] <info_hash> [down up]"
+msgstr "使用：limits [show|set] <情報ハッシュ> [ダウン アップ]"
+
+msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
+msgstr "使用：limits set <情報ハッシュ> <ダウン_kib> <アップ_kib>"
+
+msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgstr "使用：metrics show [system|performance|all] | metrics export [json|prometheus] [出力]"
+
+msgid "Usage: profile list | profile apply <name>"
+msgstr "使用：profile list | profile apply <名前>"
+
+msgid "Usage: restore <backup_file>"
+msgstr "使用：restore <バックアップファイル>"
+
+msgid "Usage: template list | template apply <name> [merge]"
+msgstr "使用：template list | template apply <名前> [merge]"
+
+msgid "Use --confirm to proceed with reset"
+msgstr "リセットを続行するには--confirmを使用"
+
+msgid "VALID"
+msgstr "有効"
+
+msgid "Value"
+msgstr "Value"
+
+msgid "Welcome"
+msgstr "ようこそ"
+
+msgid "Xet"
+msgstr "Xet"
+
+msgid "Yes"
+msgstr "はい"
+
+msgid "Yes (BEP 27)"
+msgstr "はい（BEP 27）"
+
+msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
+msgstr "[cyan]マグネットリンクを追加してメタデータを取得中...[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
+msgstr "[cyan]ダウンロード中：{progress:.1f}%（{peers}ピア）[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
+msgstr "[cyan]ダウンロード中：{progress:.1f}%（{rate:.2f} MB/s、{peers}ピア）[/cyan]"
+
+msgid "[cyan]Initializing session components...[/cyan]"
+msgstr "[cyan]セッションコンポーネントを初期化中...[/cyan]"
+
+msgid "[cyan]Troubleshooting:[/cyan]"
+msgstr "[cyan]トラブルシューティング：[/cyan]"
+
+msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
+msgstr "[cyan]セッションコンポーネントの準備を待機中（最大60秒）...[/cyan]"
+
+msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
+msgstr "[dim]デーモンコマンドを使用するか、まずデーモンを停止することを検討：'btbt daemon exit'[/dim]"
+
+msgid "[green]All files selected[/green]"
+msgstr "[green]すべてのファイルが選択されました[/green]"
+
+msgid "[green]Applied auto-tuned configuration[/green]"
+msgstr "[green]自動調整された設定を適用しました[/green]"
+
+msgid "[green]Applied profile {name}[/green]"
+msgstr "[green]プロファイル {name} を適用しました[/green]"
+
+msgid "[green]Applied template {name}[/green]"
+msgstr "[green]テンプレート {name} を適用しました[/green]"
+
+msgid "[green]Backup created: {path}[/green]"
+msgstr "[green]バックアップを作成しました：{path}[/green]"
+
+msgid "[green]Cleaned up {count} old checkpoints[/green]"
+msgstr "[green]{count}個の古いチェックポイントをクリーンアップしました[/green]"
+
+msgid "[green]Cleared active alerts[/green]"
+msgstr "[green]アクティブなアラートをクリアしました[/green]"
+
+msgid "[green]Configuration reloaded[/green]"
+msgstr "[green]設定を再読み込みしました[/green]"
+
+msgid "[green]Configuration restored[/green]"
+msgstr "[green]設定を復元しました[/green]"
+
+msgid "[green]Connected to {count} peer(s)[/green]"
+msgstr "[green]{count}ピアに接続しました[/green]"
+
+msgid "[green]Daemon status: {status}[/green]"
+msgstr "[green]デーモンステータス：{status}[/green]"
+
+msgid "[green]Download completed, stopping session...[/green]"
+msgstr "[green]ダウンロードが完了しました。セッションを停止中...[/green]"
+
+msgid "[green]Download completed: {name}[/green]"
+msgstr "[green]ダウンロードが完了しました：{name}[/green]"
+
+msgid "[green]Exported checkpoint to {path}[/green]"
+msgstr "[green]チェックポイントを {path} にエクスポートしました[/green]"
+
+msgid "[green]Exported configuration to {out}[/green]"
+msgstr "[green]設定を {out} にエクスポートしました[/green]"
+
+msgid "[green]Imported configuration[/green]"
+msgstr "[green]設定をインポートしました[/green]"
+
+msgid "[green]Loaded {count} rules[/green]"
+msgstr "[green]{count}個のルールを読み込みました[/green]"
+
+msgid "[green]Magnet added successfully: {hash}...[/green]"
+msgstr "[green]マグネットリンクを正常に追加しました：{hash}...[/green]"
+
+msgid "[green]Magnet added to daemon: {hash}[/green]"
+msgstr "[green]マグネットリンクをデーモンに追加しました：{hash}[/green]"
+
+msgid "[green]Metadata fetched successfully![/green]"
+msgstr "[green]メタデータを正常に取得しました！[/green]"
+
+msgid "[green]Migrated checkpoint to {path}[/green]"
+msgstr "[green]チェックポイントを {path} に移行しました[/green]"
+
+msgid "[green]Monitoring started[/green]"
+msgstr "[green]監視を開始しました[/green]"
+
+msgid "[green]Resuming download from checkpoint...[/green]"
+msgstr "[green]チェックポイントからダウンロードを再開中...[/green]"
+
+msgid "[green]Rule added[/green]"
+msgstr "[green]ルールを追加しました[/green]"
+
+msgid "[green]Rule evaluated[/green]"
+msgstr "[green]ルールを評価しました[/green]"
+
+msgid "[green]Rule removed[/green]"
+msgstr "[green]ルールを削除しました[/green]"
+
+msgid "[green]Saved rules[/green]"
+msgstr "[green]ルールを保存しました[/green]"
+
+msgid "[green]Selected file {idx}[/green]"
+msgstr "[green]ファイル {idx} を選択しました[/green]"
+
+msgid "[green]Selected {count} file(s) for download[/green]"
+msgstr "[green]{count}個のファイルをダウンロード用に選択しました[/green]"
+
+msgid "[green]Set priority for file {idx} to {priority}[/green]"
+msgstr "[green]ファイル {idx} の優先度を {priority} に設定しました[/green]"
+
+msgid "[green]Starting web interface on http://{host}:{port}[/green]"
+msgstr "[green]http://{host}:{port} でWebインターフェースを起動中[/green]"
+
+msgid "[green]Torrent added to daemon: {hash}[/green]"
+msgstr "[green]トレントをデーモンに追加しました：{hash}[/green]"
+
+msgid "[green]Updated runtime configuration[/green]"
+msgstr "[green]ランタイム設定を更新しました[/green]"
+
+msgid "[green]Wrote metrics to {out}[/green]"
+msgstr "[green]メトリックを {out} に書き込みました[/green]"
+
+msgid "[red]Backup failed: {msgs}[/red]"
+msgstr "[red]バックアップが失敗しました：{msgs}[/red]"
+
+msgid "[red]Error: Could not parse magnet link[/red]"
+msgstr "[red]エラー：マグネットリンクを解析できませんでした[/red]"
+
+msgid "[red]Error: {error}[/red]"
+msgstr "[red]エラー：{error}[/red]"
+
+msgid "[red]Failed to add magnet link: {error}[/red]"
+msgstr "[red]マグネットリンクの追加に失敗しました：{error}[/red]"
+
+msgid "[red]Failed to set config: {error}[/red]"
+msgstr "[red]設定の設定に失敗しました：{error}[/red]"
+
+msgid "[red]File not found: {error}[/red]"
+msgstr "[red]ファイルが見つかりません：{error}[/red]"
+
+msgid "[red]Invalid arguments[/red]"
+msgstr "[red]無効な引数[/red]"
+
+msgid "[red]Invalid file index: {idx}[/red]"
+msgstr "[red]無効なファイルインデックス：{idx}[/red]"
+
+msgid "[red]Invalid file index[/red]"
+msgstr "[red]無効なファイルインデックス[/red]"
+
+msgid "[red]Invalid info hash format: {hash}[/red]"
+msgstr "[red]無効な情報ハッシュ形式：{hash}[/red]"
+
+msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]無効な優先度。使用：do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]無効な優先度：{priority}。使用：do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid torrent file: {error}[/red]"
+msgstr "[red]無効なトレントファイル：{error}[/red]"
+
+msgid "[red]Key not found: {key}[/red]"
+msgstr "[red]キーが見つかりません：{key}[/red]"
+
+msgid "[red]No checkpoint found for {hash}[/red]"
+msgstr "[red]{hash} のチェックポイントが見つかりません[/red]"
+
+msgid "[red]PyYAML not installed[/red]"
+msgstr "[red]PyYAMLがインストールされていません[/red]"
+
+msgid "[red]Reload failed: {error}[/red]"
+msgstr "[red]再読み込みが失敗しました：{error}[/red]"
+
+msgid "[red]Restore failed: {msgs}[/red]"
+msgstr "[red]復元が失敗しました：{msgs}[/red]"
+
+msgid "[red]{error}[/red]"
+msgstr "[red]{error}[/red]"
+
+msgid "[yellow]All files deselected[/yellow]"
+msgstr "[yellow]すべてのファイルの選択が解除されました[/yellow]"
+
+msgid "[yellow]Debug mode not yet implemented[/yellow]"
+msgstr "[yellow]デバッグモードはまだ実装されていません[/yellow]"
+
+msgid "[yellow]Deselected file {idx}[/yellow]"
+msgstr "[yellow]ファイル {idx} の選択を解除しました[/yellow]"
+
+msgid "[yellow]Download interrupted by user[/yellow]"
+msgstr "[yellow]ダウンロードがユーザーによって中断されました[/yellow]"
+
+msgid "[yellow]Fetching metadata from peers...[/yellow]"
+msgstr "[yellow]ピアからメタデータを取得中...[/yellow]"
+
+msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
+msgstr "[yellow]無効な優先度指定 '{spec}'：{error}[/yellow]"
+
+msgid "[yellow]Keeping session alive[/yellow]"
+msgstr "[yellow]セッションを維持中[/yellow]"
+
+msgid "[yellow]No checkpoints found[/yellow]"
+msgstr "[yellow]チェックポイントが見つかりません[/yellow]"
+
+msgid "[yellow]Torrent session ended[/yellow]"
+msgstr "[yellow]トレントセッションが終了しました[/yellow]"
+
+msgid "[yellow]Unknown command: {cmd}[/yellow]"
+msgstr "[yellow]不明なコマンド：{cmd}[/yellow]"
+
+msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
+msgstr "[yellow]警告：デーモンが実行中です。ローカルセッションを開始するとポート競合が発生する可能性があります。[/yellow]"
+
+msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
+msgstr "[yellow]警告：セッションの停止中にエラーが発生しました：{error}[/yellow]"
+
+msgid "[yellow]{warning}[/yellow]"
+msgstr "[yellow]{warning}[/yellow]"
+
+msgid "ccBitTorrent Interactive CLI"
+msgstr "ccBitTorrent対話型CLI"
+
+msgid "ccBitTorrent Status"
+msgstr "ccBitTorrent状態"
+
+msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+
+msgid "uTP Config"
+msgstr "uTP設定"
+
+msgid "{count} features"
+msgstr "{count}個の機能"
+
+msgid "{count} items"
+msgstr "{count}個の項目"
+
+msgid "{elapsed:.0f}s ago"
+msgstr "{elapsed:.0f}秒前"

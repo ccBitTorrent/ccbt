@@ -1,0 +1,845 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: ccBitTorrent 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-01-01 00:00+0000\n"
+"PO-Revision-Date: 2025-11-10 21:50\n"
+"Last-Translator: ccBitTorrent Team\n"
+"Language-Team: Hausa Translation Team\n"
+"Language: ha\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+
+msgid "\nAvailable Commands:\n  help          - Show this help message\n  status        - Show current status\n  peers         - Show connected peers\n  files         - Show file information\n  pause         - Pause download\n  resume        - Resume download\n  stop          - Stop download\n  quit          - Quit application\n  clear         - Clear screen\n        "
+msgstr "\nUmarni da Ake Samu:\n  help          - Nuna wannan saƙon taimako\n  status        - Nuna matsayi na yanzu\n  peers         - Nuna abokan haɗin kai da aka haɗa\n  files         - Nuna bayanin fayil\n  pause         - Dakatar da zazzagewa\n  resume        - Ci gaba da zazzagewa\n  stop          - Tsayar da zazzagewa\n  quit          - Fita daga aikace-aikacen\n  clear         - Share allo\n        "
+
+msgid "\n[bold cyan]File Selection[/bold cyan]"
+msgstr "\n[bold cyan]Zaɓin Fayil[/bold cyan]"
+
+msgid "\n[bold]File selection[/bold]"
+msgstr "\n[bold]Zaɓin fayil[/bold]"
+
+msgid "\n[yellow]Commands:[/yellow]"
+msgstr "\n[yellow]Umarni:[/yellow]"
+
+msgid "\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgstr "\n[yellow]Zaɓin fayil an soke, ana amfani da na asali[/yellow]"
+
+msgid "\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgstr "\n[yellow]Ƙididdigar Tracker Scrape:[/yellow]"
+
+msgid "\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgstr "\n[yellow]Yi amfani da: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+
+msgid "\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgstr "\n[yellow]Gargadi: Babu abokan haɗin kai da aka haɗa bayan dakika 30[/yellow]"
+
+msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
+msgstr "  [cyan]deselect <index>[/cyan] - Cire zaɓin fayil"
+
+msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
+msgstr "  [cyan]deselect-all[/cyan] - Cire zaɓin duk fayiloli"
+
+msgid "  [cyan]done[/cyan] - Finish selection and start download"
+msgstr "  [cyan]done[/cyan] - Kammala zaɓi kuma fara zazzagewa"
+
+msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
+msgstr "  [cyan]priority <index> <priority>[/cyan] - Saita fifiko (do_not_download/low/normal/high/maximum)"
+
+msgid "  [cyan]select <index>[/cyan] - Select a file"
+msgstr "  [cyan]select <index>[/cyan] - Zaɓi fayil"
+
+msgid "  [cyan]select-all[/cyan] - Select all files"
+msgstr "  [cyan]select-all[/cyan] - Zaɓi duk fayiloli"
+
+msgid "  • Check if torrent has active seeders"
+msgstr "  • Bincika ko torrent yana da masu shuka masu aiki"
+
+msgid "  • Ensure DHT is enabled: --enable-dht"
+msgstr "  • Tabbatar an kunna DHT: --enable-dht"
+
+msgid "  • Run 'btbt diagnose-connections' to check connection status"
+msgstr "  • Gudanar da 'btbt diagnose-connections' don bincika matsayin haɗi"
+
+msgid "  • Verify NAT/firewall settings"
+msgstr "  • Tabbatar da saitunan NAT/firewall"
+
+msgid " | Files: {selected}/{total} selected"
+msgstr " | Fayiloli: {selected}/{total} an zaɓa"
+
+msgid " | Private: {count}"
+msgstr " | Sirri: {count}"
+
+msgid "Active"
+msgstr "Aiki"
+
+msgid "Active Alerts"
+msgstr "Faɗakarwa Masu Aiki"
+
+msgid "Active: {count}"
+msgstr "Aiki: {count}"
+
+msgid "Advanced Add"
+msgstr "Ƙara Mai Zurfi"
+
+msgid "Alert Rules"
+msgstr "Dokoki na Faɗakarwa"
+
+msgid "Alerts"
+msgstr "Faɗakarwa"
+
+msgid "Announce: Failed"
+msgstr "Sanarwa: An Gaza"
+
+msgid "Announce: {status}"
+msgstr "Sanarwa: {status}"
+
+msgid "Are you sure you want to quit?"
+msgstr "Ka tabbata kana son fita?"
+
+msgid "Automatically restart daemon if needed (without prompt)"
+msgstr "Sake farawa daemon ta atomatik idan an buƙata (ba tare da tambaya ba)"
+
+msgid "Browse"
+msgstr "Bincike"
+
+msgid "Capability"
+msgstr "Ikon"
+
+msgid "Commands: "
+msgstr "Umarni: "
+
+msgid "Completed"
+msgstr "An Kammala"
+
+msgid "Completed (Scrape)"
+msgstr "An Kammala (Scrape)"
+
+msgid "Component"
+msgstr "Bangare"
+
+msgid "Condition"
+msgstr "Yanayi"
+
+msgid "Config Backups"
+msgstr "Ajiyayyun Saituna"
+
+msgid "Configuration file path"
+msgstr "Hanyar fayil na saituna"
+
+msgid "Confirm"
+msgstr "Tabbatar"
+
+msgid "Connected"
+msgstr "An Haɗa"
+
+msgid "Connected Peers"
+msgstr "Abokan Haɗin Kai An Haɗa"
+
+msgid "Count: {count}{file_info}{private_info}"
+msgstr "Ƙidaya: {count}{file_info}{private_info}"
+
+msgid "Create backup before migration"
+msgstr "Ƙirƙiri ajiya kafin ƙaura"
+
+msgid "DHT"
+msgstr "DHT"
+
+msgid "Description"
+msgstr "Bayani"
+
+msgid "Details"
+msgstr "Cikakkun Bayanai"
+
+msgid "Disabled"
+msgstr "An Kashe"
+
+msgid "Download"
+msgstr "Zazzage"
+
+msgid "Download Speed"
+msgstr "Saurin Zazzagewa"
+
+msgid "Download paused"
+msgstr "Zazzagewa an dakata"
+
+msgid "Download resumed"
+msgstr "Zazzagewa an ci gaba"
+
+msgid "Download stopped"
+msgstr "Zazzagewa an tsayar"
+
+msgid "Downloaded"
+msgstr "An Zazzage"
+
+msgid "Downloading {name}"
+msgstr "Ana Zazzagewa {name}"
+
+msgid "ETA"
+msgstr "Lokacin Kammalawa"
+
+msgid "Enable debug mode"
+msgstr "Kunna yanayin gyarawa"
+
+msgid "Enable verbose output"
+msgstr "Kunna fitarwa mai cikakken bayani"
+
+msgid "Enabled"
+msgstr "An Kunna"
+
+msgid "Error reading scrape cache"
+msgstr "Kuskure a karanta cache na scrape"
+
+msgid "Explore"
+msgstr "Bincike"
+
+msgid "Failed"
+msgstr "An Gaza"
+
+msgid "Failed to register torrent in session"
+msgstr "An gaza yin rajista torrent a cikin zaman"
+
+msgid "File"
+msgstr "Fayil"
+
+msgid "File Name"
+msgstr "Sunan Fayil"
+
+msgid "File selection not available for this torrent"
+msgstr "Zaɓin fayil baya samuwa ga wannan torrent"
+
+msgid "Files"
+msgstr "Fayiloli"
+
+msgid "Global Config"
+msgstr "Saitunan Duniya"
+
+msgid "Help"
+msgstr "Taimako"
+
+msgid "History"
+msgstr "Tarihi"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "IP"
+msgstr "IP"
+
+msgid "IP Filter"
+msgstr "Tace IP"
+
+msgid "IPFS"
+msgstr "IPFS"
+
+msgid "Info Hash"
+msgstr "Hash na Bayani"
+
+msgid "Interactive backup"
+msgstr "Ajiya mai hulɗa"
+
+msgid "Invalid torrent file format"
+msgstr "Tsarin fayil na torrent bai daidaita ba"
+
+msgid "Key"
+msgstr "Maɓalli"
+
+msgid "Key not found: {key}"
+msgstr "Ba a sami maɓalli: {key}"
+
+msgid "Last Scrape"
+msgstr "Scrape na Ƙarshe"
+
+msgid "Leechers"
+msgstr "Masu Zazzagewa"
+
+msgid "Leechers (Scrape)"
+msgstr "Masu Zazzagewa (Scrape)"
+
+msgid "MIGRATED"
+msgstr "AN ƘAURA"
+
+msgid "Menu"
+msgstr "Menu"
+
+msgid "Metric"
+msgstr "Ma'auni"
+
+msgid "NAT Management"
+msgstr "Gudanar da NAT"
+
+msgid "Name"
+msgstr "Suna"
+
+msgid "Network"
+msgstr "Hanyar Sadarwa"
+
+msgid "No"
+msgstr "A'a"
+
+msgid "No active alerts"
+msgstr "Babu faɗakarwa masu aiki"
+
+msgid "No alert rules"
+msgstr "Babu dokoki na faɗakarwa"
+
+msgid "No alert rules configured"
+msgstr "Babu dokoki na faɗakarwa da aka saita"
+
+msgid "No backups found"
+msgstr "Ba a sami ajiyayyu"
+
+msgid "No cached results"
+msgstr "Babu sakamako da aka adana"
+
+msgid "No checkpoints"
+msgstr "Babu wuraren bincike"
+
+msgid "No config file to backup"
+msgstr "Babu fayil na saituna don ajiya"
+
+msgid "No peers connected"
+msgstr "Babu abokan haɗin kai da aka haɗa"
+
+msgid "No profiles available"
+msgstr "Babu bayanan martaba da ake samu"
+
+msgid "No templates available"
+msgstr "Babu samfura da ake samu"
+
+msgid "No torrent active"
+msgstr "Babu torrent mai aiki"
+
+msgid "Nodes: {count}"
+msgstr "Nodes: {count}"
+
+msgid "Not available"
+msgstr "Ba Ake Samuwa Ba"
+
+msgid "Not configured"
+msgstr "Ba Aka Saita Ba"
+
+msgid "Not supported"
+msgstr "Ba Ake Taimakawa Ba"
+
+msgid "OK"
+msgstr "Yayi"
+
+msgid "Operation not supported"
+msgstr "Aiki ba ake taimakawa ba"
+
+msgid "PEX: {status}"
+msgstr "PEX: {status}"
+
+msgid "Pause"
+msgstr "Dakata"
+
+msgid "Peers"
+msgstr "Abokan Haɗin Kai"
+
+msgid "Performance"
+msgstr "Aiki"
+
+msgid "Pieces"
+msgstr "Guda"
+
+msgid "Port"
+msgstr "Tashar Jiragen Ruwa"
+
+msgid "Port: {port}"
+msgstr "Tashar Jiragen Ruwa: {port}"
+
+msgid "Priority"
+msgstr "Fifiko"
+
+msgid "Private"
+msgstr "Sirri"
+
+msgid "Profiles"
+msgstr "Bayanan Martaba"
+
+msgid "Progress"
+msgstr "Ci Gaba"
+
+msgid "Property"
+msgstr "Dukiya"
+
+msgid "Proxy Config"
+msgstr "Saitunan Proxy"
+
+msgid "PyYAML is required for YAML output"
+msgstr "Ana buƙatar PyYAML don fitarwa ta YAML"
+
+msgid "Quick Add"
+msgstr "Ƙara Maimakon"
+
+msgid "Quit"
+msgstr "Fita"
+
+msgid "Rate limits disabled"
+msgstr "Iyakoki na sauri an kashe"
+
+msgid "Rate limits set to 1024 KiB/s"
+msgstr "Iyakoki na sauri an saita zuwa 1024 KiB/s"
+
+msgid "Rehash: {status}"
+msgstr "Rehash: {status}"
+
+msgid "Resume"
+msgstr "Ci Gaba"
+
+msgid "Rule"
+msgstr "Doka"
+
+msgid "Rule not found: {name}"
+msgstr "Ba a sami doka: {name}"
+
+msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
+msgstr "Dokoki: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Tubalan: {blocks}"
+
+msgid "Running"
+msgstr "Ana Gudana"
+
+msgid "SSL Config"
+msgstr "Saitunan SSL"
+
+msgid "Scrape Results"
+msgstr "Sakamakon Scrape"
+
+msgid "Scrape: {status}"
+msgstr "Scrape: {status}"
+
+msgid "Section not found: {section}"
+msgstr "Ba a sami sashe: {section}"
+
+msgid "Security Scan"
+msgstr "Binciken Tsaro"
+
+msgid "Seeders"
+msgstr "Masu Shuka"
+
+msgid "Seeders (Scrape)"
+msgstr "Masu Shuka (Scrape)"
+
+msgid "Select files to download"
+msgstr "Zaɓi fayiloli don zazzagewa"
+
+msgid "Selected"
+msgstr "An Zaɓa"
+
+msgid "Session"
+msgstr "Zaman"
+
+msgid "Set value in global config file"
+msgstr "Saita ƙima a cikin fayil na saitunan duniya"
+
+msgid "Set value in project local ccbt.toml"
+msgstr "Saita ƙima a cikin ccbt.toml na gida na aikin"
+
+msgid "Severity"
+msgstr "Matsala"
+
+msgid "Show specific key path (e.g. network.listen_port)"
+msgstr "Nuna hanyar maɓalli ta musamman (misali. network.listen_port)"
+
+msgid "Show specific section key path (e.g. network)"
+msgstr "Nuna hanyar maɓalli na sashe ta musamman (misali. network)"
+
+msgid "Size"
+msgstr "Girman"
+
+msgid "Skip confirmation prompt"
+msgstr "Tsallake tambayar tabbatarwa"
+
+msgid "Skip daemon restart even if needed"
+msgstr "Tsallake sake farawa daemon ko da an buƙata"
+
+msgid "Snapshot failed: {error}"
+msgstr "Hotunan lokaci an gaza: {error}"
+
+msgid "Snapshot saved to {path}"
+msgstr "Hotunan lokaci an adana zuwa {path}"
+
+msgid "Status"
+msgstr "Matsayi"
+
+msgid "Status: "
+msgstr "Matsayi: "
+
+msgid "Supported"
+msgstr "Ana Taimakawa"
+
+msgid "System Capabilities"
+msgstr "Ikon Tsarin"
+
+msgid "System Capabilities Summary"
+msgstr "Taƙaitaccen Ikon Tsarin"
+
+msgid "System Resources"
+msgstr "Albarkatun Tsarin"
+
+msgid "Templates"
+msgstr "Samfura"
+
+msgid "Timestamp"
+msgstr "Alamar Lokaci"
+
+msgid "Torrent Config"
+msgstr "Saitunan Torrent"
+
+msgid "Torrent Status"
+msgstr "Matsayin Torrent"
+
+msgid "Torrent file not found"
+msgstr "Ba a sami fayil na torrent"
+
+msgid "Torrent not found"
+msgstr "Ba a sami torrent"
+
+msgid "Torrents"
+msgstr "Torrents"
+
+msgid "Torrents: {count}"
+msgstr "Torrents: {count}"
+
+msgid "Tracker Scrape"
+msgstr "Scrape na Tracker"
+
+msgid "Type"
+msgstr "Nau'i"
+
+msgid "Unknown"
+msgstr "Ba A Sani Ba"
+
+msgid "Unknown subcommand"
+msgstr "Ƙaramin umarni ba a sani ba"
+
+msgid "Unknown subcommand: {sub}"
+msgstr "Ƙaramin umarni ba a sani ba: {sub}"
+
+msgid "Upload"
+msgstr "Loda"
+
+msgid "Upload Speed"
+msgstr "Saurin Lodawa"
+
+msgid "Uptime: {uptime:.1f}s"
+msgstr "Lokacin Aiki: {uptime:.1f}s"
+
+msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr "Amfani: alerts list|list-active|add|remove|clear|load|save|test ..."
+
+msgid "Usage: backup <info_hash> <dest>"
+msgstr "Amfani: backup <info_hash> <dest>"
+
+msgid "Usage: checkpoint list"
+msgstr "Amfani: checkpoint list"
+
+msgid "Usage: config [show|get|set|reload] ..."
+msgstr "Amfani: config [show|get|set|reload] ..."
+
+msgid "Usage: config get <key.path>"
+msgstr "Amfani: config get <key.path>"
+
+msgid "Usage: config set <key.path> <value>"
+msgstr "Amfani: config set <key.path> <value>"
+
+msgid "Usage: config_backup list|create [desc]|restore <file>"
+msgstr "Amfani: config_backup list|create [desc]|restore <file>"
+
+msgid "Usage: config_diff <file1> <file2>"
+msgstr "Amfani: config_diff <file1> <file2>"
+
+msgid "Usage: config_export <toml|json|yaml> <output>"
+msgstr "Amfani: config_export <toml|json|yaml> <output>"
+
+msgid "Usage: config_import <toml|json|yaml> <input>"
+msgstr "Amfani: config_import <toml|json|yaml> <input>"
+
+msgid "Usage: export <path>"
+msgstr "Amfani: export <path>"
+
+msgid "Usage: import <path>"
+msgstr "Amfani: import <path>"
+
+msgid "Usage: limits [show|set] <info_hash> [down up]"
+msgstr "Amfani: limits [show|set] <info_hash> [down up]"
+
+msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
+msgstr "Amfani: limits set <info_hash> <down_kib> <up_kib>"
+
+msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgstr "Amfani: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+
+msgid "Usage: profile list | profile apply <name>"
+msgstr "Amfani: profile list | profile apply <name>"
+
+msgid "Usage: restore <backup_file>"
+msgstr "Amfani: restore <backup_file>"
+
+msgid "Usage: template list | template apply <name> [merge]"
+msgstr "Amfani: template list | template apply <name> [merge]"
+
+msgid "Use --confirm to proceed with reset"
+msgstr "Yi amfani da --confirm don ci gaba da sake saita"
+
+msgid "VALID"
+msgstr "DAIDAI"
+
+msgid "Value"
+msgstr "Ƙima"
+
+msgid "Welcome"
+msgstr "Barka da zuwa"
+
+msgid "Xet"
+msgstr "Xet"
+
+msgid "Yes"
+msgstr "Ee"
+
+msgid "Yes (BEP 27)"
+msgstr "Ee (BEP 27)"
+
+msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
+msgstr "[cyan]Ana ƙara hanyar haɗin magnet kuma ana zazzage bayanai...[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
+msgstr "[cyan]Ana Zazzagewa: {progress:.1f}% ({peers} abokan haɗin kai)[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
+msgstr "[cyan]Ana Zazzagewa: {progress:.1f}% ({rate:.2f} MB/s, {peers} abokan haɗin kai)[/cyan]"
+
+msgid "[cyan]Initializing session components...[/cyan]"
+msgstr "[cyan]Ana farawa bangarorin zaman...[/cyan]"
+
+msgid "[cyan]Troubleshooting:[/cyan]"
+msgstr "[cyan]Magance Matsaloli:[/cyan]"
+
+msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
+msgstr "[cyan]Ana jira bangarorin zaman su shirya (matsakaici 60s)...[/cyan]"
+
+msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
+msgstr "[dim]Yi la'akari da amfani da umarnin daemon ko ka tsayar da daemon da farko: 'btbt daemon exit'[/dim]"
+
+msgid "[green]All files selected[/green]"
+msgstr "[green]Duk fayiloli an zaɓa[/green]"
+
+msgid "[green]Applied auto-tuned configuration[/green]"
+msgstr "[green]An yi amfani da saitunan da aka daidaita ta atomatik[/green]"
+
+msgid "[green]Applied profile {name}[/green]"
+msgstr "[green]An yi amfani da bayanan martaba {name}[/green]"
+
+msgid "[green]Applied template {name}[/green]"
+msgstr "[green]An yi amfani da samfura {name}[/green]"
+
+msgid "[green]Backup created: {path}[/green]"
+msgstr "[green]An ƙirƙiri ajiya: {path}[/green]"
+
+msgid "[green]Cleaned up {count} old checkpoints[/green]"
+msgstr "[green]An tsabtace wuraren bincike {count} na tsoho[/green]"
+
+msgid "[green]Cleared active alerts[/green]"
+msgstr "[green]An share faɗakarwa masu aiki[/green]"
+
+msgid "[green]Configuration reloaded[/green]"
+msgstr "[green]An sake loda saituna[/green]"
+
+msgid "[green]Configuration restored[/green]"
+msgstr "[green]An maido da saituna[/green]"
+
+msgid "[green]Connected to {count} peer(s)[/green]"
+msgstr "[green]An haɗa zuwa {count} abokin haɗin kai[/green]"
+
+msgid "[green]Daemon status: {status}[/green]"
+msgstr "[green]Matsayin daemon: {status}[/green]"
+
+msgid "[green]Download completed, stopping session...[/green]"
+msgstr "[green]Zazzagewa ta ƙare, ana tsayar da zaman...[/green]"
+
+msgid "[green]Download completed: {name}[/green]"
+msgstr "[green]Zazzagewa ta ƙare: {name}[/green]"
+
+msgid "[green]Exported checkpoint to {path}[/green]"
+msgstr "[green]An fitar da wurin bincike zuwa {path}[/green]"
+
+msgid "[green]Exported configuration to {out}[/green]"
+msgstr "[green]An fitar da saituna zuwa {out}[/green]"
+
+msgid "[green]Imported configuration[/green]"
+msgstr "[green]An shigo da saituna[/green]"
+
+msgid "[green]Loaded {count} rules[/green]"
+msgstr "[green]An loda dokoki {count}[/green]"
+
+msgid "[green]Magnet added successfully: {hash}...[/green]"
+msgstr "[green]An ƙara hanyar haɗin magnet cikin nasara: {hash}...[/green]"
+
+msgid "[green]Magnet added to daemon: {hash}[/green]"
+msgstr "[green]An ƙara hanyar haɗin magnet zuwa daemon: {hash}[/green]"
+
+msgid "[green]Metadata fetched successfully![/green]"
+msgstr "[green]An zazzage bayanai cikin nasara![/green]"
+
+msgid "[green]Migrated checkpoint to {path}[/green]"
+msgstr "[green]An ƙaura wurin bincike zuwa {path}[/green]"
+
+msgid "[green]Monitoring started[/green]"
+msgstr "[green]An fara sa ido[/green]"
+
+msgid "[green]Resuming download from checkpoint...[/green]"
+msgstr "[green]Ana ci gaba da zazzagewa daga wurin bincike...[/green]"
+
+msgid "[green]Rule added[/green]"
+msgstr "[green]An ƙara doka[/green]"
+
+msgid "[green]Rule evaluated[/green]"
+msgstr "[green]An kimanta doka[/green]"
+
+msgid "[green]Rule removed[/green]"
+msgstr "[green]An cire doka[/green]"
+
+msgid "[green]Saved rules[/green]"
+msgstr "[green]An adana dokoki[/green]"
+
+msgid "[green]Selected file {idx}[/green]"
+msgstr "[green]An zaɓi fayil {idx}[/green]"
+
+msgid "[green]Selected {count} file(s) for download[/green]"
+msgstr "[green]An zaɓi fayiloli {count} don zazzagewa[/green]"
+
+msgid "[green]Set priority for file {idx} to {priority}[/green]"
+msgstr "[green]An saita fifiko na fayil {idx} zuwa {priority}[/green]"
+
+msgid "[green]Starting web interface on http://{host}:{port}[/green]"
+msgstr "[green]Ana farawa hanyar sadarwa ta yanar gizo akan http://{host}:{port}[/green]"
+
+msgid "[green]Torrent added to daemon: {hash}[/green]"
+msgstr "[green]An ƙara torrent zuwa daemon: {hash}[/green]"
+
+msgid "[green]Updated runtime configuration[/green]"
+msgstr "[green]An sabunta saitunan lokacin aiki[/green]"
+
+msgid "[green]Wrote metrics to {out}[/green]"
+msgstr "[green]An rubuta ma'auni zuwa {out}[/green]"
+
+msgid "[red]Backup failed: {msgs}[/red]"
+msgstr "[red]Ajiya ta gaza: {msgs}[/red]"
+
+msgid "[red]Error: Could not parse magnet link[/red]"
+msgstr "[red]Kuskure: Ba za a iya fassara hanyar haɗin magnet ba[/red]"
+
+msgid "[red]Error: {error}[/red]"
+msgstr "[red]Kuskure: {error}[/red]"
+
+msgid "[red]Failed to add magnet link: {error}[/red]"
+msgstr "[red]An gaza ƙara hanyar haɗin magnet: {error}[/red]"
+
+msgid "[red]Failed to set config: {error}[/red]"
+msgstr "[red]An gaza saita saituna: {error}[/red]"
+
+msgid "[red]File not found: {error}[/red]"
+msgstr "[red]Ba a sami fayil: {error}[/red]"
+
+msgid "[red]Invalid arguments[/red]"
+msgstr "[red]Hujjoji marasa inganci[/red]"
+
+msgid "[red]Invalid file index: {idx}[/red]"
+msgstr "[red]Fihirar fayil mara inganci: {idx}[/red]"
+
+msgid "[red]Invalid file index[/red]"
+msgstr "[red]Fihirar fayil mara inganci[/red]"
+
+msgid "[red]Invalid info hash format: {hash}[/red]"
+msgstr "[red]Tsarin hash na bayani mara inganci: {hash}[/red]"
+
+msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]Fifiko mara inganci. Yi amfani da: do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]Fifiko mara inganci: {priority}. Yi amfani da: do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid torrent file: {error}[/red]"
+msgstr "[red]Fayil na torrent mara inganci: {error}[/red]"
+
+msgid "[red]Key not found: {key}[/red]"
+msgstr "[red]Ba a sami maɓalli: {key}[/red]"
+
+msgid "[red]No checkpoint found for {hash}[/red]"
+msgstr "[red]Ba a sami wurin bincike don {hash}[/red]"
+
+msgid "[red]PyYAML not installed[/red]"
+msgstr "[red]Ba a shigar da PyYAML ba[/red]"
+
+msgid "[red]Reload failed: {error}[/red]"
+msgstr "[red]Sake lodawa ya gaza: {error}[/red]"
+
+msgid "[red]Restore failed: {msgs}[/red]"
+msgstr "[red]Maido ya gaza: {msgs}[/red]"
+
+msgid "[red]{error}[/red]"
+msgstr "[red]{error}[/red]"
+
+msgid "[yellow]All files deselected[/yellow]"
+msgstr "[yellow]Duk fayiloli an cire zaɓi[/yellow]"
+
+msgid "[yellow]Debug mode not yet implemented[/yellow]"
+msgstr "[yellow]Yanayin gyarawa bai cika ba tukuna[/yellow]"
+
+msgid "[yellow]Deselected file {idx}[/yellow]"
+msgstr "[yellow]An cire zaɓin fayil {idx}[/yellow]"
+
+msgid "[yellow]Download interrupted by user[/yellow]"
+msgstr "[yellow]Zazzagewa ta katse ta mai amfani[/yellow]"
+
+msgid "[yellow]Fetching metadata from peers...[/yellow]"
+msgstr "[yellow]Ana zazzage bayanai daga abokan haɗin kai...[/yellow]"
+
+msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
+msgstr "[yellow]Fifiko '{spec}' mara inganci: {error}[/yellow]"
+
+msgid "[yellow]Keeping session alive[/yellow]"
+msgstr "[yellow]Ana kiyaye zaman a raye[/yellow]"
+
+msgid "[yellow]No checkpoints found[/yellow]"
+msgstr "[yellow]Ba a sami wuraren bincike[/yellow]"
+
+msgid "[yellow]Torrent session ended[/yellow]"
+msgstr "[yellow]Zaman na torrent ya ƙare[/yellow]"
+
+msgid "[yellow]Unknown command: {cmd}[/yellow]"
+msgstr "[yellow]Umarni da ba a sani ba: {cmd}[/yellow]"
+
+msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
+msgstr "[yellow]Gargadi: Daemon yana gudana. Farawa zaman na gida na iya haifar da rikice-rikice na tashar jiragen ruwa.[/yellow]"
+
+msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
+msgstr "[yellow]Gargadi: Kuskure wajen tsayar da zaman: {error}[/yellow]"
+
+msgid "[yellow]{warning}[/yellow]"
+msgstr "[yellow]{warning}[/yellow]"
+
+msgid "ccBitTorrent Interactive CLI"
+msgstr "ccBitTorrent CLI na Hira"
+
+msgid "ccBitTorrent Status"
+msgstr "Matsayin ccBitTorrent"
+
+msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+
+msgid "uTP Config"
+msgstr "Saitunan uTP"
+
+msgid "{count} features"
+msgstr "{count} fasaloli"
+
+msgid "{count} items"
+msgstr "{count} abubuwa"
+
+msgid "{elapsed:.0f}s ago"
+msgstr "Sakonnin {elapsed:.0f} da suka wuce"

@@ -1,0 +1,844 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: ccBitTorrent 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-11-10 21:20\n"
+"PO-Revision-Date: 2025-11-10 21:20\n"
+"Last-Translator: ccBitTorrent Team\n"
+"Language-Team: Thai Team\n"
+"Language: th\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+
+msgid "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+msgstr "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+
+msgid "\\n[bold cyan]File Selection[/bold cyan]"
+msgstr "\\n[bold cyan]File Selection[/bold cyan]"
+
+msgid "\\n[bold]File selection[/bold]"
+msgstr "\\n[bold]File selection[/bold]"
+
+msgid "\\n[yellow]Commands:[/yellow]"
+msgstr "\\n[yellow]Commands:[/yellow]"
+
+msgid "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgstr "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+
+msgid "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgstr "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+
+msgid "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgstr "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+
+msgid "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgstr "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+
+msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
+msgstr "  [cyan]deselect <ดัชนี>[/cyan] - ยกเลิกการเลือกไฟล์"
+
+msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
+msgstr "  [cyan]deselect-all[/cyan] - ยกเลิกการเลือกไฟล์ทั้งหมด"
+
+msgid "  [cyan]done[/cyan] - Finish selection and start download"
+msgstr "  [cyan]done[/cyan] - เสร็จสิ้นการเลือกและเริ่มดาวน์โหลด"
+
+msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
+msgstr "  [cyan]priority <ดัชนี> <ลำดับความสำคัญ>[/cyan] - ตั้งค่าลำดับความสำคัญ（do_not_download/low/normal/high/maximum）"
+
+msgid "  [cyan]select <index>[/cyan] - Select a file"
+msgstr "  [cyan]select <ดัชนี>[/cyan] - เลือกไฟล์"
+
+msgid "  [cyan]select-all[/cyan] - Select all files"
+msgstr "  [cyan]select-all[/cyan] - เลือกไฟล์ทั้งหมด"
+
+msgid "  • Check if torrent has active seeders"
+msgstr "  • ตรวจสอบว่าทอร์เรนต์มีผู้แชร์ที่ใช้งานอยู่"
+
+msgid "  • Ensure DHT is enabled: --enable-dht"
+msgstr "  • ตรวจสอบว่า DHT เปิดใช้งาน：--enable-dht"
+
+msgid "  • Run 'btbt diagnose-connections' to check connection status"
+msgstr "  • เรียกใช้ 'btbt diagnose-connections' เพื่อตรวจสอบสถานะการเชื่อมต่อ"
+
+msgid "  • Verify NAT/firewall settings"
+msgstr "  • ตรวจสอบการตั้งค่า NAT/ไฟร์วอลล์"
+
+msgid " | Files: {selected}/{total} selected"
+msgstr " | ไฟล์：เลือก {selected}/{total}"
+
+msgid " | Private: {count}"
+msgstr " | ส่วนตัว：{count}"
+
+msgid "Active"
+msgstr "ใช้งาน"
+
+msgid "Active Alerts"
+msgstr "การแจ้งเตือนที่ใช้งาน"
+
+msgid "Active: {count}"
+msgstr "ใช้งาน：{count}"
+
+msgid "Advanced Add"
+msgstr "เพิ่มขั้นสูง"
+
+msgid "Alert Rules"
+msgstr "กฎการแจ้งเตือน"
+
+msgid "Alerts"
+msgstr "การแจ้งเตือน"
+
+msgid "Announce: Failed"
+msgstr "ประกาศ：ล้มเหลว"
+
+msgid "Announce: {status}"
+msgstr "ประกาศ：{status}"
+
+msgid "Are you sure you want to quit?"
+msgstr "คุณแน่ใจหรือไม่ว่าต้องการออก?"
+
+msgid "Automatically restart daemon if needed (without prompt)"
+msgstr "รีสตาร์ทดีมอนโดยอัตโนมัติหากจำเป็น（โดยไม่ต้องยืนยัน）"
+
+msgid "Browse"
+msgstr "เรียกดู"
+
+msgid "Capability"
+msgstr "ความสามารถ"
+
+msgid "Commands: "
+msgstr "คำสั่ง："
+
+msgid "Completed"
+msgstr "เสร็จสมบูรณ์"
+
+msgid "Completed (Scrape)"
+msgstr "เสร็จสมบูรณ์（การสแครป）"
+
+msgid "Component"
+msgstr "ส่วนประกอบ"
+
+msgid "Condition"
+msgstr "เงื่อนไข"
+
+msgid "Config Backups"
+msgstr "สำรองการตั้งค่า"
+
+msgid "Configuration file path"
+msgstr "เส้นทางไฟล์การตั้งค่า"
+
+msgid "Confirm"
+msgstr "ยืนยัน"
+
+msgid "Connected"
+msgstr "เชื่อมต่อแล้ว"
+
+msgid "Connected Peers"
+msgstr "เพียร์ที่เชื่อมต่อ"
+
+msgid "Count: {count}{file_info}{private_info}"
+msgstr "จำนวน：{count}{file_info}{private_info}"
+
+msgid "Create backup before migration"
+msgstr "สร้างการสำรองข้อมูลก่อนการย้าย"
+
+msgid "DHT"
+msgstr "DHT"
+
+msgid "Description"
+msgstr "คำอธิบาย"
+
+msgid "Details"
+msgstr "รายละเอียด"
+
+msgid "Disabled"
+msgstr "ปิดใช้งาน"
+
+msgid "Download"
+msgstr "ดาวน์โหลด"
+
+msgid "Download Speed"
+msgstr "ความเร็วในการดาวน์โหลด"
+
+msgid "Download paused"
+msgstr "การดาวน์โหลดถูกหยุดชั่วคราว"
+
+msgid "Download resumed"
+msgstr "การดาวน์โหลดดำเนินการต่อ"
+
+msgid "Download stopped"
+msgstr "การดาวน์โหลดหยุดแล้ว"
+
+msgid "Downloaded"
+msgstr "ดาวน์โหลดแล้ว"
+
+msgid "Downloading {name}"
+msgstr "กำลังดาวน์โหลด {name}"
+
+msgid "ETA"
+msgstr "เวลาที่คาดหวัง"
+
+msgid "Enable debug mode"
+msgstr "เปิดใช้งานโหมดดีบัก"
+
+msgid "Enable verbose output"
+msgstr "เปิดใช้งานผลลัพธ์แบบละเอียด"
+
+msgid "Enabled"
+msgstr "เปิดใช้งาน"
+
+msgid "Error reading scrape cache"
+msgstr "ข้อผิดพลาดในการอ่านแคชการสแครป"
+
+msgid "Explore"
+msgstr "สำรวจ"
+
+msgid "Failed"
+msgstr "ล้มเหลว"
+
+msgid "Failed to register torrent in session"
+msgstr "ไม่สามารถลงทะเบียนทอร์เรนต์ในเซสชัน"
+
+msgid "File"
+msgstr "File"
+
+msgid "File Name"
+msgstr "ชื่อไฟล์"
+
+msgid "File selection not available for this torrent"
+msgstr "การเลือกไฟล์ไม่พร้อมใช้งานสำหรับทอร์เรนต์นี้"
+
+msgid "Files"
+msgstr "ไฟล์"
+
+msgid "Global Config"
+msgstr "การตั้งค่าทั่วไป"
+
+msgid "Help"
+msgstr "ช่วยเหลือ"
+
+msgid "History"
+msgstr "ประวัติ"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "IP"
+msgstr "IP"
+
+msgid "IP Filter"
+msgstr "ตัวกรอง IP"
+
+msgid "IPFS"
+msgstr "IPFS"
+
+msgid "Info Hash"
+msgstr "แฮชข้อมูล"
+
+msgid "Interactive backup"
+msgstr "การสำรองข้อมูลแบบโต้ตอบ"
+
+msgid "Invalid torrent file format"
+msgstr "รูปแบบไฟล์ทอร์เรนต์ไม่ถูกต้อง"
+
+msgid "Key"
+msgstr "Key"
+
+msgid "Key not found: {key}"
+msgstr "ไม่พบคีย์：{key}"
+
+msgid "Last Scrape"
+msgstr "การสแครปล่าสุด"
+
+msgid "Leechers"
+msgstr "ผู้ดาวน์โหลด"
+
+msgid "Leechers (Scrape)"
+msgstr "ผู้ดาวน์โหลด（การสแครป）"
+
+msgid "MIGRATED"
+msgstr "ย้ายแล้ว"
+
+msgid "Menu"
+msgstr "เมนู"
+
+msgid "Metric"
+msgstr "เมตริก"
+
+msgid "NAT Management"
+msgstr "การจัดการ NAT"
+
+msgid "Name"
+msgstr "ชื่อ"
+
+msgid "Network"
+msgstr "เครือข่าย"
+
+msgid "No"
+msgstr "ไม่"
+
+msgid "No active alerts"
+msgstr "ไม่มีการแจ้งเตือนที่ใช้งาน"
+
+msgid "No alert rules"
+msgstr "ไม่มีกฎการแจ้งเตือน"
+
+msgid "No alert rules configured"
+msgstr "ไม่ได้กำหนดกฎการแจ้งเตือน"
+
+msgid "No backups found"
+msgstr "ไม่พบการสำรองข้อมูล"
+
+msgid "No cached results"
+msgstr "ไม่มีผลลัพธ์ที่แคช"
+
+msgid "No checkpoints"
+msgstr "ไม่มีจุดตรวจสอบ"
+
+msgid "No config file to backup"
+msgstr "ไม่มีไฟล์การตั้งค่าที่จะสำรอง"
+
+msgid "No peers connected"
+msgstr "ไม่มีเพียร์ที่เชื่อมต่อ"
+
+msgid "No profiles available"
+msgstr "ไม่มีโปรไฟล์ที่พร้อมใช้งาน"
+
+msgid "No templates available"
+msgstr "ไม่มีเทมเพลตที่พร้อมใช้งาน"
+
+msgid "No torrent active"
+msgstr "ไม่มีทอร์เรนต์ที่ใช้งาน"
+
+msgid "Nodes: {count}"
+msgstr "โหนด：{count}"
+
+msgid "Not available"
+msgstr "ไม่พร้อมใช้งาน"
+
+msgid "Not configured"
+msgstr "ไม่ได้กำหนดค่า"
+
+msgid "Not supported"
+msgstr "ไม่รองรับ"
+
+msgid "OK"
+msgstr "ตกลง"
+
+msgid "Operation not supported"
+msgstr "ไม่รองรับการดำเนินการ"
+
+msgid "PEX: {status}"
+msgstr "PEX：{status}"
+
+msgid "Pause"
+msgstr "หยุดชั่วคราว"
+
+msgid "Peers"
+msgstr "เพียร์"
+
+msgid "Performance"
+msgstr "ประสิทธิภาพ"
+
+msgid "Pieces"
+msgstr "ชิ้นส่วน"
+
+msgid "Port"
+msgstr "พอร์ต"
+
+msgid "Port: {port}"
+msgstr "พอร์ต：{port}"
+
+msgid "Priority"
+msgstr "ลำดับความสำคัญ"
+
+msgid "Private"
+msgstr "ส่วนตัว"
+
+msgid "Profiles"
+msgstr "โปรไฟล์"
+
+msgid "Progress"
+msgstr "ความคืบหน้า"
+
+msgid "Property"
+msgstr "คุณสมบัติ"
+
+msgid "Proxy Config"
+msgstr "การตั้งค่าพร็อกซี"
+
+msgid "PyYAML is required for YAML output"
+msgstr "ต้องใช้ PyYAML สำหรับผลลัพธ์ YAML"
+
+msgid "Quick Add"
+msgstr "เพิ่มด่วน"
+
+msgid "Quit"
+msgstr "ออก"
+
+msgid "Rate limits disabled"
+msgstr "ข้อจำกัดอัตราถูกปิดใช้งาน"
+
+msgid "Rate limits set to 1024 KiB/s"
+msgstr "ข้อจำกัดอัตราถูกตั้งเป็น 1024 KiB/s"
+
+msgid "Rehash: {status}"
+msgstr "แฮชใหม่：{status}"
+
+msgid "Resume"
+msgstr "ดำเนินการต่อ"
+
+msgid "Rule"
+msgstr "กฎ"
+
+msgid "Rule not found: {name}"
+msgstr "ไม่พบกฎ：{name}"
+
+msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
+msgstr "กฎ：{rules}，IPv4：{ipv4}，IPv6：{ipv6}，บล็อก：{blocks}"
+
+msgid "Running"
+msgstr "กำลังทำงาน"
+
+msgid "SSL Config"
+msgstr "การตั้งค่า SSL"
+
+msgid "Scrape Results"
+msgstr "ผลการสแครป"
+
+msgid "Scrape: {status}"
+msgstr "การสแครป：{status}"
+
+msgid "Section not found: {section}"
+msgstr "ไม่พบส่วน：{section}"
+
+msgid "Security Scan"
+msgstr "สแกนความปลอดภัย"
+
+msgid "Seeders"
+msgstr "ผู้แชร์"
+
+msgid "Seeders (Scrape)"
+msgstr "ผู้แชร์（การสแครป）"
+
+msgid "Select files to download"
+msgstr "เลือกไฟล์ที่จะดาวน์โหลด"
+
+msgid "Selected"
+msgstr "เลือกแล้ว"
+
+msgid "Session"
+msgstr "เซสชัน"
+
+msgid "Set value in global config file"
+msgstr "ตั้งค่าในไฟล์การตั้งค่าทั่วไป"
+
+msgid "Set value in project local ccbt.toml"
+msgstr "ตั้งค่าใน ccbt.toml ของโปรเจ็กต์ท้องถิ่น"
+
+msgid "Severity"
+msgstr "ความรุนแรง"
+
+msgid "Show specific key path (e.g. network.listen_port)"
+msgstr "แสดงเส้นทางคีย์เฉพาะ（เช่น network.listen_port）"
+
+msgid "Show specific section key path (e.g. network)"
+msgstr "แสดงเส้นทางคีย์ส่วนเฉพาะ（เช่น network）"
+
+msgid "Size"
+msgstr "ขนาด"
+
+msgid "Skip confirmation prompt"
+msgstr "ข้ามข้อความยืนยัน"
+
+msgid "Skip daemon restart even if needed"
+msgstr "ข้ามการรีสตาร์ทดีมอนแม้ว่าจะจำเป็น"
+
+msgid "Snapshot failed: {error}"
+msgstr "สแนปช็อตล้มเหลว：{error}"
+
+msgid "Snapshot saved to {path}"
+msgstr "สแนปช็อตบันทึกที่ {path}"
+
+msgid "Status"
+msgstr "สถานะ"
+
+msgid "Status: "
+msgstr "สถานะ："
+
+msgid "Supported"
+msgstr "รองรับ"
+
+msgid "System Capabilities"
+msgstr "ความสามารถของระบบ"
+
+msgid "System Capabilities Summary"
+msgstr "สรุปความสามารถของระบบ"
+
+msgid "System Resources"
+msgstr "ทรัพยากรระบบ"
+
+msgid "Templates"
+msgstr "เทมเพลต"
+
+msgid "Timestamp"
+msgstr "เวลาประทับ"
+
+msgid "Torrent Config"
+msgstr "การตั้งค่าทอร์เรนต์"
+
+msgid "Torrent Status"
+msgstr "สถานะทอร์เรนต์"
+
+msgid "Torrent file not found"
+msgstr "ไม่พบไฟล์ทอร์เรนต์"
+
+msgid "Torrent not found"
+msgstr "ไม่พบทอร์เรนต์"
+
+msgid "Torrents"
+msgstr "ทอร์เรนต์"
+
+msgid "Torrents: {count}"
+msgstr "ทอร์เรนต์：{count}"
+
+msgid "Tracker Scrape"
+msgstr "การสแครปตัวติดตาม"
+
+msgid "Type"
+msgstr "ประเภท"
+
+msgid "Unknown"
+msgstr "ไม่ทราบ"
+
+msgid "Unknown subcommand"
+msgstr "คำสั่งย่อยที่ไม่รู้จัก"
+
+msgid "Unknown subcommand: {sub}"
+msgstr "คำสั่งย่อยที่ไม่รู้จัก：{sub}"
+
+msgid "Upload"
+msgstr "อัปโหลด"
+
+msgid "Upload Speed"
+msgstr "ความเร็วในการอัปโหลด"
+
+msgid "Uptime: {uptime:.1f}s"
+msgstr "เวลาทำงาน：{uptime:.1f} วินาที"
+
+msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr "ใช้：alerts list|list-active|add|remove|clear|load|save|test ..."
+
+msgid "Usage: backup <info_hash> <dest>"
+msgstr "ใช้：backup <แฮชข้อมูล> <ปลายทาง>"
+
+msgid "Usage: checkpoint list"
+msgstr "ใช้：checkpoint list"
+
+msgid "Usage: config [show|get|set|reload] ..."
+msgstr "ใช้：config [show|get|set|reload] ..."
+
+msgid "Usage: config get <key.path>"
+msgstr "ใช้：config get <คีย์.เส้นทาง>"
+
+msgid "Usage: config set <key.path> <value>"
+msgstr "ใช้：config set <คีย์.เส้นทาง> <ค่า>"
+
+msgid "Usage: config_backup list|create [desc]|restore <file>"
+msgstr "ใช้：config_backup list|create [คำอธิบาย]|restore <ไฟล์>"
+
+msgid "Usage: config_diff <file1> <file2>"
+msgstr "ใช้：config_diff <ไฟล์1> <ไฟล์2>"
+
+msgid "Usage: config_export <toml|json|yaml> <output>"
+msgstr "ใช้：config_export <toml|json|yaml> <ผลลัพธ์>"
+
+msgid "Usage: config_import <toml|json|yaml> <input>"
+msgstr "ใช้：config_import <toml|json|yaml> <อินพุต>"
+
+msgid "Usage: export <path>"
+msgstr "ใช้：export <เส้นทาง>"
+
+msgid "Usage: import <path>"
+msgstr "ใช้：import <เส้นทาง>"
+
+msgid "Usage: limits [show|set] <info_hash> [down up]"
+msgstr "ใช้：limits [show|set] <แฮชข้อมูล> [ดาวน์ อัพ]"
+
+msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
+msgstr "ใช้：limits set <แฮชข้อมูล> <ดาวน์_kib> <อัพ_kib>"
+
+msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgstr "ใช้：metrics show [system|performance|all] | metrics export [json|prometheus] [ผลลัพธ์]"
+
+msgid "Usage: profile list | profile apply <name>"
+msgstr "ใช้：profile list | profile apply <ชื่อ>"
+
+msgid "Usage: restore <backup_file>"
+msgstr "ใช้：restore <ไฟล์สำรอง>"
+
+msgid "Usage: template list | template apply <name> [merge]"
+msgstr "ใช้：template list | template apply <ชื่อ> [merge]"
+
+msgid "Use --confirm to proceed with reset"
+msgstr "ใช้ --confirm เพื่อดำเนินการรีเซ็ต"
+
+msgid "VALID"
+msgstr "ถูกต้อง"
+
+msgid "Value"
+msgstr "Value"
+
+msgid "Welcome"
+msgstr "ยินดีต้อนรับ"
+
+msgid "Xet"
+msgstr "Xet"
+
+msgid "Yes"
+msgstr "ใช่"
+
+msgid "Yes (BEP 27)"
+msgstr "ใช่（BEP 27）"
+
+msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
+msgstr "[cyan]กำลังเพิ่มลิงก์แม่เหล็กและดึงข้อมูลเมตา...[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
+msgstr "[cyan]กำลังดาวน์โหลด：{progress:.1f}%（{peers} เพียร์）[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
+msgstr "[cyan]กำลังดาวน์โหลด：{progress:.1f}%（{rate:.2f} MB/s，{peers} เพียร์）[/cyan]"
+
+msgid "[cyan]Initializing session components...[/cyan]"
+msgstr "[cyan]กำลังเริ่มต้นส่วนประกอบเซสชัน...[/cyan]"
+
+msgid "[cyan]Troubleshooting:[/cyan]"
+msgstr "[cyan]การแก้ปัญหา：[/cyan]"
+
+msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
+msgstr "[cyan]กำลังรอให้ส่วนประกอบเซสชันพร้อม（สูงสุด 60 วินาที）...[/cyan]"
+
+msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
+msgstr "[dim]พิจารณาใช้คำสั่งดีมอนหรือหยุดดีมอนก่อน：'btbt daemon exit'[/dim]"
+
+msgid "[green]All files selected[/green]"
+msgstr "[green]เลือกไฟล์ทั้งหมดแล้ว[/green]"
+
+msgid "[green]Applied auto-tuned configuration[/green]"
+msgstr "[green]ใช้การตั้งค่าที่ปรับแต่งอัตโนมัติแล้ว[/green]"
+
+msgid "[green]Applied profile {name}[/green]"
+msgstr "[green]ใช้โปรไฟล์ {name} แล้ว[/green]"
+
+msgid "[green]Applied template {name}[/green]"
+msgstr "[green]ใช้เทมเพลต {name} แล้ว[/green]"
+
+msgid "[green]Backup created: {path}[/green]"
+msgstr "[green]สร้างการสำรองข้อมูลแล้ว：{path}[/green]"
+
+msgid "[green]Cleaned up {count} old checkpoints[/green]"
+msgstr "[green]ล้างจุดตรวจสอบเก่า {count} จุดแล้ว[/green]"
+
+msgid "[green]Cleared active alerts[/green]"
+msgstr "[green]ล้างการแจ้งเตือนที่ใช้งานแล้ว[/green]"
+
+msgid "[green]Configuration reloaded[/green]"
+msgstr "[green]โหลดการตั้งค่าใหม่แล้ว[/green]"
+
+msgid "[green]Configuration restored[/green]"
+msgstr "[green]กู้คืนการตั้งค่าแล้ว[/green]"
+
+msgid "[green]Connected to {count} peer(s)[/green]"
+msgstr "[green]เชื่อมต่อกับ {count} เพียร์แล้ว[/green]"
+
+msgid "[green]Daemon status: {status}[/green]"
+msgstr "[green]สถานะดีมอน：{status}[/green]"
+
+msgid "[green]Download completed, stopping session...[/green]"
+msgstr "[green]ดาวน์โหลดเสร็จสิ้น กำลังหยุดเซสชัน...[/green]"
+
+msgid "[green]Download completed: {name}[/green]"
+msgstr "[green]ดาวน์โหลดเสร็จสิ้น：{name}[/green]"
+
+msgid "[green]Exported checkpoint to {path}[/green]"
+msgstr "[green]ส่งออกจุดตรวจสอบไปยัง {path} แล้ว[/green]"
+
+msgid "[green]Exported configuration to {out}[/green]"
+msgstr "[green]ส่งออกการตั้งค่าไปยัง {out} แล้ว[/green]"
+
+msgid "[green]Imported configuration[/green]"
+msgstr "[green]นำเข้าการตั้งค่าแล้ว[/green]"
+
+msgid "[green]Loaded {count} rules[/green]"
+msgstr "[green]โหลดกฎ {count} ข้อแล้ว[/green]"
+
+msgid "[green]Magnet added successfully: {hash}...[/green]"
+msgstr "[green]เพิ่มลิงก์แม่เหล็กสำเร็จ：{hash}...[/green]"
+
+msgid "[green]Magnet added to daemon: {hash}[/green]"
+msgstr "[green]เพิ่มลิงก์แม่เหล็กไปยังดีมอน：{hash}[/green]"
+
+msgid "[green]Metadata fetched successfully![/green]"
+msgstr "[green]ดึงข้อมูลเมตาสำเร็จ！[/green]"
+
+msgid "[green]Migrated checkpoint to {path}[/green]"
+msgstr "[green]ย้ายจุดตรวจสอบไปยัง {path} แล้ว[/green]"
+
+msgid "[green]Monitoring started[/green]"
+msgstr "[green]เริ่มการตรวจสอบแล้ว[/green]"
+
+msgid "[green]Resuming download from checkpoint...[/green]"
+msgstr "[green]กำลังดำเนินการดาวน์โหลดต่อจากจุดตรวจสอบ...[/green]"
+
+msgid "[green]Rule added[/green]"
+msgstr "[green]เพิ่มกฎแล้ว[/green]"
+
+msgid "[green]Rule evaluated[/green]"
+msgstr "[green]ประเมินกฎแล้ว[/green]"
+
+msgid "[green]Rule removed[/green]"
+msgstr "[green]ลบกฎแล้ว[/green]"
+
+msgid "[green]Saved rules[/green]"
+msgstr "[green]บันทึกกฎแล้ว[/green]"
+
+msgid "[green]Selected file {idx}[/green]"
+msgstr "[green]เลือกไฟล์ {idx} แล้ว[/green]"
+
+msgid "[green]Selected {count} file(s) for download[/green]"
+msgstr "[green]เลือกไฟล์ {count} ไฟล์สำหรับดาวน์โหลดแล้ว[/green]"
+
+msgid "[green]Set priority for file {idx} to {priority}[/green]"
+msgstr "[green]ตั้งค่าลำดับความสำคัญของไฟล์ {idx} เป็น {priority} แล้ว[/green]"
+
+msgid "[green]Starting web interface on http://{host}:{port}[/green]"
+msgstr "[green]กำลังเริ่มอินเทอร์เฟซเว็บที่ http://{host}:{port}[/green]"
+
+msgid "[green]Torrent added to daemon: {hash}[/green]"
+msgstr "[green]เพิ่มทอร์เรนต์ไปยังดีมอน：{hash}[/green]"
+
+msgid "[green]Updated runtime configuration[/green]"
+msgstr "[green]อัปเดตการตั้งค่าเวลารันแล้ว[/green]"
+
+msgid "[green]Wrote metrics to {out}[/green]"
+msgstr "[green]เขียนเมตริกไปยัง {out} แล้ว[/green]"
+
+msgid "[red]Backup failed: {msgs}[/red]"
+msgstr "[red]การสำรองข้อมูลล้มเหลว：{msgs}[/red]"
+
+msgid "[red]Error: Could not parse magnet link[/red]"
+msgstr "[red]ข้อผิดพลาด：ไม่สามารถแยกวิเคราะห์ลิงก์แม่เหล็กได้[/red]"
+
+msgid "[red]Error: {error}[/red]"
+msgstr "[red]ข้อผิดพลาด：{error}[/red]"
+
+msgid "[red]Failed to add magnet link: {error}[/red]"
+msgstr "[red]เพิ่มลิงก์แม่เหล็กล้มเหลว：{error}[/red]"
+
+msgid "[red]Failed to set config: {error}[/red]"
+msgstr "[red]ตั้งค่าการตั้งค่าล้มเหลว：{error}[/red]"
+
+msgid "[red]File not found: {error}[/red]"
+msgstr "[red]ไม่พบไฟล์：{error}[/red]"
+
+msgid "[red]Invalid arguments[/red]"
+msgstr "[red]อาร์กิวเมนต์ไม่ถูกต้อง[/red]"
+
+msgid "[red]Invalid file index: {idx}[/red]"
+msgstr "[red]ดัชนีไฟล์ไม่ถูกต้อง：{idx}[/red]"
+
+msgid "[red]Invalid file index[/red]"
+msgstr "[red]ดัชนีไฟล์ไม่ถูกต้อง[/red]"
+
+msgid "[red]Invalid info hash format: {hash}[/red]"
+msgstr "[red]รูปแบบแฮชข้อมูลไม่ถูกต้อง：{hash}[/red]"
+
+msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]ลำดับความสำคัญไม่ถูกต้อง. ใช้：do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]ลำดับความสำคัญไม่ถูกต้อง：{priority}. ใช้：do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid torrent file: {error}[/red]"
+msgstr "[red]ไฟล์ทอร์เรนต์ไม่ถูกต้อง：{error}[/red]"
+
+msgid "[red]Key not found: {key}[/red]"
+msgstr "[red]ไม่พบคีย์：{key}[/red]"
+
+msgid "[red]No checkpoint found for {hash}[/red]"
+msgstr "[red]ไม่พบจุดตรวจสอบสำหรับ {hash}[/red]"
+
+msgid "[red]PyYAML not installed[/red]"
+msgstr "[red]ไม่ได้ติดตั้ง PyYAML[/red]"
+
+msgid "[red]Reload failed: {error}[/red]"
+msgstr "[red]โหลดใหม่ล้มเหลว：{error}[/red]"
+
+msgid "[red]Restore failed: {msgs}[/red]"
+msgstr "[red]กู้คืนล้มเหลว：{msgs}[/red]"
+
+msgid "[red]{error}[/red]"
+msgstr "[red]{error}[/red]"
+
+msgid "[yellow]All files deselected[/yellow]"
+msgstr "[yellow]ยกเลิกการเลือกไฟล์ทั้งหมดแล้ว[/yellow]"
+
+msgid "[yellow]Debug mode not yet implemented[/yellow]"
+msgstr "[yellow]โหมดดีบักยังไม่ได้ใช้งาน[/yellow]"
+
+msgid "[yellow]Deselected file {idx}[/yellow]"
+msgstr "[yellow]ยกเลิกการเลือกไฟล์ {idx} แล้ว[/yellow]"
+
+msgid "[yellow]Download interrupted by user[/yellow]"
+msgstr "[yellow]การดาวน์โหลดถูกขัดจังหวะโดยผู้ใช้[/yellow]"
+
+msgid "[yellow]Fetching metadata from peers...[/yellow]"
+msgstr "[yellow]กำลังดึงข้อมูลเมตาจากเพียร์...[/yellow]"
+
+msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
+msgstr "[yellow]สเปกลำดับความสำคัญไม่ถูกต้อง '{spec}'：{error}[/yellow]"
+
+msgid "[yellow]Keeping session alive[/yellow]"
+msgstr "[yellow]รักษาเซสชันให้ทำงานอยู่[/yellow]"
+
+msgid "[yellow]No checkpoints found[/yellow]"
+msgstr "[yellow]ไม่พบจุดตรวจสอบ[/yellow]"
+
+msgid "[yellow]Torrent session ended[/yellow]"
+msgstr "[yellow]เซสชันทอร์เรนต์สิ้นสุดแล้ว[/yellow]"
+
+msgid "[yellow]Unknown command: {cmd}[/yellow]"
+msgstr "[yellow]คำสั่งที่ไม่รู้จัก：{cmd}[/yellow]"
+
+msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
+msgstr "[yellow]คำเตือน：ดีมอนกำลังทำงานอยู่. การเริ่มเซสชันท้องถิ่นอาจทำให้เกิดความขัดแย้งพอร์ต.[/yellow]"
+
+msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
+msgstr "[yellow]คำเตือน：ข้อผิดพลาดในการหยุดเซสชัน：{error}[/yellow]"
+
+msgid "[yellow]{warning}[/yellow]"
+msgstr "[yellow]{warning}[/yellow]"
+
+msgid "ccBitTorrent Interactive CLI"
+msgstr "ccBitTorrent CLI แบบโต้ตอบ"
+
+msgid "ccBitTorrent Status"
+msgstr "สถานะ ccBitTorrent"
+
+msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+
+msgid "uTP Config"
+msgstr "การตั้งค่า uTP"
+
+msgid "{count} features"
+msgstr "{count} คุณสมบัติ"
+
+msgid "{count} items"
+msgstr "{count} รายการ"
+
+msgid "{elapsed:.0f}s ago"
+msgstr "{elapsed:.0f} วินาทีที่แล้ว"

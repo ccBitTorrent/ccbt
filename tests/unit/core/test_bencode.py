@@ -121,6 +121,28 @@ class TestBencodeDecoder:
         with pytest.raises(BencodeDecodeError):
             decoder.decode()
 
+    def test_decode_unexpected_end_of_data(self):
+        """Test decoding empty data (lines 35-36)."""
+        # Empty data should raise "Unexpected end of data"
+        decoder = BencodeDecoder(b"")
+        with pytest.raises(BencodeDecodeError, match="Unexpected end of data"):
+            decoder.decode()
+
+    def test_decode_list_missing_terminator(self):
+        """Test decoding list without 'e' terminator (lines 128-129)."""
+        # List without 'e' terminator should raise "Missing 'e' terminator for list"
+        decoder = BencodeDecoder(b"l6:coding")  # Missing 'e'
+        with pytest.raises(BencodeDecodeError, match="Missing 'e' terminator for list"):
+            decoder.decode()
+
+    def test_decode_dict_missing_terminator(self):
+        """Test decoding dictionary without 'e' terminator (lines 149-150)."""
+        # Dictionary without 'e' terminator should raise "Missing 'e' terminator for dictionary"
+        # Use nested dict that exhausts data before 'e' terminator
+        decoder = BencodeDecoder(b"d3:keyd3:sub5:value")  # Nested dict missing 'e'
+        with pytest.raises(BencodeDecodeError, match="Missing 'e' terminator for dictionary"):
+            decoder.decode()
+
     def test_decode_complex_nested(self):
         """Test complex nested structures."""
         # Complex nested structure like torrent file

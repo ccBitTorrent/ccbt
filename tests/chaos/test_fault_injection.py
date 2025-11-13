@@ -49,34 +49,43 @@ class TestFaultInjection:
                 gc.collect()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # Prevent test from hanging
     async def test_network_failure_injection(self, temp_dir):
         """Test system behavior under network failures."""
-        session_manager = AsyncSessionManager(str(temp_dir))
+        # Mock DHT client to avoid bootstrapping delays
+        with patch("ccbt.discovery.dht.AsyncDHTClient") as mock_dht_class:
+            mock_dht = mock_dht_class.return_value
+            mock_dht.start = AsyncMock()
+            mock_dht.stop = AsyncMock()
+            
+            session_manager = AsyncSessionManager(str(temp_dir))
+            # Disable NAT discovery to prevent blocking socket operations
+            session_manager.config.nat.auto_map_ports = False
 
-        try:
-            await session_manager.start()
+            try:
+                await session_manager.start()
 
-            # Create torrent session
-            torrent_data = create_test_torrent_dict(
-                name="test_torrent",
-                file_length=1024,
-            )
+                # Create torrent session
+                torrent_data = create_test_torrent_dict(
+                    name="test_torrent",
+                    file_length=1024,
+                )
 
-            await session_manager.add_torrent(torrent_data, resume=False)
-            session = next(iter(session_manager.torrents.values()))
+                await session_manager.add_torrent(torrent_data, resume=False)
+                session = next(iter(session_manager.torrents.values()))
 
-            # Inject network failure
-            with patch("ccbt.tracker.AsyncTrackerClient.announce") as mock_announce:
-                mock_announce.side_effect = Exception("Network failure")
+                # Inject network failure
+                with patch("ccbt.tracker.AsyncTrackerClient.announce") as mock_announce:
+                    mock_announce.side_effect = Exception("Network failure")
 
-                # Start session (should handle network failure gracefully)
-                await session.start()
+                    # Start session (should handle network failure gracefully)
+                    await session.start()
 
-                # Check session is still functional
-                assert session.info.status in ["downloading", "error"]
+                    # Check session is still functional
+                    assert session.info.status in ["downloading", "error"]
 
-        finally:
-            await session_manager.stop()
+            finally:
+                await session_manager.stop()
 
     @pytest.mark.asyncio
     async def test_disk_failure_injection(self, temp_dir):
@@ -125,9 +134,11 @@ class TestFaultInjection:
             # Create multiple sessions to simulate memory pressure
             sessions = []
             for i in range(10):
+                # Create unique 20-byte info_hash (not 21 bytes)
+                info_hash = b"\x00" * 19 + bytes([i])
                 torrent_data = create_test_torrent_dict(
                     name=f"test_torrent_{i}",
-                    info_hash=b"\x00" * 20 + bytes([i]),
+                    info_hash=info_hash,
                     file_length=1024,
                 )
 
@@ -299,9 +310,11 @@ class TestFaultInjection:
             # Create multiple sessions with concurrent failures
             sessions = []
             for i in range(5):
+                # Create unique 20-byte info_hash (not 21 bytes)
+                info_hash = b"\x00" * 19 + bytes([i])
                 torrent_data = create_test_torrent_dict(
                     name=f"test_torrent_{i}",
-                    info_hash=b"\x00" * 20 + bytes([i]),
+                    info_hash=info_hash,
                     file_length=1024,
                 )
 
@@ -340,9 +353,11 @@ class TestFaultInjection:
             # Create many sessions to exhaust resources
             sessions = []
             for i in range(100):  # Large number of sessions
+                # Create unique 20-byte info_hash (not 21 bytes)
+                info_hash = b"\x00" * 19 + bytes([i % 256])  # Use modulo for values > 255
                 torrent_data = create_test_torrent_dict(
                     name=f"test_torrent_{i}",
-                    info_hash=b"\x00" * 20 + bytes([i]),
+                    info_hash=info_hash,
                     file_length=1024,
                 )
 

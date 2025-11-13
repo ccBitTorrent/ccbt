@@ -9,17 +9,14 @@ from __future__ import annotations
 # Explicit re-exports for commonly patched symbols to ensure they're accessible
 from ccbt.config.config import get_config
 from ccbt.core.magnet import build_minimal_torrent_data, parse_magnet
-from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
+from ccbt.peer import AsyncPeerConnectionManager
 from ccbt.piece.async_piece_manager import AsyncPieceManager
 
-# Import everything from the actual module
-from ccbt.session.async_main import *  # noqa: F403
-from ccbt.session.async_main import (
+# Re-export download helpers from canonical location
+from ccbt.session.download_manager import (
     AsyncDownloadManager,
     download_magnet,
     download_torrent,
-    main,
-    run_daemon,
 )
 
 # Ensure these are in the module namespace for patching
@@ -31,7 +28,5 @@ __all__ = [
     "download_magnet",
     "download_torrent",
     "get_config",
-    "main",
     "parse_magnet",
-    "run_daemon",
 ]

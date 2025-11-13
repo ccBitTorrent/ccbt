@@ -37,6 +37,7 @@ class RingBuffer:
         Args:
             size: Buffer size in bytes
             alignment: Memory alignment requirement
+
         """
         self.size = size
         self.alignment = alignment
@@ -55,6 +56,7 @@ class RingBuffer:
 
         Returns:
             Number of bytes written
+
         """
         with self.lock:
             if not data:
@@ -95,6 +97,7 @@ class RingBuffer:
 
         Returns:
             Data read from buffer
+
         """
         with self.lock:
             if self.used == 0 or size == 0:
@@ -130,6 +133,7 @@ class RingBuffer:
 
         Returns:
             List of 1-2 memoryviews into the internal buffer.
+
         """
         with self.lock:
             if self.used == 0:
@@ -153,6 +157,7 @@ class RingBuffer:
 
         Returns:
             Number of bytes actually consumed.
+
         """
         with self.lock:
             if size <= 0 or self.used == 0:
@@ -176,6 +181,7 @@ class RingBuffer:
 
         Returns:
             Data at current read position
+
         """
         with self.lock:
             if self.used == 0 or size == 0:
@@ -232,6 +238,7 @@ class MemoryPool:
             size: Size of each object
             count: Number of objects in pool
             factory: Factory function to create objects
+
         """
         self.size = size
         self.count = count
@@ -306,6 +313,7 @@ class ZeroCopyBuffer:
 
         Args:
             size: Buffer size in bytes
+
         """
         self.size = size
         self.buffer = bytearray(size)
@@ -322,6 +330,7 @@ class ZeroCopyBuffer:
 
         Returns:
             Number of bytes written
+
         """
         with self.lock:
             if not data:
@@ -350,6 +359,7 @@ class ZeroCopyBuffer:
 
         Returns:
             Memoryview of the data
+
         """
         with self.lock:
             if size == 0 or self.pos == 0:
@@ -373,6 +383,7 @@ class ZeroCopyBuffer:
 
         Returns:
             Memoryview of the data
+
         """
         with self.lock:
             if size == 0 or self.pos == 0:

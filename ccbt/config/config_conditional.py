@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from ccbt.config.config_capabilities import SystemCapabilities
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - TYPE_CHECKING block for type hints only
     from ccbt.models import Config
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ class ConditionalConfig:
 
         Args:
             capabilities: System capabilities detector (creates new if None)
+
         """
         self.capabilities = capabilities or SystemCapabilities()
 
@@ -37,6 +38,7 @@ class ConditionalConfig:
 
         Returns:
             Tuple of (modified_config, warnings)
+
         """
         warnings = []
         modified_config = copy.deepcopy(config)
@@ -59,6 +61,7 @@ class ConditionalConfig:
 
         Returns:
             List of warnings
+
         """
         warnings = []
 
@@ -90,6 +93,7 @@ class ConditionalConfig:
 
         Returns:
             List of warnings
+
         """
         warnings = []
         memory_info = self.capabilities.detect_memory()
@@ -137,6 +141,7 @@ class ConditionalConfig:
 
         Returns:
             List of warnings
+
         """
         warnings = []
 
@@ -176,6 +181,7 @@ class ConditionalConfig:
 
         Returns:
             List of warnings
+
         """
         warnings = []
         cpu_count = self.capabilities.detect_cpu_count()
@@ -231,6 +237,7 @@ class ConditionalConfig:
 
         Returns:
             List of warnings
+
         """
         warnings = []
 
@@ -252,6 +259,7 @@ class ConditionalConfig:
 
         Returns:
             List of warnings
+
         """
         warnings = []
         disk_info = self.capabilities.detect_disk_space()
@@ -283,6 +291,7 @@ class ConditionalConfig:
 
         Returns:
             Tuple of (tuned_config, warnings)
+
         """
         warnings = []
         tuned_config = copy.deepcopy(config)
@@ -310,6 +319,7 @@ class ConditionalConfig:
 
         Returns:
             List of warnings
+
         """
         warnings = []
         memory_info = self.capabilities.detect_memory()
@@ -351,6 +361,7 @@ class ConditionalConfig:
 
         Returns:
             List of warnings
+
         """
         warnings = []
         cpu_count = self.capabilities.detect_cpu_count()
@@ -381,6 +392,7 @@ class ConditionalConfig:
 
         Returns:
             List of warnings
+
         """
         warnings = []
         memory_info = self.capabilities.detect_memory()
@@ -422,6 +434,7 @@ class ConditionalConfig:
 
         Returns:
             Tuple of (is_valid, warnings)
+
         """
         warnings = []
         is_valid = True
@@ -480,6 +493,7 @@ class ConditionalConfig:
 
         Returns:
             Dictionary with recommendations
+
         """
         capabilities = self.capabilities.get_all_capabilities()
         return {

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from ccbt.utils.events import Event, EventType, emit_event
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from ccbt.models import PeerInfo
 
 
@@ -126,6 +126,7 @@ class PeerSelector:
 
         Returns:
             Peer quality prediction
+
         """
         peer_id = peer_info.peer_id.hex() if peer_info.peer_id else ""
 
@@ -179,6 +180,7 @@ class PeerSelector:
 
         Returns:
             List of (peer, score) tuples sorted by score
+
         """
         peer_scores = []
 
@@ -213,6 +215,7 @@ class PeerSelector:
         Args:
             peer_id: Peer identifier
             performance_data: Performance metrics
+
         """
         if peer_id not in self.peer_features:
             return
@@ -255,6 +258,7 @@ class PeerSelector:
 
         Returns:
             List of best peers
+
         """
         # Rank all peers
         ranked_peers = await self.rank_peers(peers)

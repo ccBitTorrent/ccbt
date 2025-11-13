@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "benchmark": "disk_io",
+    "config": "performance",
+    "timestamp": "2025-11-12T19:17:43.465240+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "11",
+      "python": "3.13.3"
+    },
+    "git": {
+      "commit_hash": "a9c4027a089fd38335193f400ae1a29bd3c3fec2",
+      "commit_hash_short": "a9c4027",
+      "branch": "master",
+      "author": "Joseph Pollack",
+      "is_dirty": true
+    }
+  },
+  "results": [
+    {
+      "pattern": "seq-write",
+      "size_bytes": 262144,
+      "ops": 50,
+      "elapsed_s": 5.404351899996982,
+      "throughput_bytes_per_s": 2425304.6882471363,
+      "p50_ms": 101.72540000348818,
+      "p95_ms": 103.11019999790005,
+      "p99_ms": 103.70869999314891
+    },
+    {
+      "pattern": "seq-read",
+      "size_bytes": 262144,
+      "ops": 50,
+      "elapsed_s": 0.3189779999956954,
+      "throughput_bytes_per_s": 41091235.132758,
+      "p50_ms": 0.4167000006418675,
+      "p95_ms": 0.5149999997229315,
+      "p99_ms": 0.5882999976165593
+    },
+    {
+      "pattern": "rand-read",
+      "size_bytes": 262144,
+      "ops": 50,
+      "elapsed_s": 0.3120643000002019,
+      "throughput_bytes_per_s": 42001600.31119074,
+      "p50_ms": 0.3789999973378144,
+      "p95_ms": 0.5143000016687438,
+      "p99_ms": 0.5913999993936159
+    },
+    {
+      "pattern": "seq-write",
+      "size_bytes": 1048576,
+      "ops": 50,
+      "elapsed_s": 0.3723614999980782,
+      "throughput_bytes_per_s": 140800807.81786138,
+      "p50_ms": 1.2639999986276962,
+      "p95_ms": 2.365399996051565,
+      "p99_ms": 2.8470999968703836
+    },
+    {
+      "pattern": "seq-read",
+      "size_bytes": 1048576,
+      "ops": 50,
+      "elapsed_s": 0.39632300000084797,
+      "throughput_bytes_per_s": 132288057.97263299,
+      "p50_ms": 1.5908999994280748,
+      "p95_ms": 2.3523999989265576,
+      "p99_ms": 2.768300000752788
+    },
+    {
+      "pattern": "rand-read",
+      "size_bytes": 1048576,
+      "ops": 50,
+      "elapsed_s": 0.3781592999948771,
+      "throughput_bytes_per_s": 138642101.35969222,
+      "p50_ms": 1.3149000005796552,
+      "p95_ms": 1.8049999998765998,
+      "p99_ms": 2.2262999991653487
+    }
+  ]
+}

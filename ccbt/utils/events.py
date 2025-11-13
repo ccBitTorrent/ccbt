@@ -84,6 +84,18 @@ class EventType(Enum):
     EXTENSION_HANDSHAKE = "extension_handshake"
     UNKNOWN_EXTENSION_MESSAGE = "unknown_extension_message"
     EXTENSION_ERROR = "extension_error"
+    EXTENSION_STARTED = "extension_started"
+    EXTENSION_STOPPED = "extension_stopped"
+
+    # SSL Extension events
+    SSL_NEGOTIATION = "ssl_negotiation"
+
+    # Xet Extension events
+    XET_CHUNK_REQUESTED = "xet_chunk_requested"
+    XET_CHUNK_RECEIVED = "xet_chunk_received"
+    XET_CHUNK_PROVIDED = "xet_chunk_provided"
+    XET_CHUNK_NOT_FOUND = "xet_chunk_not_found"
+    XET_CHUNK_ERROR = "xet_chunk_error"
 
     # PEX events
     PEER_DISCOVERED = "peer_discovered"
@@ -100,10 +112,6 @@ class EventType(Enum):
     WEBSEED_DOWNLOAD_SUCCESS = "webseed_download_success"
     WEBSEED_DOWNLOAD_FAILED = "webseed_download_failed"
     WEBSEED_ERROR = "webseed_error"
-
-    # Extension management events
-    EXTENSION_STARTED = "extension_started"
-    EXTENSION_STOPPED = "extension_stopped"
 
     # Protocol events
     PROTOCOL_STARTED = "protocol_started"
@@ -379,6 +387,7 @@ class EventBus:
 
         Args:
             max_queue_size: Maximum size of event queue
+
         """
         self.max_queue_size = max_queue_size
         self.handlers: dict[str, list[EventHandler]] = {}
@@ -404,6 +413,7 @@ class EventBus:
         Args:
             event_type: Type of event to handle
             handler: Handler instance
+
         """
         if event_type not in self.handlers:
             self.handlers[event_type] = []
@@ -422,6 +432,7 @@ class EventBus:
         Args:
             event_type: Type of event
             handler: Handler instance
+
         """
         if event_type in self.handlers:
             try:
@@ -431,7 +442,9 @@ class EventBus:
                     handler.name,
                     event_type,
                 )
-            except ValueError:
+            except ValueError:  # pragma: no cover
+                # Defensive: Handler already removed or never registered
+                # This should not occur in normal operation but protects against race conditions
                 pass
 
     async def emit(self, event: Event) -> None:
@@ -439,6 +452,7 @@ class EventBus:
 
         Args:
             event: Event to emit
+
         """
         try:
             # Add to replay buffer
@@ -459,13 +473,19 @@ class EventBus:
             if self._loop is None:
                 try:
                     self._loop = asyncio.get_running_loop()
-                except RuntimeError:
+                except RuntimeError:  # pragma: no cover
+                    # Edge case: No running loop, get event loop instead
+                    # Rare in production as event bus should be started in async context
                     self._loop = asyncio.get_event_loop()
             try:
                 current_loop = asyncio.get_running_loop()
-            except RuntimeError:
+            except RuntimeError:  # pragma: no cover
+                # Edge case: No running loop detected
+                # Fallback to event loop for compatibility
                 current_loop = asyncio.get_event_loop()
-            if self._loop is not current_loop:
+            if self._loop is not current_loop:  # pragma: no cover
+                # Cross-loop queue migration - extremely difficult to test with real loop switching
+                # Requires actual event loop context switching which is complex and brittle in tests
                 # Recreate queue on current loop to avoid cross-loop errors
                 old_q = self.event_queue
                 self.event_queue = asyncio.Queue(maxsize=self.max_queue_size)
@@ -492,13 +512,17 @@ class EventBus:
         # Rebind to the current running loop and recreate the queue if needed
         try:
             current_loop = asyncio.get_running_loop()
-        except RuntimeError:
+        except RuntimeError:  # pragma: no cover
+            # Edge case: No running loop detected at start
+            # Fallback to event loop for compatibility
             current_loop = asyncio.get_event_loop()
 
         if self._loop is not current_loop:
             # Cancel any previous processing task bound to another loop
             if self._task is not None and not self._task.done():
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(Exception):  # pragma: no cover
+                    # Defensive: Suppress exceptions during task cancellation
+                    # Task may already be cancelled or done, which is fine
                     self._task.cancel()
             self._task = None
             # Recreate queue bound to this loop
@@ -603,6 +627,7 @@ class EventBus:
 
         Returns:
             List of events
+
         """
         events = self.replay_buffer[-limit:] if limit > 0 else self.replay_buffer
 

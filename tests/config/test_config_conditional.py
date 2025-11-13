@@ -394,3 +394,275 @@ class TestConditionalConfigIntegration:
             # assert config.limits.hash_workers == 2
             # assert config.limits.disk_workers == 1
             assert len(warnings) == 2
+
+    def test_io_optimizations_mmap_not_supported(self):
+        """Test I/O optimizations with mmap not supported (lines 77-81)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.disk.use_mmap = True  # Set to True initially
+        
+        # Test mmap not supported path
+        with patch.object(capabilities, 'detect_io_uring', return_value=True):
+            with patch.object(capabilities, 'detect_mmap', return_value=False):
+                warnings = conditional._apply_io_optimizations(config)
+                assert config.disk.use_mmap is False
+                assert len(warnings) == 1
+                assert "Memory mapping not supported" in warnings[0]
+
+    def test_io_optimizations_io_uring_not_supported(self):
+        """Test I/O optimizations with io_uring not supported (lines 71-72)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.disk.enable_io_uring = True  # Set to True initially
+        
+        # Test io_uring not supported path
+        with patch.object(capabilities, 'detect_io_uring', return_value=False):
+            with patch.object(capabilities, 'detect_mmap', return_value=True):
+                warnings = conditional._apply_io_optimizations(config)
+                assert config.disk.enable_io_uring is False
+                assert len(warnings) == 1
+                assert "io_uring not supported" in warnings[0]
+
+    def test_memory_optimizations_medium_read_ahead(self):
+        """Test memory optimizations with medium memory read-ahead adjustment (lines 107-108)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.disk.read_ahead_kib = 1024  # Set above medium threshold
+        
+        # Test medium memory system (8-16GB)
+        with patch.object(capabilities, 'detect_memory', return_value={"total_gb": 12.0}):
+            warnings = conditional._apply_memory_optimizations(config)
+            assert config.disk.read_ahead_kib == 512
+            assert len(warnings) == 0
+
+    def test_memory_optimizations_low_read_ahead(self):
+        """Test memory optimizations with low memory read-ahead reduction (lines 111-112)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.disk.read_ahead_kib = 1024  # Set above low threshold
+        config.disk.cache_size_mb = 128  # Set to low value to avoid cache warning
+        
+        # Test low memory system (<8GB)
+        with patch.object(capabilities, 'detect_memory', return_value={"total_gb": 4.0}):
+            warnings = conditional._apply_memory_optimizations(config)
+            assert config.disk.read_ahead_kib == 256
+            assert len(warnings) >= 1
+            assert any("Reduced read-ahead buffer" in w for w in warnings)
+
+    def test_memory_optimizations_medium_cache(self):
+        """Test memory optimizations with medium memory cache adjustment (lines 123-124)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.disk.cache_size_mb = 1024  # Set above medium threshold
+        
+        # Test medium memory system (8-16GB)
+        with patch.object(capabilities, 'detect_memory', return_value={"total_gb": 12.0}):
+            warnings = conditional._apply_memory_optimizations(config)
+            assert config.disk.cache_size_mb == 512
+            assert len(warnings) == 0
+
+    def test_cpu_optimizations_avx_detection(self):
+        """Test CPU optimizations with AVX detection (line 216)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        
+        # Test AVX detection (but not AVX2)
+        with patch.object(capabilities, 'detect_cpu_features', return_value={
+            "avx": True, "avx2": False, "sse4": False
+        }):
+            warnings = conditional._apply_cpu_optimizations(config)
+            # Should log AVX support
+            assert len(warnings) == 0
+
+    def test_cpu_optimizations_sse4_detection(self):
+        """Test CPU optimizations with SSE4 detection (line 220)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        
+        # Test SSE4 detection (but not AVX or AVX2)
+        with patch.object(capabilities, 'detect_cpu_features', return_value={
+            "avx": False, "avx2": False, "sse4": True
+        }):
+            warnings = conditional._apply_cpu_optimizations(config)
+            # Should log SSE4 support
+            assert len(warnings) == 0
+
+    def test_disk_optimizations_low_space(self):
+        """Test disk optimizations with low disk space (lines 269-270)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.disk.cache_size_mb = 256  # Set above low threshold
+        
+        # Test low disk space (<5GB)
+        with patch.object(capabilities, 'detect_disk_space', return_value={"free_gb": 2.0}):
+            warnings = conditional._apply_disk_optimizations(config)
+            assert config.disk.cache_size_mb == 128
+            assert len(warnings) == 1
+            assert "limited disk space" in warnings[0]
+
+    def test_timeout_optimizations_medium_performance(self):
+        """Test timeout optimizations with medium-performance system (lines 367-368)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.network.peer_timeout = 120  # Set above medium threshold
+        
+        # Test medium-performance system (4-8 cores)
+        with patch.object(capabilities, 'detect_cpu_count', return_value=6):
+            warnings = conditional._auto_tune_timeouts(config)
+            assert config.network.peer_timeout == 60
+            assert len(warnings) == 0
+
+    def test_buffer_optimizations_medium_memory(self):
+        """Test buffer optimizations with medium memory system (lines 401-402, 404-405)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.network.socket_sndbuf_kib = 1024  # Set above medium threshold
+        config.network.socket_rcvbuf_kib = 1024  # Set above medium threshold
+        
+        # Test medium memory system (8-16GB)
+        with patch.object(capabilities, 'detect_memory', return_value={"total_gb": 12.0}):
+            warnings = conditional._auto_tune_buffers(config)
+            assert config.network.socket_sndbuf_kib == 512
+            assert config.network.socket_rcvbuf_kib == 512
+            assert len(warnings) == 0
+
+    def test_buffer_optimizations_low_memory(self):
+        """Test buffer optimizations with low memory system (lines 409-410, 412-413)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.network.socket_sndbuf_kib = 512  # Set above low threshold
+        config.network.socket_rcvbuf_kib = 512  # Set above low threshold
+        
+        # Test low memory system (<8GB)
+        with patch.object(capabilities, 'detect_memory', return_value={"total_gb": 4.0}):
+            warnings = conditional._auto_tune_buffers(config)
+            assert config.network.socket_sndbuf_kib == 256
+            assert config.network.socket_rcvbuf_kib == 256
+            assert len(warnings) == 2
+            assert any("send buffer" in w for w in warnings)
+            assert any("receive buffer" in w for w in warnings)
+
+    def test_validate_mmap_not_supported(self):
+        """Test validation with mmap enabled but not supported (lines 435-438)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.disk.use_mmap = True  # Enabled but not supported
+        
+        with patch.object(capabilities, 'detect_mmap', return_value=False):
+            is_valid, warnings = conditional.validate_against_system(config)
+            assert is_valid is False
+            assert len(warnings) >= 1
+            assert any("Memory mapping" in w for w in warnings)
+
+    def test_validate_cache_too_large(self):
+        """Test validation with cache size too large (line 460)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.disk.cache_size_mb = 2048  # Large cache
+        
+        # Test with low memory (8GB, so 2048MB > 10% of 8192MB)
+        with patch.object(capabilities, 'detect_memory', return_value={"total_gb": 8.0}):
+            is_valid, warnings = conditional.validate_against_system(config)
+            # May or may not be valid depending on other checks, but should have warning
+            assert any("Cache size" in w for w in warnings)
+
+    def test_auto_tune_peer_limits_medium(self):
+        """Test auto-tune peer limits for medium system (line 516)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        
+        # Test medium system (8GB, 4 cores) - this calls _auto_tune_peer_limits which uses line 516
+        with patch.object(capabilities, 'detect_memory', return_value={"total_gb": 8.0}):
+            with patch.object(capabilities, 'detect_cpu_count', return_value=4):
+                warnings = conditional._auto_tune_peer_limits(config)
+                # Should set max_global_peers based on medium system calculation
+                # max_global_peers should be around 120 (min(200, 8.0 * 15))
+                assert config.network.max_global_peers <= 200
+
+    def test_recommend_cache_size_medium(self):
+        """Test cache size recommendation for medium system (line 537)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        # Test medium memory system (8-16GB)
+        with patch.object(capabilities, 'detect_memory', return_value={"total_gb": 12.0}):
+            cache_size = conditional._recommend_cache_size()
+            assert cache_size == 512
+
+    def test_recommend_read_ahead_medium(self):
+        """Test read-ahead buffer recommendation for medium system (line 548)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        # Test medium memory system (8-16GB)
+        with patch.object(capabilities, 'detect_memory', return_value={"total_gb": 12.0}):
+            read_ahead = conditional._recommend_read_ahead()
+            assert read_ahead == 512
+
+    def test_security_optimizations_not_supported(self):
+        """Test security optimizations with encryption not supported (lines 242-243)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.security.enable_encryption = True  # Enabled but not supported
+        
+        with patch.object(capabilities, 'detect_encryption', return_value=False):
+            warnings = conditional._apply_security_optimizations(config)
+            assert config.security.enable_encryption is False
+            assert len(warnings) == 1
+            assert "Encryption not supported" in warnings[0]
+
+    def test_io_optimizations_mmap_enable(self):
+        """Test I/O optimizations enabling mmap when available (lines 77-78)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        config = Config()
+        config.disk.use_mmap = False  # Start disabled
+        
+        # Test mmap available and should be enabled
+        with patch.object(capabilities, 'detect_io_uring', return_value=True):
+            with patch.object(capabilities, 'detect_mmap', return_value=True):
+                warnings = conditional._apply_io_optimizations(config)
+                assert config.disk.use_mmap is True
+                assert len(warnings) == 0
+
+    def test_recommend_max_connections_medium(self):
+        """Test max connections recommendation for medium system (line 516)."""
+        capabilities = SystemCapabilities()
+        conditional = ConditionalConfig(capabilities)
+        
+        # Test medium system (8GB, 4 cores)
+        with patch.object(capabilities, 'detect_memory', return_value={"total_gb": 8.0}):
+            with patch.object(capabilities, 'detect_cpu_count', return_value=4):
+                max_conn = conditional._recommend_max_connections()
+                assert max_conn == int(min(200, 8.0 * 15))  # Should be 120

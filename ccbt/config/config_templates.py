@@ -40,6 +40,12 @@ class ConfigTemplates:
                     "max_upload_slots": 8,
                     "unchoke_interval": 10,
                     "optimistic_unchoke_interval": 30,
+                    "protocol_v2": {
+                        "enable_protocol_v2": True,
+                        "prefer_protocol_v2": False,
+                        "support_hybrid": True,
+                        "v2_handshake_timeout": 30.0,
+                    },
                 },
                 "disk": {
                     "hash_workers": 8,
@@ -52,6 +58,19 @@ class ConfigTemplates:
                     "preallocate": "full",
                     "checkpoint_enabled": True,
                     "checkpoint_interval": 30,
+                    "fast_resume_enabled": True,
+                    "resume_save_interval": 30.0,
+                    "resume_verify_on_load": True,
+                    "resume_verify_pieces": 10,
+                    "resume_data_format_version": 1,
+                    "attributes": {
+                        "preserve_attributes": True,
+                        "skip_padding_files": True,
+                        "verify_file_sha1": False,
+                        "apply_symlinks": True,
+                        "apply_executable_bit": True,
+                        "apply_hidden_attr": True,
+                    },
                 },
                 "strategy": {
                     "piece_selection": "rarest_first",
@@ -60,23 +79,50 @@ class ConfigTemplates:
                     "streaming_mode": False,
                     "sequential_download": False,
                     "first_piece_priority": False,
+                    "sequential_window": 10,
+                    "sequential_priority_files": [],
+                    "sequential_fallback_threshold": 0.1,
                 },
                 "discovery": {
                     "enable_dht": True,
-                    "dht_port": 6882,
+                    "dht_port": 50001,
                     "enable_pex": True,
                     "tracker_announce_interval": 900,
+                    "tracker_scrape_interval": 3600,
+                    "tracker_auto_scrape": False,
                     "tracker_min_interval": 60,
                     "tracker_max_interval": 3600,
                     "tracker_timeout": 15,
                     "tracker_connect_timeout": 10,
                     "tracker_connection_limit": 50,
                     "tracker_connections_per_host": 2,
+                    "strict_private_mode": True,
+                    "magnet_respect_indices": True,
                     "dht_bootstrap_nodes": [
                         "router.bittorrent.com:6881",
                         "dht.transmissionbt.com:6881",
                         "router.utorrent.com:6881",
+                        "dht.libtorrent.org:25401",
+                        "dht.aelitis.com:6881",
+                        "router.silotis.us:6881",
+                        "router.bitcomet.com:6881",
                     ],
+                    # BEP 32: IPv6 Extension for DHT
+                    "dht_enable_ipv6": True,
+                    "dht_prefer_ipv6": True,
+                    "dht_ipv6_bootstrap_nodes": [],
+                    # BEP 43: Read-only DHT Nodes
+                    "dht_readonly_mode": False,
+                    # BEP 45: Multiple-Address Operation for DHT
+                    "dht_enable_multiaddress": True,
+                    "dht_max_addresses_per_node": 4,
+                    # BEP 44: Storing Arbitrary Data in the DHT
+                    "dht_enable_storage": False,
+                    "dht_storage_ttl": 3600,
+                    "dht_max_storage_size": 1000,
+                    # BEP 51: DHT Infohash Indexing
+                    "dht_enable_indexing": True,
+                    "dht_index_samples_per_key": 8,
                 },
                 "limits": {
                     "global_down_kib": 0,  # Unlimited
@@ -84,6 +130,28 @@ class ConfigTemplates:
                     "per_torrent_down_kib": 0,  # Unlimited
                     "per_torrent_up_kib": 0,  # Unlimited
                     "scheduler_slice_ms": 100,
+                },
+                "queue": {
+                    "max_active_torrents": 5,
+                    "max_active_downloading": 3,
+                    "max_active_seeding": 2,
+                    "default_priority": "normal",
+                    "bandwidth_allocation_mode": "proportional",
+                    "auto_manage_queue": True,
+                    "priority_weights": {
+                        "maximum": 5.0,
+                        "high": 2.0,
+                        "normal": 1.0,
+                        "low": 0.5,
+                    },
+                    "priority_bandwidth_kib": {
+                        "maximum": 1000,
+                        "high": 500,
+                        "normal": 250,
+                        "low": 100,
+                    },
+                    "save_queue_state": True,
+                    "queue_state_save_interval": 30.0,
                 },
                 "observability": {
                     "log_level": "INFO",
@@ -103,6 +171,38 @@ class ConfigTemplates:
                     "rate_limit_enabled": True,
                     "max_connections_per_ip": 5,
                     "max_connections_per_subnet": 20,
+                    "ip_filter": {
+                        "enable_ip_filter": False,
+                        "filter_mode": "block",
+                        "filter_files": [],
+                        "filter_urls": [],
+                        "filter_update_interval": 86400.0,
+                        "filter_cache_dir": "~/.ccbt/filters",
+                        "filter_log_blocked": True,
+                    },
+                    "ssl": {
+                        "enable_ssl_trackers": True,
+                        "enable_ssl_peers": False,
+                        "ssl_verify_certificates": True,
+                        "ssl_ca_certificates": None,
+                        "ssl_client_certificate": None,
+                        "ssl_client_key": None,
+                        "ssl_protocol_version": "TLSv1.2",
+                        "ssl_cipher_suites": [],
+                        "ssl_allow_insecure_peers": True,
+                    },
+                },
+                "proxy": {
+                    "enable_proxy": False,
+                    "proxy_type": "http",
+                    "proxy_host": None,
+                    "proxy_port": None,
+                    "proxy_username": None,
+                    "proxy_password": None,
+                    "proxy_for_trackers": True,
+                    "proxy_for_peers": False,
+                    "proxy_for_webseeds": True,
+                    "proxy_bypass_list": [],
                 },
                 "ml": {
                     "peer_selection_enabled": True,
@@ -111,6 +211,19 @@ class ConfigTemplates:
                     "peer_scoring_alpha": 0.7,
                     "piece_prediction_threshold": 0.8,
                     "limiter_update_interval": 60,
+                },
+                "ipfs": {
+                    "api_url": "http://127.0.0.1:5001",
+                    "gateway_urls": [
+                        "https://ipfs.io/ipfs/",
+                        "https://gateway.pinata.cloud/ipfs/",
+                        "https://cloudflare-ipfs.com/ipfs/",
+                    ],
+                    "enable_pinning": False,
+                    "connection_timeout": 30,
+                    "request_timeout": 30,
+                    "enable_dht": True,
+                    "discovery_cache_ttl": 300,
                 },
             },
         },
@@ -134,6 +247,12 @@ class ConfigTemplates:
                     "max_upload_slots": 2,
                     "unchoke_interval": 30,
                     "optimistic_unchoke_interval": 60,
+                    "protocol_v2": {
+                        "enable_protocol_v2": True,
+                        "prefer_protocol_v2": False,
+                        "support_hybrid": True,
+                        "v2_handshake_timeout": 30.0,
+                    },
                 },
                 "disk": {
                     "hash_workers": 2,
@@ -146,6 +265,19 @@ class ConfigTemplates:
                     "preallocate": "none",
                     "checkpoint_enabled": False,
                     "checkpoint_interval": 300,
+                    "fast_resume_enabled": False,
+                    "resume_save_interval": 60.0,
+                    "resume_verify_on_load": False,
+                    "resume_verify_pieces": 5,
+                    "resume_data_format_version": 1,
+                    "attributes": {
+                        "preserve_attributes": True,
+                        "skip_padding_files": True,
+                        "verify_file_sha1": False,
+                        "apply_symlinks": True,
+                        "apply_executable_bit": True,
+                        "apply_hidden_attr": True,
+                    },
                 },
                 "strategy": {
                     "piece_selection": "sequential",
@@ -154,19 +286,42 @@ class ConfigTemplates:
                     "streaming_mode": True,
                     "sequential_download": True,
                     "first_piece_priority": True,
+                    "sequential_window": 15,
+                    "sequential_priority_files": [],
+                    "sequential_fallback_threshold": 0.1,
                 },
                 "discovery": {
                     "enable_dht": False,
-                    "dht_port": 6882,
+                    "dht_port": 50001,
                     "enable_pex": True,
                     "tracker_announce_interval": 1800,
+                    "tracker_scrape_interval": 3600,
+                    "tracker_auto_scrape": False,
                     "tracker_min_interval": 300,
                     "tracker_max_interval": 7200,
                     "tracker_timeout": 30,
                     "tracker_connect_timeout": 20,
                     "tracker_connection_limit": 10,
                     "tracker_connections_per_host": 1,
+                    "strict_private_mode": True,
+                    "magnet_respect_indices": True,
                     "dht_bootstrap_nodes": [],
+                    # BEP 32: IPv6 Extension for DHT (disabled when DHT is disabled)
+                    "dht_enable_ipv6": False,
+                    "dht_prefer_ipv6": False,
+                    "dht_ipv6_bootstrap_nodes": [],
+                    # BEP 43: Read-only DHT Nodes
+                    "dht_readonly_mode": False,
+                    # BEP 45: Multiple-Address Operation for DHT
+                    "dht_enable_multiaddress": False,
+                    "dht_max_addresses_per_node": 2,
+                    # BEP 44: Storing Arbitrary Data in the DHT
+                    "dht_enable_storage": False,
+                    "dht_storage_ttl": 3600,
+                    "dht_max_storage_size": 1000,
+                    # BEP 51: DHT Infohash Indexing
+                    "dht_enable_indexing": False,
+                    "dht_index_samples_per_key": 4,
                 },
                 "limits": {
                     "global_down_kib": 100,  # 100 KiB/s
@@ -174,6 +329,28 @@ class ConfigTemplates:
                     "per_torrent_down_kib": 50,  # 50 KiB/s
                     "per_torrent_up_kib": 25,  # 25 KiB/s
                     "scheduler_slice_ms": 200,
+                },
+                "queue": {
+                    "max_active_torrents": 3,
+                    "max_active_downloading": 2,
+                    "max_active_seeding": 1,
+                    "default_priority": "normal",
+                    "bandwidth_allocation_mode": "proportional",
+                    "auto_manage_queue": True,
+                    "priority_weights": {
+                        "maximum": 5.0,
+                        "high": 2.0,
+                        "normal": 1.0,
+                        "low": 0.5,
+                    },
+                    "priority_bandwidth_kib": {
+                        "maximum": 1000,
+                        "high": 500,
+                        "normal": 250,
+                        "low": 100,
+                    },
+                    "save_queue_state": True,
+                    "queue_state_save_interval": 30.0,
                 },
                 "observability": {
                     "log_level": "WARNING",
@@ -193,6 +370,38 @@ class ConfigTemplates:
                     "rate_limit_enabled": True,
                     "max_connections_per_ip": 2,
                     "max_connections_per_subnet": 5,
+                    "ip_filter": {
+                        "enable_ip_filter": False,
+                        "filter_mode": "block",
+                        "filter_files": [],
+                        "filter_urls": [],
+                        "filter_update_interval": 86400.0,
+                        "filter_cache_dir": "~/.ccbt/filters",
+                        "filter_log_blocked": True,
+                    },
+                    "ssl": {
+                        "enable_ssl_trackers": True,
+                        "enable_ssl_peers": False,
+                        "ssl_verify_certificates": True,
+                        "ssl_ca_certificates": None,
+                        "ssl_client_certificate": None,
+                        "ssl_client_key": None,
+                        "ssl_protocol_version": "TLSv1.2",
+                        "ssl_cipher_suites": [],
+                        "ssl_allow_insecure_peers": True,
+                    },
+                },
+                "proxy": {
+                    "enable_proxy": False,
+                    "proxy_type": "http",
+                    "proxy_host": None,
+                    "proxy_port": None,
+                    "proxy_username": None,
+                    "proxy_password": None,
+                    "proxy_for_trackers": True,
+                    "proxy_for_peers": False,
+                    "proxy_for_webseeds": True,
+                    "proxy_bypass_list": [],
                 },
                 "ml": {
                     "peer_selection_enabled": False,
@@ -201,6 +410,19 @@ class ConfigTemplates:
                     "peer_scoring_alpha": 0.5,
                     "piece_prediction_threshold": 0.5,
                     "limiter_update_interval": 300,
+                },
+                "ipfs": {
+                    "api_url": "http://127.0.0.1:5001",
+                    "gateway_urls": [
+                        "https://ipfs.io/ipfs/",
+                        "https://gateway.pinata.cloud/ipfs/",
+                        "https://cloudflare-ipfs.com/ipfs/",
+                    ],
+                    "enable_pinning": False,
+                    "connection_timeout": 30,
+                    "request_timeout": 30,
+                    "enable_dht": False,
+                    "discovery_cache_ttl": 600,
                 },
             },
         },
@@ -224,6 +446,12 @@ class ConfigTemplates:
                     "max_upload_slots": 4,
                     "unchoke_interval": 15,
                     "optimistic_unchoke_interval": 30,
+                    "protocol_v2": {
+                        "enable_protocol_v2": True,
+                        "prefer_protocol_v2": False,
+                        "support_hybrid": True,
+                        "v2_handshake_timeout": 30.0,
+                    },
                 },
                 "disk": {
                     "hash_workers": 4,
@@ -236,6 +464,19 @@ class ConfigTemplates:
                     "preallocate": "sparse",
                     "checkpoint_enabled": True,
                     "checkpoint_interval": 60,
+                    "fast_resume_enabled": True,
+                    "resume_save_interval": 30.0,
+                    "resume_verify_on_load": True,
+                    "resume_verify_pieces": 10,
+                    "resume_data_format_version": 1,
+                    "attributes": {
+                        "preserve_attributes": True,
+                        "skip_padding_files": True,
+                        "verify_file_sha1": False,
+                        "apply_symlinks": True,
+                        "apply_executable_bit": True,
+                        "apply_hidden_attr": True,
+                    },
                 },
                 "strategy": {
                     "piece_selection": "sequential",
@@ -247,19 +488,44 @@ class ConfigTemplates:
                 },
                 "discovery": {
                     "enable_dht": True,
-                    "dht_port": 6882,
+                    "dht_port": 50001,
                     "enable_pex": True,
                     "tracker_announce_interval": 900,
+                    "tracker_scrape_interval": 3600,
+                    "tracker_auto_scrape": False,
                     "tracker_min_interval": 60,
                     "tracker_max_interval": 3600,
                     "tracker_timeout": 15,
                     "tracker_connect_timeout": 10,
                     "tracker_connection_limit": 30,
                     "tracker_connections_per_host": 2,
+                    "strict_private_mode": True,
+                    "magnet_respect_indices": True,
                     "dht_bootstrap_nodes": [
                         "router.bittorrent.com:6881",
                         "dht.transmissionbt.com:6881",
+                        "router.utorrent.com:6881",
+                        "dht.libtorrent.org:25401",
+                        "dht.aelitis.com:6881",
+                        "router.silotis.us:6881",
+                        "router.bitcomet.com:6881",
                     ],
+                    # BEP 32: IPv6 Extension for DHT
+                    "dht_enable_ipv6": True,
+                    "dht_prefer_ipv6": True,
+                    "dht_ipv6_bootstrap_nodes": [],
+                    # BEP 43: Read-only DHT Nodes
+                    "dht_readonly_mode": False,
+                    # BEP 45: Multiple-Address Operation for DHT
+                    "dht_enable_multiaddress": True,
+                    "dht_max_addresses_per_node": 4,
+                    # BEP 44: Storing Arbitrary Data in the DHT
+                    "dht_enable_storage": False,
+                    "dht_storage_ttl": 3600,
+                    "dht_max_storage_size": 1000,
+                    # BEP 51: DHT Infohash Indexing
+                    "dht_enable_indexing": True,
+                    "dht_index_samples_per_key": 8,
                 },
                 "limits": {
                     "global_down_kib": 0,  # Unlimited
@@ -267,6 +533,28 @@ class ConfigTemplates:
                     "per_torrent_down_kib": 0,  # Unlimited
                     "per_torrent_up_kib": 0,  # Unlimited
                     "scheduler_slice_ms": 50,
+                },
+                "queue": {
+                    "max_active_torrents": 10,
+                    "max_active_downloading": 5,
+                    "max_active_seeding": 5,
+                    "default_priority": "normal",
+                    "bandwidth_allocation_mode": "proportional",
+                    "auto_manage_queue": True,
+                    "priority_weights": {
+                        "maximum": 5.0,
+                        "high": 2.0,
+                        "normal": 1.0,
+                        "low": 0.5,
+                    },
+                    "priority_bandwidth_kib": {
+                        "maximum": 1000,
+                        "high": 500,
+                        "normal": 250,
+                        "low": 100,
+                    },
+                    "save_queue_state": True,
+                    "queue_state_save_interval": 30.0,
                 },
                 "observability": {
                     "log_level": "INFO",
@@ -286,6 +574,26 @@ class ConfigTemplates:
                     "rate_limit_enabled": True,
                     "max_connections_per_ip": 3,
                     "max_connections_per_subnet": 10,
+                    "ip_filter": {
+                        "enable_ip_filter": False,
+                        "filter_mode": "block",
+                        "filter_files": [],
+                        "filter_urls": [],
+                        "filter_update_interval": 86400.0,
+                        "filter_cache_dir": "~/.ccbt/filters",
+                        "filter_log_blocked": True,
+                    },
+                    "ssl": {
+                        "enable_ssl_trackers": True,
+                        "enable_ssl_peers": False,
+                        "ssl_verify_certificates": True,
+                        "ssl_ca_certificates": None,
+                        "ssl_client_certificate": None,
+                        "ssl_client_key": None,
+                        "ssl_protocol_version": "TLSv1.2",
+                        "ssl_cipher_suites": [],
+                        "ssl_allow_insecure_peers": True,
+                    },
                 },
                 "ml": {
                     "peer_selection_enabled": True,
@@ -294,6 +602,19 @@ class ConfigTemplates:
                     "peer_scoring_alpha": 0.6,
                     "piece_prediction_threshold": 0.5,
                     "limiter_update_interval": 120,
+                },
+                "ipfs": {
+                    "api_url": "http://127.0.0.1:5001",
+                    "gateway_urls": [
+                        "https://ipfs.io/ipfs/",
+                        "https://gateway.pinata.cloud/ipfs/",
+                        "https://cloudflare-ipfs.com/ipfs/",
+                    ],
+                    "enable_pinning": False,
+                    "connection_timeout": 30,
+                    "request_timeout": 30,
+                    "enable_dht": True,
+                    "discovery_cache_ttl": 300,
                 },
             },
         },
@@ -317,6 +638,12 @@ class ConfigTemplates:
                     "max_upload_slots": 12,  # More upload slots
                     "unchoke_interval": 10,
                     "optimistic_unchoke_interval": 30,
+                    "protocol_v2": {
+                        "enable_protocol_v2": True,
+                        "prefer_protocol_v2": True,
+                        "support_hybrid": True,
+                        "v2_handshake_timeout": 30.0,
+                    },
                 },
                 "disk": {
                     "hash_workers": 6,
@@ -329,6 +656,19 @@ class ConfigTemplates:
                     "preallocate": "full",
                     "checkpoint_enabled": True,
                     "checkpoint_interval": 60,
+                    "fast_resume_enabled": True,
+                    "resume_save_interval": 30.0,
+                    "resume_verify_on_load": True,
+                    "resume_verify_pieces": 10,
+                    "resume_data_format_version": 1,
+                    "attributes": {
+                        "preserve_attributes": True,
+                        "skip_padding_files": True,
+                        "verify_file_sha1": False,
+                        "apply_symlinks": True,
+                        "apply_executable_bit": True,
+                        "apply_hidden_attr": True,
+                    },
                 },
                 "strategy": {
                     "piece_selection": "rarest_first",
@@ -337,23 +677,50 @@ class ConfigTemplates:
                     "streaming_mode": False,
                     "sequential_download": False,
                     "first_piece_priority": False,
+                    "sequential_window": 10,
+                    "sequential_priority_files": [],
+                    "sequential_fallback_threshold": 0.1,
                 },
                 "discovery": {
                     "enable_dht": True,
-                    "dht_port": 6882,
+                    "dht_port": 50001,
                     "enable_pex": True,
                     "tracker_announce_interval": 1800,  # Longer announce interval
+                    "tracker_scrape_interval": 3600,
+                    "tracker_auto_scrape": False,
                     "tracker_min_interval": 300,
                     "tracker_max_interval": 7200,
                     "tracker_timeout": 15,
                     "tracker_connect_timeout": 10,
                     "tracker_connection_limit": 40,
                     "tracker_connections_per_host": 2,
+                    "strict_private_mode": True,
+                    "magnet_respect_indices": True,
                     "dht_bootstrap_nodes": [
                         "router.bittorrent.com:6881",
                         "dht.transmissionbt.com:6881",
                         "router.utorrent.com:6881",
+                        "dht.libtorrent.org:25401",
+                        "dht.aelitis.com:6881",
+                        "router.silotis.us:6881",
+                        "router.bitcomet.com:6881",
                     ],
+                    # BEP 32: IPv6 Extension for DHT
+                    "dht_enable_ipv6": True,
+                    "dht_prefer_ipv6": True,
+                    "dht_ipv6_bootstrap_nodes": [],
+                    # BEP 43: Read-only DHT Nodes
+                    "dht_readonly_mode": False,
+                    # BEP 45: Multiple-Address Operation for DHT
+                    "dht_enable_multiaddress": True,
+                    "dht_max_addresses_per_node": 4,
+                    # BEP 44: Storing Arbitrary Data in the DHT
+                    "dht_enable_storage": False,
+                    "dht_storage_ttl": 3600,
+                    "dht_max_storage_size": 1000,
+                    # BEP 51: DHT Infohash Indexing
+                    "dht_enable_indexing": True,
+                    "dht_index_samples_per_key": 8,
                 },
                 "limits": {
                     "global_down_kib": 0,  # Unlimited
@@ -361,6 +728,28 @@ class ConfigTemplates:
                     "per_torrent_down_kib": 0,  # Unlimited
                     "per_torrent_up_kib": 0,  # Unlimited
                     "scheduler_slice_ms": 100,
+                },
+                "queue": {
+                    "max_active_torrents": 10,
+                    "max_active_downloading": 2,
+                    "max_active_seeding": 8,
+                    "default_priority": "normal",
+                    "bandwidth_allocation_mode": "proportional",
+                    "auto_manage_queue": True,
+                    "priority_weights": {
+                        "maximum": 5.0,
+                        "high": 2.0,
+                        "normal": 1.0,
+                        "low": 0.5,
+                    },
+                    "priority_bandwidth_kib": {
+                        "maximum": 1000,
+                        "high": 500,
+                        "normal": 250,
+                        "low": 100,
+                    },
+                    "save_queue_state": True,
+                    "queue_state_save_interval": 30.0,
                 },
                 "observability": {
                     "log_level": "INFO",
@@ -380,6 +769,26 @@ class ConfigTemplates:
                     "rate_limit_enabled": True,
                     "max_connections_per_ip": 4,
                     "max_connections_per_subnet": 15,
+                    "ip_filter": {
+                        "enable_ip_filter": False,
+                        "filter_mode": "block",
+                        "filter_files": [],
+                        "filter_urls": [],
+                        "filter_update_interval": 86400.0,
+                        "filter_cache_dir": "~/.ccbt/filters",
+                        "filter_log_blocked": True,
+                    },
+                    "ssl": {
+                        "enable_ssl_trackers": True,
+                        "enable_ssl_peers": False,
+                        "ssl_verify_certificates": True,
+                        "ssl_ca_certificates": None,
+                        "ssl_client_certificate": None,
+                        "ssl_client_key": None,
+                        "ssl_protocol_version": "TLSv1.2",
+                        "ssl_cipher_suites": [],
+                        "ssl_allow_insecure_peers": True,
+                    },
                 },
                 "ml": {
                     "peer_selection_enabled": True,
@@ -388,6 +797,19 @@ class ConfigTemplates:
                     "peer_scoring_alpha": 0.8,  # Higher weight for peer scoring
                     "piece_prediction_threshold": 0.9,
                     "limiter_update_interval": 60,
+                },
+                "ipfs": {
+                    "api_url": "http://127.0.0.1:5001",
+                    "gateway_urls": [
+                        "https://ipfs.io/ipfs/",
+                        "https://gateway.pinata.cloud/ipfs/",
+                        "https://cloudflare-ipfs.com/ipfs/",
+                    ],
+                    "enable_pinning": False,
+                    "connection_timeout": 30,
+                    "request_timeout": 30,
+                    "enable_dht": True,
+                    "discovery_cache_ttl": 300,
                 },
             },
         },
@@ -399,6 +821,7 @@ class ConfigTemplates:
 
         Returns:
             List of template information dictionaries
+
         """
         return [
             {
@@ -418,6 +841,7 @@ class ConfigTemplates:
 
         Returns:
             Template configuration or None if not found
+
         """
         template = ConfigTemplates.TEMPLATES.get(template_name)
         if template:
@@ -442,6 +866,7 @@ class ConfigTemplates:
 
         Raises:
             ValueError: If template not found or invalid merge strategy
+
         """
         template_config = ConfigTemplates.get_template(template_name)
         if not template_config:
@@ -467,6 +892,7 @@ class ConfigTemplates:
 
         Returns:
             Merged configuration
+
         """
         result = base.copy()
 
@@ -491,6 +917,7 @@ class ConfigTemplates:
 
         Returns:
             Tuple of (is_valid, list_of_errors)
+
         """
         template_config = ConfigTemplates.get_template(template_name)
         if not template_config:
@@ -515,6 +942,7 @@ class ConfigTemplates:
 
         Raises:
             ValueError: If template not found or invalid format
+
         """
         template_config = ConfigTemplates.get_template(template_name)
         if not template_config:
@@ -525,7 +953,7 @@ class ConfigTemplates:
             return json.dumps(template_config, indent=2)
         if format_type.lower() == "yaml":
             try:
-                import yaml  # type: ignore[import-untyped]
+                import yaml
 
                 return yaml.safe_dump(template_config, sort_keys=False)
             except ImportError as e:
@@ -618,6 +1046,17 @@ class ConfigProfiles:
                 },
                 "discovery": {
                     "tracker_announce_interval": 900,
+                    "tracker_scrape_interval": 3600,
+                    "tracker_auto_scrape": False,
+                    "magnet_respect_indices": True,
+                    # DHT enhancements (use defaults for minimal config)
+                    "dht_enable_ipv6": True,
+                    "dht_prefer_ipv6": True,
+                    "dht_readonly_mode": False,
+                    "dht_enable_multiaddress": True,
+                    "dht_max_addresses_per_node": 4,
+                    "dht_enable_storage": False,
+                    "dht_enable_indexing": True,
                 },
                 "observability": {
                     "log_level": "WARNING",
@@ -633,6 +1072,7 @@ class ConfigProfiles:
 
         Returns:
             List of profile information dictionaries
+
         """
         return [
             {
@@ -653,6 +1093,7 @@ class ConfigProfiles:
 
         Returns:
             Profile configuration or None if not found
+
         """
         profile = ConfigProfiles.PROFILES.get(profile_name)
         if profile:
@@ -675,6 +1116,7 @@ class ConfigProfiles:
 
         Raises:
             ValueError: If profile not found
+
         """
         profile = ConfigProfiles.get_profile(profile_name)
         if not profile:
@@ -728,6 +1170,7 @@ class ConfigProfiles:
 
         Raises:
             ValueError: If template not found
+
         """
         # Validate templates
         for template_name in templates:
@@ -765,6 +1208,7 @@ class ConfigProfiles:
         Raises:
             FileNotFoundError: If profile file not found
             ValueError: If profile file is invalid
+
         """
         profile_path = Path(profile_file)
         if not profile_path.exists():
@@ -796,6 +1240,7 @@ class ConfigProfiles:
 
         Returns:
             Tuple of (is_valid, list_of_errors)
+
         """
         profile = ConfigProfiles.get_profile(profile_name)
         if not profile:

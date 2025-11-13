@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "benchmark": "hash_verify",
+    "config": "performance",
+    "timestamp": "2025-11-12T19:18:06.534206+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "11",
+      "python": "3.13.3"
+    },
+    "git": {
+      "commit_hash": "a9c4027a089fd38335193f400ae1a29bd3c3fec2",
+      "commit_hash_short": "a9c4027",
+      "branch": "master",
+      "author": "Joseph Pollack",
+      "is_dirty": true
+    }
+  },
+  "results": [
+    {
+      "size_bytes": 1048576,
+      "iterations": 8,
+      "elapsed_s": 3.190000279573724e-05,
+      "bytes_processed": 8388608,
+      "throughput_bytes_per_s": 262965744978.58542
+    },
+    {
+      "size_bytes": 4194304,
+      "iterations": 8,
+      "elapsed_s": 2.510000194888562e-05,
+      "bytes_processed": 33554432,
+      "throughput_bytes_per_s": 1336829856361.415
+    },
+    {
+      "size_bytes": 16777216,
+      "iterations": 8,
+      "elapsed_s": 2.2899999748915434e-05,
+      "bytes_processed": 134217728,
+      "throughput_bytes_per_s": 5861036221467.937
+    }
+  ]
+}

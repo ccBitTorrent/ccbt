@@ -23,7 +23,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from rich.console import Console
 
     from ccbt.models import TorrentInfo
@@ -37,13 +37,22 @@ class ProgressManager:
 
         Args:
             console: Rich console for output
+
         """
         self.console = console
         self.active_progress: dict[str, Progress] = {}
         self.progress_tasks: dict[str, Any] = {}
 
-    def create_progress(self) -> Progress:
-        """Create a new progress bar."""
+    def create_progress(self, description: str | None = None) -> Progress:
+        """Create a new progress bar with i18n support.
+
+        Args:
+            description: Optional progress description (will be translated)
+
+        Returns:
+            Progress instance
+
+        """
         return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -51,12 +60,13 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeElapsedColumn(),
             TimeRemainingColumn(),
+            console=self.console,
         )
 
     def create_download_progress(
         self, _torrent: TorrentInfo | Mapping[str, Any]
     ) -> Progress:
-        """Create download progress bar."""
+        """Create download progress bar with i18n support."""
         return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -66,12 +76,13 @@ class ProgressManager:
             TextColumn("[progress.speed]{task.fields[speed]}"),
             TimeElapsedColumn(),
             TimeRemainingColumn(),
+            console=self.console,
         )
 
     def create_upload_progress(
         self, _torrent: TorrentInfo | Mapping[str, Any]
     ) -> Progress:
-        """Create upload progress bar."""
+        """Create upload progress bar with i18n support."""
         return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -80,6 +91,7 @@ class ProgressManager:
             TextColumn("[progress.uploaded]{task.fields[uploaded]}"),
             TextColumn("[progress.speed]{task.fields[speed]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_piece_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -91,6 +103,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.pieces]{task.fields[pieces]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_speed_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -103,6 +116,7 @@ class ProgressManager:
             TextColumn("[progress.download_speed]{task.fields[download_speed]}"),
             TextColumn("[progress.upload_speed]{task.fields[upload_speed]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_peer_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -114,6 +128,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.peers]{task.fields[peers]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_verification_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -125,6 +140,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.verified]{task.fields[verified]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_metadata_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -136,6 +152,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.metadata]{task.fields[metadata]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_tracker_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -147,6 +164,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.trackers]{task.fields[trackers]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_dht_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -158,6 +176,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.dht_nodes]{task.fields[dht_nodes]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_pex_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -169,6 +188,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.pex_peers]{task.fields[pex_peers]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_webseed_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -180,6 +200,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.webseeds]{task.fields[webseeds]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_encryption_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -191,6 +212,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.encrypted]{task.fields[encrypted]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_security_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -202,6 +224,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.security_checks]{task.fields[security_checks]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_ml_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -213,6 +236,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.ml_predictions]{task.fields[ml_predictions]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_monitoring_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -224,6 +248,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.metrics]{task.fields[metrics]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_observability_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -235,6 +260,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.traces]{task.fields[traces]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_dashboard_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -246,6 +272,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.dashboards]{task.fields[dashboards]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_alert_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -257,6 +284,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.alerts]{task.fields[alerts]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_tracing_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -268,6 +296,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.spans]{task.fields[spans]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_profiling_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -279,6 +308,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.profiles]{task.fields[profiles]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_debug_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -290,6 +320,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.debug_info]{task.fields[debug_info]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_completion_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -301,6 +332,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.completion]{task.fields[completion]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_cleanup_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -312,6 +344,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.cleanup]{task.fields[cleanup]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_finalization_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -323,6 +356,7 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.finalization]{task.fields[finalization]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_verification_final_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -336,6 +370,7 @@ class ProgressManager:
                 "[progress.final_verification]{task.fields[final_verification]}",
             ),
             TimeElapsedColumn(),
+            console=self.console,
         )
 
     def create_success_progress(self, _torrent: TorrentInfo) -> Progress:
@@ -347,4 +382,5 @@ class ProgressManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("[progress.success]{task.fields[success]}"),
             TimeElapsedColumn(),
+            console=self.console,
         )

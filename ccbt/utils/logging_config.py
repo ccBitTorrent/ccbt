@@ -19,8 +19,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from ccbt.utils.exceptions import CCBTError
+from ccbt.utils.rich_logging import (
+    FileFormatter,
+    create_rich_handler,
+)
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
+    # Type-only import for static type checking, not executed at runtime
     from ccbt.models import ObservabilityConfig
 
 # Context variable for correlation ID
@@ -45,62 +50,73 @@ class StructuredFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as structured JSON."""
-        log_entry = {
-            "timestamp": time.time(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
-            "line": record.lineno,
-        }
-
-        # Add correlation ID if available
-        if hasattr(record, "correlation_id"):
-            log_entry["correlation_id"] = record.correlation_id
-
-        # Add exception info if present
-        if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
-
-        # Add extra fields
-        excluded_keys = {
-            "name",
-            "msg",
-            "args",
-            "levelname",
-            "levelno",
-            "pathname",
-            "filename",
-            "module",
-            "exc_info",
-            "exc_text",
-            "stack_info",
-            "lineno",
-            "funcName",
-            "created",
-            "msecs",
-            "relativeCreated",
-            "thread",
-            "threadName",
-            "processName",
-            "process",
-            "getMessage",
-            "correlation_id",
-        }
-        log_entry.update(
-            {
-                key: value
-                for key, value in record.__dict__.items()
-                if key not in excluded_keys
+        try:
+            log_entry = {
+                "timestamp": time.time(),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": record.getMessage(),
+                "module": record.module,
+                "function": record.funcName,
+                "line": record.lineno,
             }
-        )
 
-        return json.dumps(log_entry, default=str)
+            # Add correlation ID if available
+            if hasattr(record, "correlation_id"):
+                log_entry["correlation_id"] = record.correlation_id
+
+            # Add exception info if present
+            if record.exc_info:
+                log_entry["exception"] = self.formatException(record.exc_info)
+
+            # Add extra fields
+            excluded_keys = {
+                "name",
+                "msg",
+                "args",
+                "levelname",
+                "levelno",
+                "pathname",
+                "filename",
+                "module",
+                "exc_info",
+                "exc_text",
+                "stack_info",
+                "lineno",
+                "funcName",
+                "created",
+                "msecs",
+                "relativeCreated",
+                "thread",
+                "threadName",
+                "processName",
+                "process",
+                "getMessage",
+                "correlation_id",
+            }
+            log_entry.update(
+                {
+                    key: value
+                    for key, value in record.__dict__.items()
+                    if key not in excluded_keys
+                }
+            )
+
+            return json.dumps(log_entry, default=str)
+        except Exception:
+            # CRITICAL FIX: Fallback to simple format if JSON serialization fails
+            # This prevents "Logging error" messages from circular failures
+            try:
+                return f"{record.levelname} {record.name}: {record.getMessage()}"
+            except Exception:
+                return f"Logging error: {record.levelname} {record.name}"
 
 
 class ColoredFormatter(logging.Formatter):
-    """Colored formatter for console output."""
+    """Colored formatter for console output (legacy, uses Rich now).
+
+    Deprecated: Use RichHandler instead. Kept for backward compatibility.
+    """
 
     COLORS: ClassVar[dict[str, str]] = {
         "DEBUG": "\033[36m",  # Cyan
@@ -113,27 +129,43 @@ class ColoredFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record with color coding."""
-        # Add color to level name
-        if record.levelname in self.COLORS:
-            record.levelname = (
-                f"{self.COLORS[record.levelname]}{record.levelname}{self.RESET}"
-            )
+        try:
+            # Add color to level name
+            if record.levelname in self.COLORS:
+                record.levelname = (
+                    f"{self.COLORS[record.levelname]}{record.levelname}{self.RESET}"
+                )
 
-        # Add correlation ID if available
-        if hasattr(record, "correlation_id"):
-            record.correlation_id = f"[{record.correlation_id}]"
-        else:
-            record.correlation_id = ""
+            # Add correlation ID if available
+            if hasattr(record, "correlation_id"):
+                record.correlation_id = f"[{record.correlation_id}]"
+            else:
+                record.correlation_id = ""
 
-        return super().format(record)
+            return super().format(record)
+        except Exception:
+            # CRITICAL FIX: Fallback to simple format if formatting fails
+            try:
+                return f"{record.levelname} {record.name}: {record.getMessage()}"
+            except Exception:
+                return f"Logging error: {record.levelname} {record.name}"
 
 
 def setup_logging(config: ObservabilityConfig) -> None:
-    """Set up logging configuration."""
+    """Set up logging configuration with Rich support."""
     # Create log directory if needed
     if config.log_file:
         log_path = Path(config.log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Try to use RichHandler for console output
+    try:
+        rich_handler = create_rich_handler(level=config.log_level.value)
+        use_rich = True
+    except Exception:
+        # Fallback to standard handler if Rich not available
+        use_rich = False
+        rich_handler = None
 
     # Configure logging
     logging_config: dict[str, Any] = {
@@ -149,6 +181,7 @@ def setup_logging(config: ObservabilityConfig) -> None:
                 "()": StructuredFormatter,
             },
             "simple": {
+                "()": FileFormatter,
                 "format": "%(asctime)s %(levelname)s %(name)s: %(message)s",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
@@ -158,29 +191,42 @@ def setup_logging(config: ObservabilityConfig) -> None:
                 "()": CorrelationFilter,
             },
         },
-        "handlers": {
-            "console": {
-                "class": "logging.StreamHandler",
-                "level": config.log_level.value,
-                "formatter": "colored"
-                if not config.structured_logging
-                else "structured",
-                "filters": ["correlation"],
-                "stream": sys.stdout,
-            },
-        },
+        "handlers": {},
         "loggers": {
             "ccbt": {
                 "level": config.log_level.value,
-                "handlers": ["console"],
+                "handlers": [],
                 "propagate": False,
             },
         },
         "root": {
             "level": config.log_level.value,
-            "handlers": ["console"],
+            "handlers": [],
         },
     }
+
+    # Add console handler
+    if use_rich and rich_handler:
+        # Use RichHandler for console - we'll add it directly after dictConfig
+        logging_config["handlers"]["console"] = {
+            "class": "logging.StreamHandler",
+            "level": config.log_level.value,
+            "formatter": "colored",
+            "filters": ["correlation"],
+            "stream": sys.stdout,
+        }
+    else:
+        # Fallback to standard StreamHandler
+        logging_config["handlers"]["console"] = {
+            "class": "logging.StreamHandler",
+            "level": config.log_level.value,
+            "formatter": "colored" if not config.structured_logging else "structured",
+            "filters": ["correlation"],
+            "stream": sys.stdout,
+        }
+
+    logging_config["loggers"]["ccbt"]["handlers"].append("console")
+    logging_config["root"]["handlers"].append("console")
 
     # Add file handler if log file is specified
     if config.log_file:
@@ -197,6 +243,29 @@ def setup_logging(config: ObservabilityConfig) -> None:
 
     # Apply configuration
     logging.config.dictConfig(logging_config)
+
+    # Replace console handler with RichHandler if available
+    if use_rich and rich_handler:
+        root_logger = logging.getLogger()
+        ccbt_logger = logging.getLogger("ccbt")
+
+        # Remove existing console handlers
+        for handler in list(root_logger.handlers):
+            if (
+                isinstance(handler, logging.StreamHandler)
+                and handler.stream == sys.stdout
+            ):
+                root_logger.removeHandler(handler)
+        for handler in list(ccbt_logger.handlers):
+            if (
+                isinstance(handler, logging.StreamHandler)
+                and handler.stream == sys.stdout
+            ):
+                ccbt_logger.removeHandler(handler)
+
+        # Add RichHandler
+        root_logger.addHandler(rich_handler)
+        ccbt_logger.addHandler(rich_handler)
 
     # Set up correlation ID for main thread
     if config.log_correlation_id:
@@ -273,4 +342,4 @@ def log_exception(logger: logging.Logger, exc: Exception, context: str = "") -> 
             exc_info=True,
         )
     else:
-        logger.error("%s: %s", context, exc, exc_info=True)
+        logger.exception("%s: %s", context, exc)

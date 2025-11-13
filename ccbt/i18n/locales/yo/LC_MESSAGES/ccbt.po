@@ -1,0 +1,845 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: ccBitTorrent 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-01-01 00:00+0000\n"
+"PO-Revision-Date: 2025-11-10 21:50\n"
+"Last-Translator: ccBitTorrent Team\n"
+"Language-Team: Yoruba Translation Team\n"
+"Language: yo\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+
+msgid "\nAvailable Commands:\n  help          - Show this help message\n  status        - Show current status\n  peers         - Show connected peers\n  files         - Show file information\n  pause         - Pause download\n  resume        - Resume download\n  stop          - Stop download\n  quit          - Quit application\n  clear         - Clear screen\n        "
+msgstr "\nÀwọn Àṣẹ Tí Wà:\n  help          - Fihàn ìrànlọ́wọ́ yìí\n  status        - Fihàn ìpàdé lọ́wọ́lọ́wọ́\n  peers         - Fihàn àwọn ẹgbẹ́ tí dípọ̀\n  files         - Fihàn àlàyé fáìlì\n  pause         - Dúró ìgbàsílẹ̀\n  resume        - Tún bẹ̀rẹ̀ ìgbàsílẹ̀\n  stop          - Dákẹ́ ìgbàsílẹ̀\n  quit          - Jáde kúrò nínú ohun èlò\n  clear         - Mọ́ skríìnì\n        "
+
+msgid "\n[bold cyan]File Selection[/bold cyan]"
+msgstr "\n[bold cyan]Ìyàn Fáìlì[/bold cyan]"
+
+msgid "\n[bold]File selection[/bold]"
+msgstr "\n[bold]Ìyàn fáìlì[/bold]"
+
+msgid "\n[yellow]Commands:[/yellow]"
+msgstr "\n[yellow]Àwọn Àṣẹ:[/yellow]"
+
+msgid "\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgstr "\n[yellow]Ìyàn fáìlì ti fagilé, ń lo àwọn àyípadà[/yellow]"
+
+msgid "\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgstr "\n[yellow]Ìṣirò Tracker Scrape:[/yellow]"
+
+msgid "\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgstr "\n[yellow]Lo: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+
+msgid "\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgstr "\n[yellow]Àkíyèsí: Kò sí àwọn ẹgbẹ́ tí dípọ̀ lẹ́yìn ìṣẹ́jú 30[/yellow]"
+
+msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
+msgstr "  [cyan]deselect <index>[/cyan] - Yọ fáìlì kúrò"
+
+msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
+msgstr "  [cyan]deselect-all[/cyan] - Yọ gbogbo àwọn fáìlì kúrò"
+
+msgid "  [cyan]done[/cyan] - Finish selection and start download"
+msgstr "  [cyan]done[/cyan] - Parí ìyàn àti bẹ̀rẹ̀ ìgbàsílẹ̀"
+
+msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
+msgstr "  [cyan]priority <index> <priority>[/cyan] - Ṣètò àkànkàn (do_not_download/low/normal/high/maximum)"
+
+msgid "  [cyan]select <index>[/cyan] - Select a file"
+msgstr "  [cyan]select <index>[/cyan] - Yàn fáìlì"
+
+msgid "  [cyan]select-all[/cyan] - Select all files"
+msgstr "  [cyan]select-all[/cyan] - Yàn gbogbo àwọn fáìlì"
+
+msgid "  • Check if torrent has active seeders"
+msgstr "  • Ṣàyẹ̀wò bí torrent bá ní àwọn olùgbìn tó nṣiṣẹ́"
+
+msgid "  • Ensure DHT is enabled: --enable-dht"
+msgstr "  • Rí dájú pé DHT ti mú ṣiṣẹ́: --enable-dht"
+
+msgid "  • Run 'btbt diagnose-connections' to check connection status"
+msgstr "  • Ṣe 'btbt diagnose-connections' láti ṣàyẹ̀wò ìpàdé ìdípọ̀"
+
+msgid "  • Verify NAT/firewall settings"
+msgstr "  • Jẹ́rìí àwọn ètò NAT/firewall"
+
+msgid " | Files: {selected}/{total} selected"
+msgstr " | Àwọn Fáìlì: {selected}/{total} tí a yàn"
+
+msgid " | Private: {count}"
+msgstr " | Ìkọ̀kọ̀: {count}"
+
+msgid "Active"
+msgstr "Nṣiṣẹ"
+
+msgid "Active Alerts"
+msgstr "Àkíyèsí Tó Nṣiṣẹ"
+
+msgid "Active: {count}"
+msgstr "Nṣiṣẹ: {count}"
+
+msgid "Advanced Add"
+msgstr "Ìròpò Àtẹ̀lẹ̀"
+
+msgid "Alert Rules"
+msgstr "Àwọn Ìlànà Àkíyèsí"
+
+msgid "Alerts"
+msgstr "Àkíyèsí"
+
+msgid "Announce: Failed"
+msgstr "Ìfihàn: Kò ṣe"
+
+msgid "Announce: {status}"
+msgstr "Ìfihàn: {status}"
+
+msgid "Are you sure you want to quit?"
+msgstr "Ṣé o dájú pé o fẹ́ jáde?"
+
+msgid "Automatically restart daemon if needed (without prompt)"
+msgstr "Tún bẹ̀rẹ̀ daemon laifọwọ́yí tí ó bá wúlò (láìsí ìbéèrè)"
+
+msgid "Browse"
+msgstr "Ṣàwárí"
+
+msgid "Capability"
+msgstr "Agbára"
+
+msgid "Commands: "
+msgstr "Àwọn Àṣẹ: "
+
+msgid "Completed"
+msgstr "Tí Parí"
+
+msgid "Completed (Scrape)"
+msgstr "Tí Parí (Scrape)"
+
+msgid "Component"
+msgstr "Apá"
+
+msgid "Condition"
+msgstr "Ìpàdé"
+
+msgid "Config Backups"
+msgstr "Àwọn Ìgbàgbẹ́ Ètò"
+
+msgid "Configuration file path"
+msgstr "Ọ̀nà fáìlì ètò"
+
+msgid "Confirm"
+msgstr "Jẹ́rìí"
+
+msgid "Connected"
+msgstr "Tí Dípọ̀"
+
+msgid "Connected Peers"
+msgstr "Àwọn Ẹgbẹ́ Tí Dípọ̀"
+
+msgid "Count: {count}{file_info}{private_info}"
+msgstr "Ìka: {count}{file_info}{private_info}"
+
+msgid "Create backup before migration"
+msgstr "Ṣẹ̀dá ìgbàgbẹ́ ṣáájú ìgbérí"
+
+msgid "DHT"
+msgstr "DHT"
+
+msgid "Description"
+msgstr "Àpèjúwe"
+
+msgid "Details"
+msgstr "Àwọn Àlàyé"
+
+msgid "Disabled"
+msgstr "Tí Dínkù"
+
+msgid "Download"
+msgstr "Ìgbàsílẹ̀"
+
+msgid "Download Speed"
+msgstr "Ìyára Ìgbàsílẹ̀"
+
+msgid "Download paused"
+msgstr "Ìgbàsílẹ̀ dínkù"
+
+msgid "Download resumed"
+msgstr "Ìgbàsílẹ̀ tún bẹ̀rẹ̀"
+
+msgid "Download stopped"
+msgstr "Ìgbàsílẹ̀ dákẹ́"
+
+msgid "Downloaded"
+msgstr "Tí Gbà"
+
+msgid "Downloading {name}"
+msgstr "Ń Gbà {name}"
+
+msgid "ETA"
+msgstr "Àkókò Tí Ó Parí"
+
+msgid "Enable debug mode"
+msgstr "Mú àwọn ìṣòro ṣiṣẹ́"
+
+msgid "Enable verbose output"
+msgstr "Mú ìjádé tó pọ̀ ṣiṣẹ́"
+
+msgid "Enabled"
+msgstr "Tí Mú Ṣiṣẹ́"
+
+msgid "Error reading scrape cache"
+msgstr "Àṣìṣe nínú kíkà scrape cache"
+
+msgid "Explore"
+msgstr "Ṣàwárí"
+
+msgid "Failed"
+msgstr "Kò Ṣe"
+
+msgid "Failed to register torrent in session"
+msgstr "Kò ṣeé fi torrent forúkọ sílé nínú àkókò"
+
+msgid "File"
+msgstr "Fáìlì"
+
+msgid "File Name"
+msgstr "Orúkọ Fáìlì"
+
+msgid "File selection not available for this torrent"
+msgstr "Ìyàn fáìlì kò sí fún torrent yìí"
+
+msgid "Files"
+msgstr "Àwọn Fáìlì"
+
+msgid "Global Config"
+msgstr "Ètò Gbogbogbò"
+
+msgid "Help"
+msgstr "Ìrànlọ́wọ́"
+
+msgid "History"
+msgstr "Ìtàn"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "IP"
+msgstr "IP"
+
+msgid "IP Filter"
+msgstr "Àtẹ̀jáde IP"
+
+msgid "IPFS"
+msgstr "IPFS"
+
+msgid "Info Hash"
+msgstr "Hash Àlàyé"
+
+msgid "Interactive backup"
+msgstr "Ìgbàgbẹ́ ìbaraẹnisọrọ̀"
+
+msgid "Invalid torrent file format"
+msgstr "Àwọn ètò fáìlì torrent kò tọ́"
+
+msgid "Key"
+msgstr "Ọ̀nà"
+
+msgid "Key not found: {key}"
+msgstr "Ọ̀nà kò rí: {key}"
+
+msgid "Last Scrape"
+msgstr "Scrape Tó Kẹ́hìn"
+
+msgid "Leechers"
+msgstr "Àwọn Olùgbà"
+
+msgid "Leechers (Scrape)"
+msgstr "Àwọn Olùgbà (Scrape)"
+
+msgid "MIGRATED"
+msgstr "TÍ GBÉRÍ"
+
+msgid "Menu"
+msgstr "Àtòjọ"
+
+msgid "Metric"
+msgstr "Métíríkì"
+
+msgid "NAT Management"
+msgstr "Ìṣàkóso NAT"
+
+msgid "Name"
+msgstr "Orúkọ"
+
+msgid "Network"
+msgstr "Nẹ́tíwọ̀kì"
+
+msgid "No"
+msgstr "Bẹ́ẹ̀ kọ́"
+
+msgid "No active alerts"
+msgstr "Kò sí àkíyèsí tó nṣiṣẹ́"
+
+msgid "No alert rules"
+msgstr "Kò sí àwọn ìlànà àkíyèsí"
+
+msgid "No alert rules configured"
+msgstr "Kò sí àwọn ìlànà àkíyèsí tí a ṣètò"
+
+msgid "No backups found"
+msgstr "Kò sí àwọn ìgbàgbẹ́ tí a rí"
+
+msgid "No cached results"
+msgstr "Kò sí àwọn èsì tí a ṣàkójọ"
+
+msgid "No checkpoints"
+msgstr "Kò sí àwọn ibi ìgbéyẹ̀wò"
+
+msgid "No config file to backup"
+msgstr "Kò sí fáìlì ètò láti ṣe ìgbàgbẹ́"
+
+msgid "No peers connected"
+msgstr "Kò sí àwọn ẹgbẹ́ tí dípọ̀"
+
+msgid "No profiles available"
+msgstr "Kò sí àwọn àkọlé tí wà"
+
+msgid "No templates available"
+msgstr "Kò sí àwọn àpẹrẹ tí wà"
+
+msgid "No torrent active"
+msgstr "Kò sí torrent tó nṣiṣẹ́"
+
+msgid "Nodes: {count}"
+msgstr "Àwọn Nóòdù: {count}"
+
+msgid "Not available"
+msgstr "Kò Wà"
+
+msgid "Not configured"
+msgstr "Kò ṣètò"
+
+msgid "Not supported"
+msgstr "Kò ṣeé gbà"
+
+msgid "OK"
+msgstr "Dájú"
+
+msgid "Operation not supported"
+msgstr "Ìṣẹ́ kò ṣeé gbà"
+
+msgid "PEX: {status}"
+msgstr "PEX: {status}"
+
+msgid "Pause"
+msgstr "Dúró"
+
+msgid "Peers"
+msgstr "Àwọn Ẹgbẹ́"
+
+msgid "Performance"
+msgstr "Ìṣẹ́"
+
+msgid "Pieces"
+msgstr "Àwọn Ẹyà"
+
+msgid "Port"
+msgstr "Pọ́ọ̀tì"
+
+msgid "Port: {port}"
+msgstr "Pọ́ọ̀tì: {port}"
+
+msgid "Priority"
+msgstr "Àkànkàn"
+
+msgid "Private"
+msgstr "Ìkọ̀kọ̀"
+
+msgid "Profiles"
+msgstr "Àwọn Àkọlé"
+
+msgid "Progress"
+msgstr "Ìlọsíwájú"
+
+msgid "Property"
+msgstr "Ohun"
+
+msgid "Proxy Config"
+msgstr "Ètò Proxy"
+
+msgid "PyYAML is required for YAML output"
+msgstr "PyYAML wúlò fún ìjádé YAML"
+
+msgid "Quick Add"
+msgstr "Ìròpò Kíákíá"
+
+msgid "Quit"
+msgstr "Jáde"
+
+msgid "Rate limits disabled"
+msgstr "Àwọn ààlà ìyára dínkù"
+
+msgid "Rate limits set to 1024 KiB/s"
+msgstr "Àwọn ààlà ìyára ṣètò sí 1024 KiB/s"
+
+msgid "Rehash: {status}"
+msgstr "Rehash: {status}"
+
+msgid "Resume"
+msgstr "Tún Bẹ̀rẹ̀"
+
+msgid "Rule"
+msgstr "Ìlànà"
+
+msgid "Rule not found: {name}"
+msgstr "Ìlànà kò rí: {name}"
+
+msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
+msgstr "Àwọn Ìlànà: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Àwọn Dídì: {blocks}"
+
+msgid "Running"
+msgstr "Ń Ṣiṣẹ́"
+
+msgid "SSL Config"
+msgstr "Ètò SSL"
+
+msgid "Scrape Results"
+msgstr "Àwọn Èsì Scrape"
+
+msgid "Scrape: {status}"
+msgstr "Scrape: {status}"
+
+msgid "Section not found: {section}"
+msgstr "Apá kò rí: {section}"
+
+msgid "Security Scan"
+msgstr "Ìwádìí Ààbò"
+
+msgid "Seeders"
+msgstr "Àwọn Olùgbìn"
+
+msgid "Seeders (Scrape)"
+msgstr "Àwọn Olùgbìn (Scrape)"
+
+msgid "Select files to download"
+msgstr "Yàn àwọn fáìlì láti gbà"
+
+msgid "Selected"
+msgstr "Tí A Yàn"
+
+msgid "Session"
+msgstr "Àkókò"
+
+msgid "Set value in global config file"
+msgstr "Ṣètò ìye nínú fáìlì ètò gbogbogbò"
+
+msgid "Set value in project local ccbt.toml"
+msgstr "Ṣètò ìye nínú ccbt.toml agbègbè iṣẹ́"
+
+msgid "Severity"
+msgstr "Ìwọ̀n"
+
+msgid "Show specific key path (e.g. network.listen_port)"
+msgstr "Fihàn ọ̀nà ọ̀nà pàtàkì (àpẹrẹ. network.listen_port)"
+
+msgid "Show specific section key path (e.g. network)"
+msgstr "Fihàn ọ̀nà ọ̀nà apá pàtàkì (àpẹrẹ. network)"
+
+msgid "Size"
+msgstr "Ìwọ̀n"
+
+msgid "Skip confirmation prompt"
+msgstr "Fò ìbéèrè ìjẹ́rìí"
+
+msgid "Skip daemon restart even if needed"
+msgstr "Fò títún bẹ̀rẹ̀ daemon bí ó tilẹ̀ jẹ́ pé ó wúlò"
+
+msgid "Snapshot failed: {error}"
+msgstr "Àwòrán kò ṣe: {error}"
+
+msgid "Snapshot saved to {path}"
+msgstr "Àwòrán tí a fipamọ́ sí {path}"
+
+msgid "Status"
+msgstr "Ìpàdé"
+
+msgid "Status: "
+msgstr "Ìpàdé: "
+
+msgid "Supported"
+msgstr "Tí A Gbà"
+
+msgid "System Capabilities"
+msgstr "Àwọn Agbára Ètò"
+
+msgid "System Capabilities Summary"
+msgstr "Àkójọ Àwọn Agbára Ètò"
+
+msgid "System Resources"
+msgstr "Àwọn Ohun Ètò"
+
+msgid "Templates"
+msgstr "Àwọn Àpẹrẹ"
+
+msgid "Timestamp"
+msgstr "Àkókò Àmì"
+
+msgid "Torrent Config"
+msgstr "Ètò Torrent"
+
+msgid "Torrent Status"
+msgstr "Ìpàdé Torrent"
+
+msgid "Torrent file not found"
+msgstr "Fáìlì torrent kò rí"
+
+msgid "Torrent not found"
+msgstr "Torrent kò rí"
+
+msgid "Torrents"
+msgstr "Àwọn Torrent"
+
+msgid "Torrents: {count}"
+msgstr "Àwọn Torrent: {count}"
+
+msgid "Tracker Scrape"
+msgstr "Scrape Tracker"
+
+msgid "Type"
+msgstr "Ìrí"
+
+msgid "Unknown"
+msgstr "Àìmọ̀"
+
+msgid "Unknown subcommand"
+msgstr "Àṣẹ kékeré àìmọ̀"
+
+msgid "Unknown subcommand: {sub}"
+msgstr "Àṣẹ kékeré àìmọ̀: {sub}"
+
+msgid "Upload"
+msgstr "Ìgbékalẹ̀"
+
+msgid "Upload Speed"
+msgstr "Ìyára Ìgbékalẹ̀"
+
+msgid "Uptime: {uptime:.1f}s"
+msgstr "Àkókò Ṣiṣẹ́: {uptime:.1f}s"
+
+msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr "Lílò: alerts list|list-active|add|remove|clear|load|save|test ..."
+
+msgid "Usage: backup <info_hash> <dest>"
+msgstr "Lílò: backup <info_hash> <dest>"
+
+msgid "Usage: checkpoint list"
+msgstr "Lílò: checkpoint list"
+
+msgid "Usage: config [show|get|set|reload] ..."
+msgstr "Lílò: config [show|get|set|reload] ..."
+
+msgid "Usage: config get <key.path>"
+msgstr "Lílò: config get <key.path>"
+
+msgid "Usage: config set <key.path> <value>"
+msgstr "Lílò: config set <key.path> <value>"
+
+msgid "Usage: config_backup list|create [desc]|restore <file>"
+msgstr "Lílò: config_backup list|create [desc]|restore <file>"
+
+msgid "Usage: config_diff <file1> <file2>"
+msgstr "Lílò: config_diff <file1> <file2>"
+
+msgid "Usage: config_export <toml|json|yaml> <output>"
+msgstr "Lílò: config_export <toml|json|yaml> <output>"
+
+msgid "Usage: config_import <toml|json|yaml> <input>"
+msgstr "Lílò: config_import <toml|json|yaml> <input>"
+
+msgid "Usage: export <path>"
+msgstr "Lílò: export <path>"
+
+msgid "Usage: import <path>"
+msgstr "Lílò: import <path>"
+
+msgid "Usage: limits [show|set] <info_hash> [down up]"
+msgstr "Lílò: limits [show|set] <info_hash> [down up]"
+
+msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
+msgstr "Lílò: limits set <info_hash> <down_kib> <up_kib>"
+
+msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgstr "Lílò: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+
+msgid "Usage: profile list | profile apply <name>"
+msgstr "Lílò: profile list | profile apply <name>"
+
+msgid "Usage: restore <backup_file>"
+msgstr "Lílò: restore <backup_file>"
+
+msgid "Usage: template list | template apply <name> [merge]"
+msgstr "Lílò: template list | template apply <name> [merge]"
+
+msgid "Use --confirm to proceed with reset"
+msgstr "Lo --confirm láti tẹ̀síwájú pẹ̀lú títún ṣètò"
+
+msgid "VALID"
+msgstr "TỌ́"
+
+msgid "Value"
+msgstr "Ìye"
+
+msgid "Welcome"
+msgstr "Káàbọ̀"
+
+msgid "Xet"
+msgstr "Xet"
+
+msgid "Yes"
+msgstr "Bẹ́ẹ̀ni"
+
+msgid "Yes (BEP 27)"
+msgstr "Bẹ́ẹ̀ni (BEP 27)"
+
+msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
+msgstr "[cyan]Ń ṣàfikún ìjápọ̀ magnet àti gbà metadata...[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
+msgstr "[cyan]Ń Gbà: {progress:.1f}% ({peers} àwọn ẹgbẹ́)[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
+msgstr "[cyan]Ń Gbà: {progress:.1f}% ({rate:.2f} MB/s, {peers} àwọn ẹgbẹ́)[/cyan]"
+
+msgid "[cyan]Initializing session components...[/cyan]"
+msgstr "[cyan]Ń bẹ̀rẹ̀ àwọn apá àkókò...[/cyan]"
+
+msgid "[cyan]Troubleshooting:[/cyan]"
+msgstr "[cyan]Ìṣọdọtun:[/cyan]"
+
+msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
+msgstr "[cyan]Ń dúró fún àwọn apá àkókò láti ṣeé ṣe (ààlà 60s)...[/cyan]"
+
+msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
+msgstr "[dim]Rò pé o lo àwọn àṣẹ daemon tàbí dákẹ́ daemon kíákíá: 'btbt daemon exit'[/dim]"
+
+msgid "[green]All files selected[/green]"
+msgstr "[green]Àwọn fáìlì gbogbo tí a yàn[/green]"
+
+msgid "[green]Applied auto-tuned configuration[/green]"
+msgstr "[green]Ètò tí a ṣàtúnṣe laifọwọ́yí ti wà[/green]"
+
+msgid "[green]Applied profile {name}[/green]"
+msgstr "[green]Àkọlé {name} ti wà[/green]"
+
+msgid "[green]Applied template {name}[/green]"
+msgstr "[green]Àpẹrẹ {name} ti wà[/green]"
+
+msgid "[green]Backup created: {path}[/green]"
+msgstr "[green]Ìgbàgbẹ́ ti ṣẹ̀dá: {path}[/green]"
+
+msgid "[green]Cleaned up {count} old checkpoints[/green]"
+msgstr "[green]A ti ṣe ìmọ́tẹ̀ {count} àwọn ibi ìgbéyẹ̀wò tí ó kù[/green]"
+
+msgid "[green]Cleared active alerts[/green]"
+msgstr "[green]Àwọn àkíyèsí tó nṣiṣẹ́ ti pa[/green]"
+
+msgid "[green]Configuration reloaded[/green]"
+msgstr "[green]Ètò ti tún ṣe[/green]"
+
+msgid "[green]Configuration restored[/green]"
+msgstr "[green]Ètò ti padà[/green]"
+
+msgid "[green]Connected to {count} peer(s)[/green]"
+msgstr "[green]Tí dípọ̀ sí {count} ẹgbẹ́[/green]"
+
+msgid "[green]Daemon status: {status}[/green]"
+msgstr "[green]Ìpàdé daemon: {status}[/green]"
+
+msgid "[green]Download completed, stopping session...[/green]"
+msgstr "[green]Ìgbàsílẹ̀ ti parí, ń dákẹ́ àkókò...[/green]"
+
+msgid "[green]Download completed: {name}[/green]"
+msgstr "[green]Ìgbàsílẹ̀ ti parí: {name}[/green]"
+
+msgid "[green]Exported checkpoint to {path}[/green]"
+msgstr "[green]Ibi ìgbéyẹ̀wò ti jádé sí {path}[/green]"
+
+msgid "[green]Exported configuration to {out}[/green]"
+msgstr "[green]Ètò ti jádé sí {out}[/green]"
+
+msgid "[green]Imported configuration[/green]"
+msgstr "[green]Ètò ti wọlé[/green]"
+
+msgid "[green]Loaded {count} rules[/green]"
+msgstr "[green]{count} ìlànà ti wọlé[/green]"
+
+msgid "[green]Magnet added successfully: {hash}...[/green]"
+msgstr "[green]Ìjápọ̀ magnet ti ṣàfikún ní àṣeyọrí: {hash}...[/green]"
+
+msgid "[green]Magnet added to daemon: {hash}[/green]"
+msgstr "[green]Ìjápọ̀ magnet ti ṣàfikún sí daemon: {hash}[/green]"
+
+msgid "[green]Metadata fetched successfully![/green]"
+msgstr "[green]Metadata ti gbà ní àṣeyọrí![/green]"
+
+msgid "[green]Migrated checkpoint to {path}[/green]"
+msgstr "[green]Ibi ìgbéyẹ̀wò ti gbérí sí {path}[/green]"
+
+msgid "[green]Monitoring started[/green]"
+msgstr "[green]Ìtọ́sọ́nà ti bẹ̀rẹ̀[/green]"
+
+msgid "[green]Resuming download from checkpoint...[/green]"
+msgstr "[green]Ń tún bẹ̀rẹ̀ ìgbàsílẹ̀ láti ibi ìgbéyẹ̀wò...[/green]"
+
+msgid "[green]Rule added[/green]"
+msgstr "[green]Ìlànà ti ṣàfikún[/green]"
+
+msgid "[green]Rule evaluated[/green]"
+msgstr "[green]Ìlànà ti ṣàyẹ̀wò[/green]"
+
+msgid "[green]Rule removed[/green]"
+msgstr "[green]Ìlànà ti yọ kúrò[/green]"
+
+msgid "[green]Saved rules[/green]"
+msgstr "[green]Àwọn ìlànà ti fipamọ́[/green]"
+
+msgid "[green]Selected file {idx}[/green]"
+msgstr "[green]Fáìlì {idx} tí a yàn[/green]"
+
+msgid "[green]Selected {count} file(s) for download[/green]"
+msgstr "[green]{count} fáìlì tí a yàn fún ìgbàsílẹ̀[/green]"
+
+msgid "[green]Set priority for file {idx} to {priority}[/green]"
+msgstr "[green]Àkànkàn fáìlì {idx} ti ṣètò sí {priority}[/green]"
+
+msgid "[green]Starting web interface on http://{host}:{port}[/green]"
+msgstr "[green]Ń bẹ̀rẹ̀ kiolesura wẹ́ẹ̀bù lórí http://{host}:{port}[/green]"
+
+msgid "[green]Torrent added to daemon: {hash}[/green]"
+msgstr "[green]Torrent ti ṣàfikún sí daemon: {hash}[/green]"
+
+msgid "[green]Updated runtime configuration[/green]"
+msgstr "[green]Ètò àkókò ṣiṣẹ́ ti ṣàtúnṣe[/green]"
+
+msgid "[green]Wrote metrics to {out}[/green]"
+msgstr "[green]Àwọn métíríkì ti kọ sí {out}[/green]"
+
+msgid "[red]Backup failed: {msgs}[/red]"
+msgstr "[red]Ìgbàgbẹ́ kò ṣe: {msgs}[/red]"
+
+msgid "[red]Error: Could not parse magnet link[/red]"
+msgstr "[red]Àṣìṣe: Kò ṣeé ṣàlàyé ìjápọ̀ magnet[/red]"
+
+msgid "[red]Error: {error}[/red]"
+msgstr "[red]Àṣìṣe: {error}[/red]"
+
+msgid "[red]Failed to add magnet link: {error}[/red]"
+msgstr "[red]Kò ṣeé ṣàfikún ìjápọ̀ magnet: {error}[/red]"
+
+msgid "[red]Failed to set config: {error}[/red]"
+msgstr "[red]Kò ṣeé ṣètò ètò: {error}[/red]"
+
+msgid "[red]File not found: {error}[/red]"
+msgstr "[red]Fáìlì kò rí: {error}[/red]"
+
+msgid "[red]Invalid arguments[/red]"
+msgstr "[red]Àwọn àtúnṣe kò tọ́[/red]"
+
+msgid "[red]Invalid file index: {idx}[/red]"
+msgstr "[red]Fáhìrísì fáìlì kò tọ́: {idx}[/red]"
+
+msgid "[red]Invalid file index[/red]"
+msgstr "[red]Fáhìrísì fáìlì kò tọ́[/red]"
+
+msgid "[red]Invalid info hash format: {hash}[/red]"
+msgstr "[red]Àwọn ètò hash àlàyé kò tọ́: {hash}[/red]"
+
+msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]Àkànkàn kò tọ́. Lo: do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]Àkànkàn kò tọ́: {priority}. Lo: do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid torrent file: {error}[/red]"
+msgstr "[red]Fáìlì torrent kò tọ́: {error}[/red]"
+
+msgid "[red]Key not found: {key}[/red]"
+msgstr "[red]Ọ̀nà kò rí: {key}[/red]"
+
+msgid "[red]No checkpoint found for {hash}[/red]"
+msgstr "[red]Kò sí ibi ìgbéyẹ̀wò tí a rí fún {hash}[/red]"
+
+msgid "[red]PyYAML not installed[/red]"
+msgstr "[red]PyYAML kò fi sílẹ̀[/red]"
+
+msgid "[red]Reload failed: {error}[/red]"
+msgstr "[red]Títún ṣe kò ṣe: {error}[/red]"
+
+msgid "[red]Restore failed: {msgs}[/red]"
+msgstr "[red]Ìpadà kò ṣe: {msgs}[/red]"
+
+msgid "[red]{error}[/red]"
+msgstr "[red]{error}[/red]"
+
+msgid "[yellow]All files deselected[/yellow]"
+msgstr "[yellow]Àwọn fáìlì gbogbo tí a yọ kúrò[/yellow]"
+
+msgid "[yellow]Debug mode not yet implemented[/yellow]"
+msgstr "[yellow]Àwọn àkókò ìṣọdọtun kò tíì ṣe[/yellow]"
+
+msgid "[yellow]Deselected file {idx}[/yellow]"
+msgstr "[yellow]Fáìlì {idx} tí a yọ kúrò[/yellow]"
+
+msgid "[yellow]Download interrupted by user[/yellow]"
+msgstr "[yellow]Ìgbàsílẹ̀ tí olùlo dákẹ́[/yellow]"
+
+msgid "[yellow]Fetching metadata from peers...[/yellow]"
+msgstr "[yellow]Ń gbà metadata láti àwọn ẹgbẹ́...[/yellow]"
+
+msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
+msgstr "[yellow]Àkànkàn '{spec}' kò tọ́: {error}[/yellow]"
+
+msgid "[yellow]Keeping session alive[/yellow]"
+msgstr "[yellow]Ń ṣàgbà àkókò[/yellow]"
+
+msgid "[yellow]No checkpoints found[/yellow]"
+msgstr "[yellow]Kò sí àwọn ibi ìgbéyẹ̀wò tí a rí[/yellow]"
+
+msgid "[yellow]Torrent session ended[/yellow]"
+msgstr "[yellow]Àkókò torrent ti parí[/yellow]"
+
+msgid "[yellow]Unknown command: {cmd}[/yellow]"
+msgstr "[yellow]Àṣẹ àìmọ̀: {cmd}[/yellow]"
+
+msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
+msgstr "[yellow]Àkíyèsí: Daemon ń ṣiṣẹ́. Bíríbẹ̀rẹ̀ àkókò agbègbè lè fa ìjà àwọn pọ́ọ̀tì.[/yellow]"
+
+msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
+msgstr "[yellow]Àkíyèsí: Àṣìṣe nínú dídákẹ́ àkókò: {error}[/yellow]"
+
+msgid "[yellow]{warning}[/yellow]"
+msgstr "[yellow]{warning}[/yellow]"
+
+msgid "ccBitTorrent Interactive CLI"
+msgstr "ccBitTorrent CLI Ìbaraẹnisọrọ̀"
+
+msgid "ccBitTorrent Status"
+msgstr "Ìpàdé ccBitTorrent"
+
+msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+
+msgid "uTP Config"
+msgstr "Ètò uTP"
+
+msgid "{count} features"
+msgstr "{count} àwọn ẹ̀yà"
+
+msgid "{count} items"
+msgstr "{count} àwọn nǹkan"
+
+msgid "{elapsed:.0f}s ago"
+msgstr "Ọjọ́ {elapsed:.0f}s sẹ́yìn"

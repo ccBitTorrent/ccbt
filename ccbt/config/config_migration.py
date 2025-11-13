@@ -37,6 +37,7 @@ class ConfigMigrator:
 
         Returns:
             Detected version string
+
         """
         # Check for explicit version field
         if "_version" in config_data:
@@ -66,6 +67,7 @@ class ConfigMigrator:
 
         Returns:
             Tuple of (migrated_config, migration_log)
+
         """
         if target_version is None:
             target_version = ConfigMigrator.CURRENT_VERSION
@@ -112,6 +114,7 @@ class ConfigMigrator:
 
         Returns:
             List of versions to migrate through
+
         """
         # Simple version comparison for now
         # In a real implementation, this would be more sophisticated
@@ -130,6 +133,7 @@ class ConfigMigrator:
 
         Returns:
             Migrated configuration
+
         """
         migrated = config_data.copy()
 
@@ -175,6 +179,7 @@ class ConfigMigrator:
 
         Returns:
             Migrated configuration
+
         """
         migrated = config_data.copy()
 
@@ -228,6 +233,7 @@ class ConfigMigrator:
 
         Returns:
             Tuple of (success, migration_log)
+
         """
         config_path = Path(config_file)
 
@@ -284,6 +290,7 @@ class ConfigMigrator:
 
         Returns:
             Tuple of (is_valid, list_of_errors)
+
         """
         try:
             # Remove migration metadata for validation
@@ -309,6 +316,7 @@ class ConfigMigrator:
 
         Returns:
             Tuple of (success, rollback_log)
+
         """
         config_path = Path(config_file)
 
@@ -343,6 +351,7 @@ class ConfigMigrator:
 
         Returns:
             List of migration log entries
+
         """
         return config_data.get("_migration_log", [])
 
@@ -355,6 +364,7 @@ class ConfigMigrator:
 
         Returns:
             Cleaned configuration data
+
         """
         cleaned = config_data.copy()
         cleaned.pop("_version", None)

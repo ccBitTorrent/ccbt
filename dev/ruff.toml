@@ -1,0 +1,178 @@
+# Ruff configuration file
+# See: https://docs.astral.sh/ruff/configuration/
+
+# Exclude directories
+exclude = [
+    ".benchmarks",
+    ".ccbt",
+    ".cursor",
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".github",
+    ".hg",
+    ".hypothesis",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".pre-commit-cache",
+    ".pre-commit-home",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "dev",
+    "docs",
+    "htmlcov",
+    "node_modules",
+    "site",
+    "venv",
+    "tests",
+    "benchmarks",
+    "ccbt/interface",
+]
+
+# Line length
+line-length = 88
+
+# Target Python version
+target-version = "py38"
+
+[lint]
+# Enable basic rules
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "ARG",  # flake8-unused-arguments
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "TID",  # flake8-tidy-imports
+    "Q",    # flake8-quotes
+    "I",    # isort
+    "N",    # pep8-naming
+    "D",    # pydocstyle
+    "S",    # flake8-bandit
+    "A",    # flake8-builtins
+    # "COM",  # flake8-commas - disabled due to conflict with formatter
+    "DTZ",  # flake8-datetimez
+    "EM",   # flake8-errmsg
+    "EXE",  # flake8-executable
+    "FA",   # flake8-future-annotations
+    "ISC",  # flake8-implicit-str-concat
+    "ICN",  # flake8-import-conventions
+    "G",    # flake8-logging-format
+    "INP",  # flake8-no-pep420
+    "PIE",  # flake8-pie
+    "T20",  # flake8-print
+    "PYI",  # flake8-pyi
+    "PT",   # flake8-pytest-style
+    "RSE",  # flake8-raise
+    "RET",  # flake8-return
+    "SLF",  # flake8-self
+    "SLOT", # flake8-slots
+    "INT",  # flake8-gettext
+    "PGH",  # pygrep-hooks
+    "PL",   # pylint
+    "TRY",  # tryceratops
+    "FLY",  # flynt
+    "NPY",  # numpy
+    "AIR",  # airflow
+    "PERF", # perflint
+    "FURB", # refurb
+    "RUF",  # ruff-specific rules
+]
+
+# Allow fix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+# Per-file ignores
+[lint.per-file-ignores]
+
+"ccbt/**/*.py" = [
+    "E501",     # line-too-long
+    "PLR2004",  # magic-value-comparison - BitTorrent protocol uses many constants
+    "PLR0912",  # too-many-branches - complex conditionals are acceptable
+    "PLR0915",  # too-many-statements - large functions are acceptable
+    "PLR0911",  # too-many-returns - complex functions are acceptable
+    "PLR0913",  # too-many-arguments - CLI commands often have many options
+    "PLW0603",  # global-statement - necessary for singleton pattern
+    "S324",     # SHA-1 usage - required by BitTorrent protocol (BEP 3)
+    "S104",     # hardcoded-bind-all-interfaces - configuration option
+    "S311",     # non-cryptographic-random - acceptable for peer IDs
+    "S105",     # hardcoded-password-string - enum values, not passwords
+    "S603",     # subprocess-without-shell-equals-true - CLI commands are validated
+    "SIM115",   # open-file-with-context-handler - file must stay open for mmap
+    "S110",     # try-except-pass - often necessary for cleanup and optional operations
+    "S310",     # suspicious-url-open-usage - URLs are validated for http/https schemes
+    "PLC0415",  # import-outside-top-level - lazy imports for performance/circular deps
+    "TRY301",   # abstract-raise - raise statements are clear as-is
+    "PERF203",  # try-except-in-loop - necessary for async error handling
+    "TRY300",   # try-else - async patterns don't always benefit from else blocks
+]
+"ccbt/session/session.py" = [
+    "SLF001",  # Private member access used for integration points
+    "D205",    # One-line docstring separation exceptions in large docstrings
+]
+"ccbt/session/factories.py" = [
+    "SLF001",  # Private member access used for dependency injection pattern
+]
+
+"**/__init__.py" = ["TID252"]
+"**/scripts/**/*.py" = ["T20"]
+"tests/**/*.py" = [
+    "S101",     # assert statements - standard in pytest tests
+    "E402",     # module-level import not at top - common pattern with pytestmark
+    "S324",     # SHA-1 usage - required for BEP 47 file SHA-1 verification tests
+]
+"tests/performance/bench_*.py" = [
+    "T201",     # print statements - required for CLI output
+    "PLR2004",  # magic-value-comparison - benchmark scripts use many constants
+    "PLR0915",  # too-many-statements - benchmark functions can be long
+    "PLR0912",  # too-many-branches - benchmark main functions have many test cases
+    "B023",     # function-uses-loop-variable - closures capture loop variables correctly
+]
+"ccbt/interface/terminal_dashboard.py" = [
+    "D417",     # Missing argument descriptions for *args/**kwargs - common in Textual screens
+    "SLF001",   # Private member access - necessary for Textual framework integration and internal state
+    "ARG002",   # Unused method arguments - Textual event handlers require specific signatures
+    "G004",     # Logging f-strings - acceptable for complex formatting in UI code
+    "N806",     # Variable naming - Textual framework uses PascalCase for classes
+    "N803",     # Argument naming - Textual framework uses PascalCase for class arguments
+    "E741",     # Ambiguous variable name - acceptable for short-lived variables
+    "A002",     # Shadowing builtin 'format' - Textual widget method name
+    "DTZ005",   # datetime.now() without tz - acceptable for UI timestamps
+    "SIM105",   # contextlib.suppress - try/except/pass is clearer in UI error handling
+    "SIM102",   # Nested if statements - clearer logic flow in UI event handlers
+    "B007",     # Unused loop variables - iterating for side effects is acceptable
+    "PERF102",  # dict.values() - keys needed for UI display
+    "PERF403",  # Dictionary comprehension - for-loop clearer for UI table building
+    "RUF015",   # next(iter()) - single element slice is clearer for UI code
+    "PLR1714",  # Multiple comparisons - clearer logic in UI validation
+    "RUF059",   # Unpacked variable unused - tuple unpacking for clarity
+    "F841",     # Unused local variable - may be used in future UI features
+    "TRY003",   # Long exception messages - UI error messages need to be descriptive
+    "EM101",    # Exception string literal - UI error messages are clear as literals
+    "EM102",    # Exception f-string literal - UI error messages need formatting
+    "B026",     # Star-arg unpacking after keyword - Textual framework pattern
+    "G201",     # logging.exception - logging.error with exc_info is acceptable
+    "TRY400",   # logging.exception - logging.error is acceptable for UI code
+]
+
+
+

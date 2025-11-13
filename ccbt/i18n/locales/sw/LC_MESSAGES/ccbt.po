@@ -1,0 +1,845 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: ccBitTorrent 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-01-01 00:00+0000\n"
+"PO-Revision-Date: 2025-11-10 21:50\n"
+"Last-Translator: ccBitTorrent Team\n"
+"Language-Team: Swahili Translation Team\n"
+"Language: sw\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n==0 || (n!=1 && n%1000000==0) ? 1 : 2);\n"
+
+
+msgid "\nAvailable Commands:\n  help          - Show this help message\n  status        - Show current status\n  peers         - Show connected peers\n  files         - Show file information\n  pause         - Pause download\n  resume        - Resume download\n  stop          - Stop download\n  quit          - Quit application\n  clear         - Clear screen\n        "
+msgstr "\nAmri Zinazopatikana:\n  help          - Onyesha ujumbe huu wa msaada\n  status        - Onyesha hali ya sasa\n  peers         - Onyesha wanaohusiana\n  files         - Onyesha taarifa za faili\n  pause         - Simamisha upakuaji\n  resume        - Endelea upakuaji\n  stop          - Acha upakuaji\n  quit          - Toka kwenye programu\n  clear         - Safisha skrini\n        "
+
+msgid "\n[bold cyan]File Selection[/bold cyan]"
+msgstr "\n[bold cyan]Uchaguzi wa Faili[/bold cyan]"
+
+msgid "\n[bold]File selection[/bold]"
+msgstr "\n[bold]Uchaguzi wa faili[/bold]"
+
+msgid "\n[yellow]Commands:[/yellow]"
+msgstr "\n[yellow]Amri:[/yellow]"
+
+msgid "\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgstr "\n[yellow]Uchaguzi wa faili umeghairiwa, kutumia chaguo-msingi[/yellow]"
+
+msgid "\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgstr "\n[yellow]Takwimu za Tracker Scrape:[/yellow]"
+
+msgid "\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgstr "\n[yellow]Tumia: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+
+msgid "\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgstr "\n[yellow]Onyo: Hakuna wanaohusiana wameunganishwa baada ya sekunde 30[/yellow]"
+
+msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
+msgstr "  [cyan]deselect <index>[/cyan] - Acha kuchagua faili"
+
+msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
+msgstr "  [cyan]deselect-all[/cyan] - Acha kuchagua faili zote"
+
+msgid "  [cyan]done[/cyan] - Finish selection and start download"
+msgstr "  [cyan]done[/cyan] - Maliza uchaguzi na anza upakuaji"
+
+msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
+msgstr "  [cyan]priority <index> <priority>[/cyan] - Weka kipaumbele (do_not_download/low/normal/high/maximum)"
+
+msgid "  [cyan]select <index>[/cyan] - Select a file"
+msgstr "  [cyan]select <index>[/cyan] - Chagua faili"
+
+msgid "  [cyan]select-all[/cyan] - Select all files"
+msgstr "  [cyan]select-all[/cyan] - Chagua faili zote"
+
+msgid "  • Check if torrent has active seeders"
+msgstr "  • Angalia ikiwa torrent ina seeders zinazofanya kazi"
+
+msgid "  • Ensure DHT is enabled: --enable-dht"
+msgstr "  • Hakikisha DHT imewezeshwa: --enable-dht"
+
+msgid "  • Run 'btbt diagnose-connections' to check connection status"
+msgstr "  • Endesha 'btbt diagnose-connections' kuangalia hali ya muunganisho"
+
+msgid "  • Verify NAT/firewall settings"
+msgstr "  • Thibitisha mipangilio ya NAT/firewall"
+
+msgid " | Files: {selected}/{total} selected"
+msgstr " | Faili: {selected}/{total} zimechaguliwa"
+
+msgid " | Private: {count}"
+msgstr " | Binafsi: {count}"
+
+msgid "Active"
+msgstr "Inafanya kazi"
+
+msgid "Active Alerts"
+msgstr "Onyo Zinazofanya Kazi"
+
+msgid "Active: {count}"
+msgstr "Inafanya kazi: {count}"
+
+msgid "Advanced Add"
+msgstr "Ongeza Kwa Kina"
+
+msgid "Alert Rules"
+msgstr "Kanuni za Onyo"
+
+msgid "Alerts"
+msgstr "Onyo"
+
+msgid "Announce: Failed"
+msgstr "Tangaza: Imeshindwa"
+
+msgid "Announce: {status}"
+msgstr "Tangaza: {status}"
+
+msgid "Are you sure you want to quit?"
+msgstr "Je, una uhakika unataka kuondoka?"
+
+msgid "Automatically restart daemon if needed (without prompt)"
+msgstr "Anza upya daemon kiotomatiki ikiwa inahitajika (bila kuuliza)"
+
+msgid "Browse"
+msgstr "Vinjari"
+
+msgid "Capability"
+msgstr "Uwezo"
+
+msgid "Commands: "
+msgstr "Amri: "
+
+msgid "Completed"
+msgstr "Imekamilika"
+
+msgid "Completed (Scrape)"
+msgstr "Imekamilika (Scrape)"
+
+msgid "Component"
+msgstr "Sehemu"
+
+msgid "Condition"
+msgstr "Hali"
+
+msgid "Config Backups"
+msgstr "Nakala za Usalama za Usanidi"
+
+msgid "Configuration file path"
+msgstr "Njia ya faili ya usanidi"
+
+msgid "Confirm"
+msgstr "Thibitisha"
+
+msgid "Connected"
+msgstr "Imeunganishwa"
+
+msgid "Connected Peers"
+msgstr "Wanaohusiana Wameunganishwa"
+
+msgid "Count: {count}{file_info}{private_info}"
+msgstr "Hesabu: {count}{file_info}{private_info}"
+
+msgid "Create backup before migration"
+msgstr "Unda nakala ya usalama kabla ya uhamishaji"
+
+msgid "DHT"
+msgstr "DHT"
+
+msgid "Description"
+msgstr "Maelezo"
+
+msgid "Details"
+msgstr "Maelezo ya kina"
+
+msgid "Disabled"
+msgstr "Imezimwa"
+
+msgid "Download"
+msgstr "Pakua"
+
+msgid "Download Speed"
+msgstr "Kasi ya Upakuaji"
+
+msgid "Download paused"
+msgstr "Upakuaji umezimwa"
+
+msgid "Download resumed"
+msgstr "Upakuaji umeendelezwa"
+
+msgid "Download stopped"
+msgstr "Upakuaji umeacha"
+
+msgid "Downloaded"
+msgstr "Imechukuliwa"
+
+msgid "Downloading {name}"
+msgstr "Inapakua {name}"
+
+msgid "ETA"
+msgstr "Muda wa Kukamilika"
+
+msgid "Enable debug mode"
+msgstr "Washa hali ya utatuzi"
+
+msgid "Enable verbose output"
+msgstr "Washa matokeo ya kina"
+
+msgid "Enabled"
+msgstr "Imeamilishwa"
+
+msgid "Error reading scrape cache"
+msgstr "Hitilafu katika kusoma cache ya scrape"
+
+msgid "Explore"
+msgstr "Chunguza"
+
+msgid "Failed"
+msgstr "Imeshindwa"
+
+msgid "Failed to register torrent in session"
+msgstr "Kushindwa kusajili torrent katika kikao"
+
+msgid "File"
+msgstr "Faili"
+
+msgid "File Name"
+msgstr "Jina la Faili"
+
+msgid "File selection not available for this torrent"
+msgstr "Uchaguzi wa faili haupatikani kwa torrent hii"
+
+msgid "Files"
+msgstr "Faili"
+
+msgid "Global Config"
+msgstr "Usanidi wa Ulimwengu"
+
+msgid "Help"
+msgstr "Msaada"
+
+msgid "History"
+msgstr "Historia"
+
+msgid "ID"
+msgstr "Kitambulisho"
+
+msgid "IP"
+msgstr "IP"
+
+msgid "IP Filter"
+msgstr "Kichujio cha IP"
+
+msgid "IPFS"
+msgstr "IPFS"
+
+msgid "Info Hash"
+msgstr "Hash ya Taarifa"
+
+msgid "Interactive backup"
+msgstr "Nakala ya usalama ya kuingiliana"
+
+msgid "Invalid torrent file format"
+msgstr "Muundo wa faili ya torrent si sahihi"
+
+msgid "Key"
+msgstr "Ufunguo"
+
+msgid "Key not found: {key}"
+msgstr "Ufunguo haujapatikana: {key}"
+
+msgid "Last Scrape"
+msgstr "Scrape ya Mwisho"
+
+msgid "Leechers"
+msgstr "Wanachukua"
+
+msgid "Leechers (Scrape)"
+msgstr "Wanachukua (Scrape)"
+
+msgid "MIGRATED"
+msgstr "IMEHAMISHWA"
+
+msgid "Menu"
+msgstr "Menyu"
+
+msgid "Metric"
+msgstr "Kipimo"
+
+msgid "NAT Management"
+msgstr "Usimamizi wa NAT"
+
+msgid "Name"
+msgstr "Jina"
+
+msgid "Network"
+msgstr "Mtandao"
+
+msgid "No"
+msgstr "Hapana"
+
+msgid "No active alerts"
+msgstr "Hakuna onyo zinazofanya kazi"
+
+msgid "No alert rules"
+msgstr "Hakuna kanuni za onyo"
+
+msgid "No alert rules configured"
+msgstr "Hakuna kanuni za onyo zimepangwa"
+
+msgid "No backups found"
+msgstr "Hakuna nakala za usalama zilizopatikana"
+
+msgid "No cached results"
+msgstr "Hakuna matokeo yaliyohifadhiwa"
+
+msgid "No checkpoints"
+msgstr "Hakuna sehemu za kuangalia"
+
+msgid "No config file to backup"
+msgstr "Hakuna faili ya usanidi ya kutengeneza nakala ya usalama"
+
+msgid "No peers connected"
+msgstr "Hakuna wanaohusiana wameunganishwa"
+
+msgid "No profiles available"
+msgstr "Hakuna wasifu zinazopatikana"
+
+msgid "No templates available"
+msgstr "Hakuna viwango zinazopatikana"
+
+msgid "No torrent active"
+msgstr "Hakuna torrent inayofanya kazi"
+
+msgid "Nodes: {count}"
+msgstr "Nodi: {count}"
+
+msgid "Not available"
+msgstr "Haipatikani"
+
+msgid "Not configured"
+msgstr "Haijapangwa"
+
+msgid "Not supported"
+msgstr "Haitegemezi"
+
+msgid "OK"
+msgstr "Sawa"
+
+msgid "Operation not supported"
+msgstr "Operesheni haitegemezi"
+
+msgid "PEX: {status}"
+msgstr "PEX: {status}"
+
+msgid "Pause"
+msgstr "Simamisha"
+
+msgid "Peers"
+msgstr "Wanaohusiana"
+
+msgid "Performance"
+msgstr "Utendaji"
+
+msgid "Pieces"
+msgstr "Vipande"
+
+msgid "Port"
+msgstr "Bandari"
+
+msgid "Port: {port}"
+msgstr "Bandari: {port}"
+
+msgid "Priority"
+msgstr "Kipaumbele"
+
+msgid "Private"
+msgstr "Binafsi"
+
+msgid "Profiles"
+msgstr "Wasifu"
+
+msgid "Progress"
+msgstr "Maendeleo"
+
+msgid "Property"
+msgstr "Mali"
+
+msgid "Proxy Config"
+msgstr "Usanidi wa Proxy"
+
+msgid "PyYAML is required for YAML output"
+msgstr "PyYAML inahitajika kwa matokeo ya YAML"
+
+msgid "Quick Add"
+msgstr "Ongeza Haraka"
+
+msgid "Quit"
+msgstr "Toka"
+
+msgid "Rate limits disabled"
+msgstr "Mipaka ya kasi imezimwa"
+
+msgid "Rate limits set to 1024 KiB/s"
+msgstr "Mipaka ya kasi imewekwa kwa 1024 KiB/s"
+
+msgid "Rehash: {status}"
+msgstr "Rehash: {status}"
+
+msgid "Resume"
+msgstr "Endelea"
+
+msgid "Rule"
+msgstr "Kanuni"
+
+msgid "Rule not found: {name}"
+msgstr "Kanuni haijapatikana: {name}"
+
+msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
+msgstr "Kanuni: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Vizuizi: {blocks}"
+
+msgid "Running"
+msgstr "Inaendesha"
+
+msgid "SSL Config"
+msgstr "Usanidi wa SSL"
+
+msgid "Scrape Results"
+msgstr "Matokeo ya Scrape"
+
+msgid "Scrape: {status}"
+msgstr "Scrape: {status}"
+
+msgid "Section not found: {section}"
+msgstr "Sehemu haijapatikana: {section}"
+
+msgid "Security Scan"
+msgstr "Uchunguzi wa Usalama"
+
+msgid "Seeders"
+msgstr "Wanapanda"
+
+msgid "Seeders (Scrape)"
+msgstr "Wanapanda (Scrape)"
+
+msgid "Select files to download"
+msgstr "Chagua faili za kupakua"
+
+msgid "Selected"
+msgstr "Imechaguliwa"
+
+msgid "Session"
+msgstr "Kikao"
+
+msgid "Set value in global config file"
+msgstr "Weka thamani katika faili ya usanidi ya ulimwengu"
+
+msgid "Set value in project local ccbt.toml"
+msgstr "Weka thamani katika ccbt.toml ya mradi ya ndani"
+
+msgid "Severity"
+msgstr "Ukali"
+
+msgid "Show specific key path (e.g. network.listen_port)"
+msgstr "Onyesha njia maalum ya ufunguo (mfano. network.listen_port)"
+
+msgid "Show specific section key path (e.g. network)"
+msgstr "Onyesha njia ya ufunguo wa sehemu maalum (mfano. network)"
+
+msgid "Size"
+msgstr "Ukubwa"
+
+msgid "Skip confirmation prompt"
+msgstr "Ruka ujumbe wa uthibitishaji"
+
+msgid "Skip daemon restart even if needed"
+msgstr "Ruka kuanza upya daemon hata ikiwa inahitajika"
+
+msgid "Snapshot failed: {error}"
+msgstr "Picha ya wakati imeshindwa: {error}"
+
+msgid "Snapshot saved to {path}"
+msgstr "Picha ya wakati imehifadhiwa kwa {path}"
+
+msgid "Status"
+msgstr "Hali"
+
+msgid "Status: "
+msgstr "Hali: "
+
+msgid "Supported"
+msgstr "Inategemezi"
+
+msgid "System Capabilities"
+msgstr "Uwezo wa Mfumo"
+
+msgid "System Capabilities Summary"
+msgstr "Muhtasari wa Uwezo wa Mfumo"
+
+msgid "System Resources"
+msgstr "Rasilimali za Mfumo"
+
+msgid "Templates"
+msgstr "Viwango"
+
+msgid "Timestamp"
+msgstr "Alama ya Wakati"
+
+msgid "Torrent Config"
+msgstr "Usanidi wa Torrent"
+
+msgid "Torrent Status"
+msgstr "Hali ya Torrent"
+
+msgid "Torrent file not found"
+msgstr "Faili ya torrent haijapatikana"
+
+msgid "Torrent not found"
+msgstr "Torrent haijapatikana"
+
+msgid "Torrents"
+msgstr "Torrents"
+
+msgid "Torrents: {count}"
+msgstr "Torrents: {count}"
+
+msgid "Tracker Scrape"
+msgstr "Scrape ya Tracker"
+
+msgid "Type"
+msgstr "Aina"
+
+msgid "Unknown"
+msgstr "Haijulikani"
+
+msgid "Unknown subcommand"
+msgstr "Amri ndogo haijulikani"
+
+msgid "Unknown subcommand: {sub}"
+msgstr "Amri ndogo haijulikani: {sub}"
+
+msgid "Upload"
+msgstr "Pakia"
+
+msgid "Upload Speed"
+msgstr "Kasi ya Kupakia"
+
+msgid "Uptime: {uptime:.1f}s"
+msgstr "Muda wa kufanya kazi: {uptime:.1f}s"
+
+msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr "Matumizi: alerts list|list-active|add|remove|clear|load|save|test ..."
+
+msgid "Usage: backup <info_hash> <dest>"
+msgstr "Matumizi: backup <info_hash> <dest>"
+
+msgid "Usage: checkpoint list"
+msgstr "Matumizi: checkpoint list"
+
+msgid "Usage: config [show|get|set|reload] ..."
+msgstr "Matumizi: config [show|get|set|reload] ..."
+
+msgid "Usage: config get <key.path>"
+msgstr "Matumizi: config get <key.path>"
+
+msgid "Usage: config set <key.path> <value>"
+msgstr "Matumizi: config set <key.path> <value>"
+
+msgid "Usage: config_backup list|create [desc]|restore <file>"
+msgstr "Matumizi: config_backup list|create [desc]|restore <file>"
+
+msgid "Usage: config_diff <file1> <file2>"
+msgstr "Matumizi: config_diff <file1> <file2>"
+
+msgid "Usage: config_export <toml|json|yaml> <output>"
+msgstr "Matumizi: config_export <toml|json|yaml> <output>"
+
+msgid "Usage: config_import <toml|json|yaml> <input>"
+msgstr "Matumizi: config_import <toml|json|yaml> <input>"
+
+msgid "Usage: export <path>"
+msgstr "Matumizi: export <path>"
+
+msgid "Usage: import <path>"
+msgstr "Matumizi: import <path>"
+
+msgid "Usage: limits [show|set] <info_hash> [down up]"
+msgstr "Matumizi: limits [show|set] <info_hash> [down up]"
+
+msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
+msgstr "Matumizi: limits set <info_hash> <down_kib> <up_kib>"
+
+msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgstr "Matumizi: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+
+msgid "Usage: profile list | profile apply <name>"
+msgstr "Matumizi: profile list | profile apply <name>"
+
+msgid "Usage: restore <backup_file>"
+msgstr "Matumizi: restore <backup_file>"
+
+msgid "Usage: template list | template apply <name> [merge]"
+msgstr "Matumizi: template list | template apply <name> [merge]"
+
+msgid "Use --confirm to proceed with reset"
+msgstr "Tumia --confirm kuendelea na kuanzisha upya"
+
+msgid "VALID"
+msgstr "SAHIHI"
+
+msgid "Value"
+msgstr "Thamani"
+
+msgid "Welcome"
+msgstr "Karibu"
+
+msgid "Xet"
+msgstr "Xet"
+
+msgid "Yes"
+msgstr "Ndiyo"
+
+msgid "Yes (BEP 27)"
+msgstr "Ndiyo (BEP 27)"
+
+msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
+msgstr "[cyan]Inaongeza kiungo cha magnet na inapata metadata...[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
+msgstr "[cyan]Inapakua: {progress:.1f}% ({peers} wanaohusiana)[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
+msgstr "[cyan]Inapakua: {progress:.1f}% ({rate:.2f} MB/s, {peers} wanaohusiana)[/cyan]"
+
+msgid "[cyan]Initializing session components...[/cyan]"
+msgstr "[cyan]Inaanzisha sehemu za kikao...[/cyan]"
+
+msgid "[cyan]Troubleshooting:[/cyan]"
+msgstr "[cyan]Kutatua matatizo:[/cyan]"
+
+msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
+msgstr "[cyan]Inasubiri sehemu za kikao ziwe tayari (kiwango cha juu sekunde 60)...[/cyan]"
+
+msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
+msgstr "[dim]Fikiria kutumia amri za daemon au simamisha daemon kwanza: 'btbt daemon exit'[/dim]"
+
+msgid "[green]All files selected[/green]"
+msgstr "[green]Faili zote zimechaguliwa[/green]"
+
+msgid "[green]Applied auto-tuned configuration[/green]"
+msgstr "[green]Usanidi wa kurekebisha kiotomatiki umetumika[/green]"
+
+msgid "[green]Applied profile {name}[/green]"
+msgstr "[green]Wasifu {name} umetumika[/green]"
+
+msgid "[green]Applied template {name}[/green]"
+msgstr "[green]Kiwango {name} kimetumika[/green]"
+
+msgid "[green]Backup created: {path}[/green]"
+msgstr "[green]Nakala ya usalama imeundwa: {path}[/green]"
+
+msgid "[green]Cleaned up {count} old checkpoints[/green]"
+msgstr "[green]Imesafisha sehemu za kuangalia {count} za zamani[/green]"
+
+msgid "[green]Cleared active alerts[/green]"
+msgstr "[green]Onyo zinazofanya kazi zimefutwa[/green]"
+
+msgid "[green]Configuration reloaded[/green]"
+msgstr "[green]Usanidi umeonyeshwa tena[/green]"
+
+msgid "[green]Configuration restored[/green]"
+msgstr "[green]Usanidi umerudishwa[/green]"
+
+msgid "[green]Connected to {count} peer(s)[/green]"
+msgstr "[green]Imeunganishwa na {count} mwenyehusika[/green]"
+
+msgid "[green]Daemon status: {status}[/green]"
+msgstr "[green]Hali ya daemon: {status}[/green]"
+
+msgid "[green]Download completed, stopping session...[/green]"
+msgstr "[green]Upakuaji umekamilika, kusimamisha kikao...[/green]"
+
+msgid "[green]Download completed: {name}[/green]"
+msgstr "[green]Upakuaji umekamilika: {name}[/green]"
+
+msgid "[green]Exported checkpoint to {path}[/green]"
+msgstr "[green]Sehemu ya kuangalia imehamishwa kwa {path}[/green]"
+
+msgid "[green]Exported configuration to {out}[/green]"
+msgstr "[green]Usanidi umehamishwa kwa {out}[/green]"
+
+msgid "[green]Imported configuration[/green]"
+msgstr "[green]Usanidi umeingizwa[/green]"
+
+msgid "[green]Loaded {count} rules[/green]"
+msgstr "[green]Kanuni {count} zimepakuliwa[/green]"
+
+msgid "[green]Magnet added successfully: {hash}...[/green]"
+msgstr "[green]Kiungo cha magnet kimeongezwa kwa mafanikio: {hash}...[/green]"
+
+msgid "[green]Magnet added to daemon: {hash}[/green]"
+msgstr "[green]Kiungo cha magnet kimeongezwa kwa daemon: {hash}[/green]"
+
+msgid "[green]Metadata fetched successfully![/green]"
+msgstr "[green]Metadata imepatikana kwa mafanikio![/green]"
+
+msgid "[green]Migrated checkpoint to {path}[/green]"
+msgstr "[green]Sehemu ya kuangalia imehamishwa kwa {path}[/green]"
+
+msgid "[green]Monitoring started[/green]"
+msgstr "[green]Ufuatiliaji umeanza[/green]"
+
+msgid "[green]Resuming download from checkpoint...[/green]"
+msgstr "[green]Kuendeleza upakuaji kutoka sehemu ya kuangalia...[/green]"
+
+msgid "[green]Rule added[/green]"
+msgstr "[green]Kanuni imeongezwa[/green]"
+
+msgid "[green]Rule evaluated[/green]"
+msgstr "[green]Kanuni imetathminiwa[/green]"
+
+msgid "[green]Rule removed[/green]"
+msgstr "[green]Kanuni imeondolewa[/green]"
+
+msgid "[green]Saved rules[/green]"
+msgstr "[green]Kanuni zimehifadhiwa[/green]"
+
+msgid "[green]Selected file {idx}[/green]"
+msgstr "[green]Faili {idx} imechaguliwa[/green]"
+
+msgid "[green]Selected {count} file(s) for download[/green]"
+msgstr "[green]Faili {count} zimechaguliwa kwa upakuaji[/green]"
+
+msgid "[green]Set priority for file {idx} to {priority}[/green]"
+msgstr "[green]Kipaumbele cha faili {idx} kimewekwa kwa {priority}[/green]"
+
+msgid "[green]Starting web interface on http://{host}:{port}[/green]"
+msgstr "[green]Inaanzisha kiolesura cha wavuti kwenye http://{host}:{port}[/green]"
+
+msgid "[green]Torrent added to daemon: {hash}[/green]"
+msgstr "[green]Torrent imeongezwa kwa daemon: {hash}[/green]"
+
+msgid "[green]Updated runtime configuration[/green]"
+msgstr "[green]Usanidi wa wakati wa utendaji umehakikishwa[/green]"
+
+msgid "[green]Wrote metrics to {out}[/green]"
+msgstr "[green]Vipimo vimeandikwa kwa {out}[/green]"
+
+msgid "[red]Backup failed: {msgs}[/red]"
+msgstr "[red]Nakala ya usalama imeshindwa: {msgs}[/red]"
+
+msgid "[red]Error: Could not parse magnet link[/red]"
+msgstr "[red]Hitilafu: Haikuweza kuchanganua kiungo cha magnet[/red]"
+
+msgid "[red]Error: {error}[/red]"
+msgstr "[red]Hitilafu: {error}[/red]"
+
+msgid "[red]Failed to add magnet link: {error}[/red]"
+msgstr "[red]Kushindwa kuongeza kiungo cha magnet: {error}[/red]"
+
+msgid "[red]Failed to set config: {error}[/red]"
+msgstr "[red]Kushindwa kuweka usanidi: {error}[/red]"
+
+msgid "[red]File not found: {error}[/red]"
+msgstr "[red]Faili haijapatikana: {error}[/red]"
+
+msgid "[red]Invalid arguments[/red]"
+msgstr "[red]Hoja si sahihi[/red]"
+
+msgid "[red]Invalid file index: {idx}[/red]"
+msgstr "[red]Fahirisi ya faili si sahihi: {idx}[/red]"
+
+msgid "[red]Invalid file index[/red]"
+msgstr "[red]Fahirisi ya faili si sahihi[/red]"
+
+msgid "[red]Invalid info hash format: {hash}[/red]"
+msgstr "[red]Muundo wa hash ya taarifa si sahihi: {hash}[/red]"
+
+msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]Kipaumbele si sahihi. Tumia: do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]Kipaumbele si sahihi: {priority}. Tumia: do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid torrent file: {error}[/red]"
+msgstr "[red]Faili ya torrent si sahihi: {error}[/red]"
+
+msgid "[red]Key not found: {key}[/red]"
+msgstr "[red]Ufunguo haujapatikana: {key}[/red]"
+
+msgid "[red]No checkpoint found for {hash}[/red]"
+msgstr "[red]Hakuna sehemu ya kuangalia iliyopatikana kwa {hash}[/red]"
+
+msgid "[red]PyYAML not installed[/red]"
+msgstr "[red]PyYAML haijasakinishwa[/red]"
+
+msgid "[red]Reload failed: {error}[/red]"
+msgstr "[red]Kuonyesha tena kumeshindwa: {error}[/red]"
+
+msgid "[red]Restore failed: {msgs}[/red]"
+msgstr "[red]Kurudisha kumeshindwa: {msgs}[/red]"
+
+msgid "[red]{error}[/red]"
+msgstr "[red]{error}[/red]"
+
+msgid "[yellow]All files deselected[/yellow]"
+msgstr "[yellow]Faili zote zimeachwa[/yellow]"
+
+msgid "[yellow]Debug mode not yet implemented[/yellow]"
+msgstr "[yellow]Hali ya utatuzi bado haijatekelezwa[/yellow]"
+
+msgid "[yellow]Deselected file {idx}[/yellow]"
+msgstr "[yellow]Faili {idx} imeachwa[/yellow]"
+
+msgid "[yellow]Download interrupted by user[/yellow]"
+msgstr "[yellow]Upakuaji umevurugwa na mtumiaji[/yellow]"
+
+msgid "[yellow]Fetching metadata from peers...[/yellow]"
+msgstr "[yellow]Inapata metadata kutoka kwa wanaohusiana...[/yellow]"
+
+msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
+msgstr "[yellow]Kipaumbele '{spec}' si sahihi: {error}[/yellow]"
+
+msgid "[yellow]Keeping session alive[/yellow]"
+msgstr "[yellow]Inaendeleza kikao hai[/yellow]"
+
+msgid "[yellow]No checkpoints found[/yellow]"
+msgstr "[yellow]Hakuna sehemu za kuangalia zilizopatikana[/yellow]"
+
+msgid "[yellow]Torrent session ended[/yellow]"
+msgstr "[yellow]Kikao cha torrent kimeisha[/yellow]"
+
+msgid "[yellow]Unknown command: {cmd}[/yellow]"
+msgstr "[yellow]Amri haijulikani: {cmd}[/yellow]"
+
+msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
+msgstr "[yellow]Onyo: Daemon inaendesha. Kuanza kikao cha ndani kunaweza kusababisha migogoro ya bandari.[/yellow]"
+
+msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
+msgstr "[yellow]Onyo: Hitilafu katika kusimamisha kikao: {error}[/yellow]"
+
+msgid "[yellow]{warning}[/yellow]"
+msgstr "[yellow]{warning}[/yellow]"
+
+msgid "ccBitTorrent Interactive CLI"
+msgstr "ccBitTorrent CLI ya Kuingiliana"
+
+msgid "ccBitTorrent Status"
+msgstr "Hali ya ccBitTorrent"
+
+msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+
+msgid "uTP Config"
+msgstr "Usanidi wa uTP"
+
+msgid "{count} features"
+msgstr "Vipengele {count}"
+
+msgid "{count} items"
+msgstr "Vitu {count}"
+
+msgid "{elapsed:.0f}s ago"
+msgstr "Sekunde {elapsed:.0f} zilizopita"

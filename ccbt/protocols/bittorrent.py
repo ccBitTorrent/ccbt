@@ -7,6 +7,7 @@ Provides a protocol abstraction for the existing BitTorrent implementation.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -18,7 +19,7 @@ from ccbt.protocols.base import (
 )
 from ccbt.utils.events import Event, EventType, emit_event
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - Only executed during static type checking
     from ccbt.models import PeerInfo, TorrentInfo
 
 
@@ -33,6 +34,12 @@ class BitTorrentProtocol(Protocol):
         self.tracker_manager = None
 
         # BitTorrent-specific capabilities
+        # Check if Xet is enabled in config
+        from ccbt.config.config import get_config
+
+        config = get_config()
+        supports_xet = getattr(config.disk, "xet_enabled", False)
+
         self.capabilities = ProtocolCapabilities(
             supports_encryption=True,
             supports_metadata=True,
@@ -40,6 +47,7 @@ class BitTorrentProtocol(Protocol):
             supports_dht=True,
             supports_webrtc=False,
             supports_ipfs=False,
+            supports_xet=supports_xet,
             max_connections=200,
             supports_ipv6=True,
         )
@@ -48,6 +56,9 @@ class BitTorrentProtocol(Protocol):
         self.peer_manager = None
         self.tracker_manager = None
         self.dht_manager = None
+
+        # Logger
+        self.logger = logging.getLogger(__name__)
 
     async def start(self) -> None:
         """Start BitTorrent protocol."""
@@ -151,8 +162,82 @@ class BitTorrentProtocol(Protocol):
 
     async def disconnect_peer(self, peer_id: str) -> None:
         """Disconnect from a BitTorrent peer."""
-        # TODO: Implement BitTorrent peer disconnection
-        self.remove_peer(peer_id)
+        try:
+            # Extract IP from peer_id if it's in "IP:port" format
+            # Peers are stored by IP in self.peers (from base Protocol class)
+            peer_ip = peer_id.split(":")[0] if ":" in peer_id else peer_id
+
+            # Check if peer exists in our tracking (by IP or full peer_id)
+            if (
+                peer_ip not in self.peers
+                and peer_id not in self.peers
+                and peer_ip not in self.active_connections
+                and peer_id not in self.active_connections
+            ):
+                self.logger.debug("Peer %s not found, skipping disconnection", peer_id)
+                return
+
+            # Use peer manager if available
+            if self.peer_manager and hasattr(self.peer_manager, "disconnect_peer"):
+                await self.peer_manager.disconnect_peer(peer_id)
+
+            # Fallback to session manager
+            elif self.session_manager and hasattr(
+                self.session_manager, "disconnect_peer"
+            ):
+                await self.session_manager.disconnect_peer(peer_id)
+
+            # Emit peer disconnected event
+            await emit_event(
+                Event(
+                    event_type=EventType.PEER_DISCONNECTED.value,
+                    data={
+                        "protocol_type": "bittorrent",
+                        "peer_id": peer_id,
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
+
+            # Update protocol statistics
+            self.update_stats()
+
+            # Remove peer from protocol tracking (try both IP and full peer_id)
+            if peer_ip in self.peers:
+                self.remove_peer(peer_ip)
+            elif peer_id in self.peers:
+                self.remove_peer(peer_id)
+            else:
+                # If not in peers dict, still remove from active_connections
+                self.active_connections.discard(peer_ip)
+                self.active_connections.discard(peer_id)
+
+        except Exception as e:
+            self.update_stats(errors=1)
+            self.logger.exception("Error disconnecting peer %s", peer_id)
+
+            # Still emit disconnect event even on error
+            await emit_event(
+                Event(
+                    event_type=EventType.PEER_DISCONNECTED.value,
+                    data={
+                        "protocol_type": "bittorrent",
+                        "peer_id": peer_id,
+                        "error": str(e),
+                        "timestamp": time.time(),
+                    },
+                ),
+            )
+
+            # Still remove peer from tracking
+            peer_ip = peer_id.split(":")[0] if ":" in peer_id else peer_id
+            if peer_ip in self.peers:
+                self.remove_peer(peer_ip)
+            elif peer_id in self.peers:
+                self.remove_peer(peer_id)
+            else:
+                self.active_connections.discard(peer_ip)
+                self.active_connections.discard(peer_id)
 
     async def send_message(self, peer_id: str, message: bytes) -> bool:
         """Send message to BitTorrent peer."""
@@ -234,8 +319,17 @@ class BitTorrentProtocol(Protocol):
 
             return peers
 
-    async def scrape_torrent(self, _torrent_info: TorrentInfo) -> dict[str, int]:
-        """Scrape torrent statistics from BitTorrent trackers."""
+    async def scrape_torrent(self, torrent_info: TorrentInfo) -> dict[str, int]:
+        """Scrape torrent statistics from BitTorrent trackers.
+
+        Args:
+            torrent_info: Torrent information model
+
+        Returns:
+            Dictionary with keys: seeders, leechers, completed
+            Returns zeros if scraping fails
+
+        """
         stats = {
             "seeders": 0,
             "leechers": 0,
@@ -243,13 +337,102 @@ class BitTorrentProtocol(Protocol):
         }
 
         try:
-            # TODO: Implement BitTorrent tracker scraping
-            # This would involve using the existing tracker scraping logic
+            # Convert TorrentInfo to torrent_data dict format
+            torrent_data = self._torrent_info_to_dict(torrent_info)
 
+            # Get all tracker URLs
+            tracker_urls = self._get_tracker_urls(torrent_info)
+
+            if not tracker_urls:
+                self.logger.debug("No tracker URLs found for scraping")
+                return stats
+
+            # Try scraping from each tracker until we get a successful result
+            for tracker_url in tracker_urls:
+                try:
+                    # Determine tracker type
+                    is_udp = tracker_url.startswith("udp://")
+                    is_http = tracker_url.startswith(("http://", "https://"))
+
+                    if not is_udp and not is_http:
+                        self.logger.debug(
+                            "Unsupported tracker URL scheme: %s", tracker_url
+                        )
+                        continue
+
+                    # Create tracker data dict for this tracker
+                    tracker_data = torrent_data.copy()
+                    tracker_data["announce"] = tracker_url
+
+                    # Scrape using appropriate client
+                    if is_udp:
+                        from ccbt.discovery.tracker_udp_client import (
+                            AsyncUDPTrackerClient,
+                        )
+
+                        udp_client = AsyncUDPTrackerClient()
+                        await udp_client.start()
+
+                        try:
+                            scrape_result = await udp_client.scrape(tracker_data)
+                            if scrape_result:
+                                # Map to standardized format
+                                stats["seeders"] = scrape_result.get("seeders", 0)
+                                stats["leechers"] = scrape_result.get("leechers", 0)
+                                stats["completed"] = scrape_result.get("completed", 0)
+
+                                # Success! Return first successful result
+                                if stats["seeders"] > 0 or stats["leechers"] > 0:
+                                    self.logger.info(
+                                        "Successfully scraped from UDP tracker: %s (seeders: %d, leechers: %d)",
+                                        tracker_url,
+                                        stats["seeders"],
+                                        stats["leechers"],
+                                    )
+                                    return stats
+                        finally:
+                            await udp_client.stop()
+
+                    else:  # HTTP/HTTPS
+                        from ccbt.discovery.tracker import AsyncTrackerClient
+
+                        http_client = AsyncTrackerClient()
+                        await http_client.start()
+
+                        try:
+                            scrape_result = await http_client.scrape(tracker_data)
+                            if scrape_result:
+                                # Map to standardized format
+                                stats["seeders"] = scrape_result.get("seeders", 0)
+                                stats["leechers"] = scrape_result.get("leechers", 0)
+                                stats["completed"] = scrape_result.get("completed", 0)
+
+                                # Success! Return first successful result
+                                if stats["seeders"] > 0 or stats["leechers"] > 0:
+                                    self.logger.info(
+                                        "Successfully scraped from HTTP tracker: %s (seeders: %d, leechers: %d)",
+                                        tracker_url,
+                                        stats["seeders"],
+                                        stats["leechers"],
+                                    )
+                                    return stats
+                        finally:
+                            await http_client.stop()
+
+                except Exception as e:
+                    # Log error but continue to next tracker
+                    self.logger.debug(
+                        "Failed to scrape from tracker %s: %s", tracker_url, e
+                    )
+                    continue
+
+            # If we get here, no tracker returned successful results
+            self.logger.debug("No trackers returned scrape results")
             return stats
 
         except Exception as e:
             # Emit error event
+            self.logger.exception("Error during tracker scraping")
             await emit_event(
                 Event(
                     event_type=EventType.PROTOCOL_ERROR.value,
@@ -262,6 +445,82 @@ class BitTorrentProtocol(Protocol):
             )
 
             return stats
+
+    def _torrent_info_to_dict(self, torrent_info: TorrentInfo) -> dict[str, Any]:
+        """Convert TorrentInfo model to torrent_data dict format.
+
+        Args:
+            torrent_info: TorrentInfo model
+
+        Returns:
+            Dictionary in format expected by tracker clients
+
+        """
+        # Build announce_list (flattened list)
+        announce_list = []
+        if torrent_info.announce_list:
+            for tier in torrent_info.announce_list:
+                announce_list.extend(tier)
+
+        # Build file_info dict
+        file_info = {
+            "type": "multi" if len(torrent_info.files) > 1 else "single",
+            "total_length": torrent_info.total_length,
+            "name": torrent_info.name,
+        }
+
+        if torrent_info.files:
+            if len(torrent_info.files) == 1:
+                file_info["length"] = torrent_info.files[0].length
+            else:
+                file_info["files"] = [
+                    {
+                        "length": f.length,
+                        "path": f.path or [],
+                        "full_path": f.full_path or "",
+                    }
+                    for f in torrent_info.files
+                ]
+
+        return {
+            "announce": torrent_info.announce,
+            "announce_list": announce_list,
+            "info_hash": torrent_info.info_hash,
+            "name": torrent_info.name,
+            "file_info": file_info,
+            "total_length": torrent_info.total_length,
+        }
+
+    def _get_tracker_urls(self, torrent_info: TorrentInfo) -> list[str]:
+        """Extract all tracker URLs from TorrentInfo.
+
+        Args:
+            torrent_info: TorrentInfo model
+
+        Returns:
+            List of tracker URLs (announce + all from announce_list)
+
+        """
+        urls = []
+
+        # Add primary announce URL
+        if torrent_info.announce:
+            urls.append(torrent_info.announce)
+
+        # Add URLs from announce_list
+        if torrent_info.announce_list:
+            for tier in torrent_info.announce_list:
+                urls.extend(tier)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_urls = []
+        for url in urls:
+            if url not in seen:
+                seen.add(url)
+                unique_urls.append(url)
+
+        return unique_urls
 
     def get_bittorrent_stats(self) -> dict[str, Any]:
         """Get BitTorrent-specific statistics."""

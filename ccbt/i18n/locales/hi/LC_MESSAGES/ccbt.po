@@ -1,0 +1,845 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: ccBitTorrent 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-01-01 00:00+0000\n"
+"PO-Revision-Date: 2025-11-10 21:18\n"
+"Last-Translator: ccBitTorrent Team\n"
+"Language-Team: Hindi\n"
+"Language: hi\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+
+msgid "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+msgstr "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+
+msgid "\\n[bold cyan]File Selection[/bold cyan]"
+msgstr "\\n[bold cyan]File Selection[/bold cyan]"
+
+msgid "\\n[bold]File selection[/bold]"
+msgstr "\\n[bold]File selection[/bold]"
+
+msgid "\\n[yellow]Commands:[/yellow]"
+msgstr "\\n[yellow]Commands:[/yellow]"
+
+msgid "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgstr "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+
+msgid "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgstr "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+
+msgid "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgstr "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+
+msgid "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgstr "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+
+msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
+msgstr "  [cyan]deselect <index>[/cyan] - एक फ़ाइल का चयन रद्द करें"
+
+msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
+msgstr "  [cyan]deselect-all[/cyan] - सभी फ़ाइलों का चयन रद्द करें"
+
+msgid "  [cyan]done[/cyan] - Finish selection and start download"
+msgstr "  [cyan]done[/cyan] - चयन समाप्त करें और डाउनलोड शुरू करें"
+
+msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
+msgstr "  [cyan]priority <index> <priority>[/cyan] - प्राथमिकता सेट करें (do_not_download/low/normal/high/maximum)"
+
+msgid "  [cyan]select <index>[/cyan] - Select a file"
+msgstr "  [cyan]select <index>[/cyan] - एक फ़ाइल चुनें"
+
+msgid "  [cyan]select-all[/cyan] - Select all files"
+msgstr "  [cyan]select-all[/cyan] - सभी फ़ाइलें चुनें"
+
+msgid "  • Check if torrent has active seeders"
+msgstr "  • जांचें कि क्या टोरेंट में सक्रिय सीडर हैं"
+
+msgid "  • Ensure DHT is enabled: --enable-dht"
+msgstr "  • सुनिश्चित करें कि DHT सक्षम है: --enable-dht"
+
+msgid "  • Run 'btbt diagnose-connections' to check connection status"
+msgstr "  • कनेक्शन स्थिति जांचने के लिए 'btbt diagnose-connections' चलाएं"
+
+msgid "  • Verify NAT/firewall settings"
+msgstr "  • NAT/फ़ायरवॉल सेटिंग्स सत्यापित करें"
+
+msgid " | Files: {selected}/{total} selected"
+msgstr " | फ़ाइलें: {selected}/{total} चयनित"
+
+msgid " | Private: {count}"
+msgstr " | निजी: {count}"
+
+msgid "Active"
+msgstr "सक्रिय"
+
+msgid "Active Alerts"
+msgstr "सक्रिय अलर्ट"
+
+msgid "Active: {count}"
+msgstr "सक्रिय: {count}"
+
+msgid "Advanced Add"
+msgstr "उन्नत जोड़ें"
+
+msgid "Alert Rules"
+msgstr "अलर्ट नियम"
+
+msgid "Alerts"
+msgstr "अलर्ट"
+
+msgid "Announce: Failed"
+msgstr "घोषणा: असफल"
+
+msgid "Announce: {status}"
+msgstr "घोषणा: {status}"
+
+msgid "Are you sure you want to quit?"
+msgstr "क्या आप वाकई बंद करना चाहते हैं?"
+
+msgid "Automatically restart daemon if needed (without prompt)"
+msgstr "आवश्यक होने पर स्वचालित रूप से डेमॉन पुनरारंभ करें (प्रॉम्प्ट के बिना)"
+
+msgid "Browse"
+msgstr "ब्राउज़ करें"
+
+msgid "Capability"
+msgstr "क्षमता"
+
+msgid "Commands: "
+msgstr "कमांड: "
+
+msgid "Completed"
+msgstr "पूर्ण"
+
+msgid "Completed (Scrape)"
+msgstr "पूर्ण (स्क्रैप)"
+
+msgid "Component"
+msgstr "घटक"
+
+msgid "Condition"
+msgstr "शर्त"
+
+msgid "Config Backups"
+msgstr "कॉन्फ़िग बैकअप"
+
+msgid "Configuration file path"
+msgstr "कॉन्फ़िगरेशन फ़ाइल पथ"
+
+msgid "Confirm"
+msgstr "पुष्टि करें"
+
+msgid "Connected"
+msgstr "जुड़ा हुआ"
+
+msgid "Connected Peers"
+msgstr "जुड़े हुए पीयर"
+
+msgid "Count: {count}{file_info}{private_info}"
+msgstr "गिनती: {count}{file_info}{private_info}"
+
+msgid "Create backup before migration"
+msgstr "स्थानांतरण से पहले बैकअप बनाएं"
+
+msgid "DHT"
+msgstr "DHT"
+
+msgid "Description"
+msgstr "विवरण"
+
+msgid "Details"
+msgstr "विवरण"
+
+msgid "Disabled"
+msgstr "अक्षम"
+
+msgid "Download"
+msgstr "डाउनलोड"
+
+msgid "Download Speed"
+msgstr "डाउनलोड गति"
+
+msgid "Download paused"
+msgstr "डाउनलोड रोक दिया गया"
+
+msgid "Download resumed"
+msgstr "डाउनलोड फिर से शुरू किया गया"
+
+msgid "Download stopped"
+msgstr "डाउनलोड बंद कर दिया गया"
+
+msgid "Downloaded"
+msgstr "डाउनलोड किया गया"
+
+msgid "Downloading {name}"
+msgstr "{name} डाउनलोड हो रहा है"
+
+msgid "ETA"
+msgstr "अनुमानित समय"
+
+msgid "Enable debug mode"
+msgstr "डीबग मोड सक्षम करें"
+
+msgid "Enable verbose output"
+msgstr "वर्बोज़ आउटपुट सक्षम करें"
+
+msgid "Enabled"
+msgstr "सक्षम"
+
+msgid "Error reading scrape cache"
+msgstr "स्क्रैप कैश पढ़ने में त्रुटि"
+
+msgid "Explore"
+msgstr "अन्वेषण करें"
+
+msgid "Failed"
+msgstr "असफल"
+
+msgid "Failed to register torrent in session"
+msgstr "सत्र में टोरेंट पंजीकृत करने में विफल"
+
+msgid "File"
+msgstr "फ़ाइल"
+
+msgid "File Name"
+msgstr "फ़ाइल नाम"
+
+msgid "File selection not available for this torrent"
+msgstr "इस टोरेंट के लिए फ़ाइल चयन उपलब्ध नहीं है"
+
+msgid "Files"
+msgstr "फ़ाइलें"
+
+msgid "Global Config"
+msgstr "वैश्विक कॉन्फ़िग"
+
+msgid "Help"
+msgstr "सहायता"
+
+msgid "History"
+msgstr "इतिहास"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "IP"
+msgstr "IP"
+
+msgid "IP Filter"
+msgstr "IP फ़िल्टर"
+
+msgid "IPFS"
+msgstr "IPFS"
+
+msgid "Info Hash"
+msgstr "जानकारी हैश"
+
+msgid "Interactive backup"
+msgstr "इंटरैक्टिव बैकअप"
+
+msgid "Invalid torrent file format"
+msgstr "अमान्य टोरेंट फ़ाइल प्रारूप"
+
+msgid "Key"
+msgstr "कुंजी"
+
+msgid "Key not found: {key}"
+msgstr "कुंजी नहीं मिली: {key}"
+
+msgid "Last Scrape"
+msgstr "अंतिम स्क्रैप"
+
+msgid "Leechers"
+msgstr "लीचर"
+
+msgid "Leechers (Scrape)"
+msgstr "लीचर (स्क्रैप)"
+
+msgid "MIGRATED"
+msgstr "स्थानांतरित"
+
+msgid "Menu"
+msgstr "मेनू"
+
+msgid "Metric"
+msgstr "मेट्रिक"
+
+msgid "NAT Management"
+msgstr "NAT प्रबंधन"
+
+msgid "Name"
+msgstr "नाम"
+
+msgid "Network"
+msgstr "नेटवर्क"
+
+msgid "No"
+msgstr "नहीं"
+
+msgid "No active alerts"
+msgstr "कोई सक्रिय अलर्ट नहीं"
+
+msgid "No alert rules"
+msgstr "कोई अलर्ट नियम नहीं"
+
+msgid "No alert rules configured"
+msgstr "कोई अलर्ट नियम कॉन्फ़िगर नहीं किया गया"
+
+msgid "No backups found"
+msgstr "कोई बैकअप नहीं मिला"
+
+msgid "No cached results"
+msgstr "कोई कैश्ड परिणाम नहीं"
+
+msgid "No checkpoints"
+msgstr "कोई चेकपॉइंट नहीं"
+
+msgid "No config file to backup"
+msgstr "बैकअप के लिए कोई कॉन्फ़िग फ़ाइल नहीं"
+
+msgid "No peers connected"
+msgstr "कोई पीयर जुड़ा नहीं है"
+
+msgid "No profiles available"
+msgstr "कोई प्रोफ़ाइल उपलब्ध नहीं"
+
+msgid "No templates available"
+msgstr "कोई टेम्प्लेट उपलब्ध नहीं"
+
+msgid "No torrent active"
+msgstr "कोई सक्रिय टोरेंट नहीं"
+
+msgid "Nodes: {count}"
+msgstr "नोड: {count}"
+
+msgid "Not available"
+msgstr "उपलब्ध नहीं"
+
+msgid "Not configured"
+msgstr "कॉन्फ़िगर नहीं किया गया"
+
+msgid "Not supported"
+msgstr "समर्थित नहीं"
+
+msgid "OK"
+msgstr "ठीक"
+
+msgid "Operation not supported"
+msgstr "ऑपरेशन समर्थित नहीं"
+
+msgid "PEX: {status}"
+msgstr "PEX: {status}"
+
+msgid "Pause"
+msgstr "रोकें"
+
+msgid "Peers"
+msgstr "पीयर"
+
+msgid "Performance"
+msgstr "प्रदर्शन"
+
+msgid "Pieces"
+msgstr "टुकड़े"
+
+msgid "Port"
+msgstr "पोर्ट"
+
+msgid "Port: {port}"
+msgstr "पोर्ट: {port}"
+
+msgid "Priority"
+msgstr "प्राथमिकता"
+
+msgid "Private"
+msgstr "निजी"
+
+msgid "Profiles"
+msgstr "प्रोफ़ाइल"
+
+msgid "Progress"
+msgstr "प्रगति"
+
+msgid "Property"
+msgstr "संपत्ति"
+
+msgid "Proxy Config"
+msgstr "प्रॉक्सी कॉन्फ़िग"
+
+msgid "PyYAML is required for YAML output"
+msgstr "YAML आउटपुट के लिए PyYAML आवश्यक है"
+
+msgid "Quick Add"
+msgstr "त्वरित जोड़ें"
+
+msgid "Quit"
+msgstr "बंद करें"
+
+msgid "Rate limits disabled"
+msgstr "दर सीमाएं अक्षम"
+
+msgid "Rate limits set to 1024 KiB/s"
+msgstr "दर सीमाएं 1024 KiB/s पर सेट"
+
+msgid "Rehash: {status}"
+msgstr "रीहैश: {status}"
+
+msgid "Resume"
+msgstr "फिर से शुरू करें"
+
+msgid "Rule"
+msgstr "नियम"
+
+msgid "Rule not found: {name}"
+msgstr "नियम नहीं मिला: {name}"
+
+msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
+msgstr "नियम: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, ब्लॉक: {blocks}"
+
+msgid "Running"
+msgstr "चल रहा है"
+
+msgid "SSL Config"
+msgstr "SSL कॉन्फ़िग"
+
+msgid "Scrape Results"
+msgstr "स्क्रैप परिणाम"
+
+msgid "Scrape: {status}"
+msgstr "स्क्रैप: {status}"
+
+msgid "Section not found: {section}"
+msgstr "अनुभाग नहीं मिला: {section}"
+
+msgid "Security Scan"
+msgstr "सुरक्षा स्कैन"
+
+msgid "Seeders"
+msgstr "सीडर"
+
+msgid "Seeders (Scrape)"
+msgstr "सीडर (स्क्रैप)"
+
+msgid "Select files to download"
+msgstr "डाउनलोड के लिए फ़ाइलें चुनें"
+
+msgid "Selected"
+msgstr "चयनित"
+
+msgid "Session"
+msgstr "सत्र"
+
+msgid "Set value in global config file"
+msgstr "वैश्विक कॉन्फ़िग फ़ाइल में मान सेट करें"
+
+msgid "Set value in project local ccbt.toml"
+msgstr "प्रोजेक्ट स्थानीय ccbt.toml में मान सेट करें"
+
+msgid "Severity"
+msgstr "गंभीरता"
+
+msgid "Show specific key path (e.g. network.listen_port)"
+msgstr "विशिष्ट कुंजी पथ दिखाएं (उदा. network.listen_port)"
+
+msgid "Show specific section key path (e.g. network)"
+msgstr "विशिष्ट अनुभाग कुंजी पथ दिखाएं (उदा. network)"
+
+msgid "Size"
+msgstr "आकार"
+
+msgid "Skip confirmation prompt"
+msgstr "पुष्टिकरण प्रॉम्प्ट छोड़ें"
+
+msgid "Skip daemon restart even if needed"
+msgstr "आवश्यक होने पर भी डेमॉन पुनरारंभ छोड़ें"
+
+msgid "Snapshot failed: {error}"
+msgstr "स्नैपशॉट असफल: {error}"
+
+msgid "Snapshot saved to {path}"
+msgstr "स्नैपशॉट {path} में सहेजा गया"
+
+msgid "Status"
+msgstr "स्थिति"
+
+msgid "Status: "
+msgstr "स्थिति: "
+
+msgid "Supported"
+msgstr "समर्थित"
+
+msgid "System Capabilities"
+msgstr "सिस्टम क्षमताएं"
+
+msgid "System Capabilities Summary"
+msgstr "सिस्टम क्षमताएं सारांश"
+
+msgid "System Resources"
+msgstr "सिस्टम संसाधन"
+
+msgid "Templates"
+msgstr "टेम्प्लेट"
+
+msgid "Timestamp"
+msgstr "समय चिह्न"
+
+msgid "Torrent Config"
+msgstr "टोरेंट कॉन्फ़िग"
+
+msgid "Torrent Status"
+msgstr "टोरेंट स्थिति"
+
+msgid "Torrent file not found"
+msgstr "टोरेंट फ़ाइल नहीं मिली"
+
+msgid "Torrent not found"
+msgstr "टोरेंट नहीं मिला"
+
+msgid "Torrents"
+msgstr "टोरेंट"
+
+msgid "Torrents: {count}"
+msgstr "टोरेंट: {count}"
+
+msgid "Tracker Scrape"
+msgstr "ट्रैकर स्क्रैप"
+
+msgid "Type"
+msgstr "प्रकार"
+
+msgid "Unknown"
+msgstr "अज्ञात"
+
+msgid "Unknown subcommand"
+msgstr "अज्ञात उपकमांड"
+
+msgid "Unknown subcommand: {sub}"
+msgstr "अज्ञात उपकमांड: {sub}"
+
+msgid "Upload"
+msgstr "अपलोड"
+
+msgid "Upload Speed"
+msgstr "अपलोड गति"
+
+msgid "Uptime: {uptime:.1f}s"
+msgstr "अपटाइम: {uptime:.1f}से"
+
+msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr "उपयोग: alerts list|list-active|add|remove|clear|load|save|test ..."
+
+msgid "Usage: backup <info_hash> <dest>"
+msgstr "उपयोग: backup <info_hash> <dest>"
+
+msgid "Usage: checkpoint list"
+msgstr "उपयोग: checkpoint list"
+
+msgid "Usage: config [show|get|set|reload] ..."
+msgstr "उपयोग: config [show|get|set|reload] ..."
+
+msgid "Usage: config get <key.path>"
+msgstr "उपयोग: config get <key.path>"
+
+msgid "Usage: config set <key.path> <value>"
+msgstr "उपयोग: config set <key.path> <value>"
+
+msgid "Usage: config_backup list|create [desc]|restore <file>"
+msgstr "उपयोग: config_backup list|create [desc]|restore <file>"
+
+msgid "Usage: config_diff <file1> <file2>"
+msgstr "उपयोग: config_diff <file1> <file2>"
+
+msgid "Usage: config_export <toml|json|yaml> <output>"
+msgstr "उपयोग: config_export <toml|json|yaml> <output>"
+
+msgid "Usage: config_import <toml|json|yaml> <input>"
+msgstr "उपयोग: config_import <toml|json|yaml> <input>"
+
+msgid "Usage: export <path>"
+msgstr "उपयोग: export <path>"
+
+msgid "Usage: import <path>"
+msgstr "उपयोग: import <path>"
+
+msgid "Usage: limits [show|set] <info_hash> [down up]"
+msgstr "उपयोग: limits [show|set] <info_hash> [down up]"
+
+msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
+msgstr "उपयोग: limits set <info_hash> <down_kib> <up_kib>"
+
+msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgstr "उपयोग: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+
+msgid "Usage: profile list | profile apply <name>"
+msgstr "उपयोग: profile list | profile apply <name>"
+
+msgid "Usage: restore <backup_file>"
+msgstr "उपयोग: restore <backup_file>"
+
+msgid "Usage: template list | template apply <name> [merge]"
+msgstr "उपयोग: template list | template apply <name> [merge]"
+
+msgid "Use --confirm to proceed with reset"
+msgstr "रीसेट के साथ आगे बढ़ने के लिए --confirm का उपयोग करें"
+
+msgid "VALID"
+msgstr "मान्य"
+
+msgid "Value"
+msgstr "मान"
+
+msgid "Welcome"
+msgstr "स्वागत है"
+
+msgid "Xet"
+msgstr "Xet"
+
+msgid "Yes"
+msgstr "हाँ"
+
+msgid "Yes (BEP 27)"
+msgstr "हाँ (BEP 27)"
+
+msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
+msgstr "[cyan]मैग्नेट लिंक जोड़ रहे हैं और मेटाडेटा प्राप्त कर रहे हैं...[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
+msgstr "[cyan]डाउनलोड हो रहा है: {progress:.1f}% ({peers} पीयर)[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
+msgstr "[cyan]डाउनलोड हो रहा है: {progress:.1f}% ({rate:.2f} MB/s, {peers} पीयर)[/cyan]"
+
+msgid "[cyan]Initializing session components...[/cyan]"
+msgstr "[cyan]सत्र घटक आरंभ कर रहे हैं...[/cyan]"
+
+msgid "[cyan]Troubleshooting:[/cyan]"
+msgstr "[cyan]समस्या निवारण:[/cyan]"
+
+msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
+msgstr "[cyan]सत्र घटकों के तैयार होने की प्रतीक्षा (अधिकतम 60s)...[/cyan]"
+
+msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
+msgstr "[dim]डेमॉन कमांड का उपयोग करने या पहले डेमॉन को रोकने पर विचार करें: 'btbt daemon exit'[/dim]"
+
+msgid "[green]All files selected[/green]"
+msgstr "[green]सभी फ़ाइलें चयनित[/green]"
+
+msgid "[green]Applied auto-tuned configuration[/green]"
+msgstr "[green]स्वचालित-ट्यून कॉन्फ़िगरेशन लागू किया गया[/green]"
+
+msgid "[green]Applied profile {name}[/green]"
+msgstr "[green]प्रोफ़ाइल {name} लागू की गई[/green]"
+
+msgid "[green]Applied template {name}[/green]"
+msgstr "[green]टेम्प्लेट {name} लागू किया गया[/green]"
+
+msgid "[green]Backup created: {path}[/green]"
+msgstr "[green]बैकअप बनाया गया: {path}[/green]"
+
+msgid "[green]Cleaned up {count} old checkpoints[/green]"
+msgstr "[green]{count} पुराने चेकपॉइंट साफ किए गए[/green]"
+
+msgid "[green]Cleared active alerts[/green]"
+msgstr "[green]सक्रिय अलर्ट साफ किए गए[/green]"
+
+msgid "[green]Configuration reloaded[/green]"
+msgstr "[green]कॉन्फ़िगरेशन पुनः लोड किया गया[/green]"
+
+msgid "[green]Configuration restored[/green]"
+msgstr "[green]कॉन्फ़िगरेशन पुनर्स्थापित किया गया[/green]"
+
+msgid "[green]Connected to {count} peer(s)[/green]"
+msgstr "[green]{count} पीयर से जुड़ा[/green]"
+
+msgid "[green]Daemon status: {status}[/green]"
+msgstr "[green]डेमॉन स्थिति: {status}[/green]"
+
+msgid "[green]Download completed, stopping session...[/green]"
+msgstr "[green]डाउनलोड पूर्ण, सत्र रोक रहे हैं...[/green]"
+
+msgid "[green]Download completed: {name}[/green]"
+msgstr "[green]डाउनलोड पूर्ण: {name}[/green]"
+
+msgid "[green]Exported checkpoint to {path}[/green]"
+msgstr "[green]चेकपॉइंट {path} में निर्यात किया गया[/green]"
+
+msgid "[green]Exported configuration to {out}[/green]"
+msgstr "[green]कॉन्फ़िगरेशन {out} में निर्यात किया गया[/green]"
+
+msgid "[green]Imported configuration[/green]"
+msgstr "[green]कॉन्फ़िगरेशन आयात किया गया[/green]"
+
+msgid "[green]Loaded {count} rules[/green]"
+msgstr "[green]{count} नियम लोड किए गए[/green]"
+
+msgid "[green]Magnet added successfully: {hash}...[/green]"
+msgstr "[green]मैग्नेट सफलतापूर्वक जोड़ा गया: {hash}...[/green]"
+
+msgid "[green]Magnet added to daemon: {hash}[/green]"
+msgstr "[green]मैग्नेट डेमॉन में जोड़ा गया: {hash}[/green]"
+
+msgid "[green]Metadata fetched successfully![/green]"
+msgstr "[green]मेटाडेटा सफलतापूर्वक प्राप्त किया गया![/green]"
+
+msgid "[green]Migrated checkpoint to {path}[/green]"
+msgstr "[green]चेकपॉइंट {path} में स्थानांतरित किया गया[/green]"
+
+msgid "[green]Monitoring started[/green]"
+msgstr "[green]निगरानी शुरू की गई[/green]"
+
+msgid "[green]Resuming download from checkpoint...[/green]"
+msgstr "[green]चेकपॉइंट से डाउनलोड फिर से शुरू कर रहे हैं...[/green]"
+
+msgid "[green]Rule added[/green]"
+msgstr "[green]नियम जोड़ा गया[/green]"
+
+msgid "[green]Rule evaluated[/green]"
+msgstr "[green]नियम मूल्यांकन किया गया[/green]"
+
+msgid "[green]Rule removed[/green]"
+msgstr "[green]नियम हटाया गया[/green]"
+
+msgid "[green]Saved rules[/green]"
+msgstr "[green]नियम सहेजे गए[/green]"
+
+msgid "[green]Selected file {idx}[/green]"
+msgstr "[green]फ़ाइल {idx} चयनित[/green]"
+
+msgid "[green]Selected {count} file(s) for download[/green]"
+msgstr "[green]डाउनलोड के लिए {count} फ़ाइल(ें) चयनित[/green]"
+
+msgid "[green]Set priority for file {idx} to {priority}[/green]"
+msgstr "[green]फ़ाइल {idx} के लिए प्राथमिकता {priority} सेट की गई[/green]"
+
+msgid "[green]Starting web interface on http://{host}:{port}[/green]"
+msgstr "[green]http://{host}:{port} पर वेब इंटरफ़ेस शुरू कर रहे हैं[/green]"
+
+msgid "[green]Torrent added to daemon: {hash}[/green]"
+msgstr "[green]टोरेंट डेमॉन में जोड़ा गया: {hash}[/green]"
+
+msgid "[green]Updated runtime configuration[/green]"
+msgstr "[green]रनटाइम कॉन्फ़िगरेशन अपडेट किया गया[/green]"
+
+msgid "[green]Wrote metrics to {out}[/green]"
+msgstr "[green]मेट्रिक्स {out} में लिखे गए[/green]"
+
+msgid "[red]Backup failed: {msgs}[/red]"
+msgstr "[red]बैकअप असफल: {msgs}[/red]"
+
+msgid "[red]Error: Could not parse magnet link[/red]"
+msgstr "[red]त्रुटि: मैग्नेट लिंक पार्स नहीं कर सका[/red]"
+
+msgid "[red]Error: {error}[/red]"
+msgstr "[red]त्रुटि: {error}[/red]"
+
+msgid "[red]Failed to add magnet link: {error}[/red]"
+msgstr "[red]मैग्नेट लिंक जोड़ने में विफल: {error}[/red]"
+
+msgid "[red]Failed to set config: {error}[/red]"
+msgstr "[red]कॉन्फ़िग सेट करने में विफल: {error}[/red]"
+
+msgid "[red]File not found: {error}[/red]"
+msgstr "[red]फ़ाइल नहीं मिली: {error}[/red]"
+
+msgid "[red]Invalid arguments[/red]"
+msgstr "[red]Invalid arguments[/red]"
+
+msgid "[red]Invalid file index: {idx}[/red]"
+msgstr "[red]अमान्य फ़ाइल सूचकांक: {idx}[/red]"
+
+msgid "[red]Invalid file index[/red]"
+msgstr "[red]अमान्य फ़ाइल सूचकांक[/red]"
+
+msgid "[red]Invalid info hash format: {hash}[/red]"
+msgstr "[red]अमान्य जानकारी हैश प्रारूप: {hash}[/red]"
+
+msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]अमान्य प्राथमिकता. उपयोग करें: do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]अमान्य प्राथमिकता: {priority}. उपयोग करें: do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid torrent file: {error}[/red]"
+msgstr "[red]अमान्य टोरेंट फ़ाइल: {error}[/red]"
+
+msgid "[red]Key not found: {key}[/red]"
+msgstr "[red]कुंजी नहीं मिली: {key}[/red]"
+
+msgid "[red]No checkpoint found for {hash}[/red]"
+msgstr "[red]{hash} के लिए कोई चेकपॉइंट नहीं मिला[/red]"
+
+msgid "[red]PyYAML not installed[/red]"
+msgstr "[red]PyYAML स्थापित नहीं है[/red]"
+
+msgid "[red]Reload failed: {error}[/red]"
+msgstr "[red]पुनः लोड असफल: {error}[/red]"
+
+msgid "[red]Restore failed: {msgs}[/red]"
+msgstr "[red]पुनर्स्थापना असफल: {msgs}[/red]"
+
+msgid "[red]{error}[/red]"
+msgstr "[red]{error}[/red]"
+
+msgid "[yellow]All files deselected[/yellow]"
+msgstr "[yellow]सभी फ़ाइलों का चयन रद्द कर दिया गया[/yellow]"
+
+msgid "[yellow]Debug mode not yet implemented[/yellow]"
+msgstr "[yellow]डीबग मोड अभी तक लागू नहीं किया गया[/yellow]"
+
+msgid "[yellow]Deselected file {idx}[/yellow]"
+msgstr "[yellow]फ़ाइल {idx} का चयन रद्द कर दिया गया[/yellow]"
+
+msgid "[yellow]Download interrupted by user[/yellow]"
+msgstr "[yellow]उपयोगकर्ता द्वारा डाउनलोड बाधित[/yellow]"
+
+msgid "[yellow]Fetching metadata from peers...[/yellow]"
+msgstr "[yellow]पीयर से मेटाडेटा प्राप्त कर रहे हैं...[/yellow]"
+
+msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
+msgstr "[yellow]अमान्य प्राथमिकता विनिर्देश '{spec}': {error}[/yellow]"
+
+msgid "[yellow]Keeping session alive[/yellow]"
+msgstr "[yellow]सत्र जीवित रख रहे हैं[/yellow]"
+
+msgid "[yellow]No checkpoints found[/yellow]"
+msgstr "[yellow]कोई चेकपॉइंट नहीं मिला[/yellow]"
+
+msgid "[yellow]Torrent session ended[/yellow]"
+msgstr "[yellow]टोरेंट सत्र समाप्त[/yellow]"
+
+msgid "[yellow]Unknown command: {cmd}[/yellow]"
+msgstr "[yellow]अज्ञात कमांड: {cmd}[/yellow]"
+
+msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
+msgstr "[yellow]चेतावनी: डेमॉन चल रहा है. स्थानीय सत्र शुरू करने से पोर्ट संघर्ष हो सकता है.[/yellow]"
+
+msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
+msgstr "[yellow]चेतावनी: सत्र रोकने में त्रुटि: {error}[/yellow]"
+
+msgid "[yellow]{warning}[/yellow]"
+msgstr "[yellow]{warning}[/yellow]"
+
+msgid "ccBitTorrent Interactive CLI"
+msgstr "ccBitTorrent इंटरैक्टिव CLI"
+
+msgid "ccBitTorrent Status"
+msgstr "ccBitTorrent स्थिति"
+
+msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+
+msgid "uTP Config"
+msgstr "uTP कॉन्फ़िग"
+
+msgid "{count} features"
+msgstr "{count} सुविधाएं"
+
+msgid "{count} items"
+msgstr "{count} आइटम"
+
+msgid "{elapsed:.0f}s ago"
+msgstr "{elapsed:.0f}से पहले"

@@ -5,8 +5,9 @@ This module handles multi-torrent session management and async operations.
 
 from __future__ import annotations
 
-from ccbt.session.async_main import AsyncDownloadManager as AsyncDownloadManagerSession
-from ccbt.session.async_main import main as async_main
+from ccbt.session.download_manager import (
+    AsyncDownloadManager as AsyncDownloadManagerSession,
+)
 from ccbt.session.session import (
     AsyncSessionManager,
     AsyncTorrentSession,
@@ -45,5 +46,4 @@ __all__ = [
     "AsyncSessionManager",
     "AsyncTorrentSession",
     "SessionManager",
-    "async_main",
 ]

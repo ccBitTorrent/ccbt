@@ -18,6 +18,8 @@ class TestTrackerClient:
     def setup_method(self):
         """Set up test fixtures."""
         self.client = TrackerClient()
+        # Clear any state from previous tests
+        self.client.sessions.clear()
 
         # Sample torrent data
         self.torrent_data = {
@@ -209,7 +211,7 @@ class TestTrackerClient:
         with pytest.raises(TrackerError, match="Request failed"):
             self.client._make_request("http://tracker.example.com/announce")
 
-    @patch("ccbt.tracker.TrackerClient._make_request")
+    @patch("ccbt.discovery.tracker.TrackerClient._make_request")
     def test_announce_success(self, mock_make_request):
         """Test successful tracker announce."""
         # Mock tracker response
@@ -237,7 +239,7 @@ class TestTrackerClient:
         assert "port=6881" in call_url
         assert "event=started" in call_url
 
-    @patch("ccbt.tracker.TrackerClient._make_request")
+    @patch("ccbt.discovery.tracker.TrackerClient._make_request")
     def test_announce_with_custom_params(self, mock_make_request):
         """Test tracker announce with custom parameters."""
         response_data = encode(
@@ -265,9 +267,22 @@ class TestTrackerClient:
         assert "left=10000" in call_url
         assert "event=completed" in call_url
 
-    @patch("ccbt.tracker.TrackerClient._make_request")
+    @patch("ccbt.discovery.tracker.TrackerClient._make_request")
     def test_announce_tracker_error(self, mock_make_request):
         """Test tracker announce with tracker error response."""
+        # Ensure clean state - reset any cached state
+        if hasattr(self.client, '_last_announce'):
+            delattr(self.client, '_last_announce')
+        
+        # Clear tracker sessions to avoid state pollution
+        self.client.sessions.clear()
+        
+        # Ensure torrent_data has required fields (may be modified by other tests)
+        if "peer_id" not in self.torrent_data:
+            self.torrent_data["peer_id"] = b"-CC0101-" + b"x" * 12
+        if "info_hash" not in self.torrent_data:
+            self.torrent_data["info_hash"] = b"x" * 20
+        
         # Mock failure response
         response_data = encode(
             {
@@ -278,6 +293,9 @@ class TestTrackerClient:
 
         with pytest.raises(TrackerError, match="Tracker failure"):
             self.client.announce(self.torrent_data)
+        
+        # Verify the mock was called
+        assert mock_make_request.called, "Tracker request was not made"
 
     def test_announce_generates_peer_id(self):
         """Test that announce generates peer ID if missing."""

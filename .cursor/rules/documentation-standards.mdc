@@ -1,4 +1,30 @@
 ---
+description: Documentation standards and structure for ccBitTorrent (MkDocs, reports embedding)
+globs: "docs/**/*.md"
+---
+# Documentation Standards
+
+## Structure
+- Documentation in [`docs/`](mdc:docs/); site built with MkDocs using [`dev/mkdocs.yml`](mdc:dev/mkdocs.yml).
+- Add new pages under `docs/`; update navigation in `dev/mkdocs.yml`.
+
+## Reports in Docs
+- Coverage HTML must be placed under `docs/reports/coverage/` so it can be linked as `reports/coverage/index.html` in nav.
+- Bandit JSON must be written to `docs/reports/bandit/bandit-report.json`. Render it in [`docs/reports/bandit/index.md`](mdc:docs/reports/bandit/index.md) using a fenced include:
+
+```json
+--8<-- "reports/bandit/bandit-report.json"
+```
+
+## Build
+- Build docs: `uv run mkdocs build --strict -f dev/mkdocs.yml`.
+
+## Writing
+- Use clear headers and short sections.
+- Use relative links for internal pages.
+- Provide bash/toml/python code blocks with syntax highlighting where appropriate.
+
+---
 globs: docs/**/*.md,*.md
 description: Documentation standards and requirements
 ---

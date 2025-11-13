@@ -98,6 +98,7 @@ class TestResumeIntegration:
                 mock_session_class.return_value = mock_session
 
                 session_manager = AsyncSessionManager(str(temp_path))
+                session_manager.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
 
                 # Test validate_checkpoint
                 is_valid = await session_manager.validate_checkpoint(checkpoint)
@@ -133,6 +134,7 @@ class TestResumeIntegration:
     async def test_error_handling(self):
         """Test error handling in resume functionality."""
         session_manager = AsyncSessionManager(".")
+        session_manager.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
 
         # Test with valid checkpoint but missing source
         valid_checkpoint = TorrentCheckpoint(
@@ -212,6 +214,7 @@ class TestResumeIntegration:
     async def test_resume_priority_order(self):
         """Test the resume priority order logic."""
         session_manager = AsyncSessionManager(".")
+        session_manager.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
 
         # Create checkpoint with all source types
         checkpoint = TorrentCheckpoint(

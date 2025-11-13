@@ -1,0 +1,30 @@
+# Dockerfile for compatibility testing
+# Build with: docker build -f dev/Dockerfile.test --build-arg PYTHON_VERSION=3.11 -t ccbt-test .
+# Or use docker-compose: docker-compose -f dev/docker-compose.test.yml up
+
+ARG PYTHON_VERSION=3.11
+FROM python:${PYTHON_VERSION}-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install UV
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Set working directory
+WORKDIR /app
+
+# Copy project files
+COPY . .
+
+# Install dependencies
+RUN /root/.cargo/bin/uv sync --dev
+
+# Default command (can be overridden)
+CMD ["/root/.cargo/bin/uv", "run", "pytest", "-c", "dev/pytest.ini", "tests/unit/", "-v"]
+

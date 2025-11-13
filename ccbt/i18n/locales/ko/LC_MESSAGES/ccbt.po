@@ -1,0 +1,844 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: ccBitTorrent 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-11-10 21:20\n"
+"PO-Revision-Date: 2025-11-10 21:20\n"
+"Last-Translator: ccBitTorrent Team\n"
+"Language-Team: Korean Team\n"
+"Language: ko\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+
+msgid "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+msgstr "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+
+msgid "\\n[bold cyan]File Selection[/bold cyan]"
+msgstr "\\n[bold cyan]File Selection[/bold cyan]"
+
+msgid "\\n[bold]File selection[/bold]"
+msgstr "\\n[bold]File selection[/bold]"
+
+msgid "\\n[yellow]Commands:[/yellow]"
+msgstr "\\n[yellow]Commands:[/yellow]"
+
+msgid "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgstr "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+
+msgid "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgstr "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+
+msgid "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgstr "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+
+msgid "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgstr "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+
+msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
+msgstr "  [cyan]deselect <인덱스>[/cyan] - 파일 선택 해제"
+
+msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
+msgstr "  [cyan]deselect-all[/cyan] - 모든 파일 선택 해제"
+
+msgid "  [cyan]done[/cyan] - Finish selection and start download"
+msgstr "  [cyan]done[/cyan] - 선택 완료 및 다운로드 시작"
+
+msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
+msgstr "  [cyan]priority <인덱스> <우선순위>[/cyan] - 우선순위 설정（do_not_download/low/normal/high/maximum）"
+
+msgid "  [cyan]select <index>[/cyan] - Select a file"
+msgstr "  [cyan]select <인덱스>[/cyan] - 파일 선택"
+
+msgid "  [cyan]select-all[/cyan] - Select all files"
+msgstr "  [cyan]select-all[/cyan] - 모든 파일 선택"
+
+msgid "  • Check if torrent has active seeders"
+msgstr "  • 토렌트에 활성 시더가 있는지 확인"
+
+msgid "  • Ensure DHT is enabled: --enable-dht"
+msgstr "  • DHT가 활성화되어 있는지 확인：--enable-dht"
+
+msgid "  • Run 'btbt diagnose-connections' to check connection status"
+msgstr "  • 연결 상태를 확인하려면 'btbt diagnose-connections' 실행"
+
+msgid "  • Verify NAT/firewall settings"
+msgstr "  • NAT/방화벽 설정 확인"
+
+msgid " | Files: {selected}/{total} selected"
+msgstr " | 파일：{selected}/{total} 선택됨"
+
+msgid " | Private: {count}"
+msgstr " | 비공개：{count}"
+
+msgid "Active"
+msgstr "활성"
+
+msgid "Active Alerts"
+msgstr "활성 경고"
+
+msgid "Active: {count}"
+msgstr "활성：{count}"
+
+msgid "Advanced Add"
+msgstr "고급 추가"
+
+msgid "Alert Rules"
+msgstr "경고 규칙"
+
+msgid "Alerts"
+msgstr "경고"
+
+msgid "Announce: Failed"
+msgstr "알림：실패"
+
+msgid "Announce: {status}"
+msgstr "알림：{status}"
+
+msgid "Are you sure you want to quit?"
+msgstr "종료하시겠습니까?"
+
+msgid "Automatically restart daemon if needed (without prompt)"
+msgstr "필요한 경우 데몬 자동 재시작（프롬프트 없음）"
+
+msgid "Browse"
+msgstr "찾아보기"
+
+msgid "Capability"
+msgstr "기능"
+
+msgid "Commands: "
+msgstr "명령："
+
+msgid "Completed"
+msgstr "완료"
+
+msgid "Completed (Scrape)"
+msgstr "완료（스크랩）"
+
+msgid "Component"
+msgstr "구성 요소"
+
+msgid "Condition"
+msgstr "조건"
+
+msgid "Config Backups"
+msgstr "설정 백업"
+
+msgid "Configuration file path"
+msgstr "설정 파일 경로"
+
+msgid "Confirm"
+msgstr "확인"
+
+msgid "Connected"
+msgstr "연결됨"
+
+msgid "Connected Peers"
+msgstr "연결된 피어"
+
+msgid "Count: {count}{file_info}{private_info}"
+msgstr "개수：{count}{file_info}{private_info}"
+
+msgid "Create backup before migration"
+msgstr "마이그레이션 전에 백업 생성"
+
+msgid "DHT"
+msgstr "DHT"
+
+msgid "Description"
+msgstr "설명"
+
+msgid "Details"
+msgstr "세부정보"
+
+msgid "Disabled"
+msgstr "비활성화됨"
+
+msgid "Download"
+msgstr "다운로드"
+
+msgid "Download Speed"
+msgstr "다운로드 속도"
+
+msgid "Download paused"
+msgstr "다운로드 일시정지됨"
+
+msgid "Download resumed"
+msgstr "다운로드 재개됨"
+
+msgid "Download stopped"
+msgstr "다운로드 중지됨"
+
+msgid "Downloaded"
+msgstr "다운로드됨"
+
+msgid "Downloading {name}"
+msgstr "{name} 다운로드 중"
+
+msgid "ETA"
+msgstr "예상 시간"
+
+msgid "Enable debug mode"
+msgstr "디버그 모드 활성화"
+
+msgid "Enable verbose output"
+msgstr "상세 출력 활성화"
+
+msgid "Enabled"
+msgstr "활성화됨"
+
+msgid "Error reading scrape cache"
+msgstr "스크랩 캐시 읽기 오류"
+
+msgid "Explore"
+msgstr "탐색"
+
+msgid "Failed"
+msgstr "실패"
+
+msgid "Failed to register torrent in session"
+msgstr "세션에 토렌트를 등록하지 못함"
+
+msgid "File"
+msgstr "File"
+
+msgid "File Name"
+msgstr "파일 이름"
+
+msgid "File selection not available for this torrent"
+msgstr "이 토렌트에 대해 파일 선택을 사용할 수 없음"
+
+msgid "Files"
+msgstr "파일"
+
+msgid "Global Config"
+msgstr "전역 설정"
+
+msgid "Help"
+msgstr "도움말"
+
+msgid "History"
+msgstr "기록"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "IP"
+msgstr "IP"
+
+msgid "IP Filter"
+msgstr "IP 필터"
+
+msgid "IPFS"
+msgstr "IPFS"
+
+msgid "Info Hash"
+msgstr "정보 해시"
+
+msgid "Interactive backup"
+msgstr "대화형 백업"
+
+msgid "Invalid torrent file format"
+msgstr "잘못된 토렌트 파일 형식"
+
+msgid "Key"
+msgstr "Key"
+
+msgid "Key not found: {key}"
+msgstr "키를 찾을 수 없음：{key}"
+
+msgid "Last Scrape"
+msgstr "마지막 스크랩"
+
+msgid "Leechers"
+msgstr "리처"
+
+msgid "Leechers (Scrape)"
+msgstr "리처（스크랩）"
+
+msgid "MIGRATED"
+msgstr "마이그레이션됨"
+
+msgid "Menu"
+msgstr "메뉴"
+
+msgid "Metric"
+msgstr "메트릭"
+
+msgid "NAT Management"
+msgstr "NAT 관리"
+
+msgid "Name"
+msgstr "이름"
+
+msgid "Network"
+msgstr "네트워크"
+
+msgid "No"
+msgstr "아니오"
+
+msgid "No active alerts"
+msgstr "활성 경고 없음"
+
+msgid "No alert rules"
+msgstr "경고 규칙 없음"
+
+msgid "No alert rules configured"
+msgstr "경고 규칙이 구성되지 않음"
+
+msgid "No backups found"
+msgstr "백업을 찾을 수 없음"
+
+msgid "No cached results"
+msgstr "캐시된 결과 없음"
+
+msgid "No checkpoints"
+msgstr "체크포인트 없음"
+
+msgid "No config file to backup"
+msgstr "백업할 설정 파일 없음"
+
+msgid "No peers connected"
+msgstr "연결된 피어 없음"
+
+msgid "No profiles available"
+msgstr "사용 가능한 프로필 없음"
+
+msgid "No templates available"
+msgstr "사용 가능한 템플릿 없음"
+
+msgid "No torrent active"
+msgstr "활성 토렌트 없음"
+
+msgid "Nodes: {count}"
+msgstr "노드：{count}"
+
+msgid "Not available"
+msgstr "사용할 수 없음"
+
+msgid "Not configured"
+msgstr "구성되지 않음"
+
+msgid "Not supported"
+msgstr "지원되지 않음"
+
+msgid "OK"
+msgstr "확인"
+
+msgid "Operation not supported"
+msgstr "지원되지 않는 작업"
+
+msgid "PEX: {status}"
+msgstr "PEX：{status}"
+
+msgid "Pause"
+msgstr "일시정지"
+
+msgid "Peers"
+msgstr "피어"
+
+msgid "Performance"
+msgstr "성능"
+
+msgid "Pieces"
+msgstr "조각"
+
+msgid "Port"
+msgstr "포트"
+
+msgid "Port: {port}"
+msgstr "포트：{port}"
+
+msgid "Priority"
+msgstr "우선순위"
+
+msgid "Private"
+msgstr "비공개"
+
+msgid "Profiles"
+msgstr "프로필"
+
+msgid "Progress"
+msgstr "진행률"
+
+msgid "Property"
+msgstr "속성"
+
+msgid "Proxy Config"
+msgstr "프록시 설정"
+
+msgid "PyYAML is required for YAML output"
+msgstr "YAML 출력에는 PyYAML이 필요합니다"
+
+msgid "Quick Add"
+msgstr "빠른 추가"
+
+msgid "Quit"
+msgstr "종료"
+
+msgid "Rate limits disabled"
+msgstr "속도 제한 비활성화됨"
+
+msgid "Rate limits set to 1024 KiB/s"
+msgstr "속도 제한이 1024 KiB/s로 설정됨"
+
+msgid "Rehash: {status}"
+msgstr "재해시：{status}"
+
+msgid "Resume"
+msgstr "재개"
+
+msgid "Rule"
+msgstr "규칙"
+
+msgid "Rule not found: {name}"
+msgstr "규칙을 찾을 수 없음：{name}"
+
+msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
+msgstr "규칙：{rules}，IPv4：{ipv4}，IPv6：{ipv6}，차단：{blocks}"
+
+msgid "Running"
+msgstr "실행 중"
+
+msgid "SSL Config"
+msgstr "SSL 설정"
+
+msgid "Scrape Results"
+msgstr "스크랩 결과"
+
+msgid "Scrape: {status}"
+msgstr "스크랩：{status}"
+
+msgid "Section not found: {section}"
+msgstr "섹션을 찾을 수 없음：{section}"
+
+msgid "Security Scan"
+msgstr "보안 스캔"
+
+msgid "Seeders"
+msgstr "시더"
+
+msgid "Seeders (Scrape)"
+msgstr "시더（스크랩）"
+
+msgid "Select files to download"
+msgstr "다운로드할 파일 선택"
+
+msgid "Selected"
+msgstr "선택됨"
+
+msgid "Session"
+msgstr "세션"
+
+msgid "Set value in global config file"
+msgstr "전역 설정 파일에 값 설정"
+
+msgid "Set value in project local ccbt.toml"
+msgstr "프로젝트 로컬 ccbt.toml에 값 설정"
+
+msgid "Severity"
+msgstr "심각도"
+
+msgid "Show specific key path (e.g. network.listen_port)"
+msgstr "특정 키 경로 표시（예：network.listen_port）"
+
+msgid "Show specific section key path (e.g. network)"
+msgstr "특정 섹션 키 경로 표시（예：network）"
+
+msgid "Size"
+msgstr "크기"
+
+msgid "Skip confirmation prompt"
+msgstr "확인 프롬프트 건너뛰기"
+
+msgid "Skip daemon restart even if needed"
+msgstr "필요하더라도 데몬 재시작 건너뛰기"
+
+msgid "Snapshot failed: {error}"
+msgstr "스냅샷 실패：{error}"
+
+msgid "Snapshot saved to {path}"
+msgstr "스냅샷이 {path}에 저장됨"
+
+msgid "Status"
+msgstr "상태"
+
+msgid "Status: "
+msgstr "상태："
+
+msgid "Supported"
+msgstr "지원됨"
+
+msgid "System Capabilities"
+msgstr "시스템 기능"
+
+msgid "System Capabilities Summary"
+msgstr "시스템 기능 요약"
+
+msgid "System Resources"
+msgstr "시스템 리소스"
+
+msgid "Templates"
+msgstr "템플릿"
+
+msgid "Timestamp"
+msgstr "타임스탬프"
+
+msgid "Torrent Config"
+msgstr "토렌트 설정"
+
+msgid "Torrent Status"
+msgstr "토렌트 상태"
+
+msgid "Torrent file not found"
+msgstr "토렌트 파일을 찾을 수 없음"
+
+msgid "Torrent not found"
+msgstr "토렌트를 찾을 수 없음"
+
+msgid "Torrents"
+msgstr "토렌트"
+
+msgid "Torrents: {count}"
+msgstr "토렌트：{count}"
+
+msgid "Tracker Scrape"
+msgstr "트래커 스크랩"
+
+msgid "Type"
+msgstr "유형"
+
+msgid "Unknown"
+msgstr "알 수 없음"
+
+msgid "Unknown subcommand"
+msgstr "알 수 없는 하위 명령"
+
+msgid "Unknown subcommand: {sub}"
+msgstr "알 수 없는 하위 명령：{sub}"
+
+msgid "Upload"
+msgstr "업로드"
+
+msgid "Upload Speed"
+msgstr "업로드 속도"
+
+msgid "Uptime: {uptime:.1f}s"
+msgstr "가동 시간：{uptime:.1f}초"
+
+msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr "사용：alerts list|list-active|add|remove|clear|load|save|test ..."
+
+msgid "Usage: backup <info_hash> <dest>"
+msgstr "사용：backup <정보 해시> <대상>"
+
+msgid "Usage: checkpoint list"
+msgstr "사용：checkpoint list"
+
+msgid "Usage: config [show|get|set|reload] ..."
+msgstr "사용：config [show|get|set|reload] ..."
+
+msgid "Usage: config get <key.path>"
+msgstr "사용：config get <키.경로>"
+
+msgid "Usage: config set <key.path> <value>"
+msgstr "사용：config set <키.경로> <값>"
+
+msgid "Usage: config_backup list|create [desc]|restore <file>"
+msgstr "사용：config_backup list|create [설명]|restore <파일>"
+
+msgid "Usage: config_diff <file1> <file2>"
+msgstr "사용：config_diff <파일1> <파일2>"
+
+msgid "Usage: config_export <toml|json|yaml> <output>"
+msgstr "사용：config_export <toml|json|yaml> <출력>"
+
+msgid "Usage: config_import <toml|json|yaml> <input>"
+msgstr "사용：config_import <toml|json|yaml> <입력>"
+
+msgid "Usage: export <path>"
+msgstr "사용：export <경로>"
+
+msgid "Usage: import <path>"
+msgstr "사용：import <경로>"
+
+msgid "Usage: limits [show|set] <info_hash> [down up]"
+msgstr "사용：limits [show|set] <정보 해시> [다운 업]"
+
+msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
+msgstr "사용：limits set <정보 해시> <다운_kib> <업_kib>"
+
+msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgstr "사용：metrics show [system|performance|all] | metrics export [json|prometheus] [출력]"
+
+msgid "Usage: profile list | profile apply <name>"
+msgstr "사용：profile list | profile apply <이름>"
+
+msgid "Usage: restore <backup_file>"
+msgstr "사용：restore <백업 파일>"
+
+msgid "Usage: template list | template apply <name> [merge]"
+msgstr "사용：template list | template apply <이름> [merge]"
+
+msgid "Use --confirm to proceed with reset"
+msgstr "재설정을 진행하려면 --confirm 사용"
+
+msgid "VALID"
+msgstr "유효"
+
+msgid "Value"
+msgstr "Value"
+
+msgid "Welcome"
+msgstr "환영합니다"
+
+msgid "Xet"
+msgstr "Xet"
+
+msgid "Yes"
+msgstr "예"
+
+msgid "Yes (BEP 27)"
+msgstr "예（BEP 27）"
+
+msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
+msgstr "[cyan]마그넷 링크 추가 및 메타데이터 가져오는 중...[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
+msgstr "[cyan]다운로드 중：{progress:.1f}%（{peers} 피어）[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
+msgstr "[cyan]다운로드 중：{progress:.1f}%（{rate:.2f} MB/s，{peers} 피어）[/cyan]"
+
+msgid "[cyan]Initializing session components...[/cyan]"
+msgstr "[cyan]세션 구성 요소 초기화 중...[/cyan]"
+
+msgid "[cyan]Troubleshooting:[/cyan]"
+msgstr "[cyan]문제 해결：[/cyan]"
+
+msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
+msgstr "[cyan]세션 구성 요소 준비 대기 중（최대 60초）...[/cyan]"
+
+msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
+msgstr "[dim]데몬 명령을 사용하거나 먼저 데몬을 중지하는 것을 고려：'btbt daemon exit'[/dim]"
+
+msgid "[green]All files selected[/green]"
+msgstr "[green]모든 파일이 선택되었습니다[/green]"
+
+msgid "[green]Applied auto-tuned configuration[/green]"
+msgstr "[green]자동 조정된 구성이 적용되었습니다[/green]"
+
+msgid "[green]Applied profile {name}[/green]"
+msgstr "[green]프로필 {name}이 적용되었습니다[/green]"
+
+msgid "[green]Applied template {name}[/green]"
+msgstr "[green]템플릿 {name}이 적용되었습니다[/green]"
+
+msgid "[green]Backup created: {path}[/green]"
+msgstr "[green]백업이 생성되었습니다：{path}[/green]"
+
+msgid "[green]Cleaned up {count} old checkpoints[/green]"
+msgstr "[green]{count}개의 오래된 체크포인트를 정리했습니다[/green]"
+
+msgid "[green]Cleared active alerts[/green]"
+msgstr "[green]활성 경고가 지워졌습니다[/green]"
+
+msgid "[green]Configuration reloaded[/green]"
+msgstr "[green]구성이 다시 로드되었습니다[/green]"
+
+msgid "[green]Configuration restored[/green]"
+msgstr "[green]구성이 복원되었습니다[/green]"
+
+msgid "[green]Connected to {count} peer(s)[/green]"
+msgstr "[green]{count}개의 피어에 연결되었습니다[/green]"
+
+msgid "[green]Daemon status: {status}[/green]"
+msgstr "[green]데몬 상태：{status}[/green]"
+
+msgid "[green]Download completed, stopping session...[/green]"
+msgstr "[green]다운로드가 완료되었습니다. 세션을 중지하는 중...[/green]"
+
+msgid "[green]Download completed: {name}[/green]"
+msgstr "[green]다운로드가 완료되었습니다：{name}[/green]"
+
+msgid "[green]Exported checkpoint to {path}[/green]"
+msgstr "[green]체크포인트가 {path}로 내보내졌습니다[/green]"
+
+msgid "[green]Exported configuration to {out}[/green]"
+msgstr "[green]구성이 {out}로 내보내졌습니다[/green]"
+
+msgid "[green]Imported configuration[/green]"
+msgstr "[green]구성이 가져와졌습니다[/green]"
+
+msgid "[green]Loaded {count} rules[/green]"
+msgstr "[green]{count}개의 규칙이 로드되었습니다[/green]"
+
+msgid "[green]Magnet added successfully: {hash}...[/green]"
+msgstr "[green]마그넷 링크가 성공적으로 추가되었습니다：{hash}...[/green]"
+
+msgid "[green]Magnet added to daemon: {hash}[/green]"
+msgstr "[green]마그넷 링크가 데몬에 추가되었습니다：{hash}[/green]"
+
+msgid "[green]Metadata fetched successfully![/green]"
+msgstr "[green]메타데이터를 성공적으로 가져왔습니다！[/green]"
+
+msgid "[green]Migrated checkpoint to {path}[/green]"
+msgstr "[green]체크포인트가 {path}로 마이그레이션되었습니다[/green]"
+
+msgid "[green]Monitoring started[/green]"
+msgstr "[green]모니터링이 시작되었습니다[/green]"
+
+msgid "[green]Resuming download from checkpoint...[/green]"
+msgstr "[green]체크포인트에서 다운로드를 재개하는 중...[/green]"
+
+msgid "[green]Rule added[/green]"
+msgstr "[green]규칙이 추가되었습니다[/green]"
+
+msgid "[green]Rule evaluated[/green]"
+msgstr "[green]규칙이 평가되었습니다[/green]"
+
+msgid "[green]Rule removed[/green]"
+msgstr "[green]규칙이 제거되었습니다[/green]"
+
+msgid "[green]Saved rules[/green]"
+msgstr "[green]규칙이 저장되었습니다[/green]"
+
+msgid "[green]Selected file {idx}[/green]"
+msgstr "[green]파일 {idx}이 선택되었습니다[/green]"
+
+msgid "[green]Selected {count} file(s) for download[/green]"
+msgstr "[green]{count}개의 파일이 다운로드용으로 선택되었습니다[/green]"
+
+msgid "[green]Set priority for file {idx} to {priority}[/green]"
+msgstr "[green]파일 {idx}의 우선순위가 {priority}로 설정되었습니다[/green]"
+
+msgid "[green]Starting web interface on http://{host}:{port}[/green]"
+msgstr "[green]http://{host}:{port}에서 웹 인터페이스를 시작하는 중[/green]"
+
+msgid "[green]Torrent added to daemon: {hash}[/green]"
+msgstr "[green]토렌트가 데몬에 추가되었습니다：{hash}[/green]"
+
+msgid "[green]Updated runtime configuration[/green]"
+msgstr "[green]런타임 구성이 업데이트되었습니다[/green]"
+
+msgid "[green]Wrote metrics to {out}[/green]"
+msgstr "[green]메트릭이 {out}에 기록되었습니다[/green]"
+
+msgid "[red]Backup failed: {msgs}[/red]"
+msgstr "[red]백업이 실패했습니다：{msgs}[/red]"
+
+msgid "[red]Error: Could not parse magnet link[/red]"
+msgstr "[red]오류：마그넷 링크를 구문 분석할 수 없습니다[/red]"
+
+msgid "[red]Error: {error}[/red]"
+msgstr "[red]오류：{error}[/red]"
+
+msgid "[red]Failed to add magnet link: {error}[/red]"
+msgstr "[red]마그넷 링크 추가 실패：{error}[/red]"
+
+msgid "[red]Failed to set config: {error}[/red]"
+msgstr "[red]구성 설정 실패：{error}[/red]"
+
+msgid "[red]File not found: {error}[/red]"
+msgstr "[red]파일을 찾을 수 없습니다：{error}[/red]"
+
+msgid "[red]Invalid arguments[/red]"
+msgstr "[red]잘못된 인수[/red]"
+
+msgid "[red]Invalid file index: {idx}[/red]"
+msgstr "[red]잘못된 파일 인덱스：{idx}[/red]"
+
+msgid "[red]Invalid file index[/red]"
+msgstr "[red]잘못된 파일 인덱스[/red]"
+
+msgid "[red]Invalid info hash format: {hash}[/red]"
+msgstr "[red]잘못된 정보 해시 형식：{hash}[/red]"
+
+msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]잘못된 우선순위. 사용：do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]잘못된 우선순위：{priority}. 사용：do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid torrent file: {error}[/red]"
+msgstr "[red]잘못된 토렌트 파일：{error}[/red]"
+
+msgid "[red]Key not found: {key}[/red]"
+msgstr "[red]키를 찾을 수 없습니다：{key}[/red]"
+
+msgid "[red]No checkpoint found for {hash}[/red]"
+msgstr "[red]{hash}에 대한 체크포인트를 찾을 수 없습니다[/red]"
+
+msgid "[red]PyYAML not installed[/red]"
+msgstr "[red]PyYAML이 설치되지 않았습니다[/red]"
+
+msgid "[red]Reload failed: {error}[/red]"
+msgstr "[red]다시 로드 실패：{error}[/red]"
+
+msgid "[red]Restore failed: {msgs}[/red]"
+msgstr "[red]복원 실패：{msgs}[/red]"
+
+msgid "[red]{error}[/red]"
+msgstr "[red]{error}[/red]"
+
+msgid "[yellow]All files deselected[/yellow]"
+msgstr "[yellow]모든 파일 선택이 해제되었습니다[/yellow]"
+
+msgid "[yellow]Debug mode not yet implemented[/yellow]"
+msgstr "[yellow]디버그 모드가 아직 구현되지 않았습니다[/yellow]"
+
+msgid "[yellow]Deselected file {idx}[/yellow]"
+msgstr "[yellow]파일 {idx} 선택이 해제되었습니다[/yellow]"
+
+msgid "[yellow]Download interrupted by user[/yellow]"
+msgstr "[yellow]다운로드가 사용자에 의해 중단되었습니다[/yellow]"
+
+msgid "[yellow]Fetching metadata from peers...[/yellow]"
+msgstr "[yellow]피어에서 메타데이터를 가져오는 중...[/yellow]"
+
+msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
+msgstr "[yellow]잘못된 우선순위 사양 '{spec}'：{error}[/yellow]"
+
+msgid "[yellow]Keeping session alive[/yellow]"
+msgstr "[yellow]세션을 유지하는 중[/yellow]"
+
+msgid "[yellow]No checkpoints found[/yellow]"
+msgstr "[yellow]체크포인트를 찾을 수 없습니다[/yellow]"
+
+msgid "[yellow]Torrent session ended[/yellow]"
+msgstr "[yellow]토렌트 세션이 종료되었습니다[/yellow]"
+
+msgid "[yellow]Unknown command: {cmd}[/yellow]"
+msgstr "[yellow]알 수 없는 명령：{cmd}[/yellow]"
+
+msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
+msgstr "[yellow]경고：데몬이 실행 중입니다. 로컬 세션을 시작하면 포트 충돌이 발생할 수 있습니다.[/yellow]"
+
+msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
+msgstr "[yellow]경고：세션 중지 중 오류：{error}[/yellow]"
+
+msgid "[yellow]{warning}[/yellow]"
+msgstr "[yellow]{warning}[/yellow]"
+
+msgid "ccBitTorrent Interactive CLI"
+msgstr "ccBitTorrent 대화형 CLI"
+
+msgid "ccBitTorrent Status"
+msgstr "ccBitTorrent 상태"
+
+msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+
+msgid "uTP Config"
+msgstr "uTP 설정"
+
+msgid "{count} features"
+msgstr "{count}개 기능"
+
+msgid "{count} items"
+msgstr "{count}개 항목"
+
+msgid "{elapsed:.0f}s ago"
+msgstr "{elapsed:.0f}초 전"
