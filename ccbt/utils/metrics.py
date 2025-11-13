@@ -9,6 +9,7 @@ structured logging, and real-time statistics tracking.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -17,19 +18,35 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
+# Define at module level so they always exist for patching/mocking
+CollectorRegistry: type | None = None  # type: ignore[assignment, misc]
+Counter: type | None = None  # type: ignore[assignment, misc]
+Gauge: type | None = None  # type: ignore[assignment, misc]
+start_http_server: Callable | None = None  # type: ignore[assignment, misc]
+
 try:
     from prometheus_client import (
-        CollectorRegistry,
-        Counter,
-        Gauge,
-        start_http_server,
+        CollectorRegistry as _CollectorRegistry,
+    )
+    from prometheus_client import (
+        Counter as _Counter,
+    )
+    from prometheus_client import (
+        Gauge as _Gauge,
+    )
+    from prometheus_client import (
+        start_http_server as _start_http_server,
     )
 
-    HAS_PROMETHEUS = True
-except ImportError:
-    HAS_PROMETHEUS = False
+    # Assign imported values
+    CollectorRegistry = _CollectorRegistry
+    Counter = _Counter
+    Gauge = _Gauge
+    start_http_server = _start_http_server
 
-import contextlib
+    HAS_PROMETHEUS = True
+except ImportError:  # pragma: no cover - Defensive check for missing prometheus_client, requires uninstalling dependency
+    HAS_PROMETHEUS = False
 
 
 def _get_config():
@@ -133,7 +150,12 @@ class MetricsCollector:
 
     def _setup_prometheus_metrics(self) -> None:
         """Setup Prometheus metrics if available."""
-        if not HAS_PROMETHEUS:
+        if (
+            not HAS_PROMETHEUS
+            or CollectorRegistry is None
+            or Gauge is None
+            or Counter is None
+        ):
             return
 
         self.registry = CollectorRegistry()
@@ -173,6 +195,7 @@ class MetricsCollector:
             HAS_PROMETHEUS
             and self.config.observability.enable_metrics
             and hasattr(self, "registry")
+            and start_http_server is not None
         ):
             try:
                 port = self.config.observability.metrics_port

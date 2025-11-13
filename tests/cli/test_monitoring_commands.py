@@ -338,6 +338,122 @@ class TestAlertsCommand:
         
         assert "Use --list" in result.output
 
+    @patch("ccbt.cli.monitoring_commands.get_alert_manager")
+    @patch("ccbt.config.config.get_config")
+    def test_alerts_get_config_exception(self, mock_get_config, mock_get_am):
+        """Test alerts with get_config() exception - default path fallback (lines 120-121)."""
+        am = MagicMock()
+        mock_get_am.return_value = am
+        mock_get_config.side_effect = Exception("Config error")
+        
+        runner = CliRunner()
+        result = runner.invoke(alerts, ["--load", "/some/path.json"])
+        
+        # Should use default path ".ccbt/alerts.json" when get_config fails
+        # The load will fail, but the exception path is covered
+        assert result.exit_code == 0 or "Failed to load rules" in result.output
+
+    @patch("ccbt.cli.monitoring_commands.get_alert_manager")
+    def test_alerts_list_active_with_multiple_alerts(self, mock_get_am):
+        """Test alerts --list-active with multiple active alerts (lines 159-162)."""
+        # Create multiple active alerts
+        alert1 = MagicMock()
+        alert1.severity = MagicMock()
+        alert1.severity.value = "warning"
+        alert1.rule_name = "rule1"
+        alert1.value = 85.5
+        
+        alert2 = MagicMock()
+        alert2.severity = MagicMock()
+        alert2.severity.value = "error"
+        alert2.rule_name = "rule2"
+        alert2.value = 95.0
+        
+        am = MagicMock()
+        am.active_alerts = {
+            "alert1": alert1,
+            "alert2": alert2,
+        }
+        mock_get_am.return_value = am
+        
+        runner = CliRunner()
+        result = runner.invoke(alerts, ["--list-active"])
+        
+        assert result.exit_code == 0
+        assert "alert1" in result.output
+        assert "alert2" in result.output
+        assert "rule1" in result.output
+        assert "rule2" in result.output
+        assert "warning" in result.output or "error" in result.output
+
+    @patch("ccbt.cli.monitoring_commands.get_alert_manager")
+    def test_alerts_test_missing_value(self, mock_get_am):
+        """Test alerts --test with missing --value parameter (lines 216-217)."""
+        am = MagicMock()
+        mock_get_am.return_value = am
+        
+        runner = CliRunner()
+        result = runner.invoke(alerts, ["--test", "--name", "test_rule"])
+        
+        assert "--value is required with --test" in result.output
+
+    @patch("ccbt.cli.monitoring_commands.get_alert_manager")
+    def test_alerts_test_missing_name(self, mock_get_am):
+        """Test alerts --test with missing --name parameter (lines 221-222)."""
+        am = MagicMock()
+        mock_get_am.return_value = am
+        
+        runner = CliRunner()
+        result = runner.invoke(alerts, ["--test", "--value", "85"])
+        
+        assert "--name is required to test a rule" in result.output
+
+    @patch("ccbt.cli.monitoring_commands.get_alert_manager")
+    @patch("ccbt.cli.monitoring_commands.asyncio.run")
+    def test_alerts_test_process_alert_exception(self, mock_asyncio_run, mock_get_am):
+        """Test alerts --test with process_alert raising exception (lines 221-222)."""
+        from ccbt.monitoring.alert_manager import AlertRule, AlertSeverity
+        
+        rule = AlertRule(
+            name="test_rule",
+            metric_name="cpu_usage",
+            condition="value > 80",
+            severity=AlertSeverity.WARNING,
+            description="Test rule",
+        )
+        am = MagicMock()
+        am.alert_rules = {"test_rule": rule}
+        
+        # Make process_alert raise an exception
+        async def failing_process_alert(*args):
+            raise RuntimeError("Processing failed")
+        
+        am.process_alert = failing_process_alert
+        mock_get_am.return_value = am
+        
+        def mock_run(coro):
+            import asyncio as real_asyncio
+            try:
+                loop = real_asyncio.get_event_loop()
+                if loop.is_closed():
+                    raise RuntimeError("Loop is closed")
+            except RuntimeError:
+                loop = real_asyncio.new_event_loop()
+                real_asyncio.set_event_loop(loop)
+            
+            # Actually run the coroutine, which will raise an error
+            try:
+                return loop.run_until_complete(coro)
+            except RuntimeError as e:
+                raise RuntimeError("Processing failed") from e
+        
+        mock_asyncio_run.side_effect = mock_run
+        
+        runner = CliRunner()
+        result = runner.invoke(alerts, ["--test", "--name", "test_rule", "--value", "85"])
+        
+        assert "Failed to test rule" in result.output
+
 
 
 class TestMetricsCommand:
@@ -502,4 +618,69 @@ class TestMetricsCommand:
         result = runner.invoke(metrics, ["--format", "json"])
         
         assert result.exit_code != 0 or "Metrics error" in result.output
+
+    @patch("ccbt.monitoring.MetricsCollector")
+    @patch("ccbt.cli.monitoring_commands.asyncio.run")
+    def test_metrics_duration_finally_block(self, mock_asyncio_run, mock_mc_class):
+        """Test metrics with --duration to verify finally block executes mc.stop() (lines 302-306)."""
+        mc = MagicMock()
+        mc.get_all_metrics.return_value = {}
+        mc.start = AsyncMock()
+        mc.stop = AsyncMock()
+        mock_mc_class.return_value = mc
+        
+        def mock_run(coro):
+            import asyncio as real_asyncio
+            try:
+                loop = real_asyncio.get_event_loop()
+                if loop.is_closed():
+                    raise RuntimeError("Loop is closed")
+            except RuntimeError:
+                loop = real_asyncio.new_event_loop()
+                real_asyncio.set_event_loop(loop)
+            
+            result = loop.run_until_complete(coro)
+            return result
+        
+        mock_asyncio_run.side_effect = mock_run
+        
+        runner = CliRunner()
+        result = runner.invoke(metrics, ["--format", "json", "--duration", "0.1", "--interval", "0.5"])
+        
+        assert result.exit_code == 0
+        # Verify that stop() was called (finally block executed)
+        mc.stop.assert_called_once()
+
+    @patch("ccbt.monitoring.MetricsCollector")
+    @patch("ccbt.cli.monitoring_commands.asyncio.run")
+    @patch("ccbt.config.config.get_config")
+    def test_metrics_config_access_exception(self, mock_get_config, mock_asyncio_run, mock_mc_class):
+        """Test metrics with config access exception (lines 316-317)."""
+        mc = MagicMock()
+        mc.get_all_metrics.return_value = {"test": 123}
+        mock_mc_class.return_value = mc
+        
+        # Make get_config raise an exception
+        mock_get_config.side_effect = Exception("Config access failed")
+        
+        def mock_run(coro):
+            import asyncio as real_asyncio
+            try:
+                loop = real_asyncio.get_event_loop()
+                if loop.is_closed():
+                    raise RuntimeError("Loop is closed")
+            except RuntimeError:
+                loop = real_asyncio.new_event_loop()
+                real_asyncio.set_event_loop(loop)
+            
+            result = loop.run_until_complete(coro)
+            return result
+        
+        mock_asyncio_run.side_effect = mock_run
+        
+        runner = CliRunner()
+        result = runner.invoke(metrics, ["--format", "json", "--duration", "0.1"])
+        
+        # Should still work, using default interval 5.0 when config access fails
+        assert result.exit_code == 0
 

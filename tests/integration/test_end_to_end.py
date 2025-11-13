@@ -127,6 +127,8 @@ class TestEndToEnd:
             
             # Create session manager
             session_manager = AsyncSessionManager(str(temp_dir))
+            # Disable NAT discovery to prevent blocking socket operations
+            session_manager.config.nat.auto_map_ports = False
 
             try:
                 # Start session manager
@@ -253,6 +255,8 @@ class TestEndToEnd:
             mock_dht.stop = AsyncMock()
             
             session_manager = AsyncSessionManager(str(temp_dir))
+            # Disable NAT discovery to prevent blocking socket operations
+            session_manager.config.nat.auto_map_ports = False
 
             try:
                 # Start session manager
@@ -306,6 +310,8 @@ class TestEndToEnd:
             mock_dht.stop = AsyncMock()
             
             session_manager = AsyncSessionManager(str(temp_dir))
+            # Disable NAT discovery to prevent blocking socket operations
+            session_manager.config.nat.auto_map_ports = False
 
             try:
                 await session_manager.start()
@@ -341,6 +347,8 @@ class TestEndToEnd:
             mock_dht.stop = AsyncMock()
             
             session_manager = AsyncSessionManager(str(temp_dir))
+            # Disable NAT discovery to prevent blocking socket operations
+            session_manager.config.nat.auto_map_ports = False
 
             try:
                 await session_manager.start()
@@ -392,6 +400,8 @@ class TestEndToEnd:
             mock_dht.stop = AsyncMock()
             
             session_manager = AsyncSessionManager(str(temp_dir))
+            # Disable NAT discovery to prevent blocking socket operations
+            session_manager.config.nat.auto_map_ports = False
 
             try:
                 await session_manager.start()
@@ -428,6 +438,8 @@ class TestEndToEnd:
             mock_dht.stop = AsyncMock()
             
             session_manager = AsyncSessionManager(str(temp_dir))
+            # Disable NAT discovery to prevent blocking socket operations
+            session_manager.config.nat.auto_map_ports = False
 
             try:
                 await session_manager.start()

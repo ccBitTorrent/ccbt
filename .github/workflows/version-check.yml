@@ -1,0 +1,75 @@
+name: Version Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'ccbt/__init__.py'
+  push:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'ccbt/__init__.py'
+
+jobs:
+  check-version-consistency:
+    name: check-version-consistency
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Extract version from pyproject.toml
+        id: pyproject_version
+        run: |
+          VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version in pyproject.toml: $VERSION"
+      
+      - name: Check version in __init__.py (if exists)
+        id: init_version
+        run: |
+          if [ -f ccbt/__init__.py ]; then
+            VERSION=$(grep -E '__version__|version' ccbt/__init__.py | head -1 | sed "s/.*['\"]\(.*\)['\"].*/\1/" || echo "")
+            if [ -n "$VERSION" ]; then
+              echo "version=$VERSION" >> $GITHUB_OUTPUT
+              echo "Version in __init__.py: $VERSION"
+            else
+              echo "No version found in __init__.py"
+            fi
+          else
+            echo "ccbt/__init__.py does not exist"
+          fi
+        continue-on-error: true
+      
+      - name: Verify version consistency
+        run: |
+          PYPROJECT_VERSION="${{ steps.pyproject_version.outputs.version }}"
+          INIT_VERSION="${{ steps.init_version.outputs.version }}"
+          
+          echo "pyproject.toml version: $PYPROJECT_VERSION"
+          echo "__init__.py version: $INIT_VERSION"
+          
+          if [ -n "$INIT_VERSION" ] && [ "$PYPROJECT_VERSION" != "$INIT_VERSION" ]; then
+            echo "❌ Version mismatch detected!"
+            echo "   pyproject.toml: $PYPROJECT_VERSION"
+            echo "   __init__.py: $INIT_VERSION"
+            echo ""
+            echo "Please ensure both files have the same version."
+            exit 1
+          fi
+          
+          echo "✅ Version consistency check passed: $PYPROJECT_VERSION"
+      
+      - name: Check semantic versioning format
+        run: |
+          VERSION="${{ steps.pyproject_version.outputs.version }}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$'; then
+            echo "⚠️  Version '$VERSION' may not follow semantic versioning (MAJOR.MINOR.PATCH)"
+            echo "   Consider using format like: 0.1.0, 1.2.3, 2.0.0-beta.1"
+          else
+            echo "✅ Version format is valid: $VERSION"
+          fi
+        continue-on-error: true
+

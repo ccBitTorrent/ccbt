@@ -4,6 +4,7 @@ Tests for system capability detection and conditional configuration.
 
 import os
 import platform
+import subprocess
 import tempfile
 import time
 from unittest.mock import MagicMock, patch
@@ -58,6 +59,274 @@ class TestSystemCapabilities:
             result = capabilities.detect_io_uring()
             assert result is False
 
+    def test_detect_io_uring_import_error(self):
+        """Test io_uring detection with ImportError (lines 84-91)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'linux'):
+            # Mock open to raise OSError (no /proc/version)
+            with patch('builtins.open', side_effect=OSError()):
+                # Mock import io_uring to fail
+                with patch.dict('sys.modules', {}, clear=False):
+                    import sys
+                    # Ensure io_uring is not in modules
+                    if 'io_uring' in sys.modules:
+                        del sys.modules['io_uring']
+                    result = capabilities.detect_io_uring()
+                    assert result is False
+
+    def test_detect_mmap_import_error(self):
+        """Test mmap detection with ImportError (lines 110-111)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        # Mock mmap import to fail
+        with patch.dict('sys.modules', {}, clear=False):
+            import sys
+            # Remove mmap from modules temporarily
+            mmap_module = sys.modules.pop('mmap', None)
+            try:
+                with patch('builtins.__import__', side_effect=ImportError("No module named 'mmap'")):
+                    result = capabilities.detect_mmap()
+                    assert result is False
+            finally:
+                if mmap_module:
+                    sys.modules['mmap'] = mmap_module
+
+    def test_detect_ipv6_cached(self):
+        """Test IPv6 detection returns cached value (line 124)."""
+        capabilities = SystemCapabilities()
+        
+        # First call populates cache
+        result1 = capabilities.detect_ipv6()
+        # Second call should use cache
+        result2 = capabilities.detect_ipv6()
+        assert result1 == result2
+
+    def test_detect_encryption_cached(self):
+        """Test encryption detection returns cached value (line 147)."""
+        capabilities = SystemCapabilities()
+        
+        # First call populates cache
+        result1 = capabilities.detect_encryption()
+        # Second call should use cache
+        result2 = capabilities.detect_encryption()
+        assert result1 == result2
+
+    def test_detect_cpu_features_oserror_linux(self):
+        """Test CPU features detection with OSError on Linux (lines 198-199)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'linux'):
+            with patch('builtins.open', side_effect=OSError("File not found")):
+                result = capabilities.detect_cpu_features()
+                # Should return default features dict with all False
+                assert isinstance(result, dict)
+                assert result["sse"] is False
+                assert result["avx"] is False
+
+    def test_detect_cpu_features_darwin(self):
+        """Test CPU features detection on macOS/Darwin (lines 201-225)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'darwin'):
+            # Test successful sysctl call
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_result.stdout = "SSE SSE2 AVX AVX2"
+            
+            with patch('subprocess.run', return_value=mock_result):
+                result = capabilities.detect_cpu_features()
+                assert result["sse"] is True
+                assert result["sse2"] is True
+                assert result["avx"] is True
+                assert result["avx2"] is True
+
+    def test_detect_cpu_features_darwin_error(self):
+        """Test CPU features detection on macOS with subprocess error (lines 220-225)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'darwin'):
+            # Test subprocess error handling
+            with patch('subprocess.run', side_effect=subprocess.TimeoutExpired("sysctl", 5)):
+                result = capabilities.detect_cpu_features()
+                assert isinstance(result, dict)
+                assert result["sse"] is False
+
+    def test_detect_cpu_features_windows(self):
+        """Test CPU features detection on Windows (lines 238-251)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'windows'):
+            # Test successful wmic call
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_result.stdout = "SSE SSE2 AVX AVX2"
+            
+            with patch('subprocess.run', return_value=mock_result):
+                result = capabilities.detect_cpu_features()
+                assert result["sse"] is True
+                assert result["sse2"] is True
+                assert result["avx"] is True
+                assert result["avx2"] is True
+
+    def test_detect_cpu_features_windows_error(self):
+        """Test CPU features detection on Windows with subprocess error (lines 246-251)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'windows'):
+            # Test subprocess error handling
+            with patch('subprocess.run', side_effect=FileNotFoundError("wmic not found")):
+                result = capabilities.detect_cpu_features()
+                assert isinstance(result, dict)
+                assert result["sse"] is False
+
+    def test_detect_cpu_features_cached(self):
+        """Test CPU features detection returns cached value (line 172)."""
+        capabilities = SystemCapabilities()
+        
+        # First call populates cache
+        result1 = capabilities.detect_cpu_features()
+        # Second call should use cache
+        result2 = capabilities.detect_cpu_features()
+        assert result1 == result2
+
+    def test_detect_memory_exception(self):
+        """Test memory detection with exception (lines 275-276)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch('psutil.virtual_memory', side_effect=Exception("psutil error")):
+            result = capabilities.detect_memory()
+            assert result["total_bytes"] == 0
+            assert result["total_gb"] == 0.0
+            assert result["percent_used"] == 100.0
+
+    def test_detect_memory_cached(self):
+        """Test memory detection returns cached value (line 264)."""
+        capabilities = SystemCapabilities()
+        
+        # First call populates cache
+        result1 = capabilities.detect_memory()
+        # Second call should use cache
+        result2 = capabilities.detect_memory()
+        assert result1 == result2
+
+    def test_detect_disk_space_cached(self):
+        """Test disk space detection returns cached value (line 299)."""
+        capabilities = SystemCapabilities()
+        
+        # First call populates cache
+        result1 = capabilities.detect_disk_space()
+        # Second call should use cache
+        result2 = capabilities.detect_disk_space()
+        assert result1 == result2
+
+    def test_detect_disk_space_exception(self):
+        """Test disk space detection with exception (lines 312-313)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch('psutil.disk_usage', side_effect=Exception("psutil error")):
+            result = capabilities.detect_disk_space()
+            assert result["total_bytes"] == 0
+            assert result["total_gb"] == 0.0
+            assert result["percent_used"] == 100.0
+
+    def test_detect_cpu_count_exception(self):
+        """Test CPU count detection with exception (lines 340-341)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch('psutil.cpu_count', side_effect=Exception("psutil error")):
+            result = capabilities.detect_cpu_count()
+            assert result == 1
+
+    def test_detect_network_interfaces_cached(self):
+        """Test network interfaces detection returns cached value (line 354)."""
+        capabilities = SystemCapabilities()
+        
+        # First call populates cache
+        result1 = capabilities.detect_network_interfaces()
+        # Second call should use cache
+        result2 = capabilities.detect_network_interfaces()
+        assert result1 == result2
+
+    def test_detect_network_interfaces_exception(self):
+        """Test network interfaces detection with exception (lines 399-400)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch('psutil.net_if_addrs', side_effect=Exception("psutil error")):
+            result = capabilities.detect_network_interfaces()
+            assert result == []
+
+    def test_detect_platform_specific_cached(self):
+        """Test platform specific detection returns cached value (line 413)."""
+        capabilities = SystemCapabilities()
+        
+        # First call populates cache
+        result1 = capabilities.detect_platform_specific()
+        # Second call should use cache
+        result2 = capabilities.detect_platform_specific()
+        assert result1 == result2
+
+    def test_detect_platform_specific_darwin(self):
+        """Test platform specific detection on macOS (lines 429-433)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'darwin'):
+            with patch('platform.mac_ver', return_value=('10.15', '', '')):
+                result = capabilities.detect_platform_specific()
+                assert result["macos_version"] == "10.15"
+
+    def test_detect_platform_specific_darwin_exception(self):
+        """Test platform specific detection on macOS with exception (lines 432-433)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'darwin'):
+            with patch('platform.mac_ver', side_effect=Exception("mac_ver error")):
+                result = capabilities.detect_platform_specific()
+                assert result["macos_version"] == "unknown"
+
+    def test_detect_platform_specific_windows(self):
+        """Test platform specific detection on Windows (lines 435-438)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'windows'):
+            with patch('platform.win32_ver', return_value=('10', '', '', '')):
+                result = capabilities.detect_platform_specific()
+                assert result["windows_version"] == "10"
+
+    def test_detect_platform_specific_windows_exception(self):
+        """Test platform specific detection on Windows with exception (lines 437-438)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'windows'):
+            with patch('platform.win32_ver', side_effect=Exception("win32_ver error")):
+                result = capabilities.detect_platform_specific()
+                assert result["windows_version"] == "unknown"
+
+    def test_detect_platform_specific_linux_oserror(self):
+        """Test platform specific detection on Linux with OSError (lines 427-428)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch.object(capabilities, '_platform', 'linux'):
+            with patch('builtins.open', side_effect=OSError("File not found")):
+                result = capabilities.detect_platform_specific()
+                assert result["os_release"] == "unknown"
+
     def test_detect_mmap(self):
         """Test memory mapping detection."""
         capabilities = SystemCapabilities()
@@ -87,20 +356,33 @@ class TestSystemCapabilities:
         capabilities = SystemCapabilities()
         
         # Test with cryptography available
-        with patch.dict('sys.modules', {'cryptography': MagicMock()}):
-            result = capabilities.detect_encryption()
-            assert result is True
+        import sys
+        original_crypto = sys.modules.pop('cryptography', None)
+        original_ssl = sys.modules.pop('ssl', None)
+        try:
+            with patch.dict('sys.modules', {'cryptography': MagicMock()}, clear=False):
+                result = capabilities.detect_encryption()
+                assert result is True
 
-        # Clear cache and test with only ssl available
-        capabilities.clear_cache()
-        with patch.dict('sys.modules', {'ssl': MagicMock()}, clear=True):
-            result = capabilities.detect_encryption()
-            assert result is True
+            # Clear cache and test with only ssl available (covers lines 153-159)
+            capabilities.clear_cache()
+            sys.modules.pop('cryptography', None)
+            with patch.dict('sys.modules', {'ssl': MagicMock()}, clear=False):
+                result = capabilities.detect_encryption()
+                assert result is True
 
-        # Clear cache and test with neither available - just test that it returns a boolean
-        capabilities.clear_cache()
-        result = capabilities.detect_encryption()
-        assert isinstance(result, bool)
+            # Clear cache and test with neither available (covers line 158)
+            capabilities.clear_cache()
+            sys.modules.pop('cryptography', None)
+            sys.modules.pop('ssl', None)
+            with patch('builtins.__import__', side_effect=ImportError("No module")):
+                result = capabilities.detect_encryption()
+                assert result is False
+        finally:
+            if original_crypto:
+                sys.modules['cryptography'] = original_crypto
+            if original_ssl:
+                sys.modules['ssl'] = original_ssl
 
     def test_detect_cpu_features(self):
         """Test CPU feature detection."""
@@ -196,6 +478,104 @@ class TestSystemCapabilities:
                 assert result[0]["is_loopback"] is False
                 assert result[1]["name"] == "lo"
                 assert result[1]["is_loopback"] is True
+
+    def test_detect_network_interfaces_wireless(self):
+        """Test network interface detection with wireless interface (line 396)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch('psutil.net_if_addrs') as mock_addrs:
+            # Create mock address for wireless interface
+            mock_addr = MagicMock()
+            mock_addr.family = 2  # AF_INET
+            mock_addr.address = '192.168.1.100'
+            mock_addr.netmask = '255.255.255.0'
+            mock_addr.broadcast = '192.168.1.255'
+            
+            # Create wireless interface name
+            mock_addrs.return_value = {
+                'wlan0': [mock_addr],
+            }
+            
+            with patch('psutil.AF_LINK', 17):
+                result = capabilities.detect_network_interfaces()
+                assert len(result) == 1
+                assert result[0]["name"] == "wlan0"
+                assert result[0]["is_wireless"] is True
+
+    def test_detect_network_interfaces_ipv6(self):
+        """Test network interface detection with IPv6 (covers AF_INET6 path, lines 384-385)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch('psutil.net_if_addrs') as mock_addrs:
+            # Create mock address for IPv6
+            mock_addr = MagicMock()
+            mock_addr.family = 23  # AF_INET6
+            mock_addr.address = '2001:db8::1'
+            mock_addr.netmask = None
+            mock_addr.broadcast = None
+            
+            mock_addrs.return_value = {
+                'eth0': [mock_addr],
+            }
+            
+            result = capabilities.detect_network_interfaces()
+            assert len(result) == 1
+            assert result[0]["name"] == "eth0"
+            assert "ipv6_address" in result[0]
+            assert result[0]["ipv6_address"] == '2001:db8::1'
+
+    def test_detect_network_interfaces_mac_address(self):
+        """Test network interface detection with MAC address (covers AF_LINK path, line 380-381)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch('psutil.net_if_addrs') as mock_addrs:
+            # Create mock address for MAC (AF_LINK)
+            mock_addr = MagicMock()
+            mock_addr.family = 17  # AF_LINK (MAC address)
+            mock_addr.address = '00:11:22:33:44:55'
+            mock_addr.netmask = None
+            mock_addr.broadcast = None
+            
+            mock_addrs.return_value = {
+                'eth0': [mock_addr],
+            }
+            
+            with patch('psutil.AF_LINK', 17):
+                result = capabilities.detect_network_interfaces()
+                assert len(result) == 1
+                assert result[0]["name"] == "eth0"
+                assert "mac_address" in result[0]
+                assert result[0]["mac_address"] == '00:11:22:33:44:55'
+
+    def test_detect_network_interfaces_addresses_list(self):
+        """Test network interface detection with multiple addresses (covers lines 376-378)."""
+        capabilities = SystemCapabilities()
+        capabilities.clear_cache()
+        
+        with patch('psutil.net_if_addrs') as mock_addrs:
+            # Create multiple addresses for same interface
+            mock_addr1 = MagicMock()
+            mock_addr1.family = 2  # AF_INET
+            mock_addr1.address = '192.168.1.100'
+            mock_addr1.netmask = '255.255.255.0'
+            mock_addr1.broadcast = '192.168.1.255'
+            
+            mock_addr2 = MagicMock()
+            mock_addr2.family = 2  # AF_INET
+            mock_addr2.address = '10.0.0.1'
+            mock_addr2.netmask = '255.0.0.0'
+            mock_addr2.broadcast = None
+            
+            mock_addrs.return_value = {
+                'eth0': [mock_addr1, mock_addr2],
+            }
+            
+            result = capabilities.detect_network_interfaces()
+            assert len(result) == 1
+            assert len(result[0]["addresses"]) == 2
 
     def test_detect_platform_specific(self):
         """Test platform-specific detection."""

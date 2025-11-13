@@ -127,6 +127,7 @@ class PiecePredictor:
 
         Returns:
             Piece download prediction
+
         """
         # Extract features
         features = await self._extract_piece_features(piece_index, piece_size)
@@ -188,6 +189,7 @@ class PiecePredictor:
 
         Returns:
             List of optimal piece indices
+
         """
         piece_predictions = []
 
@@ -220,6 +222,7 @@ class PiecePredictor:
         Args:
             piece_index: Piece index
             performance_data: Performance metrics
+
         """
         if piece_index not in self.piece_info:
             return
@@ -276,6 +279,7 @@ class PiecePredictor:
 
         Returns:
             Pattern analysis results
+
         """
         pattern_analysis: dict[str, Any] = {
             "total_pieces": len(self.piece_info),

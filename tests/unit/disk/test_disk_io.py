@@ -134,33 +134,54 @@ class TestDiskIO:
     @pytest.mark.timeout(30)  # Add timeout for concurrent operations
     async def test_async_thread_pool(self, disk_io_manager, temp_file):
         """Test async thread pool for I/O operations."""
-        # Create multiple concurrent write tasks
-        tasks = []
-        for i in range(10):
-            data = f"Task {i} data".encode() * 100
+        # Disable write batching to ensure all writes are processed individually
+        # This helps avoid race conditions in batching logic
+        original_batch_kib = disk_io_manager.config.disk.write_batch_kib
+        disk_io_manager.config.disk.write_batch_kib = 1  # Very small batch size
+        original_buffer_kib = getattr(disk_io_manager.config.disk, "write_buffer_kib", 256)
+        disk_io_manager.config.disk.write_buffer_kib = 1  # Very small buffer
+        
+        try:
+            # Create multiple concurrent write tasks with non-overlapping offsets
+            tasks = []
+            for i in range(10):
+                data = f"Task {i} data".encode() * 100
 
-            async def write_task(offset=i, write_data=data):
-                future = await disk_io_manager.write_block(
-                    Path(temp_file),
-                    offset * 1000,
-                    write_data,
-                )
-                await future
+                async def write_task(offset=i, write_data=data):
+                    future = await disk_io_manager.write_block(
+                        Path(temp_file),
+                        offset * 2000,  # Use 2000 to avoid overlaps
+                        write_data,
+                    )
+                    await future
 
-            task = asyncio.create_task(write_task())
-            tasks.append(task)
+                task = asyncio.create_task(write_task())
+                tasks.append(task)
 
-        # Wait for all tasks to complete
-        await asyncio.gather(*tasks)
+            # Wait for all tasks to complete with timeout
+            await asyncio.wait_for(asyncio.gather(*tasks), timeout=30.0)
 
-        # Verify all data was written
-        with open(temp_file, "rb") as f:
-            written_data = f.read()
+            # Give the batcher a moment to process any remaining queued writes
+            await asyncio.sleep(0.2)
+            
+            # Flush all writes before reading
+            await disk_io_manager._flush_all_writes()
+            
+            # Ensure all writes are actually written to disk
+            await asyncio.sleep(0.2)
 
-        # Should have data from all tasks
-        assert len(written_data) > 0
-        for i in range(10):
-            assert f"Task {i} data".encode() in written_data
+            # Verify all data was written
+            with open(temp_file, "rb") as f:
+                written_data = f.read()
+
+            # Should have data from all tasks
+            assert len(written_data) > 0
+            for i in range(10):
+                assert f"Task {i} data".encode() in written_data, f"Task {i} data not found in written data"
+        finally:
+            # Restore original config
+            disk_io_manager.config.disk.write_batch_kib = original_batch_kib
+            disk_io_manager.config.disk.write_buffer_kib = original_buffer_kib
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(30)  # Add timeout to prevent hanging
@@ -355,10 +376,35 @@ class TestDiskIO:
             task = asyncio.create_task(write_task())
             tasks.append(task)
 
-        # Wait for all operations
+        # Wait for all operations to complete
         await asyncio.gather(*tasks)
 
-        # Clean up
+        # Flush all pending writes to ensure file handles are released
+        # This ensures the disk_io_manager has fully written all data
+        try:
+            await asyncio.wait_for(disk_io_manager._flush_all_writes(), timeout=5.0)
+        except Exception:
+            pass  # Ignore flush errors, files may already be written
+
+        # On Windows, file handles need extra time to be released by the OS
+        # The disk_io_manager.stop() will handle this, but we're cleaning up
+        # before the fixture stops, so we need our own delay
+        import sys
+        if sys.platform == "win32":
+            # Give Windows time to release file handles from thread pool
+            await asyncio.sleep(0.3)
+            import gc
+            gc.collect()
+
+        # Clean up - on Windows, file handles may take time to release
+        import time
         for i in range(20):
-            with contextlib.suppress(FileNotFoundError):
-                os.unlink(f"test_{i}.txt")
+            for _ in range(5):  # Retry up to 5 times
+                try:
+                    os.unlink(f"test_{i}.txt")
+                    break
+                except (FileNotFoundError, PermissionError):
+                    # On Windows, file handles may be slow to release
+                    time.sleep(0.1)
+                except Exception:
+                    break  # Other errors, stop retrying

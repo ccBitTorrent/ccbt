@@ -61,6 +61,7 @@ class Plugin(ABC):
             name: Plugin name
             version: Plugin version
             description: Plugin description
+
         """
         self.name = name
         self.version = version
@@ -163,6 +164,7 @@ class PluginManager:
 
         Returns:
             Plugin name
+
         """
         plugin = plugin_class(name=plugin_class.__name__)
         plugin_name = plugin.name
@@ -209,6 +211,7 @@ class PluginManager:
 
         Args:
             plugin_name: Name of plugin to unload
+
         """
         if plugin_name not in self.plugins:
             msg = f"Plugin '{plugin_name}' is not loaded"
@@ -248,6 +251,7 @@ class PluginManager:
 
         Args:
             plugin_name: Name of plugin to start
+
         """
         if plugin_name not in self.plugins:
             msg = f"Plugin '{plugin_name}' is not loaded"
@@ -277,6 +281,7 @@ class PluginManager:
 
         Args:
             plugin_name: Name of plugin to stop
+
         """
         if plugin_name not in self.plugins:
             msg = f"Plugin '{plugin_name}' is not loaded"
@@ -311,6 +316,7 @@ class PluginManager:
 
         Returns:
             List of hook results
+
         """
         results = []
         if hook_name in self.global_hooks:
@@ -358,6 +364,7 @@ class PluginManager:
 
         Returns:
             Plugin name
+
         """
         try:
             module = importlib.import_module(module_path)
@@ -394,3 +401,20 @@ class PluginManager:
                 )
 
         self.logger.info("Plugin manager shutdown complete")
+
+
+# Global plugin manager instance
+_plugin_manager: PluginManager | None = None
+
+
+def get_plugin_manager() -> PluginManager:
+    """Get the global plugin manager singleton.
+
+    Returns:
+        PluginManager: Global plugin manager instance.
+
+    """
+    global _plugin_manager
+    if _plugin_manager is None:
+        _plugin_manager = PluginManager()
+    return _plugin_manager

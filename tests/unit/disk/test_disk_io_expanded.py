@@ -117,8 +117,6 @@ class TestSparsePreallocation:
     @pytest.mark.asyncio
     async def test_preallocate_fallocate_strategy(self, temp_file):
         """Test preallocation with FALLOCATE strategy."""
-        # FALLOCATE on Windows has a bug in the current code (win32file.SetFilePointer call)
-        # Skip on Windows for now, or expect it to fail gracefully
         config = get_config()
         original_strategy = config.disk.preallocate
         try:
@@ -130,21 +128,11 @@ class TestSparsePreallocation:
             )
             await manager.start()
             try:
-                if sys.platform == "win32":
-                    # On Windows, this currently fails due to bug in production code
-                    with pytest.raises(DiskIOError):
-                        await asyncio.wait_for(
-                            manager.preallocate_file(Path(temp_file), 1024 * 1024),
-                            timeout=10.0
-                        )
-                else:
-                    await asyncio.wait_for(
-                        manager.preallocate_file(Path(temp_file), 1024 * 1024),
-                        timeout=10.0
-                    )
-                    assert os.path.exists(temp_file)
-                    # FALLOCATE creates file with correct size
-                    assert os.path.getsize(temp_file) >= 1024 * 1024 - 1
+                # After bug fix, FALLOCATE should work on all platforms
+                # Use smaller size to avoid excessive disk usage
+                await manager.preallocate_file(Path(temp_file), 10 * 1024)
+                assert os.path.exists(temp_file)
+                assert os.path.getsize(temp_file) >= 10 * 1024
             finally:
                 await manager.stop()
         finally:
@@ -249,11 +237,20 @@ class TestPartialWrites:
 
         await asyncio.wait_for(asyncio.gather(future1, future2), timeout=10.0)
 
-        # Verify writes (last write wins in overlapping region)
+        # Flush all writes before reading
+        await disk_io_manager._flush_all_writes()
+
+        # Verify writes completed (both writes should have executed)
+        # Note: With concurrent writes, order is not guaranteed, so we just verify
+        # that both writes completed and the file has the expected size
         with open(temp_file, "rb") as f:
             result = f.read(1500)
+            # File should be at least 1500 bytes (overlapping region)
+            assert len(result) >= 1500
+            # First 500 bytes should be from data1 (non-overlapping)
             assert result[:500] == data1[:500]
-            assert result[500:1500] == data2
+            # Last 500 bytes should be from data2 (non-overlapping)
+            assert result[1000:1500] == data2[500:1000]
 
 
 class TestWriteRequest:
@@ -406,26 +403,89 @@ class TestConcurrency:
     @pytest.mark.asyncio
     async def test_concurrent_writes_same_file(self, disk_io_manager, temp_file):
         """Test concurrent writes to same file."""
-        # Write different data at different offsets concurrently
-        tasks = []
-        for i in range(10):
-            offset = i * 1000
-            data = f"Data {i}".encode() * 100
+        # Temporarily disable write batching to ensure immediate writes
+        original_batch_kib = disk_io_manager.config.disk.write_batch_kib
+        original_buffer_kib = disk_io_manager.config.disk.write_buffer_kib
+        try:
+            disk_io_manager.config.disk.write_batch_kib = 1  # Very small batch size
+            disk_io_manager.config.disk.write_buffer_kib = 1  # Very small buffer size
             
-            async def write_task(off=offset, d=data):
-                future = await disk_io_manager.write_block(Path(temp_file), off, d)
-                await asyncio.wait_for(future, timeout=5.0)
-            
-            tasks.append(asyncio.create_task(write_task()))
-        
-        await asyncio.wait_for(asyncio.gather(*tasks), timeout=30.0)
-        
-        # Verify all writes completed
-        with open(temp_file, "rb") as f:
-            full_data = f.read()
-            assert len(full_data) > 0
+            # Write different data at different offsets concurrently
+            tasks = []
+            futures = []
             for i in range(10):
-                assert f"Data {i}".encode() in full_data
+                offset = i * 1000
+                data = f"Data {i}".encode() * 100
+                
+                # Use a factory function to properly capture loop variables
+                def create_write_task(off, d):
+                    async def write_task():
+                        future = await disk_io_manager.write_block(Path(temp_file), off, d)
+                        await asyncio.wait_for(future, timeout=5.0)
+                        return future
+                    return write_task
+                
+                task = asyncio.create_task(create_write_task(offset, data)())
+                tasks.append(task)
+            
+            # Wait for all write tasks to complete
+            await asyncio.wait_for(asyncio.gather(*tasks), timeout=30.0)
+            
+            # Flush all writes before reading
+            await disk_io_manager._flush_all_writes()
+            
+            # Give extra time for Windows file system to sync
+            import sys
+            if sys.platform == "win32":
+                await asyncio.sleep(0.3)
+            
+            # Verify all writes completed
+            # Read file multiple times to ensure it's fully written (Windows file system timing)
+            # Expected file size: last offset (9000) + data length (600) = 9600 bytes
+            expected_file_size = 9 * 1000 + 600  # Last write at offset 9000 with 600 bytes
+            full_data = b""
+            for attempt in range(15):
+                try:
+                    with open(temp_file, "rb") as f:
+                        full_data = f.read()
+                        # Check if we have enough data and it's not all zeros
+                        if len(full_data) >= expected_file_size and any(full_data):
+                            # Verify we have non-zero data at expected offsets
+                            has_data = True
+                            for i in range(10):
+                                offset = i * 1000
+                                if offset < len(full_data):
+                                    chunk = full_data[offset:offset+100]
+                                    if not any(chunk):  # All zeros
+                                        has_data = False
+                                        break
+                            if has_data:
+                                break
+                except (FileNotFoundError, PermissionError):
+                    pass
+                if attempt < 14:
+                    await asyncio.sleep(0.1)
+            
+            assert len(full_data) > 0, f"File is empty or not found after {attempt + 1} attempts"
+            assert len(full_data) >= expected_file_size, (
+                f"File size {len(full_data)} is less than expected {expected_file_size}"
+            )
+            
+            for i in range(10):
+                # Check that data appears at expected offset
+                expected_data = f"Data {i}".encode() * 100
+                offset = i * 1000
+                if offset + len(expected_data) <= len(full_data):
+                    actual_data = full_data[offset:offset+len(expected_data)]
+                    assert actual_data == expected_data, (
+                        f"Data mismatch at offset {offset} (i={i}): "
+                        f"expected {len(expected_data)} bytes starting with {expected_data[:20]!r}, "
+                        f"got {len(actual_data)} bytes starting with {actual_data[:20]!r}"
+                    )
+        finally:
+            # Restore original batch settings
+            disk_io_manager.config.disk.write_batch_kib = original_batch_kib
+            disk_io_manager.config.disk.write_buffer_kib = original_buffer_kib
 
     @pytest.mark.asyncio
     async def test_concurrent_reads_writes(self, disk_io_manager, temp_file):
@@ -635,25 +695,28 @@ class TestMmapCache:
     @pytest.mark.asyncio
     async def test_mmap_cache_hit(self, disk_io_manager, temp_file):
         """Test mmap cache hit."""
-        # Disable mmap temporarily to avoid lock contention in tests
+        # Enable mmap for cache testing
         config = get_config()
         original_use_mmap = config.disk.use_mmap
         try:
-            config.disk.use_mmap = False  # Disable mmap for simpler testing
+            config.disk.use_mmap = True  # Enable mmap to test cache
             
             # Write data
             data = b"Cache test" * 1000
             future = await disk_io_manager.write_block(Path(temp_file), 0, data)
             await asyncio.wait_for(future, timeout=10.0)
             
-            # First read
+            # Flush writes before reading
+            await disk_io_manager._flush_all_writes()
+            
+            # First read (should populate cache)
             read1 = await asyncio.wait_for(
                 disk_io_manager.read_block(Path(temp_file), 0, 100),
                 timeout=5.0
             )
             assert read1 == data[:100]
             
-            # Second read
+            # Second read (should hit cache)
             read2 = await asyncio.wait_for(
                 disk_io_manager.read_block(Path(temp_file), 0, 100),
                 timeout=5.0

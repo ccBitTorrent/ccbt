@@ -586,43 +586,77 @@ class TestAsyncUDPTrackerClientScrape:
     def test_encode_scrape_request(self):
         """Test encoding scrape request."""
         client = AsyncUDPTrackerClient()
-        request = {
-            "action": 2,
-            "transaction_id": 12345,
-            "info_hash": b"\x00" * 20,
-        }
-        data = client._encode_scrape_request(request)
-        assert len(data) == 28  # 4 (action) + 4 (transaction_id) + 20 (info_hash)
-        action, trans_id = struct.unpack("!II", data[:8])
+        connection_id = 0x41727101980  # Magic number
+        transaction_id = 12345
+        info_hash = b"\x00" * 20
+        data = client._encode_scrape_request(connection_id, transaction_id, info_hash)
+        assert len(data) == 36  # 8 (connection_id) + 4 (action) + 4 (transaction_id) + 20 (info_hash)
+        conn_id, action, trans_id = struct.unpack("!QII", data[:16])
+        assert conn_id == connection_id
         assert action == 2
-        assert trans_id == 12345
+        assert trans_id == transaction_id
 
     def test_decode_scrape_response(self):
         """Test decoding scrape response."""
+        from ccbt.discovery.tracker_udp_client import TrackerAction, TrackerResponse
+
         client = AsyncUDPTrackerClient()
         # Scrape response: action(4) + transaction_id(4) + complete(4) + downloaded(4) + incomplete(4)
         complete = 10
         downloaded = 100
         incomplete = 5
-        response_data = struct.pack("!IIIII", 2, 12345, complete, downloaded, incomplete)
+        transaction_id = 12345
+        info_hash = b"\x00" * 20
 
-        result = client._decode_scrape_response(response_data)
-        assert result["complete"] == complete
-        assert result["downloaded"] == downloaded
-        assert result["incomplete"] == incomplete
+        response = TrackerResponse(
+            action=TrackerAction.SCRAPE,
+            transaction_id=transaction_id,
+            complete=complete,
+            downloaded=downloaded,
+            incomplete=incomplete,
+        )
+
+        result = client._decode_scrape_response(response, info_hash)
+        # _decode_scrape_response returns seeders, leechers, completed
+        # where seeders=complete, leechers=incomplete, completed=downloaded
+        assert result["seeders"] == complete
+        assert result["leechers"] == incomplete
+        assert result["completed"] == downloaded
 
     def test_decode_scrape_response_short(self):
         """Test decoding short scrape response."""
+        from ccbt.discovery.tracker_udp_client import TrackerAction, TrackerResponse
+
         client = AsyncUDPTrackerClient()
-        response_data = b"\x00" * 8
-        result = client._decode_scrape_response(response_data)
+        info_hash = b"\x00" * 20
+
+        # Create a response with incomplete data
+        response = TrackerResponse(
+            action=TrackerAction.SCRAPE,
+            transaction_id=12345,
+            complete=None,
+            downloaded=None,
+            incomplete=None,
+        )
+
+        result = client._decode_scrape_response(response, info_hash)
         assert result == {}
 
     def test_decode_scrape_response_wrong_action(self):
         """Test decoding scrape response with wrong action."""
+        from ccbt.discovery.tracker_udp_client import TrackerAction, TrackerResponse
+
         client = AsyncUDPTrackerClient()
-        response_data = struct.pack("!II", TrackerAction.ERROR.value, 12345)
-        result = client._decode_scrape_response(response_data)
+        info_hash = b"\x00" * 20
+
+        # Create response with wrong action
+        response = TrackerResponse(
+            action=TrackerAction.ERROR,
+            transaction_id=12345,
+            error_message="Test error",
+        )
+
+        result = client._decode_scrape_response(response, info_hash)
         assert result == {}
 
 

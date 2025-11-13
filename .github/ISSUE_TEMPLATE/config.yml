@@ -1,0 +1,15 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/ccBittorrent/ccbt/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 📚 Documentation
+    url: https://ccbittorrent.readthedocs.io/
+    about: Check the documentation for guides and API reference
+  - name: 🐛 Bug Reports
+    url: https://github.com/ccBittorrent/ccbt/issues/new?template=bug_report.md
+    about: Report a bug or unexpected behavior
+  - name: ✨ Feature Requests
+    url: https://github.com/ccBittorrent/ccbt/issues/new?template=feature_request.md
+    about: Suggest a new feature or enhancement
+

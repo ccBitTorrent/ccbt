@@ -1,0 +1,94 @@
+name: Pre-Release
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'ccbt/__init__.py'
+      - 'CHANGELOG.md'
+  workflow_dispatch:
+    inputs:
+      check_version:
+        description: 'Check version consistency'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  version-check:
+    name: version-check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.check_version)
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Extract version from pyproject.toml
+        id: pyproject_version
+        run: |
+          VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version in pyproject.toml: $VERSION"
+      
+      - name: Check version in __init__.py (if exists)
+        id: init_version
+        run: |
+          if [ -f ccbt/__init__.py ]; then
+            VERSION=$(grep -E '__version__|version' ccbt/__init__.py | head -1 | sed "s/.*['\"]\(.*\)['\"].*/\1/")
+            if [ -n "$VERSION" ]; then
+              echo "version=$VERSION" >> $GITHUB_OUTPUT
+              echo "Version in __init__.py: $VERSION"
+            fi
+          fi
+        continue-on-error: true
+      
+      - name: Verify version consistency
+        run: |
+          PYPROJECT_VERSION="${{ steps.pyproject_version.outputs.version }}"
+          INIT_VERSION="${{ steps.init_version.outputs.version }}"
+          
+          if [ -n "$INIT_VERSION" ] && [ "$PYPROJECT_VERSION" != "$INIT_VERSION" ]; then
+            echo "Version mismatch: pyproject.toml has $PYPROJECT_VERSION but __init__.py has $INIT_VERSION"
+            exit 1
+          fi
+          
+          echo "✅ Version consistency check passed: $PYPROJECT_VERSION"
+      
+      - name: Check CHANGELOG.md
+        run: |
+          if [ ! -f CHANGELOG.md ]; then
+            echo "⚠️  CHANGELOG.md not found. Consider creating one for release notes."
+          else
+            VERSION="${{ steps.pyproject_version.outputs.version }}"
+            if ! grep -q "$VERSION" CHANGELOG.md; then
+              echo "⚠️  CHANGELOG.md does not contain version $VERSION. Please update it."
+            else
+              echo "✅ CHANGELOG.md contains version $VERSION"
+            fi
+          fi
+        continue-on-error: true
+
+  release-checklist-reminder:
+    name: release-checklist-reminder
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check release checklist items
+        run: |
+          echo "## 📋 Release Checklist Reminder" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Before merging to main, ensure:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] All tests pass" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Coverage meets 99% threshold" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Version updated in pyproject.toml" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] CHANGELOG.md updated" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Documentation builds successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Package builds and validates" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "See [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) for complete checklist." >> $GITHUB_STEP_SUMMARY
+

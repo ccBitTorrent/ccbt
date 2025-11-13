@@ -1,0 +1,844 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: ccBitTorrent 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-01-01 00:00+0000\n"
+"PO-Revision-Date: 2025-11-10 20:42\n"
+"Last-Translator: ccBitTorrent Team\n"
+"Language-Team: Basque / Euskara\n"
+"Language: eu\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "\nAvailable Commands:\n  help          - Show this help message\n  status        - Show current status\n  peers         - Show connected peers\n  files         - Show file information\n  pause         - Pause download\n  resume        - Resume download\n  stop          - Stop download\n  quit          - Quit application\n  clear         - Clear screen\n        "
+msgstr "\nKomando erabilgarriak:\n  help          - Laguntza mezu hau erakusteko\n  status        - Egoera orain erakusteko\n  peers         - Konektatutako kideak erakusteko\n  files         - Fitxategi informazioa erakusteko\n  pause         - Deskarga pausatu\n  resume        - Deskarga berrekin\n  stop          - Deskarga gelditu\n  quit          - Aplikazioa irten\n  clear         - Pantaila garbitu\n        "
+
+msgid "\n[bold cyan]File Selection[/bold cyan]"
+msgstr "\n[bold cyan]Fitxategi hautaketa[/bold cyan]"
+
+msgid "\n[bold]File selection[/bold]"
+msgstr "\n[bold]Fitxategi hautaketa[/bold]"
+
+msgid "\n[yellow]Commands:[/yellow]"
+msgstr "\n[yellow]Komandoak:[/yellow]"
+
+msgid "\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgstr "\n[yellow]Fitxategi hautaketa bertan behera utzita, lehenetsiak erabiliz[/yellow]"
+
+msgid "\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgstr "\n[yellow]Tracker Scrape estatistikak:[/yellow]"
+
+msgid "\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgstr "\n[yellow]Erabilera: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+
+msgid "\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgstr "\n[yellow]Abisua: 30 segundu ondoren kide konektaturik ez[/yellow]"
+
+msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
+msgstr "  [cyan]deselect <index>[/cyan] - Fitxategi bat deshautatu"
+
+msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
+msgstr "  [cyan]deselect-all[/cyan] - Fitxategi guztiak deshautatu"
+
+msgid "  [cyan]done[/cyan] - Finish selection and start download"
+msgstr "  [cyan]done[/cyan] - Hautaketa amaitu eta deskarga hasi"
+
+msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
+msgstr "  [cyan]priority <index> <priority>[/cyan] - Lehentasuna ezarri (do_not_download/low/normal/high/maximum)"
+
+msgid "  [cyan]select <index>[/cyan] - Select a file"
+msgstr "  [cyan]select <index>[/cyan] - Fitxategi bat hautatu"
+
+msgid "  [cyan]select-all[/cyan] - Select all files"
+msgstr "  [cyan]select-all[/cyan] - Fitxategi guztiak hautatu"
+
+msgid "  • Check if torrent has active seeders"
+msgstr "  • Egiaztatu torrent-ak seeders aktiboak dituen"
+
+msgid "  • Ensure DHT is enabled: --enable-dht"
+msgstr "  • Ziurtatu DHT gaituta dagoela: --enable-dht"
+
+msgid "  • Run 'btbt diagnose-connections' to check connection status"
+msgstr "  • Exekutatu 'btbt diagnose-connections' konexio egoera egiaztatzeko"
+
+msgid "  • Verify NAT/firewall settings"
+msgstr "  • Egiaztatu NAT/suhesi ezarpenak"
+
+msgid " | Files: {selected}/{total} selected"
+msgstr " | Fitxategiak: {selected}/{total} hautatuta"
+
+msgid " | Private: {count}"
+msgstr " | Pribatua: {count}"
+
+msgid "Active"
+msgstr "Aktiboa"
+
+msgid "Active Alerts"
+msgstr "Alerta aktiboak"
+
+msgid "Active: {count}"
+msgstr "Aktiboa: {count}"
+
+msgid "Advanced Add"
+msgstr "Gehitu aurreratua"
+
+msgid "Alert Rules"
+msgstr "Alerta arauak"
+
+msgid "Alerts"
+msgstr "Alertak"
+
+msgid "Announce: Failed"
+msgstr "Iragarpena: Huts egin du"
+
+msgid "Announce: {status}"
+msgstr "Iragarpena: {status}"
+
+msgid "Are you sure you want to quit?"
+msgstr "Ziur zaude irten nahi duzula?"
+
+msgid "Automatically restart daemon if needed (without prompt)"
+msgstr "Deabrua automatikoki berrabiarazi beharrezkoa bada (galdera gabe)"
+
+msgid "Browse"
+msgstr "Arakatu"
+
+msgid "Capability"
+msgstr "Gaitasuna"
+
+msgid "Commands: "
+msgstr "Komandoak: "
+
+msgid "Completed"
+msgstr "Osatuta"
+
+msgid "Completed (Scrape)"
+msgstr "Osatuta (Scrape)"
+
+msgid "Component"
+msgstr "Osagaia"
+
+msgid "Condition"
+msgstr "Baldintza"
+
+msgid "Config Backups"
+msgstr "Konfigurazio babeskopiak"
+
+msgid "Configuration file path"
+msgstr "Konfigurazio fitxategi bidea"
+
+msgid "Confirm"
+msgstr "Berretsi"
+
+msgid "Connected"
+msgstr "Konektatuta"
+
+msgid "Connected Peers"
+msgstr "Konektatutako kideak"
+
+msgid "Count: {count}{file_info}{private_info}"
+msgstr "Zenbaketa: {count}{file_info}{private_info}"
+
+msgid "Create backup before migration"
+msgstr "Babeskopia sortu migrazioa baino lehen"
+
+msgid "DHT"
+msgstr "DHT"
+
+msgid "Description"
+msgstr "Deskribapena"
+
+msgid "Details"
+msgstr "Xehetasunak"
+
+msgid "Disabled"
+msgstr "Desgaituta"
+
+msgid "Download"
+msgstr "Deskargatu"
+
+msgid "Download Speed"
+msgstr "Deskarga abiadura"
+
+msgid "Download paused"
+msgstr "Deskarga pausatuta"
+
+msgid "Download resumed"
+msgstr "Deskarga berrekin"
+
+msgid "Download stopped"
+msgstr "Deskarga geldituta"
+
+msgid "Downloaded"
+msgstr "Deskargatuta"
+
+msgid "Downloading {name}"
+msgstr "{name} deskargatzen"
+
+msgid "ETA"
+msgstr "Denbora estimatua"
+
+msgid "Enable debug mode"
+msgstr "Arazketa modua gaitatu"
+
+msgid "Enable verbose output"
+msgstr "Irteera zehatza gaitatu"
+
+msgid "Enabled"
+msgstr "Gaituta"
+
+msgid "Error reading scrape cache"
+msgstr "Errorea scrape cache irakurtzean"
+
+msgid "Explore"
+msgstr "Esploratu"
+
+msgid "Failed"
+msgstr "Huts egin du"
+
+msgid "Failed to register torrent in session"
+msgstr "Errorea torrent saioan erregistratzean"
+
+msgid "File"
+msgstr "Fitxategia"
+
+msgid "File Name"
+msgstr "Fitxategi izena"
+
+msgid "File selection not available for this torrent"
+msgstr "Fitxategi hautaketa ez dago eskuragarri torrent honentzat"
+
+msgid "Files"
+msgstr "Fitxategiak"
+
+msgid "Global Config"
+msgstr "Konfigurazio globala"
+
+msgid "Help"
+msgstr "Laguntza"
+
+msgid "History"
+msgstr "Historia"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "IP"
+msgstr "IP"
+
+msgid "IP Filter"
+msgstr "IP iragazkia"
+
+msgid "IPFS"
+msgstr "IPFS"
+
+msgid "Info Hash"
+msgstr "Info Hash"
+
+msgid "Interactive backup"
+msgstr "Babeskopia interaktiboa"
+
+msgid "Invalid torrent file format"
+msgstr "Torrent fitxategi formatu baliogabea"
+
+msgid "Key"
+msgstr "Gakoa"
+
+msgid "Key not found: {key}"
+msgstr "Gakoa ez da aurkitu: {key}"
+
+msgid "Last Scrape"
+msgstr "Azken Scrape"
+
+msgid "Leechers"
+msgstr "Leechers"
+
+msgid "Leechers (Scrape)"
+msgstr "Leechers (Scrape)"
+
+msgid "MIGRATED"
+msgstr "MIGRATUTA"
+
+msgid "Menu"
+msgstr "Menua"
+
+msgid "Metric"
+msgstr "Metrika"
+
+msgid "NAT Management"
+msgstr "NAT kudeaketa"
+
+msgid "Name"
+msgstr "Izena"
+
+msgid "Network"
+msgstr "Sarea"
+
+msgid "No"
+msgstr "Ez"
+
+msgid "No active alerts"
+msgstr "Alerta aktiborik ez"
+
+msgid "No alert rules"
+msgstr "Alerta araurik ez"
+
+msgid "No alert rules configured"
+msgstr "Alerta araurik ez dago konfiguratuta"
+
+msgid "No backups found"
+msgstr "Babeskopiarik ez aurkitu"
+
+msgid "No cached results"
+msgstr "Emaitzarik ez cachean"
+
+msgid "No checkpoints"
+msgstr "Checkpoint-ik ez"
+
+msgid "No config file to backup"
+msgstr "Konfigurazio fitxategirik ez babesteko"
+
+msgid "No peers connected"
+msgstr "Kide konektaturik ez"
+
+msgid "No profiles available"
+msgstr "Profilik ez eskuragarri"
+
+msgid "No templates available"
+msgstr "Txantiloirik ez eskuragarri"
+
+msgid "No torrent active"
+msgstr "Torrent aktiborik ez"
+
+msgid "Nodes: {count}"
+msgstr "Nodoak: {count}"
+
+msgid "Not available"
+msgstr "Ez dago eskuragarri"
+
+msgid "Not configured"
+msgstr "Ez dago konfiguratuta"
+
+msgid "Not supported"
+msgstr "Ez dago onartuta"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "Operation not supported"
+msgstr "Eragiketa ez dago onartuta"
+
+msgid "PEX: {status}"
+msgstr "PEX: {status}"
+
+msgid "Pause"
+msgstr "Pausatu"
+
+msgid "Peers"
+msgstr "Kideak"
+
+msgid "Performance"
+msgstr "Errendimendua"
+
+msgid "Pieces"
+msgstr "Piezak"
+
+msgid "Port"
+msgstr "Portua"
+
+msgid "Port: {port}"
+msgstr "Portua: {port}"
+
+msgid "Priority"
+msgstr "Lehentasuna"
+
+msgid "Private"
+msgstr "Pribatua"
+
+msgid "Profiles"
+msgstr "Profilak"
+
+msgid "Progress"
+msgstr "Aurrerapena"
+
+msgid "Property"
+msgstr "Propietatea"
+
+msgid "Proxy Config"
+msgstr "Proxy konfigurazioa"
+
+msgid "PyYAML is required for YAML output"
+msgstr "PyYAML beharrezkoa da YAML irteerarako"
+
+msgid "Quick Add"
+msgstr "Gehitu azkarra"
+
+msgid "Quit"
+msgstr "Irten"
+
+msgid "Rate limits disabled"
+msgstr "Abiadura muga desgaituta"
+
+msgid "Rate limits set to 1024 KiB/s"
+msgstr "Abiadura muga 1024 KiB/s-ra ezarrita"
+
+msgid "Rehash: {status}"
+msgstr "Rehash: {status}"
+
+msgid "Resume"
+msgstr "Berrekin"
+
+msgid "Rule"
+msgstr "Araua"
+
+msgid "Rule not found: {name}"
+msgstr "Araua ez da aurkitu: {name}"
+
+msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
+msgstr "Arauak: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blokeoak: {blocks}"
+
+msgid "Running"
+msgstr "Exekutatzen"
+
+msgid "SSL Config"
+msgstr "SSL konfigurazioa"
+
+msgid "Scrape Results"
+msgstr "Scrape emaitzak"
+
+msgid "Scrape: {status}"
+msgstr "Scrape: {status}"
+
+msgid "Section not found: {section}"
+msgstr "Atala ez da aurkitu: {section}"
+
+msgid "Security Scan"
+msgstr "Segurtasun eskaneatzea"
+
+msgid "Seeders"
+msgstr "Seeders"
+
+msgid "Seeders (Scrape)"
+msgstr "Seeders (Scrape)"
+
+msgid "Select files to download"
+msgstr "Hautatu deskargatzeko fitxategiak"
+
+msgid "Selected"
+msgstr "Hautatuta"
+
+msgid "Session"
+msgstr "Saioa"
+
+msgid "Set value in global config file"
+msgstr "Balioa ezarri konfigurazio fitxategi globalean"
+
+msgid "Set value in project local ccbt.toml"
+msgstr "Balioa ezarri proiektu lokaleko ccbt.toml-en"
+
+msgid "Severity"
+msgstr "Larritasuna"
+
+msgid "Show specific key path (e.g. network.listen_port)"
+msgstr "Erakutsi gako bide zehatza (adib. network.listen_port)"
+
+msgid "Show specific section key path (e.g. network)"
+msgstr "Erakutsi atal gako bide zehatza (adib. network)"
+
+msgid "Size"
+msgstr "Tamaina"
+
+msgid "Skip confirmation prompt"
+msgstr "Berrespena saltatu"
+
+msgid "Skip daemon restart even if needed"
+msgstr "Deabrua berrabiaraztea saltatu beharrezkoa bada ere"
+
+msgid "Snapshot failed: {error}"
+msgstr "Argazkia huts egin du: {error}"
+
+msgid "Snapshot saved to {path}"
+msgstr "Argazkia {path}-ra gordeta"
+
+msgid "Status"
+msgstr "Egoera"
+
+msgid "Status: "
+msgstr "Egoera: "
+
+msgid "Supported"
+msgstr "Onartuta"
+
+msgid "System Capabilities"
+msgstr "Sistema gaitasunak"
+
+msgid "System Capabilities Summary"
+msgstr "Sistema gaitasun laburpena"
+
+msgid "System Resources"
+msgstr "Sistema baliabideak"
+
+msgid "Templates"
+msgstr "Txantiloiak"
+
+msgid "Timestamp"
+msgstr "Denbora zigilua"
+
+msgid "Torrent Config"
+msgstr "Torrent konfigurazioa"
+
+msgid "Torrent Status"
+msgstr "Torrent egoera"
+
+msgid "Torrent file not found"
+msgstr "Torrent fitxategia ez da aurkitu"
+
+msgid "Torrent not found"
+msgstr "Torrent-a ez da aurkitu"
+
+msgid "Torrents"
+msgstr "Torrent-ak"
+
+msgid "Torrents: {count}"
+msgstr "Torrent-ak: {count}"
+
+msgid "Tracker Scrape"
+msgstr "Tracker Scrape"
+
+msgid "Type"
+msgstr "Mota"
+
+msgid "Unknown"
+msgstr "Ezezaguna"
+
+msgid "Unknown subcommand"
+msgstr "Azpikomando ezezaguna"
+
+msgid "Unknown subcommand: {sub}"
+msgstr "Azpikomando ezezaguna: {sub}"
+
+msgid "Upload"
+msgstr "Igo"
+
+msgid "Upload Speed"
+msgstr "Igo abiadura"
+
+msgid "Uptime: {uptime:.1f}s"
+msgstr "Iraupena: {uptime:.1f}s"
+
+msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr "Erabilera: alerts list|list-active|add|remove|clear|load|save|test ..."
+
+msgid "Usage: backup <info_hash> <dest>"
+msgstr "Erabilera: backup <info_hash> <dest>"
+
+msgid "Usage: checkpoint list"
+msgstr "Erabilera: checkpoint list"
+
+msgid "Usage: config [show|get|set|reload] ..."
+msgstr "Erabilera: config [show|get|set|reload] ..."
+
+msgid "Usage: config get <key.path>"
+msgstr "Erabilera: config get <key.path>"
+
+msgid "Usage: config set <key.path> <value>"
+msgstr "Erabilera: config set <key.path> <value>"
+
+msgid "Usage: config_backup list|create [desc]|restore <file>"
+msgstr "Erabilera: config_backup list|create [desc]|restore <file>"
+
+msgid "Usage: config_diff <file1> <file2>"
+msgstr "Erabilera: config_diff <file1> <file2>"
+
+msgid "Usage: config_export <toml|json|yaml> <output>"
+msgstr "Erabilera: config_export <toml|json|yaml> <output>"
+
+msgid "Usage: config_import <toml|json|yaml> <input>"
+msgstr "Erabilera: config_import <toml|json|yaml> <input>"
+
+msgid "Usage: export <path>"
+msgstr "Erabilera: export <path>"
+
+msgid "Usage: import <path>"
+msgstr "Erabilera: import <path>"
+
+msgid "Usage: limits [show|set] <info_hash> [down up]"
+msgstr "Erabilera: limits [show|set] <info_hash> [down up]"
+
+msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
+msgstr "Erabilera: limits set <info_hash> <down_kib> <up_kib>"
+
+msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgstr "Erabilera: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+
+msgid "Usage: profile list | profile apply <name>"
+msgstr "Erabilera: profile list | profile apply <name>"
+
+msgid "Usage: restore <backup_file>"
+msgstr "Erabilera: restore <backup_file>"
+
+msgid "Usage: template list | template apply <name> [merge]"
+msgstr "Erabilera: template list | template apply <name> [merge]"
+
+msgid "Use --confirm to proceed with reset"
+msgstr "Erabili --confirm berrezartzeko"
+
+msgid "VALID"
+msgstr "BALIOZKOA"
+
+msgid "Value"
+msgstr "Balioa"
+
+msgid "Welcome"
+msgstr "Ongi etorri"
+
+msgid "Xet"
+msgstr "Xet"
+
+msgid "Yes"
+msgstr "Bai"
+
+msgid "Yes (BEP 27)"
+msgstr "Bai (BEP 27)"
+
+msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
+msgstr "[cyan]Magnet esteka gehitzen eta metadatuak eskuratzen...[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
+msgstr "[cyan]Deskargatzen: {progress:.1f}% ({peers} kide)[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
+msgstr "[cyan]Deskargatzen: {progress:.1f}% ({rate:.2f} MB/s, {peers} kide)[/cyan]"
+
+msgid "[cyan]Initializing session components...[/cyan]"
+msgstr "[cyan]Saio osagaiak hasieratzen...[/cyan]"
+
+msgid "[cyan]Troubleshooting:[/cyan]"
+msgstr "[cyan]Arazoak konpontzen:[/cyan]"
+
+msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
+msgstr "[cyan]Saio osagaien prest egotea itxaroten (gehienez 60s)...[/cyan]"
+
+msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
+msgstr "[dim]Kontuan hartu deabru komandoak erabiltzea edo deabrua lehenik gelditzea: 'btbt daemon exit'[/dim]"
+
+msgid "[green]All files selected[/green]"
+msgstr "[green]Fitxategi guztiak hautatuta[/green]"
+
+msgid "[green]Applied auto-tuned configuration[/green]"
+msgstr "[green]Auto-doinatutako konfigurazioa aplikatuta[/green]"
+
+msgid "[green]Applied profile {name}[/green]"
+msgstr "[green]{name} profila aplikatuta[/green]"
+
+msgid "[green]Applied template {name}[/green]"
+msgstr "[green]{name} txantiloia aplikatuta[/green]"
+
+msgid "[green]Backup created: {path}[/green]"
+msgstr "[green]Babeskopia sortuta: {path}[/green]"
+
+msgid "[green]Cleaned up {count} old checkpoints[/green]"
+msgstr "[green]{count} checkpoint zahar garbituak[/green]"
+
+msgid "[green]Cleared active alerts[/green]"
+msgstr "[green]Alerta aktiboak garbituak[/green]"
+
+msgid "[green]Configuration reloaded[/green]"
+msgstr "[green]Konfigurazioa birkargatuta[/green]"
+
+msgid "[green]Configuration restored[/green]"
+msgstr "[green]Konfigurazioa berreskuratuta[/green]"
+
+msgid "[green]Connected to {count} peer(s)[/green]"
+msgstr "[green]{count} kide(ra) konektatuta[/green]"
+
+msgid "[green]Daemon status: {status}[/green]"
+msgstr "[green]Deabru egoera: {status}[/green]"
+
+msgid "[green]Download completed, stopping session...[/green]"
+msgstr "[green]Deskarga osatuta, saioa gelditzen...[/green]"
+
+msgid "[green]Download completed: {name}[/green]"
+msgstr "[green]Deskarga osatuta: {name}[/green]"
+
+msgid "[green]Exported checkpoint to {path}[/green]"
+msgstr "[green]Checkpoint {path}-ra esportatuta[/green]"
+
+msgid "[green]Exported configuration to {out}[/green]"
+msgstr "[green]Konfigurazioa {out}-ra esportatuta[/green]"
+
+msgid "[green]Imported configuration[/green]"
+msgstr "[green]Konfigurazioa inportatuta[/green]"
+
+msgid "[green]Loaded {count} rules[/green]"
+msgstr "[green]{count} arau kargatuta[/green]"
+
+msgid "[green]Magnet added successfully: {hash}...[/green]"
+msgstr "[green]Magnet esteka arrakastaz gehituta: {hash}...[/green]"
+
+msgid "[green]Magnet added to daemon: {hash}[/green]"
+msgstr "[green]Magnet esteka deabrura gehituta: {hash}[/green]"
+
+msgid "[green]Metadata fetched successfully![/green]"
+msgstr "[green]Metadatuak arrakastaz eskuratuta![/green]"
+
+msgid "[green]Migrated checkpoint to {path}[/green]"
+msgstr "[green]Checkpoint {path}-ra migratuta[/green]"
+
+msgid "[green]Monitoring started[/green]"
+msgstr "[green]Monitorizazioa hasita[/green]"
+
+msgid "[green]Resuming download from checkpoint...[/green]"
+msgstr "[green]Deskarga checkpoint-etik berrekin...[/green]"
+
+msgid "[green]Rule added[/green]"
+msgstr "[green]Araua gehituta[/green]"
+
+msgid "[green]Rule evaluated[/green]"
+msgstr "[green]Araua ebaluatuta[/green]"
+
+msgid "[green]Rule removed[/green]"
+msgstr "[green]Araua kenduta[/green]"
+
+msgid "[green]Saved rules[/green]"
+msgstr "[green]Arauak gordeta[/green]"
+
+msgid "[green]Selected file {idx}[/green]"
+msgstr "[green]{idx} fitxategia hautatuta[/green]"
+
+msgid "[green]Selected {count} file(s) for download[/green]"
+msgstr "[green]{count} fitxategi(a) hautatuta deskargatzeko[/green]"
+
+msgid "[green]Set priority for file {idx} to {priority}[/green]"
+msgstr "[green]{idx} fitxategiaren lehentasuna {priority}-ra ezarrita[/green]"
+
+msgid "[green]Starting web interface on http://{host}:{port}[/green]"
+msgstr "[green]Web interfazea http://{host}:{port}-n abiarazten[/green]"
+
+msgid "[green]Torrent added to daemon: {hash}[/green]"
+msgstr "[green]Torrent-a deabrura gehituta: {hash}[/green]"
+
+msgid "[green]Updated runtime configuration[/green]"
+msgstr "[green]Exekuzio denbora konfigurazioa eguneratuta[/green]"
+
+msgid "[green]Wrote metrics to {out}[/green]"
+msgstr "[green]Metrikak {out}-ra idatzita[/green]"
+
+msgid "[red]Backup failed: {msgs}[/red]"
+msgstr "[red]Babeskopia huts egin du: {msgs}[/red]"
+
+msgid "[red]Error: Could not parse magnet link[/red]"
+msgstr "[red]Errorea: Ezin izan da magnet esteka analizatu[/red]"
+
+msgid "[red]Error: {error}[/red]"
+msgstr "[red]Errorea: {error}[/red]"
+
+msgid "[red]Failed to add magnet link: {error}[/red]"
+msgstr "[red]Errorea magnet esteka gehitzean: {error}[/red]"
+
+msgid "[red]Failed to set config: {error}[/red]"
+msgstr "[red]Errorea konfigurazioa ezartzean: {error}[/red]"
+
+msgid "[red]File not found: {error}[/red]"
+msgstr "[red]Fitxategia ez da aurkitu: {error}[/red]"
+
+msgid "[red]Invalid arguments[/red]"
+msgstr "[red]Argumentu baliogabeak[/red]"
+
+msgid "[red]Invalid file index: {idx}[/red]"
+msgstr "[red]Fitxategi indize baliogabea: {idx}[/red]"
+
+msgid "[red]Invalid file index[/red]"
+msgstr "[red]Fitxategi indize baliogabea[/red]"
+
+msgid "[red]Invalid info hash format: {hash}[/red]"
+msgstr "[red]Info hash formatu baliogabea: {hash}[/red]"
+
+msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]Lehentasun baliogabea. Erabili: do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]Lehentasun baliogabea: {priority}. Erabili: do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid torrent file: {error}[/red]"
+msgstr "[red]Torrent fitxategi baliogabea: {error}[/red]"
+
+msgid "[red]Key not found: {key}[/red]"
+msgstr "[red]Gakoa ez da aurkitu: {key}[/red]"
+
+msgid "[red]No checkpoint found for {hash}[/red]"
+msgstr "[red]Checkpoint-ik ez aurkitu {hash}-entzat[/red]"
+
+msgid "[red]PyYAML not installed[/red]"
+msgstr "[red]PyYAML ez dago instalatuta[/red]"
+
+msgid "[red]Reload failed: {error}[/red]"
+msgstr "[red]Birkargak huts egin du: {error}[/red]"
+
+msgid "[red]Restore failed: {msgs}[/red]"
+msgstr "[red]Berreskuratzeak huts egin du: {msgs}[/red]"
+
+msgid "[red]{error}[/red]"
+msgstr "[red]{error}[/red]"
+
+msgid "[yellow]All files deselected[/yellow]"
+msgstr "[yellow]Fitxategi guztiak deshautatuta[/yellow]"
+
+msgid "[yellow]Debug mode not yet implemented[/yellow]"
+msgstr "[yellow]Arazketa modua oraindik ez da inplementatuta[/yellow]"
+
+msgid "[yellow]Deselected file {idx}[/yellow]"
+msgstr "[yellow]{idx} fitxategia deshautatuta[/yellow]"
+
+msgid "[yellow]Download interrupted by user[/yellow]"
+msgstr "[yellow]Deskarga erabiltzaileak eten du[/yellow]"
+
+msgid "[yellow]Fetching metadata from peers...[/yellow]"
+msgstr "[yellow]Metadatuak kideetatik eskuratzen...[/yellow]"
+
+msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
+msgstr "[yellow]Lehentasun zehaztapen baliogabea '{spec}': {error}[/yellow]"
+
+msgid "[yellow]Keeping session alive[/yellow]"
+msgstr "[yellow]Saioa bizirik mantentzen[/yellow]"
+
+msgid "[yellow]No checkpoints found[/yellow]"
+msgstr "[yellow]Checkpoint-ik ez aurkitu[/yellow]"
+
+msgid "[yellow]Torrent session ended[/yellow]"
+msgstr "[yellow]Torrent saioa amaitu da[/yellow]"
+
+msgid "[yellow]Unknown command: {cmd}[/yellow]"
+msgstr "[yellow]Komando ezezaguna: {cmd}[/yellow]"
+
+msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
+msgstr "[yellow]Abisua: Deabrua exekutatzen ari da. Saio lokala abiarazteak portu gatazkak eragin ditzake.[/yellow]"
+
+msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
+msgstr "[yellow]Abisua: Errorea saioa gelditzean: {error}[/yellow]"
+
+msgid "[yellow]{warning}[/yellow]"
+msgstr "[yellow]{warning}[/yellow]"
+
+msgid "ccBitTorrent Interactive CLI"
+msgstr "ccBitTorrent CLI interaktiboa"
+
+msgid "ccBitTorrent Status"
+msgstr "ccBitTorrent Egoera"
+
+msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+
+msgid "uTP Config"
+msgstr "uTP konfigurazioa"
+
+msgid "{count} features"
+msgstr "{count} ezaugarri"
+
+msgid "{count} items"
+msgstr "{count} elementu"
+
+msgid "{elapsed:.0f}s ago"
+msgstr "duela {elapsed:.0f}s"

@@ -1,0 +1,67 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'docs/**'
+      - 'dev/mkdocs.yml'
+      - 'ccbt/**'
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'docs/**'
+      - 'dev/mkdocs.yml'
+
+jobs:
+  build-docs:
+    name: build-docs
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+      
+      - name: Generate coverage report
+        run: |
+          uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html:site/reports/htmlcov
+        continue-on-error: true
+      
+      - name: Generate Bandit report
+        run: |
+          uv run python tests/scripts/ensure_bandit_dir.py
+          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks
+        continue-on-error: true
+      
+      - name: Build documentation
+        run: |
+          uv run mkdocs build --strict -f dev/mkdocs.yml
+      
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: site/
+          retention-days: 7
+      
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          cname: ccbittorrent.readthedocs.io
+
