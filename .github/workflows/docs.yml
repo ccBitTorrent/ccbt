@@ -6,12 +6,16 @@ on:
     paths:
       - 'docs/**'
       - 'dev/mkdocs.yml'
+      - '.readthedocs.yaml'
+      - 'dev/requirements-rtd.txt'
       - 'ccbt/**'
   pull_request:
     branches: [main, dev]
     paths:
       - 'docs/**'
       - 'dev/mkdocs.yml'
+      - '.readthedocs.yaml'
+      - 'dev/requirements-rtd.txt'
 
 jobs:
   build-docs:
