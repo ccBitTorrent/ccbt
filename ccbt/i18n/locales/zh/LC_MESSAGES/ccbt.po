@@ -1,0 +1,844 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: ccBitTorrent 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-11-10 21:20\n"
+"PO-Revision-Date: 2025-11-10 21:20\n"
+"Last-Translator: ccBitTorrent Team\n"
+"Language-Team: Chinese Team\n"
+"Language: zh\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+
+msgid "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+msgstr "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+
+msgid "\\n[bold cyan]File Selection[/bold cyan]"
+msgstr "\\n[bold cyan]File Selection[/bold cyan]"
+
+msgid "\\n[bold]File selection[/bold]"
+msgstr "\\n[bold]File selection[/bold]"
+
+msgid "\\n[yellow]Commands:[/yellow]"
+msgstr "\\n[yellow]Commands:[/yellow]"
+
+msgid "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgstr "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+
+msgid "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgstr "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+
+msgid "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgstr "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+
+msgid "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgstr "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+
+msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
+msgstr "  [cyan]deselect <索引>[/cyan] - 取消选择文件"
+
+msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
+msgstr "  [cyan]deselect-all[/cyan] - 取消选择所有文件"
+
+msgid "  [cyan]done[/cyan] - Finish selection and start download"
+msgstr "  [cyan]done[/cyan] - 完成选择并开始下载"
+
+msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
+msgstr "  [cyan]priority <索引> <优先级>[/cyan] - 设置优先级（do_not_download/low/normal/high/maximum）"
+
+msgid "  [cyan]select <index>[/cyan] - Select a file"
+msgstr "  [cyan]select <索引>[/cyan] - 选择文件"
+
+msgid "  [cyan]select-all[/cyan] - Select all files"
+msgstr "  [cyan]select-all[/cyan] - 选择所有文件"
+
+msgid "  • Check if torrent has active seeders"
+msgstr "  • 检查种子是否有活跃的做种者"
+
+msgid "  • Ensure DHT is enabled: --enable-dht"
+msgstr "  • 确保 DHT 已启用：--enable-dht"
+
+msgid "  • Run 'btbt diagnose-connections' to check connection status"
+msgstr "  • 运行 'btbt diagnose-connections' 检查连接状态"
+
+msgid "  • Verify NAT/firewall settings"
+msgstr "  • 验证 NAT/防火墙设置"
+
+msgid " | Files: {selected}/{total} selected"
+msgstr " | 文件：已选择 {selected}/{total}"
+
+msgid " | Private: {count}"
+msgstr " | 私有：{count}"
+
+msgid "Active"
+msgstr "活跃"
+
+msgid "Active Alerts"
+msgstr "活跃警报"
+
+msgid "Active: {count}"
+msgstr "活跃：{count}"
+
+msgid "Advanced Add"
+msgstr "高级添加"
+
+msgid "Alert Rules"
+msgstr "警报规则"
+
+msgid "Alerts"
+msgstr "警报"
+
+msgid "Announce: Failed"
+msgstr "宣告：失败"
+
+msgid "Announce: {status}"
+msgstr "宣告：{status}"
+
+msgid "Are you sure you want to quit?"
+msgstr "您确定要退出吗？"
+
+msgid "Automatically restart daemon if needed (without prompt)"
+msgstr "需要时自动重启守护进程（无提示）"
+
+msgid "Browse"
+msgstr "浏览"
+
+msgid "Capability"
+msgstr "功能"
+
+msgid "Commands: "
+msgstr "命令："
+
+msgid "Completed"
+msgstr "已完成"
+
+msgid "Completed (Scrape)"
+msgstr "已完成（抓取）"
+
+msgid "Component"
+msgstr "组件"
+
+msgid "Condition"
+msgstr "条件"
+
+msgid "Config Backups"
+msgstr "配置备份"
+
+msgid "Configuration file path"
+msgstr "配置文件路径"
+
+msgid "Confirm"
+msgstr "确认"
+
+msgid "Connected"
+msgstr "已连接"
+
+msgid "Connected Peers"
+msgstr "已连接节点"
+
+msgid "Count: {count}{file_info}{private_info}"
+msgstr "计数：{count}{file_info}{private_info}"
+
+msgid "Create backup before migration"
+msgstr "迁移前创建备份"
+
+msgid "DHT"
+msgstr "DHT"
+
+msgid "Description"
+msgstr "描述"
+
+msgid "Details"
+msgstr "详情"
+
+msgid "Disabled"
+msgstr "已禁用"
+
+msgid "Download"
+msgstr "下载"
+
+msgid "Download Speed"
+msgstr "下载速度"
+
+msgid "Download paused"
+msgstr "下载已暂停"
+
+msgid "Download resumed"
+msgstr "下载已恢复"
+
+msgid "Download stopped"
+msgstr "下载已停止"
+
+msgid "Downloaded"
+msgstr "已下载"
+
+msgid "Downloading {name}"
+msgstr "正在下载 {name}"
+
+msgid "ETA"
+msgstr "预计时间"
+
+msgid "Enable debug mode"
+msgstr "启用调试模式"
+
+msgid "Enable verbose output"
+msgstr "启用详细输出"
+
+msgid "Enabled"
+msgstr "已启用"
+
+msgid "Error reading scrape cache"
+msgstr "读取抓取缓存错误"
+
+msgid "Explore"
+msgstr "浏览"
+
+msgid "Failed"
+msgstr "失败"
+
+msgid "Failed to register torrent in session"
+msgstr "在会话中注册种子失败"
+
+msgid "File"
+msgstr "File"
+
+msgid "File Name"
+msgstr "文件名"
+
+msgid "File selection not available for this torrent"
+msgstr "此种子不支持文件选择"
+
+msgid "Files"
+msgstr "文件"
+
+msgid "Global Config"
+msgstr "全局配置"
+
+msgid "Help"
+msgstr "帮助"
+
+msgid "History"
+msgstr "历史"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "IP"
+msgstr "IP"
+
+msgid "IP Filter"
+msgstr "IP 过滤器"
+
+msgid "IPFS"
+msgstr "IPFS"
+
+msgid "Info Hash"
+msgstr "信息哈希"
+
+msgid "Interactive backup"
+msgstr "交互式备份"
+
+msgid "Invalid torrent file format"
+msgstr "无效的种子文件格式"
+
+msgid "Key"
+msgstr "键"
+
+msgid "Key not found: {key}"
+msgstr "未找到键：{key}"
+
+msgid "Last Scrape"
+msgstr "最后抓取"
+
+msgid "Leechers"
+msgstr "下载者"
+
+msgid "Leechers (Scrape)"
+msgstr "下载者（抓取）"
+
+msgid "MIGRATED"
+msgstr "已迁移"
+
+msgid "Menu"
+msgstr "菜单"
+
+msgid "Metric"
+msgstr "指标"
+
+msgid "NAT Management"
+msgstr "NAT 管理"
+
+msgid "Name"
+msgstr "名称"
+
+msgid "Network"
+msgstr "网络"
+
+msgid "No"
+msgstr "否"
+
+msgid "No active alerts"
+msgstr "无活跃警报"
+
+msgid "No alert rules"
+msgstr "无警报规则"
+
+msgid "No alert rules configured"
+msgstr "未配置警报规则"
+
+msgid "No backups found"
+msgstr "未找到备份"
+
+msgid "No cached results"
+msgstr "无缓存结果"
+
+msgid "No checkpoints"
+msgstr "无检查点"
+
+msgid "No config file to backup"
+msgstr "无配置文件可备份"
+
+msgid "No peers connected"
+msgstr "无节点连接"
+
+msgid "No profiles available"
+msgstr "无可用配置文件"
+
+msgid "No templates available"
+msgstr "无可用模板"
+
+msgid "No torrent active"
+msgstr "无活跃种子"
+
+msgid "Nodes: {count}"
+msgstr "节点：{count}"
+
+msgid "Not available"
+msgstr "不可用"
+
+msgid "Not configured"
+msgstr "未配置"
+
+msgid "Not supported"
+msgstr "不支持"
+
+msgid "OK"
+msgstr "确定"
+
+msgid "Operation not supported"
+msgstr "不支持的操作"
+
+msgid "PEX: {status}"
+msgstr "PEX：{status}"
+
+msgid "Pause"
+msgstr "暂停"
+
+msgid "Peers"
+msgstr "节点"
+
+msgid "Performance"
+msgstr "性能"
+
+msgid "Pieces"
+msgstr "片段"
+
+msgid "Port"
+msgstr "端口"
+
+msgid "Port: {port}"
+msgstr "端口：{port}"
+
+msgid "Priority"
+msgstr "优先级"
+
+msgid "Private"
+msgstr "私有"
+
+msgid "Profiles"
+msgstr "配置文件"
+
+msgid "Progress"
+msgstr "进度"
+
+msgid "Property"
+msgstr "属性"
+
+msgid "Proxy Config"
+msgstr "代理配置"
+
+msgid "PyYAML is required for YAML output"
+msgstr "YAML 输出需要 PyYAML"
+
+msgid "Quick Add"
+msgstr "快速添加"
+
+msgid "Quit"
+msgstr "退出"
+
+msgid "Rate limits disabled"
+msgstr "速率限制已禁用"
+
+msgid "Rate limits set to 1024 KiB/s"
+msgstr "速率限制设置为 1024 KiB/s"
+
+msgid "Rehash: {status}"
+msgstr "重新哈希：{status}"
+
+msgid "Resume"
+msgstr "恢复"
+
+msgid "Rule"
+msgstr "规则"
+
+msgid "Rule not found: {name}"
+msgstr "未找到规则：{name}"
+
+msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
+msgstr "规则：{rules}，IPv4：{ipv4}，IPv6：{ipv6}，阻止：{blocks}"
+
+msgid "Running"
+msgstr "运行中"
+
+msgid "SSL Config"
+msgstr "SSL 配置"
+
+msgid "Scrape Results"
+msgstr "抓取结果"
+
+msgid "Scrape: {status}"
+msgstr "抓取：{status}"
+
+msgid "Section not found: {section}"
+msgstr "未找到节：{section}"
+
+msgid "Security Scan"
+msgstr "安全扫描"
+
+msgid "Seeders"
+msgstr "做种者"
+
+msgid "Seeders (Scrape)"
+msgstr "做种者（抓取）"
+
+msgid "Select files to download"
+msgstr "选择要下载的文件"
+
+msgid "Selected"
+msgstr "已选择"
+
+msgid "Session"
+msgstr "会话"
+
+msgid "Set value in global config file"
+msgstr "在全局配置文件中设置值"
+
+msgid "Set value in project local ccbt.toml"
+msgstr "在项目本地 ccbt.toml 中设置值"
+
+msgid "Severity"
+msgstr "严重性"
+
+msgid "Show specific key path (e.g. network.listen_port)"
+msgstr "显示特定键路径（例如 network.listen_port）"
+
+msgid "Show specific section key path (e.g. network)"
+msgstr "显示特定节键路径（例如 network）"
+
+msgid "Size"
+msgstr "大小"
+
+msgid "Skip confirmation prompt"
+msgstr "跳过确认提示"
+
+msgid "Skip daemon restart even if needed"
+msgstr "即使需要也跳过守护进程重启"
+
+msgid "Snapshot failed: {error}"
+msgstr "快照失败：{error}"
+
+msgid "Snapshot saved to {path}"
+msgstr "快照已保存到 {path}"
+
+msgid "Status"
+msgstr "状态"
+
+msgid "Status: "
+msgstr "状态："
+
+msgid "Supported"
+msgstr "支持"
+
+msgid "System Capabilities"
+msgstr "系统功能"
+
+msgid "System Capabilities Summary"
+msgstr "系统功能摘要"
+
+msgid "System Resources"
+msgstr "系统资源"
+
+msgid "Templates"
+msgstr "模板"
+
+msgid "Timestamp"
+msgstr "时间戳"
+
+msgid "Torrent Config"
+msgstr "种子配置"
+
+msgid "Torrent Status"
+msgstr "种子状态"
+
+msgid "Torrent file not found"
+msgstr "未找到种子文件"
+
+msgid "Torrent not found"
+msgstr "未找到种子"
+
+msgid "Torrents"
+msgstr "种子"
+
+msgid "Torrents: {count}"
+msgstr "种子：{count}"
+
+msgid "Tracker Scrape"
+msgstr "Tracker 抓取"
+
+msgid "Type"
+msgstr "类型"
+
+msgid "Unknown"
+msgstr "未知"
+
+msgid "Unknown subcommand"
+msgstr "未知子命令"
+
+msgid "Unknown subcommand: {sub}"
+msgstr "未知子命令：{sub}"
+
+msgid "Upload"
+msgstr "上传"
+
+msgid "Upload Speed"
+msgstr "上传速度"
+
+msgid "Uptime: {uptime:.1f}s"
+msgstr "运行时间：{uptime:.1f} 秒"
+
+msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr "用法：alerts list|list-active|add|remove|clear|load|save|test ..."
+
+msgid "Usage: backup <info_hash> <dest>"
+msgstr "用法：backup <信息哈希> <目标>"
+
+msgid "Usage: checkpoint list"
+msgstr "用法：checkpoint list"
+
+msgid "Usage: config [show|get|set|reload] ..."
+msgstr "用法：config [show|get|set|reload] ..."
+
+msgid "Usage: config get <key.path>"
+msgstr "用法：config get <键.路径>"
+
+msgid "Usage: config set <key.path> <value>"
+msgstr "用法：config set <键.路径> <值>"
+
+msgid "Usage: config_backup list|create [desc]|restore <file>"
+msgstr "用法：config_backup list|create [描述]|restore <文件>"
+
+msgid "Usage: config_diff <file1> <file2>"
+msgstr "用法：config_diff <文件1> <文件2>"
+
+msgid "Usage: config_export <toml|json|yaml> <output>"
+msgstr "用法：config_export <toml|json|yaml> <输出>"
+
+msgid "Usage: config_import <toml|json|yaml> <input>"
+msgstr "用法：config_import <toml|json|yaml> <输入>"
+
+msgid "Usage: export <path>"
+msgstr "用法：export <路径>"
+
+msgid "Usage: import <path>"
+msgstr "用法：import <路径>"
+
+msgid "Usage: limits [show|set] <info_hash> [down up]"
+msgstr "用法：limits [show|set] <信息哈希> [下载 上传]"
+
+msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
+msgstr "用法：limits set <信息哈希> <下载_kib> <上传_kib>"
+
+msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgstr "用法：metrics show [system|performance|all] | metrics export [json|prometheus] [输出]"
+
+msgid "Usage: profile list | profile apply <name>"
+msgstr "用法：profile list | profile apply <名称>"
+
+msgid "Usage: restore <backup_file>"
+msgstr "用法：restore <备份文件>"
+
+msgid "Usage: template list | template apply <name> [merge]"
+msgstr "用法：template list | template apply <名称> [merge]"
+
+msgid "Use --confirm to proceed with reset"
+msgstr "使用 --confirm 继续重置"
+
+msgid "VALID"
+msgstr "有效"
+
+msgid "Value"
+msgstr "值"
+
+msgid "Welcome"
+msgstr "欢迎"
+
+msgid "Xet"
+msgstr "Xet"
+
+msgid "Yes"
+msgstr "是"
+
+msgid "Yes (BEP 27)"
+msgstr "是（BEP 27）"
+
+msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
+msgstr "[cyan]正在添加磁力链接并获取元数据...[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
+msgstr "[cyan]正在下载：{progress:.1f}%（{peers} 个节点）[/cyan]"
+
+msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
+msgstr "[cyan]正在下载：{progress:.1f}%（{rate:.2f} MB/s，{peers} 个节点）[/cyan]"
+
+msgid "[cyan]Initializing session components...[/cyan]"
+msgstr "[cyan]正在初始化会话组件...[/cyan]"
+
+msgid "[cyan]Troubleshooting:[/cyan]"
+msgstr "[cyan]故障排除：[/cyan]"
+
+msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
+msgstr "[cyan]等待会话组件就绪（最多 60 秒）...[/cyan]"
+
+msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
+msgstr "[dim]考虑使用守护进程命令或先停止守护进程：'btbt daemon exit'[/dim]"
+
+msgid "[green]All files selected[/green]"
+msgstr "[green]已选择所有文件[/green]"
+
+msgid "[green]Applied auto-tuned configuration[/green]"
+msgstr "[green]已应用自动调整配置[/green]"
+
+msgid "[green]Applied profile {name}[/green]"
+msgstr "[green]已应用配置文件 {name}[/green]"
+
+msgid "[green]Applied template {name}[/green]"
+msgstr "[green]已应用模板 {name}[/green]"
+
+msgid "[green]Backup created: {path}[/green]"
+msgstr "[green]已创建备份：{path}[/green]"
+
+msgid "[green]Cleaned up {count} old checkpoints[/green]"
+msgstr "[green]已清理 {count} 个旧检查点[/green]"
+
+msgid "[green]Cleared active alerts[/green]"
+msgstr "[green]已清除活跃警报[/green]"
+
+msgid "[green]Configuration reloaded[/green]"
+msgstr "[green]配置已重新加载[/green]"
+
+msgid "[green]Configuration restored[/green]"
+msgstr "[green]配置已恢复[/green]"
+
+msgid "[green]Connected to {count} peer(s)[/green]"
+msgstr "[green]已连接到 {count} 个节点[/green]"
+
+msgid "[green]Daemon status: {status}[/green]"
+msgstr "[green]守护进程状态：{status}[/green]"
+
+msgid "[green]Download completed, stopping session...[/green]"
+msgstr "[green]下载完成，正在停止会话...[/green]"
+
+msgid "[green]Download completed: {name}[/green]"
+msgstr "[green]下载完成：{name}[/green]"
+
+msgid "[green]Exported checkpoint to {path}[/green]"
+msgstr "[green]已导出检查点到 {path}[/green]"
+
+msgid "[green]Exported configuration to {out}[/green]"
+msgstr "[green]已导出配置到 {out}[/green]"
+
+msgid "[green]Imported configuration[/green]"
+msgstr "[green]已导入配置[/green]"
+
+msgid "[green]Loaded {count} rules[/green]"
+msgstr "[green]已加载 {count} 条规则[/green]"
+
+msgid "[green]Magnet added successfully: {hash}...[/green]"
+msgstr "[green]磁力链接添加成功：{hash}...[/green]"
+
+msgid "[green]Magnet added to daemon: {hash}[/green]"
+msgstr "[green]磁力链接已添加到守护进程：{hash}[/green]"
+
+msgid "[green]Metadata fetched successfully![/green]"
+msgstr "[green]元数据获取成功！[/green]"
+
+msgid "[green]Migrated checkpoint to {path}[/green]"
+msgstr "[green]已迁移检查点到 {path}[/green]"
+
+msgid "[green]Monitoring started[/green]"
+msgstr "[green]监控已启动[/green]"
+
+msgid "[green]Resuming download from checkpoint...[/green]"
+msgstr "[green]正在从检查点恢复下载...[/green]"
+
+msgid "[green]Rule added[/green]"
+msgstr "[green]规则已添加[/green]"
+
+msgid "[green]Rule evaluated[/green]"
+msgstr "[green]规则已评估[/green]"
+
+msgid "[green]Rule removed[/green]"
+msgstr "[green]规则已删除[/green]"
+
+msgid "[green]Saved rules[/green]"
+msgstr "[green]规则已保存[/green]"
+
+msgid "[green]Selected file {idx}[/green]"
+msgstr "[green]已选择文件 {idx}[/green]"
+
+msgid "[green]Selected {count} file(s) for download[/green]"
+msgstr "[green]已选择 {count} 个文件用于下载[/green]"
+
+msgid "[green]Set priority for file {idx} to {priority}[/green]"
+msgstr "[green]已将文件 {idx} 的优先级设置为 {priority}[/green]"
+
+msgid "[green]Starting web interface on http://{host}:{port}[/green]"
+msgstr "[green]正在 http://{host}:{port} 启动 Web 界面[/green]"
+
+msgid "[green]Torrent added to daemon: {hash}[/green]"
+msgstr "[green]种子已添加到守护进程：{hash}[/green]"
+
+msgid "[green]Updated runtime configuration[/green]"
+msgstr "[green]已更新运行时配置[/green]"
+
+msgid "[green]Wrote metrics to {out}[/green]"
+msgstr "[green]已将指标写入 {out}[/green]"
+
+msgid "[red]Backup failed: {msgs}[/red]"
+msgstr "[red]备份失败：{msgs}[/red]"
+
+msgid "[red]Error: Could not parse magnet link[/red]"
+msgstr "[red]错误：无法解析磁力链接[/red]"
+
+msgid "[red]Error: {error}[/red]"
+msgstr "[red]错误：{error}[/red]"
+
+msgid "[red]Failed to add magnet link: {error}[/red]"
+msgstr "[red]添加磁力链接失败：{error}[/red]"
+
+msgid "[red]Failed to set config: {error}[/red]"
+msgstr "[red]设置配置失败：{error}[/red]"
+
+msgid "[red]File not found: {error}[/red]"
+msgstr "[red]文件未找到：{error}[/red]"
+
+msgid "[red]Invalid arguments[/red]"
+msgstr "[red]无效参数[/red]"
+
+msgid "[red]Invalid file index: {idx}[/red]"
+msgstr "[red]无效的文件索引：{idx}[/red]"
+
+msgid "[red]Invalid file index[/red]"
+msgstr "[red]无效的文件索引[/red]"
+
+msgid "[red]Invalid info hash format: {hash}[/red]"
+msgstr "[red]无效的信息哈希格式：{hash}[/red]"
+
+msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]无效的优先级。使用：do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
+msgstr "[red]无效的优先级：{priority}。使用：do_not_download/low/normal/high/maximum[/red]"
+
+msgid "[red]Invalid torrent file: {error}[/red]"
+msgstr "[red]无效的种子文件：{error}[/red]"
+
+msgid "[red]Key not found: {key}[/red]"
+msgstr "[red]未找到键：{key}[/red]"
+
+msgid "[red]No checkpoint found for {hash}[/red]"
+msgstr "[red]未找到 {hash} 的检查点[/red]"
+
+msgid "[red]PyYAML not installed[/red]"
+msgstr "[red]未安装 PyYAML[/red]"
+
+msgid "[red]Reload failed: {error}[/red]"
+msgstr "[red]重新加载失败：{error}[/red]"
+
+msgid "[red]Restore failed: {msgs}[/red]"
+msgstr "[red]恢复失败：{msgs}[/red]"
+
+msgid "[red]{error}[/red]"
+msgstr "[red]{error}[/red]"
+
+msgid "[yellow]All files deselected[/yellow]"
+msgstr "[yellow]已取消选择所有文件[/yellow]"
+
+msgid "[yellow]Debug mode not yet implemented[/yellow]"
+msgstr "[yellow]调试模式尚未实现[/yellow]"
+
+msgid "[yellow]Deselected file {idx}[/yellow]"
+msgstr "[yellow]已取消选择文件 {idx}[/yellow]"
+
+msgid "[yellow]Download interrupted by user[/yellow]"
+msgstr "[yellow]下载被用户中断[/yellow]"
+
+msgid "[yellow]Fetching metadata from peers...[/yellow]"
+msgstr "[yellow]正在从节点获取元数据...[/yellow]"
+
+msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
+msgstr "[yellow]无效的优先级规范 '{spec}'：{error}[/yellow]"
+
+msgid "[yellow]Keeping session alive[/yellow]"
+msgstr "[yellow]保持会话活动[/yellow]"
+
+msgid "[yellow]No checkpoints found[/yellow]"
+msgstr "[yellow]未找到检查点[/yellow]"
+
+msgid "[yellow]Torrent session ended[/yellow]"
+msgstr "[yellow]种子会话已结束[/yellow]"
+
+msgid "[yellow]Unknown command: {cmd}[/yellow]"
+msgstr "[yellow]未知命令：{cmd}[/yellow]"
+
+msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
+msgstr "[yellow]警告：守护进程正在运行。启动本地会话可能导致端口冲突。[/yellow]"
+
+msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
+msgstr "[yellow]警告：停止会话时出错：{error}[/yellow]"
+
+msgid "[yellow]{warning}[/yellow]"
+msgstr "[yellow]{warning}[/yellow]"
+
+msgid "ccBitTorrent Interactive CLI"
+msgstr "ccBitTorrent 交互式 CLI"
+
+msgid "ccBitTorrent Status"
+msgstr "ccBitTorrent 状态"
+
+msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+
+msgid "uTP Config"
+msgstr "uTP 配置"
+
+msgid "{count} features"
+msgstr "{count} 个功能"
+
+msgid "{count} items"
+msgstr "{count} 个项目"
+
+msgid "{elapsed:.0f}s ago"
+msgstr "{elapsed:.0f} 秒前"

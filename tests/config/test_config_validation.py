@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from ccbt.config import ConfigManager
 from ccbt.config.config_schema import ConfigValidator
-from ccbt.models import Config
 
 
 class TestConfigValidation:
@@ -19,7 +18,7 @@ class TestConfigValidation:
         valid_configs = [
             # Minimal config
             {},
-            
+
             # Basic network config
             {
                 "network": {
@@ -27,7 +26,7 @@ class TestConfigValidation:
                     "max_global_peers": 200,
                 }
             },
-            
+
             # Full config
             {
                 "network": {
@@ -41,6 +40,7 @@ class TestConfigValidation:
                     "hash_workers": 4,
                     "disk_workers": 2,
                     "use_mmap": True,
+                    "max_file_size_mb": 100,
                 },
                 "strategy": {
                     "piece_selection": "rarest_first",
@@ -68,7 +68,7 @@ class TestConfigValidation:
                 }
             }
         ]
-        
+
         for config_data in valid_configs:
             is_valid, errors = ConfigValidator.validate_with_details(config_data)
             assert is_valid, f"Config should be valid but got errors: {errors}"
@@ -82,35 +82,49 @@ class TestConfigValidation:
                     "listen_port": "invalid",
                 }
             },
-            
+
             # Negative peer count
             {
                 "network": {
                     "max_global_peers": -1,
                 }
             },
-            
+
             # Invalid enum value
             {
                 "strategy": {
                     "piece_selection": "invalid_strategy",
                 }
             },
-            
+
             # Out of range values
             {
                 "network": {
                     "listen_port": 1023,  # Below minimum
                 }
             },
-            
+
             # Invalid type
             {
                 "disk": {
                     "hash_workers": "not_a_number",
                 }
             },
-            
+
+            # Invalid max_file_size_mb (negative)
+            {
+                "disk": {
+                    "max_file_size_mb": -1,
+                }
+            },
+
+            # Invalid max_file_size_mb (too large, > 1TB)
+            {
+                "disk": {
+                    "max_file_size_mb": 1048577,  # Exceeds 1TB limit
+                }
+            },
+
             # Invalid boolean
             {
                 "network": {
@@ -118,7 +132,7 @@ class TestConfigValidation:
                 }
             }
         ]
-        
+
         for config_data in invalid_configs:
             is_valid, errors = ConfigValidator.validate_with_details(config_data)
             assert not is_valid, f"Config should be invalid: {config_data}"
@@ -135,12 +149,13 @@ class TestConfigValidation:
             "disk": {
                 "hash_workers": 1,  # Minimum
                 "disk_workers": 1,  # Minimum
+                "max_file_size_mb": 0,  # Unlimited (0 is converted to None)
             }
         }
-        
+
         is_valid, errors = ConfigValidator.validate_with_details(min_config)
         assert is_valid, f"Min config should be valid: {errors}"
-        
+
         # Test maximum values
         max_config = {
             "network": {
@@ -150,9 +165,10 @@ class TestConfigValidation:
             "disk": {
                 "hash_workers": 32,  # Maximum
                 "disk_workers": 16,  # Maximum
+                "max_file_size_mb": 1048576,  # Maximum (1TB)
             }
         }
-        
+
         is_valid, errors = ConfigValidator.validate_with_details(max_config)
         assert is_valid, f"Max config should be valid: {errors}"
 
@@ -165,14 +181,14 @@ class TestConfigValidation:
                     "listen_port": 1023,  # Below minimum
                 }
             },
-            
+
             # Above maximum
             {
                 "network": {
                     "listen_port": 65536,  # Above maximum
                 }
             },
-            
+
             # Negative values where not allowed
             {
                 "network": {
@@ -180,15 +196,61 @@ class TestConfigValidation:
                 }
             }
         ]
-        
+
         for config_data in out_of_range_configs:
             is_valid, errors = ConfigValidator.validate_with_details(config_data)
             assert not is_valid, f"Out of range config should be invalid: {config_data}"
 
+    def test_max_file_size_mb_validation(self):
+        """Test max_file_size_mb configuration validation."""
+        from ccbt.models import DiskConfig
+
+        # Valid values
+        assert DiskConfig(max_file_size_mb=0).max_file_size_mb is None  # 0 becomes None
+        assert DiskConfig(max_file_size_mb=100).max_file_size_mb == 100
+        assert DiskConfig(max_file_size_mb=None).max_file_size_mb is None
+        assert DiskConfig(max_file_size_mb=1048576).max_file_size_mb == 1048576  # 1TB
+
+        # Invalid values (should raise ValidationError)
+        with pytest.raises(Exception):  # Pydantic ValidationError
+            DiskConfig(max_file_size_mb=-1)
+
+        with pytest.raises(Exception):
+            DiskConfig(max_file_size_mb=1048577)  # Exceeds max
+
+    def test_max_file_size_mb_toml_loading(self):
+        """Test that max_file_size_mb loads correctly from TOML."""
+        import tempfile
+        from pathlib import Path
+
+        # Create temporary TOML file
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+            f.write("""
+[disk]
+max_file_size_mb = 50
+""")
+            temp_path = Path(f.name)
+
+        try:
+            manager = ConfigManager(config_file=temp_path)
+            config = manager.config
+
+            assert config.disk.max_file_size_mb == 50
+        finally:
+            temp_path.unlink()
+
+    def test_max_file_size_mb_default_unlimited(self):
+        """Test that default max_file_size_mb is None (unlimited)."""
+        from ccbt.models import DiskConfig
+
+        # Default should be None
+        disk_config = DiskConfig()
+        assert disk_config.max_file_size_mb is None
+
     def test_system_capability_checks(self):
         """Test system capability validation."""
         # Mock CPU count for testing
-        with patch('os.cpu_count', return_value=4):
+        with patch("os.cpu_count", return_value=4):
             # Reasonable worker counts
             reasonable_config = {
                 "disk": {
@@ -196,10 +258,10 @@ class TestConfigValidation:
                     "disk_workers": 2,   # Less than CPU count
                 }
             }
-            
+
             errors = ConfigValidator.validate_cross_field_rules(reasonable_config)
             assert len(errors) == 0, f"Reasonable config should have no warnings: {errors}"
-            
+
             # Excessive worker counts
             excessive_config = {
                 "disk": {
@@ -207,7 +269,7 @@ class TestConfigValidation:
                     "disk_workers": 8,   # 2x CPU count
                 }
             }
-            
+
             errors = ConfigValidator.validate_cross_field_rules(excessive_config)
             assert len(errors) > 0, "Excessive config should have warnings"
             assert any("Hash workers" in error for error in errors)
@@ -220,11 +282,11 @@ class TestConfigValidation:
             "network": {"listen_port": 6881},
             "discovery": {"enable_dht": True, "dht_port": 6881}
         }
-        
+
         is_valid, errors = ConfigValidator.validate_with_details(dht_conflict_config)
         assert not is_valid, "DHT port conflict should be caught by model validator"
         assert any("DHT port cannot be the same as listen port" in error for error in errors)
-        
+
         # Test limit conflicts
         limit_conflict_config = {
             "limits": {
@@ -234,7 +296,7 @@ class TestConfigValidation:
                 "per_torrent_up_kib": 1000,    # Higher than global
             }
         }
-        
+
         errors = ConfigValidator.validate_cross_field_rules(limit_conflict_config)
         assert len(errors) > 0
         assert any("Global download limit should be >=" in error for error in errors)
@@ -243,7 +305,7 @@ class TestConfigValidation:
     def test_property_based_validation_consistency(self):
         """Test validation consistency with property-based testing."""
         import random
-        
+
         # Test that valid configs remain valid after minor modifications
         base_config = {
             "network": {
@@ -254,22 +316,22 @@ class TestConfigValidation:
                 "hash_workers": 4,
             }
         }
-        
+
         # Test multiple variations
         for _ in range(10):
             # Create a variation of the base config
             config = base_config.copy()
-            
+
             # Randomly modify some values within valid ranges
             if random.choice([True, False]):
                 config["network"]["listen_port"] = random.randint(1024, 65535)
-            
+
             if random.choice([True, False]):
                 config["network"]["max_global_peers"] = random.randint(1, 10000)
-            
+
             if random.choice([True, False]):
                 config["disk"]["hash_workers"] = random.randint(1, 32)
-            
+
             # Should still be valid
             is_valid, errors = ConfigValidator.validate_with_details(config)
             assert is_valid, f"Variation should be valid: {errors}"
@@ -285,12 +347,12 @@ class TestConfigValidation:
                 "piece_selection": "invalid_strategy",
             }
         }
-        
+
         is_valid, errors = ConfigValidator.validate_with_details(config_data)
-        
+
         assert not is_valid
         assert len(errors) > 0
-        
+
         # Check that error messages are descriptive
         error_text = " ".join(errors)
         assert "listen_port" in error_text
@@ -302,19 +364,19 @@ class TestConfigValidation:
         # Test with valid config
         config_manager = ConfigManager()
         is_valid, errors = config_manager.validate_detailed()
-        
+
         assert is_valid, f"Default config should be valid: {errors}"
-        
+
         # Test schema access
         schema = config_manager.get_schema()
         assert isinstance(schema, dict)
         assert "properties" in schema
-        
+
         # Test option listing
         options = config_manager.list_options()
         assert isinstance(options, list)
         assert len(options) > 0
-        
+
         # Test option metadata
         metadata = config_manager.get_option_metadata("network.listen_port")
         assert metadata is not None
@@ -323,7 +385,7 @@ class TestConfigValidation:
     def test_validation_performance(self):
         """Test validation performance."""
         import time
-        
+
         config_data = {
             "network": {
                 "listen_port": 6881,
@@ -333,12 +395,12 @@ class TestConfigValidation:
                 "hash_workers": 4,
             }
         }
-        
+
         # Time validation
         start_time = time.time()
         is_valid, errors = ConfigValidator.validate_with_details(config_data)
         end_time = time.time()
-        
+
         assert is_valid
         assert (end_time - start_time) < 0.1  # Should be fast (< 100ms)
 
@@ -349,7 +411,7 @@ class TestConfigValidation:
                 "listen_port": None,  # Should be invalid
             }
         }
-        
+
         is_valid, errors = ConfigValidator.validate_with_details(config_data)
         assert not is_valid
         assert len(errors) > 0
@@ -368,7 +430,7 @@ class TestConfigValidation:
                 "global_up_kib": 0,    # 0 should be valid (unlimited)
             }
         }
-        
+
         is_valid, errors = ConfigValidator.validate_with_details(config_data)
         assert is_valid, f"Zero limits should be valid: {errors}"
 
@@ -379,6 +441,6 @@ class TestConfigValidation:
                 "endgame_threshold": 0.123456789,  # High precision float
             }
         }
-        
+
         is_valid, errors = ConfigValidator.validate_with_details(config_data)
         assert is_valid, f"High precision float should be valid: {errors}"

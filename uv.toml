@@ -1,5 +1,0 @@
-# UV configuration file
-# See: https://docs.astral.sh/uv/configuration/
-
-# Index configuration
-index-url = "https://pypi.org/simple"

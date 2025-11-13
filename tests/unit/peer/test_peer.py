@@ -517,6 +517,7 @@ class TestCancelMessage:
 
 class TestMessageDecoder:
     """Test cases for MessageDecoder."""
+    pytestmark = [pytest.mark.asyncio]
 
     async def test_decode_keepalive(self):
         """Test decoding keep-alive message."""

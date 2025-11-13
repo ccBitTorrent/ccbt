@@ -1,0 +1,88 @@
+name: Compatibility
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    # Run weekly on Sundays at 02:00 UTC
+    - cron: '0 2 * * 0'
+
+jobs:
+  docker-test:
+    name: docker-test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        os-variant: ['ubuntu:20.04', 'ubuntu:22.04', 'debian:bullseye', 'alpine:3.18']
+        exclude:
+          - python-version: '3.8'
+            os-variant: 'alpine:3.18'
+          - python-version: '3.9'
+            os-variant: 'alpine:3.18'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build test container
+        run: |
+          cat > dev/Dockerfile.test.tmp <<EOF
+          FROM ${{ matrix.os-variant }}
+          RUN apt-get update && apt-get install -y python${{ matrix.python-version }} python3-pip curl
+          RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+          WORKDIR /app
+          COPY . .
+          RUN /root/.cargo/bin/uv sync --dev
+          CMD ["/root/.cargo/bin/uv", "run", "pytest", "-c", "dev/pytest.ini", "tests/unit/", "-v"]
+          EOF
+      
+      - name: Run tests in container
+        run: |
+          docker build -f dev/Dockerfile.test.tmp -t ccbt-test:${{ matrix.python-version }}-${{ matrix.os-variant }} .
+          docker run --rm ccbt-test:${{ matrix.python-version }}-${{ matrix.os-variant }}
+
+  live-deployment-test:
+    name: live-deployment-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+      
+      - name: Build package
+        run: |
+          uv run python -m build
+      
+      - name: Install from wheel
+        run: |
+          uv pip install dist/*.whl
+      
+      - name: Test installation
+        run: |
+          ccbt --version || echo "ccbt command not available (expected)"
+          btbt --version || echo "btbt command not available (expected)"
+          bitonic --version || echo "bitonic command not available (expected)"
+      
+      - name: Run smoke tests
+        run: |
+          uv run pytest -c dev/pytest.ini tests/integration/test_basic_download.py -v
+

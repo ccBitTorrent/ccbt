@@ -11,6 +11,7 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.piece]
 
@@ -36,7 +37,7 @@ def mock_torrent_data():
     }
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def piece_manager(mock_torrent_data):
     """Create async piece manager for testing."""
     manager = AsyncPieceManager(mock_torrent_data)

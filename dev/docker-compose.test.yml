@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  test-python38:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.8"
+    volumes:
+      - .:/app
+      - test-cache:/root/.cache
+    working_dir: /app
+    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/unit/ -v
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - test-network
+
+  test-python39:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.9"
+    volumes:
+      - .:/app
+      - test-cache:/root/.cache
+    working_dir: /app
+    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/unit/ -v
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - test-network
+
+  test-python310:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.10"
+    volumes:
+      - .:/app
+      - test-cache:/root/.cache
+    working_dir: /app
+    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/unit/ -v
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - test-network
+
+  test-python311:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.11"
+    volumes:
+      - .:/app
+      - test-cache:/root/.cache
+    working_dir: /app
+    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/unit/ -v
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - test-network
+
+  test-python312:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.12"
+    volumes:
+      - .:/app
+      - test-cache:/root/.cache
+    working_dir: /app
+    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/unit/ -v
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - test-network
+
+  test-integration:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile.test
+      args:
+        PYTHON_VERSION: "3.11"
+    volumes:
+      - .:/app
+      - test-cache:/root/.cache
+    working_dir: /app
+    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/integration/ -v
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - test-network
+
+volumes:
+  test-cache:
+    driver: local
+
+networks:
+  test-network:
+    driver: bridge
+

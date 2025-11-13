@@ -194,7 +194,8 @@ class TestSocketOptimizer:
 
     def test_create_optimized_socket(self, socket_optimizer):
         """Test creating optimized socket."""
-        with patch('socket.socket') as mock_socket_class:
+        with patch('socket.socket') as mock_socket_class, \
+             patch.object(socket_optimizer, '_supports_tcp_window_scaling', return_value=False):
             mock_sock = MagicMock()
             mock_socket_class.return_value = mock_sock
             
@@ -207,7 +208,8 @@ class TestSocketOptimizer:
 
     def test_create_optimized_socket_ipv6(self, socket_optimizer):
         """Test creating optimized socket with IPv6."""
-        with patch('socket.socket') as mock_socket_class:
+        with patch('socket.socket') as mock_socket_class, \
+             patch.object(socket_optimizer, '_supports_tcp_window_scaling', return_value=False):
             mock_sock = MagicMock()
             mock_socket_class.return_value = mock_sock
             
@@ -221,7 +223,8 @@ class TestSocketOptimizer:
 
     def test_create_optimized_socket_udp(self, socket_optimizer):
         """Test creating optimized socket with UDP."""
-        with patch('socket.socket') as mock_socket_class:
+        with patch('socket.socket') as mock_socket_class, \
+             patch.object(socket_optimizer, '_supports_tcp_window_scaling', return_value=False):
             mock_sock = MagicMock()
             mock_socket_class.return_value = mock_sock
             

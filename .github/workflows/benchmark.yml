@@ -1,0 +1,74 @@
+name: Benchmark
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'ccbt/**'
+      - 'tests/performance/**'
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    name: benchmark
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for git metadata
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+      
+      - name: Run hash verification benchmark
+        run: |
+          uv run python tests/performance/bench_hash_verify.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
+      
+      - name: Run disk I/O benchmark
+        run: |
+          uv run python tests/performance/bench_disk_io.py --quick --sizes 256KiB 1MiB --record-mode=commit --config-file docs/examples/example-config-performance.toml
+      
+      - name: Run piece assembly benchmark
+        run: |
+          uv run python tests/performance/bench_piece_assembly.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
+      
+      - name: Run loopback throughput benchmark
+        run: |
+          uv run python tests/performance/bench_loopback_throughput.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
+      
+      - name: Run encryption benchmark
+        run: |
+          uv run python tests/performance/bench_encryption.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
+      
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            docs/reports/benchmarks/runs/*.json
+            docs/reports/benchmarks/timeseries/*.json
+          retention-days: 90
+      
+      - name: Commit benchmark results
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add docs/reports/benchmarks/
+          git diff --staged --quiet || git commit -m "ci: record benchmark results [skip ci]"
+          git push
+

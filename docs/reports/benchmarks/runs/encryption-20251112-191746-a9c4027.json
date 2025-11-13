@@ -1,0 +1,243 @@
+{
+  "meta": {
+    "benchmark": "encryption",
+    "config": "performance",
+    "timestamp": "2025-11-12T19:17:46.949272+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "11",
+      "python": "3.13.3"
+    },
+    "git": {
+      "commit_hash": "a9c4027a089fd38335193f400ae1a29bd3c3fec2",
+      "commit_hash_short": "a9c4027",
+      "branch": "master",
+      "author": "Joseph Pollack",
+      "is_dirty": true
+    }
+  },
+  "results": [
+    {
+      "cipher": "RC4",
+      "operation": "encrypt",
+      "data_size_bytes": 1024,
+      "iterations": 10,
+      "elapsed_s": 0.007829099995433353,
+      "throughput_bytes_per_s": 1307940.887965782
+    },
+    {
+      "cipher": "RC4",
+      "operation": "decrypt",
+      "data_size_bytes": 1024,
+      "iterations": 10,
+      "elapsed_s": 0.021454999994602986,
+      "throughput_bytes_per_s": 477278.02389074233
+    },
+    {
+      "cipher": "AES-128",
+      "operation": "encrypt",
+      "data_size_bytes": 1024,
+      "iterations": 10,
+      "elapsed_s": 4.260000423528254e-05,
+      "throughput_bytes_per_s": 240375562.956375
+    },
+    {
+      "cipher": "AES-128",
+      "operation": "decrypt",
+      "data_size_bytes": 1024,
+      "iterations": 10,
+      "elapsed_s": 6.0500002291519195e-05,
+      "throughput_bytes_per_s": 169256191.9363006
+    },
+    {
+      "cipher": "AES-256",
+      "operation": "encrypt",
+      "data_size_bytes": 1024,
+      "iterations": 10,
+      "elapsed_s": 3.440000000409782e-05,
+      "throughput_bytes_per_s": 297674418.5691914
+    },
+    {
+      "cipher": "AES-256",
+      "operation": "decrypt",
+      "data_size_bytes": 1024,
+      "iterations": 10,
+      "elapsed_s": 6.44999963697046e-05,
+      "throughput_bytes_per_s": 158759698.85805586
+    },
+    {
+      "operation": "keypair_generation",
+      "key_size": 768,
+      "iterations": 10,
+      "elapsed_s": 0.003931999999622349,
+      "avg_latency_ms": 0.38856999890413135
+    },
+    {
+      "operation": "keypair_generation",
+      "key_size": 1024,
+      "iterations": 10,
+      "elapsed_s": 0.005986700001813006,
+      "avg_latency_ms": 0.5912500004342292
+    },
+    {
+      "operation": "shared_secret",
+      "key_size": 768,
+      "iterations": 10,
+      "elapsed_s": 0.004510400001890957,
+      "avg_latency_ms": 0.44959000224480405
+    },
+    {
+      "operation": "shared_secret",
+      "key_size": 1024,
+      "iterations": 10,
+      "elapsed_s": 0.005803100000775885,
+      "avg_latency_ms": 0.5790600014734082
+    },
+    {
+      "operation": "key_derivation",
+      "key_size": 0,
+      "iterations": 10,
+      "elapsed_s": 6.0200000007171184e-05,
+      "avg_latency_ms": 0.0053299991122912616
+    },
+    {
+      "role": "initiator",
+      "dh_key_size": 768,
+      "iterations": 5,
+      "elapsed_s": 0.42695130000356585,
+      "avg_latency_ms": 85.39026000071317,
+      "success_rate": 100.0
+    },
+    {
+      "role": "initiator",
+      "dh_key_size": 1024,
+      "iterations": 5,
+      "elapsed_s": 0.6882499000057578,
+      "avg_latency_ms": 137.64998000115156,
+      "success_rate": 100.0
+    },
+    {
+      "operation": "read",
+      "stream_type": "plain",
+      "data_size_bytes": 1024,
+      "buffer_size": 1024,
+      "iterations": 10,
+      "elapsed_s": 0.00048429999878862873,
+      "throughput_bytes_per_s": 21143919.111321777,
+      "overhead_ms": 0.0
+    },
+    {
+      "operation": "read",
+      "stream_type": "encrypted",
+      "data_size_bytes": 1024,
+      "buffer_size": 1024,
+      "iterations": 10,
+      "elapsed_s": 0.010719199992308859,
+      "throughput_bytes_per_s": 955295.1719668735,
+      "overhead_ms": 1.0198599986324552
+    },
+    {
+      "operation": "write",
+      "stream_type": "plain",
+      "data_size_bytes": 1024,
+      "buffer_size": 1024,
+      "iterations": 10,
+      "elapsed_s": 0.005475099998875521,
+      "throughput_bytes_per_s": 1870285.4746220338,
+      "overhead_ms": 0.0
+    },
+    {
+      "operation": "write",
+      "stream_type": "encrypted",
+      "data_size_bytes": 1024,
+      "buffer_size": 1024,
+      "iterations": 10,
+      "elapsed_s": 0.01624660000379663,
+      "throughput_bytes_per_s": 630285.7211728632,
+      "overhead_ms": 1.1190600002009887
+    },
+    {
+      "connection_type": "plain",
+      "dh_key_size": 0,
+      "iterations": 5,
+      "elapsed_s": 0.005304799989971798,
+      "avg_latency_ms": 1.0609599979943596,
+      "overhead_ms": 0.0,
+      "overhead_percent": 0.0
+    },
+    {
+      "connection_type": "encrypted",
+      "dh_key_size": 768,
+      "iterations": 5,
+      "elapsed_s": 0.4358229999925243,
+      "avg_latency_ms": 87.16459999850485,
+      "overhead_ms": 86.1036400005105,
+      "overhead_percent": 8115.634912087256
+    },
+    {
+      "connection_type": "encrypted",
+      "dh_key_size": 1024,
+      "iterations": 5,
+      "elapsed_s": 0.7083788999952958,
+      "avg_latency_ms": 141.67577999905916,
+      "overhead_ms": 140.6148200010648,
+      "overhead_percent": 13253.545870427093
+    },
+    {
+      "transfer_type": "plain",
+      "piece_size_bytes": 262144,
+      "iterations": 5,
+      "elapsed_s": 0.0023877000057836995,
+      "throughput_bytes_per_s": 548946683.7647349,
+      "overhead_percent": 0.0
+    },
+    {
+      "transfer_type": "encrypted",
+      "piece_size_bytes": 262144,
+      "iterations": 5,
+      "elapsed_s": 2.4322899999897345,
+      "throughput_bytes_per_s": 538883.1101577246,
+      "overhead_percent": 99.90183325155331
+    },
+    {
+      "operation": "cipher",
+      "cipher_type": "RC4",
+      "dh_key_size": 0,
+      "memory_bytes": 4096,
+      "instances": 100,
+      "avg_bytes_per_instance": 40
+    },
+    {
+      "operation": "cipher",
+      "cipher_type": "AES-128",
+      "dh_key_size": 0,
+      "memory_bytes": 0,
+      "instances": 100,
+      "avg_bytes_per_instance": 0
+    },
+    {
+      "operation": "cipher",
+      "cipher_type": "AES-256",
+      "dh_key_size": 0,
+      "memory_bytes": 0,
+      "instances": 100,
+      "avg_bytes_per_instance": 0
+    },
+    {
+      "operation": "handshake",
+      "cipher_type": "RC4",
+      "dh_key_size": 768,
+      "memory_bytes": 8192,
+      "instances": 10,
+      "avg_bytes_per_instance": 819
+    },
+    {
+      "operation": "handshake",
+      "cipher_type": "RC4",
+      "dh_key_size": 1024,
+      "memory_bytes": 4096,
+      "instances": 10,
+      "avg_bytes_per_instance": 409
+    }
+  ]
+}

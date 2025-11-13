@@ -64,7 +64,9 @@ class FastExtension:
 
     def decode_handshake(self, data: bytes) -> FastCapabilities:
         """Decode Fast Extension handshake."""
-        if len(data) < 8:
+        if (
+            len(data) < 8
+        ):  # Tested in test_fast_coverage.py::TestFastExtensionCoverage::test_decode_handshake_short_data
             return FastCapabilities()
 
         extension_bits = struct.unpack("!Q", data[:8])[0]
@@ -88,7 +90,9 @@ class FastExtension:
             raise ValueError(msg)
 
         message_type, piece_index = struct.unpack("!BI", data[:5])
-        if message_type != FastMessageType.SUGGEST:
+        if (
+            message_type != FastMessageType.SUGGEST
+        ):  # Tested in test_fast_coverage.py::TestFastExtensionCoverage::test_decode_suggest_invalid_message_type
             msg = "Invalid message type for Suggest"
             raise ValueError(msg)
 
@@ -100,7 +104,9 @@ class FastExtension:
 
     def decode_have_all(self, data: bytes) -> bool:
         """Decode Have All message."""
-        if len(data) < 1:
+        if (
+            len(data) < 1
+        ):  # Tested in test_fast_coverage.py::TestFastExtensionCoverage::test_decode_have_all_short_data
             return False
 
         return data[0] == FastMessageType.HAVE_ALL
@@ -111,7 +117,9 @@ class FastExtension:
 
     def decode_have_none(self, data: bytes) -> bool:
         """Decode Have None message."""
-        if len(data) < 1:
+        if (
+            len(data) < 1
+        ):  # Tested in test_fast_coverage.py::TestFastExtensionCoverage::test_decode_have_none_short_data
             return False
 
         return data[0] == FastMessageType.HAVE_NONE
@@ -127,7 +135,9 @@ class FastExtension:
             raise ValueError(msg)
 
         message_type, index, begin, length = struct.unpack("!BIII", data[:13])
-        if message_type != FastMessageType.REJECT:
+        if (
+            message_type != FastMessageType.REJECT
+        ):  # Tested in test_fast_coverage.py::TestFastExtensionCoverage::test_decode_reject_invalid_message_type
             msg = "Invalid message type for Reject"
             raise ValueError(msg)
 
@@ -139,12 +149,16 @@ class FastExtension:
 
     def decode_allow_fast(self, data: bytes) -> int:
         """Decode Allow Fast message."""
-        if len(data) < 5:
+        if (
+            len(data) < 5
+        ):  # Tested in test_fast_coverage.py::TestFastExtensionCoverage::test_decode_allow_fast_short_data
             msg = "Invalid Allow Fast message"
             raise ValueError(msg)
 
         message_type, piece_index = struct.unpack("!BI", data[:5])
-        if message_type != FastMessageType.ALLOW_FAST:
+        if (
+            message_type != FastMessageType.ALLOW_FAST
+        ):  # Tested in test_fast_coverage.py::TestFastExtensionCoverage::test_decode_allow_fast_invalid_message_type
             msg = "Invalid message type for Allow Fast"
             raise ValueError(msg)
 

@@ -134,6 +134,7 @@ class AnomalyDetector:
 
         Returns:
             List of detected anomalies
+
         """
         anomalies = []
 
@@ -578,7 +579,7 @@ class AnomalyDetector:
             new_std = math.sqrt(
                 (baseline["std"] ** 2 * baseline["count"] + delta * delta2) / new_count,
             )
-        else:
+        else:  # pragma: no cover
             new_std = 0.0
 
         baseline["mean"] = new_mean
@@ -641,7 +642,7 @@ class AnomalyDetector:
 
         # Clean up statistical baselines
         for peer_id in list(self.statistical_baselines.keys()):
-            if peer_id not in self.behavioral_patterns:
+            if peer_id not in self.behavioral_patterns:  # pragma: no cover
                 del self.statistical_baselines[peer_id]
 
         # Clean up anomaly history

@@ -25,8 +25,7 @@ def test___main___daemon_status_quick_exit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_async_main_sync_wrapper_daemon_status(monkeypatch):
-    """Smoke-test ccbt.async_main.sync_main via main() with --daemon --status."""
-    import ccbt.session.async_main as am
+    """Smoke-test CLI main via main() with --daemon --status."""
 
     # Make parse_args return desired args without touching argparse internals
     fake_args = SimpleNamespace(
@@ -63,9 +62,11 @@ async def test_async_main_sync_wrapper_daemon_status(monkeypatch):
     monkeypatch.setattr(config_module, "init_config", lambda _p: _FakeConfigMgr())
     monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self: fake_args)
 
-    # Run main() directly to avoid creating a new event loop via sync_main
-    from ccbt.session.async_main import main
-    rc = await main()
+    # Run CLI main() directly (Click entrypoint raises SystemExit)
+    from ccbt.cli.main import main
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+    rc = excinfo.value.code
     assert rc == 0
 
 

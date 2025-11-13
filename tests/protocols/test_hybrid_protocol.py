@@ -7,6 +7,14 @@ from ccbt.models import PeerInfo, TorrentInfo
 from ccbt.protocols.base import ProtocolState, ProtocolStats, ProtocolType
 from ccbt.protocols.hybrid import HybridProtocol, HybridStrategy
 
+# Check if WebTorrent is available - use same check as hybrid.py
+try:
+    from ccbt.protocols import WebTorrentProtocol  # noqa: F401
+
+    HAS_WEBTORRENT = WebTorrentProtocol is not None
+except (ImportError, AttributeError):
+    HAS_WEBTORRENT = False
+
 
 class TestHybridProtocol:
     """Tests for HybridProtocol class."""
@@ -32,15 +40,24 @@ class TestHybridProtocol:
 
     def test_hybrid_protocol_creation(self):
         """Test hybrid protocol creation."""
-        protocol = HybridProtocol()
+        # Use strategy based on WebTorrent availability
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         assert protocol.protocol_type == ProtocolType.HYBRID
         assert protocol.state == ProtocolState.DISCONNECTED
         assert isinstance(protocol.strategy, HybridStrategy)
-        assert len(protocol.sub_protocols) == 3  # All sub-protocols by default
+        # Count may be 2 or 3 depending on WebTorrent availability
+        expected_count = 3 if HAS_WEBTORRENT else 2
+        assert len(protocol.sub_protocols) == expected_count
 
     def test_hybrid_protocol_with_strategy(self):
         """Test hybrid protocol with custom strategy."""
+        # Use strategy without WebTorrent to avoid import errors
         strategy = HybridStrategy(
             use_bittorrent=True,
             use_webtorrent=False,
@@ -60,6 +77,9 @@ class TestHybridProtocol:
         assert protocol.strategy.webtorrent_weight == 0.0
         assert protocol.strategy.ipfs_weight == 0.3
 
+    @pytest.mark.skipif(
+        not HAS_WEBTORRENT, reason="WebTorrent protocol not available"
+    )
     def test_initialize_sub_protocols(self):
         """Test sub-protocol initialization."""
         strategy = HybridStrategy(
@@ -75,11 +95,14 @@ class TestHybridProtocol:
         assert ProtocolType.WEBTORRENT in protocol.sub_protocols
         assert ProtocolType.IPFS not in protocol.sub_protocols
 
-        # Check protocol weights
-        assert protocol.protocol_weights[ProtocolType.BITTORRENT] == 0.6
-        assert protocol.protocol_weights[ProtocolType.WEBTORRENT] == 0.3
+        # Check protocol weights (using default values from HybridStrategy)
+        assert protocol.protocol_weights[ProtocolType.BITTORRENT] == 0.5
+        assert protocol.protocol_weights[ProtocolType.WEBTORRENT] == 0.25
         assert ProtocolType.IPFS not in protocol.protocol_weights
 
+    @pytest.mark.skipif(
+        not HAS_WEBTORRENT, reason="WebTorrent protocol not available"
+    )
     def test_protocol_weights(self):
         """Test protocol weights."""
         strategy = HybridStrategy(
@@ -96,7 +119,13 @@ class TestHybridProtocol:
 
     def test_protocol_performance(self):
         """Test protocol performance tracking."""
-        protocol = HybridProtocol()
+        # Use strategy without WebTorrent if not available
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         # Initial performance scores
         for protocol_type in protocol.sub_protocols:
@@ -111,7 +140,12 @@ class TestHybridProtocol:
 
     def test_select_best_protocol(self, sample_peer_info):
         """Test best protocol selection."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         # Should return a protocol if available
         best_protocol = protocol._select_best_protocol(sample_peer_info)
@@ -120,7 +154,12 @@ class TestHybridProtocol:
 
     def test_find_protocol_for_peer(self, sample_peer_info):
         """Test finding protocol for peer."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         # No peers connected yet
         found_protocol = protocol._find_protocol_for_peer(sample_peer_info.ip)
@@ -128,7 +167,12 @@ class TestHybridProtocol:
 
     def test_deduplicate_peers(self):
         """Test peer deduplication."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         # Create duplicate peers
         peer1 = PeerInfo(ip="192.168.1.1", port=6881)
@@ -144,7 +188,12 @@ class TestHybridProtocol:
 
     def test_get_sub_protocols(self):
         """Test getting sub-protocols."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         sub_protocols = protocol.get_sub_protocols()
         assert isinstance(sub_protocols, dict)
@@ -156,7 +205,12 @@ class TestHybridProtocol:
 
     def test_get_protocol_weights(self):
         """Test getting protocol weights."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         weights = protocol.get_protocol_weights()
         assert isinstance(weights, dict)
@@ -168,7 +222,12 @@ class TestHybridProtocol:
 
     def test_get_protocol_performance(self):
         """Test getting protocol performance."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         performance = protocol.get_protocol_performance()
         assert isinstance(performance, dict)
@@ -178,9 +237,17 @@ class TestHybridProtocol:
             assert isinstance(score, float)
             assert score > 0.0
 
+    @pytest.mark.skipif(
+        not HAS_WEBTORRENT, reason="WebTorrent protocol not available"
+    )
     def test_update_strategy(self):
         """Test updating strategy."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         # New strategy
         new_strategy = HybridStrategy(
@@ -201,7 +268,12 @@ class TestHybridProtocol:
 
     def test_get_hybrid_stats(self):
         """Test getting hybrid statistics."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         stats = protocol.get_hybrid_stats()
         assert isinstance(stats, dict)
@@ -222,14 +294,21 @@ class TestHybridProtocol:
 
     def test_capabilities(self):
         """Test hybrid protocol capabilities."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         caps = protocol.get_capabilities()
         assert caps.supports_encryption
         assert caps.supports_metadata
         assert caps.supports_pex
         assert caps.supports_dht
-        assert caps.supports_webrtc
+        # Hybrid protocol claims to support WebRTC regardless of availability
+        # (capabilities are set at initialization, not dynamically)
+        assert caps.supports_webrtc is True
         assert caps.supports_ipfs
         assert caps.max_connections > 0
         assert caps.supports_ipv6
@@ -237,7 +316,12 @@ class TestHybridProtocol:
     @pytest.mark.asyncio
     async def test_state_management(self):
         """Test state management."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         # Initial state
         assert protocol.get_state() == ProtocolState.DISCONNECTED
@@ -253,7 +337,12 @@ class TestHybridProtocol:
     @pytest.mark.asyncio
     async def test_peer_management(self, sample_peer_info):
         """Test peer management."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         # Add peer
         protocol.add_peer(sample_peer_info)
@@ -278,7 +367,12 @@ class TestHybridProtocol:
 
     def test_stats_management(self):
         """Test statistics management."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         stats = protocol.get_stats()
         assert isinstance(stats, ProtocolStats)
@@ -302,7 +396,12 @@ class TestHybridProtocol:
     @pytest.mark.asyncio
     async def test_health_check(self):
         """Test health check."""
-        protocol = HybridProtocol()
+        strategy = HybridStrategy(
+            use_bittorrent=True,
+            use_webtorrent=HAS_WEBTORRENT,
+            use_ipfs=True,
+        )
+        protocol = HybridProtocol(strategy)
 
         # Disconnected state
         assert not await protocol.health_check()

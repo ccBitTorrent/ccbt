@@ -4,6 +4,7 @@ import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.network, pytest.mark.connection]
 
@@ -17,7 +18,7 @@ def peer_info():
     return PeerInfo(ip="127.0.0.1", port=6881)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def connection_pool():
     """Create a test connection pool."""
     pool = PeerConnectionPool(max_connections=10, max_idle_time=60.0)

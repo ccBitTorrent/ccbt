@@ -288,13 +288,15 @@ class TestPeerSelector:
         assert "recent_peer" in peer_selector.peer_features
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(10)  # Prevent hanging on Windows event loop creation
     async def test_extract_features(self, peer_selector, sample_peer_info):
         """Test feature extraction."""
         peer_id = sample_peer_info.peer_id.hex()
         
-        with patch.object(peer_selector, '_estimate_latency', return_value=0.05), \
-             patch.object(peer_selector, '_estimate_bandwidth', return_value=1000000), \
-             patch.object(peer_selector, '_calculate_quality_score', return_value=0.7):
+        # Patch all async methods to return immediately and avoid event loop issues
+        with patch.object(peer_selector, '_estimate_latency', new_callable=AsyncMock, return_value=0.05), \
+             patch.object(peer_selector, '_estimate_bandwidth', new_callable=AsyncMock, return_value=1000000), \
+             patch.object(peer_selector, '_calculate_quality_score', new_callable=AsyncMock, return_value=0.7):
             
             features = await peer_selector._extract_features(peer_id, sample_peer_info)
         

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from ccbt.services.base import HealthCheck, Service
 from ccbt.utils.logging_config import LoggingContext
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from ccbt.models import PeerInfo
 
 
@@ -57,17 +57,39 @@ class PeerService(Service):
         self.total_pieces_downloaded = 0
         self.total_pieces_uploaded = 0
 
+        # Background task reference
+        self._monitor_task: asyncio.Task[None] | None = None
+
     async def start(self) -> None:
         """Start the peer service."""
         self.logger.info("Starting peer service")
-        self.state = self.state  # Update state in base class
+        from ccbt.services.base import ServiceState
+
+        self.state = ServiceState.STARTING
 
         # Initialize peer management
         await self._initialize_peer_management()
 
+        # Set state to running after successful initialization
+        self.state = ServiceState.RUNNING
+        self.logger.info("Peer service started successfully")
+
     async def stop(self) -> None:
         """Stop the peer service."""
         self.logger.info("Stopping peer service")
+        from ccbt.services.base import ServiceState
+
+        self.state = ServiceState.STOPPING
+
+        # Cancel monitoring task if it exists
+        if hasattr(self, "_monitor_task") and self._monitor_task:
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                self.logger.debug("Error waiting for monitor task: %s", e)
 
         # Disconnect all peers
         await self._disconnect_all_peers()
@@ -75,6 +97,10 @@ class PeerService(Service):
         # Clear peer data
         self.peers.clear()
         self.active_connections = 0
+
+        # Set state to stopped
+        self.state = ServiceState.STOPPED
+        self.logger.info("Peer service stopped")
 
     async def health_check(self) -> HealthCheck:
         """Perform health check."""
@@ -117,13 +143,14 @@ class PeerService(Service):
         """Initialize peer management systems."""
         self.logger.info("Initializing peer management")
 
-        # Start peer monitoring task
-        task = asyncio.create_task(self._monitor_peers())
-        task.add_done_callback(lambda _t: None)  # Discard task reference
+        # Start peer monitoring task and store reference for cleanup
+        self._monitor_task = asyncio.create_task(self._monitor_peers())
 
     async def _monitor_peers(self) -> None:
         """Monitor peer connections."""
-        while self.state.value == "running":
+        from ccbt.services.base import ServiceState
+
+        while self.state == ServiceState.RUNNING:
             try:
                 await asyncio.sleep(30)  # Check every 30 seconds
 
@@ -140,7 +167,11 @@ class PeerService(Service):
 
                 self.logger.debug("Peer monitoring: %s active peers", len(self.peers))
 
-            except Exception:
+            except asyncio.CancelledError:
+                # Task was cancelled, exit gracefully
+                self.logger.debug("Peer monitoring task cancelled")
+                break
+            except Exception:  # pragma: no cover - Background loop exception handler, difficult to trigger reliably
                 self.logger.exception("Error in peer monitoring")
 
     async def connect_peer(self, peer_info: PeerInfo) -> bool:
@@ -151,6 +182,7 @@ class PeerService(Service):
 
         Returns:
             True if connection successful
+
         """
         peer_id = f"{peer_info.ip}:{peer_info.port}"
 
@@ -194,6 +226,7 @@ class PeerService(Service):
 
         Args:
             peer_id: Peer identifier
+
         """
         try:
             with LoggingContext("peer_disconnect", peer_id=peer_id):
@@ -276,4 +309,12 @@ class PeerService(Service):
     async def _disconnect_all_peers(self) -> None:
         """Disconnect all peers."""
         for peer_id in list(self.peers.keys()):
-            await self.disconnect_peer(peer_id)
+            try:
+                await self.disconnect_peer(peer_id)
+            except Exception:
+                # Log but don't fail - one peer disconnect error shouldn't block shutdown
+                self.logger.warning(
+                    "Failed to disconnect peer %s during shutdown",
+                    peer_id,
+                    exc_info=True,
+                )

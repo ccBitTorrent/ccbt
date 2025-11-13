@@ -1,97 +1,318 @@
 ---
-globs: ccbt/interface/terminal_dashboard.py
-description: Guidance and constraints for Textual-based terminal dashboard implementation
+description: Terminal dashboard implementation patterns using Textual framework
+globs: ccbt/interface/**/*.py
 ---
 
-# Terminal Dashboard Rules
+# Terminal Dashboard Implementation Guide
 
-These rules apply to the Textual dashboard in [ccbt/interface/terminal_dashboard.py](mdc:ccbt/interface/terminal_dashboard.py) and align with the roadmap in [textualinterface](mdc:textualinterface).
+This rule covers patterns and best practices for implementing the Textual-based terminal dashboard in `ccbt/interface/`.
 
-## Architecture and Composition
-- Prefer compose()/yield over imperative mount during layout construction.
-  - Build the layout tree in `compose()` using `with` blocks and `yield`.
-  - Use `on_mount()` only for wiring, background tasks, intervals, and querying refs.
-- Query widgets after compose using `query_one` with explicit types.
-- Keep I/O async and non-blocking. Use `set_interval()` for periodic UI updates.
-- Use `App.BINDINGS` for key actions; implement corresponding `action_*` methods.
+## Module Structure
 
-## Rendering with Textual and Rich
-- Only pass Rich renderables, text, or Content objects to `Static.update()`.
-  - Valid: `str`, `rich.table.Table`, `rich.panel.Panel`, etc.
-  - Invalid: Textual widgets such as `Container`, `Horizontal`, `Vertical`, `DataTable`, `Sparkline`, `Static` instances.
-- Never wrap Textual widgets inside Rich renderables (e.g., `Panel(Container(...))`).
-- To show multiple renderables in one area, compose a Rich layout (e.g., `Table.grid`) and update the `Static` with that renderable.
-- For errors, display a short Rich `Panel` with a message (avoid raising inside the UI loop).
+The interface module follows a modular architecture:
 
-References:
-- Content and rendering: [Content guide](https://textual.textualize.io/guide/content/)
-- Widgets overview: [Widgets guide](https://textual.textualize.io/guide/widgets/)
-- Styles and layout: [Layout](https://textual.textualize.io/guide/layout/), [Styles reference](https://textual.textualize.io/reference/styles/)
+```
+ccbt/interface/
+├── terminal_dashboard.py    # Main App class and entry points
+├── widgets/                 # Reusable UI components
+│   ├── core_widgets.py     # Overview, TorrentsTable, PeersTable, SpeedSparklines
+│   └── reusable_widgets.py # ProgressBarWidget, MetricsTableWidget, SparklineGroup
+├── screens/                 # Screen components
+│   ├── base.py             # Base classes (ConfigScreen, MonitoringScreen)
+│   ├── dialogs.py          # Modal dialogs (AddTorrentScreen)
+│   ├── monitoring/         # Monitoring screens (15 screens)
+│   ├── config/             # Configuration screens (7 screens)
+│   └── utility/            # Utility screens (Help, Navigation, FileSelection)
+└── commands/               # Command execution
+    └── executor.py         # CommandExecutor class
+```
 
-## Containers and Layout
-- Use `Horizontal`/`Container` for structure; manage sizing via CSS only.
-- Use fractional sizing and min-heights in CSS for predictable layout:
-  - `#body { layout: horizontal; }
-     #left, #right { width: 1fr; }
-     #overview { height: 1fr; min-height: 8 }
-     #speeds { height: 1fr; min-height: 5 }`
-- Do not attempt to render container widgets; they are not Rich renderables.
+## Import Patterns
 
-Docs:
-- Containers API: [textual.containers](https://textual.textualize.io/api/textual.containers/)
-- Grid and size properties: [Grid styles](https://textual.textualize.io/reference/styles/#grid), [Width/Height](https://textual.textualize.io/reference/styles/#width)
+### Textual Import Handling
 
-## Widget-Specific Guidance
-- Overview (`Static` subclass): generate a `rich.table.Table` and wrap in `rich.panel.Panel`.
-- Torrents/Peers (`DataTable`):
-  - Add columns in `on_mount()`.
-  - Keep the selection model stable across refresh by reusing row keys.
-  - Clear and repopulate rows on update; avoid heavy per-row formatting in the UI loop.
-- Speeds (`Sparkline` widgets):
-  - Mount `Sparkline` children directly as Textual widgets; do not place them inside a `Panel`.
-  - The label/title for the area should be a `Static.update("Speeds")` or a Rich renderable on the parent `Static`.
-- Logs (`RichLog`): write short, concise messages; avoid high-frequency spam.
-- Input: rely on `Input.Submitted` for command/filter handling; hide input after processing.
+Always use TYPE_CHECKING blocks and fallback classes for Textual imports:
 
-Docs:
-- DataTable: https://textual.textualize.io/reference/widgets/#datatable
-- Sparkline: https://textual.textualize.io/reference/widgets/#sparkline
-- RichLog: https://textual.textualize.io/reference/widgets/#richlog
-- Input events: https://textual.textualize.io/reference/widgets/#input
+```python
+from __future__ import annotations
 
-## Events, Actions, and Key Handling
-- Use `BINDINGS` for common actions and implement `action_*` methods.
-- For raw key handling, use `on_key` sparingly; prefer actions for discoverability.
-- For inputs, handle `on_input_submitted` with id-based routing.
+from typing import TYPE_CHECKING, Any, ClassVar
 
-Docs:
-- Actions & bindings: https://textual.textualize.io/guide/actions/
-- Key event: https://textual.textualize.io/reference/events/#key
+if TYPE_CHECKING:
+    from textual.app import App, ComposeResult
+    from textual.screen import Screen
+    from textual.widgets import Static, DataTable
+else:
+    try:
+        from textual.app import App, ComposeResult
+        from textual.screen import Screen
+        from textual.widgets import Static, DataTable
+    except ImportError:
+        # Fallback classes for when textual is not available
+        class App:  # type: ignore[misc]
+            """Fallback App class when textual is not available."""
+        
+        class Screen:  # type: ignore[no-redef]
+            """Fallback Screen class."""
+        
+        class Static:  # type: ignore[no-redef]
+            """Fallback Static widget."""
+        
+        ComposeResult = None  # type: ignore[assignment, misc]
+```
 
-## Async and Background Work
-- All I/O must be `async` and awaited.
-- Use `set_interval()` to schedule periodic updates; gate concurrent polls with a task guard.
-- Avoid long operations in UI thread; prefer service calls (`AsyncSessionManager`) and lightweight UI updates.
+### Container Imports
 
-## Error Handling and Resilience
-- Wrap external/service calls with `contextlib.suppress` where failure is non-critical.
-- On exceptions during refresh, update a visible area (`#overview` or status bar) with a red `Panel` containing a concise message; keep the app responsive.
-- Never crash the UI due to a non-renderable content; ensure `Static.update()` receives only renderables/text.
+For containers, handle the fallback case:
 
-## Metrics and Alerts
-- Metrics collection should be optional and failure-tolerant.
-- When showing alert rules/active alerts, build Rich tables and combine via `Table.grid`, then `Static.update(Panel(grid, title="Alerts"))`.
+```python
+try:
+    from textual.containers import Container, Horizontal, Vertical
+except ImportError:
+    from typing import Any as ComposeResult
+    Container = None  # type: ignore[assignment, misc]
+    Horizontal = None  # type: ignore[assignment, misc]
+    Vertical = None  # type: ignore[assignment, misc]
+```
 
-## Theming and Compact Mode
-- Toggle theme via `self.dark` boolean; reflect state in status bar.
-- For compact mode, adjust `.styles.height` and `.display` of panels; call `refresh(layout=True)` afterward.
+## Screen Implementation
 
-## Testing and Docs
-- Add unit tests for composition, bindings, and basic refresh cycle.
-- Document user interactions (keys, command palette) and troubleshooting.
+### Base Screen Pattern
 
-## Prohibited Patterns (lint-level rules)
-- Do not pass Textual widgets to Rich containers (e.g., `Panel(Container(...))`).
-- Do not block the event loop with synchronous I/O.
-- Do not modify layout tree in the refresh loop unless necessary (prefer state updates).
+All screens should inherit from base classes in [ccbt/interface/screens/base.py](mdc:ccbt/interface/screens/base.py):
 
+- **MonitoringScreen**: For monitoring/metrics screens
+- **ConfigScreen**: For configuration screens
+- **Screen**: For utility screens
+
+Example monitoring screen:
+
+```python
+from ccbt.interface.screens.base import MonitoringScreen
+
+class SystemResourcesScreen(MonitoringScreen):  # type: ignore[misc]
+    """Screen to display system resource usage."""
+    
+    CSS = """
+    #content {
+        height: 1fr;
+        overflow-y: auto;
+    }
+    """
+    
+    def compose(self) -> ComposeResult:  # pragma: no cover
+        """Compose the screen."""
+        yield Header()
+        with Vertical():
+            yield Static(id="content")
+        yield Footer()
+    
+    async def _refresh_data(self) -> None:  # pragma: no cover
+        """Refresh screen data."""
+        content = self.query_one("#content", Static)
+        # Update content...
+```
+
+### CSS Patterns
+
+- Define CSS as class variable `CSS` (string)
+- Use `#id` selectors for specific widgets
+- Use layout containers: `height: 1fr` for flexible sizing
+- Use `overflow-y: auto` for scrollable content
+- Reference Textual design tokens: `$primary`, `$surface`, etc.
+
+### Compose Pattern
+
+Always use the `compose()` method with `yield`:
+
+```python
+def compose(self) -> ComposeResult:  # pragma: no cover
+    """Compose the screen."""
+    yield Header()
+    with Vertical():
+        yield Static(id="content")
+        yield DataTable(id="table")
+    yield Footer()
+```
+
+### Event Handling
+
+- Use `on_mount()` for initialization
+- Use `on_unmount()` for cleanup
+- Use `action_*` methods for keyboard bindings
+- Use `on_*` methods for widget events (e.g., `on_button_pressed`)
+
+### Bindings
+
+Define keyboard bindings as class variable:
+
+```python
+BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+    ("escape", "back", "Back"),
+    ("q", "quit", "Quit"),
+    ("r", "refresh", "Refresh"),
+]
+```
+
+## Widget Implementation
+
+### Widget Base Classes
+
+Widgets extend Textual widgets (usually `Static`):
+
+```python
+from textual.widgets import Static
+
+class Overview(Static):  # type: ignore[misc]
+    """Simple widget to render global stats."""
+    
+    def update_from_stats(self, stats: dict[str, Any]) -> None:
+        """Update widget with statistics."""
+        # Use Rich for formatting
+        from rich.table import Table
+        from rich.panel import Panel
+        
+        table = Table()
+        # Build table...
+        self.update(Panel(table, title="Overview"))
+```
+
+### Widget Patterns
+
+- Use `update()` method to change widget content
+- Use Rich library for formatting (Table, Panel, etc.)
+- Keep widgets focused on single responsibility
+- Export widgets through `widgets/__init__.py`
+
+## Configuration Screens
+
+Configuration screens inherit from `ConfigScreen`:
+
+```python
+from ccbt.interface.screens.base import ConfigScreen
+
+class SSLConfigScreen(ConfigScreen):  # type: ignore[misc]
+    """Screen to manage SSL/TLS configuration."""
+    
+    CSS = """..."""
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [...]
+    
+    def compose(self) -> ComposeResult:
+        """Compose configuration screen."""
+        # Use ConfigValueEditor and ConfigSectionWidget from
+        # ccbt/interface/screens/config/widgets.py
+```
+
+## Command Execution
+
+Use `CommandExecutor` from [ccbt/interface/commands/executor.py](mdc:ccbt/interface/commands/executor.py) to execute CLI commands:
+
+```python
+from ccbt.interface.commands.executor import CommandExecutor
+
+class MyScreen(Screen):
+    def __init__(self, session, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.session = session
+        self._command_executor = CommandExecutor(session)
+    
+    async def action_some_command(self):
+        """Execute a CLI command."""
+        result = await self._command_executor.execute_command(
+            "download", ["--torrent", "path/to/file.torrent"]
+        )
+```
+
+## Module Exports
+
+### Widgets Module
+
+Export all widgets in [ccbt/interface/widgets/__init__.py](mdc:ccbt/interface/widgets/__init__.py):
+
+```python
+from ccbt.interface.widgets.core_widgets import (
+    Overview,
+    PeersTable,
+    SpeedSparklines,
+    TorrentsTable,
+)
+from ccbt.interface.widgets.reusable_widgets import (
+    MetricsTableWidget,
+    ProgressBarWidget,
+    SparklineGroup,
+)
+
+__all__ = [
+    "MetricsTableWidget",
+    "Overview",
+    "PeersTable",
+    "ProgressBarWidget",
+    "SparklineGroup",
+    "SpeedSparklines",
+    "TorrentsTable",
+]
+```
+
+### Screens Module
+
+Export base classes in [ccbt/interface/screens/__init__.py](mdc:ccbt/interface/screens/__init__.py). Individual screens are imported directly from their modules.
+
+## Main Dashboard
+
+The main dashboard in [ccbt/interface/terminal_dashboard.py](mdc:ccbt/interface/terminal_dashboard.py) contains:
+
+- `TerminalDashboard` class (extends `App`)
+- `run_dashboard()` function
+- `main()` function (CLI entry point)
+
+All screens and widgets are imported from their respective modules.
+
+## Rich Integration
+
+Use Rich library for formatting:
+
+- `Panel`: For bordered content areas
+- `Table`: For tabular data
+- Rich markup: `[bold]`, `[cyan]`, `[green]`, etc.
+
+Example:
+
+```python
+from rich.panel import Panel
+from rich.table import Table
+
+table = Table(title="Metrics", expand=True)
+table.add_column("Metric", style="cyan", ratio=1)
+table.add_column("Value", style="green", ratio=2)
+table.add_row("CPU", "45%")
+
+content.update(Panel(table, title="System Resources"))
+```
+
+## Type Hints
+
+- Use `ComposeResult` for `compose()` return type
+- Use `TYPE_CHECKING` blocks for type-only imports
+- Use `# type: ignore[misc]` for Textual base classes
+- Use `# pragma: no cover` for UI code that's hard to test
+
+## Error Handling
+
+- Always handle Textual import failures gracefully
+- Use try/except blocks for async operations
+- Display errors in UI using Rich Panels with `border_style="red"`
+
+## Testing Considerations
+
+- Mark UI code with `# pragma: no cover`
+- Use integration tests for screen behavior
+- Mock Textual widgets in unit tests
+- Test fallback behavior when Textual is unavailable
+
+
+## References
+
+- Main dashboard: [ccbt/interface/terminal_dashboard.py](mdc:ccbt/interface/terminal_dashboard.py)
+- Base screens: [ccbt/interface/screens/base.py](mdc:ccbt/interface/screens/base.py)
+- Widgets: [ccbt/interface/widgets/](mdc:ccbt/interface/widgets/)
+- Textual docs: https://textual.textualize.io/

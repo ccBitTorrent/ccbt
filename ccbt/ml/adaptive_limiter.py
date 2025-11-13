@@ -122,6 +122,7 @@ class AdaptiveLimiter:
 
         Returns:
             Bandwidth estimate
+
         """
         if len(samples) < 2:
             return BandwidthEstimate(
@@ -206,6 +207,7 @@ class AdaptiveLimiter:
 
         Returns:
             New rate limit
+
         """
         limiter_key = f"{peer_id}_{limiter_type.value}"
 
@@ -289,6 +291,7 @@ class AdaptiveLimiter:
         Args:
             peer_id: Peer identifier
             congestion_data: Congestion control data
+
         """
         if peer_id not in self.congestion_states:
             self.congestion_states[peer_id] = CongestionState(
@@ -341,6 +344,7 @@ class AdaptiveLimiter:
 
         Returns:
             Dictionary of peer_id -> allocated_bandwidth
+
         """
         if not peers:
             return {}
