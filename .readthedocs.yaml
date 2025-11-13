@@ -1,0 +1,35 @@
+# Read the Docs configuration file
+# See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
+#
+# Note: This file must be in the root directory (Read the Docs requirement)
+# but references dev/mkdocs.yml for the MkDocs configuration
+
+version: 2
+
+# Build configuration
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.11"
+
+# MkDocs configuration
+# Point to the mkdocs.yml file in the dev directory
+mkdocs:
+  configuration: dev/mkdocs.yml
+
+# Python environment configuration
+python:
+  install:
+    # Install dependencies from requirements file
+    - requirements: dev/requirements-rtd.txt
+    # Install the project itself (needed for mkdocstrings to parse code)
+    # Use editable install to ensure imports work correctly
+    - method: pip
+      path: .
+      extra_requirements: []
+
+# Format configuration (optional, for better build output)
+formats:
+  - htmlzip
+  - pdf
+

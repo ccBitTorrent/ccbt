@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "benchmark": "loopback_throughput",
+    "config": "performance",
+    "timestamp": "2025-11-13T16:50:17.512689+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "11",
+      "python": "3.13.3"
+    },
+    "git": {
+      "commit_hash": "7cbe3b258d4941c0284a379d9ffab92feba69af9",
+      "commit_hash_short": "7cbe3b2",
+      "branch": "dev",
+      "author": "Joseph Pollack",
+      "is_dirty": true
+    }
+  },
+  "results": [
+    {
+      "payload_bytes": 16384,
+      "pipeline_depth": 8,
+      "duration_s": 3.0000255000049947,
+      "bytes_transferred": 31215058944,
+      "throughput_bytes_per_s": 10404931206.067425,
+      "stall_percent": 11.111064455567126
+    },
+    {
+      "payload_bytes": 16384,
+      "pipeline_depth": 128,
+      "duration_s": 3.000070099995355,
+      "bytes_transferred": 59949187072,
+      "throughput_bytes_per_s": 19982595430.71771,
+      "stall_percent": 0.7751935882329811
+    },
+    {
+      "payload_bytes": 65536,
+      "pipeline_depth": 8,
+      "duration_s": 3.0000253999896813,
+      "bytes_transferred": 118709813248,
+      "throughput_bytes_per_s": 39569602726.833015,
+      "stall_percent": 11.11106203831702
+    },
+    {
+      "payload_bytes": 65536,
+      "pipeline_depth": 128,
+      "duration_s": 3.0000620000064373,
+      "bytes_transferred": 235166236672,
+      "throughput_bytes_per_s": 78387125556.5703,
+      "stall_percent": 0.7751935840937377
+    }
+  ]
+}
