@@ -8,6 +8,7 @@ from rich.console import Console
 
 from ccbt.config.config import ConfigManager
 from ccbt.daemon.daemon_manager import DaemonManager
+from ccbt.i18n import _
 from ccbt.session.session import AsyncSessionManager
 
 
@@ -20,80 +21,80 @@ def run_diagnostics(config_manager: ConfigManager, console: Console) -> None:
 
     if pid_file_exists:
         console.print(
-            "[yellow]Warning: Daemon is running. Diagnostics will test local session which may cause port conflicts.[/yellow]\n"
-            "[dim]Consider stopping the daemon first: 'btbt daemon exit'[/dim]\n"
+            _("[yellow]Warning: Daemon is running. Diagnostics will test local session which may cause port conflicts.[/yellow]\n"
+            "[dim]Consider stopping the daemon first: 'btbt daemon exit'[/dim]\n")
         )
         # For diagnostics, we'll allow it but warn the user
         # The user can decide if they want to proceed
 
     config = config_manager.config
-    console.print("[cyan]Running diagnostic checks...[/cyan]\n")
+    console.print(_("[cyan]Running diagnostic checks...[/cyan]\n"))
 
-    console.print("[yellow]1. Network Connectivity[/yellow]")
+    console.print(_("[yellow]1. Network Connectivity[/yellow]"))
     try:
         test_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        test_socket.bind(("0.0.0.0", 0))
+        test_socket.bind(("0.0.0.0", 0))  # nosec B104 - Test socket binding for diagnostics, ephemeral port (0)
         test_port = test_socket.getsockname()[1]
         test_socket.close()
-        console.print(f"  [green]✓[/green] Can bind to port {test_port}")
+        console.print(_("  [green]✓[/green] Can bind to port {port}").format(port=test_port))
     except Exception as e:
-        console.print(f"  [red]✗[/red] Cannot bind to port: {e}")
+        console.print(_("  [red]✗[/red] Cannot bind to port: {e}").format(e=e))
 
-    console.print("\n[yellow]2. DHT Status[/yellow]")
+    console.print(_("\n[yellow]2. DHT Status[/yellow]"))
     console.print(
-        f"  DHT Enabled: {'[green]Yes[/green]' if config.discovery.enable_dht else '[red]No[/red]'}"
+        _("  DHT Enabled: {status}").format(status="[green]Yes[/green]" if config.discovery.enable_dht else "[red]No[/red]")
     )
-    console.print(f"  DHT Port: {config.discovery.dht_port}")
+    console.print(_("  DHT Port: {port}").format(port=config.discovery.dht_port))
 
-    console.print("\n[yellow]3. Tracker Configuration[/yellow]")
+    console.print(_("\n[yellow]3. Tracker Configuration[/yellow]"))
     console.print(
-        f"  HTTP Trackers: {'[green]Enabled[/green]' if config.discovery.enable_http_trackers else '[red]Disabled[/red]'}"
+        _("  HTTP Trackers: {status}").format(status="[green]Enabled[/green]" if config.discovery.enable_http_trackers else "[red]Disabled[/red]")
     )
     console.print(
-        f"  UDP Trackers: {'[green]Enabled[/green]' if config.discovery.enable_udp_trackers else '[red]Disabled[/red]'}"
-    )
-
-    console.print("\n[yellow]4. NAT Configuration[/yellow]")
-    console.print(
-        f"  Auto Map Ports: {'[green]Yes[/green]' if config.nat.auto_map_ports else '[red]No[/red]'}"
-    )
-    console.print(
-        f"  UPnP: {'[green]Enabled[/green]' if config.nat.enable_upnp else '[red]Disabled[/red]'}"
-    )
-    console.print(
-        f"  NAT-PMP: {'[green]Enabled[/green]' if config.nat.enable_nat_pmp else '[red]Disabled[/red]'}"
+        _("  UDP Trackers: {status}").format(status="[green]Enabled[/green]" if config.discovery.enable_udp_trackers else "[red]Disabled[/red]")
     )
 
-    console.print("\n[yellow]5. Listen Port[/yellow]")
-    console.print(f"  TCP Port: {config.network.listen_port}")
+    console.print(_("\n[yellow]4. NAT Configuration[/yellow]"))
     console.print(
-        f"  TCP Enabled: {'[green]Yes[/green]' if config.network.enable_tcp else '[red]No[/red]'}"
+        _("  Auto Map Ports: {status}").format(status="[green]Yes[/green]" if config.nat.auto_map_ports else "[red]No[/red]")
     )
     console.print(
-        f"  uTP Enabled: {'[green]Yes[/green]' if config.network.enable_utp else '[red]No[/red]'}"
+        _("  UPnP: {status}").format(status="[green]Enabled[/green]" if config.nat.enable_upnp else "[red]Disabled[/red]")
+    )
+    console.print(
+        _("  NAT-PMP: {status}").format(status="[green]Enabled[/green]" if config.nat.enable_nat_pmp else "[red]Disabled[/red]")
     )
 
-    console.print("\n[yellow]6. Session Initialization Test[/yellow]")
+    console.print(_("\n[yellow]5. Listen Port[/yellow]"))
+    console.print(_("  TCP Port: {port}").format(port=config.network.listen_port))
+    console.print(
+        _("  TCP Enabled: {status}").format(status="[green]Yes[/green]" if config.network.enable_tcp else "[red]No[/red]")
+    )
+    console.print(
+        _("  uTP Enabled: {status}").format(status="[green]Yes[/green]" if config.network.enable_utp else "[red]No[/red]")
+    )
+
+    console.print(_("\n[yellow]6. Session Initialization Test[/yellow]"))
     try:
         # CRITICAL FIX: Use safe local session creation helper
         from ccbt.cli.main import _ensure_local_session_safe
 
         session = asyncio.run(_ensure_local_session_safe(force_local=True))
-        console.print("  [green]✓[/green] Session initialized successfully")
+        console.print(_("  [green]✓[/green] Session initialized successfully"))
         if hasattr(session, "dht_client") and session.dht_client:
             routing_table_size = len(session.dht_client.routing_table.nodes)
-            console.print(f"  DHT Routing Table: {routing_table_size} nodes")
+            console.print(_("  DHT Routing Table: {size} nodes").format(size=routing_table_size))
         else:
-            console.print("  [yellow]⚠[/yellow] DHT client not initialized")
+            console.print(_("  [yellow]⚠[/yellow] DHT client not initialized"))
         if hasattr(session, "tcp_server") and session.tcp_server:
-            console.print("  [green]✓[/green] TCP server initialized")
+            console.print(_("  [green]✓[/green] TCP server initialized"))
         else:
-            console.print("  [yellow]⚠[/yellow] TCP server not initialized")
+            console.print(_("  [yellow]⚠[/yellow] TCP server not initialized"))
         asyncio.run(session.stop())
     except Exception as e:
-        console.print(f"  [red]✗[/red] Session initialization failed: {e}")
+        console.print(_("  [red]✗[/red] Session initialization failed: {e}").format(e=e))
 
-    console.print("\n[green]Diagnostic complete![/green]")
+    console.print(_("\n[green]Diagnostic complete![/green]"))
 
 
 async def diagnose_connections(session: AsyncSessionManager) -> dict[str, Any]:
@@ -140,8 +141,8 @@ async def diagnose_connections(session: AsyncSessionManager) -> dict[str, Any]:
         diagnostics["tcp_server_status"] = {"status": "not_initialized"}
 
     # Check all active sessions
-    if hasattr(session, "_sessions") and isinstance(session._sessions, dict):
-        sessions_dict: dict[Any, Any] = session._sessions
+    if hasattr(session, "torrents") and isinstance(session.torrents, dict):
+        sessions_dict: dict[Any, Any] = session.torrents
         for info_hash, torrent_session in sessions_dict.items():
             # Type guard: ensure info_hash has hex method (bytes)
             if not hasattr(info_hash, "hex") or not callable(
@@ -154,7 +155,11 @@ async def diagnose_connections(session: AsyncSessionManager) -> dict[str, Any]:
             try:
                 hex_method = info_hash.hex
                 if callable(hex_method):
-                    info_hash_hex_str = hex_method()[:16] + "..."
+                    hex_result = hex_method()
+                    if isinstance(hex_result, str):
+                        info_hash_hex_str = hex_result[:16] + "..."
+                    else:
+                        continue
                 else:
                     continue
             except (AttributeError, TypeError):
@@ -246,43 +251,43 @@ def print_connection_diagnostics(diagnostics: dict[str, Any], console: Console) 
     """
     from rich.table import Table
 
-    console.print("\n[cyan]Connection Diagnostics[/cyan]\n")
+    console.print(_("\n[cyan]Connection Diagnostics[/cyan]\n"))
 
     # NAT Status
-    console.print("[yellow]NAT Status[/yellow]")
+    console.print(_("[yellow]NAT Status[/yellow]"))
     nat_status = diagnostics.get("nat_status", {})
     if nat_status.get("status") == "not_initialized":
-        console.print("  [red]✗[/red] NAT manager not initialized")
+        console.print(_("  [red]✗[/red] NAT manager not initialized"))
     else:
-        console.print(f"  Protocol: {nat_status.get('active_protocol', 'None')}")
-        console.print(f"  External IP: {nat_status.get('external_ip', 'Unknown')}")
-        console.print(f"  Active Mappings: {nat_status.get('mappings', 0)}")
+        console.print(_("  Protocol: {protocol}").format(protocol=nat_status.get("active_protocol", "None")))
+        console.print(_("  External IP: {ip}").format(ip=nat_status.get("external_ip", "Unknown")))
+        console.print(_("  Active Mappings: {mappings}").format(mappings=nat_status.get("mappings", 0)))
 
     # TCP Server Status
-    console.print("\n[yellow]TCP Server Status[/yellow]")
+    console.print(_("\n[yellow]TCP Server Status[/yellow]"))
     tcp_status = diagnostics.get("tcp_server_status", {})
     if tcp_status.get("status") == "not_initialized":
-        console.print("  [red]✗[/red] TCP server not initialized")
+        console.print(_("  [red]✗[/red] TCP server not initialized"))
     else:
         running = tcp_status.get("running", False)
         serving = tcp_status.get("is_serving", False)
         console.print(
-            f"  Running: {'[green]Yes[/green]' if running else '[red]No[/red]'}"
+            _("  Running: {status}").format(status="[green]Yes[/green]" if running else "[red]No[/red]")
         )
         console.print(
-            f"  Serving: {'[green]Yes[/green]' if serving else '[red]No[/red]'}"
+            _("  Serving: {status}").format(status="[green]Yes[/green]" if serving else "[red]No[/red]")
         )
 
     # Session Summary
-    console.print("\n[yellow]Session Summary[/yellow]")
-    console.print(f"  Total Sessions: {diagnostics.get('total_sessions', 0)}")
-    console.print(f"  Sessions with Peers: {diagnostics.get('sessions_with_peers', 0)}")
-    console.print(f"  Total Connections: {diagnostics.get('total_connections', 0)}")
+    console.print(_("\n[yellow]Session Summary[/yellow]"))
+    console.print(_("  Total Sessions: {count}").format(count=diagnostics.get("total_sessions", 0)))
+    console.print(_("  Sessions with Peers: {count}").format(count=diagnostics.get("sessions_with_peers", 0)))
+    console.print(_("  Total Connections: {count}").format(count=diagnostics.get("total_connections", 0)))
 
     # Connection Issues
     issues = diagnostics.get("connection_issues", [])
     if issues:
-        console.print("\n[yellow]Connection Issues[/yellow]")
+        console.print(_("\n[yellow]Connection Issues[/yellow]"))
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("Torrent")
         table.add_column("Status")
@@ -300,4 +305,4 @@ def print_connection_diagnostics(diagnostics: dict[str, Any], console: Console) 
 
         console.print(table)
     else:
-        console.print("\n[green]✓[/green] No connection issues detected")
+        console.print(_("\n[green]✓[/green] No connection issues detected"))

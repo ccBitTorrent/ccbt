@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ccbt"
-version = "0.1.0"
+version = "0.0.1"
 description = "The Easiest , Smallest & Fastest High-performance BitTorrent Client With All The Features"
-readme = "docs/README_PyPI.md"
+readme = "dev/README_PyPI.md"
 requires-python = ">=3.8"
 license = {text = "GPL-2.0"}
 authors = [
@@ -54,6 +54,7 @@ dependencies = [
     "multiformats>=0.3.1.post4",
     "blake3>=1.0.8",
     "lz4>=4.3.3",
+    "watchdog>=4.0.2",
 ]
 
 [project.optional-dependencies]
@@ -80,15 +81,6 @@ dev = [
     "ty>=0.0.1a24",
     "textual-dev>=1.6.1",
 ]
-metrics-endpoint = [
-]
-webrtc = [
-]
-nat = [
-]
-proxy = [
-]
-
 
 [project.urls]
 Homepage = "https://github.com/ccBittorrent/ccbt"

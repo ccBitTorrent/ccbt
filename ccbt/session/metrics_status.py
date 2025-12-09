@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from typing import Any
 
@@ -227,10 +228,8 @@ class StatusLoop:
                 }
 
                 if self.s.on_status_update:
-                    try:
+                    with contextlib.suppress(Exception):
                         await self.s.on_status_update(status)
-                    except Exception:
-                        pass
 
                 await asyncio.sleep(5)
             except asyncio.CancelledError:

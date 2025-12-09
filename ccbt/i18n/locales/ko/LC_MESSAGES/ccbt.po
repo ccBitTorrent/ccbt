@@ -1,844 +1,3807 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: ccBitTorrent 0.1.0\n"
-"Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-10 21:20\n"
-"PO-Revision-Date: 2025-11-10 21:20\n"
-"Last-Translator: ccBitTorrent Team\n"
-"Language-Team: Korean Team\n"
 "Language: ko\n"
-"MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
-"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
 
 
-msgid "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
-msgstr "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+msgid ""
+"\n"
+"  [cyan]Matching Rules:[/cyan] None\n"
+msgstr ""
+"\n"
+"  [cyan]일치 규칙:[/cyan] 없음\n"
 
-msgid "\\n[bold cyan]File Selection[/bold cyan]"
-msgstr "\\n[bold cyan]File Selection[/bold cyan]"
+msgid ""
+"\n"
+"  [cyan]Matching Rules:[/cyan] {count}\n"
+msgstr ""
+"\n"
+"  [cyan]일치 규칙:[/cyan] {count}\n"
 
-msgid "\\n[bold]File selection[/bold]"
-msgstr "\\n[bold]File selection[/bold]"
+msgid ""
+"\n"
+"Available Commands:\n"
+"  help          - Show this help message\n"
+"  status        - Show current status\n"
+"  peers         - Show connected peers\n"
+"  files         - Show file information\n"
+"  pause         - Pause download\n"
+"  resume        - Resume download\n"
+"  stop          - Stop download\n"
+"  quit          - Quit application\n"
+"  clear         - Clear screen\n"
+"        \n"
+msgstr ""
+"\n"
+"사용 가능한 명령:\n"
+"  help          - 이 도움말 메시지 표시\n"
+"  status        - 현재 상태 표시\n"
+"  peers         - 연결된 피어 표시\n"
+"  files         - 파일 정보 표시\n"
+"  pause         - 다운로드 일시 중지\n"
+"  resume        - 다운로드 재개\n"
+"  stop          - 다운로드 중지\n"
+"  quit          - 애플리케이션 종료\n"
+"  clear         - 화면 지우기\n"
+"        \n"
 
-msgid "\\n[yellow]Commands:[/yellow]"
-msgstr "\\n[yellow]Commands:[/yellow]"
+msgid ""
+"\n"
+"[bold cyan]Cache Statistics:[/bold cyan]\n"
+msgstr ""
 
-msgid "\\n[yellow]File selection cancelled, using defaults[/yellow]"
-msgstr "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgid ""
+"\n"
+"[bold cyan]File Selection[/bold cyan]\n"
+msgstr ""
 
-msgid "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
-msgstr "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgid ""
+"\n"
+"[bold]Active Port Mappings:[/bold]\n"
+msgstr ""
 
-msgid "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
-msgstr "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgid ""
+"\n"
+"[bold]File selection[/bold]\n"
+msgstr ""
 
-msgid "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
-msgstr "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgid ""
+"\n"
+"[bold]IP Filter Statistics[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[bold]IP Filter Test[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[bold]Runtime Status:[/bold]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[bold]Sample chunks (last {limit} accessed):[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[bold]Statistics:[/bold]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[bold]Total: {count} rules[/bold]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[cyan]Connection Diagnostics[/cyan]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[cyan]Proxy Statistics:[/cyan]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[cyan]Status:[/cyan] {status}\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[green]Diagnostic complete![/green]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[green]✓ Discovery successful![/green]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[green]✓[/green] No connection issues detected\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]2. DHT Status[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]3. Tracker Configuration[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]4. NAT Configuration[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]5. Listen Port[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]6. Session Initialization Test[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]Commands:[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]Connection Issues[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]Download interrupted by user[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]File selection cancelled, using defaults[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]Runtime Status:[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]Session Summary[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]Shutting down daemon...[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]TCP Server Status[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]Warning: No peers connected after 30 seconds[/yellow]\n"
+msgstr ""
+
+msgid ""
+"\n"
+"[yellow]✗ No NAT devices discovered[/yellow]\n"
+msgstr ""
+
+msgid "    - {network} ({mode}, priority: {priority})"
+msgstr ""
+
+msgid "  - {hash}... ({format})"
+msgstr ""
+
+msgid "  Active Downloading: {count}"
+msgstr ""
+
+msgid "  Active Mappings: {mappings}"
+msgstr ""
+
+msgid "  Active Seeding: {count}"
+msgstr ""
+
+msgid "  Add the peer first using 'tonic allowlist add'"
+msgstr ""
+
+msgid "  Auth failures: {count}"
+msgstr ""
+
+msgid "  Auto Map Ports: {status}"
+msgstr ""
+
+msgid "  Bypass list: {value}"
+msgstr ""
+
+msgid "  Cache DB: {path}"
+msgstr ""
+
+msgid "  Certificate: {path}"
+msgstr ""
+
+msgid "  Chunk size range: {min}-{max} bytes"
+msgstr ""
+
+msgid "  Chunk store: {path}"
+msgstr ""
+
+msgid "  Compression: {enabled}"
+msgstr ""
+
+msgid "  Configuration saved to: {location}"
+msgstr ""
+
+msgid "  Current mode: {mode}"
+msgstr ""
+
+msgid "  DHT Enabled: {status}"
+msgstr ""
+
+msgid "  DHT Port: {port}"
+msgstr ""
+
+msgid "  DHT Routing Table: {size} nodes"
+msgstr ""
+
+msgid "  Deduplication: {enabled}"
+msgstr ""
+
+msgid "  Enabled: {enabled}"
+msgstr ""
+
+msgid "  External IP: {ip}"
+msgstr ""
+
+msgid "  External: {port}"
+msgstr ""
+
+msgid "  Failed: {count}"
+msgstr ""
+
+msgid "  For peers: {value}"
+msgstr ""
+
+msgid "  For trackers: {value}"
+msgstr ""
+
+msgid "  For webseeds: {value}"
+msgstr ""
+
+msgid "  HTTP Trackers: {status}"
+msgstr ""
+
+msgid "  Host: {host}:{port}"
+msgstr ""
+
+msgid "  Internal: {port}"
+msgstr ""
+
+msgid "  Key: {path}"
+msgstr ""
+
+msgid "  Make sure NAT traversal is enabled and a device is discovered"
+msgstr ""
+
+msgid "  Make sure NAT-PMP or UPnP is enabled on your router"
+msgstr ""
+
+msgid "  Mode: {mode}"
+msgstr ""
+
+msgid "  NAT-PMP: {status}"
+msgstr ""
+
+msgid "  Output directory: {dir}"
+msgstr ""
+
+msgid "  P2P CAS client: Active"
+msgstr ""
+
+msgid "  P2P CAS client: Not initialized"
+msgstr ""
+
+msgid "  P2P CAS: {enabled}"
+msgstr ""
+
+msgid "  Paused: {count}"
+msgstr ""
+
+msgid "  Protocol not active (session may not be running)"
+msgstr ""
+
+msgid "  Protocol state: {state}"
+msgstr ""
+
+msgid "  Protocol: {method}"
+msgstr ""
+
+msgid "  Protocol: {protocol}"
+msgstr ""
+
+msgid "  Queued: {count}"
+msgstr ""
+
+msgid "  Running: {status}"
+msgstr ""
+
+msgid "  Serving: {status}"
+msgstr ""
+
+msgid "  Sessions with Peers: {count}"
+msgstr ""
+
+msgid "  Source peers: {peers}"
+msgstr ""
+
+msgid "  Successful: {count}"
+msgstr ""
+
+msgid "  Sync mode: {mode}"
+msgstr ""
+
+msgid "  TCP Enabled: {status}"
+msgstr ""
+
+msgid "  TCP Port: {port}"
+msgstr ""
+
+msgid "  Target chunk size: {size} bytes"
+msgstr ""
+
+msgid "  This would fetch the .tonic file and start syncing"
+msgstr ""
+
+msgid "  Total Connections: {count}"
+msgstr ""
+
+msgid "  Total Sessions: {count}"
+msgstr ""
+
+msgid "  Total connections: {count}"
+msgstr ""
+
+msgid "  Total: {count}"
+msgstr ""
+
+msgid "  Type: {type}"
+msgstr ""
+
+msgid "  UDP Trackers: {status}"
+msgstr ""
+
+msgid "  UPnP: {status}"
+msgstr ""
+
+msgid "  Unable to connect to active session"
+msgstr ""
+
+msgid "  Use 'ccbt tonic status' to check sync status"
+msgstr ""
+
+msgid "  Username: {username}"
+msgstr ""
+
+msgid "  [cyan]Allowed:[/cyan] {allows}"
+msgstr ""
+
+msgid "  [cyan]Blocked:[/cyan] {blocks}"
+msgstr ""
+
+msgid "  [cyan]Enabled:[/cyan] {enabled}"
+msgstr ""
+
+msgid "  [cyan]IP Address:[/cyan] {ip}"
+msgstr ""
+
+msgid "  [cyan]IPv4 Ranges:[/cyan] {ipv4_ranges}"
+msgstr ""
+
+msgid "  [cyan]IPv6 Ranges:[/cyan] {ipv6_ranges}"
+msgstr ""
+
+msgid "  [cyan]Last Update:[/cyan] Never"
+msgstr ""
+
+msgid "  [cyan]Last Update:[/cyan] {timestamp}"
+msgstr ""
+
+msgid "  [cyan]Mode:[/cyan] {mode}"
+msgstr ""
+
+msgid "  [cyan]Status:[/cyan] {status}"
+msgstr ""
+
+msgid "  [cyan]Total Checks:[/cyan] {matches}"
+msgstr ""
+
+msgid "  [cyan]Total Rules:[/cyan] {total_rules}"
+msgstr ""
 
 msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
-msgstr "  [cyan]deselect <인덱스>[/cyan] - 파일 선택 해제"
+msgstr ""
 
 msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
-msgstr "  [cyan]deselect-all[/cyan] - 모든 파일 선택 해제"
+msgstr ""
 
 msgid "  [cyan]done[/cyan] - Finish selection and start download"
-msgstr "  [cyan]done[/cyan] - 선택 완료 및 다운로드 시작"
+msgstr ""
 
-msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
-msgstr "  [cyan]priority <인덱스> <우선순위>[/cyan] - 우선순위 설정（do_not_download/low/normal/high/maximum）"
+msgid ""
+"  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)\n"
+msgstr ""
 
 msgid "  [cyan]select <index>[/cyan] - Select a file"
-msgstr "  [cyan]select <인덱스>[/cyan] - 파일 선택"
+msgstr ""
 
 msgid "  [cyan]select-all[/cyan] - Select all files"
-msgstr "  [cyan]select-all[/cyan] - 모든 파일 선택"
+msgstr ""
+
+msgid "  [green]✓[/green] Can bind to port {port}"
+msgstr ""
+
+msgid "  [green]✓[/green] Session initialized successfully"
+msgstr ""
+
+msgid "  [green]✓[/green] TCP server initialized"
+msgstr ""
+
+msgid "  [green]✓[/green] {url}: {loaded} rules"
+msgstr ""
+
+msgid "  [red]✗[/red] Cannot bind to port: {e}"
+msgstr ""
+
+msgid "  [red]✗[/red] NAT manager not initialized"
+msgstr ""
+
+msgid "  [red]✗[/red] Session initialization failed: {e}"
+msgstr ""
+
+msgid "  [red]✗[/red] TCP server not initialized"
+msgstr ""
+
+msgid "  [red]✗[/red] {url}: failed"
+msgstr ""
+
+msgid "  [yellow]⚠[/yellow] DHT client not initialized"
+msgstr ""
+
+msgid "  [yellow]⚠[/yellow] TCP server not initialized"
+msgstr ""
+
+msgid "  uTP Enabled: {status}"
+msgstr ""
+
+msgid "  {msg}"
+msgstr ""
+
+msgid "  {warning}"
+msgstr ""
 
 msgid "  • Check if torrent has active seeders"
-msgstr "  • 토렌트에 활성 시더가 있는지 확인"
+msgstr ""
 
 msgid "  • Ensure DHT is enabled: --enable-dht"
-msgstr "  • DHT가 활성화되어 있는지 확인：--enable-dht"
+msgstr ""
 
 msgid "  • Run 'btbt diagnose-connections' to check connection status"
-msgstr "  • 연결 상태를 확인하려면 'btbt diagnose-connections' 실행"
+msgstr ""
 
 msgid "  • Verify NAT/firewall settings"
-msgstr "  • NAT/방화벽 설정 확인"
+msgstr ""
 
-msgid " | Files: {selected}/{total} selected"
-msgstr " | 파일：{selected}/{total} 선택됨"
+msgid "  ⚠ {warning}"
+msgstr ""
 
-msgid " | Private: {count}"
-msgstr " | 비공개：{count}"
+msgid "(no options set)"
+msgstr ""
+
+msgid "- [yellow]{issue}[/yellow]"
+msgstr ""
+
+msgid "- {id}: {severity} rule={rule} value={value}"
+msgstr ""
+
+msgid "- {name}: metric={metric}, cond={condition}, severity={severity}"
+msgstr ""
+
+msgid "ACK Interval"
+msgstr ""
+
+msgid "ACK packet send interval"
+msgstr ""
+
+msgid "API key or Ed25519 key manager required for WebSocket connection"
+msgstr ""
 
 msgid "Active"
-msgstr "활성"
+msgstr ""
 
 msgid "Active Alerts"
-msgstr "활성 경고"
+msgstr ""
 
-msgid "Active: {count}"
-msgstr "활성：{count}"
+msgid "Add Tracker"
+msgstr ""
+
+msgid ""
+"Add tracker functionality not yet implemented. Use CLI command: torrent.add_tracker\n"
+msgstr ""
+
+msgid "Advanced"
+msgstr ""
 
 msgid "Advanced Add"
-msgstr "고급 추가"
+msgstr ""
+
+msgid "Advanced configuration (experimental features)"
+msgstr ""
+
+msgid "Advanced configuration - Data provider/Executor not available"
+msgstr ""
 
 msgid "Alert Rules"
-msgstr "경고 규칙"
+msgstr ""
 
 msgid "Alerts"
-msgstr "경고"
+msgstr ""
+
+msgid "All {total} file(s) verified successfully"
+msgstr ""
+
+msgid "Announce sent"
+msgstr ""
 
 msgid "Announce: Failed"
-msgstr "알림：실패"
+msgstr ""
 
 msgid "Announce: {status}"
-msgstr "알림：{status}"
+msgstr ""
 
 msgid "Are you sure you want to quit?"
-msgstr "종료하시겠습니까?"
+msgstr ""
+
+msgid "Auto-tuned configuration saved to {path}"
+msgstr ""
+
+msgid "Auto-tuning warnings:"
+msgstr ""
 
 msgid "Automatically restart daemon if needed (without prompt)"
-msgstr "필요한 경우 데몬 자동 재시작（프롬프트 없음）"
+msgstr ""
+
+msgid "Available keys: {keys}"
+msgstr ""
+
+msgid "Available locales: {locales}"
+msgstr ""
+
+msgid "Backup complete"
+msgstr ""
+
+msgid "Backup created: {path}"
+msgstr ""
+
+msgid "Backup failed"
+msgstr ""
+
+msgid "Ban Peer"
+msgstr ""
+
+msgid "Bandwidth"
+msgstr ""
+
+msgid "Bandwidth configuration - Data provider/Executor not available"
+msgstr ""
 
 msgid "Browse"
-msgstr "찾아보기"
+msgstr ""
+
+msgid ""
+"CRITICAL: PID file exists (initial=%s, current=%s, path=%s) but code reached local session creation! This will cause port conflicts. Aborting.\n"
+msgstr ""
+
+msgid "Cache entries: {count}"
+msgstr ""
+
+msgid "Cache hit rate: {rate:.2f}%"
+msgstr ""
+
+msgid "Cache size: {size} bytes"
+msgstr ""
+
+msgid "Cached Scrape Results"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Cannot auto-resume checkpoint"
+msgstr ""
+
+msgid ""
+"Cannot connect to daemon at %s: %s (daemon may not be running or IPC server not started)\n"
+msgstr ""
+
+msgid "Cannot specify both --hybrid and --v1"
+msgstr ""
+
+msgid "Cannot specify both --v2 and --hybrid"
+msgstr ""
+
+msgid "Cannot specify both --v2 and --v1"
+msgstr ""
 
 msgid "Capability"
-msgstr "기능"
+msgstr ""
+
+msgid "Choked"
+msgstr ""
+
+msgid "Cleaning up old checkpoints..."
+msgstr ""
+
+msgid "Cleanup complete"
+msgstr ""
+
+msgid "Click on 'Global' tab to configure this section"
+msgstr ""
+
+msgid "Client"
+msgstr ""
+
+msgid ""
+"Client error checking daemon status at %s: %s (daemon may be starting up)\n"
+msgstr ""
 
 msgid "Commands: "
-msgstr "명령："
+msgstr ""
 
 msgid "Completed"
-msgstr "완료"
+msgstr "완료됨"
 
 msgid "Completed (Scrape)"
-msgstr "완료（스크랩）"
+msgstr ""
 
-msgid "Component"
-msgstr "구성 요소"
+msgid "Compressing backup..."
+msgstr ""
 
 msgid "Condition"
-msgstr "조건"
+msgstr ""
+
+msgid "Config"
+msgstr ""
 
 msgid "Config Backups"
-msgstr "설정 백업"
+msgstr ""
+
+msgid "Configuration differences:"
+msgstr ""
+
+msgid "Configuration exported to {path}"
+msgstr ""
 
 msgid "Configuration file path"
-msgstr "설정 파일 경로"
+msgstr ""
+
+msgid "Configuration imported to {path}"
+msgstr ""
+
+msgid "Configuration restored from {path}"
+msgstr ""
+
+msgid "Configuration section"
+msgstr ""
+
+msgid ""
+"Configuration: {type}\n"
+"\n"
+"This configuration section is not yet fully implemented.\n"
+msgstr ""
 
 msgid "Confirm"
-msgstr "확인"
-
-msgid "Connected"
-msgstr "연결됨"
+msgstr ""
 
 msgid "Connected Peers"
 msgstr "연결된 피어"
 
-msgid "Count: {count}{file_info}{private_info}"
-msgstr "개수：{count}{file_info}{private_info}"
+msgid "Connecting to daemon at %s (PID file exists)"
+msgstr ""
+
+msgid "Connection Timeout"
+msgstr ""
+
+msgid "Connection timeout in seconds"
+msgstr ""
+
+msgid "Copy Info Hash"
+msgstr ""
+
+msgid ""
+"Could not connect to daemon (no PID file): %s - will create local session\n"
+msgstr ""
+
+msgid "Could not find file index"
+msgstr ""
+
+msgid "Could not get torrent output directory"
+msgstr ""
+
+msgid "Could not read daemon config file: %s"
+msgstr ""
+
+msgid "Could not read daemon config from ConfigManager: %s"
+msgstr ""
+
+msgid "Could not save daemon config to config file: %s"
+msgstr ""
+
+msgid "Could not send shutdown request, using signal..."
+msgstr ""
 
 msgid "Create backup before migration"
-msgstr "마이그레이션 전에 백업 생성"
+msgstr ""
 
-msgid "DHT"
-msgstr "DHT"
+msgid "Creating backup..."
+msgstr ""
+
+msgid "Current chunks: {count}"
+msgstr ""
+
+msgid "Current locale: {locale}"
+msgstr ""
+
+msgid ""
+"Daemon PID file exists but API key not found in config. Cannot route to daemon. Please check daemon configuration.\n"
+msgstr ""
+
+msgid "Daemon config file exists but ipc_port not found, trying main config"
+msgstr ""
+
+msgid ""
+"Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...\n"
+msgstr ""
+
+msgid ""
+"Daemon connection timeout (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+
+msgid "Daemon is accessible and ready (attempt %d/%d, took %.1fs)"
+msgstr ""
+
+msgid ""
+"Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+
+msgid ""
+"Daemon is marked as running but not accessible after %d attempts (elapsed %.1fs)\n"
+msgstr ""
+
+msgid "Daemon is not running"
+msgstr ""
+
+msgid "Daemon is not running, nothing to restart"
+msgstr ""
+
+msgid "Daemon is not running, restart not needed"
+msgstr ""
+
+msgid ""
+"Daemon is not running. File management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+
+msgid ""
+"Daemon is not running. NAT management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+
+msgid ""
+"Daemon is not running. Queue management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+
+msgid ""
+"Daemon is not running. Scrape commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+
+msgid "Daemon restarted successfully (PID: %d)"
+msgstr ""
+
+msgid "Daemon stopped"
+msgstr ""
+
+msgid "Daemon stopped gracefully"
+msgstr ""
 
 msgid "Description"
-msgstr "설명"
+msgstr ""
+
+msgid "Description: {desc}"
+msgstr ""
+
+msgid "Deselect All"
+msgstr ""
+
+msgid "Deselected {count} file(s)"
+msgstr ""
 
 msgid "Details"
-msgstr "세부정보"
+msgstr ""
 
-msgid "Disabled"
-msgstr "비활성화됨"
+msgid "Diff written to {path}"
+msgstr ""
+
+msgid "Direct session access not available in daemon mode"
+msgstr ""
+
+msgid "Disk I/O configuration (preallocation, hashing, checkpoints)"
+msgstr ""
+
+msgid "Do Not Download"
+msgstr ""
 
 msgid "Download"
 msgstr "다운로드"
+
+msgid "Download Limit"
+msgstr ""
+
+msgid "Download Rate"
+msgstr ""
 
 msgid "Download Speed"
 msgstr "다운로드 속도"
 
 msgid "Download paused"
-msgstr "다운로드 일시정지됨"
+msgstr "다운로드 일시 중지됨"
 
 msgid "Download resumed"
 msgstr "다운로드 재개됨"
 
 msgid "Download stopped"
-msgstr "다운로드 중지됨"
+msgstr ""
 
 msgid "Downloaded"
-msgstr "다운로드됨"
+msgstr ""
+
+msgid "Downloaders"
+msgstr ""
+
+msgid "Downloading"
+msgstr "다운로드 중"
 
 msgid "Downloading {name}"
-msgstr "{name} 다운로드 중"
+msgstr ""
 
 msgid "ETA"
-msgstr "예상 시간"
+msgstr ""
 
-msgid "Enable debug mode"
-msgstr "디버그 모드 활성화"
-
-msgid "Enable verbose output"
-msgstr "상세 출력 활성화"
+msgid "Enable debug mode (deprecated, use -vv)"
+msgstr ""
 
 msgid "Enabled"
-msgstr "활성화됨"
+msgstr ""
 
-msgid "Error reading scrape cache"
-msgstr "스크랩 캐시 읽기 오류"
+msgid "Encrypting backup..."
+msgstr ""
+
+msgid "Error"
+msgstr "오류"
+
+msgid "Error adding tracker: {error}"
+msgstr ""
+
+msgid "Error banning peer: {error}"
+msgstr ""
+
+msgid ""
+"Error checking daemon accessibility (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...\n"
+msgstr ""
+
+msgid ""
+"Error checking daemon accessibility after %d attempts (elapsed %.1fs): %s\n"
+msgstr ""
+
+msgid "Error checking daemon stage: %s"
+msgstr ""
+
+msgid ""
+"Error checking if daemon is running (Windows-specific issue?): %s - PID file exists, will attempt IPC connection\n"
+msgstr ""
+
+msgid "Error checking if restart is needed: %s"
+msgstr ""
+
+msgid "Error closing HTTP session: %s"
+msgstr ""
+
+msgid "Error closing IPC client: %s"
+msgstr ""
+
+msgid "Error closing WebSocket: %s"
+msgstr ""
+
+msgid "Error comparing configs: {e}"
+msgstr ""
+
+msgid "Error creating backup: {e}"
+msgstr ""
+
+msgid "Error creating torrent"
+msgstr ""
+
+msgid "Error deselecting files: {error}"
+msgstr ""
+
+msgid "Error exporting configuration: {e}"
+msgstr ""
+
+msgid "Error forcing announce: {error}"
+msgstr ""
+
+msgid "Error generating schema: {e}"
+msgstr ""
+
+msgid "Error getting daemon status: %s"
+msgstr ""
+
+msgid "Error importing configuration: {e}"
+msgstr ""
+
+msgid "Error in socket pre-check: %s"
+msgstr ""
+
+msgid "Error listing backups: {e}"
+msgstr ""
+
+msgid "Error listing profiles: {e}"
+msgstr ""
+
+msgid "Error listing templates: {e}"
+msgstr ""
+
+msgid "Error loading torrent configuration: {error}"
+msgstr ""
+
+msgid "Error opening folder: {error}"
+msgstr ""
+
+msgid "Error processing file %s: %s"
+msgstr ""
+
+msgid "Error reading PID file after retries: %s"
+msgstr ""
+
+msgid "Error reading PID file: %s"
+msgstr ""
+
+msgid "Error receiving WebSocket event: %s"
+msgstr ""
+
+msgid "Error removing tracker: {error}"
+msgstr ""
+
+msgid "Error restarting daemon: %s"
+msgstr ""
+
+msgid "Error restoring backup: {e}"
+msgstr ""
+
+msgid "Error routing to daemon (PID file exists): %s"
+msgstr ""
+
+msgid "Error routing to daemon (no PID file): %s - will create local session"
+msgstr ""
+
+msgid "Error selecting files: {error}"
+msgstr ""
+
+msgid "Error sending shutdown request: %s"
+msgstr ""
+
+msgid "Error setting file priority: {error}"
+msgstr ""
+
+msgid "Error starting daemon: %s"
+msgstr ""
+
+msgid "Error stopping daemon: %s"
+msgstr ""
+
+msgid "Error verifying files: {error}"
+msgstr ""
+
+msgid "Error waiting for daemon with progress: %s"
+msgstr ""
+
+msgid "Error waiting for daemon: %s"
+msgstr ""
+
+msgid "Error with auto-tuning: {e}"
+msgstr ""
+
+msgid "Error with profile: {e}"
+msgstr ""
+
+msgid "Error with template: {e}"
+msgstr ""
+
+msgid "Error: {error}"
+msgstr ""
+
+msgid "Eviction rate: {rate:.2f} /sec"
+msgstr ""
+
+msgid "Exceeded maximum wait time (%.1fs) for daemon readiness"
+msgstr ""
+
+msgid "Expected type: {type_name}"
+msgstr ""
 
 msgid "Explore"
-msgstr "탐색"
+msgstr ""
+
+msgid "Export complete"
+msgstr ""
+
+msgid "Exporting checkpoint..."
+msgstr ""
 
 msgid "Failed"
 msgstr "실패"
 
+msgid "Failed to add content"
+msgstr ""
+
+msgid "Failed to add magnet link"
+msgstr ""
+
+msgid "Failed to add peer to allowlist"
+msgstr ""
+
+msgid "Failed to add torrent"
+msgstr "토렌트 추가 실패"
+
+msgid "Failed to add torrent to daemon"
+msgstr ""
+
+msgid "Failed to announce: {error}"
+msgstr ""
+
+msgid "Failed to ban peer: {error}"
+msgstr ""
+
+msgid "Failed to calculate progress: %s"
+msgstr ""
+
+msgid "Failed to cleanup Xet cache"
+msgstr ""
+
+msgid "Failed to clear queue"
+msgstr ""
+
+msgid "Failed to collect custom metrics: %s"
+msgstr ""
+
+msgid "Failed to collect performance metrics: %s"
+msgstr ""
+
+msgid "Failed to collect system metrics: %s"
+msgstr ""
+
+msgid "Failed to copy info hash: {error}"
+msgstr ""
+
+msgid "Failed to deselect all files"
+msgstr ""
+
+msgid "Failed to deselect files"
+msgstr ""
+
+msgid "Failed to deselect files: {error}"
+msgstr ""
+
+msgid "Failed to disable io_uring: %s"
+msgstr ""
+
+msgid "Failed to discover NAT"
+msgstr ""
+
+msgid "Failed to enable io_uring: %s"
+msgstr ""
+
+msgid "Failed to generate .tonic file"
+msgstr ""
+
+msgid "Failed to generate tonic link"
+msgstr ""
+
+msgid "Failed to get NAT status"
+msgstr ""
+
+msgid "Failed to get Xet cache info"
+msgstr ""
+
+msgid "Failed to get Xet stats"
+msgstr ""
+
+msgid "Failed to get content"
+msgstr ""
+
+msgid "Failed to get metrics interval from config: %s"
+msgstr ""
+
+msgid "Failed to get peers"
+msgstr ""
+
+msgid "Failed to get queue"
+msgstr ""
+
+msgid "Failed to get runtime status: %s"
+msgstr ""
+
+msgid "Failed to get stats"
+msgstr ""
+
+msgid "Failed to get sync mode"
+msgstr ""
+
+msgid "Failed to get sync status"
+msgstr ""
+
+msgid "Failed to list aliases"
+msgstr ""
+
+msgid "Failed to list allowlist"
+msgstr ""
+
+msgid "Failed to list files"
+msgstr ""
+
+msgid "Failed to list scrape results"
+msgstr ""
+
+msgid "Failed to load filter file: {file_path}"
+msgstr ""
+
+msgid "Failed to map port"
+msgstr ""
+
+msgid "Failed to move in queue"
+msgstr ""
+
+msgid "Failed to parse config value: %s"
+msgstr ""
+
+msgid "Failed to pause torrent"
+msgstr ""
+
+msgid "Failed to pin content"
+msgstr ""
+
+msgid "Failed to refresh mappings"
+msgstr ""
+
 msgid "Failed to register torrent in session"
-msgstr "세션에 토렌트를 등록하지 못함"
+msgstr ""
+
+msgid "Failed to remove alias"
+msgstr ""
+
+msgid "Failed to remove from queue"
+msgstr ""
+
+msgid "Failed to remove peer from allowlist"
+msgstr ""
+
+msgid "Failed to remove tracker: {error}"
+msgstr ""
+
+msgid "Failed to resume torrent"
+msgstr ""
+
+msgid "Failed to save configuration to file: %s"
+msgstr ""
+
+msgid "Failed to scrape torrent"
+msgstr ""
+
+msgid "Failed to select all files"
+msgstr ""
+
+msgid "Failed to select files"
+msgstr ""
+
+msgid "Failed to select files: {error}"
+msgstr ""
+
+msgid "Failed to set alias"
+msgstr ""
+
+msgid "Failed to set file priority"
+msgstr ""
+
+msgid "Failed to set first piece priority: %s"
+msgstr ""
+
+msgid "Failed to set last piece priority: %s"
+msgstr ""
+
+msgid "Failed to set priority"
+msgstr ""
+
+msgid "Failed to set priority: {error}"
+msgstr ""
+
+msgid "Failed to set sync mode"
+msgstr ""
+
+msgid "Failed to sign WebSocket request: %s"
+msgstr ""
+
+msgid "Failed to sign request with Ed25519: %s"
+msgstr ""
+
+msgid "Failed to start sync"
+msgstr ""
+
+msgid "Failed to stop daemon"
+msgstr ""
+
+msgid "Failed to unmap port"
+msgstr ""
+
+msgid "Failed to unpin content"
+msgstr ""
 
 msgid "File"
-msgstr "File"
+msgstr ""
 
 msgid "File Name"
-msgstr "파일 이름"
+msgstr ""
 
 msgid "File selection not available for this torrent"
-msgstr "이 토렌트에 대해 파일 선택을 사용할 수 없음"
+msgstr ""
 
 msgid "Files"
-msgstr "파일"
+msgstr ""
+
+msgid "Filter update failed"
+msgstr ""
+
+msgid "Folder not found: {folder}"
+msgstr ""
+
+msgid "Force Announce"
+msgstr ""
+
+msgid "Found {count} potential issues"
+msgstr ""
+
+msgid ""
+"Full configuration editing is available in the Global Config screen. Press 'g' to open it.\n"
+msgstr ""
+
+msgid ""
+"Full configuration editing requires navigating to the Global Config screen\n"
+msgstr ""
+
+msgid "General"
+msgstr ""
+
+msgid "General configuration - Data provider/Executor not available"
+msgstr ""
+
+msgid "Generated new API key for daemon"
+msgstr ""
+
+msgid "Generating {format} torrent..."
+msgstr ""
+
+msgid "Global"
+msgstr ""
 
 msgid "Global Config"
-msgstr "전역 설정"
+msgstr ""
+
+msgid "Global Configuration"
+msgstr ""
+
+msgid "Graceful shutdown timeout, forcing stop"
+msgstr ""
+
+msgid "Graphs"
+msgstr ""
 
 msgid "Help"
-msgstr "도움말"
+msgstr ""
+
+msgid "High"
+msgstr ""
 
 msgid "History"
-msgstr "기록"
+msgstr ""
 
 msgid "ID"
-msgstr "ID"
+msgstr ""
 
 msgid "IP"
-msgstr "IP"
+msgstr ""
 
-msgid "IP Filter"
-msgstr "IP 필터"
+msgid "IP Address"
+msgstr ""
+
+msgid "IP filter not available"
+msgstr ""
+
+msgid ""
+"IPCClient.get_daemon_pid: Checking pid_file=%s (home_dir=%s, exists=%s)\n"
+msgstr ""
 
 msgid "IPFS"
-msgstr "IPFS"
+msgstr ""
+
+msgid "Idle"
+msgstr ""
+
+msgid "Inactive"
+msgstr ""
+
+msgid "Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)"
+msgstr ""
+
+msgid "Info"
+msgstr ""
 
 msgid "Info Hash"
-msgstr "정보 해시"
+msgstr ""
+
+msgid "Info hash copied to clipboard"
+msgstr ""
+
+msgid "Info hash: {hash}"
+msgstr ""
+
+msgid "Initial Rate"
+msgstr ""
+
+msgid "Initial send rate"
+msgstr ""
 
 msgid "Interactive backup"
-msgstr "대화형 백업"
+msgstr ""
+
+msgid "Invalid IP address: {error}"
+msgstr ""
+
+msgid "Invalid IP range: {ip_range}"
+msgstr ""
+
+msgid "Invalid configuration: {e}"
+msgstr ""
+
+msgid "Invalid info hash format"
+msgstr ""
+
+msgid "Invalid info hash format: %s"
+msgstr ""
+
+msgid "Invalid info hash length in magnet link"
+msgstr ""
+
+msgid ""
+"Invalid locale '{current_locale}' specified. Falling back to 'en'. Available locales: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu\n"
+msgstr ""
+
+msgid "Invalid magnet link - missing 'xt=urn:btih:' parameter"
+msgstr ""
+
+msgid "Invalid magnet link format"
+msgstr ""
+
+msgid "Invalid magnet link format - must start with 'magnet:?'"
+msgstr ""
+
+msgid "Invalid peer selection"
+msgstr ""
+
+msgid "Invalid profile '{name}': {errors}"
+msgstr ""
+
+msgid "Invalid template '{name}': {errors}"
+msgstr ""
 
 msgid "Invalid torrent file format"
-msgstr "잘못된 토렌트 파일 형식"
+msgstr ""
 
 msgid "Key"
-msgstr "Key"
+msgstr ""
 
 msgid "Key not found: {key}"
-msgstr "키를 찾을 수 없음：{key}"
+msgstr ""
 
 msgid "Last Scrape"
-msgstr "마지막 스크랩"
+msgstr ""
 
-msgid "Leechers"
-msgstr "리처"
+msgid "Last Update"
+msgstr ""
 
 msgid "Leechers (Scrape)"
-msgstr "리처（스크랩）"
+msgstr ""
+
+msgid "Loading configuration..."
+msgstr ""
+
+msgid "Loading torrent configuration..."
+msgstr ""
+
+msgid "Low"
+msgstr ""
 
 msgid "MIGRATED"
-msgstr "마이그레이션됨"
+msgstr ""
+
+msgid "MTU"
+msgstr ""
+
+msgid "Magnet command: PID file check - exists=%s, path=%s"
+msgstr ""
+
+msgid "Magnet link must contain 'xt=urn:btih:' parameter"
+msgstr ""
+
+msgid "Magnet link must start with 'magnet:?'"
+msgstr ""
+
+msgid "Max Rate"
+msgstr ""
+
+msgid "Max Retransmits"
+msgstr ""
+
+msgid "Max Window Size"
+msgstr ""
+
+msgid "Maximum"
+msgstr ""
+
+msgid "Maximum UDP packet size"
+msgstr ""
+
+msgid "Maximum receive window size"
+msgstr ""
+
+msgid "Maximum retransmission attempts"
+msgstr ""
+
+msgid "Maximum send rate"
+msgstr ""
 
 msgid "Menu"
-msgstr "메뉴"
+msgstr ""
 
 msgid "Metric"
-msgstr "메트릭"
+msgstr ""
+
+msgid "Migrating checkpoint format from {from_fmt} to {to_fmt}..."
+msgstr ""
+
+msgid "Migration complete"
+msgstr ""
+
+msgid "Min Rate"
+msgstr ""
+
+msgid "Minimum send rate"
+msgstr ""
+
+msgid "Model '{model}' not found in Config"
+msgstr ""
+
+msgid "Modified"
+msgstr ""
+
+msgid "N/A"
+msgstr ""
 
 msgid "NAT Management"
-msgstr "NAT 관리"
+msgstr ""
 
 msgid "Name"
-msgstr "이름"
+msgstr ""
 
 msgid "Network"
-msgstr "네트워크"
+msgstr ""
+
+msgid "Network configuration (connections, timeouts, rate limits)"
+msgstr ""
+
+msgid "Network configuration - Data provider/Executor not available"
+msgstr ""
+
+msgid "Never"
+msgstr ""
 
 msgid "No"
-msgstr "아니오"
+msgstr ""
+
+msgid "No PID file found, checking for daemon via _get_executor()"
+msgstr ""
 
 msgid "No active alerts"
-msgstr "활성 경고 없음"
+msgstr ""
 
 msgid "No alert rules"
-msgstr "경고 규칙 없음"
+msgstr ""
 
 msgid "No alert rules configured"
-msgstr "경고 규칙이 구성되지 않음"
+msgstr ""
 
 msgid "No backups found"
-msgstr "백업을 찾을 수 없음"
-
-msgid "No cached results"
-msgstr "캐시된 결과 없음"
+msgstr ""
 
 msgid "No checkpoints"
-msgstr "체크포인트 없음"
+msgstr ""
 
 msgid "No config file to backup"
-msgstr "백업할 설정 파일 없음"
+msgstr ""
+
+msgid "No configuration file to backup"
+msgstr ""
+
+msgid "No daemon PID file found - daemon is not running"
+msgstr ""
+
+msgid "No daemon config or API key found - will create local session"
+msgstr ""
+
+msgid ""
+"No daemon detected (PID file doesn't exist), creating local session. PID file path: %s\n"
+msgstr ""
+
+msgid "No file selected"
+msgstr ""
+
+msgid "No files to deselect"
+msgstr ""
+
+msgid "No files to select"
+msgstr ""
+
+msgid "No locales directory found"
+msgstr ""
+
+msgid "No magnet URI provided"
+msgstr ""
+
+msgid "No magnet URI provided for add_magnet operation."
+msgstr ""
+
+msgid "No peer selected"
+msgstr ""
 
 msgid "No peers connected"
-msgstr "연결된 피어 없음"
+msgstr ""
 
 msgid "No profiles available"
-msgstr "사용 가능한 프로필 없음"
+msgstr ""
 
 msgid "No templates available"
-msgstr "사용 가능한 템플릿 없음"
+msgstr ""
 
 msgid "No torrent active"
-msgstr "활성 토렌트 없음"
+msgstr ""
 
-msgid "Nodes: {count}"
-msgstr "노드：{count}"
+msgid "No torrent path or magnet provided"
+msgstr ""
 
-msgid "Not available"
-msgstr "사용할 수 없음"
+msgid "No tracker selected"
+msgstr ""
 
-msgid "Not configured"
-msgstr "구성되지 않음"
+msgid "No trackers found"
+msgstr ""
+
+msgid "Normal"
+msgstr ""
 
 msgid "Not supported"
-msgstr "지원되지 않음"
+msgstr ""
+
+msgid "Note"
+msgstr ""
 
 msgid "OK"
-msgstr "확인"
+msgstr ""
+
+msgid "Open Folder"
+msgstr ""
+
+msgid "Opened folder: {path}"
+msgstr ""
 
 msgid "Operation not supported"
-msgstr "지원되지 않는 작업"
+msgstr ""
+
+msgid "Option"
+msgstr ""
+
+msgid "Output directory not available"
+msgstr ""
+
+msgid "PEX: Failed"
+msgstr ""
 
 msgid "PEX: {status}"
-msgstr "PEX：{status}"
+msgstr ""
+
+msgid "PID file contains invalid PID: %d, removing"
+msgstr ""
+
+msgid "PID file contains invalid data: %r, removing"
+msgstr ""
+
+msgid "PID file is empty, removing"
+msgstr ""
+
+msgid "Parsing files and building file tree..."
+msgstr ""
+
+msgid "Parsing files and building hybrid metadata..."
+msgstr ""
+
+msgid "Path"
+msgstr ""
 
 msgid "Pause"
-msgstr "일시정지"
+msgstr "일시 중지"
+
+msgid "Pause failed: {error}"
+msgstr ""
+
+msgid "Peer banning not yet implemented. Selected peer: {ip}:{port}"
+msgstr ""
+
+msgid "Peer {ip}:{port} banned"
+msgstr ""
 
 msgid "Peers"
-msgstr "피어"
+msgstr ""
+
+msgid "Per-Torrent"
+msgstr ""
+
+msgid "Per-Torrent Config: {hash}..."
+msgstr ""
+
+msgid "Per-Torrent Configuration"
+msgstr ""
+
+msgid "Per-Torrent Configuration: {name}"
+msgstr ""
+
+msgid "Per-Torrent tab - Data provider or executor not available"
+msgstr ""
+
+msgid ""
+"Per-torrent configuration - Data provider/Executor or torrent not available\n"
+msgstr ""
+
+msgid ""
+"Per-torrent rate limits and priority can be configured via the CLI or executor commands.\n"
+msgstr ""
 
 msgid "Performance"
-msgstr "성능"
+msgstr ""
 
 msgid "Pieces"
-msgstr "조각"
+msgstr ""
+
+msgid "Please select a torrent first"
+msgstr ""
 
 msgid "Port"
-msgstr "포트"
+msgstr ""
 
-msgid "Port: {port}"
-msgstr "포트：{port}"
+msgid "Prefer over TCP"
+msgstr ""
+
+msgid "Prefer uTP when both TCP and uTP are available"
+msgstr ""
+
+msgid "Preferences"
+msgstr ""
+
+msgid "Preferences tab - Executor not available"
+msgstr ""
+
+msgid "Press Ctrl+C to stop the daemon"
+msgstr ""
+
+msgid "Press Enter to configure this section"
+msgstr ""
 
 msgid "Priority"
-msgstr "우선순위"
+msgstr ""
 
 msgid "Private"
-msgstr "비공개"
+msgstr ""
+
+msgid "Profile '{name}' not found"
+msgstr ""
+
+msgid "Profile applied to {path}"
+msgstr ""
+
+msgid "Profile config written to {path}"
+msgstr ""
+
+msgid "Profile: {name}"
+msgstr ""
 
 msgid "Profiles"
-msgstr "프로필"
+msgstr ""
 
 msgid "Progress"
-msgstr "진행률"
+msgstr ""
 
 msgid "Property"
-msgstr "속성"
+msgstr ""
 
 msgid "Proxy Config"
-msgstr "프록시 설정"
+msgstr ""
+
+msgid "Public key must be 32 bytes (64 hex characters)"
+msgstr ""
+
+msgid "PyYAML is required for YAML export"
+msgstr ""
+
+msgid "PyYAML is required for YAML import"
+msgstr ""
 
 msgid "PyYAML is required for YAML output"
-msgstr "YAML 출력에는 PyYAML이 필요합니다"
+msgstr ""
 
 msgid "Quick Add"
-msgstr "빠른 추가"
+msgstr ""
 
 msgid "Quit"
-msgstr "종료"
+msgstr ""
+
+msgid "RTT multiplier for retransmit timeout"
+msgstr ""
+
+msgid "Rate limit configuration (global and per-torrent)"
+msgstr ""
 
 msgid "Rate limits disabled"
-msgstr "속도 제한 비활성화됨"
+msgstr ""
 
 msgid "Rate limits set to 1024 KiB/s"
-msgstr "속도 제한이 1024 KiB/s로 설정됨"
+msgstr ""
+
+msgid "Read IPC port %d from daemon config file (authoritative source)"
+msgstr ""
+
+msgid "Rehash: Failed"
+msgstr ""
 
 msgid "Rehash: {status}"
-msgstr "재해시：{status}"
+msgstr ""
+
+msgid "Remaining chunks: {count}"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+msgid "Remove Tracker"
+msgstr ""
+
+msgid "Remove failed: {error}"
+msgstr ""
+
+msgid "Remove tracker not yet implemented. Selected tracker: {url}"
+msgstr ""
+
+msgid "Reset specific key only (otherwise resets all options)"
+msgstr ""
+
+msgid "Restart daemon now?"
+msgstr ""
+
+msgid "Restore complete"
+msgstr ""
+
+msgid "Restore failed"
+msgstr ""
+
+msgid "Restoring checkpoint..."
+msgstr ""
 
 msgid "Resume"
 msgstr "재개"
 
+msgid "Resume failed: {error}"
+msgstr ""
+
+msgid "Resume from checkpoint?"
+msgstr ""
+
+msgid "Resuming {name}"
+msgstr ""
+
+msgid "Retransmit Timeout Factor"
+msgstr ""
+
 msgid "Rule"
-msgstr "규칙"
+msgstr ""
+
+msgid "Rule not found: {ip_range}"
+msgstr ""
 
 msgid "Rule not found: {name}"
-msgstr "규칙을 찾을 수 없음：{name}"
-
-msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
-msgstr "규칙：{rules}，IPv4：{ipv4}，IPv6：{ipv6}，차단：{blocks}"
+msgstr ""
 
 msgid "Running"
-msgstr "실행 중"
+msgstr ""
 
 msgid "SSL Config"
-msgstr "SSL 설정"
+msgstr ""
+
+msgid "Save checkpoint after reset"
+msgstr ""
+
+msgid "Save checkpoint immediately after setting option"
+msgstr ""
+
+msgid "Saving torrent to {path}..."
+msgstr ""
+
+msgid "Scanning folder and calculating chunks..."
+msgstr ""
+
+msgid "Schema written to {path}"
+msgstr ""
 
 msgid "Scrape Results"
-msgstr "스크랩 결과"
+msgstr ""
+
+msgid "Scrape: Failed"
+msgstr ""
 
 msgid "Scrape: {status}"
-msgstr "스크랩：{status}"
+msgstr ""
+
+msgid "Search torrents..."
+msgstr ""
+
+msgid "Section"
+msgstr ""
 
 msgid "Section not found: {section}"
-msgstr "섹션을 찾을 수 없음：{section}"
+msgstr ""
+
+msgid "Section: {section}"
+msgstr ""
+
+msgid "Security"
+msgstr ""
 
 msgid "Security Scan"
-msgstr "보안 스캔"
+msgstr ""
 
-msgid "Seeders"
-msgstr "시더"
+msgid "Security configuration - Data provider/Executor not available"
+msgstr ""
+
+msgid "Security settings (encryption, IP filtering, SSL)"
+msgstr ""
 
 msgid "Seeders (Scrape)"
-msgstr "시더（스크랩）"
+msgstr ""
+
+msgid "Seeding"
+msgstr ""
+
+msgid "Seeds"
+msgstr ""
+
+msgid "Select All"
+msgstr ""
+
+msgid "Select File Priority"
+msgstr ""
+
+msgid "Select Priority"
+msgstr ""
+
+msgid "Select a section to configure"
+msgstr ""
+
+msgid "Select a section to configure. Press Enter to edit, Escape to go back."
+msgstr ""
+
+msgid "Select a sub-tab to view configuration options"
+msgstr ""
+
+msgid "Select a sub-tab to view torrents"
+msgstr ""
+
+msgid "Select a tab to view content"
+msgstr ""
+
+msgid "Select a torrent and sub-tab to view details"
+msgstr ""
 
 msgid "Select files to download"
-msgstr "다운로드할 파일 선택"
+msgstr ""
 
 msgid "Selected"
-msgstr "선택됨"
+msgstr ""
 
-msgid "Session"
-msgstr "세션"
+msgid "Selected {count} file(s)"
+msgstr ""
+
+msgid "Set Priority"
+msgstr ""
+
+msgid "Set priority to {priority} for file"
+msgstr ""
 
 msgid "Set value in global config file"
-msgstr "전역 설정 파일에 값 설정"
+msgstr ""
 
 msgid "Set value in project local ccbt.toml"
-msgstr "프로젝트 로컬 ccbt.toml에 값 설정"
+msgstr ""
 
 msgid "Severity"
-msgstr "심각도"
+msgstr ""
 
 msgid "Show specific key path (e.g. network.listen_port)"
-msgstr "특정 키 경로 표시（예：network.listen_port）"
+msgstr ""
 
 msgid "Show specific section key path (e.g. network)"
-msgstr "특정 섹션 키 경로 표시（예：network）"
+msgstr ""
 
 msgid "Size"
-msgstr "크기"
+msgstr ""
 
 msgid "Skip confirmation prompt"
-msgstr "확인 프롬프트 건너뛰기"
+msgstr ""
 
 msgid "Skip daemon restart even if needed"
-msgstr "필요하더라도 데몬 재시작 건너뛰기"
+msgstr ""
 
 msgid "Snapshot failed: {error}"
-msgstr "스냅샷 실패：{error}"
+msgstr ""
 
 msgid "Snapshot saved to {path}"
-msgstr "스냅샷이 {path}에 저장됨"
+msgstr ""
+
+msgid ""
+"Socket connection test to %s:%d failed (result=%d). Port may not be open or firewall blocking. Proceeding with HTTP check anyway.\n"
+msgstr ""
+
+msgid ""
+"Socket test returned 10035 (WSAEWOULDBLOCK) on Windows for %s:%d. This may be a false positive - proceeding with HTTP check.\n"
+msgstr ""
+
+msgid "Source path does not exist: %s"
+msgstr ""
+
+msgid "Starting daemon..."
+msgstr ""
+
+msgid "Starting file verification..."
+msgstr ""
 
 msgid "Status"
-msgstr "상태"
+msgstr ""
 
 msgid "Status: "
-msgstr "상태："
+msgstr ""
+
+msgid "Stopping daemon for restart..."
+msgstr ""
+
+msgid "Stopping daemon..."
+msgstr ""
+
+msgid "Stopping daemon... ({elapsed:.1f}s)"
+msgstr ""
+
+msgid "Storage"
+msgstr ""
+
+msgid "Storage configuration - Data provider/Executor not available"
+msgstr ""
 
 msgid "Supported"
-msgstr "지원됨"
+msgstr ""
 
 msgid "System Capabilities"
-msgstr "시스템 기능"
+msgstr ""
 
 msgid "System Capabilities Summary"
-msgstr "시스템 기능 요약"
+msgstr ""
 
 msgid "System Resources"
-msgstr "시스템 리소스"
+msgstr ""
+
+msgid "System recommendations:"
+msgstr ""
+
+msgid "Template '{name}' not found"
+msgstr ""
+
+msgid "Template applied to {path}"
+msgstr ""
+
+msgid "Template config written to {path}"
+msgstr ""
+
+msgid "Template: {name}"
+msgstr ""
 
 msgid "Templates"
-msgstr "템플릿"
+msgstr ""
+
+msgid "Templates: {templates}"
+msgstr ""
+
+msgid "This will modify your configuration file. Continue?"
+msgstr ""
+
+msgid ""
+"Timeout checking daemon accessibility (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+
+msgid ""
+"Timeout checking daemon accessibility after %d attempts (elapsed %.1fs)\n"
+msgstr ""
+
+msgid ""
+"Timeout checking daemon status at %s (daemon may be starting up or overloaded)\n"
+msgstr ""
 
 msgid "Timestamp"
-msgstr "타임스탬프"
+msgstr ""
+
+msgid "Top profile entries:"
+msgstr ""
 
 msgid "Torrent Config"
-msgstr "토렌트 설정"
+msgstr ""
 
 msgid "Torrent Status"
-msgstr "토렌트 상태"
+msgstr ""
 
 msgid "Torrent file not found"
-msgstr "토렌트 파일을 찾을 수 없음"
+msgstr ""
 
 msgid "Torrent not found"
-msgstr "토렌트를 찾을 수 없음"
+msgstr ""
+
+msgid "Torrent paused"
+msgstr ""
+
+msgid "Torrent removed"
+msgstr ""
+
+msgid "Torrent resumed"
+msgstr ""
+
+msgid "Torrent saved to {path}"
+msgstr ""
+
+msgid "Torrent {hash}... not found"
+msgstr ""
 
 msgid "Torrents"
-msgstr "토렌트"
+msgstr ""
+
+msgid "Torrents tab - Data provider or executor not available"
+msgstr ""
 
 msgid "Torrents: {count}"
-msgstr "토렌트：{count}"
+msgstr ""
 
-msgid "Tracker Scrape"
-msgstr "트래커 스크랩"
+msgid "Total chunks: {count}"
+msgstr ""
+
+msgid "Tracker removed: {url}"
+msgstr ""
+
+msgid "Trackers"
+msgstr ""
 
 msgid "Type"
-msgstr "유형"
+msgstr ""
+
+msgid "URL"
+msgstr ""
+
+msgid "Unexpected error checking daemon status at %s: %s"
+msgstr ""
 
 msgid "Unknown"
-msgstr "알 수 없음"
+msgstr ""
+
+msgid "Unknown error"
+msgstr ""
+
+msgid "Unknown operation: %s"
+msgstr ""
 
 msgid "Unknown subcommand"
-msgstr "알 수 없는 하위 명령"
+msgstr ""
 
 msgid "Unknown subcommand: {sub}"
-msgstr "알 수 없는 하위 명령：{sub}"
+msgstr ""
+
+msgid "Unlimited"
+msgstr ""
+
+msgid "Updated config file with daemon configuration"
+msgstr ""
 
 msgid "Upload"
-msgstr "업로드"
+msgstr ""
+
+msgid "Upload Limit"
+msgstr ""
+
+msgid "Upload Rate"
+msgstr ""
 
 msgid "Upload Speed"
-msgstr "업로드 속도"
+msgstr ""
+
+msgid "Uploading"
+msgstr ""
 
 msgid "Uptime: {uptime:.1f}s"
-msgstr "가동 시간：{uptime:.1f}초"
+msgstr ""
 
 msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
-msgstr "사용：alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr ""
 
 msgid "Usage: backup <info_hash> <dest>"
-msgstr "사용：backup <정보 해시> <대상>"
+msgstr ""
 
 msgid "Usage: checkpoint list"
-msgstr "사용：checkpoint list"
+msgstr ""
 
 msgid "Usage: config [show|get|set|reload] ..."
-msgstr "사용：config [show|get|set|reload] ..."
+msgstr ""
 
 msgid "Usage: config get <key.path>"
-msgstr "사용：config get <키.경로>"
+msgstr ""
 
 msgid "Usage: config set <key.path> <value>"
-msgstr "사용：config set <키.경로> <값>"
+msgstr ""
 
 msgid "Usage: config_backup list|create [desc]|restore <file>"
-msgstr "사용：config_backup list|create [설명]|restore <파일>"
+msgstr ""
 
 msgid "Usage: config_diff <file1> <file2>"
-msgstr "사용：config_diff <파일1> <파일2>"
+msgstr ""
 
 msgid "Usage: config_export <toml|json|yaml> <output>"
-msgstr "사용：config_export <toml|json|yaml> <출력>"
+msgstr ""
 
 msgid "Usage: config_import <toml|json|yaml> <input>"
-msgstr "사용：config_import <toml|json|yaml> <입력>"
+msgstr ""
+
+msgid "Usage: disk [show|stats|config <key> <value>|monitor]"
+msgstr ""
 
 msgid "Usage: export <path>"
-msgstr "사용：export <경로>"
+msgstr ""
 
 msgid "Usage: import <path>"
-msgstr "사용：import <경로>"
+msgstr ""
 
 msgid "Usage: limits [show|set] <info_hash> [down up]"
-msgstr "사용：limits [show|set] <정보 해시> [다운 업]"
+msgstr ""
 
 msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
-msgstr "사용：limits set <정보 해시> <다운_kib> <업_kib>"
+msgstr ""
 
-msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
-msgstr "사용：metrics show [system|performance|all] | metrics export [json|prometheus] [출력]"
+msgid ""
+"Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]\n"
+msgstr ""
+
+msgid "Usage: network [show|stats|config <key> <value>|optimize|monitor]"
+msgstr ""
 
 msgid "Usage: profile list | profile apply <name>"
-msgstr "사용：profile list | profile apply <이름>"
+msgstr ""
 
 msgid "Usage: restore <backup_file>"
-msgstr "사용：restore <백업 파일>"
+msgstr ""
 
 msgid "Usage: template list | template apply <name> [merge]"
-msgstr "사용：template list | template apply <이름> [merge]"
+msgstr ""
 
 msgid "Use --confirm to proceed with reset"
-msgstr "재설정을 진행하려면 --confirm 사용"
+msgstr ""
+
+msgid "Use --confirm to proceed with restore"
+msgstr ""
+
+msgid "Use --force to force kill"
+msgstr ""
+
+msgid "Using IPC port %d from main config"
+msgstr ""
+
+msgid "Using daemon executor for magnet command"
+msgstr ""
+
+msgid "Using default IPC port 8080 (daemon config file may not exist)"
+msgstr ""
+
+msgid "V1 torrent generation not yet implemented"
+msgstr ""
 
 msgid "VALID"
-msgstr "유효"
+msgstr ""
 
 msgid "Value"
-msgstr "Value"
+msgstr ""
+
+msgid ""
+"Verification complete: {verified} verified, {failed} failed out of {total}\n"
+msgstr ""
+
+msgid "Verification failed: {error}"
+msgstr ""
+
+msgid "Verify Files"
+msgstr ""
+
+msgid "Warnings:"
+msgstr ""
+
+msgid "WebSocket error: %s"
+msgstr ""
+
+msgid "WebSocket receive loop error: %s"
+msgstr ""
 
 msgid "Welcome"
-msgstr "환영합니다"
+msgstr ""
+
+msgid ""
+"Windows-specific error checking daemon (os.kill() issue): %s - no PID file found, will create local session\n"
+msgstr ""
+
+msgid "Writing export file..."
+msgstr ""
+
+msgid "XET Folders"
+msgstr ""
 
 msgid "Xet"
-msgstr "Xet"
+msgstr ""
 
 msgid "Yes"
-msgstr "예"
+msgstr ""
 
 msgid "Yes (BEP 27)"
-msgstr "예（BEP 27）"
+msgstr ""
+
+msgid "[blue]Progress: {verified}/{total} pieces verified[/blue]"
+msgstr ""
+
+msgid "[blue]Running: {command}[/blue]"
+msgstr ""
+
+msgid ""
+"[bold]Aliases ({count}):[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Allowlist ({count} peers):[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Configuration:[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]Discovering NAT devices...[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Mapping {protocol} port {port}...[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]NAT Traversal Status[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Removing {protocol} port mapping for port {port}...[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]Sync Mode for: {path}[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Sync Status for: {path}[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Cache Information[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Deduplication Cache Statistics[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Protocol Status[/bold]\n"
+"\n"
+msgstr ""
 
 msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
-msgstr "[cyan]마그넷 링크 추가 및 메타데이터 가져오는 중...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Checking for existing daemon instance...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Creating {format} torrent...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Download:[/cyan] {rate:.2f} KiB/s"
+msgstr ""
 
 msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
-msgstr "[cyan]다운로드 중：{progress:.1f}%（{peers} 피어）[/cyan]"
+msgstr ""
 
-msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
-msgstr "[cyan]다운로드 중：{progress:.1f}%（{rate:.2f} MB/s，{peers} 피어）[/cyan]"
+msgid ""
+"[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]\n"
+msgstr ""
+
+msgid "[cyan]Initializing configuration...[/cyan]"
+msgstr ""
 
 msgid "[cyan]Initializing session components...[/cyan]"
-msgstr "[cyan]세션 구성 요소 초기화 중...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Loading filter from: {file_path}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Parsed tonic link: {name}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Restarting daemon...[/cyan]"
+msgstr ""
+
+msgid ""
+"[cyan]Running diagnostic checks...[/cyan]\n"
+"\n"
+msgstr ""
+
+msgid "[cyan]Starting daemon in background...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Starting daemon in foreground mode...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Starting sync for: {name}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Testing proxy connection to {host}:{port}...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Torrents:[/cyan] {num_torrents}"
+msgstr ""
 
 msgid "[cyan]Troubleshooting:[/cyan]"
-msgstr "[cyan]문제 해결：[/cyan]"
+msgstr ""
 
-msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
-msgstr "[cyan]세션 구성 요소 준비 대기 중（최대 60초）...[/cyan]"
+msgid "[cyan]Updating filter lists from {count} URL(s)...[/cyan]"
+msgstr ""
 
-msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
-msgstr "[dim]데몬 명령을 사용하거나 먼저 데몬을 중지하는 것을 고려：'btbt daemon exit'[/dim]"
+msgid "[cyan]Upload:[/cyan] {rate:.2f} KiB/s"
+msgstr ""
+
+msgid "[cyan]Uptime:[/cyan] {uptime:.1f}s"
+msgstr ""
+
+msgid "[cyan]Using custom IPC port: {port}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Waiting for daemon to be ready...[/cyan]"
+msgstr ""
+
+msgid "[dim]  uv run btbt daemon start --foreground[/dim]"
+msgstr ""
+
+msgid ""
+"[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]\n"
+msgstr ""
+
+msgid ""
+"[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]\n"
+msgstr ""
+
+msgid "[dim]Info hash v1 (SHA-1): {hash}...[/dim]"
+msgstr ""
+
+msgid "[dim]Info hash v2 (SHA-256): {hash}...[/dim]"
+msgstr ""
+
+msgid "[dim]No active port mappings[/dim]"
+msgstr ""
+
+msgid "[dim]Output: {path}[/dim]"
+msgstr ""
+
+msgid "[dim]Please restart manually: 'btbt daemon restart'[/dim]"
+msgstr ""
+
+msgid "[dim]Please restart the daemon manually: 'btbt daemon restart'[/dim]"
+msgstr ""
+
+msgid "[dim]Protocol: {method}[/dim]"
+msgstr ""
+
+msgid "[dim]Source: {path}[/dim]"
+msgstr ""
+
+msgid "[dim]Trackers: {count}[/dim]"
+msgstr ""
+
+msgid ""
+"[dim]Try running with --foreground flag to see detailed error output:[/dim]\n"
+msgstr ""
+
+msgid "[dim]Use 'btbt daemon status' to check daemon status[/dim]"
+msgstr ""
+
+msgid "[dim]Use -v flag for more details or check daemon logs[/dim]"
+msgstr ""
+
+msgid "[dim]Web seeds: {count}[/dim]"
+msgstr ""
+
+msgid "[green]ALLOWED[/green]"
+msgstr ""
+
+msgid "[green]Active Protocol:[/green] {method}"
+msgstr ""
+
+msgid "[green]Added alert rule {name}[/green]"
+msgstr ""
+
+msgid "[green]Added to IPFS:[/green] {cid}"
+msgstr ""
 
 msgid "[green]All files selected[/green]"
-msgstr "[green]모든 파일이 선택되었습니다[/green]"
+msgstr ""
 
 msgid "[green]Applied auto-tuned configuration[/green]"
-msgstr "[green]자동 조정된 구성이 적용되었습니다[/green]"
+msgstr ""
 
 msgid "[green]Applied profile {name}[/green]"
-msgstr "[green]프로필 {name}이 적용되었습니다[/green]"
+msgstr ""
 
 msgid "[green]Applied template {name}[/green]"
-msgstr "[green]템플릿 {name}이 적용되었습니다[/green]"
+msgstr ""
+
+msgid "[green]Applying {preset} optimizations...[/green]"
+msgstr ""
 
 msgid "[green]Backup created: {path}[/green]"
-msgstr "[green]백업이 생성되었습니다：{path}[/green]"
+msgstr ""
+
+msgid "[green]Benchmark results:[/green] {results}"
+msgstr ""
+
+msgid ""
+"[green]CA certificates path set to {path}. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid "[green]Checkpoint for {hash} is valid[/green]"
+msgstr ""
+
+msgid "[green]Checkpoint for {info_hash} is valid[/green]"
+msgstr ""
+
+msgid "[green]Checkpoint saved[/green]"
+msgstr ""
+
+msgid "[green]Checkpoint valid[/green]"
+msgstr ""
 
 msgid "[green]Cleaned up {count} old checkpoints[/green]"
-msgstr "[green]{count}개의 오래된 체크포인트를 정리했습니다[/green]"
+msgstr ""
 
 msgid "[green]Cleared active alerts[/green]"
-msgstr "[green]활성 경고가 지워졌습니다[/green]"
+msgstr ""
+
+msgid "[green]Cleared all active alerts[/green]"
+msgstr ""
+
+msgid "[green]Cleared queue[/green]"
+msgstr ""
+
+msgid ""
+"[green]Client certificate set. Configuration saved to {config_file}[/green]\n"
+msgstr ""
 
 msgid "[green]Configuration reloaded[/green]"
-msgstr "[green]구성이 다시 로드되었습니다[/green]"
+msgstr ""
 
 msgid "[green]Configuration restored[/green]"
-msgstr "[green]구성이 복원되었습니다[/green]"
+msgstr ""
+
+msgid "[green]Connected to daemon[/green]"
+msgstr ""
 
 msgid "[green]Connected to {count} peer(s)[/green]"
-msgstr "[green]{count}개의 피어에 연결되었습니다[/green]"
+msgstr ""
+
+msgid "[green]Content pinned[/green]"
+msgstr ""
+
+msgid "[green]Content saved to:[/green] {output}"
+msgstr ""
+
+msgid "[green]Daemon is running[/green] (PID: {pid})"
+msgstr ""
+
+msgid "[green]Daemon restarted successfully[/green]"
+msgstr ""
 
 msgid "[green]Daemon status: {status}[/green]"
-msgstr "[green]데몬 상태：{status}[/green]"
+msgstr ""
+
+msgid "[green]Daemon stopped gracefully[/green]"
+msgstr ""
+
+msgid "[green]Deleted checkpoint for {hash}[/green]"
+msgstr ""
+
+msgid "[green]Deleted checkpoint for {info_hash}[/green]"
+msgstr ""
+
+msgid "[green]Deselected all files[/green]"
+msgstr ""
+
+msgid "[green]Deselected {count} file(s)[/green]"
+msgstr ""
 
 msgid "[green]Download completed, stopping session...[/green]"
-msgstr "[green]다운로드가 완료되었습니다. 세션을 중지하는 중...[/green]"
+msgstr ""
 
 msgid "[green]Download completed: {name}[/green]"
-msgstr "[green]다운로드가 완료되었습니다：{name}[/green]"
+msgstr ""
 
 msgid "[green]Exported checkpoint to {path}[/green]"
-msgstr "[green]체크포인트가 {path}로 내보내졌습니다[/green]"
+msgstr ""
 
 msgid "[green]Exported configuration to {out}[/green]"
-msgstr "[green]구성이 {out}로 내보내졌습니다[/green]"
+msgstr ""
+
+msgid "[green]External IP:[/green] {ip}"
+msgstr ""
+
+msgid "[green]Found checkpoint for: {torrent_name}[/green]"
+msgstr ""
 
 msgid "[green]Imported configuration[/green]"
-msgstr "[green]구성이 가져와졌습니다[/green]"
+msgstr ""
+
+msgid "[green]Loaded alert rules from {path}[/green]"
+msgstr ""
+
+msgid "[green]Loaded {count} alert rules from {path}[/green]"
+msgstr ""
 
 msgid "[green]Loaded {count} rules[/green]"
-msgstr "[green]{count}개의 규칙이 로드되었습니다[/green]"
+msgstr ""
+
+msgid "[green]Locale set to: {locale_code}[/green]"
+msgstr ""
 
 msgid "[green]Magnet added successfully: {hash}...[/green]"
-msgstr "[green]마그넷 링크가 성공적으로 추가되었습니다：{hash}...[/green]"
+msgstr ""
 
 msgid "[green]Magnet added to daemon: {hash}[/green]"
-msgstr "[green]마그넷 링크가 데몬에 추가되었습니다：{hash}[/green]"
+msgstr ""
+
+msgid "[green]Magnet link added to daemon: {info_hash}[/green]"
+msgstr ""
 
 msgid "[green]Metadata fetched successfully![/green]"
-msgstr "[green]메타데이터를 성공적으로 가져왔습니다！[/green]"
+msgstr ""
 
 msgid "[green]Migrated checkpoint to {path}[/green]"
-msgstr "[green]체크포인트가 {path}로 마이그레이션되었습니다[/green]"
+msgstr ""
 
 msgid "[green]Monitoring started[/green]"
-msgstr "[green]모니터링이 시작되었습니다[/green]"
+msgstr ""
+
+msgid "[green]Moved to position {position}[/green]"
+msgstr ""
+
+msgid "[green]Network configuration looks optimal![/green]"
+msgstr ""
+
+msgid "[green]No checkpoints older than {days} days found[/green]"
+msgstr ""
+
+msgid ""
+"[green]Optimizations applied successfully![/green]\n"
+"[yellow]Note: Some changes may require restart to take effect.[/yellow]\n"
+msgstr ""
+
+msgid "[green]Optimizations saved to {path}[/green]"
+msgstr ""
+
+msgid "[green]Paused torrent[/green]"
+msgstr ""
+
+msgid "[green]Peer validation hooks are enabled by configuration[/green]"
+msgstr ""
+
+msgid "[green]Performing basic configuration scan...[/green]"
+msgstr ""
+
+msgid "[green]Pinned:[/green] {cid}"
+msgstr ""
+
+msgid "[green]Proxy configuration saved to {config_file}[/green]"
+msgstr ""
+
+msgid "[green]Proxy configuration updated successfully[/green]"
+msgstr ""
+
+msgid "[green]Proxy has been disabled[/green]"
+msgstr ""
+
+msgid "[green]Removed alert rule {name}[/green]"
+msgstr ""
+
+msgid "[green]Removed torrent from queue[/green]"
+msgstr ""
+
+msgid "[green]Reset all options for torrent {hash}[/green]"
+msgstr ""
+
+msgid "[green]Reset {key} for torrent {hash}[/green]"
+msgstr ""
+
+msgid ""
+"[green]Restored checkpoint for: {name}[/green]\n"
+"Info hash: {hash}\n"
+msgstr ""
+
+msgid "[green]Resumed torrent[/green]"
+msgstr ""
 
 msgid "[green]Resuming download from checkpoint...[/green]"
-msgstr "[green]체크포인트에서 다운로드를 재개하는 중...[/green]"
+msgstr ""
+
+msgid "[green]Resuming from checkpoint[/green]"
+msgstr ""
 
 msgid "[green]Rule added[/green]"
-msgstr "[green]규칙이 추가되었습니다[/green]"
+msgstr ""
 
 msgid "[green]Rule evaluated[/green]"
-msgstr "[green]규칙이 평가되었습니다[/green]"
+msgstr ""
 
 msgid "[green]Rule removed[/green]"
-msgstr "[green]규칙이 제거되었습니다[/green]"
+msgstr ""
+
+msgid ""
+"[green]SSL certificate verification enabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for peers disabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for peers enabled (experimental). Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for trackers disabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for trackers enabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid "[green]Saved alert rules to {path}[/green]"
+msgstr ""
 
 msgid "[green]Saved rules[/green]"
-msgstr "[green]규칙이 저장되었습니다[/green]"
+msgstr ""
+
+msgid "[green]Selected all files[/green]"
+msgstr ""
 
 msgid "[green]Selected file {idx}[/green]"
-msgstr "[green]파일 {idx}이 선택되었습니다[/green]"
+msgstr ""
 
 msgid "[green]Selected {count} file(s) for download[/green]"
-msgstr "[green]{count}개의 파일이 다운로드용으로 선택되었습니다[/green]"
+msgstr ""
+
+msgid "[green]Selected {count} file(s)[/green]"
+msgstr ""
+
+msgid "[green]Set file {index} priority to {priority}[/green]"
+msgstr ""
 
 msgid "[green]Set priority for file {idx} to {priority}[/green]"
-msgstr "[green]파일 {idx}의 우선순위가 {priority}로 설정되었습니다[/green]"
+msgstr ""
+
+msgid "[green]Set priority to {priority}[/green]"
+msgstr ""
+
+msgid "[green]Set {key} = {value} for torrent {hash}[/green]"
+msgstr ""
 
 msgid "[green]Starting web interface on http://{host}:{port}[/green]"
-msgstr "[green]http://{host}:{port}에서 웹 인터페이스를 시작하는 중[/green]"
+msgstr ""
+
+msgid "[green]Successfully resumed download: {hash}[/green]"
+msgstr ""
+
+msgid "[green]Successfully resumed download: {resumed_info_hash}[/green]"
+msgstr ""
+
+msgid ""
+"[green]TLS protocol version set to {version}. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid "[green]Tested rule {name} with value {value}[/green]"
+msgstr ""
 
 msgid "[green]Torrent added to daemon: {hash}[/green]"
-msgstr "[green]토렌트가 데몬에 추가되었습니다：{hash}[/green]"
+msgstr ""
+
+msgid "[green]Torrent added to daemon: {info_hash}[/green]"
+msgstr ""
+
+msgid "[green]Unpinned:[/green] {cid}"
+msgstr ""
 
 msgid "[green]Updated runtime configuration[/green]"
-msgstr "[green]런타임 구성이 업데이트되었습니다[/green]"
+msgstr ""
+
+msgid "[green]Updated {key} to {value}[/green]"
+msgstr ""
 
 msgid "[green]Wrote metrics to {out}[/green]"
-msgstr "[green]메트릭이 {out}에 기록되었습니다[/green]"
+msgstr ""
+
+msgid "[green]Wrote metrics to {path}[/green]"
+msgstr ""
+
+msgid "[green]✓ Port mapping removed[/green]"
+msgstr ""
+
+msgid "[green]✓ Port mapping successful![/green]"
+msgstr ""
+
+msgid "[green]✓ Port mappings refreshed[/green]"
+msgstr ""
+
+msgid "[green]✓ Proxy connection test successful[/green]"
+msgstr ""
+
+msgid "[green]✓ Torrent created successfully: {path}[/green]"
+msgstr ""
+
+msgid "[green]✓[/green] Added filter rule: {ip_range} ({mode})"
+msgstr ""
+
+msgid "[green]✓[/green] Added peer {peer_id} to allowlist"
+msgstr ""
+
+msgid ""
+"[green]✓[/green] Added peer {peer_id} to allowlist with alias '{alias}'\n"
+msgstr ""
+
+msgid "[green]✓[/green] Cleaned {cleaned} unused chunks"
+msgstr ""
+
+msgid "[green]✓[/green] Configuration saved to {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Daemon process started (PID {pid})"
+msgstr ""
+
+msgid ""
+"[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)\n"
+msgstr ""
+
+msgid "[green]✓[/green] Folder sync started"
+msgstr ""
+
+msgid "[green]✓[/green] Generated .tonic file: {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Generated new API key for daemon"
+msgstr ""
+
+msgid "[green]✓[/green] Generated tonic?: link:"
+msgstr ""
+
+msgid "[green]✓[/green] Loaded {loaded} rules from {file_path}"
+msgstr ""
+
+msgid "[green]✓[/green] Loaded {total_loaded} total rules"
+msgstr ""
+
+msgid "[green]✓[/green] Removed alias for peer {peer_id}"
+msgstr ""
+
+msgid "[green]✓[/green] Removed filter rule: {ip_range}"
+msgstr ""
+
+msgid "[green]✓[/green] Removed peer {peer_id} from allowlist"
+msgstr ""
+
+msgid "[green]✓[/green] Set alias '{alias}' for peer {peer_id}"
+msgstr ""
+
+msgid "[green]✓[/green] Set {key} = {value}"
+msgstr ""
+
+msgid "[green]✓[/green] Successfully updated {count} filter list(s)"
+msgstr ""
+
+msgid "[green]✓[/green] Sync mode updated"
+msgstr ""
+
+msgid "[green]✓[/green] Tonic link:"
+msgstr ""
+
+msgid "[green]✓[/green] Updated config file: {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Xet protocol enabled"
+msgstr ""
+
+msgid "[green]✓[/green] uTP configuration reset to defaults"
+msgstr ""
+
+msgid "[green]✓[/green] uTP transport enabled"
+msgstr ""
+
+msgid "[red]--name is required to remove a rule[/red]"
+msgstr ""
+
+msgid "[red]--name is required to test a rule[/red]"
+msgstr ""
+
+msgid "[red]--name, --metric and --condition are required to add a rule[/red]"
+msgstr ""
+
+msgid "[red]--value is required with --test[/red]"
+msgstr ""
+
+msgid "[red]BLOCKED[/red]"
+msgstr ""
 
 msgid "[red]Backup failed: {msgs}[/red]"
-msgstr "[red]백업이 실패했습니다：{msgs}[/red]"
+msgstr ""
+
+msgid "[red]Certificate file does not exist: {path}[/red]"
+msgstr ""
+
+msgid "[red]Certificate path must be a file: {path}[/red]"
+msgstr ""
+
+msgid "[red]Configuration key not found: {key}[/red]"
+msgstr ""
+
+msgid "[red]Content not found: {cid}[/red]"
+msgstr ""
+
+msgid "[red]Daemon is not running[/red]"
+msgstr ""
+
+msgid "[red]Daemon process crashed[/red]"
+msgstr ""
+
+msgid "[red]Dashboard error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Directories not yet supported[/red]"
+msgstr ""
+
+msgid "[red]Error adding content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error adding peer to allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling SSL for peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling SSL for trackers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling certificate verification: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error during cleanup: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling SSL for peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling SSL for trackers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling certificate verification: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error ensuring daemon is running: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error generating .tonic file: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error generating tonic link: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting SSL status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting stats: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting sync mode: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error listing aliases: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error listing allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error pinning content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error removing alias: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error removing peer from allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error restarting daemon: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving cache info: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving disk statistics: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving network statistics: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving stats: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting CA certificates path: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting alias: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting client certificate: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting protocol version: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting sync mode: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error starting sync: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error unpinning content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error updating configuration: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --hybrid and --v1[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --v2 and --hybrid[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --v2 and --v1[/red]"
+msgstr ""
+
+msgid "[red]Error: Could not load torrent file {torrent_file}[/red]"
+msgstr ""
 
 msgid "[red]Error: Could not parse magnet link[/red]"
-msgstr "[red]오류：마그넷 링크를 구문 분석할 수 없습니다[/red]"
+msgstr ""
+
+msgid "[red]Error: Info hash must be 40 hex characters[/red]"
+msgstr ""
+
+msgid "[red]Error: Piece length must be a power of 2[/red]"
+msgstr ""
+
+msgid "[red]Error: Piece length must be at least 16 KiB (16384 bytes)[/red]"
+msgstr ""
+
+msgid "[red]Error: Source directory is empty[/red]"
+msgstr ""
+
+msgid "[red]Error: Source path does not exist: {path}[/red]"
+msgstr ""
 
 msgid "[red]Error: {error}[/red]"
-msgstr "[red]오류：{error}[/red]"
+msgstr ""
+
+msgid "[red]Error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error:[/red] Invalid value for {key}: {value}"
+msgstr ""
+
+msgid "[red]Error:[/red] Unknown configuration key: {key}"
+msgstr ""
+
+msgid "[red]Export not available in daemon mode[/red]"
+msgstr ""
 
 msgid "[red]Failed to add magnet link: {error}[/red]"
-msgstr "[red]마그넷 링크 추가 실패：{error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to clear active alerts: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to create session[/red]"
+msgstr ""
+
+msgid "[red]Failed to disable proxy: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to get proxy status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to load alert rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to load rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to pause: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to reset options: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to restart daemon[/red]"
+msgstr ""
+
+msgid "[red]Failed to resume: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to run tests: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to save rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set alias for peer {peer_id}[/red]"
+msgstr ""
 
 msgid "[red]Failed to set config: {error}[/red]"
-msgstr "[red]구성 설정 실패：{error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set option: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set proxy configuration: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n"
+"[yellow]Please check:[/yellow]\n"
+"  1. Daemon logs for startup errors\n"
+"  2. Port conflicts (check if port is already in use)\n"
+"  3. Permissions (ensure you have permission to start daemon)\n"
+"\n"
+"[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
+"[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]\n"
+msgstr ""
+
+msgid "[red]Failed to stop: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to test proxy: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to test rule: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed: {error}[/red]"
+msgstr ""
 
 msgid "[red]File not found: {error}[/red]"
-msgstr "[red]파일을 찾을 수 없습니다：{error}[/red]"
+msgstr ""
+
+msgid "[red]File not found: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]IP filter not initialized. Please enable it in configuration.[/red]\n"
+msgstr ""
+
+msgid "[red]IP filter not initialized.[/red]"
+msgstr ""
+
+msgid "[red]IPFS protocol not available[/red]"
+msgstr ""
+
+msgid "[red]Import not available in daemon mode[/red]"
+msgstr ""
+
+msgid "[red]Invalid IP address: {ip}[/red]"
+msgstr ""
 
 msgid "[red]Invalid arguments[/red]"
-msgstr "[red]잘못된 인수[/red]"
+msgstr ""
 
 msgid "[red]Invalid file index: {idx}[/red]"
-msgstr "[red]잘못된 파일 인덱스：{idx}[/red]"
+msgstr ""
 
 msgid "[red]Invalid file index[/red]"
-msgstr "[red]잘못된 파일 인덱스[/red]"
+msgstr ""
 
 msgid "[red]Invalid info hash format: {hash}[/red]"
-msgstr "[red]잘못된 정보 해시 형식：{hash}[/red]"
+msgstr ""
 
-msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
-msgstr "[red]잘못된 우선순위. 사용：do_not_download/low/normal/high/maximum[/red]"
+msgid "[red]Invalid info hash format[/red]"
+msgstr ""
 
-msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
-msgstr "[red]잘못된 우선순위：{priority}. 사용：do_not_download/low/normal/high/maximum[/red]"
+msgid "[red]Invalid magnet link: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]\n"
+msgstr ""
+
+msgid ""
+"[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]\n"
+msgstr ""
+
+msgid "[red]Invalid public key: {e}[/red]"
+msgstr ""
 
 msgid "[red]Invalid torrent file: {error}[/red]"
-msgstr "[red]잘못된 토렌트 파일：{error}[/red]"
+msgstr ""
+
+msgid "[red]Invalid value for {key}: {error}[/red]"
+msgstr ""
+
+msgid "[red]Key file does not exist: {path}[/red]"
+msgstr ""
 
 msgid "[red]Key not found: {key}[/red]"
-msgstr "[red]키를 찾을 수 없습니다：{key}[/red]"
+msgstr ""
+
+msgid "[red]Key path must be a file: {path}[/red]"
+msgstr ""
+
+msgid "[red]Metrics error: {e}[/red]"
+msgstr ""
 
 msgid "[red]No checkpoint found for {hash}[/red]"
-msgstr "[red]{hash}에 대한 체크포인트를 찾을 수 없습니다[/red]"
+msgstr ""
+
+msgid "[red]No stats found for CID: {cid}[/red]"
+msgstr ""
+
+msgid "[red]Path does not exist: {path}[/red]"
+msgstr ""
+
+msgid "[red]Path must be a file or directory: {path}[/red]"
+msgstr ""
+
+msgid "[red]Peer {peer_id} not found in allowlist[/red]"
+msgstr ""
+
+msgid "[red]Proxy error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Proxy host and port must be configured[/red]"
+msgstr ""
 
 msgid "[red]PyYAML not installed[/red]"
-msgstr "[red]PyYAML이 설치되지 않았습니다[/red]"
+msgstr ""
 
 msgid "[red]Reload failed: {error}[/red]"
-msgstr "[red]다시 로드 실패：{error}[/red]"
+msgstr ""
 
 msgid "[red]Restore failed: {msgs}[/red]"
-msgstr "[red]복원 실패：{msgs}[/red]"
+msgstr ""
+
+msgid "[red]Rule not found: {name}[/red]"
+msgstr ""
+
+msgid "[red]Specify CID or use --all[/red]"
+msgstr ""
+
+msgid "[red]Tonic file not found: {path}[/red]"
+msgstr ""
+
+msgid "[red]Torrent not found or option not set[/red]"
+msgstr ""
+
+msgid "[red]Torrent not found: {hash}[/red]"
+msgstr ""
+
+msgid "[red]Unexpected error during resume: {e}[/red]"
+msgstr ""
+
+msgid "[red]Unknown configuration key: {key}[/red]"
+msgstr ""
+
+msgid "[red]Validation error: {e}[/red]"
+msgstr ""
 
 msgid "[red]{error}[/red]"
-msgstr "[red]{error}[/red]"
+msgstr ""
+
+msgid "[red]✗ Failed to remove port mapping[/red]"
+msgstr ""
+
+msgid "[red]✗ Port mapping failed[/red]"
+msgstr ""
+
+msgid "[red]✗ Proxy connection test failed[/red]"
+msgstr ""
+
+msgid "[red]✗[/red] Daemon is already running with PID {pid}"
+msgstr ""
+
+msgid ""
+"[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)\n"
+msgstr ""
+
+msgid ""
+"[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting\n"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to add filter rule: {ip_range}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to load rules from {file_path}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to start daemon: {e}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to update filter lists"
+msgstr ""
+
+msgid "[yellow]1. Network Connectivity[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]API key not found in config, cannot get detailed status[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Active Protocol:[/yellow] None (not discovered)"
+msgstr ""
 
 msgid "[yellow]All files deselected[/yellow]"
-msgstr "[yellow]모든 파일 선택이 해제되었습니다[/yellow]"
+msgstr ""
+
+msgid "[yellow]Allowlist is empty[/yellow]"
+msgstr ""
+
+msgid "[yellow]Automatic repair not implemented[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]CA certificates path set to {path} (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]CA certificates path set to {path} (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Checkpoint for {hash} is missing or invalid[/yellow]"
+msgstr ""
+
+msgid "[yellow]Checkpoint missing/invalid[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Client certificate set (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Client certificate set (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid "[yellow]Configuration changes require daemon restart.[/yellow]"
+msgstr ""
+
+msgid "[yellow]Could not get detailed status via IPC[/yellow]"
+msgstr ""
+
+msgid "[yellow]Could not save to config file: {error}[/yellow]"
+msgstr ""
 
 msgid "[yellow]Debug mode not yet implemented[/yellow]"
-msgstr "[yellow]디버그 모드가 아직 구현되지 않았습니다[/yellow]"
+msgstr ""
 
 msgid "[yellow]Deselected file {idx}[/yellow]"
-msgstr "[yellow]파일 {idx} 선택이 해제되었습니다[/yellow]"
+msgstr ""
+
+msgid "[yellow]Disk I/O manager not running. Statistics unavailable.[/yellow]"
+msgstr ""
 
 msgid "[yellow]Download interrupted by user[/yellow]"
-msgstr "[yellow]다운로드가 사용자에 의해 중단되었습니다[/yellow]"
+msgstr ""
+
+msgid "[yellow]Dry run: Would clean chunks older than {days} days[/yellow]"
+msgstr ""
+
+msgid "[yellow]External IP not available[/yellow]"
+msgstr ""
+
+msgid "[yellow]External IP:[/yellow] Not available"
+msgstr ""
+
+msgid "[yellow]Failed to generate tonic link[/yellow]"
+msgstr ""
+
+msgid "[yellow]Failed to move torrent[/yellow]"
+msgstr ""
 
 msgid "[yellow]Fetching metadata from peers...[/yellow]"
-msgstr "[yellow]피어에서 메타데이터를 가져오는 중...[/yellow]"
+msgstr ""
+
+msgid "[yellow]Found checkpoint for: {name}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Found checkpoint for: {torrent_name}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]IP filter not initialized or disabled.[/yellow]"
+msgstr ""
 
 msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
-msgstr "[yellow]잘못된 우선순위 사양 '{spec}'：{error}[/yellow]"
+msgstr ""
 
-msgid "[yellow]Keeping session alive[/yellow]"
-msgstr "[yellow]세션을 유지하는 중[/yellow]"
+msgid "[yellow]NAT Status[/yellow]"
+msgstr ""
+
+msgid "[yellow]No active alerts[/yellow]"
+msgstr ""
+
+msgid "[yellow]No alert rules defined[/yellow]"
+msgstr ""
+
+msgid "[yellow]No alias found for peer {peer_id}[/yellow]"
+msgstr ""
+
+msgid "[yellow]No aliases found in allowlist[/yellow]"
+msgstr ""
+
+msgid "[yellow]No cached scrape results[/yellow]"
+msgstr ""
+
+msgid "[yellow]No checkpoint found for {hash}[/yellow]"
+msgstr ""
+
+msgid "[yellow]No checkpoint found for {info_hash}[/yellow]"
+msgstr ""
 
 msgid "[yellow]No checkpoints found[/yellow]"
-msgstr "[yellow]체크포인트를 찾을 수 없습니다[/yellow]"
+msgstr ""
+
+msgid "[yellow]No chunks in cache[/yellow]"
+msgstr ""
+
+msgid "[yellow]No config file found - configuration not persisted[/yellow]"
+msgstr ""
+
+msgid "[yellow]No filter URLs configured.[/yellow]"
+msgstr ""
+
+msgid "[yellow]No filter rules configured.[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]No optimizations were applied (already optimal or unsupported)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]No performance action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]No recover action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]No security action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]Non-interactive mode, starting fresh download[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Note: This change is temporary and will be lost on restart. Use config file for persistent changes.[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Note: Update config file to persist locale setting[/yellow]"
+msgstr ""
+
+msgid "[yellow]Note:[/yellow] Configuration change is runtime-only"
+msgstr ""
+
+msgid "[yellow]Optimization cancelled[/yellow]"
+msgstr ""
+
+msgid "[yellow]Peer {peer_id} not found in allowlist[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Please provide the original torrent file or magnet link[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Please use --v2 or --hybrid flags for now.[/yellow]"
+msgstr ""
+
+msgid "[yellow]Proxy configuration not found[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Proxy has been disabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid "[yellow]Proxy is not enabled[/yellow]"
+msgstr ""
+
+msgid "[yellow]Real-time monitoring not yet implemented[/yellow]"
+msgstr ""
+
+msgid "[yellow]Refresh completed with warnings[/yellow]"
+msgstr ""
+
+msgid "[yellow]Rich not available, starting fresh download[/yellow]"
+msgstr ""
+
+msgid "[yellow]Rule not found: {ip_range}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended). Configuration saved to {config_file}[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended, configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended, skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification enabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers disabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]SSL for peers disabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers enabled (experimental, configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers enabled (experimental, skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers disabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers disabled (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers enabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]SSL for trackers enabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Starting fresh download[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]TLS protocol version set to {version} (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]TLS protocol version set to {version} (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]The daemon process crashed during initialization.[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Tonic link sync not yet fully implemented[/yellow]"
+msgstr ""
+
+msgid "[yellow]Torrent not found in queue[/yellow]"
+msgstr ""
+
+msgid "[yellow]Torrent not found[/yellow]"
+msgstr ""
 
 msgid "[yellow]Torrent session ended[/yellow]"
-msgstr "[yellow]토렌트 세션이 종료되었습니다[/yellow]"
+msgstr ""
 
 msgid "[yellow]Unknown command: {cmd}[/yellow]"
-msgstr "[yellow]알 수 없는 명령：{cmd}[/yellow]"
+msgstr ""
 
-msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
-msgstr "[yellow]경고：데몬이 실행 중입니다. 로컬 세션을 시작하면 포트 충돌이 발생할 수 있습니다.[/yellow]"
+msgid ""
+"[yellow]Use --list/--list-active, --add, --remove, --clear-active, --test, --load or --save[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Using local session (--no-daemon specified). Session state will not persist.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Daemon is running. Diagnostics will test local session which may cause port conflicts.[/yellow]\n"
+"[dim]Consider stopping the daemon first: 'btbt daemon exit'[/dim]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]\n"
+msgstr ""
 
 msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
-msgstr "[yellow]경고：세션 중지 중 오류：{error}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Error stopping session: {e}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Failed to select files: {error}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Failed to set queue priority: {error}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Xet protocol is disabled[/yellow]"
+msgstr ""
+
+msgid "[yellow]{key} is not set[/yellow]"
+msgstr ""
 
 msgid "[yellow]{warning}[/yellow]"
-msgstr "[yellow]{warning}[/yellow]"
+msgstr ""
+
+msgid "[yellow]⚠[/yellow] Could not save daemon config to config file: {e}"
+msgstr ""
+
+msgid ""
+"[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet\n"
+msgstr ""
+
+msgid ""
+"[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})\n"
+msgstr ""
+
+msgid "[yellow]⚠[/yellow] {errors} errors encountered"
+msgstr ""
+
+msgid "[yellow]✓[/yellow] Xet protocol disabled"
+msgstr ""
+
+msgid "[yellow]✓[/yellow] uTP transport disabled"
+msgstr ""
+
+msgid "_get_daemon_ipc_port: Checking config_file=%s (home_dir=%s)"
+msgstr ""
+
+msgid "_get_executor() returned: executor=%s, is_daemon=%s"
+msgstr ""
 
 msgid "ccBitTorrent Interactive CLI"
-msgstr "ccBitTorrent 대화형 CLI"
+msgstr ""
 
-msgid "ccBitTorrent Status"
-msgstr "ccBitTorrent 상태"
+msgid "enable_dht={value}"
+msgstr ""
 
-msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
-msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgid "enable_pex={value}"
+msgstr ""
+
+msgid "failed"
+msgstr ""
+
+msgid ""
+"help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema\n"
+msgstr ""
+
+msgid "succeeded"
+msgstr ""
 
 msgid "uTP Config"
-msgstr "uTP 설정"
+msgstr ""
+
+msgid "uTP Configuration"
+msgstr ""
+
+msgid "uTP configuration reset to defaults via CLI"
+msgstr ""
+
+msgid "uTP configuration updated: %s = %s"
+msgstr ""
+
+msgid "uTP transport disabled via CLI"
+msgstr ""
+
+msgid "uTP transport enabled"
+msgstr ""
+
+msgid "uTP transport enabled via CLI"
+msgstr ""
 
 msgid "{count} features"
-msgstr "{count}개 기능"
+msgstr ""
 
 msgid "{count} items"
-msgstr "{count}개 항목"
+msgstr ""
 
 msgid "{elapsed:.0f}s ago"
-msgstr "{elapsed:.0f}초 전"
+msgstr ""
+
+msgid "{key} = {value}"
+msgstr ""
+
+msgid "{key}: {value}"
+msgstr ""
+
+msgid ""
+"{msg}\n"
+"\n"
+"PID file path: {path}\n"
+msgstr ""
+
+msgid "{sub_tab} configuration - Coming soon"
+msgstr ""
+
+msgid "{sub_tab} content for torrent {hash}... - Coming soon"
+msgstr ""
+
+msgid "{type} Configuration"
+msgstr ""
+
+msgid "↑ Speed"
+msgstr ""
+
+msgid "↓ Speed"
+msgstr ""
+
+msgid "✓ Configuration is valid"
+msgstr ""
+
+msgid "✓ No system compatibility warnings"
+msgstr ""
+
+msgid "✗ Configuration validation failed: {e}"
+msgstr ""
+

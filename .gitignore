@@ -11,7 +11,7 @@ ccbt_tuned.toml
 MagicMock
 .coverage_html 
 .cursor
-
+scripts
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -216,7 +216,9 @@ class ProxyClient:
             timeout,
         )
 
-        session_headers = {"User-Agent": "ccBitTorrent/0.1.0"}
+        from ccbt.utils.version import get_user_agent
+
+        session_headers = {"User-Agent": get_user_agent()}
         if headers:
             session_headers.update(
                 headers

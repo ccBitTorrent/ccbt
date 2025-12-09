@@ -19,11 +19,14 @@ from ccbt.interface.screens.monitoring.scrape import ScrapeResultsScreen
 from ccbt.interface.screens.monitoring.system_resources import SystemResourcesScreen
 from ccbt.interface.screens.monitoring.tracker import TrackerMetricsScreen
 from ccbt.interface.screens.monitoring.xet import XetManagementScreen
+from ccbt.interface.screens.monitoring.security_scan import SecurityScanScreen
+from ccbt.interface.screens.monitoring.dht_metrics import DHTMetricsScreen
 
 __all__ = [
     "AlertsDashboardScreen",
     "DiskAnalysisScreen",
     "DiskIOMetricsScreen",
+    "DHTMetricsScreen",
     "HistoricalTrendsScreen",
     "IPFSManagementScreen",
     "MetricsExplorerScreen",
@@ -33,6 +36,7 @@ __all__ = [
     "PerformanceMetricsScreen",
     "QueueMetricsScreen",
     "ScrapeResultsScreen",
+    "SecurityScanScreen",
     "SystemResourcesScreen",
     "TrackerMetricsScreen",
     "XetManagementScreen",

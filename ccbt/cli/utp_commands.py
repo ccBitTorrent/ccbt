@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ccbt.config.config import get_config
+from ccbt.i18n import _
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -41,62 +42,62 @@ def utp_show() -> None:
     utp_config = config.network.utp
 
     table = Table(
-        title="uTP Configuration", show_header=True, header_style="bold magenta"
+        title=_("uTP Configuration"), show_header=True, header_style="bold magenta"
     )
     table.add_column("Setting", style="cyan", no_wrap=True)
     table.add_column("Value", style="green")
     table.add_column("Description", style="yellow")
 
-    table.add_row("Enabled", str(config.network.enable_utp), "uTP transport enabled")
+    table.add_row(_("Enabled"), str(config.network.enable_utp), _("uTP transport enabled"))
     table.add_row(
-        "Prefer over TCP",
+        _("Prefer over TCP"),
         str(utp_config.prefer_over_tcp),
-        "Prefer uTP when both TCP and uTP are available",
+        _("Prefer uTP when both TCP and uTP are available"),
     )
     table.add_row(
-        "Connection Timeout",
+        _("Connection Timeout"),
         f"{utp_config.connection_timeout}s",
-        "Connection timeout in seconds",
+        _("Connection timeout in seconds"),
     )
     table.add_row(
-        "Max Window Size",
+        _("Max Window Size"),
         f"{utp_config.max_window_size:,} bytes",
-        "Maximum receive window size",
+        _("Maximum receive window size"),
     )
     table.add_row(
-        "MTU",
+        _("MTU"),
         f"{utp_config.mtu} bytes",
-        "Maximum UDP packet size",
+        _("Maximum UDP packet size"),
     )
     table.add_row(
-        "Initial Rate",
+        _("Initial Rate"),
         f"{utp_config.initial_rate:,} B/s",
-        "Initial send rate",
+        _("Initial send rate"),
     )
     table.add_row(
-        "Min Rate",
+        _("Min Rate"),
         f"{utp_config.min_rate:,} B/s",
-        "Minimum send rate",
+        _("Minimum send rate"),
     )
     table.add_row(
-        "Max Rate",
+        _("Max Rate"),
         f"{utp_config.max_rate:,} B/s",
-        "Maximum send rate",
+        _("Maximum send rate"),
     )
     table.add_row(
-        "ACK Interval",
+        _("ACK Interval"),
         f"{utp_config.ack_interval}s",
-        "ACK packet send interval",
+        _("ACK packet send interval"),
     )
     table.add_row(
-        "Retransmit Timeout Factor",
+        _("Retransmit Timeout Factor"),
         str(utp_config.retransmit_timeout_factor),
-        "RTT multiplier for retransmit timeout",
+        _("RTT multiplier for retransmit timeout"),
     )
     table.add_row(
-        "Max Retransmits",
+        _("Max Retransmits"),
         str(utp_config.max_retransmits),
-        "Maximum retransmission attempts",
+        _("Maximum retransmission attempts"),
     )
 
     console.print(table)
@@ -107,8 +108,8 @@ def utp_enable() -> None:
     """Enable uTP transport."""
     config = get_config()
     config.network.enable_utp = True
-    console.print("[green]✓[/green] uTP transport enabled")
-    logger.info("uTP transport enabled via CLI")
+    console.print(_("[green]✓[/green] uTP transport enabled"))
+    logger.info(_("uTP transport enabled via CLI"))
 
 
 @utp_group.command("disable")
@@ -116,8 +117,8 @@ def utp_disable() -> None:
     """Disable uTP transport."""
     config = get_config()
     config.network.enable_utp = False
-    console.print("[yellow]✓[/yellow] uTP transport disabled")
-    logger.info("uTP transport disabled via CLI")
+    console.print(_("[yellow]✓[/yellow] uTP transport disabled"))
+    logger.info(_("uTP transport disabled via CLI"))
 
 
 @utp_group.group("config")
@@ -160,13 +161,13 @@ def utp_config_get(key: str | None) -> None:
     }
 
     if key not in key_mapping:
-        console.print(f"[red]Error:[/red] Unknown configuration key: {key}")
-        console.print(f"Available keys: {', '.join(key_mapping.keys())}")
+        console.print(_("[red]Error:[/red] Unknown configuration key: {key}").format(key=key))
+        console.print(_("Available keys: {keys}").format(keys=', '.join(key_mapping.keys())))
         raise click.Abort
 
     attr_name = key_mapping[key]
     value = getattr(utp_config, attr_name)
-    console.print(f"{key} = {value}")
+    console.print(_("{key} = {value}").format(key=key, value=value))
 
 
 @utp_config_group.command("set")
@@ -198,8 +199,8 @@ def utp_config_set(key: str, value: str) -> None:
     }
 
     if key not in key_mapping:
-        console.print(f"[red]Error:[/red] Unknown configuration key: {key}")
-        console.print(f"Available keys: {', '.join(key_mapping.keys())}")
+        console.print(_("[red]Error:[/red] Unknown configuration key: {key}").format(key=key))
+        console.print(_("Available keys: {keys}").format(keys=', '.join(key_mapping.keys())))
         raise click.Abort
 
     attr_name, value_type = key_mapping[key]
@@ -215,14 +216,14 @@ def utp_config_set(key: str, value: str) -> None:
         else:
             converted_value = value
     except ValueError as e:
-        console.print(f"[red]Error:[/red] Invalid value for {key}: {value}")
-        console.print(f"Expected type: {value_type.__name__}")
+        console.print(_("[red]Error:[/red] Invalid value for {key}: {value}").format(key=key, value=value))
+        console.print(_("Expected type: {type_name}").format(type_name=value_type.__name__))
         raise click.Abort from e
 
     # Set the value
     setattr(utp_config, attr_name, converted_value)
-    console.print(f"[green]✓[/green] Set {key} = {converted_value}")
-    logger.info("uTP configuration updated: %s = %s", key, converted_value)
+    console.print(_("[green]✓[/green] Set {key} = {value}").format(key=key, value=converted_value))
+    logger.info(_("uTP configuration updated: %s = %s"), key, converted_value)
 
     # Note: This is a runtime change. To persist, save config:
     try:  # pragma: no cover
@@ -258,13 +259,13 @@ def utp_config_set(key: str, value: str) -> None:
                 toml.dump(config_data, f)
 
             console.print(
-                f"[green]✓[/green] Configuration saved to {config_manager.config_file}"
+                _("[green]✓[/green] Configuration saved to {file}").format(file=config_manager.config_file)
             )  # pragma: no cover
     except Exception as e:  # pragma: no cover
         # Defensive error handling: file save should not fail, but handle gracefully
         # Hard to test: requires exception during file I/O or TOML operations
-        logger.warning("Failed to save configuration to file: %s", e)
-        console.print("[yellow]Note:[/yellow] Configuration change is runtime-only")
+        logger.warning(_("Failed to save configuration to file: %s"), e)
+        console.print(_("[yellow]Note:[/yellow] Configuration change is runtime-only"))
 
 
 @utp_config_group.command("reset")
@@ -289,5 +290,6 @@ def utp_config_reset() -> None:
     )
     config.network.utp.max_retransmits = default_config.max_retransmits
 
-    console.print("[green]✓[/green] uTP configuration reset to defaults")
-    logger.info("uTP configuration reset to defaults via CLI")
+    console.print(_("[green]✓[/green] uTP configuration reset to defaults"))
+    logger.info(_("uTP configuration reset to defaults via CLI"))
+

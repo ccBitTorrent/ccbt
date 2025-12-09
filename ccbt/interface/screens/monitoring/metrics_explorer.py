@@ -371,7 +371,7 @@ class MetricsExplorerScreen(MonitoringScreen):  # type: ignore[misc]
                     border_style="red",
                 )
             )
-            logger.exception("Error exporting metrics: %s", e)
+            logger.exception("Error exporting metrics")
 
     async def action_export_json(self) -> None:  # pragma: no cover
         """Export metrics in JSON format."""

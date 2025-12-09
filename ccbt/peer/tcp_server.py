@@ -51,7 +51,7 @@ class IncomingPeerServer:
             self.logger.info("TCP transport disabled, skipping TCP server startup")
             return
 
-        listen_interface = self.config.network.listen_interface or "0.0.0.0"
+        listen_interface = self.config.network.listen_interface or "0.0.0.0"  # nosec B104 - Network service must bind to all interfaces to accept peer connections
         # Use listen_port_tcp if available, fallback to listen_port for backward compatibility
         listen_port = (
             self.config.network.listen_port_tcp or self.config.network.listen_port
@@ -81,36 +81,35 @@ class IncomingPeerServer:
                         f"Error: {e}\n\n"
                         f"{resolution}"
                     )
-                    self.logger.error(error_msg)
+                    self.logger.exception("TCP port %d is already in use", listen_port)
                     raise RuntimeError(error_msg) from e
-                elif error_code == 10013:  # WSAEACCES
+                if error_code == 10013:  # WSAEACCES
                     error_msg = (
                         f"Permission denied binding to {listen_interface}:{listen_port}.\n"
                         f"Error: {e}\n\n"
                         f"Resolution: Run with administrator privileges or change the port."
                     )
-                    self.logger.error(error_msg)
+                    self.logger.exception("Permission denied binding to %s:%d", listen_interface, listen_port)
                     raise RuntimeError(error_msg) from e
-            else:
-                if error_code == 98:  # EADDRINUSE
-                    from ccbt.utils.port_checker import get_port_conflict_resolution
+            elif error_code == 98:  # EADDRINUSE
+                from ccbt.utils.port_checker import get_port_conflict_resolution
 
-                    resolution = get_port_conflict_resolution(listen_port, "tcp")
-                    error_msg = (
-                        f"TCP port {listen_port} is already in use.\n"
-                        f"Error: {e}\n\n"
-                        f"{resolution}"
-                    )
-                    self.logger.error(error_msg)
-                    raise RuntimeError(error_msg) from e
-                elif error_code == 13:  # EACCES
-                    error_msg = (
-                        f"Permission denied binding to {listen_interface}:{listen_port}.\n"
-                        f"Error: {e}\n\n"
-                        f"Resolution: Run with root privileges or change the port to >= 1024."
-                    )
-                    self.logger.error(error_msg)
-                    raise RuntimeError(error_msg) from e
+                resolution = get_port_conflict_resolution(listen_port, "tcp")
+                error_msg = (
+                    f"TCP port {listen_port} is already in use.\n"
+                    f"Error: {e}\n\n"
+                    f"{resolution}"
+                )
+                self.logger.exception("TCP port %d is already in use", listen_port)
+                raise RuntimeError(error_msg) from e
+            elif error_code == 13:  # EACCES
+                error_msg = (
+                    f"Permission denied binding to {listen_interface}:{listen_port}.\n"
+                    f"Error: {e}\n\n"
+                    f"Resolution: Run with root privileges or change the port to >= 1024."
+                )
+                self.logger.exception("Permission denied binding to %s:%d", listen_interface, listen_port)
+                raise RuntimeError(error_msg) from e
             # Re-raise other OSErrors as-is
             raise
 
@@ -156,13 +155,16 @@ class IncomingPeerServer:
                 )
                 msg = "TCP server failed to start serving"
                 raise RuntimeError(msg)
-        except Exception as e:
+        except Exception:
             # Handle any other exceptions
-            self.logger.error("Failed to start TCP server: %s", e, exc_info=True)
+            self.logger.exception("Failed to start TCP server")
             raise
 
     async def stop(self) -> None:
-        """Stop the TCP server gracefully."""
+        """Stop the TCP server gracefully.
+        
+        CRITICAL FIX: Add delays on Windows to prevent socket buffer exhaustion (WinError 10055).
+        """
         if not self._running:
             return
 
@@ -172,8 +174,22 @@ class IncomingPeerServer:
             self.server.close()
             try:
                 await asyncio.wait_for(self.server.wait_closed(), timeout=5.0)
+                # CRITICAL FIX: Add delay on Windows after server close to prevent buffer exhaustion
+                import sys
+                if sys.platform == "win32":
+                    await asyncio.sleep(0.1)  # 100ms delay on Windows
             except asyncio.TimeoutError:
                 self.logger.warning("TCP server close timed out")
+            except OSError as e:
+                # CRITICAL FIX: Handle WinError 10055 gracefully
+                error_code = getattr(e, "winerror", None) or getattr(e, "errno", None)
+                if error_code == 10055:
+                    self.logger.debug(
+                        "WinError 10055 (socket buffer exhaustion) during TCP server close. "
+                        "This is a transient Windows issue. Continuing..."
+                    )
+                else:
+                    self.logger.debug("OSError waiting for server to close: %s", e)
             except Exception as e:
                 self.logger.debug("Error waiting for server to close: %s", e)
 
@@ -291,16 +307,36 @@ class IncomingPeerServer:
 
             if session is None:
                 elapsed = asyncio.get_event_loop().time() - start_time
-                self.logger.warning(
-                    "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
-                    "Session may not be registered yet or torrent not active. "
-                    "This may indicate slow session initialization (especially for magnet links) or session registration failure. "
-                    "If this is a magnet link, metadata fetching may still be in progress.",
-                    handshake.info_hash.hex()[:16],
-                    peer_ip,
-                    peer_port,
-                    elapsed,
-                )
+                # CRITICAL FIX: Check if any sessions exist at all
+                # If no sessions are registered, this is expected during startup - use DEBUG level
+                # If sessions exist but this one doesn't, it's a real issue - use WARNING level
+                has_any_sessions = False
+                if self.session_manager:
+                    async with self.session_manager.lock:
+                        has_any_sessions = len(self.session_manager.torrents) > 0
+                
+                if not has_any_sessions:
+                    # No sessions registered yet - expected during startup
+                    self.logger.debug(
+                        "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
+                        "No sessions registered yet (this is normal during daemon startup).",
+                        handshake.info_hash.hex()[:16],
+                        peer_ip,
+                        peer_port,
+                        elapsed,
+                    )
+                else:
+                    # Sessions exist but this one wasn't found - this is a real issue
+                    self.logger.warning(
+                        "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
+                        "Session may not be registered yet or torrent not active. "
+                        "This may indicate slow session initialization (especially for magnet links) or session registration failure. "
+                        "If this is a magnet link, metadata fetching may still be in progress.",
+                        handshake.info_hash.hex()[:16],
+                        peer_ip,
+                        peer_port,
+                        elapsed,
+                    )
                 writer.close()
                 await writer.wait_closed()
                 return
@@ -339,16 +375,56 @@ class IncomingPeerServer:
                 peer_port,
                 self.config.network.handshake_timeout,
             )
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except (ConnectionResetError, OSError):
+                # Remote host closed connection - this is normal
+                pass
         except asyncio.IncompleteReadError:
             self.logger.debug(
                 "Incomplete handshake from %s:%d (connection closed early)",
                 peer_ip,
                 peer_port,
             )
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except (ConnectionResetError, OSError):
+                # Remote host closed connection - this is normal
+                pass
+        except (ConnectionResetError, OSError) as e:
+            # CRITICAL FIX: Handle Windows ConnectionResetError (WinError 10054) gracefully
+            # This occurs when remote host closes connection during handshake or processing
+            import sys
+
+            if sys.platform == "win32":
+                winerror = getattr(e, "winerror", None)
+                if winerror == 10054:  # WSAECONNRESET
+                    self.logger.debug(
+                        "Connection reset by peer %s:%d (WinError 10054) - this is normal",
+                        peer_ip,
+                        peer_port,
+                    )
+                else:
+                    self.logger.debug(
+                        "Connection error from %s:%d: %s (WinError %s)",
+                        peer_ip,
+                        peer_port,
+                        type(e).__name__,
+                        winerror,
+                    )
+            else:
+                self.logger.debug(
+                    "Connection reset by peer %s:%d - this is normal",
+                    peer_ip,
+                    peer_port,
+                )
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass  # Ignore errors during cleanup
         except Exception:
             self.logger.exception(
                 "Error handling incoming connection from %s:%d",
@@ -358,5 +434,8 @@ class IncomingPeerServer:
             try:
                 writer.close()
                 await writer.wait_closed()
+            except (ConnectionResetError, OSError):
+                # Remote host closed connection - this is normal
+                pass
             except Exception:
-                pass  # Ignore errors during cleanup
+                pass  # Ignore other errors during cleanup

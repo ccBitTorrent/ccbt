@@ -334,6 +334,7 @@ def parse_magnet_link(
             magnet_info.info_hash,  # pragma: no cover - Build minimal torrent data from magnet, tested via integration tests
             magnet_info.display_name,  # pragma: no cover - Build minimal torrent data from magnet, tested via integration tests
             magnet_info.trackers,
+            magnet_info.web_seeds,  # CRITICAL FIX: Pass web seeds from magnet link
         )
     except Exception:  # pragma: no cover - defensive: parse_magnet error handling, returns None on failure
         if logger:

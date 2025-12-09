@@ -9,6 +9,13 @@ from rich.console import Console
 from rich.table import Table
 
 from ccbt.cli.main import _get_executor
+from ccbt.i18n import _
+
+# Exception messages
+DAEMON_NOT_RUNNING_NAT_MSG = _(
+    "Daemon is not running. NAT management commands require the daemon to be running.\n"
+    "Start the daemon with: 'btbt daemon start'"
+)
 
 
 @click.group()
@@ -28,40 +35,38 @@ def nat_status(ctx) -> None:
         executor, is_daemon = await _get_executor()
 
         if not executor or not is_daemon:
-            raise click.ClickException(
-                "Daemon is not running. NAT management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
-            )
+            raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
 
         try:
             # Execute command via executor
             result = await executor.execute("nat.status")
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to get NAT status")
+                error_msg = result.error or _("Failed to get NAT status")
+                raise click.ClickException(error_msg)
 
             nat_status_response = result.data["status"]
 
-            console.print("[bold]NAT Traversal Status[/bold]\n")
+            console.print(_("[bold]NAT Traversal Status[/bold]\n"))
 
             # Protocol status
             if nat_status_response.method:
                 console.print(
-                    f"[green]Active Protocol:[/green] {nat_status_response.method.upper()}"
+                    _("[green]Active Protocol:[/green] {method}").format(method=nat_status_response.method.upper())
                 )
             else:
-                console.print("[yellow]Active Protocol:[/yellow] None (not discovered)")
+                console.print(_("[yellow]Active Protocol:[/yellow] None (not discovered)"))
 
             # External IP
             if nat_status_response.external_ip:
                 console.print(
-                    f"[green]External IP:[/green] {nat_status_response.external_ip}"
+                    _("[green]External IP:[/green] {ip}").format(ip=nat_status_response.external_ip)
                 )
             else:
-                console.print("[yellow]External IP:[/yellow] Not available")
+                console.print(_("[yellow]External IP:[/yellow] Not available"))
 
             # Port mappings
-            console.print("\n[bold]Active Port Mappings:[/bold]")
+            console.print(_("\n[bold]Active Port Mappings:[/bold]"))
             if nat_status_response.mappings:
                 table = Table()
                 table.add_column("Protocol", style="cyan")
@@ -86,7 +91,7 @@ def nat_status(ctx) -> None:
 
                 console.print(table)
             else:
-                console.print("[dim]No active port mappings[/dim]")
+                console.print(_("[dim]No active port mappings[/dim]"))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -97,8 +102,9 @@ def nat_status(ctx) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @nat.command("discover")
@@ -113,36 +119,34 @@ def nat_discover(ctx) -> None:
         executor, is_daemon = await _get_executor()
 
         if not executor or not is_daemon:
-            raise click.ClickException(
-                "Daemon is not running. NAT management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
-            )
+            raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
 
         try:
             # Execute command via executor
-            console.print("[bold]Discovering NAT devices...[/bold]\n")
+            console.print(_("[bold]Discovering NAT devices...[/bold]\n"))
             result = await executor.execute("nat.discover")
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to discover NAT")
+                error_msg = result.error or _("Failed to discover NAT")
+                raise click.ClickException(error_msg)
 
             discover_result = result.data
 
             if discover_result.get("status") == "discovered" and discover_result.get(
                 "result"
             ):
-                console.print("\n[green]✓ Discovery successful![/green]")
+                console.print(_("\n[green]✓ Discovery successful![/green]"))
                 # Get updated status to show protocol and external IP
                 status_result = await executor.execute("nat.status")
                 if status_result.success:
                     nat_status = status_result.data["status"]
                     if nat_status.method:
-                        console.print(f"  Protocol: {nat_status.method.upper()}")
+                        console.print(_("  Protocol: {method}").format(method=nat_status.method.upper()))
                     if nat_status.external_ip:
-                        console.print(f"  External IP: {nat_status.external_ip}")
+                        console.print(_("  External IP: {ip}").format(ip=nat_status.external_ip))
             else:
-                console.print("\n[yellow]✗ No NAT devices discovered[/yellow]")
-                console.print("  Make sure NAT-PMP or UPnP is enabled on your router")
+                console.print(_("\n[yellow]✗ No NAT devices discovered[/yellow]"))
+                console.print(_("  Make sure NAT-PMP or UPnP is enabled on your router"))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -153,8 +157,9 @@ def nat_discover(ctx) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @nat.command("map")
@@ -179,14 +184,11 @@ def nat_map(ctx, port: int, protocol: str, external_port: int) -> None:
         executor, is_daemon = await _get_executor()
 
         if not executor or not is_daemon:
-            raise click.ClickException(
-                "Daemon is not running. NAT management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
-            )
+            raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
 
         try:
             # Execute command via executor
-            console.print(f"[bold]Mapping {protocol.upper()} port {port}...[/bold]")
+            console.print(_("[bold]Mapping {protocol} port {port}...[/bold]").format(protocol=protocol.upper(), port=port))
             result = await executor.execute(
                 "nat.map",
                 internal_port=port,
@@ -195,23 +197,24 @@ def nat_map(ctx, port: int, protocol: str, external_port: int) -> None:
             )
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to map port")
+                error_msg = result.error or _("Failed to map port")
+                raise click.ClickException(error_msg)
 
             map_result = result.data
 
             if map_result.get("status") == "mapped" and map_result.get("result"):
-                console.print("[green]✓ Port mapping successful![/green]")
+                console.print(_("[green]✓ Port mapping successful![/green]"))
                 mapping_result = map_result.get("result", {})
                 if isinstance(mapping_result, dict):
                     console.print(
-                        f"  Internal: {mapping_result.get('internal_port', port)}"
+                        _("  Internal: {port}").format(port=mapping_result.get("internal_port", port))
                     )
                     console.print(
-                        f"  External: {mapping_result.get('external_port', 'auto')}"
+                        _("  External: {port}").format(port=mapping_result.get("external_port", "auto"))
                     )
-                    console.print(f"  Protocol: {protocol.upper()}")
+                    console.print(_("  Protocol: {protocol}").format(protocol=protocol.upper()))
             else:
-                console.print("[red]✗ Port mapping failed[/red]")
+                console.print(_("[red]✗ Port mapping failed[/red]"))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -222,8 +225,9 @@ def nat_map(ctx, port: int, protocol: str, external_port: int) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @nat.command("unmap")
@@ -245,27 +249,25 @@ def nat_unmap(ctx, port: int, protocol: str) -> None:
         executor, is_daemon = await _get_executor()
 
         if not executor or not is_daemon:
-            raise click.ClickException(
-                "Daemon is not running. NAT management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
-            )
+            raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
 
         try:
             # Execute command via executor
             console.print(
-                f"[bold]Removing {protocol.upper()} port mapping for port {port}...[/bold]"
+                _("[bold]Removing {protocol} port mapping for port {port}...[/bold]").format(protocol=protocol.upper(), port=port)
             )
             result = await executor.execute("nat.unmap", port=port, protocol=protocol)
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to unmap port")
+                error_msg = result.error or _("Failed to unmap port")
+                raise click.ClickException(error_msg)
 
             unmap_result = result.data
 
             if unmap_result.get("status") == "unmapped":
-                console.print("[green]✓ Port mapping removed[/green]")
+                console.print(_("[green]✓ Port mapping removed[/green]"))
             else:
-                console.print("[red]✗ Failed to remove port mapping[/red]")
+                console.print(_("[red]✗ Failed to remove port mapping[/red]"))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -276,8 +278,9 @@ def nat_unmap(ctx, port: int, protocol: str) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @nat.command("external-ip")
@@ -292,28 +295,26 @@ def nat_external_ip(ctx) -> None:
         executor, is_daemon = await _get_executor()
 
         if not executor or not is_daemon:
-            raise click.ClickException(
-                "Daemon is not running. NAT management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
-            )
+            raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
 
         try:
             # Execute command via executor
             result = await executor.execute("nat.status")
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to get NAT status")
+                error_msg = result.error or _("Failed to get NAT status")
+                raise click.ClickException(error_msg)
 
             nat_status = result.data["status"]
 
             if nat_status.external_ip:
-                console.print(f"[green]External IP:[/green] {nat_status.external_ip}")
+                console.print(_("[green]External IP:[/green] {ip}").format(ip=nat_status.external_ip))
                 if nat_status.method:
-                    console.print(f"[dim]Protocol: {nat_status.method.upper()}[/dim]")
+                    console.print(_("[dim]Protocol: {method}[/dim]").format(method=nat_status.method.upper()))
             else:
-                console.print("[yellow]External IP not available[/yellow]")
+                console.print(_("[yellow]External IP not available[/yellow]"))
                 console.print(
-                    "  Make sure NAT traversal is enabled and a device is discovered"
+                    _("  Make sure NAT traversal is enabled and a device is discovered")
                 )
         finally:
             # Close IPC client if using daemon adapter
@@ -325,8 +326,9 @@ def nat_external_ip(ctx) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @nat.command("refresh")
@@ -341,24 +343,22 @@ def nat_refresh(ctx) -> None:
         executor, is_daemon = await _get_executor()
 
         if not executor or not is_daemon:
-            raise click.ClickException(
-                "Daemon is not running. NAT management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
-            )
+            raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
 
         try:
             # Execute command via executor
             result = await executor.execute("nat.refresh")
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to refresh mappings")
+                error_msg = result.error or _("Failed to refresh mappings")
+                raise click.ClickException(error_msg)
 
             refresh_result = result.data
 
             if refresh_result.get("status") == "refreshed":
-                console.print("[green]✓ Port mappings refreshed[/green]")
+                console.print(_("[green]✓ Port mappings refreshed[/green]"))
             else:
-                console.print("[yellow]Refresh completed with warnings[/yellow]")
+                console.print(_("[yellow]Refresh completed with warnings[/yellow]"))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -369,5 +369,6 @@ def nat_refresh(ctx) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e

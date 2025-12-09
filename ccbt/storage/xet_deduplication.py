@@ -7,13 +7,14 @@ using SQLite for local caching and DHT for peer-to-peer chunk discovery.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any
 
-from ccbt.models import PeerInfo
+from ccbt.models import PeerInfo, XetFileMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class XetDeduplication:
         """Initialize SQLite cache database.
 
         Creates the database file and tables if they don't exist.
+        Supports migration from old schema (chunks only) to new schema.
 
         Returns:
             SQLite database connection
@@ -65,6 +67,33 @@ class XetDeduplication:
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
 
         db = sqlite3.connect(str(self.cache_path))
+        
+        # Check if schema version table exists (for migration support)
+        cursor = db.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='schema_version'
+        """)
+        schema_version_exists = cursor.fetchone() is not None
+        
+        # Create schema version table if it doesn't exist
+        if not schema_version_exists:
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INTEGER PRIMARY KEY,
+                    applied_at REAL NOT NULL
+                )
+            """)
+            # Set initial version to 1 (old schema with chunks only)
+            db.execute("""
+                INSERT INTO schema_version (version, applied_at) 
+                VALUES (1, ?)
+            """, (time.time(),))
+        
+        # Get current schema version
+        cursor = db.execute("SELECT MAX(version) FROM schema_version")
+        current_version = cursor.fetchone()[0] or 1
+        
+        # Create chunks table (always needed)
         db.execute("""
             CREATE TABLE IF NOT EXISTS chunks (
                 hash BLOB PRIMARY KEY,
@@ -81,6 +110,60 @@ class XetDeduplication:
         db.execute("""
             CREATE INDEX IF NOT EXISTS idx_last_accessed ON chunks(last_accessed)
         """)
+        
+        # Migrate to version 2: Add file_chunks and file_metadata tables
+        if current_version < 2:
+            # Create file_chunks table to track file-to-chunk references
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS file_chunks (
+                    file_path TEXT NOT NULL,
+                    chunk_hash BLOB NOT NULL,
+                    offset INTEGER NOT NULL,
+                    chunk_size INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (file_path, chunk_hash, offset),
+                    FOREIGN KEY (chunk_hash) REFERENCES chunks(hash) ON DELETE CASCADE
+                )
+            """)
+            # Indexes for file_chunks
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_file_chunks_file_path 
+                ON file_chunks(file_path)
+            """)
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_file_chunks_chunk_hash 
+                ON file_chunks(chunk_hash)
+            """)
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_file_chunks_file_offset 
+                ON file_chunks(file_path, offset)
+            """)
+            
+            # Create file_metadata table for persistent file metadata storage
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS file_metadata (
+                    file_path TEXT PRIMARY KEY,
+                    file_hash BLOB NOT NULL,
+                    total_size INTEGER NOT NULL,
+                    chunk_count INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    last_modified REAL NOT NULL,
+                    metadata_json TEXT NOT NULL
+                )
+            """)
+            # Index for file_metadata
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_file_metadata_file_hash 
+                ON file_metadata(file_hash)
+            """)
+            
+            # Update schema version
+            db.execute("""
+                INSERT INTO schema_version (version, applied_at) 
+                VALUES (2, ?)
+            """, (time.time(),))
+            self.logger.info("Migrated XET deduplication database to schema version 2")
+        
         db.commit()
 
         return db
@@ -117,6 +200,8 @@ class XetDeduplication:
         self,
         chunk_hash: bytes,
         chunk_data: bytes,
+        file_path: str | None = None,
+        file_offset: int | None = None,
     ) -> Path:
         """Store chunk with deduplication.
 
@@ -127,6 +212,8 @@ class XetDeduplication:
         Args:
             chunk_hash: 32-byte chunk hash
             chunk_data: Chunk data to store
+            file_path: Optional file path that references this chunk
+            file_offset: Optional offset in file where this chunk appears
 
         Returns:
             Path to stored chunk (may be existing or new)
@@ -145,6 +232,13 @@ class XetDeduplication:
                 "Chunk %s already exists, incremented ref count",
                 chunk_hash.hex()[:16],
             )
+            
+            # If file context provided, add file-to-chunk reference
+            if file_path is not None and file_offset is not None:
+                await self.add_file_chunk_reference(
+                    file_path, chunk_hash, file_offset, len(chunk_data)
+                )
+            
             return existing
 
         # Store new chunk
@@ -166,6 +260,12 @@ class XetDeduplication:
         )
         self.db.commit()
 
+        # If file context provided, add file-to-chunk reference
+        if file_path is not None and file_offset is not None:
+            await self.add_file_chunk_reference(
+                file_path, chunk_hash, file_offset, len(chunk_data)
+            )
+
         self.logger.debug(
             "Stored new chunk %s (%d bytes)",
             chunk_hash.hex()[:16],
@@ -173,6 +273,335 @@ class XetDeduplication:
         )
 
         return storage_file
+
+    async def add_file_chunk_reference(
+        self,
+        file_path: str,
+        chunk_hash: bytes,
+        offset: int,
+        chunk_size: int,
+    ) -> None:
+        """Add a file-to-chunk reference.
+
+        Records that a file references a chunk at a specific offset.
+        This enables file reconstruction from chunks.
+
+        Args:
+            file_path: Path to the file
+            chunk_hash: 32-byte chunk hash
+            offset: Offset in file where chunk appears
+            chunk_size: Size of the chunk in bytes
+
+        """
+        try:
+            current_time = time.time()
+            
+            # Check if reference already exists
+            cursor = self.db.execute(
+                """SELECT 1 FROM file_chunks 
+                   WHERE file_path = ? AND chunk_hash = ? AND offset = ?""",
+                (file_path, chunk_hash, offset),
+            )
+            if cursor.fetchone():
+                # Reference already exists, skip
+                self.logger.debug(
+                    "File chunk reference already exists: %s @ offset %d",
+                    file_path,
+                    offset,
+                )
+                return
+            
+            # Insert file-to-chunk reference
+            self.db.execute(
+                """INSERT INTO file_chunks 
+                   (file_path, chunk_hash, offset, chunk_size, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (file_path, chunk_hash, offset, chunk_size, current_time),
+            )
+            self.db.commit()
+            
+            self.logger.debug(
+                "Added file chunk reference: %s -> %s @ offset %d",
+                file_path,
+                chunk_hash.hex()[:16],
+                offset,
+            )
+        except sqlite3.IntegrityError as e:
+            # Handle duplicate key errors gracefully
+            self.logger.debug(
+                "File chunk reference already exists (integrity error): %s", e
+            )
+        except Exception as e:
+            self.logger.warning(
+                "Failed to add file chunk reference: %s", e, exc_info=True
+            )
+
+    async def remove_file_chunk_reference(
+        self,
+        file_path: str,
+        chunk_hash: bytes,
+        offset: int,
+    ) -> bool:
+        """Remove a file-to-chunk reference.
+
+        Removes the reference and decrements chunk reference count.
+        If ref_count reaches zero, the chunk is deleted.
+
+        Args:
+            file_path: Path to the file
+            chunk_hash: 32-byte chunk hash
+            offset: Offset in file where chunk appears
+
+        Returns:
+            True if chunk was deleted (ref_count reached 0), False otherwise
+
+        """
+        try:
+            # Delete file-to-chunk reference
+            cursor = self.db.execute(
+                """DELETE FROM file_chunks 
+                   WHERE file_path = ? AND chunk_hash = ? AND offset = ?""",
+                (file_path, chunk_hash, offset),
+            )
+            deleted = cursor.rowcount > 0
+            self.db.commit()
+            
+            if not deleted:
+                self.logger.debug(
+                    "File chunk reference not found: %s -> %s @ offset %d",
+                    file_path,
+                    chunk_hash.hex()[:16],
+                    offset,
+                )
+                return False
+            
+            # Decrement chunk reference count
+            return self.remove_chunk_reference(chunk_hash)
+            
+        except Exception as e:
+            self.logger.warning(
+                "Failed to remove file chunk reference: %s", e, exc_info=True
+            )
+            return False
+
+    async def get_file_chunks(
+        self, file_path: str
+    ) -> list[tuple[bytes, int, int]]:
+        """Get ordered list of chunks for a file.
+
+        Retrieves all chunks referenced by a file, ordered by offset.
+        This enables file reconstruction.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            List of tuples (chunk_hash, offset, chunk_size) ordered by offset
+
+        """
+        try:
+            cursor = self.db.execute(
+                """SELECT chunk_hash, offset, chunk_size 
+                   FROM file_chunks 
+                   WHERE file_path = ? 
+                   ORDER BY offset ASC""",
+                (file_path,),
+            )
+            rows = cursor.fetchall()
+            return [(row[0], row[1], row[2]) for row in rows]
+        except Exception as e:
+            self.logger.warning(
+                "Failed to get file chunks: %s", e, exc_info=True
+            )
+            return []
+
+    async def reconstruct_file_from_chunks(
+        self,
+        file_path: str,
+        output_path: Path | None = None,
+    ) -> Path:
+        """Reconstruct a file from its stored chunks.
+
+        Reads all chunks referenced by the file in order and writes
+        them to the output path to reconstruct the original file.
+
+        Args:
+            file_path: Path to the file (used to look up chunks)
+            output_path: Optional output path (defaults to file_path)
+
+        Returns:
+            Path to reconstructed file
+
+        Raises:
+            FileNotFoundError: If file has no chunk references
+            IOError: If chunk files are missing or cannot be read
+
+        """
+        if output_path is None:
+            output_path = Path(file_path)
+
+        # Get ordered list of chunks
+        chunks = await self.get_file_chunks(file_path)
+        if not chunks:
+            msg = f"No chunks found for file: {file_path}"
+            raise FileNotFoundError(msg)
+
+        # Ensure output directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Reconstruct file by reading chunks in order
+        missing_chunks = []
+        with output_path.open("wb") as output_file:
+            for chunk_hash, offset, chunk_size in chunks:
+                try:
+                    # Read chunk from storage
+                    chunk_path = await self.check_chunk_exists(chunk_hash)
+                    if not chunk_path or not chunk_path.exists():
+                        missing_chunks.append((chunk_hash, offset))
+                        self.logger.warning(
+                            "Missing chunk %s at offset %d for file %s",
+                            chunk_hash.hex()[:16],
+                            offset,
+                            file_path,
+                        )
+                        # Write zeros for missing chunk
+                        output_file.write(b"\x00" * chunk_size)
+                        continue
+
+                    # Read chunk data
+                    chunk_data = chunk_path.read_bytes()
+
+                    # Verify chunk size matches expected
+                    if len(chunk_data) != chunk_size:
+                        self.logger.warning(
+                            "Chunk size mismatch: expected %d, got %d for chunk %s",
+                            chunk_size,
+                            len(chunk_data),
+                            chunk_hash.hex()[:16],
+                        )
+
+                    # Seek to correct offset in output file
+                    output_file.seek(offset)
+                    # Write chunk data
+                    output_file.write(chunk_data)
+
+                except Exception as e:
+                    self.logger.warning(
+                        "Failed to read chunk %s at offset %d: %s",
+                        chunk_hash.hex()[:16],
+                        offset,
+                        e,
+                    )
+                    missing_chunks.append((chunk_hash, offset))
+                    # Write zeros for missing chunk
+                    output_file.seek(offset)
+                    output_file.write(b"\x00" * chunk_size)
+
+        if missing_chunks:
+            self.logger.warning(
+                "Reconstructed file %s with %d missing chunks",
+                output_path,
+                len(missing_chunks),
+            )
+
+        self.logger.debug(
+            "Reconstructed file %s from %d chunks",
+            output_path,
+            len(chunks),
+        )
+
+        return output_path
+
+    async def store_file_metadata(self, metadata: XetFileMetadata) -> None:
+        """Store file metadata persistently.
+
+        Serializes XetFileMetadata to JSON and stores it in the database
+        for later retrieval and file reconstruction.
+
+        Args:
+            metadata: XetFileMetadata instance to store
+
+        """
+        try:
+            current_time = time.time()
+            
+            # Serialize metadata to JSON
+            metadata_dict = metadata.model_dump()
+            # Convert bytes to hex strings for JSON serialization
+            metadata_dict["file_hash"] = metadata.file_hash.hex()
+            metadata_dict["chunk_hashes"] = [
+                h.hex() for h in metadata.chunk_hashes
+            ]
+            metadata_dict["xorb_refs"] = [h.hex() for h in metadata.xorb_refs]
+            metadata_json = json.dumps(metadata_dict)
+            
+            # Insert or update file metadata
+            self.db.execute(
+                """INSERT OR REPLACE INTO file_metadata 
+                   (file_path, file_hash, total_size, chunk_count, 
+                    created_at, last_modified, metadata_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    metadata.file_path,
+                    metadata.file_hash,
+                    metadata.total_size,
+                    len(metadata.chunk_hashes),
+                    current_time,
+                    current_time,
+                    metadata_json,
+                ),
+            )
+            self.db.commit()
+            
+            self.logger.debug(
+                "Stored file metadata for %s (%d chunks)",
+                metadata.file_path,
+                len(metadata.chunk_hashes),
+            )
+        except Exception as e:
+            self.logger.warning(
+                "Failed to store file metadata: %s", e, exc_info=True
+            )
+
+    async def get_file_metadata(self, file_path: str) -> XetFileMetadata | None:
+        """Get file metadata from persistent storage.
+
+        Retrieves and deserializes XetFileMetadata from the database.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            XetFileMetadata if found, None otherwise
+
+        """
+        try:
+            cursor = self.db.execute(
+                """SELECT metadata_json FROM file_metadata 
+                   WHERE file_path = ?""",
+                (file_path,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            
+            # Deserialize JSON to XetFileMetadata
+            metadata_dict = json.loads(row[0])
+            # Convert hex strings back to bytes
+            metadata_dict["file_hash"] = bytes.fromhex(metadata_dict["file_hash"])
+            metadata_dict["chunk_hashes"] = [
+                bytes.fromhex(h) for h in metadata_dict["chunk_hashes"]
+            ]
+            metadata_dict["xorb_refs"] = [
+                bytes.fromhex(h) for h in metadata_dict.get("xorb_refs", [])
+            ]
+            
+            return XetFileMetadata(**metadata_dict)
+        except Exception as e:
+            self.logger.warning(
+                "Failed to get file metadata: %s", e, exc_info=True
+            )
+            return None
 
     async def query_dht_for_chunk(self, chunk_hash: bytes) -> PeerInfo | None:
         """Query DHT for peers that have this chunk.

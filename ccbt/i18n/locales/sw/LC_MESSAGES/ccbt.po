@@ -1,53 +1,526 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ccBitTorrent 0.1.0\n"
-"Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-01-01 00:00+0000\n"
-"PO-Revision-Date: 2025-11-10 21:50\n"
-"Last-Translator: ccBitTorrent Team\n"
-"Language-Team: Swahili Translation Team\n"
-"Language: sw\n"
-"MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=UTF-8\n"
-"Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n==0 || (n!=1 && n%1000000==0) ? 1 : 2);\n"
+"Project-Id-Version: ccBitTorrent 0.1.0\n""Language: sw
+"Content-Type: text/plain; charset=UTF-8
 
 
-msgid "\nAvailable Commands:\n  help          - Show this help message\n  status        - Show current status\n  peers         - Show connected peers\n  files         - Show file information\n  pause         - Pause download\n  resume        - Resume download\n  stop          - Stop download\n  quit          - Quit application\n  clear         - Clear screen\n        "
-msgstr "\nAmri Zinazopatikana:\n  help          - Onyesha ujumbe huu wa msaada\n  status        - Onyesha hali ya sasa\n  peers         - Onyesha wanaohusiana\n  files         - Onyesha taarifa za faili\n  pause         - Simamisha upakuaji\n  resume        - Endelea upakuaji\n  stop          - Acha upakuaji\n  quit          - Toka kwenye programu\n  clear         - Safisha skrini\n        "
+msgid ""
+"\n"
+"  [cyan]Matching Rules:[/cyan] None\n"
+msgstr ""
+"\n"
+"  [cyan]Sheria za Kufanana:[/cyan] Hakuna\n"
 
-msgid "\n[bold cyan]File Selection[/bold cyan]"
-msgstr "\n[bold cyan]Uchaguzi wa Faili[/bold cyan]"
+msgid ""
+"\n"
+"  [cyan]Matching Rules:[/cyan] {count}\n"
+msgstr ""
+"\n"
+"  [cyan]Sheria za Kufanana:[/cyan] {count}\n"
 
-msgid "\n[bold]File selection[/bold]"
-msgstr "\n[bold]Uchaguzi wa faili[/bold]"
+msgid ""
+"\n"
+"Available Commands:\n"
+"  help          - Show this help message\n"
+"  status        - Show current status\n"
+"  peers         - Show connected peers\n"
+"  files         - Show file information\n"
+"  pause         - Pause download\n"
+"  resume        - Resume download\n"
+"  stop          - Stop download\n"
+"  quit          - Quit application\n"
+"  clear         - Clear screen\n"
+"        \n"
+msgstr ""
+"\n"
+"Amri Zinazopatikana:\n"
+"  msaada        - Onyesha ujumbe huu wa msaada\n"
+"  hali          - Onyesha hali ya sasa\n"
+"  washirika     - Onyesha washirika waliounganishwa\n"
+"  faili         - Onyesha taarifa za faili\n"
+"  simamisha     - Simamisha upakuaji\n"
+"  endelea       - Endelea upakuaji\n"
+"  acha          - Acha upakuaji\n"
+"  toka          - Toka kwenye programu\n"
+"  futa          - Futa skrini\n"
+"        \n"
 
-msgid "\n[yellow]Commands:[/yellow]"
-msgstr "\n[yellow]Amri:[/yellow]"
+msgid ""
+"\n"
+"[bold cyan]Cache Statistics:[/bold cyan]\n"
+msgstr ""
+"\n"
+"[bold cyan]Takwimu za Hifadhi:[/bold cyan]\n"
 
-msgid "\n[yellow]File selection cancelled, using defaults[/yellow]"
-msgstr "\n[yellow]Uchaguzi wa faili umeghairiwa, kutumia chaguo-msingi[/yellow]"
+msgid ""
+"\n"
+"[bold cyan]File Selection[/bold cyan]\n"
+msgstr ""
+"\n"
+"[bold cyan]Uchaguzi wa Faili[/bold cyan]\n"
 
-msgid "\n[yellow]Tracker Scrape Statistics:[/yellow]"
-msgstr "\n[yellow]Takwimu za Tracker Scrape:[/yellow]"
+msgid ""
+"\n"
+"[bold]Active Port Mappings:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]Ramani za Bandari Zinazofanya Kazi:[/bold]\n"
 
-msgid "\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
-msgstr "\n[yellow]Tumia: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgid ""
+"\n"
+"[bold]File selection[/bold]\n"
+msgstr ""
+"\n"
+"[bold]Uchaguzi wa faili[/bold]\n"
 
-msgid "\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
-msgstr "\n[yellow]Onyo: Hakuna wanaohusiana wameunganishwa baada ya sekunde 30[/yellow]"
+msgid ""
+"\n"
+"[bold]IP Filter Statistics[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]Takwimu za Kichujio cha IP[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]IP Filter Test[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]Mtihani wa Kichujio cha IP[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]Runtime Status:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]Hali ya Utendaji:[/bold]\n"
+
+msgid ""
+"\n"
+"[bold]Sample chunks (last {limit} accessed):[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]Vipande vya Mfano (mwisho {limit} vilivyofikiwa):[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]Statistics:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]Takwimu:[/bold]\n"
+
+msgid ""
+"\n"
+"[bold]Total: {count} rules[/bold]\n"
+msgstr ""
+"\n"
+"[bold]Jumla: {count} sheria[/bold]\n"
+
+msgid ""
+"\n"
+"[cyan]Connection Diagnostics[/cyan]\n"
+"\n"
+msgstr ""
+"\n"
+"[cyan]Uchunguzi wa Muunganisho[/cyan]\n"
+"\n"
+
+msgid ""
+"\n"
+"[cyan]Proxy Statistics:[/cyan]\n"
+msgstr ""
+"\n"
+"[cyan]Takwimu za Wakala:[/cyan]\n"
+
+msgid ""
+"\n"
+"[cyan]Status:[/cyan] {status}\n"
+msgstr ""
+"\n"
+"[cyan]Hali:[/cyan] {status}\n"
+
+msgid ""
+"\n"
+"[green]Diagnostic complete![/green]\n"
+msgstr ""
+"\n"
+"[green]Uchunguzi umekamilika![/green]\n"
+
+msgid ""
+"\n"
+"[green]✓ Discovery successful![/green]\n"
+msgstr ""
+"\n"
+"[green]✓ Uvumbuzi umefanikiwa![/green]\n"
+
+msgid ""
+"\n"
+"[green]✓[/green] No connection issues detected\n"
+msgstr ""
+"\n"
+"[green]✓[/green] Hakuna matatizo ya muunganisho yaliyogunduliwa\n"
+
+msgid ""
+"\n"
+"[yellow]2. DHT Status[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]2. Hali ya DHT[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]3. Tracker Configuration[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]3. Mpangilio wa Tracker[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]4. NAT Configuration[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]4. Mpangilio wa NAT[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]5. Listen Port[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]5. Bandari ya Kusikiliza[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]6. Session Initialization Test[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]6. Mtihani wa Kuanzisha Kikao[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Commands:[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Amri:[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Connection Issues[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Matatizo ya Muunganisho[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Download interrupted by user[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Upakuaji ulikatizwa na mtumiaji[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]File selection cancelled, using defaults[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Uchaguzi wa faili ulifutwa, unatumia chaguo-msingi[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Runtime Status:[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Hali ya Utendaji:[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Session Summary[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Muhtasari wa Kikao[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Shutting down daemon...[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Inazima daemon...[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]TCP Server Status[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Hali ya Seva ya TCP[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Tumia: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Warning: No peers connected after 30 seconds[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Onyo: Hakuna washirika waliounganishwa baada ya sekunde 30[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]✗ No NAT devices discovered[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]✗ Hakuna vifaa vya NAT vilivyogunduliwa[/yellow]\n"
+
+msgid "    - {network} ({mode}, priority: {priority})"
+msgstr "    - {network} ({mode}, kipaumbele: {priority})"
+
+msgid "  - {hash}... ({format})"
+msgstr "  - {hash}... ({format})"
+
+msgid "  Active Downloading: {count}"
+msgstr "  Upakuaji Unaendelea: {count}"
+
+msgid "  Active Mappings: {mappings}"
+msgstr "  Ramani Zinazofanya Kazi: {mappings}"
+
+msgid "  Active Seeding: {count}"
+msgstr "  Kupanda Mbegu Unaendelea: {count}"
+
+msgid "  Add the peer first using 'tonic allowlist add'"
+msgstr "  Ongeza mshirika kwanza kwa kutumia 'tonic allowlist add'"
+
+msgid "  Auth failures: {count}"
+msgstr "  Kushindwa kwa Uthibitishaji: {count}"
+
+msgid "  Auto Map Ports: {status}"
+msgstr "  Ramani ya Bandari ya Otomatiki: {status}"
+
+msgid "  Bypass list: {value}"
+msgstr "  Orodha ya Kupita: {value}"
+
+msgid "  Cache DB: {path}"
+msgstr "  Hifadhi ya Cache: {path}"
+
+msgid "  Certificate: {path}"
+msgstr "  Cheti: {path}"
+
+msgid "  Chunk size range: {min}-{max} bytes"
+msgstr "  Anuwai ya Ukubwa wa Kipande: {min}-{max} baiti"
+
+msgid "  Chunk store: {path}"
+msgstr "  Hifadhi ya Vipande: {path}"
+
+msgid "  Compression: {enabled}"
+msgstr "  Ukandamizaji: {enabled}"
+
+msgid "  Configuration saved to: {location}"
+msgstr "  Mpangilio umehifadhiwa kwa: {location}"
+
+msgid "  Current mode: {mode}"
+msgstr "  Hali ya Sasa: {mode}"
+
+msgid "  DHT Enabled: {status}"
+msgstr "  DHT Imewezeshwa: {status}"
+
+msgid "  DHT Port: {port}"
+msgstr "  Bandari ya DHT: {port}"
+
+msgid "  DHT Routing Table: {size} nodes"
+msgstr "  Jedwali la Uelekezaji la DHT: {size} nodi"
+
+msgid "  Deduplication: {enabled}"
+msgstr "  Uondoa Marudio: {enabled}"
+
+msgid "  Enabled: {enabled}"
+msgstr "  Imewezeshwa: {enabled}"
+
+msgid "  External IP: {ip}"
+msgstr "  IP ya Nje: {ip}"
+
+msgid "  External: {port}"
+msgstr "  Nje: {port}"
+
+msgid "  Failed: {count}"
+msgstr "  Imeshindwa: {count}"
+
+msgid "  For peers: {value}"
+msgstr ""
+
+msgid "  For trackers: {value}"
+msgstr ""
+
+msgid "  For webseeds: {value}"
+msgstr ""
+
+msgid "  HTTP Trackers: {status}"
+msgstr ""
+
+msgid "  Host: {host}:{port}"
+msgstr ""
+
+msgid "  Internal: {port}"
+msgstr ""
+
+msgid "  Key: {path}"
+msgstr ""
+
+msgid "  Make sure NAT traversal is enabled and a device is discovered"
+msgstr ""
+
+msgid "  Make sure NAT-PMP or UPnP is enabled on your router"
+msgstr ""
+
+msgid "  Mode: {mode}"
+msgstr ""
+
+msgid "  NAT-PMP: {status}"
+msgstr ""
+
+msgid "  Output directory: {dir}"
+msgstr ""
+
+msgid "  P2P CAS client: Active"
+msgstr ""
+
+msgid "  P2P CAS client: Not initialized"
+msgstr ""
+
+msgid "  P2P CAS: {enabled}"
+msgstr ""
+
+msgid "  Paused: {count}"
+msgstr ""
+
+msgid "  Protocol not active (session may not be running)"
+msgstr "  Itifaki haifanyi kazi (kikao huenda hakifanyi kazi)"
+
+msgid "  Protocol state: {state}"
+msgstr "  Hali ya Itifaki: {state}"
+
+msgid "  Protocol: {method}"
+msgstr "  Itifaki: {method}"
+
+msgid "  Protocol: {protocol}"
+msgstr "  Itifaki: {protocol}"
+
+msgid "  Queued: {count}"
+msgstr "  Imesimamishwa: {count}"
+
+msgid "  Running: {status}"
+msgstr "  Inafanya Kazi: {status}"
+
+msgid "  Serving: {status}"
+msgstr "  Inahudumia: {status}"
+
+msgid "  Sessions with Peers: {count}"
+msgstr "  Vikao na Washirika: {count}"
+
+msgid "  Source peers: {peers}"
+msgstr "  Washirika wa Chanzo: {peers}"
+
+msgid "  Successful: {count}"
+msgstr "  Imefanikiwa: {count}"
+
+msgid "  Sync mode: {mode}"
+msgstr "  Hali ya Sinkronia: {mode}"
+
+msgid "  TCP Enabled: {status}"
+msgstr "  TCP Imewezeshwa: {status}"
+
+msgid "  TCP Port: {port}"
+msgstr "  Bandari ya TCP: {port}"
+
+msgid "  Target chunk size: {size} bytes"
+msgstr "  Ukubwa wa Lengo la Kipande: {size} baiti"
+
+msgid "  This would fetch the .tonic file and start syncing"
+msgstr "  Hii ingepakua faili .tonic na kuanza sinkronia"
+
+msgid "  Total Connections: {count}"
+msgstr "  Jumla ya Muunganisho: {count}"
+
+msgid "  Total Sessions: {count}"
+msgstr "  Jumla ya Vikao: {count}"
+
+msgid "  Total connections: {count}"
+msgstr "  Jumla ya muunganisho: {count}"
+
+msgid "  Total: {count}"
+msgstr "  Jumla: {count}"
+
+msgid "  Type: {type}"
+msgstr "  Aina: {type}"
+
+msgid "  UDP Trackers: {status}"
+msgstr "  Tracker za UDP: {status}"
+
+msgid "  UPnP: {status}"
+msgstr "  UPnP: {status}"
+
+msgid "  Unable to connect to active session"
+msgstr "  Haiwezi kuunganisha na kikao kinachofanya kazi"
+
+msgid "  Use 'ccbt tonic status' to check sync status"
+msgstr "  Tumia 'ccbt tonic status' kuangalia hali ya sinkronia"
+
+msgid "  Username: {username}"
+msgstr "  Jina la Mtumiaji: {username}"
+
+msgid "  [cyan]Allowed:[/cyan] {allows}"
+msgstr "  [cyan]Imeruhusiwa:[/cyan] {allows}"
+
+msgid "  [cyan]Blocked:[/cyan] {blocks}"
+msgstr "  [cyan]Imekatizwa:[/cyan] {blocks}"
+
+msgid "  [cyan]Enabled:[/cyan] {enabled}"
+msgstr "  [cyan]Imewezeshwa:[/cyan] {enabled}"
+
+msgid "  [cyan]IP Address:[/cyan] {ip}"
+msgstr "  [cyan]Anwani ya IP:[/cyan] {ip}"
+
+msgid "  [cyan]IPv4 Ranges:[/cyan] {ipv4_ranges}"
+msgstr "  [cyan]Anuwai za IPv4:[/cyan] {ipv4_ranges}"
+
+msgid "  [cyan]IPv6 Ranges:[/cyan] {ipv6_ranges}"
+msgstr "  [cyan]Anuwai za IPv6:[/cyan] {ipv6_ranges}"
+
+msgid "  [cyan]Last Update:[/cyan] Never"
+msgstr "  [cyan]Sasisho la Mwisho:[/cyan] Kamwe"
+
+msgid "  [cyan]Last Update:[/cyan] {timestamp}"
+msgstr "  [cyan]Sasisho la Mwisho:[/cyan] {timestamp}"
+
+msgid "  [cyan]Mode:[/cyan] {mode}"
+msgstr "  [cyan]Hali:[/cyan] {mode}"
+
+msgid "  [cyan]Status:[/cyan] {status}"
+msgstr "  [cyan]Hali:[/cyan] {status}"
+
+msgid "  [cyan]Total Checks:[/cyan] {matches}"
+msgstr "  [cyan]Jumla ya Uhakiki:[/cyan] {matches}"
+
+msgid "  [cyan]Total Rules:[/cyan] {total_rules}"
+msgstr "  [cyan]Jumla ya Sheria:[/cyan] {total_rules}"
 
 msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
-msgstr "  [cyan]deselect <index>[/cyan] - Acha kuchagua faili"
+msgstr "  [cyan]deselect <index>[/cyan] - Ondoa faili"
 
 msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
-msgstr "  [cyan]deselect-all[/cyan] - Acha kuchagua faili zote"
+msgstr "  [cyan]deselect-all[/cyan] - Ondoa faili zote"
 
 msgid "  [cyan]done[/cyan] - Finish selection and start download"
-msgstr "  [cyan]done[/cyan] - Maliza uchaguzi na anza upakuaji"
+msgstr "  [cyan]done[/cyan] - Maliza uchaguzi na uanze upakuaji"
 
-msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
-msgstr "  [cyan]priority <index> <priority>[/cyan] - Weka kipaumbele (do_not_download/low/normal/high/maximum)"
+msgid ""
+"  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)\n"
+msgstr ""
+"  [cyan]priority <index> <priority>[/cyan] - Weka kipaumbele (do_not_download/low/normal/high/maximum)\n"
 
 msgid "  [cyan]select <index>[/cyan] - Select a file"
 msgstr "  [cyan]select <index>[/cyan] - Chagua faili"
@@ -55,59 +528,226 @@ msgstr "  [cyan]select <index>[/cyan] - Chagua faili"
 msgid "  [cyan]select-all[/cyan] - Select all files"
 msgstr "  [cyan]select-all[/cyan] - Chagua faili zote"
 
+msgid "  [green]✓[/green] Can bind to port {port}"
+msgstr "  [green]✓[/green] Inaweza kuunganisha na bandari {port}"
+
+msgid "  [green]✓[/green] Session initialized successfully"
+msgstr "  [green]✓[/green] Kikao kimeanzishwa kwa mafanikio"
+
+msgid "  [green]✓[/green] TCP server initialized"
+msgstr ""
+
+msgid "  [green]✓[/green] {url}: {loaded} rules"
+msgstr ""
+
+msgid "  [red]✗[/red] Cannot bind to port: {e}"
+msgstr "  [red]✗[/red] Haiwezi kuunganisha na bandari: {e}"
+
+msgid "  [red]✗[/red] NAT manager not initialized"
+msgstr ""
+
+msgid "  [red]✗[/red] Session initialization failed: {e}"
+msgstr ""
+
+msgid "  [red]✗[/red] TCP server not initialized"
+msgstr ""
+
+msgid "  [red]✗[/red] {url}: failed"
+msgstr ""
+
+msgid "  [yellow]⚠[/yellow] DHT client not initialized"
+msgstr ""
+
+msgid "  [yellow]⚠[/yellow] TCP server not initialized"
+msgstr ""
+
+msgid "  uTP Enabled: {status}"
+msgstr ""
+
+msgid "  {msg}"
+msgstr ""
+
+msgid "  {warning}"
+msgstr ""
+
 msgid "  • Check if torrent has active seeders"
-msgstr "  • Angalia ikiwa torrent ina seeders zinazofanya kazi"
+msgstr ""
 
 msgid "  • Ensure DHT is enabled: --enable-dht"
-msgstr "  • Hakikisha DHT imewezeshwa: --enable-dht"
+msgstr ""
 
 msgid "  • Run 'btbt diagnose-connections' to check connection status"
-msgstr "  • Endesha 'btbt diagnose-connections' kuangalia hali ya muunganisho"
+msgstr ""
 
 msgid "  • Verify NAT/firewall settings"
-msgstr "  • Thibitisha mipangilio ya NAT/firewall"
+msgstr ""
 
-msgid " | Files: {selected}/{total} selected"
-msgstr " | Faili: {selected}/{total} zimechaguliwa"
+msgid "  ⚠ {warning}"
+msgstr ""
 
-msgid " | Private: {count}"
-msgstr " | Binafsi: {count}"
+msgid "(no options set)"
+msgstr ""
+
+msgid "- [yellow]{issue}[/yellow]"
+msgstr ""
+
+msgid "- {id}: {severity} rule={rule} value={value}"
+msgstr ""
+
+msgid "- {name}: metric={metric}, cond={condition}, severity={severity}"
+msgstr ""
+
+msgid "ACK Interval"
+msgstr "Muda wa Kati ya ACK"
+
+msgid "ACK packet send interval"
+msgstr "Muda wa kati ya kutuma pakiti ya ACK"
+
+msgid "API key or Ed25519 key manager required for WebSocket connection"
+msgstr "Ufunguo wa API au msimamizi wa ufunguo wa Ed25519 unahitajika kwa muunganisho wa WebSocket"
 
 msgid "Active"
-msgstr "Inafanya kazi"
+msgstr "Inafanya Kazi"
 
 msgid "Active Alerts"
 msgstr "Onyo Zinazofanya Kazi"
 
-msgid "Active: {count}"
-msgstr "Inafanya kazi: {count}"
+msgid "Add Tracker"
+msgstr "Ongeza Tracker"
+
+msgid ""
+"Add tracker functionality not yet implemented. Use CLI command: torrent.add_tracker\n"
+msgstr ""
+"Utendaji wa kuongeza tracker bado haujaanzishwa. Tumia amri ya CLI: torrent.add_tracker\n"
+
+msgid "Advanced"
+msgstr "Ya Juu"
 
 msgid "Advanced Add"
-msgstr "Ongeza Kwa Kina"
+msgstr "Ongeza ya Juu"
+
+msgid "Advanced configuration (experimental features)"
+msgstr "Mpangilio wa juu (huduma za majaribio)"
+
+msgid "Advanced configuration - Data provider/Executor not available"
+msgstr "Mpangilio wa juu - Mtoaji wa Data/Mtekelezi haupo"
 
 msgid "Alert Rules"
-msgstr "Kanuni za Onyo"
+msgstr "Sheria za Onyo"
 
 msgid "Alerts"
 msgstr "Onyo"
 
+msgid "All {total} file(s) verified successfully"
+msgstr "Faili zote {total} zimehakikiwa kwa mafanikio"
+
+msgid "Announce sent"
+msgstr "Tangazo limetumwa"
+
 msgid "Announce: Failed"
-msgstr "Tangaza: Imeshindwa"
+msgstr "Tangazo: Imeshindwa"
 
 msgid "Announce: {status}"
-msgstr "Tangaza: {status}"
+msgstr "Tangazo: {status}"
 
 msgid "Are you sure you want to quit?"
-msgstr "Je, una uhakika unataka kuondoka?"
+msgstr "Je, una uhakika unataka kutoka?"
+
+msgid "Auto-tuned configuration saved to {path}"
+msgstr "Mpangilio uliojipanga otomatiki umehifadhiwa kwa {path}"
+
+msgid "Auto-tuning warnings:"
+msgstr "Onyo za kujipanga otomatiki:"
 
 msgid "Automatically restart daemon if needed (without prompt)"
-msgstr "Anza upya daemon kiotomatiki ikiwa inahitajika (bila kuuliza)"
+msgstr "Anzisha upya daemon otomatiki ikiwa inahitajika (bila kuuliza)"
+
+msgid "Available keys: {keys}"
+msgstr "Funguo zinazopatikana: {keys}"
+
+msgid "Available locales: {locales}"
+msgstr "Lugha zinazopatikana: {locales}"
+
+msgid "Backup complete"
+msgstr "Nakala rudufu imekamilika"
+
+msgid "Backup created: {path}"
+msgstr "Nakala rudufu imeundwa: {path}"
+
+msgid "Backup failed"
+msgstr "Nakala rudufu imeshindwa"
+
+msgid "Ban Peer"
+msgstr "Kataza Mshirika"
+
+msgid "Bandwidth"
+msgstr "Upana wa Banda"
+
+msgid "Bandwidth configuration - Data provider/Executor not available"
+msgstr "Mpangilio wa upana wa banda - Mtoaji wa Data/Mtekelezi haupo"
 
 msgid "Browse"
 msgstr "Vinjari"
 
+msgid ""
+"CRITICAL: PID file exists (initial=%s, current=%s, path=%s) but code reached local session creation! This will cause port conflicts. Aborting.\n"
+msgstr ""
+"MUHIMU: Faili ya PID ipo (ya awali=%s, ya sasa=%s, njia=%s) lakini msimbo umefikia uundaji wa kikao cha ndani! Hii itasababisha migogoro ya bandari. Inakatiza.\n"
+
+msgid "Cache entries: {count}"
+msgstr "Maingizo ya Hifadhi: {count}"
+
+msgid "Cache hit rate: {rate:.2f}%"
+msgstr "Kiwango cha Kupata Hifadhi: {rate:.2f}%"
+
+msgid "Cache size: {size} bytes"
+msgstr "Ukubwa wa Hifadhi: {size} baiti"
+
+msgid "Cached Scrape Results"
+msgstr "Matokeo ya Scrape yaliyohifadhiwa"
+
+msgid "Cancel"
+msgstr "Ghairi"
+
+msgid "Cannot auto-resume checkpoint"
+msgstr "Haiwezi kuendeleza checkpoint otomatiki"
+
+msgid ""
+"Cannot connect to daemon at %s: %s (daemon may not be running or IPC server not started)\n"
+msgstr ""
+"Haiwezi kuunganisha na daemon kwa %s: %s (daemon huenda haifanyi kazi au seva ya IPC haijaanzishwa)\n"
+
+msgid "Cannot specify both --hybrid and --v1"
+msgstr "Haiwezi kubainisha wote --hybrid na --v1"
+
+msgid "Cannot specify both --v2 and --hybrid"
+msgstr "Haiwezi kubainisha wote --v2 na --hybrid"
+
+msgid "Cannot specify both --v2 and --v1"
+msgstr "Haiwezi kubainisha wote --v2 na --v1"
+
 msgid "Capability"
 msgstr "Uwezo"
+
+msgid "Choked"
+msgstr "Imezimwa"
+
+msgid "Cleaning up old checkpoints..."
+msgstr "Inasafisha checkpoint za zamani..."
+
+msgid "Cleanup complete"
+msgstr "Usafishaji umekamilika"
+
+msgid "Click on 'Global' tab to configure this section"
+msgstr "Bofya kwenye kichupo cha 'Global' kuweka mpangilio wa sehemu hii"
+
+msgid "Client"
+msgstr "Mteja"
+
+msgid ""
+"Client error checking daemon status at %s: %s (daemon may be starting up)\n"
+msgstr ""
+"Kosa la mteja katika kuangalia hali ya daemon kwa %s: %s (daemon huenda inaanza)\n"
 
 msgid "Commands: "
 msgstr "Amri: "
@@ -118,89 +758,618 @@ msgstr "Imekamilika"
 msgid "Completed (Scrape)"
 msgstr "Imekamilika (Scrape)"
 
-msgid "Component"
-msgstr "Sehemu"
+msgid "Compressing backup..."
+msgstr "Inakandamiza nakala rudufu..."
 
 msgid "Condition"
 msgstr "Hali"
 
+msgid "Config"
+msgstr "Mpangilio"
+
 msgid "Config Backups"
-msgstr "Nakala za Usalama za Usanidi"
+msgstr "Nakala Rudufu za Mpangilio"
+
+msgid "Configuration differences:"
+msgstr "Tofauti za Mpangilio:"
+
+msgid "Configuration exported to {path}"
+msgstr "Mpangilio umetolewa kwa {path}"
 
 msgid "Configuration file path"
-msgstr "Njia ya faili ya usanidi"
+msgstr "Njia ya faili ya mpangilio"
+
+msgid "Configuration imported to {path}"
+msgstr "Mpangilio umeingizwa kwa {path}"
+
+msgid "Configuration restored from {path}"
+msgstr "Mpangilio umerudishwa kutoka {path}"
+
+msgid "Configuration section"
+msgstr "Sehemu ya mpangilio"
+
+msgid ""
+"Configuration: {type}\n"
+"\n"
+"This configuration section is not yet fully implemented.\n"
+msgstr ""
+"Mpangilio: {type}\n"
+"\n"
+"Sehemu hii ya mpangilio bado haijaanzishwa kikamilifu.\n"
 
 msgid "Confirm"
 msgstr "Thibitisha"
 
-msgid "Connected"
-msgstr "Imeunganishwa"
-
 msgid "Connected Peers"
-msgstr "Wanaohusiana Wameunganishwa"
+msgstr "Washirika Waliounganishwa"
 
-msgid "Count: {count}{file_info}{private_info}"
-msgstr "Hesabu: {count}{file_info}{private_info}"
+msgid "Connecting to daemon at %s (PID file exists)"
+msgstr "Inaunganisha na daemon kwa %s (faili ya PID ipo)"
+
+msgid "Connection Timeout"
+msgstr "Muda wa Muunganisho"
+
+msgid "Connection timeout in seconds"
+msgstr "Muda wa muunganisho kwa sekunde"
+
+msgid "Copy Info Hash"
+msgstr "Nakili Hash ya Taarifa"
+
+msgid ""
+"Could not connect to daemon (no PID file): %s - will create local session\n"
+msgstr ""
+"Haikuweza kuunganisha na daemon (hakuna faili ya PID): %s - itaunda kikao cha ndani\n"
+
+msgid "Could not find file index"
+msgstr "Haikuweza kupata faharasa ya faili"
+
+msgid "Could not get torrent output directory"
+msgstr "Haikuweza kupata folda ya matokeo ya torrent"
+
+msgid "Could not read daemon config file: %s"
+msgstr "Haikuweza kusoma faili ya mpangilio ya daemon: %s"
+
+msgid "Could not read daemon config from ConfigManager: %s"
+msgstr "Haikuweza kusoma mpangilio wa daemon kutoka ConfigManager: %s"
+
+msgid "Could not save daemon config to config file: %s"
+msgstr "Haikuweza kuhifadhi mpangilio wa daemon kwa faili ya mpangilio: %s"
+
+msgid "Could not send shutdown request, using signal..."
+msgstr "Haikuweza kutuma ombi la kuzima, inatumia ishara..."
 
 msgid "Create backup before migration"
-msgstr "Unda nakala ya usalama kabla ya uhamishaji"
+msgstr "Unda nakala rudufu kabla ya uhamishaji"
 
-msgid "DHT"
-msgstr "DHT"
+msgid "Creating backup..."
+msgstr "Inaunda nakala rudufu..."
+
+msgid "Current chunks: {count}"
+msgstr "Vipande vya Sasa: {count}"
+
+msgid "Current locale: {locale}"
+msgstr "Lugha ya Sasa: {locale}"
+
+msgid ""
+"Daemon PID file exists but API key not found in config. Cannot route to daemon. Please check daemon configuration.\n"
+msgstr ""
+"Faili ya PID ya daemon ipo lakini ufunguo wa API haujapatikana katika mpangilio. Haiwezi kuelekeza kwa daemon. Tafadhali angalia mpangilio wa daemon.\n"
+
+msgid "Daemon config file exists but ipc_port not found, trying main config"
+msgstr "Faili ya mpangilio ya daemon ipo lakini ipc_port haijapatikana, inajaribu mpangilio kuu"
+
+msgid ""
+"Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...\n"
+msgstr ""
+"Kosa la muunganisho wa daemon (jaribio %d/%d, limepita %.1fs): %s, inajaribu tena katika %.1fs...\n"
+
+msgid ""
+"Daemon connection timeout (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+"Muda wa muunganisho wa daemon (jaribio %d/%d, limepita %.1fs), inajaribu tena katika %.1fs...\n"
+
+msgid "Daemon is accessible and ready (attempt %d/%d, took %.1fs)"
+msgstr "Daemon inapatikana na imeandaa (jaribio %d/%d, ilichukua %.1fs)"
+
+msgid ""
+"Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+"Daemon imeainishwa kama inafanya kazi lakini haipatikani (jaribio %d/%d, limepita %.1fs), inajaribu tena katika %.1fs...\n"
+
+msgid ""
+"Daemon is marked as running but not accessible after %d attempts (elapsed %.1fs)\n"
+msgstr ""
+"Daemon imeainishwa kama inafanya kazi lakini haipatikani baada ya majaribio %d (limepita %.1fs)\n"
+
+msgid "Daemon is not running"
+msgstr "Daemon haifanyi kazi"
+
+msgid "Daemon is not running, nothing to restart"
+msgstr "Daemon haifanyi kazi, hakuna cha kuanzisha upya"
+
+msgid "Daemon is not running, restart not needed"
+msgstr "Daemon haifanyi kazi, kuanzisha upya hakihitajiki"
+
+msgid ""
+"Daemon is not running. File management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"Daemon haifanyi kazi. Amri za usimamizi wa faili zinahitaji daemon ifanye kazi.\n"
+"Anzisha daemon kwa: 'btbt daemon start'\n"
+
+msgid ""
+"Daemon is not running. NAT management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"Daemon haifanyi kazi. Amri za usimamizi wa NAT zinahitaji daemon ifanye kazi.\n"
+"Anzisha daemon kwa: 'btbt daemon start'\n"
+
+msgid ""
+"Daemon is not running. Queue management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"Daemon haifanyi kazi. Amri za usimamizi wa foleni zinahitaji daemon ifanye kazi.\n"
+"Anzisha daemon kwa: 'btbt daemon start'\n"
+
+msgid ""
+"Daemon is not running. Scrape commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"Daemon haifanyi kazi. Amri za Scrape zinahitaji daemon ifanye kazi.\n"
+"Anzisha daemon kwa: 'btbt daemon start'\n"
+
+msgid "Daemon restarted successfully (PID: %d)"
+msgstr "Daemon imeanzishwa upya kwa mafanikio (PID: %d)"
+
+msgid "Daemon stopped"
+msgstr "Daemon imezimwa"
+
+msgid "Daemon stopped gracefully"
+msgstr "Daemon imezimwa kwa adabu"
 
 msgid "Description"
 msgstr "Maelezo"
 
-msgid "Details"
-msgstr "Maelezo ya kina"
+msgid "Description: {desc}"
+msgstr "Maelezo: {desc}"
 
-msgid "Disabled"
-msgstr "Imezimwa"
+msgid "Deselect All"
+msgstr "Ondoa Zote"
+
+msgid "Deselected {count} file(s)"
+msgstr "Faili {count} zimeondolewa"
+
+msgid "Details"
+msgstr "Maelezo"
+
+msgid "Diff written to {path}"
+msgstr "Tofauti imeandikwa kwa {path}"
+
+msgid "Direct session access not available in daemon mode"
+msgstr "Ufikiaji wa moja kwa moja wa kikao haupo katika hali ya daemon"
+
+msgid "Disk I/O configuration (preallocation, hashing, checkpoints)"
+msgstr "Mpangilio wa Disk I/O (kutanguliza, hashing, checkpoint)"
+
+msgid "Do Not Download"
+msgstr "Usipakue"
 
 msgid "Download"
 msgstr "Pakua"
+
+msgid "Download Limit"
+msgstr "Kikomo cha Upakuaji"
+
+msgid "Download Rate"
+msgstr "Kasi ya Upakuaji"
 
 msgid "Download Speed"
 msgstr "Kasi ya Upakuaji"
 
 msgid "Download paused"
-msgstr "Upakuaji umezimwa"
+msgstr "Upakuaji umesimamishwa"
 
 msgid "Download resumed"
 msgstr "Upakuaji umeendelezwa"
 
 msgid "Download stopped"
-msgstr "Upakuaji umeacha"
+msgstr "Upakuaji umesimamishwa"
 
 msgid "Downloaded"
-msgstr "Imechukuliwa"
+msgstr "Imepakuliwa"
+
+msgid "Downloaders"
+msgstr "Wapakua"
+
+msgid "Downloading"
+msgstr "Inapakua"
 
 msgid "Downloading {name}"
 msgstr "Inapakua {name}"
 
 msgid "ETA"
-msgstr "Muda wa Kukamilika"
+msgstr "ETA"
 
-msgid "Enable debug mode"
-msgstr "Washa hali ya utatuzi"
-
-msgid "Enable verbose output"
-msgstr "Washa matokeo ya kina"
+msgid "Enable debug mode (deprecated, use -vv)"
+msgstr "Washa hali ya utambuzi (imepitwa, tumia -vv)"
 
 msgid "Enabled"
-msgstr "Imeamilishwa"
+msgstr "Imewezeshwa"
 
-msgid "Error reading scrape cache"
-msgstr "Hitilafu katika kusoma cache ya scrape"
+msgid "Encrypting backup..."
+msgstr "Inaficha nakala rudufu..."
+
+msgid "Error"
+msgstr "Kosa"
+
+msgid "Error adding tracker: {error}"
+msgstr "Kosa katika kuongeza tracker: {error}"
+
+msgid "Error banning peer: {error}"
+msgstr "Kosa katika kukataza mshirika: {error}"
+
+msgid ""
+"Error checking daemon accessibility (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...\n"
+msgstr ""
+"Kosa katika kuangalia ufikiaji wa daemon (jaribio %d/%d, limepita %.1fs): %s, inajaribu tena katika %.1fs...\n"
+
+msgid ""
+"Error checking daemon accessibility after %d attempts (elapsed %.1fs): %s\n"
+msgstr ""
+"Kosa katika kuangalia ufikiaji wa daemon baada ya majaribio %d (limepita %.1fs): %s\n"
+
+msgid "Error checking daemon stage: %s"
+msgstr "Kosa katika kuangalia hatua ya daemon: %s"
+
+msgid ""
+"Error checking if daemon is running (Windows-specific issue?): %s - PID file exists, will attempt IPC connection\n"
+msgstr ""
+"Kosa katika kuangalia ikiwa daemon inafanya kazi (suala la Windows?): %s - faili ya PID ipo, itajaribu muunganisho wa IPC\n"
+
+msgid "Error checking if restart is needed: %s"
+msgstr "Kosa katika kuangalia ikiwa kuanzisha upya kunahitajika: %s"
+
+msgid "Error closing HTTP session: %s"
+msgstr "Kosa katika kufunga kikao cha HTTP: %s"
+
+msgid "Error closing IPC client: %s"
+msgstr "Kosa katika kufunga mteja wa IPC: %s"
+
+msgid "Error closing WebSocket: %s"
+msgstr "Kosa katika kufunga WebSocket: %s"
+
+msgid "Error comparing configs: {e}"
+msgstr "Kosa katika kulinganisha mpangilio: {e}"
+
+msgid "Error creating backup: {e}"
+msgstr "Kosa katika kuunda nakala rudufu: {e}"
+
+msgid "Error creating torrent"
+msgstr "Kosa katika kuunda torrent"
+
+msgid "Error deselecting files: {error}"
+msgstr "Kosa katika kuondoa faili: {error}"
+
+msgid "Error exporting configuration: {e}"
+msgstr "Kosa katika kutolea nje mpangilio: {e}"
+
+msgid "Error forcing announce: {error}"
+msgstr "Kosa katika kulazimisha tangazo: {error}"
+
+msgid "Error generating schema: {e}"
+msgstr "Kosa katika kutengeneza schema: {e}"
+
+msgid "Error getting daemon status: %s"
+msgstr "Kosa katika kupata hali ya daemon: %s"
+
+msgid "Error importing configuration: {e}"
+msgstr "Kosa katika kuingiza mpangilio: {e}"
+
+msgid "Error in socket pre-check: %s"
+msgstr "Kosa katika ukaguzi wa awali wa socket: %s"
+
+msgid "Error listing backups: {e}"
+msgstr "Kosa katika kuorodhesha nakala rudufu: {e}"
+
+msgid "Error listing profiles: {e}"
+msgstr "Kosa katika kuorodhesha wasifu: {e}"
+
+msgid "Error listing templates: {e}"
+msgstr "Kosa katika kuorodhesha viwango: {e}"
+
+msgid "Error loading torrent configuration: {error}"
+msgstr "Kosa katika kupakia mpangilio wa torrent: {error}"
+
+msgid "Error opening folder: {error}"
+msgstr "Kosa katika kufungua folda: {error}"
+
+msgid "Error processing file %s: %s"
+msgstr "Kosa katika kuchakata faili %s: %s"
+
+msgid "Error reading PID file after retries: %s"
+msgstr "Kosa katika kusoma faili ya PID baada ya majaribio: %s"
+
+msgid "Error reading PID file: %s"
+msgstr "Kosa katika kusoma faili ya PID: %s"
+
+msgid "Error receiving WebSocket event: %s"
+msgstr "Kosa katika kupokea tukio la WebSocket: %s"
+
+msgid "Error removing tracker: {error}"
+msgstr "Kosa katika kuondoa tracker: {error}"
+
+msgid "Error restarting daemon: %s"
+msgstr "Kosa katika kuanzisha upya daemon: %s"
+
+msgid "Error restoring backup: {e}"
+msgstr "Kosa katika kurejesha nakala rudufu: {e}"
+
+msgid "Error routing to daemon (PID file exists): %s"
+msgstr "Kosa katika kuelekeza kwa daemon (faili ya PID ipo): %s"
+
+msgid "Error routing to daemon (no PID file): %s - will create local session"
+msgstr "Kosa katika kuelekeza kwa daemon (hakuna faili ya PID): %s - itaunda kikao cha ndani"
+
+msgid "Error selecting files: {error}"
+msgstr "Kosa katika kuchagua faili: {error}"
+
+msgid "Error sending shutdown request: %s"
+msgstr "Kosa katika kutuma ombi la kuzima: %s"
+
+msgid "Error setting file priority: {error}"
+msgstr "Kosa katika kuweka kipaumbele cha faili: {error}"
+
+msgid "Error starting daemon: %s"
+msgstr "Kosa katika kuanzisha daemon: %s"
+
+msgid "Error stopping daemon: %s"
+msgstr "Kosa katika kuzima daemon: %s"
+
+msgid "Error verifying files: {error}"
+msgstr "Kosa katika kuthibitisha faili: {error}"
+
+msgid "Error waiting for daemon with progress: %s"
+msgstr "Kosa katika kusubiri daemon na maendeleo: %s"
+
+msgid "Error waiting for daemon: %s"
+msgstr "Kosa katika kusubiri daemon: %s"
+
+msgid "Error with auto-tuning: {e}"
+msgstr "Kosa na kujipanga otomatiki: {e}"
+
+msgid "Error with profile: {e}"
+msgstr "Kosa na wasifu: {e}"
+
+msgid "Error with template: {e}"
+msgstr "Kosa na kiolezo: {e}"
+
+msgid "Error: {error}"
+msgstr "Kosa: {error}"
+
+msgid "Eviction rate: {rate:.2f} /sec"
+msgstr "Kiwango cha kuondoa: {rate:.2f} /sekunde"
+
+msgid "Exceeded maximum wait time (%.1fs) for daemon readiness"
+msgstr "Kimezidi muda wa kusubiri (%.1fs) kwa uandaa wa daemon"
+
+msgid "Expected type: {type_name}"
+msgstr "Aina inayotarajiwa: {type_name}"
 
 msgid "Explore"
-msgstr "Chunguza"
+msgstr "Vinjari"
+
+msgid "Export complete"
+msgstr "Utoaji umekamilika"
+
+msgid "Exporting checkpoint..."
+msgstr "Inatoa checkpoint..."
 
 msgid "Failed"
 msgstr "Imeshindwa"
 
+msgid "Failed to add content"
+msgstr "Imeshindwa kuongeza maudhui"
+
+msgid "Failed to add magnet link"
+msgstr "Imeshindwa kuongeza kiungo cha magnet"
+
+msgid "Failed to add peer to allowlist"
+msgstr "Imeshindwa kuongeza mshirika kwenye orodha ya kuruhusiwa"
+
+msgid "Failed to add torrent"
+msgstr "Imeshindwa kuongeza torrent"
+
+msgid "Failed to add torrent to daemon"
+msgstr "Imeshindwa kuongeza torrent kwa daemon"
+
+msgid "Failed to announce: {error}"
+msgstr "Imeshindwa kutangaza: {error}"
+
+msgid "Failed to ban peer: {error}"
+msgstr "Imeshindwa kukataza mshirika: {error}"
+
+msgid "Failed to calculate progress: %s"
+msgstr "Imeshindwa kuhesabu maendeleo: %s"
+
+msgid "Failed to cleanup Xet cache"
+msgstr "Imeshindwa kusafisha hifadhi ya Xet"
+
+msgid "Failed to clear queue"
+msgstr "Imeshindwa kufuta foleni"
+
+msgid "Failed to collect custom metrics: %s"
+msgstr "Imeshindwa kukusanya metriki za desturi: %s"
+
+msgid "Failed to collect performance metrics: %s"
+msgstr "Imeshindwa kukusanya metriki za utendaji: %s"
+
+msgid "Failed to collect system metrics: %s"
+msgstr "Imeshindwa kukusanya metriki za mfumo: %s"
+
+msgid "Failed to copy info hash: {error}"
+msgstr "Imeshindwa kunakili hash ya taarifa: {error}"
+
+msgid "Failed to deselect all files"
+msgstr "Imeshindwa kuondoa faili zote"
+
+msgid "Failed to deselect files"
+msgstr "Imeshindwa kuondoa faili"
+
+msgid "Failed to deselect files: {error}"
+msgstr "Imeshindwa kuondoa faili: {error}"
+
+msgid "Failed to disable io_uring: %s"
+msgstr "Imeshindwa kuzima io_uring: %s"
+
+msgid "Failed to discover NAT"
+msgstr "Imeshindwa kugundua NAT"
+
+msgid "Failed to enable io_uring: %s"
+msgstr "Imeshindwa kuwezesha io_uring: %s"
+
+msgid "Failed to generate .tonic file"
+msgstr "Imeshindwa kutengeneza faili .tonic"
+
+msgid "Failed to generate tonic link"
+msgstr "Imeshindwa kutengeneza kiungo cha tonic"
+
+msgid "Failed to get NAT status"
+msgstr "Imeshindwa kupata hali ya NAT"
+
+msgid "Failed to get Xet cache info"
+msgstr "Imeshindwa kupata taarifa za hifadhi ya Xet"
+
+msgid "Failed to get Xet stats"
+msgstr "Imeshindwa kupata takwimu za Xet"
+
+msgid "Failed to get content"
+msgstr "Imeshindwa kupata maudhui"
+
+msgid "Failed to get metrics interval from config: %s"
+msgstr "Imeshindwa kupata muda wa metriki kutoka mpangilio: %s"
+
+msgid "Failed to get peers"
+msgstr "Imeshindwa kupata washirika"
+
+msgid "Failed to get queue"
+msgstr "Imeshindwa kupata foleni"
+
+msgid "Failed to get runtime status: %s"
+msgstr "Imeshindwa kupata hali ya utendaji: %s"
+
+msgid "Failed to get stats"
+msgstr "Imeshindwa kupata takwimu"
+
+msgid "Failed to get sync mode"
+msgstr "Imeshindwa kupata hali ya sinkronia"
+
+msgid "Failed to get sync status"
+msgstr "Imeshindwa kupata hali ya sinkronia"
+
+msgid "Failed to list aliases"
+msgstr "Imeshindwa kuorodhesha majina mbadala"
+
+msgid "Failed to list allowlist"
+msgstr "Imeshindwa kuorodhesha orodha ya kuruhusiwa"
+
+msgid "Failed to list files"
+msgstr "Imeshindwa kuorodhesha faili"
+
+msgid "Failed to list scrape results"
+msgstr "Imeshindwa kuorodhesha matokeo ya scrape"
+
+msgid "Failed to load filter file: {file_path}"
+msgstr "Imeshindwa kupakia faili ya kichujio: {file_path}"
+
+msgid "Failed to map port"
+msgstr "Imeshindwa kuweka ramani ya bandari"
+
+msgid "Failed to move in queue"
+msgstr "Imeshindwa kusogeza kwenye foleni"
+
+msgid "Failed to parse config value: %s"
+msgstr "Imeshindwa kuchanganua thamani ya mpangilio: %s"
+
+msgid "Failed to pause torrent"
+msgstr "Imeshindwa kusimamisha torrent"
+
+msgid "Failed to pin content"
+msgstr "Imeshindwa kufunga maudhui"
+
+msgid "Failed to refresh mappings"
+msgstr "Imeshindwa kusasisha ramani"
+
 msgid "Failed to register torrent in session"
-msgstr "Kushindwa kusajili torrent katika kikao"
+msgstr "Imeshindwa kusajili torrent katika kikao"
+
+msgid "Failed to remove alias"
+msgstr "Imeshindwa kuondoa jina mbadala"
+
+msgid "Failed to remove from queue"
+msgstr "Imeshindwa kuondoa kutoka foleni"
+
+msgid "Failed to remove peer from allowlist"
+msgstr "Imeshindwa kuondoa mshirika kutoka orodha ya kuruhusiwa"
+
+msgid "Failed to remove tracker: {error}"
+msgstr "Imeshindwa kuondoa tracker: {error}"
+
+msgid "Failed to resume torrent"
+msgstr "Imeshindwa kuendeleza torrent"
+
+msgid "Failed to save configuration to file: %s"
+msgstr "Imeshindwa kuhifadhi mpangilio kwa faili: %s"
+
+msgid "Failed to scrape torrent"
+msgstr "Imeshindwa kusakura torrent"
+
+msgid "Failed to select all files"
+msgstr "Imeshindwa kuchagua faili zote"
+
+msgid "Failed to select files"
+msgstr "Imeshindwa kuchagua faili"
+
+msgid "Failed to select files: {error}"
+msgstr "Imeshindwa kuchagua faili: {error}"
+
+msgid "Failed to set alias"
+msgstr "Imeshindwa kuweka jina mbadala"
+
+msgid "Failed to set file priority"
+msgstr "Imeshindwa kuweka kipaumbele cha faili"
+
+msgid "Failed to set first piece priority: %s"
+msgstr "Imeshindwa kuweka kipaumbele cha kipande cha kwanza: %s"
+
+msgid "Failed to set last piece priority: %s"
+msgstr "Imeshindwa kuweka kipaumbele cha kipande cha mwisho: %s"
+
+msgid "Failed to set priority"
+msgstr "Imeshindwa kuweka kipaumbele"
+
+msgid "Failed to set priority: {error}"
+msgstr "Imeshindwa kuweka kipaumbele: {error}"
+
+msgid "Failed to set sync mode"
+msgstr "Imeshindwa kuweka hali ya sinkronia"
+
+msgid "Failed to sign WebSocket request: %s"
+msgstr "Imeshindwa kusaini ombi la WebSocket: %s"
+
+msgid "Failed to sign request with Ed25519: %s"
+msgstr "Imeshindwa kusaini ombi na Ed25519: %s"
+
+msgid "Failed to start sync"
+msgstr "Imeshindwa kuanza sinkronia"
+
+msgid "Failed to stop daemon"
+msgstr "Imeshindwa kuzima daemon"
+
+msgid "Failed to unmap port"
+msgstr "Imeshindwa kuondoa ramani ya bandari"
+
+msgid "Failed to unpin content"
+msgstr "Imeshindwa kuondoa kufunga maudhui"
 
 msgid "File"
 msgstr "Faili"
@@ -214,35 +1383,157 @@ msgstr "Uchaguzi wa faili haupatikani kwa torrent hii"
 msgid "Files"
 msgstr "Faili"
 
+msgid "Filter update failed"
+msgstr "Sasisho la kichujio limeshindwa"
+
+msgid "Folder not found: {folder}"
+msgstr "Folda haijapatikana: {folder}"
+
+msgid "Force Announce"
+msgstr "Lazimisha Tangazo"
+
+msgid "Found {count} potential issues"
+msgstr "Masuala {count} yanayowezekana yamepatikana"
+
+msgid ""
+"Full configuration editing is available in the Global Config screen. Press 'g' to open it.\n"
+msgstr ""
+"Uhariri kamili wa mpangilio unapatikana kwenye skrini ya Mpangilio wa Ulimwengu. Bofya 'g' kuifungua.\n"
+
+msgid ""
+"Full configuration editing requires navigating to the Global Config screen\n"
+msgstr ""
+"Uhariri kamili wa mpangilio unahitaji kuelekea kwenye skrini ya Mpangilio wa Ulimwengu\n"
+
+msgid "General"
+msgstr "Jumla"
+
+msgid "General configuration - Data provider/Executor not available"
+msgstr "Mpangilio wa jumla - Mtoaji wa Data/Mtekelezi haupo"
+
+msgid "Generated new API key for daemon"
+msgstr "Ufunguo mpya wa API umeundwa kwa daemon"
+
+msgid "Generating {format} torrent..."
+msgstr "Inatengeneza torrent {format}..."
+
+msgid "Global"
+msgstr "Ulimwengu"
+
 msgid "Global Config"
-msgstr "Usanidi wa Ulimwengu"
+msgstr "Mpangilio wa Ulimwengu"
+
+msgid "Global Configuration"
+msgstr "Mpangilio wa Ulimwengu"
+
+msgid "Graceful shutdown timeout, forcing stop"
+msgstr "Muda wa kuzima kwa adabu umepita, inalazimisha kusimamisha"
+
+msgid "Graphs"
+msgstr "Grafu"
 
 msgid "Help"
 msgstr "Msaada"
+
+msgid "High"
+msgstr "Juu"
 
 msgid "History"
 msgstr "Historia"
 
 msgid "ID"
-msgstr "Kitambulisho"
+msgstr "ID"
 
 msgid "IP"
 msgstr "IP"
 
-msgid "IP Filter"
-msgstr "Kichujio cha IP"
+msgid "IP Address"
+msgstr "Anwani ya IP"
+
+msgid "IP filter not available"
+msgstr "Kichujio cha IP hakipo"
+
+msgid ""
+"IPCClient.get_daemon_pid: Checking pid_file=%s (home_dir=%s, exists=%s)\n"
+msgstr ""
+"IPCClient.get_daemon_pid: Inaangalia pid_file=%s (home_dir=%s, ipo=%s)\n"
 
 msgid "IPFS"
 msgstr "IPFS"
 
+msgid "Idle"
+msgstr "Hapo"
+
+msgid "Inactive"
+msgstr "Haifanyi kazi"
+
+msgid "Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)"
+msgstr "Ongeza maelezo (-v: maelezo, -vv: utambuzi, -vvv: ufuatiliaji)"
+
+msgid "Info"
+msgstr "Taarifa"
+
 msgid "Info Hash"
 msgstr "Hash ya Taarifa"
 
+msgid "Info hash copied to clipboard"
+msgstr "Hash ya taarifa imenakiliwa kwenye ubao wa kunakili"
+
+msgid "Info hash: {hash}"
+msgstr "Hash ya taarifa: {hash}"
+
+msgid "Initial Rate"
+msgstr "Kasi ya Awali"
+
+msgid "Initial send rate"
+msgstr "Kasi ya awali ya kutuma"
+
 msgid "Interactive backup"
-msgstr "Nakala ya usalama ya kuingiliana"
+msgstr "Nakala rudufu ya mazungumzo"
+
+msgid "Invalid IP address: {error}"
+msgstr "Anwani ya IP batili: {error}"
+
+msgid "Invalid IP range: {ip_range}"
+msgstr "Anuwai ya IP batili: {ip_range}"
+
+msgid "Invalid configuration: {e}"
+msgstr "Mpangilio batili: {e}"
+
+msgid "Invalid info hash format"
+msgstr "Muundo wa hash ya taarifa batili"
+
+msgid "Invalid info hash format: %s"
+msgstr "Muundo wa hash ya taarifa batili: %s"
+
+msgid "Invalid info hash length in magnet link"
+msgstr "Urefu wa hash ya taarifa batili katika kiungo cha magnet"
+
+msgid ""
+"Invalid locale '{current_locale}' specified. Falling back to 'en'. Available locales: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu\n"
+msgstr ""
+"Lugha batili '{current_locale}' imebainishwa. Inarudi kwa 'en'. Lugha zinazopatikana: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu\n"
+
+msgid "Invalid magnet link - missing 'xt=urn:btih:' parameter"
+msgstr "Kiungo cha magnet batili - kimekosa kigezo 'xt=urn:btih:'"
+
+msgid "Invalid magnet link format"
+msgstr "Muundo wa kiungo cha magnet batili"
+
+msgid "Invalid magnet link format - must start with 'magnet:?'"
+msgstr "Muundo wa kiungo cha magnet batili - lazima ianze na 'magnet:?'"
+
+msgid "Invalid peer selection"
+msgstr "Uchaguzi wa mshirika batili"
+
+msgid "Invalid profile '{name}': {errors}"
+msgstr "Wasifu batili '{name}': {errors}"
+
+msgid "Invalid template '{name}': {errors}"
+msgstr "Kiolezo batili '{name}': {errors}"
 
 msgid "Invalid torrent file format"
-msgstr "Muundo wa faili ya torrent si sahihi"
+msgstr "Muundo wa faili ya torrent batili"
 
 msgid "Key"
 msgstr "Ufunguo"
@@ -253,20 +1544,86 @@ msgstr "Ufunguo haujapatikana: {key}"
 msgid "Last Scrape"
 msgstr "Scrape ya Mwisho"
 
-msgid "Leechers"
-msgstr "Wanachukua"
+msgid "Last Update"
+msgstr "Sasisho la Mwisho"
 
 msgid "Leechers (Scrape)"
-msgstr "Wanachukua (Scrape)"
+msgstr "Wapakua (Scrape)"
+
+msgid "Loading configuration..."
+msgstr "Inapakia mpangilio..."
+
+msgid "Loading torrent configuration..."
+msgstr "Inapakia mpangilio wa torrent..."
+
+msgid "Low"
+msgstr "Chini"
 
 msgid "MIGRATED"
 msgstr "IMEHAMISHWA"
+
+msgid "MTU"
+msgstr "MTU"
+
+msgid "Magnet command: PID file check - exists=%s, path=%s"
+msgstr "Amri ya magnet: ukaguzi wa faili ya PID - ipo=%s, njia=%s"
+
+msgid "Magnet link must contain 'xt=urn:btih:' parameter"
+msgstr "Kiungo cha magnet lazima kiwe na kigezo 'xt=urn:btih:'"
+
+msgid "Magnet link must start with 'magnet:?'"
+msgstr "Kiungo cha magnet lazima kianze na 'magnet:?'"
+
+msgid "Max Rate"
+msgstr "Kasi ya Juu zaidi"
+
+msgid "Max Retransmits"
+msgstr "Ujumbe wa Juu zaidi wa Kurudia"
+
+msgid "Max Window Size"
+msgstr "Ukubwa wa Juu zaidi wa Dirisha"
+
+msgid "Maximum"
+msgstr "Juu zaidi"
+
+msgid "Maximum UDP packet size"
+msgstr "Ukubwa wa juu zaidi wa pakiti ya UDP"
+
+msgid "Maximum receive window size"
+msgstr "Ukubwa wa juu zaidi wa dirisha la kupokea"
+
+msgid "Maximum retransmission attempts"
+msgstr "Jaribio la juu zaidi la kurudia"
+
+msgid "Maximum send rate"
+msgstr "Kasi ya juu zaidi ya kutuma"
 
 msgid "Menu"
 msgstr "Menyu"
 
 msgid "Metric"
-msgstr "Kipimo"
+msgstr "Metriki"
+
+msgid "Migrating checkpoint format from {from_fmt} to {to_fmt}..."
+msgstr "Inahamisha muundo wa checkpoint kutoka {from_fmt} hadi {to_fmt}..."
+
+msgid "Migration complete"
+msgstr "Uhamishaji umekamilika"
+
+msgid "Min Rate"
+msgstr "Kasi ya Chini zaidi"
+
+msgid "Minimum send rate"
+msgstr "Kasi ya chini zaidi ya kutuma"
+
+msgid "Model '{model}' not found in Config"
+msgstr "Mfano '{model}' haujapatikana katika Mpangilio"
+
+msgid "Modified"
+msgstr "Imehaririwa"
+
+msgid "N/A"
+msgstr "Haipatikani"
 
 msgid "NAT Management"
 msgstr "Usimamizi wa NAT"
@@ -277,68 +1634,185 @@ msgstr "Jina"
 msgid "Network"
 msgstr "Mtandao"
 
+msgid "Network configuration (connections, timeouts, rate limits)"
+msgstr "Mpangilio wa mtandao (muunganisho, muda, mipaka ya kasi)"
+
+msgid "Network configuration - Data provider/Executor not available"
+msgstr "Mpangilio wa mtandao - Mtoaji wa Data/Mtekelezi haupo"
+
+msgid "Never"
+msgstr "Kamwe"
+
 msgid "No"
 msgstr "Hapana"
+
+msgid "No PID file found, checking for daemon via _get_executor()"
+msgstr "Faili ya PID haijapatikana, inaangalia daemon kupitia _get_executor()"
 
 msgid "No active alerts"
 msgstr "Hakuna onyo zinazofanya kazi"
 
 msgid "No alert rules"
-msgstr "Hakuna kanuni za onyo"
+msgstr "Hakuna sheria za onyo"
 
 msgid "No alert rules configured"
-msgstr "Hakuna kanuni za onyo zimepangwa"
+msgstr "Hakuna sheria za onyo zilizowekwa"
 
 msgid "No backups found"
-msgstr "Hakuna nakala za usalama zilizopatikana"
-
-msgid "No cached results"
-msgstr "Hakuna matokeo yaliyohifadhiwa"
+msgstr "Hakuna nakala rudufu zilizopatikana"
 
 msgid "No checkpoints"
-msgstr "Hakuna sehemu za kuangalia"
+msgstr "Hakuna checkpoint"
 
 msgid "No config file to backup"
-msgstr "Hakuna faili ya usanidi ya kutengeneza nakala ya usalama"
+msgstr "Hakuna faili ya mpangilio ya kufanya nakala rudufu"
+
+msgid "No configuration file to backup"
+msgstr "Hakuna faili ya mpangilio ya kufanya nakala rudufu"
+
+msgid "No daemon PID file found - daemon is not running"
+msgstr "Faili ya PID ya daemon haijapatikana - daemon haifanyi kazi"
+
+msgid "No daemon config or API key found - will create local session"
+msgstr "Mpangilio wa daemon au ufunguo wa API haujapatikana - itaunda kikao cha ndani"
+
+msgid ""
+"No daemon detected (PID file doesn't exist), creating local session. PID file path: %s\n"
+msgstr ""
+"Daemon haijagunduliwa (faili ya PID haipo), inaunda kikao cha ndani. Njia ya faili ya PID: %s\n"
+
+msgid "No file selected"
+msgstr "Hakuna faili iliyochaguliwa"
+
+msgid "No files to deselect"
+msgstr "Hakuna faili za kuondoa"
+
+msgid "No files to select"
+msgstr "Hakuna faili za kuchagua"
+
+msgid "No locales directory found"
+msgstr "Folda ya lugha haijapatikana"
+
+msgid "No magnet URI provided"
+msgstr "URI ya magnet haijatolewa"
+
+msgid "No magnet URI provided for add_magnet operation."
+msgstr "URI ya magnet haijatolewa kwa operesheni ya add_magnet."
+
+msgid "No peer selected"
+msgstr "Hakuna mshirika aliyechaguliwa"
 
 msgid "No peers connected"
-msgstr "Hakuna wanaohusiana wameunganishwa"
+msgstr "Hakuna washirika waliounganishwa"
 
 msgid "No profiles available"
 msgstr "Hakuna wasifu zinazopatikana"
 
 msgid "No templates available"
-msgstr "Hakuna viwango zinazopatikana"
+msgstr "Hakuna viwango vinazopatikana"
 
 msgid "No torrent active"
 msgstr "Hakuna torrent inayofanya kazi"
 
-msgid "Nodes: {count}"
-msgstr "Nodi: {count}"
+msgid "No torrent path or magnet provided"
+msgstr "Njia ya torrent au magnet haijatolewa"
 
-msgid "Not available"
-msgstr "Haipatikani"
+msgid "No tracker selected"
+msgstr "Hakuna tracker iliyochaguliwa"
 
-msgid "Not configured"
-msgstr "Haijapangwa"
+msgid "No trackers found"
+msgstr "Hakuna tracker zilizopatikana"
+
+msgid "Normal"
+msgstr "Kawaida"
 
 msgid "Not supported"
 msgstr "Haitegemezi"
 
+msgid "Note"
+msgstr "Kumbuka"
+
 msgid "OK"
 msgstr "Sawa"
+
+msgid "Open Folder"
+msgstr "Fungua Folda"
+
+msgid "Opened folder: {path}"
+msgstr "Folda imefunguliwa: {path}"
 
 msgid "Operation not supported"
 msgstr "Operesheni haitegemezi"
 
+msgid "Option"
+msgstr "Chaguo"
+
+msgid "Output directory not available"
+msgstr "Folda ya matokeo haipatikani"
+
+msgid "PEX: Failed"
+msgstr "PEX: Imeshindwa"
+
 msgid "PEX: {status}"
 msgstr "PEX: {status}"
+
+msgid "PID file contains invalid PID: %d, removing"
+msgstr "Faili ya PID ina PID batili: %d, inaondoa"
+
+msgid "PID file contains invalid data: %r, removing"
+msgstr "Faili ya PID ina data batili: %r, inaondoa"
+
+msgid "PID file is empty, removing"
+msgstr "Faili ya PID ni tupu, inaondoa"
+
+msgid "Parsing files and building file tree..."
+msgstr "Inachanganua faili na kuunda mti wa faili..."
+
+msgid "Parsing files and building hybrid metadata..."
+msgstr "Inachanganua faili na kuunda metadata ya mseto..."
+
+msgid "Path"
+msgstr "Njia"
 
 msgid "Pause"
 msgstr "Simamisha"
 
+msgid "Pause failed: {error}"
+msgstr "Kusimamisha kumeshindwa: {error}"
+
+msgid "Peer banning not yet implemented. Selected peer: {ip}:{port}"
+msgstr "Kukataza mshirika bado haijaanzishwa. Mshirika aliyechaguliwa: {ip}:{port}"
+
+msgid "Peer {ip}:{port} banned"
+msgstr "Mshirika {ip}:{port} amekatazwa"
+
 msgid "Peers"
-msgstr "Wanaohusiana"
+msgstr "Washirika"
+
+msgid "Per-Torrent"
+msgstr "Kwa Torrent"
+
+msgid "Per-Torrent Config: {hash}..."
+msgstr "Mpangilio wa Torrent: {hash}..."
+
+msgid "Per-Torrent Configuration"
+msgstr "Mpangilio wa Torrent"
+
+msgid "Per-Torrent Configuration: {name}"
+msgstr "Mpangilio wa Torrent: {name}"
+
+msgid "Per-Torrent tab - Data provider or executor not available"
+msgstr "Kichupo cha Torrent - Mtoaji wa Data au mtekelezi haupo"
+
+msgid ""
+"Per-torrent configuration - Data provider/Executor or torrent not available\n"
+msgstr ""
+"Usanidi wa torrent - Mtoaji wa Data au mtekelezi au torrent haupo\n"
+
+msgid ""
+"Per-torrent rate limits and priority can be configured via the CLI or executor commands.\n"
+msgstr ""
+"Vikomo vya kasi na kipaumbele vya torrent vinaweza kusanidiwa kupitia amri za CLI au mtekelezi.\n"
 
 msgid "Performance"
 msgstr "Utendaji"
@@ -346,17 +1820,47 @@ msgstr "Utendaji"
 msgid "Pieces"
 msgstr "Vipande"
 
+msgid "Please select a torrent first"
+msgstr "Tafadhali chagua torrent kwanza"
+
 msgid "Port"
 msgstr "Bandari"
 
-msgid "Port: {port}"
-msgstr "Bandari: {port}"
+msgid "Prefer over TCP"
+msgstr "Pendea zaidi ya TCP"
+
+msgid "Prefer uTP when both TCP and uTP are available"
+msgstr "Pendea uTP wakati TCP na uTP zipo"
+
+msgid "Preferences"
+msgstr "Mapendeleo"
+
+msgid "Preferences tab - Executor not available"
+msgstr "Kichupo cha Mapendeleo - Mtekelezi haupo"
+
+msgid "Press Ctrl+C to stop the daemon"
+msgstr "Bofya Ctrl+C kusimamisha daemon"
+
+msgid "Press Enter to configure this section"
+msgstr "Bofya Enter kusanidi sehemu hii"
 
 msgid "Priority"
 msgstr "Kipaumbele"
 
 msgid "Private"
 msgstr "Binafsi"
+
+msgid "Profile '{name}' not found"
+msgstr "Wasifu '{name}' haijulikani"
+
+msgid "Profile applied to {path}"
+msgstr "Wasifu imetumika kwa {path}"
+
+msgid "Profile config written to {path}"
+msgstr "Usanidi wa wasifu umeandikwa kwa {path}"
+
+msgid "Profile: {name}"
+msgstr "Wasifu: {name}"
 
 msgid "Profiles"
 msgstr "Wasifu"
@@ -365,40 +1869,103 @@ msgid "Progress"
 msgstr "Maendeleo"
 
 msgid "Property"
-msgstr "Mali"
+msgstr "Sifa"
 
 msgid "Proxy Config"
 msgstr "Usanidi wa Proxy"
 
+msgid "Public key must be 32 bytes (64 hex characters)"
+msgstr "Ufunguo wa umma lazima uwe baiti 32 (herufi 64 za hex)"
+
+msgid "PyYAML is required for YAML export"
+msgstr "PyYAML inahitajika kwa uhamishaji wa YAML"
+
+msgid "PyYAML is required for YAML import"
+msgstr "PyYAML inahitajika kwa uingizaji wa YAML"
+
 msgid "PyYAML is required for YAML output"
-msgstr "PyYAML inahitajika kwa matokeo ya YAML"
+msgstr "PyYAML inahitajika kwa pato la YAML"
 
 msgid "Quick Add"
 msgstr "Ongeza Haraka"
 
 msgid "Quit"
-msgstr "Toka"
+msgstr "Acha"
+
+msgid "RTT multiplier for retransmit timeout"
+msgstr "Kizidishi cha RTT kwa muda wa kupeleka tena"
+
+msgid "Rate limit configuration (global and per-torrent)"
+msgstr "Usanidi wa kikomo cha kasi (kwa jumla na kwa torrent)"
 
 msgid "Rate limits disabled"
-msgstr "Mipaka ya kasi imezimwa"
+msgstr "Vikomo vya kasi vimezimwa"
 
 msgid "Rate limits set to 1024 KiB/s"
-msgstr "Mipaka ya kasi imewekwa kwa 1024 KiB/s"
+msgstr "Vikomo vya kasi vimewekwa kwa 1024 KiB/s"
+
+msgid "Read IPC port %d from daemon config file (authoritative source)"
+msgstr "Soma bandari ya IPC %d kutoka faili ya usanidi wa daemon (chanzo cha mamlaka)"
+
+msgid "Rehash: Failed"
+msgstr "Rehash: Imeshindwa"
 
 msgid "Rehash: {status}"
 msgstr "Rehash: {status}"
 
+msgid "Remaining chunks: {count}"
+msgstr "Vipande vilivyobaki: {count}"
+
+msgid "Remove"
+msgstr "Ondoa"
+
+msgid "Remove Tracker"
+msgstr "Ondoa Tracker"
+
+msgid "Remove failed: {error}"
+msgstr "Kuondoa kumeshindwa: {error}"
+
+msgid "Remove tracker not yet implemented. Selected tracker: {url}"
+msgstr "Kuondoa tracker bado haijatekelezwa. Tracker iliyochaguliwa: {url}"
+
+msgid "Reset specific key only (otherwise resets all options)"
+msgstr "Weka upya ufunguo maalum tu (vinginevyo huweka upya chaguzi zote)"
+
+msgid "Restart daemon now?"
+msgstr "Anza upya daemon sasa?"
+
+msgid "Restore complete"
+msgstr "Kurejesha kumekamilika"
+
+msgid "Restore failed"
+msgstr "Kurejesha kumeshindwa"
+
+msgid "Restoring checkpoint..."
+msgstr "Inarejesha kichupo..."
+
 msgid "Resume"
 msgstr "Endelea"
+
+msgid "Resume failed: {error}"
+msgstr "Kuendeleza kumeshindwa: {error}"
+
+msgid "Resume from checkpoint?"
+msgstr "Endelea kutoka kichupo?"
+
+msgid "Resuming {name}"
+msgstr "Inaendeleza {name}"
+
+msgid "Retransmit Timeout Factor"
+msgstr "Kizidishi cha Muda wa Kupeleka Tena"
 
 msgid "Rule"
 msgstr "Kanuni"
 
-msgid "Rule not found: {name}"
-msgstr "Kanuni haijapatikana: {name}"
+msgid "Rule not found: {ip_range}"
+msgstr "Kanuni haijulikani: {ip_range}"
 
-msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
-msgstr "Kanuni: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Vizuizi: {blocks}"
+msgid "Rule not found: {name}"
+msgstr "Kanuni haijulikani: {name}"
 
 msgid "Running"
 msgstr "Inaendesha"
@@ -406,56 +1973,128 @@ msgstr "Inaendesha"
 msgid "SSL Config"
 msgstr "Usanidi wa SSL"
 
+msgid "Save checkpoint after reset"
+msgstr "Hifadhi kichupo baada ya kuweka upya"
+
+msgid "Save checkpoint immediately after setting option"
+msgstr "Hifadhi kichupo mara moja baada ya kuweka chaguo"
+
+msgid "Saving torrent to {path}..."
+msgstr "Inahifadhi torrent kwa {path}..."
+
+msgid "Scanning folder and calculating chunks..."
+msgstr "Inachunguza folda na kuhesabu vipande..."
+
+msgid "Schema written to {path}"
+msgstr "Schema imeandikwa kwa {path}"
+
 msgid "Scrape Results"
 msgstr "Matokeo ya Scrape"
+
+msgid "Scrape: Failed"
+msgstr "Scrape: Imeshindwa"
 
 msgid "Scrape: {status}"
 msgstr "Scrape: {status}"
 
+msgid "Search torrents..."
+msgstr "Tafuta torrents..."
+
+msgid "Section"
+msgstr "Sehemu"
+
 msgid "Section not found: {section}"
-msgstr "Sehemu haijapatikana: {section}"
+msgstr "Sehemu haijulikani: {section}"
+
+msgid "Section: {section}"
+msgstr "Sehemu: {section}"
+
+msgid "Security"
+msgstr "Usalama"
 
 msgid "Security Scan"
 msgstr "Uchunguzi wa Usalama"
 
-msgid "Seeders"
-msgstr "Wanapanda"
+msgid "Security configuration - Data provider/Executor not available"
+msgstr "Usanidi wa usalama - Mtoaji wa Data au mtekelezi haupo"
+
+msgid "Security settings (encryption, IP filtering, SSL)"
+msgstr "Mipangilio ya usalama (usimbaji, kuchuja IP, SSL)"
 
 msgid "Seeders (Scrape)"
-msgstr "Wanapanda (Scrape)"
+msgstr "Wapandaji (Scrape)"
+
+msgid "Seeding"
+msgstr "Inapanda"
+
+msgid "Seeds"
+msgstr "Mbegu"
+
+msgid "Select All"
+msgstr "Chagua Zote"
+
+msgid "Select File Priority"
+msgstr "Chagua Kipaumbele cha Faili"
+
+msgid "Select Priority"
+msgstr "Chagua Kipaumbele"
+
+msgid "Select a section to configure"
+msgstr "Chagua sehemu kusanidi"
+
+msgid "Select a section to configure. Press Enter to edit, Escape to go back."
+msgstr "Chagua sehemu kusanidi. Bofya Enter kuhariri, Escape kurudi nyuma."
+
+msgid "Select a sub-tab to view configuration options"
+msgstr "Chagua kichupo kidogo kuona chaguzi za usanidi"
+
+msgid "Select a sub-tab to view torrents"
+msgstr "Chagua kichupo kidogo kuona torrents"
+
+msgid "Select a tab to view content"
+msgstr "Chagua kichupo kuona maudhui"
+
+msgid "Select a torrent and sub-tab to view details"
+msgstr "Chagua torrent na kichupo kidogo kuona maelezo"
 
 msgid "Select files to download"
-msgstr "Chagua faili za kupakua"
+msgstr "Chagua faili kushusha"
 
 msgid "Selected"
 msgstr "Imechaguliwa"
 
-msgid "Session"
-msgstr "Kikao"
+msgid "Selected {count} file(s)"
+msgstr "Faili {count} zimechaguliwa"
+
+msgid "Set Priority"
+msgstr "Weka Kipaumbele"
+
+msgid "Set priority to {priority} for file"
+msgstr "Weka kipaumbele kwa {priority} kwa faili"
 
 msgid "Set value in global config file"
-msgstr "Weka thamani katika faili ya usanidi ya ulimwengu"
+msgstr "Weka thamani katika faili ya usanidi ya jumla"
 
 msgid "Set value in project local ccbt.toml"
-msgstr "Weka thamani katika ccbt.toml ya mradi ya ndani"
+msgstr "Weka thamani katika ccbt.toml ya ndani ya mradi"
 
 msgid "Severity"
 msgstr "Ukali"
 
 msgid "Show specific key path (e.g. network.listen_port)"
-msgstr "Onyesha njia maalum ya ufunguo (mfano. network.listen_port)"
+msgstr "Onyesha njia ya ufunguo maalum (mf. network.listen_port)"
 
 msgid "Show specific section key path (e.g. network)"
-msgstr "Onyesha njia ya ufunguo wa sehemu maalum (mfano. network)"
+msgstr "Onyesha njia ya ufunguo wa sehemu maalum (mf. network)"
 
 msgid "Size"
 msgstr "Ukubwa"
 
 msgid "Skip confirmation prompt"
-msgstr "Ruka ujumbe wa uthibitishaji"
+msgstr "Ruka kiulizo cha uthibitisho"
 
 msgid "Skip daemon restart even if needed"
-msgstr "Ruka kuanza upya daemon hata ikiwa inahitajika"
+msgstr "Ruka kuanza upya daemon hata kama inahitajika"
 
 msgid "Snapshot failed: {error}"
 msgstr "Picha ya wakati imeshindwa: {error}"
@@ -463,14 +2102,46 @@ msgstr "Picha ya wakati imeshindwa: {error}"
 msgid "Snapshot saved to {path}"
 msgstr "Picha ya wakati imehifadhiwa kwa {path}"
 
+msgid ""
+"Socket connection test to %s:%d failed (result=%d). Port may not be open or firewall blocking. Proceeding with HTTP check anyway.\n"
+msgstr ""
+
+msgid ""
+"Socket test returned 10035 (WSAEWOULDBLOCK) on Windows for %s:%d. This may be a false positive - proceeding with HTTP check.\n"
+msgstr ""
+
+msgid "Source path does not exist: %s"
+msgstr ""
+
+msgid "Starting daemon..."
+msgstr "Inaanza daemon..."
+
+msgid "Starting file verification..."
+msgstr "Inaanza uthibitisho wa faili..."
+
 msgid "Status"
 msgstr "Hali"
 
 msgid "Status: "
 msgstr "Hali: "
 
+msgid "Stopping daemon for restart..."
+msgstr "Inaacha daemon kwa ajili ya kuanza upya..."
+
+msgid "Stopping daemon..."
+msgstr "Inaacha daemon..."
+
+msgid "Stopping daemon... ({elapsed:.1f}s)"
+msgstr "Inaacha daemon... ({elapsed:.1f}s)"
+
+msgid "Storage"
+msgstr "Uhifadhi"
+
+msgid "Storage configuration - Data provider/Executor not available"
+msgstr "Usanidi wa uhifadhi - Mtoaji wa Data au mtekelezi haupo"
+
 msgid "Supported"
-msgstr "Inategemezi"
+msgstr "Inasaidiwa"
 
 msgid "System Capabilities"
 msgstr "Uwezo wa Mfumo"
@@ -481,11 +2152,47 @@ msgstr "Muhtasari wa Uwezo wa Mfumo"
 msgid "System Resources"
 msgstr "Rasilimali za Mfumo"
 
+msgid "System recommendations:"
+msgstr "Mapendekezo ya mfumo:"
+
+msgid "Template '{name}' not found"
+msgstr "Kiolezo '{name}' haijulikani"
+
+msgid "Template applied to {path}"
+msgstr "Kiolezo kimetumika kwa {path}"
+
+msgid "Template config written to {path}"
+msgstr "Usanidi wa kiolezo umeandikwa kwa {path}"
+
+msgid "Template: {name}"
+msgstr "Kiolezo: {name}"
+
 msgid "Templates"
-msgstr "Viwango"
+msgstr "Violezo"
+
+msgid "Templates: {templates}"
+msgstr "Violezo: {templates}"
+
+msgid "This will modify your configuration file. Continue?"
+msgstr "Hii itabadilisha faili yako ya usanidi. Endelea?"
+
+msgid ""
+"Timeout checking daemon accessibility (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+
+msgid ""
+"Timeout checking daemon accessibility after %d attempts (elapsed %.1fs)\n"
+msgstr ""
+
+msgid ""
+"Timeout checking daemon status at %s (daemon may be starting up or overloaded)\n"
+msgstr ""
 
 msgid "Timestamp"
-msgstr "Alama ya Wakati"
+msgstr "Muda wa Wakati"
+
+msgid "Top profile entries:"
+msgstr "Maingizo ya juu ya wasifu:"
 
 msgid "Torrent Config"
 msgstr "Usanidi wa Torrent"
@@ -494,352 +2201,1705 @@ msgid "Torrent Status"
 msgstr "Hali ya Torrent"
 
 msgid "Torrent file not found"
-msgstr "Faili ya torrent haijapatikana"
+msgstr "Faili ya torrent haijulikani"
 
 msgid "Torrent not found"
-msgstr "Torrent haijapatikana"
+msgstr "Torrent haijulikani"
+
+msgid "Torrent paused"
+msgstr "Torrent imesimamishwa"
+
+msgid "Torrent removed"
+msgstr "Torrent imeondolewa"
+
+msgid "Torrent resumed"
+msgstr "Torrent imeendelezwa"
+
+msgid "Torrent saved to {path}"
+msgstr "Torrent imehifadhiwa kwa {path}"
+
+msgid "Torrent {hash}... not found"
+msgstr "Torrent {hash}... haijulikani"
 
 msgid "Torrents"
 msgstr "Torrents"
 
-msgid "Torrents: {count}"
-msgstr "Torrents: {count}"
+msgid "Torrents tab - Data provider or executor not available"
+msgstr ""
 
-msgid "Tracker Scrape"
-msgstr "Scrape ya Tracker"
+msgid "Torrents: {count}"
+msgstr ""
+
+msgid "Total chunks: {count}"
+msgstr ""
+
+msgid "Tracker removed: {url}"
+msgstr ""
+
+msgid "Trackers"
+msgstr ""
 
 msgid "Type"
-msgstr "Aina"
+msgstr ""
+
+msgid "URL"
+msgstr ""
+
+msgid "Unexpected error checking daemon status at %s: %s"
+msgstr ""
 
 msgid "Unknown"
-msgstr "Haijulikani"
+msgstr ""
+
+msgid "Unknown error"
+msgstr ""
+
+msgid "Unknown operation: %s"
+msgstr ""
 
 msgid "Unknown subcommand"
-msgstr "Amri ndogo haijulikani"
+msgstr ""
 
 msgid "Unknown subcommand: {sub}"
-msgstr "Amri ndogo haijulikani: {sub}"
+msgstr ""
+
+msgid "Unlimited"
+msgstr ""
+
+msgid "Updated config file with daemon configuration"
+msgstr ""
 
 msgid "Upload"
-msgstr "Pakia"
+msgstr ""
+
+msgid "Upload Limit"
+msgstr ""
+
+msgid "Upload Rate"
+msgstr ""
 
 msgid "Upload Speed"
-msgstr "Kasi ya Kupakia"
+msgstr ""
+
+msgid "Uploading"
+msgstr ""
 
 msgid "Uptime: {uptime:.1f}s"
-msgstr "Muda wa kufanya kazi: {uptime:.1f}s"
+msgstr ""
 
 msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
-msgstr "Matumizi: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr ""
 
 msgid "Usage: backup <info_hash> <dest>"
-msgstr "Matumizi: backup <info_hash> <dest>"
+msgstr ""
 
 msgid "Usage: checkpoint list"
-msgstr "Matumizi: checkpoint list"
+msgstr ""
 
 msgid "Usage: config [show|get|set|reload] ..."
-msgstr "Matumizi: config [show|get|set|reload] ..."
+msgstr ""
 
 msgid "Usage: config get <key.path>"
-msgstr "Matumizi: config get <key.path>"
+msgstr ""
 
 msgid "Usage: config set <key.path> <value>"
-msgstr "Matumizi: config set <key.path> <value>"
+msgstr ""
 
 msgid "Usage: config_backup list|create [desc]|restore <file>"
-msgstr "Matumizi: config_backup list|create [desc]|restore <file>"
+msgstr ""
 
 msgid "Usage: config_diff <file1> <file2>"
-msgstr "Matumizi: config_diff <file1> <file2>"
+msgstr ""
 
 msgid "Usage: config_export <toml|json|yaml> <output>"
-msgstr "Matumizi: config_export <toml|json|yaml> <output>"
+msgstr ""
 
 msgid "Usage: config_import <toml|json|yaml> <input>"
-msgstr "Matumizi: config_import <toml|json|yaml> <input>"
+msgstr ""
+
+msgid "Usage: disk [show|stats|config <key> <value>|monitor]"
+msgstr ""
 
 msgid "Usage: export <path>"
-msgstr "Matumizi: export <path>"
+msgstr ""
 
 msgid "Usage: import <path>"
-msgstr "Matumizi: import <path>"
+msgstr ""
 
 msgid "Usage: limits [show|set] <info_hash> [down up]"
-msgstr "Matumizi: limits [show|set] <info_hash> [down up]"
+msgstr ""
 
 msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
-msgstr "Matumizi: limits set <info_hash> <down_kib> <up_kib>"
+msgstr ""
 
-msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
-msgstr "Matumizi: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgid ""
+"Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]\n"
+msgstr ""
+
+msgid "Usage: network [show|stats|config <key> <value>|optimize|monitor]"
+msgstr ""
 
 msgid "Usage: profile list | profile apply <name>"
-msgstr "Matumizi: profile list | profile apply <name>"
+msgstr ""
 
 msgid "Usage: restore <backup_file>"
-msgstr "Matumizi: restore <backup_file>"
+msgstr ""
 
 msgid "Usage: template list | template apply <name> [merge]"
-msgstr "Matumizi: template list | template apply <name> [merge]"
+msgstr ""
 
 msgid "Use --confirm to proceed with reset"
-msgstr "Tumia --confirm kuendelea na kuanzisha upya"
+msgstr ""
+
+msgid "Use --confirm to proceed with restore"
+msgstr ""
+
+msgid "Use --force to force kill"
+msgstr ""
+
+msgid "Using IPC port %d from main config"
+msgstr ""
+
+msgid "Using daemon executor for magnet command"
+msgstr ""
+
+msgid "Using default IPC port 8080 (daemon config file may not exist)"
+msgstr ""
+
+msgid "V1 torrent generation not yet implemented"
+msgstr ""
 
 msgid "VALID"
-msgstr "SAHIHI"
+msgstr ""
 
 msgid "Value"
-msgstr "Thamani"
+msgstr ""
+
+msgid ""
+"Verification complete: {verified} verified, {failed} failed out of {total}\n"
+msgstr ""
+
+msgid "Verification failed: {error}"
+msgstr ""
+
+msgid "Verify Files"
+msgstr ""
+
+msgid "Warnings:"
+msgstr ""
+
+msgid "WebSocket error: %s"
+msgstr ""
+
+msgid "WebSocket receive loop error: %s"
+msgstr ""
 
 msgid "Welcome"
-msgstr "Karibu"
+msgstr ""
+
+msgid ""
+"Windows-specific error checking daemon (os.kill() issue): %s - no PID file found, will create local session\n"
+msgstr ""
+
+msgid "Writing export file..."
+msgstr ""
+
+msgid "XET Folders"
+msgstr ""
 
 msgid "Xet"
-msgstr "Xet"
+msgstr ""
 
 msgid "Yes"
-msgstr "Ndiyo"
+msgstr ""
 
 msgid "Yes (BEP 27)"
-msgstr "Ndiyo (BEP 27)"
+msgstr ""
+
+msgid "[blue]Progress: {verified}/{total} pieces verified[/blue]"
+msgstr ""
+
+msgid "[blue]Running: {command}[/blue]"
+msgstr ""
+
+msgid ""
+"[bold]Aliases ({count}):[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Allowlist ({count} peers):[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Configuration:[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]Discovering NAT devices...[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Mapping {protocol} port {port}...[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]NAT Traversal Status[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Removing {protocol} port mapping for port {port}...[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]Sync Mode for: {path}[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Sync Status for: {path}[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Cache Information[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Deduplication Cache Statistics[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Protocol Status[/bold]\n"
+"\n"
+msgstr ""
 
 msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
-msgstr "[cyan]Inaongeza kiungo cha magnet na inapata metadata...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Checking for existing daemon instance...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Creating {format} torrent...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Download:[/cyan] {rate:.2f} KiB/s"
+msgstr ""
 
 msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
-msgstr "[cyan]Inapakua: {progress:.1f}% ({peers} wanaohusiana)[/cyan]"
+msgstr ""
 
-msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
-msgstr "[cyan]Inapakua: {progress:.1f}% ({rate:.2f} MB/s, {peers} wanaohusiana)[/cyan]"
+msgid ""
+"[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]\n"
+msgstr ""
+
+msgid "[cyan]Initializing configuration...[/cyan]"
+msgstr ""
 
 msgid "[cyan]Initializing session components...[/cyan]"
-msgstr "[cyan]Inaanzisha sehemu za kikao...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Loading filter from: {file_path}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Parsed tonic link: {name}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Restarting daemon...[/cyan]"
+msgstr ""
+
+msgid ""
+"[cyan]Running diagnostic checks...[/cyan]\n"
+"\n"
+msgstr ""
+
+msgid "[cyan]Starting daemon in background...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Starting daemon in foreground mode...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Starting sync for: {name}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Testing proxy connection to {host}:{port}...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Torrents:[/cyan] {num_torrents}"
+msgstr ""
 
 msgid "[cyan]Troubleshooting:[/cyan]"
-msgstr "[cyan]Kutatua matatizo:[/cyan]"
+msgstr ""
 
-msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
-msgstr "[cyan]Inasubiri sehemu za kikao ziwe tayari (kiwango cha juu sekunde 60)...[/cyan]"
+msgid "[cyan]Updating filter lists from {count} URL(s)...[/cyan]"
+msgstr ""
 
-msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
-msgstr "[dim]Fikiria kutumia amri za daemon au simamisha daemon kwanza: 'btbt daemon exit'[/dim]"
+msgid "[cyan]Upload:[/cyan] {rate:.2f} KiB/s"
+msgstr ""
+
+msgid "[cyan]Uptime:[/cyan] {uptime:.1f}s"
+msgstr ""
+
+msgid "[cyan]Using custom IPC port: {port}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Waiting for daemon to be ready...[/cyan]"
+msgstr ""
+
+msgid "[dim]  uv run btbt daemon start --foreground[/dim]"
+msgstr ""
+
+msgid ""
+"[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]\n"
+msgstr ""
+
+msgid ""
+"[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]\n"
+msgstr ""
+
+msgid "[dim]Info hash v1 (SHA-1): {hash}...[/dim]"
+msgstr ""
+
+msgid "[dim]Info hash v2 (SHA-256): {hash}...[/dim]"
+msgstr ""
+
+msgid "[dim]No active port mappings[/dim]"
+msgstr ""
+
+msgid "[dim]Output: {path}[/dim]"
+msgstr ""
+
+msgid "[dim]Please restart manually: 'btbt daemon restart'[/dim]"
+msgstr ""
+
+msgid "[dim]Please restart the daemon manually: 'btbt daemon restart'[/dim]"
+msgstr ""
+
+msgid "[dim]Protocol: {method}[/dim]"
+msgstr ""
+
+msgid "[dim]Source: {path}[/dim]"
+msgstr ""
+
+msgid "[dim]Trackers: {count}[/dim]"
+msgstr ""
+
+msgid ""
+"[dim]Try running with --foreground flag to see detailed error output:[/dim]\n"
+msgstr ""
+
+msgid "[dim]Use 'btbt daemon status' to check daemon status[/dim]"
+msgstr ""
+
+msgid "[dim]Use -v flag for more details or check daemon logs[/dim]"
+msgstr ""
+
+msgid "[dim]Web seeds: {count}[/dim]"
+msgstr ""
+
+msgid "[green]ALLOWED[/green]"
+msgstr ""
+
+msgid "[green]Active Protocol:[/green] {method}"
+msgstr ""
+
+msgid "[green]Added alert rule {name}[/green]"
+msgstr ""
+
+msgid "[green]Added to IPFS:[/green] {cid}"
+msgstr ""
 
 msgid "[green]All files selected[/green]"
-msgstr "[green]Faili zote zimechaguliwa[/green]"
+msgstr ""
 
 msgid "[green]Applied auto-tuned configuration[/green]"
-msgstr "[green]Usanidi wa kurekebisha kiotomatiki umetumika[/green]"
+msgstr ""
 
 msgid "[green]Applied profile {name}[/green]"
-msgstr "[green]Wasifu {name} umetumika[/green]"
+msgstr ""
 
 msgid "[green]Applied template {name}[/green]"
-msgstr "[green]Kiwango {name} kimetumika[/green]"
+msgstr ""
+
+msgid "[green]Applying {preset} optimizations...[/green]"
+msgstr ""
 
 msgid "[green]Backup created: {path}[/green]"
-msgstr "[green]Nakala ya usalama imeundwa: {path}[/green]"
+msgstr ""
+
+msgid "[green]Benchmark results:[/green] {results}"
+msgstr ""
+
+msgid ""
+"[green]CA certificates path set to {path}. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid "[green]Checkpoint for {hash} is valid[/green]"
+msgstr ""
+
+msgid "[green]Checkpoint for {info_hash} is valid[/green]"
+msgstr ""
+
+msgid "[green]Checkpoint saved[/green]"
+msgstr ""
+
+msgid "[green]Checkpoint valid[/green]"
+msgstr ""
 
 msgid "[green]Cleaned up {count} old checkpoints[/green]"
-msgstr "[green]Imesafisha sehemu za kuangalia {count} za zamani[/green]"
+msgstr ""
 
 msgid "[green]Cleared active alerts[/green]"
-msgstr "[green]Onyo zinazofanya kazi zimefutwa[/green]"
+msgstr ""
+
+msgid "[green]Cleared all active alerts[/green]"
+msgstr ""
+
+msgid "[green]Cleared queue[/green]"
+msgstr ""
+
+msgid ""
+"[green]Client certificate set. Configuration saved to {config_file}[/green]\n"
+msgstr ""
 
 msgid "[green]Configuration reloaded[/green]"
-msgstr "[green]Usanidi umeonyeshwa tena[/green]"
+msgstr ""
 
 msgid "[green]Configuration restored[/green]"
-msgstr "[green]Usanidi umerudishwa[/green]"
+msgstr ""
+
+msgid "[green]Connected to daemon[/green]"
+msgstr ""
 
 msgid "[green]Connected to {count} peer(s)[/green]"
-msgstr "[green]Imeunganishwa na {count} mwenyehusika[/green]"
+msgstr ""
+
+msgid "[green]Content pinned[/green]"
+msgstr ""
+
+msgid "[green]Content saved to:[/green] {output}"
+msgstr ""
+
+msgid "[green]Daemon is running[/green] (PID: {pid})"
+msgstr ""
+
+msgid "[green]Daemon restarted successfully[/green]"
+msgstr ""
 
 msgid "[green]Daemon status: {status}[/green]"
-msgstr "[green]Hali ya daemon: {status}[/green]"
+msgstr ""
+
+msgid "[green]Daemon stopped gracefully[/green]"
+msgstr ""
+
+msgid "[green]Deleted checkpoint for {hash}[/green]"
+msgstr ""
+
+msgid "[green]Deleted checkpoint for {info_hash}[/green]"
+msgstr ""
+
+msgid "[green]Deselected all files[/green]"
+msgstr ""
+
+msgid "[green]Deselected {count} file(s)[/green]"
+msgstr ""
 
 msgid "[green]Download completed, stopping session...[/green]"
-msgstr "[green]Upakuaji umekamilika, kusimamisha kikao...[/green]"
+msgstr ""
 
 msgid "[green]Download completed: {name}[/green]"
-msgstr "[green]Upakuaji umekamilika: {name}[/green]"
+msgstr ""
 
 msgid "[green]Exported checkpoint to {path}[/green]"
-msgstr "[green]Sehemu ya kuangalia imehamishwa kwa {path}[/green]"
+msgstr ""
 
 msgid "[green]Exported configuration to {out}[/green]"
-msgstr "[green]Usanidi umehamishwa kwa {out}[/green]"
+msgstr ""
+
+msgid "[green]External IP:[/green] {ip}"
+msgstr ""
+
+msgid "[green]Found checkpoint for: {torrent_name}[/green]"
+msgstr ""
 
 msgid "[green]Imported configuration[/green]"
-msgstr "[green]Usanidi umeingizwa[/green]"
+msgstr ""
+
+msgid "[green]Loaded alert rules from {path}[/green]"
+msgstr ""
+
+msgid "[green]Loaded {count} alert rules from {path}[/green]"
+msgstr ""
 
 msgid "[green]Loaded {count} rules[/green]"
-msgstr "[green]Kanuni {count} zimepakuliwa[/green]"
+msgstr ""
+
+msgid "[green]Locale set to: {locale_code}[/green]"
+msgstr ""
 
 msgid "[green]Magnet added successfully: {hash}...[/green]"
-msgstr "[green]Kiungo cha magnet kimeongezwa kwa mafanikio: {hash}...[/green]"
+msgstr ""
 
 msgid "[green]Magnet added to daemon: {hash}[/green]"
-msgstr "[green]Kiungo cha magnet kimeongezwa kwa daemon: {hash}[/green]"
+msgstr ""
+
+msgid "[green]Magnet link added to daemon: {info_hash}[/green]"
+msgstr ""
 
 msgid "[green]Metadata fetched successfully![/green]"
-msgstr "[green]Metadata imepatikana kwa mafanikio![/green]"
+msgstr ""
 
 msgid "[green]Migrated checkpoint to {path}[/green]"
-msgstr "[green]Sehemu ya kuangalia imehamishwa kwa {path}[/green]"
+msgstr ""
 
 msgid "[green]Monitoring started[/green]"
-msgstr "[green]Ufuatiliaji umeanza[/green]"
+msgstr ""
+
+msgid "[green]Moved to position {position}[/green]"
+msgstr ""
+
+msgid "[green]Network configuration looks optimal![/green]"
+msgstr ""
+
+msgid "[green]No checkpoints older than {days} days found[/green]"
+msgstr ""
+
+msgid ""
+"[green]Optimizations applied successfully![/green]\n"
+"[yellow]Note: Some changes may require restart to take effect.[/yellow]\n"
+msgstr ""
+
+msgid "[green]Optimizations saved to {path}[/green]"
+msgstr ""
+
+msgid "[green]Paused torrent[/green]"
+msgstr ""
+
+msgid "[green]Peer validation hooks are enabled by configuration[/green]"
+msgstr ""
+
+msgid "[green]Performing basic configuration scan...[/green]"
+msgstr ""
+
+msgid "[green]Pinned:[/green] {cid}"
+msgstr ""
+
+msgid "[green]Proxy configuration saved to {config_file}[/green]"
+msgstr ""
+
+msgid "[green]Proxy configuration updated successfully[/green]"
+msgstr ""
+
+msgid "[green]Proxy has been disabled[/green]"
+msgstr ""
+
+msgid "[green]Removed alert rule {name}[/green]"
+msgstr ""
+
+msgid "[green]Removed torrent from queue[/green]"
+msgstr ""
+
+msgid "[green]Reset all options for torrent {hash}[/green]"
+msgstr ""
+
+msgid "[green]Reset {key} for torrent {hash}[/green]"
+msgstr ""
+
+msgid ""
+"[green]Restored checkpoint for: {name}[/green]\n"
+"Info hash: {hash}\n"
+msgstr ""
+
+msgid "[green]Resumed torrent[/green]"
+msgstr ""
 
 msgid "[green]Resuming download from checkpoint...[/green]"
-msgstr "[green]Kuendeleza upakuaji kutoka sehemu ya kuangalia...[/green]"
+msgstr ""
+
+msgid "[green]Resuming from checkpoint[/green]"
+msgstr ""
 
 msgid "[green]Rule added[/green]"
-msgstr "[green]Kanuni imeongezwa[/green]"
+msgstr ""
 
 msgid "[green]Rule evaluated[/green]"
-msgstr "[green]Kanuni imetathminiwa[/green]"
+msgstr ""
 
 msgid "[green]Rule removed[/green]"
-msgstr "[green]Kanuni imeondolewa[/green]"
+msgstr ""
+
+msgid ""
+"[green]SSL certificate verification enabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for peers disabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for peers enabled (experimental). Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for trackers disabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for trackers enabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid "[green]Saved alert rules to {path}[/green]"
+msgstr ""
 
 msgid "[green]Saved rules[/green]"
-msgstr "[green]Kanuni zimehifadhiwa[/green]"
+msgstr ""
+
+msgid "[green]Selected all files[/green]"
+msgstr ""
 
 msgid "[green]Selected file {idx}[/green]"
-msgstr "[green]Faili {idx} imechaguliwa[/green]"
+msgstr ""
 
 msgid "[green]Selected {count} file(s) for download[/green]"
-msgstr "[green]Faili {count} zimechaguliwa kwa upakuaji[/green]"
+msgstr ""
+
+msgid "[green]Selected {count} file(s)[/green]"
+msgstr ""
+
+msgid "[green]Set file {index} priority to {priority}[/green]"
+msgstr ""
 
 msgid "[green]Set priority for file {idx} to {priority}[/green]"
-msgstr "[green]Kipaumbele cha faili {idx} kimewekwa kwa {priority}[/green]"
+msgstr ""
+
+msgid "[green]Set priority to {priority}[/green]"
+msgstr ""
+
+msgid "[green]Set {key} = {value} for torrent {hash}[/green]"
+msgstr ""
 
 msgid "[green]Starting web interface on http://{host}:{port}[/green]"
-msgstr "[green]Inaanzisha kiolesura cha wavuti kwenye http://{host}:{port}[/green]"
+msgstr ""
+
+msgid "[green]Successfully resumed download: {hash}[/green]"
+msgstr ""
+
+msgid "[green]Successfully resumed download: {resumed_info_hash}[/green]"
+msgstr ""
+
+msgid ""
+"[green]TLS protocol version set to {version}. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid "[green]Tested rule {name} with value {value}[/green]"
+msgstr ""
 
 msgid "[green]Torrent added to daemon: {hash}[/green]"
-msgstr "[green]Torrent imeongezwa kwa daemon: {hash}[/green]"
+msgstr ""
+
+msgid "[green]Torrent added to daemon: {info_hash}[/green]"
+msgstr ""
+
+msgid "[green]Unpinned:[/green] {cid}"
+msgstr ""
 
 msgid "[green]Updated runtime configuration[/green]"
-msgstr "[green]Usanidi wa wakati wa utendaji umehakikishwa[/green]"
+msgstr ""
+
+msgid "[green]Updated {key} to {value}[/green]"
+msgstr ""
 
 msgid "[green]Wrote metrics to {out}[/green]"
-msgstr "[green]Vipimo vimeandikwa kwa {out}[/green]"
+msgstr ""
+
+msgid "[green]Wrote metrics to {path}[/green]"
+msgstr ""
+
+msgid "[green]✓ Port mapping removed[/green]"
+msgstr ""
+
+msgid "[green]✓ Port mapping successful![/green]"
+msgstr ""
+
+msgid "[green]✓ Port mappings refreshed[/green]"
+msgstr ""
+
+msgid "[green]✓ Proxy connection test successful[/green]"
+msgstr ""
+
+msgid "[green]✓ Torrent created successfully: {path}[/green]"
+msgstr ""
+
+msgid "[green]✓[/green] Added filter rule: {ip_range} ({mode})"
+msgstr ""
+
+msgid "[green]✓[/green] Added peer {peer_id} to allowlist"
+msgstr ""
+
+msgid ""
+"[green]✓[/green] Added peer {peer_id} to allowlist with alias '{alias}'\n"
+msgstr ""
+
+msgid "[green]✓[/green] Cleaned {cleaned} unused chunks"
+msgstr ""
+
+msgid "[green]✓[/green] Configuration saved to {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Daemon process started (PID {pid})"
+msgstr ""
+
+msgid ""
+"[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)\n"
+msgstr ""
+
+msgid "[green]✓[/green] Folder sync started"
+msgstr ""
+
+msgid "[green]✓[/green] Generated .tonic file: {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Generated new API key for daemon"
+msgstr ""
+
+msgid "[green]✓[/green] Generated tonic?: link:"
+msgstr ""
+
+msgid "[green]✓[/green] Loaded {loaded} rules from {file_path}"
+msgstr ""
+
+msgid "[green]✓[/green] Loaded {total_loaded} total rules"
+msgstr ""
+
+msgid "[green]✓[/green] Removed alias for peer {peer_id}"
+msgstr ""
+
+msgid "[green]✓[/green] Removed filter rule: {ip_range}"
+msgstr ""
+
+msgid "[green]✓[/green] Removed peer {peer_id} from allowlist"
+msgstr ""
+
+msgid "[green]✓[/green] Set alias '{alias}' for peer {peer_id}"
+msgstr ""
+
+msgid "[green]✓[/green] Set {key} = {value}"
+msgstr ""
+
+msgid "[green]✓[/green] Successfully updated {count} filter list(s)"
+msgstr ""
+
+msgid "[green]✓[/green] Sync mode updated"
+msgstr ""
+
+msgid "[green]✓[/green] Tonic link:"
+msgstr ""
+
+msgid "[green]✓[/green] Updated config file: {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Xet protocol enabled"
+msgstr ""
+
+msgid "[green]✓[/green] uTP configuration reset to defaults"
+msgstr ""
+
+msgid "[green]✓[/green] uTP transport enabled"
+msgstr ""
+
+msgid "[red]--name is required to remove a rule[/red]"
+msgstr ""
+
+msgid "[red]--name is required to test a rule[/red]"
+msgstr ""
+
+msgid "[red]--name, --metric and --condition are required to add a rule[/red]"
+msgstr ""
+
+msgid "[red]--value is required with --test[/red]"
+msgstr ""
+
+msgid "[red]BLOCKED[/red]"
+msgstr ""
 
 msgid "[red]Backup failed: {msgs}[/red]"
-msgstr "[red]Nakala ya usalama imeshindwa: {msgs}[/red]"
+msgstr ""
+
+msgid "[red]Certificate file does not exist: {path}[/red]"
+msgstr ""
+
+msgid "[red]Certificate path must be a file: {path}[/red]"
+msgstr ""
+
+msgid "[red]Configuration key not found: {key}[/red]"
+msgstr ""
+
+msgid "[red]Content not found: {cid}[/red]"
+msgstr ""
+
+msgid "[red]Daemon is not running[/red]"
+msgstr ""
+
+msgid "[red]Daemon process crashed[/red]"
+msgstr ""
+
+msgid "[red]Dashboard error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Directories not yet supported[/red]"
+msgstr ""
+
+msgid "[red]Error adding content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error adding peer to allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling SSL for peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling SSL for trackers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling certificate verification: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error during cleanup: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling SSL for peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling SSL for trackers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling certificate verification: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error ensuring daemon is running: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error generating .tonic file: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error generating tonic link: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting SSL status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting stats: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting sync mode: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error listing aliases: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error listing allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error pinning content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error removing alias: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error removing peer from allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error restarting daemon: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving cache info: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving disk statistics: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving network statistics: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving stats: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting CA certificates path: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting alias: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting client certificate: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting protocol version: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting sync mode: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error starting sync: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error unpinning content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error updating configuration: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --hybrid and --v1[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --v2 and --hybrid[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --v2 and --v1[/red]"
+msgstr ""
+
+msgid "[red]Error: Could not load torrent file {torrent_file}[/red]"
+msgstr ""
 
 msgid "[red]Error: Could not parse magnet link[/red]"
-msgstr "[red]Hitilafu: Haikuweza kuchanganua kiungo cha magnet[/red]"
+msgstr ""
+
+msgid "[red]Error: Info hash must be 40 hex characters[/red]"
+msgstr ""
+
+msgid "[red]Error: Piece length must be a power of 2[/red]"
+msgstr ""
+
+msgid "[red]Error: Piece length must be at least 16 KiB (16384 bytes)[/red]"
+msgstr ""
+
+msgid "[red]Error: Source directory is empty[/red]"
+msgstr ""
+
+msgid "[red]Error: Source path does not exist: {path}[/red]"
+msgstr ""
 
 msgid "[red]Error: {error}[/red]"
-msgstr "[red]Hitilafu: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error:[/red] Invalid value for {key}: {value}"
+msgstr ""
+
+msgid "[red]Error:[/red] Unknown configuration key: {key}"
+msgstr ""
+
+msgid "[red]Export not available in daemon mode[/red]"
+msgstr ""
 
 msgid "[red]Failed to add magnet link: {error}[/red]"
-msgstr "[red]Kushindwa kuongeza kiungo cha magnet: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to clear active alerts: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to create session[/red]"
+msgstr ""
+
+msgid "[red]Failed to disable proxy: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to get proxy status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to load alert rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to load rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to pause: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to reset options: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to restart daemon[/red]"
+msgstr ""
+
+msgid "[red]Failed to resume: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to run tests: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to save rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set alias for peer {peer_id}[/red]"
+msgstr ""
 
 msgid "[red]Failed to set config: {error}[/red]"
-msgstr "[red]Kushindwa kuweka usanidi: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set option: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set proxy configuration: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n"
+"[yellow]Please check:[/yellow]\n"
+"  1. Daemon logs for startup errors\n"
+"  2. Port conflicts (check if port is already in use)\n"
+"  3. Permissions (ensure you have permission to start daemon)\n"
+"\n"
+"[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
+"[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]\n"
+msgstr ""
+
+msgid "[red]Failed to stop: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to test proxy: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to test rule: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed: {error}[/red]"
+msgstr ""
 
 msgid "[red]File not found: {error}[/red]"
-msgstr "[red]Faili haijapatikana: {error}[/red]"
+msgstr ""
+
+msgid "[red]File not found: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]IP filter not initialized. Please enable it in configuration.[/red]\n"
+msgstr ""
+
+msgid "[red]IP filter not initialized.[/red]"
+msgstr ""
+
+msgid "[red]IPFS protocol not available[/red]"
+msgstr ""
+
+msgid "[red]Import not available in daemon mode[/red]"
+msgstr ""
+
+msgid "[red]Invalid IP address: {ip}[/red]"
+msgstr ""
 
 msgid "[red]Invalid arguments[/red]"
-msgstr "[red]Hoja si sahihi[/red]"
+msgstr ""
 
 msgid "[red]Invalid file index: {idx}[/red]"
-msgstr "[red]Fahirisi ya faili si sahihi: {idx}[/red]"
+msgstr ""
 
 msgid "[red]Invalid file index[/red]"
-msgstr "[red]Fahirisi ya faili si sahihi[/red]"
+msgstr ""
 
 msgid "[red]Invalid info hash format: {hash}[/red]"
-msgstr "[red]Muundo wa hash ya taarifa si sahihi: {hash}[/red]"
+msgstr ""
 
-msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
-msgstr "[red]Kipaumbele si sahihi. Tumia: do_not_download/low/normal/high/maximum[/red]"
+msgid "[red]Invalid info hash format[/red]"
+msgstr ""
 
-msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
-msgstr "[red]Kipaumbele si sahihi: {priority}. Tumia: do_not_download/low/normal/high/maximum[/red]"
+msgid "[red]Invalid magnet link: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]\n"
+msgstr ""
+
+msgid ""
+"[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]\n"
+msgstr ""
+
+msgid "[red]Invalid public key: {e}[/red]"
+msgstr ""
 
 msgid "[red]Invalid torrent file: {error}[/red]"
-msgstr "[red]Faili ya torrent si sahihi: {error}[/red]"
+msgstr ""
+
+msgid "[red]Invalid value for {key}: {error}[/red]"
+msgstr ""
+
+msgid "[red]Key file does not exist: {path}[/red]"
+msgstr ""
 
 msgid "[red]Key not found: {key}[/red]"
-msgstr "[red]Ufunguo haujapatikana: {key}[/red]"
+msgstr ""
+
+msgid "[red]Key path must be a file: {path}[/red]"
+msgstr ""
+
+msgid "[red]Metrics error: {e}[/red]"
+msgstr ""
 
 msgid "[red]No checkpoint found for {hash}[/red]"
-msgstr "[red]Hakuna sehemu ya kuangalia iliyopatikana kwa {hash}[/red]"
+msgstr ""
+
+msgid "[red]No stats found for CID: {cid}[/red]"
+msgstr ""
+
+msgid "[red]Path does not exist: {path}[/red]"
+msgstr ""
+
+msgid "[red]Path must be a file or directory: {path}[/red]"
+msgstr ""
+
+msgid "[red]Peer {peer_id} not found in allowlist[/red]"
+msgstr ""
+
+msgid "[red]Proxy error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Proxy host and port must be configured[/red]"
+msgstr ""
 
 msgid "[red]PyYAML not installed[/red]"
-msgstr "[red]PyYAML haijasakinishwa[/red]"
+msgstr ""
 
 msgid "[red]Reload failed: {error}[/red]"
-msgstr "[red]Kuonyesha tena kumeshindwa: {error}[/red]"
+msgstr ""
 
 msgid "[red]Restore failed: {msgs}[/red]"
-msgstr "[red]Kurudisha kumeshindwa: {msgs}[/red]"
+msgstr ""
+
+msgid "[red]Rule not found: {name}[/red]"
+msgstr ""
+
+msgid "[red]Specify CID or use --all[/red]"
+msgstr ""
+
+msgid "[red]Tonic file not found: {path}[/red]"
+msgstr ""
+
+msgid "[red]Torrent not found or option not set[/red]"
+msgstr ""
+
+msgid "[red]Torrent not found: {hash}[/red]"
+msgstr ""
+
+msgid "[red]Unexpected error during resume: {e}[/red]"
+msgstr ""
+
+msgid "[red]Unknown configuration key: {key}[/red]"
+msgstr ""
+
+msgid "[red]Validation error: {e}[/red]"
+msgstr ""
 
 msgid "[red]{error}[/red]"
-msgstr "[red]{error}[/red]"
+msgstr ""
+
+msgid "[red]✗ Failed to remove port mapping[/red]"
+msgstr ""
+
+msgid "[red]✗ Port mapping failed[/red]"
+msgstr ""
+
+msgid "[red]✗ Proxy connection test failed[/red]"
+msgstr ""
+
+msgid "[red]✗[/red] Daemon is already running with PID {pid}"
+msgstr ""
+
+msgid ""
+"[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)\n"
+msgstr ""
+
+msgid ""
+"[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting\n"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to add filter rule: {ip_range}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to load rules from {file_path}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to start daemon: {e}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to update filter lists"
+msgstr ""
+
+msgid "[yellow]1. Network Connectivity[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]API key not found in config, cannot get detailed status[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Active Protocol:[/yellow] None (not discovered)"
+msgstr ""
 
 msgid "[yellow]All files deselected[/yellow]"
-msgstr "[yellow]Faili zote zimeachwa[/yellow]"
+msgstr ""
+
+msgid "[yellow]Allowlist is empty[/yellow]"
+msgstr ""
+
+msgid "[yellow]Automatic repair not implemented[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]CA certificates path set to {path} (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]CA certificates path set to {path} (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Checkpoint for {hash} is missing or invalid[/yellow]"
+msgstr ""
+
+msgid "[yellow]Checkpoint missing/invalid[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Client certificate set (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Client certificate set (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid "[yellow]Configuration changes require daemon restart.[/yellow]"
+msgstr ""
+
+msgid "[yellow]Could not get detailed status via IPC[/yellow]"
+msgstr ""
+
+msgid "[yellow]Could not save to config file: {error}[/yellow]"
+msgstr ""
 
 msgid "[yellow]Debug mode not yet implemented[/yellow]"
-msgstr "[yellow]Hali ya utatuzi bado haijatekelezwa[/yellow]"
+msgstr ""
 
 msgid "[yellow]Deselected file {idx}[/yellow]"
-msgstr "[yellow]Faili {idx} imeachwa[/yellow]"
+msgstr ""
+
+msgid "[yellow]Disk I/O manager not running. Statistics unavailable.[/yellow]"
+msgstr ""
 
 msgid "[yellow]Download interrupted by user[/yellow]"
-msgstr "[yellow]Upakuaji umevurugwa na mtumiaji[/yellow]"
+msgstr ""
+
+msgid "[yellow]Dry run: Would clean chunks older than {days} days[/yellow]"
+msgstr ""
+
+msgid "[yellow]External IP not available[/yellow]"
+msgstr ""
+
+msgid "[yellow]External IP:[/yellow] Not available"
+msgstr ""
+
+msgid "[yellow]Failed to generate tonic link[/yellow]"
+msgstr ""
+
+msgid "[yellow]Failed to move torrent[/yellow]"
+msgstr ""
 
 msgid "[yellow]Fetching metadata from peers...[/yellow]"
-msgstr "[yellow]Inapata metadata kutoka kwa wanaohusiana...[/yellow]"
+msgstr ""
+
+msgid "[yellow]Found checkpoint for: {name}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Found checkpoint for: {torrent_name}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]IP filter not initialized or disabled.[/yellow]"
+msgstr ""
 
 msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
-msgstr "[yellow]Kipaumbele '{spec}' si sahihi: {error}[/yellow]"
+msgstr ""
 
-msgid "[yellow]Keeping session alive[/yellow]"
-msgstr "[yellow]Inaendeleza kikao hai[/yellow]"
+msgid "[yellow]NAT Status[/yellow]"
+msgstr ""
+
+msgid "[yellow]No active alerts[/yellow]"
+msgstr ""
+
+msgid "[yellow]No alert rules defined[/yellow]"
+msgstr ""
+
+msgid "[yellow]No alias found for peer {peer_id}[/yellow]"
+msgstr ""
+
+msgid "[yellow]No aliases found in allowlist[/yellow]"
+msgstr ""
+
+msgid "[yellow]No cached scrape results[/yellow]"
+msgstr ""
+
+msgid "[yellow]No checkpoint found for {hash}[/yellow]"
+msgstr ""
+
+msgid "[yellow]No checkpoint found for {info_hash}[/yellow]"
+msgstr ""
 
 msgid "[yellow]No checkpoints found[/yellow]"
-msgstr "[yellow]Hakuna sehemu za kuangalia zilizopatikana[/yellow]"
+msgstr ""
+
+msgid "[yellow]No chunks in cache[/yellow]"
+msgstr ""
+
+msgid "[yellow]No config file found - configuration not persisted[/yellow]"
+msgstr ""
+
+msgid "[yellow]No filter URLs configured.[/yellow]"
+msgstr ""
+
+msgid "[yellow]No filter rules configured.[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]No optimizations were applied (already optimal or unsupported)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]No performance action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]No recover action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]No security action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]Non-interactive mode, starting fresh download[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Note: This change is temporary and will be lost on restart. Use config file for persistent changes.[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Note: Update config file to persist locale setting[/yellow]"
+msgstr ""
+
+msgid "[yellow]Note:[/yellow] Configuration change is runtime-only"
+msgstr ""
+
+msgid "[yellow]Optimization cancelled[/yellow]"
+msgstr ""
+
+msgid "[yellow]Peer {peer_id} not found in allowlist[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Please provide the original torrent file or magnet link[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Please use --v2 or --hybrid flags for now.[/yellow]"
+msgstr ""
+
+msgid "[yellow]Proxy configuration not found[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Proxy has been disabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid "[yellow]Proxy is not enabled[/yellow]"
+msgstr ""
+
+msgid "[yellow]Real-time monitoring not yet implemented[/yellow]"
+msgstr ""
+
+msgid "[yellow]Refresh completed with warnings[/yellow]"
+msgstr ""
+
+msgid "[yellow]Rich not available, starting fresh download[/yellow]"
+msgstr ""
+
+msgid "[yellow]Rule not found: {ip_range}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended). Configuration saved to {config_file}[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended, configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended, skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification enabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers disabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]SSL for peers disabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers enabled (experimental, configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers enabled (experimental, skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers disabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers disabled (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers enabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]SSL for trackers enabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Starting fresh download[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]TLS protocol version set to {version} (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]TLS protocol version set to {version} (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]The daemon process crashed during initialization.[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Tonic link sync not yet fully implemented[/yellow]"
+msgstr ""
+
+msgid "[yellow]Torrent not found in queue[/yellow]"
+msgstr ""
+
+msgid "[yellow]Torrent not found[/yellow]"
+msgstr ""
 
 msgid "[yellow]Torrent session ended[/yellow]"
-msgstr "[yellow]Kikao cha torrent kimeisha[/yellow]"
+msgstr ""
 
 msgid "[yellow]Unknown command: {cmd}[/yellow]"
-msgstr "[yellow]Amri haijulikani: {cmd}[/yellow]"
+msgstr ""
 
-msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
-msgstr "[yellow]Onyo: Daemon inaendesha. Kuanza kikao cha ndani kunaweza kusababisha migogoro ya bandari.[/yellow]"
+msgid ""
+"[yellow]Use --list/--list-active, --add, --remove, --clear-active, --test, --load or --save[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Using local session (--no-daemon specified). Session state will not persist.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Daemon is running. Diagnostics will test local session which may cause port conflicts.[/yellow]\n"
+"[dim]Consider stopping the daemon first: 'btbt daemon exit'[/dim]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]\n"
+msgstr ""
 
 msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
-msgstr "[yellow]Onyo: Hitilafu katika kusimamisha kikao: {error}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Error stopping session: {e}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Failed to select files: {error}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Failed to set queue priority: {error}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Xet protocol is disabled[/yellow]"
+msgstr ""
+
+msgid "[yellow]{key} is not set[/yellow]"
+msgstr ""
 
 msgid "[yellow]{warning}[/yellow]"
-msgstr "[yellow]{warning}[/yellow]"
+msgstr ""
+
+msgid "[yellow]⚠[/yellow] Could not save daemon config to config file: {e}"
+msgstr ""
+
+msgid ""
+"[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet\n"
+msgstr ""
+
+msgid ""
+"[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})\n"
+msgstr ""
+
+msgid "[yellow]⚠[/yellow] {errors} errors encountered"
+msgstr ""
+
+msgid "[yellow]✓[/yellow] Xet protocol disabled"
+msgstr ""
+
+msgid "[yellow]✓[/yellow] uTP transport disabled"
+msgstr ""
+
+msgid "_get_daemon_ipc_port: Checking config_file=%s (home_dir=%s)"
+msgstr ""
+
+msgid "_get_executor() returned: executor=%s, is_daemon=%s"
+msgstr ""
 
 msgid "ccBitTorrent Interactive CLI"
-msgstr "ccBitTorrent CLI ya Kuingiliana"
+msgstr ""
 
-msgid "ccBitTorrent Status"
-msgstr "Hali ya ccBitTorrent"
+msgid "enable_dht={value}"
+msgstr ""
 
-msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
-msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgid "enable_pex={value}"
+msgstr ""
+
+msgid "failed"
+msgstr ""
+
+msgid ""
+"help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema\n"
+msgstr ""
+
+msgid "succeeded"
+msgstr ""
 
 msgid "uTP Config"
-msgstr "Usanidi wa uTP"
+msgstr ""
+
+msgid "uTP Configuration"
+msgstr ""
+
+msgid "uTP configuration reset to defaults via CLI"
+msgstr ""
+
+msgid "uTP configuration updated: %s = %s"
+msgstr ""
+
+msgid "uTP transport disabled via CLI"
+msgstr ""
+
+msgid "uTP transport enabled"
+msgstr ""
+
+msgid "uTP transport enabled via CLI"
+msgstr ""
 
 msgid "{count} features"
-msgstr "Vipengele {count}"
+msgstr ""
 
 msgid "{count} items"
-msgstr "Vitu {count}"
+msgstr ""
 
 msgid "{elapsed:.0f}s ago"
-msgstr "Sekunde {elapsed:.0f} zilizopita"
+msgstr ""
+
+msgid "{key} = {value}"
+msgstr ""
+
+msgid "{key}: {value}"
+msgstr ""
+
+msgid ""
+"{msg}\n"
+"\n"
+"PID file path: {path}\n"
+msgstr ""
+
+msgid "{sub_tab} configuration - Coming soon"
+msgstr ""
+
+msgid "{sub_tab} content for torrent {hash}... - Coming soon"
+msgstr ""
+
+msgid "{type} Configuration"
+msgstr ""
+
+msgid "↑ Speed"
+msgstr ""
+
+msgid "↓ Speed"
+msgstr ""
+
+msgid "✓ Configuration is valid"
+msgstr ""
+
+msgid "✓ No system compatibility warnings"
+msgstr ""
+
+msgid "✗ Configuration validation failed: {e}"
+msgstr ""
+

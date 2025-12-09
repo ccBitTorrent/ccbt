@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.0.1"
 
 # Ensure a default asyncio event loop exists on import for libraries/tests that
 # construct futures outside of a running loop (e.g., asyncio.Future()).
@@ -63,6 +63,23 @@ try:
                     watcher
                 )  # pragma: no cover - Same context
             return _raise_not_implemented()  # pragma: no cover - Same context
+
+    # CRITICAL FIX: On Windows, use SelectorEventLoop instead of ProactorEventLoop
+    # ProactorEventLoop has known bugs with UDP sockets (WinError 10022)
+    # This must be set BEFORE wrapping with _SafeEventLoopPolicy
+    import sys
+    if sys.platform == "win32":
+        current_policy = asyncio.get_event_loop_policy()
+        # Check if we're using ProactorEventLoopPolicy (the default on Windows)
+        # Handle both direct policy and wrapped policy
+        base_policy = current_policy
+        if hasattr(current_policy, "_base"):
+            base_policy = current_policy._base  # noqa: SLF001 - Windows event loop policy workaround
+
+        # Replace ProactorEventLoopPolicy with WindowsSelectorEventLoopPolicy
+        if isinstance(base_policy, asyncio.WindowsProactorEventLoopPolicy):
+            selector_policy = asyncio.WindowsSelectorEventLoopPolicy()
+            asyncio.set_event_loop_policy(selector_policy)
 
     # Install safe policy once
     try:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from typing import Any, cast
 
@@ -50,10 +51,8 @@ class CheckpointController:
         """Stop batching loop and flush pending work."""
         if self._batch_task:
             self._batch_task.cancel()
-            try:
+            with contextlib.suppress(Exception):
                 await self._batch_task
-            except Exception:
-                pass
         await self.flush_now()
 
     async def enqueue_save(self) -> None:
@@ -100,10 +99,8 @@ class CheckpointController:
                     self._pieces_since_flush = 0
         except asyncio.CancelledError:
             # Flush any final state before exit
-            try:
+            with contextlib.suppress(Exception):
                 await self._save_once()
-            except Exception:
-                pass
 
     async def _save_once(self) -> None:
         """Collect checkpoint state from piece manager and persist via manager."""
@@ -246,6 +243,62 @@ class CheckpointController:
                         "bytes_downloaded": state.bytes_downloaded,
                     }
                 checkpoint.file_selections = file_selections
+
+            # Add per-torrent configuration options if they exist
+            if hasattr(session, "options") and session.options:
+                checkpoint.per_torrent_options = dict(session.options)
+                if self._ctx.logger:
+                    self._ctx.logger.debug(
+                        "Saved per-torrent options to checkpoint: %s",
+                        list(session.options.keys()),
+                    )
+
+            # Add per-torrent rate limits if they exist
+            session_manager = getattr(session, "session_manager", None)
+            if session_manager and hasattr(session_manager, "_per_torrent_limits"):
+                info_hash = getattr(self._ctx.info, "info_hash", b"")
+                if info_hash in session_manager._per_torrent_limits:
+                    limits = session_manager._per_torrent_limits[info_hash]
+                    checkpoint.rate_limits = {
+                        "down_kib": limits.get("down_kib", 0),
+                        "up_kib": limits.get("up_kib", 0),
+                    }
+                    if self._ctx.logger:
+                        self._ctx.logger.debug(
+                            "Saved per-torrent rate limits to checkpoint: down=%d KiB/s, up=%d KiB/s",
+                            limits.get("down_kib", 0),
+                            limits.get("up_kib", 0),
+                        )
+
+            # Collect peer lists and statistics
+            await self._collect_peer_lists(checkpoint, session)
+
+            # Collect tracker lists and health
+            await self._collect_tracker_lists(checkpoint, session)
+
+            # Collect security state (whitelist/blacklist)
+            await self._collect_security_state(checkpoint, session)
+
+            # Collect session state
+            await self._collect_session_state(checkpoint, session)
+
+            # Collect event history
+            await self._collect_event_history(checkpoint, session)
+
+            # Collect peer lists and statistics
+            await self._collect_peer_lists(checkpoint, session)
+
+            # Collect tracker lists and health
+            await self._collect_tracker_lists(checkpoint, session)
+
+            # Collect security state (whitelist/blacklist)
+            await self._collect_security_state(checkpoint, session)
+
+            # Collect session state
+            await self._collect_session_state(checkpoint, session)
+
+            # Collect event history
+            await self._collect_event_history(checkpoint, session)
 
             # Add fast resume data if enabled
             config = self._ctx.config
@@ -482,6 +535,18 @@ class CheckpointController:
                             e,
                         )
 
+            # Restore peer lists if available
+            await self._restore_peer_lists(checkpoint, session)
+
+            # Restore tracker lists if available
+            await self._restore_tracker_lists(checkpoint, session)
+
+            # Restore security state if available
+            await self._restore_security_state(checkpoint, session)
+
+            # Restore session state if available
+            await self._restore_session_state(checkpoint, session)
+
             if hasattr(session, "checkpoint_loaded"):
                 session.checkpoint_loaded = True
             if self._ctx.logger:
@@ -494,3 +559,435 @@ class CheckpointController:
             if self._ctx.logger:
                 self._ctx.logger.exception("Failed to resume from checkpoint")
             raise
+
+    async def _collect_peer_lists(
+        self, checkpoint: TorrentCheckpoint, session: Any
+    ) -> None:
+        """Collect peer lists and statistics for checkpoint."""
+        try:
+            # Get peer manager from download manager
+            download_manager = getattr(session, "download_manager", None)
+            if not download_manager:
+                return
+
+            peer_manager = getattr(download_manager, "peer_manager", None)
+            if not peer_manager:
+                return
+
+            # Collect connected peers
+            connected_peers_list = []
+            if hasattr(peer_manager, "get_connected_peers"):
+                connected_peers = peer_manager.get_connected_peers()
+                for conn in connected_peers:
+                    if hasattr(conn, "peer_info"):
+                        peer_info = conn.peer_info
+                        peer_data = {
+                            "ip": peer_info.ip,
+                            "port": peer_info.port,
+                            "peer_source": getattr(peer_info, "peer_source", "unknown"),
+                        }
+                        if hasattr(peer_info, "peer_id") and peer_info.peer_id:
+                            peer_data["peer_id"] = peer_info.peer_id.hex()
+                        connected_peers_list.append(peer_data)
+
+            # Collect active peers (subset of connected)
+            active_peers_list = []
+            if hasattr(peer_manager, "get_active_peers"):
+                active_peers = peer_manager.get_active_peers()
+                for conn in active_peers:
+                    if hasattr(conn, "peer_info"):
+                        peer_info = conn.peer_info
+                        peer_data = {
+                            "ip": peer_info.ip,
+                            "port": peer_info.port,
+                            "peer_source": getattr(peer_info, "peer_source", "unknown"),
+                        }
+                        if hasattr(peer_info, "peer_id") and peer_info.peer_id:
+                            peer_data["peer_id"] = peer_info.peer_id.hex()
+                        active_peers_list.append(peer_data)
+
+            # Collect peer statistics
+            peer_stats = {}
+            if hasattr(peer_manager, "connections"):
+                for conn in peer_manager.connections.values():
+                    if hasattr(conn, "peer_info") and hasattr(conn, "stats"):
+                        peer_info = conn.peer_info
+                        peer_key = f"{peer_info.ip}:{peer_info.port}"
+                        stats = conn.stats
+                        peer_stats[peer_key] = {
+                            "bytes_downloaded": getattr(stats, "bytes_downloaded", 0),
+                            "bytes_uploaded": getattr(stats, "bytes_uploaded", 0),
+                            "download_rate": getattr(stats, "download_rate", 0.0),
+                            "upload_rate": getattr(stats, "upload_rate", 0.0),
+                            "last_activity": getattr(stats, "last_activity", 0.0),
+                            "performance_score": getattr(
+                                stats, "performance_score", 0.0
+                            ),
+                        }
+
+            checkpoint.connected_peers = connected_peers_list if connected_peers_list else None
+            checkpoint.active_peers = active_peers_list if active_peers_list else None
+            checkpoint.peer_statistics = peer_stats if peer_stats else None
+
+            if self._ctx.logger:
+                self._ctx.logger.debug(
+                    "Collected peer lists: %d connected, %d active, %d with stats",
+                    len(connected_peers_list),
+                    len(active_peers_list),
+                    len(peer_stats),
+                )
+        except Exception as e:
+            if self._ctx.logger:
+                self._ctx.logger.debug("Failed to collect peer lists: %s", e)
+
+    async def _collect_tracker_lists(
+        self, checkpoint: TorrentCheckpoint, session: Any
+    ) -> None:
+        """Collect tracker lists and health for checkpoint."""
+        try:
+            tracker_list = []
+            tracker_health = {}
+
+            # Get tracker from session
+            tracker = getattr(session, "tracker", None)
+            if tracker:
+                # Try to get tracker URLs from announce_urls
+                if checkpoint.announce_urls:
+                    for url in checkpoint.announce_urls:
+                        tracker_data = {
+                            "url": url,
+                            "last_announce": None,
+                            "last_success": None,
+                            "is_healthy": True,
+                            "failure_count": 0,
+                        }
+                        tracker_list.append(tracker_data)
+                        tracker_health[url] = tracker_data
+
+                # Try to get more detailed tracker state if available
+                if hasattr(tracker, "trackers") or hasattr(tracker, "_trackers"):
+                    trackers_dict = getattr(tracker, "trackers", None) or getattr(
+                        tracker, "_trackers", None
+                    )
+                    if trackers_dict:
+                        for url, tracker_obj in trackers_dict.items():
+                            if url in tracker_health:
+                                health = tracker_health[url]
+                                if hasattr(tracker_obj, "last_announce"):
+                                    health["last_announce"] = tracker_obj.last_announce
+                                if hasattr(tracker_obj, "last_success"):
+                                    health["last_success"] = tracker_obj.last_success
+                                if hasattr(tracker_obj, "is_healthy"):
+                                    health["is_healthy"] = tracker_obj.is_healthy
+                                if hasattr(tracker_obj, "failure_count"):
+                                    health["failure_count"] = tracker_obj.failure_count
+
+            checkpoint.tracker_list = tracker_list if tracker_list else None
+            checkpoint.tracker_health = tracker_health if tracker_health else None
+
+            if self._ctx.logger:
+                self._ctx.logger.debug(
+                    "Collected tracker lists: %d trackers",
+                    len(tracker_list),
+                )
+        except Exception as e:
+            if self._ctx.logger:
+                self._ctx.logger.debug("Failed to collect tracker lists: %s", e)
+
+    async def _collect_security_state(
+        self, checkpoint: TorrentCheckpoint, session: Any
+    ) -> None:
+        """Collect security state (whitelist/blacklist) for checkpoint."""
+        try:
+            # Get security manager from session manager
+            session_manager = getattr(session, "session_manager", None)
+            if not session_manager:
+                return
+
+            security_manager = getattr(session_manager, "security_manager", None)
+            if not security_manager:
+                return
+
+            info_hash = getattr(self._ctx.info, "info_hash", b"")
+            info_hash_hex = info_hash.hex() if info_hash else None
+
+            # Collect per-torrent whitelist/blacklist if available
+            # Note: Security manager may not have per-torrent lists, so we collect global
+            # and filter by torrent if per-torrent tracking exists
+            peer_whitelist = []
+            peer_blacklist = []
+
+            if hasattr(security_manager, "ip_whitelist"):
+                whitelist = security_manager.ip_whitelist
+                if isinstance(whitelist, set):
+                    peer_whitelist = list(whitelist)
+                elif isinstance(whitelist, list):
+                    peer_whitelist = whitelist
+
+            if hasattr(security_manager, "ip_blacklist"):
+                blacklist = security_manager.ip_blacklist
+                if isinstance(blacklist, set):
+                    peer_blacklist = list(blacklist)
+                elif isinstance(blacklist, dict):
+                    # Blacklist entries may be dict with metadata
+                    peer_blacklist = list(blacklist.keys())
+
+            checkpoint.peer_whitelist = peer_whitelist if peer_whitelist else None
+            checkpoint.peer_blacklist = peer_blacklist if peer_blacklist else None
+
+            if self._ctx.logger:
+                self._ctx.logger.debug(
+                    "Collected security state: %d whitelisted, %d blacklisted",
+                    len(peer_whitelist),
+                    len(peer_blacklist),
+                )
+        except Exception as e:
+            if self._ctx.logger:
+                self._ctx.logger.debug("Failed to collect security state: %s", e)
+
+    async def _collect_session_state(
+        self, checkpoint: TorrentCheckpoint, session: Any
+    ) -> None:
+        """Collect session state for checkpoint."""
+        try:
+            import time
+
+            # Get session state from info or status
+            session_state = None
+            if hasattr(session, "info") and hasattr(session.info, "status"):
+                session_state = session.info.status
+            elif hasattr(session, "_stop_event"):
+                if session._stop_event.is_set():
+                    session_state = "stopped"
+                else:
+                    session_state = "active"
+
+            checkpoint.session_state = session_state
+            checkpoint.session_state_timestamp = time.time()
+
+            if self._ctx.logger:
+                self._ctx.logger.debug(
+                    "Collected session state: %s",
+                    session_state,
+                )
+        except Exception as e:
+            if self._ctx.logger:
+                self._ctx.logger.debug("Failed to collect session state: %s", e)
+
+    async def _collect_event_history(
+        self, checkpoint: TorrentCheckpoint, session: Any
+    ) -> None:
+        """Collect recent event history for checkpoint."""
+        try:
+            import time
+
+            # Try to get event history from event system
+            # Limit to last 100 events to prevent checkpoint bloat
+            recent_events = []
+
+            # Check if event system has history
+            try:
+                from ccbt.utils.events import get_recent_events
+
+                events = get_recent_events(limit=100)
+                for event in events:
+                    if hasattr(event, "event_type") and hasattr(event, "data"):
+                        recent_events.append(
+                            {
+                                "event_type": event.event_type,
+                                "timestamp": getattr(event, "timestamp", time.time()),
+                                "data": event.data if hasattr(event, "data") else {},
+                            }
+                        )
+            except (ImportError, AttributeError):
+                # Event system may not have history feature
+                pass
+
+            checkpoint.recent_events = recent_events if recent_events else None
+
+            if self._ctx.logger:
+                self._ctx.logger.debug(
+                    "Collected event history: %d events",
+                    len(recent_events),
+                )
+        except Exception as e:
+            if self._ctx.logger:
+                self._ctx.logger.debug("Failed to collect event history: %s", e)
+
+    async def _restore_peer_lists(
+        self, checkpoint: TorrentCheckpoint, session: Any
+    ) -> None:
+        """Restore peer lists from checkpoint."""
+        try:
+            if not checkpoint.connected_peers and not checkpoint.active_peers:
+                return
+
+            # Get peer manager from download manager
+            download_manager = getattr(session, "download_manager", None)
+            if not download_manager:
+                return
+
+            peer_manager = getattr(download_manager, "peer_manager", None)
+            if not peer_manager:
+                return
+
+            # Restore connected peers if session is active
+            if checkpoint.connected_peers and checkpoint.session_state == "active":
+                peer_list = []
+                for peer_data in checkpoint.connected_peers:
+                    peer_list.append(
+                        {
+                            "ip": peer_data.get("ip"),
+                            "port": peer_data.get("port"),
+                            "peer_source": peer_data.get("peer_source", "checkpoint"),
+                        }
+                    )
+
+                if peer_list and hasattr(peer_manager, "connect_to_peers"):
+                    try:
+                        await peer_manager.connect_to_peers(peer_list)
+                        if self._ctx.logger:
+                            self._ctx.logger.debug(
+                                "Restored %d peers from checkpoint",
+                                len(peer_list),
+                            )
+                    except Exception as e:
+                        if self._ctx.logger:
+                            self._ctx.logger.debug(
+                                "Failed to reconnect peers from checkpoint: %s", e
+                            )
+
+            # Restore peer statistics if available
+            if checkpoint.peer_statistics and hasattr(peer_manager, "connections"):
+                for peer_key, stats_data in checkpoint.peer_statistics.items():
+                    # Try to find matching connection and restore stats
+                    # Note: Stats restoration is informational, actual stats will update during operation
+                    if self._ctx.logger:
+                        self._ctx.logger.debug(
+                            "Restored peer statistics for %s", peer_key
+                        )
+
+        except Exception as e:
+            if self._ctx.logger:
+                self._ctx.logger.debug("Failed to restore peer lists: %s", e)
+
+    async def _restore_tracker_lists(
+        self, checkpoint: TorrentCheckpoint, session: Any
+    ) -> None:
+        """Restore tracker lists from checkpoint."""
+        try:
+            if not checkpoint.tracker_list and not checkpoint.tracker_health:
+                return
+
+            # Get tracker from session
+            tracker = getattr(session, "tracker", None)
+            if not tracker:
+                return
+
+            # Restore tracker health if available
+            if checkpoint.tracker_health:
+                # Try to update tracker health metrics if tracker supports it
+                if hasattr(tracker, "trackers") or hasattr(tracker, "_trackers"):
+                    trackers_dict = getattr(tracker, "trackers", None) or getattr(
+                        tracker, "_trackers", None
+                    )
+                    if trackers_dict:
+                        for url, health_data in checkpoint.tracker_health.items():
+                            if url in trackers_dict:
+                                tracker_obj = trackers_dict[url]
+                                if hasattr(tracker_obj, "last_announce"):
+                                    tracker_obj.last_announce = health_data.get(
+                                        "last_announce"
+                                    )
+                                if hasattr(tracker_obj, "last_success"):
+                                    tracker_obj.last_success = health_data.get(
+                                        "last_success"
+                                    )
+                                if hasattr(tracker_obj, "is_healthy"):
+                                    tracker_obj.is_healthy = health_data.get(
+                                        "is_healthy", True
+                                    )
+                                if hasattr(tracker_obj, "failure_count"):
+                                    tracker_obj.failure_count = health_data.get(
+                                        "failure_count", 0
+                                    )
+
+            if self._ctx.logger:
+                self._ctx.logger.debug(
+                    "Restored tracker lists: %d trackers",
+                    len(checkpoint.tracker_list) if checkpoint.tracker_list else 0,
+                )
+        except Exception as e:
+            if self._ctx.logger:
+                self._ctx.logger.debug("Failed to restore tracker lists: %s", e)
+
+    async def _restore_security_state(
+        self, checkpoint: TorrentCheckpoint, session: Any
+    ) -> None:
+        """Restore security state (whitelist/blacklist) from checkpoint."""
+        try:
+            if not checkpoint.peer_whitelist and not checkpoint.peer_blacklist:
+                return
+
+            # Get security manager from session manager
+            session_manager = getattr(session, "session_manager", None)
+            if not session_manager:
+                return
+
+            security_manager = getattr(session_manager, "security_manager", None)
+            if not security_manager:
+                return
+
+            # Restore whitelist
+            if checkpoint.peer_whitelist:
+                for ip in checkpoint.peer_whitelist:
+                    if hasattr(security_manager, "add_to_whitelist"):
+                        try:
+                            await security_manager.add_to_whitelist(ip)
+                        except Exception:
+                            pass  # Ignore errors for individual IPs
+
+            # Restore blacklist
+            if checkpoint.peer_blacklist:
+                for ip in checkpoint.peer_blacklist:
+                    if hasattr(security_manager, "add_to_blacklist"):
+                        try:
+                            await security_manager.add_to_blacklist(
+                                ip, reason="restored from checkpoint"
+                            )
+                        except Exception:
+                            pass  # Ignore errors for individual IPs
+
+            if self._ctx.logger:
+                self._ctx.logger.debug(
+                    "Restored security state: %d whitelisted, %d blacklisted",
+                    len(checkpoint.peer_whitelist) if checkpoint.peer_whitelist else 0,
+                    len(checkpoint.peer_blacklist) if checkpoint.peer_blacklist else 0,
+                )
+        except Exception as e:
+            if self._ctx.logger:
+                self._ctx.logger.debug("Failed to restore security state: %s", e)
+
+    async def _restore_session_state(
+        self, checkpoint: TorrentCheckpoint, session: Any
+    ) -> None:
+        """Restore session state from checkpoint."""
+        try:
+            if not checkpoint.session_state:
+                return
+
+            # Restore session state
+            if hasattr(session, "info") and hasattr(session.info, "status"):
+                # Only restore if state is valid
+                valid_states = ["active", "paused", "stopped", "queued", "seeding"]
+                if checkpoint.session_state in valid_states:
+                    session.info.status = checkpoint.session_state
+
+            if self._ctx.logger:
+                self._ctx.logger.debug(
+                    "Restored session state: %s",
+                    checkpoint.session_state,
+                )
+        except Exception as e:
+            if self._ctx.logger:
+                self._ctx.logger.debug("Failed to restore session state: %s", e)

@@ -875,7 +875,9 @@ class IPFSProtocol(Protocol):
 
             # Create blocks list from piece hashes (for reference)
             # These are placeholders until actual piece data is available
-            blocks = [
+            # Note: blocks list is reserved for future implementation when piece data is available
+            # For now, blocks are not used - DAG creation happens when pieces are converted
+            _blocks = [
                 {
                     "hash": piece.hex(),
                     "index": i,
@@ -894,10 +896,12 @@ class IPFSProtocol(Protocol):
             links: list[dict[str, Any]] = []
 
             # Create IPFS content record
+            # Note: blocks will be updated with actual CIDs when pieces are converted
+            # For now, use empty list since blocks contains dicts, not CIDs (strings)
             ipfs_content = IPFSContent(
                 cid=cid,
                 size=torrent_info.total_length,
-                blocks=blocks,  # Will be updated with actual CIDs when pieces are converted
+                blocks=[],  # Will be updated with actual CIDs when pieces are converted
                 links=links,  # Will be populated from DAG structure
             )
 

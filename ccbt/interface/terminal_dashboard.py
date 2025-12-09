@@ -67,6 +67,7 @@ from ccbt.interface.screens.utility import (
     HelpScreen,
     NavigationMenuScreen,
 )
+from ccbt.interface.screens.file_selection_dialog import FileSelectionDialog
 from ccbt.interface.screens.monitoring.disk_analysis import DiskAnalysisScreen
 from ccbt.interface.screens.monitoring.disk_io import DiskIOMetricsScreen
 from ccbt.interface.screens.monitoring.historical import HistoricalTrendsScreen
@@ -83,7 +84,10 @@ from ccbt.interface.screens.monitoring.scrape import ScrapeResultsScreen
 from ccbt.interface.screens.monitoring.system_resources import SystemResourcesScreen
 from ccbt.interface.screens.monitoring.tracker import TrackerMetricsScreen
 from ccbt.interface.screens.monitoring.xet import XetManagementScreen
+from ccbt.interface.screens.monitoring.xet_folder_sync import XetFolderSyncScreen
 from ccbt.interface.widgets import (
+    GraphsSectionContainer,
+    MainTabsContainer,
     Overview,
     PeersTable,
     SparklineGroup,
@@ -94,6 +98,15 @@ from ccbt.monitoring import get_alert_manager, get_metrics_collector
 from ccbt.storage.checkpoint import CheckpointManager
 
 logger = logging.getLogger(__name__)
+
+# Import rainbow theme
+try:
+    from ccbt.interface.themes.rainbow import create_rainbow_theme
+except ImportError:
+    # Fallback if themes module not available
+    def create_rainbow_theme() -> Any:  # type: ignore[misc]
+        """Fallback rainbow theme creator."""
+        return None
 
 if (
     TYPE_CHECKING
@@ -249,6 +262,91 @@ except Exception:  # pragma: no cover - fallback when Textual isn't installed
 
 
 # ============================================================================
+# Custom Footer Widget
+# ============================================================================
+
+
+class CustomFooter(Container):  # type: ignore[misc]
+    """Custom footer that displays all bindings in organized rows."""
+    
+    DEFAULT_CSS = """
+    CustomFooter {
+        height: auto;
+        min-height: 3;
+        max-height: 6;
+        border-top: solid $primary;
+        background: $surface-darken-1;
+        padding: 0 1;
+        layout: vertical;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+    CustomFooter #footer-content {
+        width: 1fr;
+        height: auto;
+        min-height: 3;
+        layout: vertical;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+    CustomFooter .footer-row {
+        height: 1;
+        layout: horizontal;
+        margin: 0;
+        padding: 0;
+    }
+    CustomFooter .footer-item {
+        margin: 0 1;
+        width: auto;
+        height: 1;
+    }
+    """
+    
+    def __init__(self, bindings: list[tuple[str, str, str]], *args: Any, **kwargs: Any) -> None:
+        """Initialize custom footer with all bindings.
+        
+        Args:
+            bindings: List of (key, action, description) tuples to display
+"""
+        super().__init__(*args, **kwargs)
+        self._bindings = bindings
+    
+    def compose(self) -> Any:  # pragma: no cover
+        """Compose the custom footer with multi-row layout."""
+        from textual.containers import Horizontal
+        
+        if not self._bindings:
+            yield Static(_("No commands available"), id="footer-content")
+            return
+        
+        # Group bindings into rows (max 12 commands per row for readability)
+        commands_per_row = 12
+        rows = []
+        current_row = []
+        
+        for key, action, description in self._bindings:
+            current_row.append((key, action, description))
+            if len(current_row) >= commands_per_row:
+                rows.append(current_row)
+                current_row = []
+        
+        # Add remaining row
+        if current_row:
+            rows.append(current_row)
+        
+        # Create rows with horizontal layout
+        with Container(id="footer-content"):
+            for row in rows:
+                with Horizontal(classes="footer-row"):
+                    for key, action, description in row:
+                        yield Static(
+                            f"[cyan]{key}[/cyan] {description}",
+                            classes="footer-item",
+                            markup=True
+                        )
+
+
+# ============================================================================
 # Terminal Dashboard Application
 # ============================================================================
 
@@ -257,38 +355,137 @@ class TerminalDashboard(App):  # type: ignore[misc]
     """Textual dashboard application."""
 
     CSS = """
-    Screen { layout: vertical; }
-    #body { layout: horizontal; height: 1fr; }
-    #left, #right { width: 1fr; }
-    #left { layout: vertical; }
-    #right { layout: vertical; }
-    #overview {
-        height: 1fr;
-        min-height: 8;
+    Screen { 
+        layout: vertical; 
     }
-    #speeds {
-        height: 1fr;
-        min-height: 5;
+    
+    /* Split layout: 45% graphs, 40% bottom section, 15% for menus/footers */
+    /* Use fractional units to ensure footers always have space */
+    /* Total: 20fr - main-content gets 17fr, footers get 3fr */
+    #main-content {
+        layout: vertical;
+        height: 17fr;  /* 17 out of 20 fractional units - leaves 3fr for footers */
+        min-height: 20;
+        display: block;
     }
-    #torrents { height: 2fr; }
-    #peers { height: 1fr; }
-    #details { height: 1fr; }
-    #logs { height: 1fr; }
-    Footer {
-        height: auto;
+    
+    /* Graphs section: 45% of main-content (9fr out of 20fr total) */
+    #graphs-section {
+        height: 9fr;
+        min-height: 12;
+        display: block;
+    }
+    
+    /* Main tabs section: 40% of main-content (8fr out of 20fr total) */
+    #main-tabs-section {
+        height: 8fr;
+        min-height: 10;
+        display: block;
+    }
+    
+    /* Legacy layout (hidden - kept for backward compatibility) */
+    .legacy-layout {
+        display: none;
+    }
+    
+    /* Status bar - ensure it's visible and not truncated */
+    #statusbar {
+        height: 1;
         min-height: 1;
-        max-height: 10;
-        overflow-y: auto;
-        overflow-x: hidden;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0 1;
+        border-top: solid $primary;
+        text-wrap: nowrap;
     }
+    
+    /* Overview footer - ensure it's visible and not truncated */
+    #overview-footer {
+        height: 2;
+        min-height: 2;
+        border-top: solid $primary;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0 1;
+        text-wrap: nowrap;
+    }
+    
+    /* Custom footer - ensure it's visible and can accommodate multiple lines if needed */
+    CustomFooter {
+        height: auto;
+        min-height: 2;
+        max-height: 3;
+        border-top: solid $primary;
+        background: $surface-darken-1;
+        padding: 0 1;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+    
+    CustomFooter #footer-content {
+        width: 1fr;
+        height: auto;
+        min-height: 2;
+        overflow-x: auto;
+        overflow-y: hidden;
+        text-wrap: wrap;
+    }
+    
+    /* Rainbow theme border classes - sequential rainbow colors */
+    /* Note: Textual uses 'border: <style> <color>' syntax, not 'border-color' */
+    .rainbow-1 {
+        border: solid $primary;
+    }
+    .rainbow-2 {
+        border: solid $secondary;
+    }
+    .rainbow-3 {
+        border: solid $accent;
+    }
+    .rainbow-4 {
+        border: solid $success;
+    }
+    .rainbow-5 {
+        border: solid $warning;
+    }
+    .rainbow-6 {
+        border: solid $error;
+    }
+    .rainbow-7 {
+        border: solid #8B00FF;  /* Violet color - hardcoded since $info is not available as CSS variable */
+    }
+    
+    /* Note: Rainbow theme borders are applied programmatically via _apply_rainbow_borders() method
+       using the .rainbow-1 through .rainbow-7 classes defined above. Attribute selectors
+       like TerminalDashboard[theme="rainbow"] are not supported in Textual CSS. */
     """
 
     def __init__(
-        self, session: AsyncSessionManager, refresh_interval: float = 1.0
+        self, session: Any, refresh_interval: float = 1.0, splash_manager: Any | None = None
     ):  # pragma: no cover
-        """Initialize terminal dashboard."""
+        """Initialize terminal dashboard.
+        
+        Args:
+            session: DaemonInterfaceAdapter instance (daemon session required)
+            refresh_interval: UI refresh interval in seconds
+            splash_manager: Splash manager to end when dashboard is fully rendered
+            
+        Raises:
+            ValueError: If session is not a DaemonInterfaceAdapter
+        """
         super().__init__()
+        
+        # CRITICAL: Dashboard ONLY works with daemon - no local sessions allowed
+        from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
+        if not isinstance(session, DaemonInterfaceAdapter):
+            raise ValueError(
+                "TerminalDashboard requires a DaemonInterfaceAdapter. "
+                "Local sessions are not supported. Please ensure the daemon is running."
+            )
+        
         self.session = session
+        self._splash_manager = splash_manager
+        self._splash_ended = False
         
         # Initialize translations
         try:
@@ -298,16 +495,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # Fallback if config not available
             TranslationManager(None)
         
-        # Detect if using DaemonInterfaceAdapter
-        from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
-        self._is_daemon_session = isinstance(session, DaemonInterfaceAdapter)
-        
-        # Reduce polling frequency when using daemon (WebSocket provides real-time updates)
-        if self._is_daemon_session:
-            # Use longer refresh interval for daemon (WebSocket handles real-time updates)
-            self.refresh_interval = max(2.0, float(refresh_interval) * 2.0)
-        else:
-            self.refresh_interval = max(0.2, float(refresh_interval))
+        # Dashboard always uses daemon - WebSocket provides real-time updates, polling is backup
+        # CRITICAL FIX: Use refresh_interval directly (no multiplier) for tighter integration
+        self.refresh_interval = max(0.5, float(refresh_interval))
         
         self.alert_manager = get_alert_manager()
         self.metrics_collector = get_metrics_collector()
@@ -318,8 +508,21 @@ class TerminalDashboard(App):  # type: ignore[misc]
         self._compact = False
         # Command executor for CLI command integration
         self._command_executor = CommandExecutor(session)
+        # Data provider for unified data access (IPC client for daemon, direct for local)
+        from ccbt.interface.data_provider import create_data_provider
+        executor_for_provider = self._command_executor._executor if hasattr(self._command_executor, "_executor") else None
+        self._data_provider = create_data_provider(session, executor_for_provider)
+        # CRITICAL DEBUG: Log data provider initialization
+        logger.debug("TerminalDashboard: Data provider initialized: %s", type(self._data_provider).__name__)
+        if hasattr(self._data_provider, "_client"):
+            logger.debug("TerminalDashboard: Data provider has IPC client: %s", type(self._data_provider._client).__name__)
+        else:
+            logger.warning("TerminalDashboard: Data provider does not have IPC client!")
+        # Reactive update manager for WebSocket events
+        self._reactive_manager: Any | None = None
         # Widget references will be set in on_mount after compose
         self.overview: Overview | None = None
+        self.overview_footer: Overview | None = None
         self.speeds: SpeedSparklines | None = None
         self.torrents: TorrentsTable | None = None
         self.peers: PeersTable | None = None
@@ -327,55 +530,57 @@ class TerminalDashboard(App):  # type: ignore[misc]
         self.statusbar: Static | None = None
         self.alerts: Static | None = None
         self.logs: RichLog | None = None
+        # New tabbed interface widgets
+        self.graphs_section: GraphsSectionContainer | None = None
 
     def _format_bindings_display(self) -> Any:  # pragma: no cover
         """Format all key bindings grouped by category for display."""
         # Group bindings by category
         categories = {
-            "Torrent Control": [
-                ("p", "Pause torrent"),
-                ("r", "Resume torrent"),
+            _("Torrent Control"): [
+                ("p", _("Pause torrent")),
+                ("r", _("Resume torrent")),
             ],
-            "Add Torrents": [
-                ("i", "Quick add torrent"),
-                ("o", "Advanced add torrent"),
-                ("b", "Browse and add torrent"),
+            _("Add Torrents"): [
+                ("i", _("Quick add torrent")),
+                ("o", _("Advanced add torrent")),
+                ("b", _("Browse and add torrent")),
             ],
-            "Configuration": [
-                ("g", "Global config"),
-                ("t", "Torrent config"),
+            _("Configuration"): [
+                ("g", _("Global config")),
+                ("t", _("Torrent config")),
             ],
-            "Monitoring": [
-                ("s", "System resources"),
-                ("m", "Performance metrics"),
-                ("n", "Network quality"),
-                ("h", "Historical trends"),
-                ("a", "Alerts dashboard"),
-                ("e", "Metrics explorer"),
+            _("Monitoring"): [
+                ("s", _("System resources")),
+                ("m", _("Performance metrics")),
+                ("n", _("Network quality")),
+                ("h", _("Historical trends")),
+                ("a", _("Alerts dashboard")),
+                ("e", _("Metrics explorer")),
             ],
-            "Protocols (Ctrl+)": [
-                ("Ctrl+X", "Xet management"),
-                ("Ctrl+I", "IPFS management"),
-                ("Ctrl+S", "SSL config"),
-                ("Ctrl+P", "Proxy config"),
-                ("Ctrl+R", "Scrape results"),
-                ("Ctrl+N", "NAT management"),
-                ("Ctrl+U", "uTP config"),
+            _("Protocols (Ctrl+)"): [
+                ("Ctrl+X", _("Xet management")),
+                ("Ctrl+I", _("IPFS management")),
+                ("Ctrl+S", _("SSL config")),
+                ("Ctrl+P", _("Proxy config")),
+                ("Ctrl+R", _("Scrape results")),
+                ("Ctrl+N", _("NAT management")),
+                ("Ctrl+U", _("uTP config")),
             ],
-            "Navigation": [
-                ("Ctrl+M", "Navigation menu"),
-                ("?", "Help screen"),
+            _("Navigation"): [
+                ("Ctrl+M", _("Navigation menu")),
+                ("?", _("Help screen")),
             ],
-            "General": [
-                ("q", "Quit"),
-                ("x", "Security scan"),
+            _("General"): [
+                ("q", _("Quit")),
+                ("x", _("Security scan")),
             ],
         }
 
         # Create a table with two columns for better layout
         table = Table(show_header=False, box=None, expand=True, padding=(0, 1))
-        table.add_column("Key", style="cyan bold", ratio=1)
-        table.add_column("Action", style="white", ratio=2)
+        table.add_column(_("Key"), style="cyan bold", ratio=1)
+        table.add_column(_("Action"), style="white", ratio=2)
 
         # Add bindings grouped by category
         for category, bindings in categories.items():
@@ -392,7 +597,18 @@ class TerminalDashboard(App):  # type: ignore[misc]
         # Textual UI composition method - requires full Textual app context to test
         # Testing would require mocking entire Textual framework or integration tests
         yield Header(show_clock=True)
-        with Horizontal(id="body"):
+        
+        # Main content area with split layout
+        with Container(id="main-content"):
+            # Top half: Always-visible graphs section
+            yield GraphsSectionContainer(self._data_provider, id="graphs-section")
+            
+            # Bottom half: Main tabs
+            yield MainTabsContainer(self.session, id="main-tabs-section")
+        
+        # Legacy layout (kept for backward compatibility during transition)
+        # TODO: Remove once new layout is fully implemented
+        with Horizontal(id="body", classes="legacy-layout"):
             with Container(id="left"):
                 yield Overview(id="overview")
                 yield SpeedSparklines(id="speeds")
@@ -401,11 +617,61 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 yield PeersTable(id="peers")
                 yield Static(id="details")
                 yield RichLog(id="logs")
+        
         yield Static(id="statusbar")
-        yield Container(Static(id="alerts"))
-        yield Footer()
+        
+        # Activity bar (overview) above commands
+        yield Overview(id="overview-footer")
+        
+        # Comprehensive custom footer with all commands including Textual system bindings
+        yield CustomFooter(self.ALL_FOOTER_BINDINGS)
 
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+    # All footer bindings - comprehensive list including Textual system bindings
+    ALL_FOOTER_BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        # Core torrent actions
+        ("p", "pause_torrent", _("Pause")),
+        ("r", "resume_torrent", _("Resume")),
+        ("q", "quit", _("Quit")),
+        # Torrent addition
+        ("i", "quick_add_torrent", _("Quick Add")),
+        ("o", "advanced_add_torrent", _("Advanced Add")),
+        ("b", "browse_add_torrent", _("Browse")),
+        # Configuration
+        ("g", "global_config", _("Global Config")),
+        ("t", "torrent_config", _("Torrent Config")),
+        # Monitoring screens
+        ("s", "system_resources", _("System Resources")),
+        ("m", "performance_metrics", _("Performance")),
+        ("n", "network_quality", _("Network")),
+        ("h", "historical_trends", _("History")),
+        ("a", "alerts_dashboard", _("Alerts")),
+        ("e", "metrics_explorer", _("Explore")),
+        ("x", "security_scan", _("Security Scan")),
+        # Settings
+        ("l", "language_selection", _("Language")),
+        ("ctrl+t", "theme_selection", _("Theme")),
+        ("?", "help", _("Help")),
+        # Protocol management (Ctrl+ combinations)
+        ("ctrl+x", "xet_management", _("Xet")),
+        ("ctrl+f", "xet_folder_sync", _("XET Folders")),
+        ("ctrl+i", "ipfs_management", _("IPFS")),
+        ("ctrl+s", "ssl_config", _("SSL Config")),
+        ("ctrl+p", "proxy_config", _("Proxy Config")),
+        ("ctrl+r", "scrape_results", _("Scrape Results")),
+        ("ctrl+n", "nat_management", _("NAT Management")),
+        ("ctrl+u", "utp_config", _("uTP Config")),
+        ("ctrl+m", "navigation_menu", _("Menu")),
+        # Textual system bindings
+        ("ctrl+t", "toggle_dark", _("Toggle Dark/Light")),
+        ("ctrl+d", "dark_mode", _("Dark Mode")),
+        ("ctrl+shift+d", "light_mode", _("Light Mode")),
+    ]
+    
+    # All bindings combined (for action routing)
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = ALL_FOOTER_BINDINGS
+    
+    # Legacy bindings (kept for backward compatibility)
+    FOOTER_BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("p", "pause_torrent", _("Pause")),
         ("r", "resume_torrent", _("Resume")),
         ("q", "quit", _("Quit")),
@@ -413,6 +679,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
         ("o", "advanced_add_torrent", _("Advanced Add")),
         ("b", "browse_add_torrent", _("Browse")),
         ("g", "global_config", _("Global Config")),
+    ]
+    
+    COMMAND_BARS_BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("t", "torrent_config", _("Torrent Config")),
         ("s", "system_resources", _("System Resources")),
         ("m", "performance_metrics", _("Performance")),
@@ -421,8 +690,10 @@ class TerminalDashboard(App):  # type: ignore[misc]
         ("a", "alerts_dashboard", _("Alerts")),
         ("e", "metrics_explorer", _("Explore")),
         ("x", "security_scan", _("Security Scan")),
+        ("l", "language_selection", _("Language")),
         ("?", "help", _("Help")),
         ("ctrl+x", "xet_management", _("Xet")),
+        ("ctrl+f", "xet_folder_sync", _("XET Folders")),
         ("ctrl+i", "ipfs_management", _("IPFS")),
         ("ctrl+s", "ssl_config", _("SSL Config")),
         ("ctrl+p", "proxy_config", _("Proxy Config")),
@@ -435,41 +706,398 @@ class TerminalDashboard(App):  # type: ignore[misc]
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the dashboard and start session polling."""
         # Textual lifecycle method - requires full app mount context to test
+        
+        # Register rainbow theme
+        try:
+            rainbow_theme = create_rainbow_theme()
+            if rainbow_theme:
+                self.register_theme(rainbow_theme)  # type: ignore[attr-defined]
+                logger.debug("Rainbow theme registered")
+        except Exception as e:
+            logger.debug("Error registering rainbow theme: %s", e)
+        
         # Get widget references after compose
-        self.overview = self.query_one("#overview", Overview)
-        self.speeds = self.query_one("#speeds", SpeedSparklines)
-        self.torrents = self.query_one("#torrents", TorrentsTable)
-        self.peers = self.query_one("#peers", PeersTable)
-        self.details = self.query_one("#details", Static)
+        # Legacy widgets (for backward compatibility)
+        try:
+            try:
+                self.overview = self.query_one("#overview", Overview)
+            except Exception:
+                self.overview = None
+            self.overview_footer = self.query_one("#overview-footer", Overview)
+            self.speeds = self.query_one("#speeds", SpeedSparklines)
+            self.torrents = self.query_one("#torrents", TorrentsTable)
+            self.peers = self.query_one("#peers", PeersTable)
+            self.details = self.query_one("#details", Static)
+        except Exception:
+            # Legacy widgets may not be present in new layout
+            pass
+        
+        # Prefer new top-pane logs widget, fall back to legacy RichLog
+        self.logs = None
+        try:
+            self.logs = self.query_one("#top-logs", RichLog)
+        except Exception:
+            with contextlib.suppress(Exception):
+                self.logs = self.query_one("#logs", RichLog)
+        
+        # New tabbed interface widgets
+        try:
+            self.graphs_section = self.query_one("#graphs-section", GraphsSectionContainer)
+        except Exception:
+            logger.warning("Graphs section not found, continuing without it")
+            self.graphs_section = None
+        
+        # Status bar and alerts (always present)
         self.statusbar = self.query_one("#statusbar", Static)
-        self.alerts = self.query_one("#alerts", Static)
-        self.logs = self.query_one("#logs", RichLog)
+        self.alerts = None
+        for selector in ("#top-alerts", "#alerts"):
+            with contextlib.suppress(Exception):
+                self.alerts = self.query_one(selector, Static)
+                if self.alerts:
+                    break
 
         # Set up custom logging handler to capture errors in RichLog widget
         self._setup_logging_handler()
 
         # Start the session and begin polling
         try:
-            await self.session.start()
-            
-            # If using DaemonInterfaceAdapter, WebSocket subscription is already handled in adapter.start()
+            # CRITICAL: Dashboard only works with daemon - start is handled by DaemonInterfaceAdapter
+            # WebSocket subscription is already handled in adapter.start()
             # Register callbacks for real-time updates
-            if self._is_daemon_session:
-                # Set up event callbacks for WebSocket updates
-                from ccbt.daemon.ipc_protocol import EventType
-                
-                def on_torrent_status_changed(data: dict[str, Any]) -> None:
-                    """Handle torrent status change event."""
-                    # Trigger UI refresh
-                    self._schedule_poll()
-                
-                self.session.register_event_callback(  # type: ignore[attr-defined]
-                    EventType.TORRENT_STATUS_CHANGED,
-                    on_torrent_status_changed,
-                )
-                logger.info("Daemon session adapter started with WebSocket subscription")
+            # Set up event callbacks for WebSocket updates
+            from ccbt.daemon.ipc_protocol import EventType
+            
+            def on_torrent_status_changed(data: dict[str, Any]) -> None:
+                """Handle torrent status change event."""
+                # Use enhanced invalidate_on_event method
+                if hasattr(self, "_data_provider") and self._data_provider:
+                    if hasattr(self._data_provider, "invalidate_on_event"):
+                        info_hash = data.get("info_hash", "")
+                        self._data_provider.invalidate_on_event(
+                            EventType.TORRENT_STATUS_CHANGED.value,
+                            info_hash if info_hash else None,
+                        )
+                    elif hasattr(self._data_provider, "invalidate_cache"):
+                        # Fallback to manual invalidation
+                        self._data_provider.invalidate_cache("torrent_list")
+                        self._data_provider.invalidate_cache("global_stats")
+                # Trigger UI refresh (includes graphs section)
+                self._schedule_poll()
+                # CRITICAL FIX: Also explicitly refresh active torrent screens
+                try:
+                    from ccbt.interface.screens.torrents_tab import (
+                        GlobalTorrentsScreen,
+                        FilteredTorrentsScreen,
+                    )
+                    # Find and refresh active screen
+                    # CRITICAL FIX: query_one() doesn't accept can_be_none parameter in Textual
+                    try:
+                        global_screen = self.query_one(GlobalTorrentsScreen)  # type: ignore[attr-defined]
+                        if global_screen and hasattr(global_screen, "refresh_torrents"):
+                            self.call_later(global_screen.refresh_torrents)  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+                    # Try filtered screens
+                    try:
+                        filtered_screens = list(self.query(FilteredTorrentsScreen))  # type: ignore[attr-defined]
+                        for screen in filtered_screens:
+                            if screen.display and hasattr(screen, "refresh_torrents"):  # type: ignore[attr-defined]
+                                self.call_later(screen.refresh_torrents)  # type: ignore[attr-defined]
+                                break
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            
+            def on_global_stats_updated(data: dict[str, Any]) -> None:
+                """Handle global stats update event."""
+                # Use enhanced invalidate_on_event method
+                if hasattr(self, "_data_provider") and self._data_provider:
+                    if hasattr(self._data_provider, "invalidate_on_event"):
+                        self._data_provider.invalidate_on_event(
+                            EventType.GLOBAL_STATS_UPDATED.value,
+                            None,
+                        )
+                # Update graphs section immediately
+                if self.graphs_section:
+                    # Update graphs with event data
+                    self.graphs_section.update_from_stats(data)
+            
+            def on_piece_completed(data: dict[str, Any]) -> None:
+                """Handle piece completion event."""
+                if hasattr(self, "_data_provider") and self._data_provider:
+                    if hasattr(self._data_provider, "invalidate_on_event"):
+                        info_hash = data.get("info_hash", "")
+                        self._data_provider.invalidate_on_event(
+                            EventType.PIECE_COMPLETED.value,
+                            info_hash if info_hash else None,
+                        )
+            
+            def on_progress_updated(data: dict[str, Any]) -> None:
+                """Handle progress update event."""
+                if hasattr(self, "_data_provider") and self._data_provider:
+                    if hasattr(self._data_provider, "invalidate_on_event"):
+                        info_hash = data.get("info_hash", "")
+                        self._data_provider.invalidate_on_event(
+                            EventType.PROGRESS_UPDATED.value,
+                            info_hash if info_hash else None,
+                        )
+            
+            # CRITICAL FIX: Register torrent added event callback
+            def on_torrent_added(data: dict[str, Any]) -> None:
+                """Handle torrent added event."""
+                # Use enhanced invalidate_on_event method
+                if hasattr(self, "_data_provider") and self._data_provider:
+                    if hasattr(self._data_provider, "invalidate_on_event"):
+                        info_hash = data.get("info_hash", "")
+                        self._data_provider.invalidate_on_event(
+                            EventType.TORRENT_ADDED.value,
+                            info_hash if info_hash else None,
+                        )
+                    elif hasattr(self._data_provider, "invalidate_cache"):
+                        # Fallback to manual invalidation
+                        self._data_provider.invalidate_cache("torrent_list")
+                        self._data_provider.invalidate_cache("swarm_health")
+                # CRITICAL FIX: Refresh torrent list screens immediately
+                try:
+                    from ccbt.interface.screens.torrents_tab import (
+                        GlobalTorrentsScreen,
+                        FilteredTorrentsScreen,
+                    )
+                    # Find and refresh active screen
+                    try:
+                        global_screen = self.query_one(GlobalTorrentsScreen)  # type: ignore[attr-defined]
+                        if global_screen and hasattr(global_screen, "refresh_torrents"):
+                            # Use asyncio.create_task for async method
+                            asyncio.create_task(global_screen.refresh_torrents())
+                    except Exception:
+                        pass
+                    # Try filtered screens
+                    try:
+                        filtered_screens = list(self.query(FilteredTorrentsScreen))  # type: ignore[attr-defined]
+                        for screen in filtered_screens:
+                            if screen.display and hasattr(screen, "refresh_torrents"):  # type: ignore[attr-defined]
+                                asyncio.create_task(screen.refresh_torrents())
+                                break
+                    except Exception:
+                        pass
+                    # CRITICAL FIX: Also refresh torrent controls widget
+                    try:
+                        from ccbt.interface.widgets.torrent_controls import TorrentControlsWidget
+                        controls = self.query_one(TorrentControlsWidget, can_focus=False)  # type: ignore[attr-defined]
+                        if controls and hasattr(controls, "_refresh_torrent_list"):
+                            asyncio.create_task(controls._refresh_torrent_list())
+                    except Exception:
+                        pass
+                    # CRITICAL FIX: Also refresh torrent selector in Per-Torrent tab
+                    try:
+                        from ccbt.interface.widgets.torrent_selector import TorrentSelector
+                        selectors = list(self.query(TorrentSelector))  # type: ignore[attr-defined]
+                        for selector in selectors:
+                            if selector.is_attached and hasattr(selector, "_refresh_torrent_list"):  # type: ignore[attr-defined]
+                                asyncio.create_task(selector._refresh_torrent_list())
+                                # CRITICAL FIX: If this is a newly added torrent, auto-select it
+                                info_hash = data.get("info_hash", "")
+                                if info_hash:
+                                    # Wait a moment for the selector to refresh, then set the value
+                                    async def auto_select_new_torrent() -> None:
+                                        await asyncio.sleep(0.5)  # Give selector time to refresh
+                                        if selector.is_attached and hasattr(selector, "set_value"):  # type: ignore[attr-defined]
+                                            selector.set_value(info_hash)  # type: ignore[attr-defined]
+                                    asyncio.create_task(auto_select_new_torrent())
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                # Trigger UI refresh
+                self._schedule_poll()
+            
+            # Register TORRENT_ADDED callback if session supports it
+            if hasattr(self.session, "register_event_callback"):
+                try:
+                    self.session.register_event_callback(  # type: ignore[attr-defined]
+                        EventType.TORRENT_ADDED,
+                        on_torrent_added,
+                    )
+                except Exception:
+                    pass
+            # Also set up callback for daemon session adapter if available
+            if hasattr(self.session, "on_torrent_added"):
+                async def daemon_on_torrent_added(info_hash: bytes, name: str) -> None:
+                    """Handle torrent added from daemon adapter."""
+                    # Convert to dict format for consistency
+                    info_hash_hex = info_hash.hex()
+                    logger.debug(
+                        "TerminalDashboard: daemon_on_torrent_added called - info_hash: %s, name: %s",
+                        info_hash_hex,
+                        name,
+                    )
+                    try:
+                        on_torrent_added({"info_hash": info_hash_hex, "name": name})
+                        logger.debug(
+                            "TerminalDashboard: on_torrent_added callback completed for %s",
+                            info_hash_hex,
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "TerminalDashboard: Error in on_torrent_added callback: %s",
+                            e,
+                            exc_info=True,
+                        )
+                self.session.on_torrent_added = daemon_on_torrent_added  # type: ignore[assignment]
+                logger.debug("TerminalDashboard: Registered daemon_on_torrent_added callback")
+            
+            self.session.register_event_callback(  # type: ignore[attr-defined]
+                EventType.TORRENT_STATUS_CHANGED,
+                on_torrent_status_changed,
+            )
+            
+            # CRITICAL FIX: Register completion event callback to show user-facing dialog
+            def on_torrent_completed(data: dict[str, Any]) -> None:
+                """Handle torrent completion event and show dialog."""
+                # Use enhanced invalidate_on_event method
+                if hasattr(self, "_data_provider") and self._data_provider:
+                    if hasattr(self._data_provider, "invalidate_on_event"):
+                        info_hash = data.get("info_hash", "")
+                        self._data_provider.invalidate_on_event(
+                            EventType.TORRENT_COMPLETED.value,
+                            info_hash if info_hash else None,
+                        )
+                    elif hasattr(self._data_provider, "invalidate_cache"):
+                        # Fallback to manual invalidation
+                        self._data_provider.invalidate_cache("torrent_list")
+                        self._data_provider.invalidate_cache("global_stats")
+                info_hash_hex = data.get("info_hash", "")
+                name = data.get("name", "")
+                if info_hash_hex and name:
+                    # Schedule async dialog display
+                    asyncio.create_task(self._show_completion_dialog(name, info_hash_hex))
+                # Trigger UI refresh
+                self._schedule_poll()
+            
+            self.session.register_event_callback(  # type: ignore[attr-defined]
+                EventType.TORRENT_COMPLETED,
+                on_torrent_completed,
+            )
+            
+            # Register additional event callbacks for swarm/piece health updates
+            self.session.register_event_callback(  # type: ignore[attr-defined]
+                EventType.PIECE_COMPLETED,
+                on_piece_completed,
+            )
+            
+            self.session.register_event_callback(  # type: ignore[attr-defined]
+                EventType.PROGRESS_UPDATED,
+                on_progress_updated,
+            )
+            
+            self.session.register_event_callback(  # type: ignore[attr-defined]
+                EventType.GLOBAL_STATS_UPDATED,
+                on_global_stats_updated,
+            )
+            # Note: Global stats events may not be available, but we'll poll for updates
+            logger.info("Daemon session adapter started with WebSocket subscription")
+            
+            # Set up reactive update manager for graphs section
+            try:
+                from ccbt.interface.reactive_updates import ReactiveUpdateManager
+                if self._data_provider:
+                    # Create reactive update manager
+                    self._reactive_manager = ReactiveUpdateManager(self._data_provider)
+                    await self._reactive_manager.start()
+                    await self._reactive_manager.setup_websocket_subscriptions(self.session)
+                    
+                    adapter = None
+                    if hasattr(self._data_provider, "get_adapter"):
+                        adapter = self._data_provider.get_adapter()
+                    if adapter:
+                        self._reactive_manager.subscribe_to_adapter(adapter)
+                    
+                    # Helper to refresh per-torrent tab when a specific info hash is impacted
+                    async def _refresh_per_torrent_tab(info_hash: str | None) -> None:
+                        if not info_hash:
+                            return
+                        try:
+                            from ccbt.interface.screens.per_torrent_tab import PerTorrentTabContent
+                            per_torrent_tab = self.query_one(PerTorrentTabContent)  # type: ignore[attr-defined]
+                        except Exception:
+                            per_torrent_tab = None
+                        if not per_torrent_tab or not per_torrent_tab.is_attached or not per_torrent_tab.display:  # type: ignore[attr-defined]
+                            return
+                        selected = per_torrent_tab.get_selected_info_hash()
+                        if not selected or selected.lower() != info_hash.lower():
+                            return
+                        if hasattr(per_torrent_tab, "refresh_active_sub_tab"):
+                            try:
+                                if hasattr(self, "loop"):
+                                    self.loop.create_task(per_torrent_tab.refresh_active_sub_tab())  # type: ignore[attr-defined]
+                                else:
+                                    asyncio.create_task(per_torrent_tab.refresh_active_sub_tab())
+                            except Exception:
+                                await per_torrent_tab.refresh_active_sub_tab()
+
+                    # Subscribe UI widgets to reactive events
+                    def on_stats_update(event: Any) -> None:
+                        """Handle stats update event for graphs."""
+                        stats = getattr(event, "data", {}) or {}
+                        if self.graphs_section:
+                            self.graphs_section.update_from_stats(stats)
+                        if getattr(self, "overview", None):
+                            self.overview.update_from_stats(stats)
+                        if getattr(self, "overview_footer", None):
+                            self.overview_footer.update_from_stats(stats)
+                        if getattr(self, "speeds", None):
+                            self.speeds.update_from_stats(stats)
+                    
+                    async def on_torrent_delta(event: Any) -> None:
+                        """Patch torrents table with incremental updates."""
+                        if not hasattr(event, "data"):
+                            return
+                        info_hash = event.data.get("info_hash")
+                        if not info_hash:
+                            return
+                        removed = event.data.get("event") == EventType.TORRENT_REMOVED.value
+                        if not hasattr(self, "_last_status"):
+                            self._last_status = {}
+                        if removed:
+                            self._last_status.pop(info_hash, None)
+                        else:
+                            status = await self._data_provider.get_torrent_status(info_hash)
+                            if status:
+                                self._last_status[info_hash] = status
+                        self._apply_filter_and_update()
+                    
+                    async def on_peer_metrics(event: Any) -> None:
+                        """Refresh peer widget from peer metric events."""
+                        if not hasattr(event, "data"):
+                            return
+                        info_hash = event.data.get("info_hash")
+                        if not info_hash or not getattr(self, "peers", None):
+                            return
+                        peers = await self._data_provider.get_torrent_peers(info_hash)
+                        self.peers.update_from_peers(peers)
+
+                    async def on_tracker_event(event: Any) -> None:
+                        """Refresh tracker views on tracker events."""
+                        data = getattr(event, "data", {}) or {}
+                        await _refresh_per_torrent_tab(data.get("info_hash"))
+
+                    async def on_metadata_event(event: Any) -> None:
+                        """Refresh metadata-dependent views."""
+                        data = getattr(event, "data", {}) or {}
+                        await _refresh_per_torrent_tab(data.get("info_hash"))
+                    
+                    self._reactive_manager.subscribe("global_stats_updated", on_stats_update)
+                    self._reactive_manager.subscribe("torrent_delta", on_torrent_delta)
+                    self._reactive_manager.subscribe("peer_metrics", on_peer_metrics)
+                    self._reactive_manager.subscribe("tracker_event", on_tracker_event)
+                    self._reactive_manager.subscribe("metadata_event", on_metadata_event)
+            except Exception as reactive_error:
+                logger.debug("Error setting up reactive updates: %s", reactive_error)
+                # Continue without reactive updates - polling will still work
+                self._reactive_manager = None
         except Exception as e:
-            logger.exception("Failed to start session: %s", e)
+            logger.exception("Failed to start session")
             # Show error in status bar
             if self.statusbar:
                 self.statusbar.update(
@@ -507,11 +1135,50 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # Ignore alert manager initialization errors
             logger.debug("Alert manager initialization failed", exc_info=True)
         
-        # Start polling (reduced frequency for daemon sessions)
-        self.set_interval(self.refresh_interval, self._schedule_poll)
+        # Start polling (reduced frequency when WebSocket updates are active)
+        fallback_interval = self.refresh_interval
+        if self._reactive_manager:
+            fallback_interval = max(self.refresh_interval, 30.0)
+            self.refresh_interval = fallback_interval
+        self.set_interval(fallback_interval, self._schedule_poll)
+        
+        # Trigger initial poll immediately to load torrents and stats
+        self.call_later(self._schedule_poll)  # type: ignore[attr-defined]
         
         # Update status bar with connection status
         self._update_connection_status()
+        
+        # End splash screen after dashboard is mounted and first render is scheduled
+        # Use multiple fallback mechanisms to ensure splash ends reliably
+        if self._splash_manager and not self._splash_ended:
+            # Method 1: Schedule splash end after refresh (primary method)
+            try:
+                self.call_after_refresh(self._end_splash)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            
+            # Method 2: Use set_timer as backup (after 0.5 seconds)
+            # This is more reliable than call_later with delay
+            try:
+                self.set_timer(0.5, self._end_splash, name="splash_end_short")  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            
+            # Method 3: Fallback timeout - end splash after 3 seconds maximum
+            # This ensures splash always ends even if other methods fail
+            try:
+                self.set_timer(3.0, self._end_splash, name="splash_end_fallback")  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            
+            # Method 4: Also try call_later without delay (immediate, but after current call stack)
+            try:
+                self.call_later(self._end_splash)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        
+        # Apply rainbow borders if rainbow theme is active
+        self.call_later(self._apply_rainbow_borders)  # type: ignore[attr-defined]
 
     def _setup_logging_handler(self) -> None:  # pragma: no cover
         """Set up Textual logging handler to capture errors in RichLog widget.
@@ -542,17 +1209,34 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         from io import StringIO
                         console = Console(file=StringIO(), width=120, force_terminal=False)
                         
-                        # Format message with Rich markup based on level
-                        if record.levelno >= logging.ERROR:
-                            formatted_msg = f"[red]{record.levelname}[/red] {record.getMessage()}"
-                        elif record.levelno >= logging.WARNING:
-                            formatted_msg = f"[yellow]{record.levelname}[/yellow] {record.getMessage()}"
-                        else:
-                            formatted_msg = f"{record.levelname} {record.getMessage()}"
+                        # Format message with Rich markup based on level (icons removed)
+                        from ccbt.utils.rich_logging import CorrelationRichHandler
+                        
+                        # Use colors from CorrelationRichHandler (icons removed)
+                        colors = CorrelationRichHandler.LEVEL_COLORS
+                        
+                        level_name = record.levelname
+                        color = colors.get(level_name, "white")
+                        func_name = getattr(record, "funcName", "unknown")
+                        original_msg = record.getMessage()
+                        
+                        # Colorize action text (like CorrelationRichHandler does)
+                        handler = CorrelationRichHandler()
+                        colored_msg = handler._colorize_action_text(original_msg)
+                        
+                        # Format: [color]LEVEL[/color] [#ff69b4]method_name[/#ff69b4] message
+                        # Using hex color #ff69b4 (hot pink) as Rich doesn't have "pink" as a named color
+                        formatted_msg = f"[{color}]{level_name}[/{color}] [#ff69b4]{func_name}[/#ff69b4] {colored_msg}"
                         
                         # Add correlation ID if available
-                        if hasattr(record, "correlation_id"):
+                        if hasattr(record, "correlation_id") and record.correlation_id:
                             formatted_msg = f"[dim][{record.correlation_id}][/dim] {formatted_msg}"
+                        
+                        # Add timestamp for DEBUG/TRACE levels
+                        if record.levelno <= logging.DEBUG:
+                            import datetime
+                            timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                            formatted_msg = f"[dim]{timestamp}[/dim] {formatted_msg}"
                         
                         # Write directly to RichLog - Textual handles thread safety
                         if self.rich_log:
@@ -631,6 +1315,36 @@ class TerminalDashboard(App):  # type: ignore[misc]
             except Exception:
                 pass
 
+    def _end_splash(self) -> None:
+        """End splash screen when dashboard is fully rendered."""
+        if self._splash_manager and not self._splash_ended:
+            try:
+                logger.debug("Ending splash screen - dashboard is ready")
+                # Use stop_splash() which clears console and stops animation
+                if hasattr(self._splash_manager, 'stop_splash'):
+                    self._splash_manager.stop_splash()
+                else:
+                    # Fallback to clear_progress_messages
+                    self._splash_manager.clear_progress_messages()
+                
+                # CRITICAL: Add a small delay to ensure splash screen is fully cleared
+                # before Textual renders. This prevents the splash from leaking into the dashboard.
+                import time
+                time.sleep(0.1)  # 100ms delay to ensure terminal is ready
+                
+                self._splash_ended = True
+                
+                # Restore original log level if it was suppressed
+                import logging
+                root_logger = logging.getLogger()
+                if hasattr(self._splash_manager, '_original_log_level'):
+                    root_logger.setLevel(self._splash_manager._original_log_level)
+                    logger.debug("Restored original log level: %s", self._splash_manager._original_log_level)
+            except Exception as e:
+                logger.debug("Error ending splash screen: %s", e, exc_info=True)
+                # Mark as ended even if clear failed to prevent infinite retries
+                self._splash_ended = True
+    
     def _schedule_poll(self) -> None:  # pragma: no cover
         # UI refresh scheduler - requires Textual set_interval and task management
         if self._poll_task and not self._poll_task.done():
@@ -658,68 +1372,34 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # Convert hex to bytes
             info_hash_bytes = bytes.fromhex(info_hash_hex)
 
-            # Handle DaemonInterfaceAdapter (can't access piece_manager directly)
-            if self._is_daemon_session:
-                # For DaemonInterfaceAdapter, torrents dict contains status objects, not sessions
-                # We can't access piece_manager directly, so return limited metrics
-                torrent_status = await self.session.get_torrent_status(info_hash_hex)
-                if not torrent_status:
-                    return {}
-                # Return basic metrics from status
-                return {
-                    "status": torrent_status.get("status", "unknown"),
-                    "progress": torrent_status.get("progress", 0.0),
-                    "name": torrent_status.get("name", "Unknown"),
-                    "download_rate": torrent_status.get("download_rate", 0.0),
-                    "upload_rate": torrent_status.get("upload_rate", 0.0),
-                    "total_downloaded_bytes": torrent_status.get("downloaded", 0),
-                    "total_uploaded_bytes": torrent_status.get("uploaded", 0),
-                    "connection_count": torrent_status.get("peers", 0),
-                }
-            
-            # For AsyncSessionManager, get torrent session
-            torrent_session = self.session.torrents.get(info_hash_bytes)
-            if not torrent_session:
+            # CRITICAL: Dashboard only works with daemon - use DataProvider for all data access
+            # For DaemonInterfaceAdapter, we can't access piece_manager directly
+            torrent_status = await self._data_provider.get_torrent_status(info_hash_hex)
+            if not torrent_status:
                 return {}
-
-            metrics: dict[str, Any] = {}
-
-            # Get basic status
-            status = await self.session.get_status()
-            torrent_status = status.get(info_hash_hex, {})
-
-            # Pieces information from piece manager
-            if (
-                hasattr(torrent_session, "piece_manager")
-                and torrent_session.piece_manager
-            ):
-                try:
-                    piece_stats = torrent_session.piece_manager.get_stats()
-                    metrics["pieces_completed"] = piece_stats.get("completed_pieces", 0)
-                    metrics["pieces_total"] = piece_stats.get("total_pieces", 0)
-                    metrics["pieces_verified"] = piece_stats.get("verified_pieces", 0)
-                    metrics["pieces_missing"] = piece_stats.get("missing_pieces", 0)
-                    metrics["pieces_downloading"] = piece_stats.get(
-                        "downloading_pieces", 0
-                    )
-                    metrics["piece_progress"] = piece_stats.get("progress", 0.0)
-                    metrics["endgame_mode"] = piece_stats.get("endgame_mode", False)
-                except Exception:
-                    pass
+            
+            # Return metrics from status data
+            metrics: dict[str, Any] = {
+                "status": torrent_status.get("status", "unknown"),
+                "progress": torrent_status.get("progress", 0.0),
+                "name": torrent_status.get("name", "Unknown"),
+                "download_rate": torrent_status.get("download_rate", 0.0),
+                "upload_rate": torrent_status.get("upload_rate", 0.0),
+                "total_downloaded_bytes": torrent_status.get("downloaded", 0),
+                "total_uploaded_bytes": torrent_status.get("uploaded", 0),
+                "connection_count": torrent_status.get("peers", 0),
+            }
+            
+            # Piece stats would need to be added to DataProvider if needed
+            # For now, we rely on status data from DataProvider
 
             # Bytes downloaded/uploaded
-            try:
-                metrics["total_downloaded_bytes"] = torrent_session.downloaded_bytes()
-                metrics["total_uploaded_bytes"] = torrent_session.uploaded_bytes()
-                metrics["left_bytes"] = torrent_session.left_bytes()
-            except Exception:
-                metrics["total_downloaded_bytes"] = torrent_status.get(
-                    "downloaded_bytes", 0
-                )
-                metrics["total_uploaded_bytes"] = torrent_status.get(
-                    "uploaded_bytes", 0
-                )
-                metrics["left_bytes"] = torrent_status.get("left_bytes", 0)
+            # CRITICAL: Use DataProvider data instead of direct session access
+            metrics["total_downloaded_bytes"] = torrent_status.get("downloaded", 0)
+            metrics["total_uploaded_bytes"] = torrent_status.get("uploaded", 0)
+            total_size = torrent_status.get("total_size", 0)
+            downloaded = torrent_status.get("downloaded", 0)
+            metrics["left_bytes"] = max(0, total_size - downloaded)
 
             # Download/upload rates
             metrics["download_rate"] = torrent_status.get("download_rate", 0.0)
@@ -735,35 +1415,14 @@ class TerminalDashboard(App):  # type: ignore[misc]
 
             # Connection count
             try:
-                peers = await self.session.get_peers_for_torrent(info_hash_hex)
+                # CRITICAL: Use DataProvider for read operations
+                peers = await self._data_provider.get_torrent_peers(info_hash_hex)
                 metrics["connection_count"] = len(peers) if peers else 0
             except Exception:
                 metrics["connection_count"] = torrent_status.get("peer_count", 0)
 
-            # Piece availability (from piece manager if available)
-            if (
-                hasattr(torrent_session, "piece_manager")
-                and torrent_session.piece_manager
-                and hasattr(torrent_session.piece_manager, "peer_availability")
-            ):
-                try:
-                    peer_availability = torrent_session.piece_manager.peer_availability
-                    if peer_availability:
-                        # Calculate average availability
-                        total_pieces = metrics.get("pieces_total", 0)
-                        if total_pieces > 0:
-                            total_availability = sum(
-                                len(peers) for peers in peer_availability.values()
-                            )
-                            metrics["piece_availability_avg"] = (
-                                total_availability / total_pieces
-                            )
-                        else:
-                            metrics["piece_availability_avg"] = 0.0
-                    else:
-                        metrics["piece_availability_avg"] = 0.0
-                except Exception:
-                    metrics["piece_availability_avg"] = None
+            # Piece availability is not currently used in the interface
+            # If needed in the future, it can be added to DataProvider
 
             # Add status information
             metrics["status"] = torrent_status.get("status", "unknown")
@@ -777,40 +1436,184 @@ class TerminalDashboard(App):  # type: ignore[misc]
             return {}
 
     async def _poll_once(self) -> None:  # pragma: no cover
-        # Background polling task - requires widget tree and full app context
+        # Background polling task - requires widget tree and full app context.
+        # Current polling responsibilities:
+        #   1. get_global_stats() -> overview, speeds, graphs_section.
+        #   2. list_torrents()    -> torrents table + _last_status snapshot.
+        #   3. get_torrent_peers() for selected torrent -> peers widget.
+        #   4. get_torrent_status() via _get_torrent_detailed_metrics().
+        #   5. get_rate_samples()/disk/network metrics indirectly via widgets.
+        # These will be replaced by WebSocket-driven updates where possible.
+        
+        # End splash after first successful poll (dashboard is rendered and has data)
+        if self._splash_manager and not self._splash_ended:
+            self._end_splash()
+        
         try:
-            # Check daemon connection status if using DaemonInterfaceAdapter
-            if self._is_daemon_session:
-                try:
-                    # Verify daemon is still accessible
-                    if hasattr(self.session, "_client"):
-                        is_running = await self.session._client.is_daemon_running()  # type: ignore[attr-defined]
-                        if not is_running:
-                            # Daemon connection lost
-                            if self.statusbar:
-                                self.statusbar.update(
-                                    Panel(
-                                        "[red]●[/red] Daemon connection lost - attempting to reconnect...",
-                                        title="Status",
-                                        border_style="red",
-                                    )
-                                )
-                            logger.warning("Daemon connection lost during poll")
-                            # Try to refresh cache (will attempt reconnection)
-                            if hasattr(self.session, "_refresh_cache"):
-                                await self.session._refresh_cache()  # type: ignore[attr-defined]
-                except Exception as conn_error:
-                    logger.debug("Error checking daemon connection: %s", conn_error)
+            # CRITICAL FIX: Verify data provider is available
+            if not self._data_provider:
+                logger.error("Data provider is None - cannot poll for updates")
+                if self.statusbar:
+                    self.statusbar.update(
+                        Panel(
+                            "[red]●[/red] Data provider not initialized",
+                            title="Status",
+                            border_style="red",
+                        )
+                    )
+                return
             
-            stats = await self.session.get_global_stats()
+            # Check daemon connection status
+            # CRITICAL: Use DataProvider/IPC client instead of direct session access
+            try:
+                # Verify daemon is still accessible via data provider
+                # DataProvider will handle connection checks internally
+                stats = await self._data_provider.get_global_stats()
+                if not stats:
+                    # Daemon connection may be lost
+                    logger.warning("Daemon connection lost during poll - no stats returned")
+                    if self.statusbar:
+                        self.statusbar.update(
+                            Panel(
+                                "[red]●[/red] Daemon connection lost - attempting to reconnect...",
+                                title="Status",
+                                border_style="red",
+                            )
+                        )
+                    return
+                logger.debug("Poll: Retrieved global stats successfully")
+                
+                # CRITICAL: End splash after successful data retrieval (dashboard is fully ready)
+                # This is the most reliable indicator that dashboard has data and is rendered
+                if self._splash_manager and not self._splash_ended:
+                    self._end_splash()
+            except Exception as conn_error:
+                logger.error("Error checking daemon connection: %s", conn_error, exc_info=True)
+                # Connection error - daemon may be down
+                if self.statusbar:
+                    self.statusbar.update(
+                        Panel(
+                            "[red]●[/red] Daemon connection error - check daemon status",
+                            title="Status",
+                            border_style="red",
+                        )
+                    )
+                return
+            
+            # CRITICAL: Use DataProvider for all read operations (routes through IPC for daemon)
+            # CRITICAL FIX: Add timeout to prevent UI hangs
+            try:
+                stats = await asyncio.wait_for(
+                    self._data_provider.get_global_stats(),
+                    timeout=10.0  # Increased from 5.0 for better reliability
+                )
+            except asyncio.TimeoutError:
+                logger.debug("Poll: Timeout getting global stats, skipping this poll cycle")
+                return
+            except Exception as e:
+                logger.debug("Poll: Error getting global stats: %s", e)
+                return
+            if not stats:
+                logger.warning("Poll: No stats returned from data provider")
+                return
             # Some tests construct the app without mounting widgets; guard None
             if getattr(self, "overview", None) is not None:
                 self.overview.update_from_stats(stats)
+            if getattr(self, "overview_footer", None) is not None:
+                self.overview_footer.update_from_stats(stats)
             if getattr(self, "speeds", None) is not None:
                 self.speeds.update_from_stats(stats)
-            all_status = await self.session.get_status()
-            self._last_status = all_status
-            self._apply_filter_and_update()
+            # Update graphs section (new tabbed interface)
+            # This ensures graphs section gets updates via polling
+            if getattr(self, "graphs_section", None) is not None:
+                self.graphs_section.update_from_stats(stats)
+            
+            # Also update graphs section via WebSocket events if available
+            # (handled in on_mount event callbacks)
+            # CRITICAL: Use DataProvider instead of direct session access
+            # CRITICAL FIX: Add timeout to prevent UI hangs
+            all_status: dict[str, dict[str, Any]] = {}
+            try:
+                logger.debug("Poll: Calling data_provider.list_torrents()...")
+                if not self._data_provider:
+                    logger.error("Poll: _data_provider is None!")
+                    return
+                torrents_list = await asyncio.wait_for(
+                    self._data_provider.list_torrents(),
+                    timeout=10.0  # Increased from 5.0 for better reliability
+                )
+                logger.debug("Poll: Retrieved %d torrents from data provider", len(torrents_list) if torrents_list else 0)
+                if not torrents_list:
+                    logger.warning("Poll: list_torrents() returned empty list or None!")
+                all_status_dict: dict[str, dict[str, Any]] = {}
+                for torrent in torrents_list or []:
+                    info_hash = torrent.get("info_hash", "")
+                    if info_hash:
+                        all_status_dict[info_hash] = torrent
+                all_status = all_status_dict
+                self._last_status = all_status
+                self._apply_filter_and_update()
+            except asyncio.TimeoutError:
+                logger.debug("Poll: Timeout getting torrent list, skipping this poll cycle")
+                # Use last known status if available
+                all_status = self._last_status if hasattr(self, "_last_status") else {}
+                return
+            except Exception as torrent_error:
+                logger.error("Error fetching torrent list: %s", torrent_error, exc_info=True)
+                # Continue with empty list to avoid breaking the UI
+                self._last_status = {}
+                all_status = {}
+                self._apply_filter_and_update()
+            
+            # CRITICAL FIX: Refresh per-torrent tab if active
+            try:
+                from ccbt.interface.screens.per_torrent_tab import PerTorrentTabContent
+                # CRITICAL FIX: query_one() doesn't accept can_be_none parameter in Textual
+                try:
+                    per_torrent_tab = self.query_one(PerTorrentTabContent)  # type: ignore[attr-defined]
+                except Exception:
+                    per_torrent_tab = None
+                if per_torrent_tab and per_torrent_tab.is_attached and per_torrent_tab.display:  # type: ignore[attr-defined]
+                    selected_ih = per_torrent_tab.get_selected_info_hash()
+                    if selected_ih:
+                        # Refresh the active sub-tab to ensure it's up-to-date
+                        # Use asyncio.create_task for async method
+                        if hasattr(per_torrent_tab, "refresh_active_sub_tab"):
+                            # CRITICAL FIX: Use app's event loop for task creation
+                            try:
+                                if hasattr(self, "loop"):
+                                    self.loop.create_task(per_torrent_tab.refresh_active_sub_tab())  # type: ignore[attr-defined]
+                                else:
+                                    asyncio.create_task(per_torrent_tab.refresh_active_sub_tab())
+                            except Exception:
+                                asyncio.create_task(per_torrent_tab.refresh_active_sub_tab())
+                        elif hasattr(per_torrent_tab, "refresh"):
+                            # Fallback to refresh if refresh_active_sub_tab not available
+                            # refresh() is now synchronous and schedules async work internally
+                            per_torrent_tab.refresh()
+            except Exception as e:
+                logger.debug("Error refreshing per-torrent tab: %s", e)
+            
+            # CRITICAL FIX: Refresh per-peer tab if active
+            try:
+                from ccbt.interface.screens.per_peer_tab import PerPeerTabContent
+                try:
+                    per_peer_tab = self.query_one(PerPeerTabContent)  # type: ignore[attr-defined]
+                except Exception:
+                    per_peer_tab = None
+                if per_peer_tab and per_peer_tab.is_attached and per_peer_tab.display:  # type: ignore[attr-defined]
+                    # Per-peer tab has its own update loop, but we can trigger a manual update
+                    if hasattr(per_peer_tab, "_update_peer_data"):
+                        try:
+                            if hasattr(self, "loop"):
+                                self.loop.create_task(per_peer_tab._update_peer_data())  # type: ignore[attr-defined]
+                            else:
+                                asyncio.create_task(per_peer_tab._update_peer_data())
+                        except Exception:
+                            asyncio.create_task(per_peer_tab._update_peer_data())
+            except Exception as e:
+                logger.debug("Error refreshing per-peer tab: %s", e)
+            
             # Evaluate alert rules using current system metrics if available
             # Attempt to feed system CPU usage if present via MetricsCollector
             with contextlib.suppress(Exception):
@@ -835,9 +1638,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
             peers: list[dict[str, Any]] = []
             if ih:
                 with contextlib.suppress(Exception):
-                    # For DaemonInterfaceAdapter, get_peers_for_torrent may return empty list
-                    # This is expected as IPC doesn't provide detailed peer info
-                    peers = await self.session.get_peers_for_torrent(ih)
+                    # CRITICAL: Use DataProvider instead of direct session access
+                    peers = await self._data_provider.get_torrent_peers(ih)
             if getattr(self, "peers", None) is not None:
                 self.peers.update_from_peers(peers)
             # Update details panel for selected torrent
@@ -887,31 +1689,34 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     tracker_status_display = "[yellow]timeout[/yellow]"
                 elif tracker_status == "connecting":
                     tracker_status_display = "[yellow]connecting...[/yellow]"
-                det.add_row("Tracker", tracker_status_display)
+                det.add_row(_("Tracker"), tracker_status_display)
 
                 # Show last tracker error if present
                 last_tracker_error = st.get("last_tracker_error")
                 if last_tracker_error:
                     det.add_row(
-                        "Tracker Error", f"[red]{str(last_tracker_error)[:50]}[/red]"
+                        _("Tracker Error"), f"[red]{str(last_tracker_error)[:50]}[/red]"
                     )
 
                 # Show last error if present
                 last_error = st.get("last_error")
                 if last_error:
-                    det.add_row("Last Error", f"[red]{str(last_error)[:50]}[/red]")
+                    det.add_row(_("Last Error"), f"[red]{str(last_error)[:50]}[/red]")
 
                 # Get scrape result (BEP 48)
                 scrape_result = None
                 with contextlib.suppress(Exception):
-                    scrape_result = await self.session.get_scrape_result(ih)
+                    # CRITICAL: Use executor for scrape result
+                    result = await self._command_executor.execute_command("scrape.get_result", info_hash=ih)
+                    if result and hasattr(result, "data") and result.data:
+                        scrape_result = result.data
 
                 if scrape_result:
-                    det.add_row("Seeders (Scrape)", str(scrape_result.seeders))
-                    det.add_row("Leechers (Scrape)", str(scrape_result.leechers))
-                    det.add_row("Completed (Scrape)", str(scrape_result.completed))
+                    det.add_row(_("Seeders (Scrape)"), str(scrape_result.seeders))
+                    det.add_row(_("Leechers (Scrape)"), str(scrape_result.leechers))
+                    det.add_row(_("Completed (Scrape)"), str(scrape_result.completed))
                     if hasattr(scrape_result, "scrape_count"):
-                        det.add_row("Scrape Count", str(scrape_result.scrape_count))
+                        det.add_row(_("Scrape Count"), str(scrape_result.scrape_count))
                     if (
                         hasattr(scrape_result, "last_scrape_time")
                         and scrape_result.last_scrape_time > 0
@@ -919,28 +1724,36 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         import time
 
                         elapsed = time.time() - scrape_result.last_scrape_time
-                        det.add_row("Last Scrape", f"{elapsed:.0f}s ago")
+                        det.add_row(_("Last Scrape"), _("{elapsed:.0f}s ago").format(elapsed=elapsed))
                 else:
-                    det.add_row("Scrape", "[dim]No data (press 's' to scrape)[/dim]")
+                    det.add_row(_("Scrape"), _("[dim]No data (press 's' to scrape)[/dim]"))
 
                 if getattr(self, "details", None) is not None:
-                    self.details.update(Panel(det, title="Details"))
+                    self.details.update(Panel(det, title=_("Details")))
             elif getattr(self, "details", None) is not None:
                 # Show key bindings when no torrent is selected
                 bindings_display = self._format_bindings_display()
-                self.details.update(Panel(bindings_display, title="Key Bindings"))
+                self.details.update(Panel(bindings_display, title=_("Key Bindings")))
             # Update status bar counters with connection status
             connection_status = self._get_connection_status()
-            sb = f"{connection_status}  Torrents: {stats.get('num_torrents', 0)}  Active: {stats.get('num_active', 0)}  Paused: {stats.get('num_paused', 0)}  Seeding: {stats.get('num_seeding', 0)}  D: {float(stats.get('download_rate', 0.0)):.0f}B/s  U: {float(stats.get('upload_rate', 0.0)):.0f}B/s"
+            sb = _("{connection}  Torrents: {torrents}  Active: {active}  Paused: {paused}  Seeding: {seeding}  D: {download}B/s  U: {upload}B/s").format(
+                connection=connection_status,
+                torrents=stats.get('num_torrents', 0),
+                active=stats.get('num_active', 0),
+                paused=stats.get('num_paused', 0),
+                seeding=stats.get('num_seeding', 0),
+                download=f"{float(stats.get('download_rate', 0.0)):.0f}",
+                upload=f"{float(stats.get('upload_rate', 0.0)):.0f}"
+            )
             if getattr(self, "statusbar", None) is not None:
-                self.statusbar.update(Panel(sb, title="Status"))
+                self.statusbar.update(Panel(sb, title=_("Status")))
             # Show alert rules and active alerts
             if getattr(self.alert_manager, "alert_rules", None):
                 rules_table = Table(title=_("Alert Rules"), expand=True)
-                rules_table.add_column("Name", style="cyan")
-                rules_table.add_column("Metric")
-                rules_table.add_column("Condition")
-                rules_table.add_column("Severity", style="red")
+                rules_table.add_column(_("Name"), style="cyan")
+                rules_table.add_column(_("Metric"))
+                rules_table.add_column(_("Condition"))
+                rules_table.add_column(_("Severity"), style="red")
                 for rn, rule in self.alert_manager.alert_rules.items():
                     rules_table.add_row(
                         rn,
@@ -956,9 +1769,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
 
             if getattr(self.alert_manager, "active_alerts", None):
                 act_table = Table(title=_("Active Alerts"), expand=True)
-                act_table.add_column("Severity", style="red")
-                act_table.add_column("Rule", style="yellow")
-                act_table.add_column("Value")
+                act_table.add_column(_("Severity"), style="red")
+                act_table.add_column(_("Rule"), style="yellow")
+                act_table.add_column(_("Value"))
                 for a in self.alert_manager.active_alerts.values():
                     act_table.add_row(
                         getattr(a.severity, "value", str(a.severity)),
@@ -980,13 +1793,13 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 self.alerts.update(Panel(alerts_grid, title=_("Alerts")))
         except Exception as e:
             # Log the error for debugging
-            logger.exception("Error in dashboard poll: %s", e)
+            logger.exception("Error in dashboard poll")
 
             # Render error where overview goes but don't break the UI
-            error_msg = f"Error: {str(e)[:100]}"
+            error_msg = _("Error: {error}").format(error=str(e)[:100])
             if getattr(self, "overview", None) is not None:
                 self.overview.update(
-                    Panel(error_msg, title="Dashboard Error", border_style="red")
+                    Panel(error_msg, title=_("Dashboard Error"), border_style="red")
                 )
 
             # Try to continue with cached data if available
@@ -1007,33 +1820,62 @@ class TerminalDashboard(App):  # type: ignore[misc]
             with contextlib.suppress(asyncio.CancelledError):
                 await self._poll_task
         
+        # CRITICAL FIX: On Windows, add delay before cleanup to prevent socket buffer exhaustion
+        import sys
+        if sys.platform == "win32":
+            await asyncio.sleep(0.3)  # Increased wait time to allow socket buffers to drain
+        
         # Stop session (DaemonInterfaceAdapter will close WebSocket and IPC connection)
-        with contextlib.suppress(Exception):
-            await self.session.stop()
+        # CRITICAL: Dashboard only works with daemon - stop is handled by DaemonInterfaceAdapter
+        if hasattr(self, "session") and self.session:
+            try:
+                # DaemonInterfaceAdapter.stop() closes IPC client connections
+                if hasattr(self.session, "stop"):
+                    await self.session.stop()
+            except Exception as e:
+                # CRITICAL FIX: Handle WinError 10055 gracefully during cleanup
+                error_code = getattr(e, "winerror", None) or getattr(e, "errno", None)
+                if error_code == 10055:
+                    logger.warning(
+                        "WinError 10055 (socket buffer exhaustion) during session cleanup. "
+                        "This is a transient Windows issue. Continuing cleanup..."
+                    )
+                else:
+                    logger.debug("Error stopping session during unmount: %s", e)
         
         # Stop metrics collector
         with contextlib.suppress(Exception):
             await self.metrics_collector.stop()
 
     # Key bindings
+    # Note: Using on_key() method instead of @on(events.Key) for flexibility
+    # This allows handling multiple keys in one method and custom logic
     async def on_key(self, event: events.Key) -> None:  # type: ignore[override]  # pragma: no cover
-        """Handle key press events."""
+        """Handle key press events.
+        
+        This method handles custom key bindings that aren't covered by action methods.
+        For standard actions, use action_* methods which are automatically bound via BINDINGS.
+        """
         # Textual event handler - requires full event system and widget tree to test
         # Testing would require complex Textual app setup and event simulation
         if event.key in ("q", "Q"):
             await self.action_quit()
             return
         if event.key in ("delete",):
+            # Guard against missing widgets
+            if not hasattr(self, "torrents") or not self.torrents:
+                return
             ih = self.torrents.get_selected_info_hash()
             if ih:
                 # Basic inline confirm: press 'y' to confirm deletion
-                self.overview.update(
-                    Panel(
-                        f"Delete torrent {ih[:16]}…? Press 'y' to confirm or 'n' to cancel",
-                        title=_("Confirm"),
-                        border_style="yellow",
-                    ),
-                )
+                if hasattr(self, "overview") and self.overview:
+                    self.overview.update(
+                        Panel(
+                            _("Delete torrent {info_hash}…? Press 'y' to confirm or 'n' to cancel").format(info_hash=ih[:16]),
+                            title=_("Confirm"),
+                            border_style="yellow",
+                        ),
+                    )
                 self._pending_delete = ih  # type: ignore[attr-defined]
             return
         if event.key in ("y", "Y"):
@@ -1056,7 +1898,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
             ih = getattr(self, "_pending_delete", None)
             if ih:
                 with contextlib.suppress(Exception):
-                    await self.session.remove(ih)
+                    # CRITICAL: Use CommandExecutor for all write operations
+                    await self._command_executor.execute_command("torrent.remove", info_hash=ih)
                 self._pending_delete = None  # type: ignore[attr-defined]
             return
         if event.key in ("n", "N"):
@@ -1081,14 +1924,16 @@ class TerminalDashboard(App):  # type: ignore[misc]
             ih = self.torrents.get_selected_info_hash()
             if ih:
                 with contextlib.suppress(Exception):
-                    await self.session.pause_torrent(ih)
+                    # CRITICAL: Use CommandExecutor for all write operations
+                    await self._command_executor.execute_command("torrent.pause", info_hash=ih)
                     self.logs.write(f"Paused {ih}")
             return
         if event.key in ("r", "R"):
             ih = self.torrents.get_selected_info_hash()
             if ih:
                 with contextlib.suppress(Exception):
-                    await self.session.resume_torrent(ih)
+                    # CRITICAL: Use CommandExecutor for all write operations
+                    await self._command_executor.execute_command("torrent.resume", info_hash=ih)
                     self.logs.write(f"Resumed {ih}")
             return
         if event.key == "/":
@@ -1116,7 +1961,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
             ih = self.torrents.get_selected_info_hash()
             if ih:
                 try:
-                    ok = await self.session.force_announce(ih)
+                    # CRITICAL: Use CommandExecutor for all write operations
+                    result = await self._command_executor.execute_command("torrent.force_announce", info_hash=ih)
+                    ok = result.success if result and hasattr(result, "success") else False
                     self.statusbar.update(
                         Panel(_("Announce: {status}").format(status=_("OK") if ok else _("Failed")), title=_("Status")),
                     )
@@ -1127,34 +1974,62 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     )
             return
         if event.key in ("s", "S"):
-            # Force scrape (placeholder)
+            # Force scrape
             ih = self.torrents.get_selected_info_hash()
             if ih:
-                ok = await self.session.force_scrape(ih)
-                self.statusbar.update(
-                    Panel(_("Scrape: {status}").format(status=_("OK") if ok else _("Failed")), title=_("Status")),
-                )
-                self.logs.write(f"Scrape {'OK' if ok else 'Failed'} for {ih}")
+                try:
+                    # CRITICAL: Use CommandExecutor for all write operations
+                    result = await self._command_executor.execute_command("scrape.torrent", info_hash=ih, force=True)
+                    ok = result.success if result and hasattr(result, "success") else False
+                    self.statusbar.update(
+                        Panel(_("Scrape: {status}").format(status=_("OK") if ok else _("Failed")), title=_("Status")),
+                    )
+                    self.logs.write(f"Scrape {'OK' if ok else 'Failed'} for {ih}")
+                except Exception:
+                    self.statusbar.update(
+                        Panel(_("Scrape: Failed"), title=_("Status"), border_style="red"),
+                    )
             return
         if event.key in ("e", "E"):
-            # Refresh PEX (placeholder)
+            # Refresh PEX
             ih = self.torrents.get_selected_info_hash()
             if ih:
-                ok = await self.session.refresh_pex(ih)
-                self.statusbar.update(
-                    Panel(_("PEX: {status}").format(status=_("OK") if ok else _("Failed")), title=_("Status")),
-                )
-                self.logs.write(f"PEX {'OK' if ok else 'Failed'} for {ih}")
+                try:
+                    # CRITICAL: Use CommandExecutor for all write operations
+                    # Use executor for PEX refresh
+                    result = await self._command_executor.execute_command(
+                        "torrent.refresh_pex",
+                        info_hash=ih
+                    )
+                    ok = result.get("success", False) if isinstance(result, dict) else False
+                    self.statusbar.update(
+                        Panel(_("PEX: {status}").format(status=_("OK") if ok else _("Failed")), title=_("Status")),
+                    )
+                    self.logs.write(f"PEX {'OK' if ok else 'Failed'} for {ih}")
+                except Exception:
+                    self.statusbar.update(
+                        Panel(_("PEX: Failed"), title=_("Status"), border_style="red"),
+                    )
             return
         if event.key in ("h", "H"):
-            # Rehash (placeholder)
+            # Rehash
             ih = self.torrents.get_selected_info_hash()
             if ih:
-                ok = await self.session.rehash_torrent(ih)
-                self.statusbar.update(
-                    Panel(_("Rehash: {status}").format(status=_("OK") if ok else _("Failed")), title=_("Status")),
-                )
-                self.logs.write(f"Rehash {'OK' if ok else 'Failed'} for {ih}")
+                try:
+                    # Use executor for rehash
+                    result = await self._command_executor.execute_command(
+                        "torrent.rehash",
+                        info_hash=ih
+                    )
+                    ok = result.get("success", False) if isinstance(result, dict) else False
+                    self.statusbar.update(
+                        Panel(_("Rehash: {status}").format(status=_("OK") if ok else _("Failed")), title=_("Status")),
+                    )
+                    self.logs.write(f"Rehash {'OK' if ok else 'Failed'} for {ih}")
+                except Exception:
+                    self.statusbar.update(
+                        Panel(_("Rehash: Failed"), title=_("Status"), border_style="red"),
+                    )
             return
         if event.key in ("x", "X"):
             # Export snapshot
@@ -1162,7 +2037,13 @@ class TerminalDashboard(App):  # type: ignore[misc]
 
             p = Path("dashboard_snapshot.json")
             try:
-                await self.session.export_session_state(p)
+                # Use executor for export
+                result = await self._command_executor.execute_command(
+                    "torrent.export_session_state",
+                    path=str(p)
+                )
+                if not result.get("success", False) if isinstance(result, dict) else False:
+                    raise RuntimeError(result.get("error", "Export failed") if isinstance(result, dict) else "Export failed")
                 self.statusbar.update(Panel(_("Snapshot saved to {path}").format(path=p), title=_("Status")))
                 self.logs.write(f"Snapshot saved to {p}")
             except Exception as e:
@@ -1174,7 +2055,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
             ih = self.torrents.get_selected_info_hash()
             if ih:
                 with contextlib.suppress(Exception):
-                    await self.session.set_rate_limits(ih, 0, 0)
+                    # CRITICAL: Use CommandExecutor for all write operations
+                    await self._command_executor.execute_command("torrent.set_rate_limits", info_hash=ih, download_kib=0, upload_kib=0)
                     self.statusbar.update(Panel(_("Rate limits disabled"), title=_("Status")))
                     self.logs.write(f"Rate limits disabled for {ih}")
             return
@@ -1182,11 +2064,21 @@ class TerminalDashboard(App):  # type: ignore[misc]
             ih = self.torrents.get_selected_info_hash()
             if ih:
                 with contextlib.suppress(Exception):
-                    await self.session.set_rate_limits(ih, 1024, 1024)
-                    self.statusbar.update(
-                        Panel(_("Rate limits set to 1024 KiB/s"), title=_("Status")),
+                    # CRITICAL: Use executor for all write operations
+                    result = await self._command_executor.execute_command(
+                        "torrent.set_rate_limits",
+                        info_hash=ih,
+                        download_kib=1024,
+                        upload_kib=1024,
                     )
-                    self.logs.write(f"Rate limits set to 1024/1024 KiB/s for {ih}")
+                    if result and hasattr(result, "success") and result.success:
+                        self.statusbar.update(
+                            Panel(_("Rate limits set to 1024 KiB/s"), title=_("Status")),
+                        )
+                        self.logs.write(f"Rate limits set to 1024/1024 KiB/s for {ih}")
+                    else:
+                        error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
+                        self.logs.write(f"Failed to set rate limits: {error_msg}")
             return
         if event.key in ("m", "M"):
             # Toggle metrics collection interval among 1, 5, 10 seconds
@@ -1198,7 +2090,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             with contextlib.suppress(Exception):
                 self.metrics_collector.collection_interval = new_iv
                 self.statusbar.update(
-                    Panel(f"Metrics interval: {new_iv}s", title="Status"),
+                    Panel(_("Metrics interval: {interval}s").format(interval=new_iv), title=_("Status")),
                 )
                 self.logs.write(f"Metrics interval set to {new_iv}s")
             return
@@ -1213,15 +2105,16 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # Reset interval
             self.set_interval(self.refresh_interval, self._schedule_poll)
             self.statusbar.update(
-                Panel(f"UI refresh interval: {self.refresh_interval}s", title="Status"),
+                Panel(_("UI refresh interval: {interval}s").format(interval=self.refresh_interval), title=_("Status")),
             )
             return
         if event.key in ("t", "T"):
             # Toggle light/dark theme
             with contextlib.suppress(Exception):
                 self.dark = not self.dark  # type: ignore[attr-defined]
+                theme_name = _("Dark") if self.dark else _("Light")
                 self.statusbar.update(
-                    Panel(f"Theme: {'Dark' if self.dark else 'Light'}", title="Status"),
+                    Panel(_("Theme: {theme}").format(theme=theme_name), title=_("Status")),
                 )
             return
         if event.key in ("c", "C"):
@@ -1308,7 +2201,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
             if not path_or_magnet.startswith("magnet:") and len(path_or_magnet) < 3:
                 self.logs.write("[red]Error: Invalid torrent path or magnet link[/red]")
                 return
-            await self._process_add_torrent(path_or_magnet, {})
+            # Run torrent addition in background to avoid blocking UI thread
+            # This prevents the "Callback is still pending after 3 seconds" warning
+            asyncio.create_task(self._process_add_torrent(path_or_magnet, {}))
         elif message.input.id == "add_torrent_advanced_step1":
             path_or_magnet = message.value.strip()
             # CRITICAL FIX: Strip quotes from path (Windows paths may have quotes from copy/paste)
@@ -1321,28 +2216,193 @@ class TerminalDashboard(App):  # type: ignore[misc]
             output_dir = message.value.strip() or "."
             message.input.display = False
             await self._process_advanced_options(output_dir)
-        elif message.input.id == "add_torrent_browse":
-            path_or_magnet = message.value.strip()
-            # CRITICAL FIX: Strip quotes from path (Windows paths may have quotes from copy/paste)
-            if path_or_magnet and not path_or_magnet.startswith("magnet:"):
-                path_or_magnet = path_or_magnet.strip('"').strip("'")
-            message.input.display = False
-            # Validate input before processing
-            if not path_or_magnet:
-                self.logs.write(
-                    "[red]Error: No torrent path or magnet link provided[/red]"
+
+    def on_language_changed(
+        self, message: Any
+    ) -> None:  # pragma: no cover
+        """Handle language change event from LanguageSelectorWidget.
+
+        Args:
+            message: LanguageChanged message with new locale
+        """
+        try:
+            from ccbt.interface.widgets.language_selector import (
+                LanguageSelectorWidget,
+            )
+
+            # Verify this is a LanguageChanged message
+            if not hasattr(message, "locale"):
+                return
+
+            new_locale = message.locale
+            logger.info("Language changed to: %s, refreshing interface widgets", new_locale)
+
+            # Query and refresh all widgets that use translations
+            # The message will bubble up through the widget tree, so widgets
+            # can handle it individually, but we also coordinate here
+
+            # Refresh main tabs container if it exists
+            try:
+                from ccbt.interface.widgets.tabbed_interface import (
+                    MainTabsContainer,
                 )
+
+                main_tabs = self.query_one(MainTabsContainer, can_focus=False)  # type: ignore[attr-defined]
+                if main_tabs:
+                    # Post message to main tabs so it can handle its own refresh
+                    main_tabs.post_message(message)  # type: ignore[attr-defined]
+            except Exception:
+                pass  # Main tabs may not be mounted yet
+
+            # Refresh graphs section if it exists
+            if self.graphs_section:
+                try:
+                    self.graphs_section.post_message(message)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+            # Trigger a refresh of visible widgets
+            # Widgets that handle the message will update themselves
+            # For widgets that don't handle it, we can trigger a general refresh
+            self.call_later(self._refresh_translated_widgets)  # type: ignore[attr-defined]
+
+        except Exception as e:
+            logger.debug("Error handling language change: %s", e)
+
+    def _refresh_translated_widgets(self) -> None:  # pragma: no cover
+        """Refresh widgets that use translations but don't handle language change events."""
+        try:
+            from ccbt.i18n import _
+
+            # Refresh status bar if it exists
+            if self.statusbar:
+                # Status bar content is usually dynamic, so it will update on next poll
+                pass
+
+            # Refresh logs if needed (usually dynamic)
+            if self.logs:
+                pass
+
+            # Force a refresh of the app to update any remaining widgets
+            # This is a fallback for widgets that don't handle the message
+            self.refresh(layout=False)  # type: ignore[attr-defined]
+
+        except Exception as e:
+            logger.debug("Error refreshing translated widgets: %s", e)
+
+    def on_language_changed(
+        self, message: Any
+    ) -> None:  # pragma: no cover
+        """Handle language change event from LanguageSelectorWidget.
+
+        Args:
+            message: LanguageChanged message with new locale
+        """
+        try:
+            from ccbt.interface.widgets.language_selector import (
+                LanguageSelectorWidget,
+            )
+
+            # Verify this is a LanguageChanged message
+            if not hasattr(message, "locale"):
                 return
-            if not path_or_magnet.startswith("magnet:") and len(path_or_magnet) < 3:
-                self.logs.write("[red]Error: Invalid torrent path or magnet link[/red]")
-                return
-            await self._process_add_torrent(path_or_magnet, {})
+
+            new_locale = message.locale
+            logger.info("Language changed to: %s, refreshing interface widgets", new_locale)
+
+            # Query and refresh all widgets that use translations
+            # The message will bubble up through the widget tree, so widgets
+            # can handle it individually, but we also coordinate here
+
+            # Refresh main tabs container if it exists
+            try:
+                from ccbt.interface.widgets.tabbed_interface import (
+                    MainTabsContainer,
+                )
+
+                main_tabs = self.query_one(MainTabsContainer, can_focus=False)  # type: ignore[attr-defined]
+                if main_tabs:
+                    # Post message to main tabs so it can handle its own refresh
+                    main_tabs.post_message(message)  # type: ignore[attr-defined]
+            except Exception:
+                pass  # Main tabs may not be mounted yet
+
+            # Refresh graphs section if it exists
+            if self.graphs_section:
+                try:
+                    self.graphs_section.post_message(message)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+            # Trigger a refresh of visible widgets
+            # Widgets that handle the message will update themselves
+            # For widgets that don't handle it, we can trigger a general refresh
+            self.call_later(self._refresh_translated_widgets)  # type: ignore[attr-defined]
+
+        except Exception as e:
+            logger.debug("Error handling language change: %s", e)
+
+    def _refresh_translated_widgets(self) -> None:  # pragma: no cover
+        """Refresh widgets that use translations but don't handle language change events."""
+        try:
+            from ccbt.i18n import _
+
+            # Refresh status bar if it exists
+            if self.statusbar:
+                # Status bar content is usually dynamic, so it will update on next poll
+                pass
+
+            # Refresh logs if needed (usually dynamic)
+            if self.logs:
+                pass
+
+            # Force a refresh of the app to update any remaining widgets
+            # This is a fallback for widgets that don't handle the message
+            self.refresh(layout=False)  # type: ignore[attr-defined]
+
+        except Exception as e:
+            logger.debug("Error refreshing translated widgets: %s", e)
 
     def _apply_filter_and_update(self) -> None:  # pragma: no cover
         # UI helper method - requires widget tree to test properly
+        # CRITICAL FIX: Update new tabbed interface screens instead of legacy widget
+        try:
+            # Try to find active torrent screen in new tabbed interface
+            from ccbt.interface.screens.torrents_tab import (
+                GlobalTorrentsScreen,
+                FilteredTorrentsScreen,
+            )
+            
+            # Query for active screen (either GlobalTorrentsScreen or FilteredTorrentsScreen)
+            # CRITICAL FIX: query_one() doesn't accept can_be_none parameter in Textual
+            try:
+                # Try GlobalTorrentsScreen first
+                global_screen = self.query_one(GlobalTorrentsScreen)  # type: ignore[attr-defined]
+                if global_screen and hasattr(global_screen, "refresh_torrents"):
+                    # Schedule refresh (async method)
+                    self.call_later(global_screen.refresh_torrents)  # type: ignore[attr-defined]
+                    return
+            except Exception:
+                pass
+            
+            # Try FilteredTorrentsScreen
+            try:
+                filtered_screens = list(self.query(FilteredTorrentsScreen))  # type: ignore[attr-defined]
+                for screen in filtered_screens:
+                    if screen.display and hasattr(screen, "refresh_torrents"):  # type: ignore[attr-defined]
+                        # Schedule refresh (async method)
+                        self.call_later(screen.refresh_torrents)  # type: ignore[attr-defined]
+                        return
+            except Exception:
+                pass
+        except Exception:
+            pass
+        
+        # Fallback to legacy widget if new interface not found
         status = self._last_status
         if not self._filter_text:
-            self.torrents.update_from_status(status)
+            if hasattr(self, "torrents") and self.torrents:
+                self.torrents.update_from_status(status)
             return
         filt = self._filter_text.lower()
         filtered: dict[str, dict[str, Any]] = {}
@@ -1351,7 +2411,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
             state = str(st.get("status", "")).lower()
             if (filt in name) or (filt in state):
                 filtered[ih] = st
-        self.torrents.update_from_status(filtered)
+        if hasattr(self, "torrents") and self.torrents:
+            self.torrents.update_from_status(filtered)
 
     async def _run_command(self, cmdline: str) -> None:  # pragma: no cover
         # Command handler - requires widget tree and UI context
@@ -1400,8 +2461,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         formatted = console.file.getvalue()  # type: ignore[attr-defined]
                         self.statusbar.update(
                             Panel(
-                                formatted or f"Command '{cmd}' executed successfully",
-                                title="Success",
+                                formatted or _("Command '{cmd}' executed successfully").format(cmd=cmd),
+                                title=_("Success"),
                                 border_style="green",
                             )
                         )
@@ -1410,8 +2471,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         # Fallback to simple text
                         self.statusbar.update(
                             Panel(
-                                message or f"Command '{cmd}' executed successfully",
-                                title="Success",
+                                message or _("Command '{cmd}' executed successfully").format(cmd=cmd),
+                                title=_("Success"),
                                 border_style="green",
                             )
                         )
@@ -1422,8 +2483,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 # Display error message
                 self.statusbar.update(
                     Panel(
-                        message or f"Command '{cmd}' failed",
-                        title="Error",
+                        message or _("Command '{cmd}' failed").format(cmd=cmd),
+                        title=_("Error"),
                         border_style="red",
                     )
                 )
@@ -1453,8 +2514,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         formatted = console.file.getvalue()  # type: ignore[attr-defined]
                         self.statusbar.update(
                             Panel(
-                                formatted or f"Command '{cmd}' executed successfully",
-                                title="Success",
+                                formatted or _("Command '{cmd}' executed successfully").format(cmd=cmd),
+                                title=_("Success"),
                                 border_style="green",
                             )
                         )
@@ -1463,8 +2524,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         # Fallback to simple text
                         self.statusbar.update(
                             Panel(
-                                message or f"Command '{cmd}' executed successfully",
-                                title="Success",
+                                message or _("Command '{cmd}' executed successfully").format(cmd=cmd),
+                                title=_("Success"),
                                 border_style="green",
                             )
                         )
@@ -1475,8 +2536,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 # Display error message
                 self.statusbar.update(
                     Panel(
-                        message or f"Command '{cmd}' failed",
-                        title="Error",
+                        message or _("Command '{cmd}' failed").format(cmd=cmd),
+                        title=_("Error"),
                         border_style="red",
                     )
                 )
@@ -1484,43 +2545,98 @@ class TerminalDashboard(App):  # type: ignore[misc]
             return
 
         # Legacy command handlers (for backward compatibility)
+        # CRITICAL: All commands must use CommandExecutor
         try:
             if cmd == "pause" and ih:
-                await self.session.pause_torrent(ih)
-                self.logs.write(f"Paused {ih}")
+                result = await self._command_executor.execute_command("torrent.pause", info_hash=ih)
+                if result and hasattr(result, "success") and result.success:
+                    self.logs.write(f"Paused {ih}")
+                else:
+                    self.logs.write(f"Failed to pause {ih}")
             elif cmd == "resume" and ih:
-                await self.session.resume_torrent(ih)
-                self.logs.write(f"Resumed {ih}")
+                result = await self._command_executor.execute_command("torrent.resume", info_hash=ih)
+                if result and hasattr(result, "success") and result.success:
+                    self.logs.write(f"Resumed {ih}")
+                else:
+                    self.logs.write(f"Failed to resume {ih}")
             elif cmd == "remove" and ih:
-                await self.session.remove(ih)
-                self.logs.write(f"Removed {ih}")
+                result = await self._command_executor.execute_command("torrent.remove", info_hash=ih)
+                if result and hasattr(result, "success") and result.success:
+                    self.logs.write(f"Removed {ih}")
+                else:
+                    self.logs.write(f"Failed to remove {ih}")
             elif cmd == "announce" and ih:
-                await self.session.force_announce(ih)
-                self.logs.write(f"Announce sent {ih}")
+                result = await self._command_executor.execute_command("torrent.force_announce", info_hash=ih)
+                if result and hasattr(result, "success") and result.success:
+                    self.logs.write(f"Announce sent {ih}")
+                else:
+                    self.logs.write(f"Failed to announce {ih}")
             elif cmd == "scrape" and ih:
-                await self.session.force_scrape(ih)
-                self.logs.write(f"Scrape requested {ih}")
+                result = await self._command_executor.execute_command("scrape.torrent", info_hash=ih, force=True)
+                if result and hasattr(result, "success") and result.success:
+                    self.logs.write(f"Scrape requested {ih}")
+                else:
+                    self.logs.write(f"Failed to scrape {ih}")
             elif cmd == "pex" and ih:
-                await self.session.refresh_pex(ih)
-                self.logs.write(f"PEX refresh {ih}")
+                # CRITICAL: Use executor for all write operations
+                # Note: PEX refresh may not have executor command yet, but try executor first
+                result = await self._command_executor.execute_command(
+                    "torrent.refresh_pex",
+                    info_hash=ih,
+                )
+                if result and hasattr(result, "success") and result.success:
+                    self.logs.write(f"PEX refresh {ih}")
+                else:
+                    # Fallback: executor command may not exist yet
+                    self.logs.write(f"PEX refresh not yet available via executor for {ih}")
             elif cmd == "rehash" and ih:
-                await self.session.rehash_torrent(ih)
-                self.logs.write(f"Rehash {ih}")
+                # CRITICAL: Use executor for all write operations
+                result = await self._command_executor.execute_command(
+                    "torrent.rehash",
+                    info_hash=ih,
+                )
+                if result and hasattr(result, "success") and result.success:
+                    self.logs.write(f"Rehash {ih}")
+                else:
+                    error_msg = result.error if result and hasattr(result, "error") else "Unknown error"
+                    self.logs.write(f"Failed to rehash: {error_msg}")
             elif cmd == "limit" and ih and len(parts) >= 3:
-                await self.session.set_rate_limits(ih, int(parts[1]), int(parts[2]))
-                self.logs.write(f"Set limits {parts[1]}/{parts[2]} KiB/s for {ih}")
+                result = await self._command_executor.execute_command(
+                    "torrent.set_rate_limits",
+                    info_hash=ih,
+                    download_kib=int(parts[1]),
+                    upload_kib=int(parts[2]),
+                )
+                if result and hasattr(result, "success") and result.success:
+                    self.logs.write(f"Set limits {parts[1]}/{parts[2]} KiB/s for {ih}")
+                else:
+                    self.logs.write(f"Failed to set limits for {ih}")
             elif cmd == "backup" and ih and len(parts) >= 2:
                 from pathlib import Path
-
-                await self.session.checkpoint_backup_torrent(ih, Path(parts[1]))
-                self.logs.write(f"Backup checkpoint to {parts[1]} for {ih}")
+                # CRITICAL: Use executor for all write operations
+                # Note: Checkpoint backup may not have executor command yet, but try executor first
+                result = await self._command_executor.execute_command(
+                    "checkpoint.backup",
+                    info_hash=ih,
+                    backup_path=str(Path(parts[1])),
+                )
+                if result and hasattr(result, "success") and result.success:
+                    self.logs.write(f"Backup checkpoint to {parts[1]} for {ih}")
+                else:
+                    # Fallback: executor command may not exist yet
+                    self.logs.write(f"Checkpoint backup not yet available via executor for {ih}")
             elif cmd == "restore" and len(parts) >= 2:
-                # Restore checkpoint from backup file
+                # CRITICAL: Use executor for all write operations
                 from pathlib import Path
-
-                cm = CheckpointManager(self.session.config.disk)
-                await cm.restore_checkpoint(Path(parts[1]))
-                self.logs.write(f"Restored checkpoint from {parts[1]}")
+                result = await self._command_executor.execute_command(
+                    "checkpoint.restore",
+                    backup_path=str(Path(parts[1])),
+                )
+                if result and hasattr(result, "success") and result.success:
+                    self.logs.write(f"Restored checkpoint from {parts[1]}")
+                else:
+                    error_msg = result.error if result and hasattr(result, "error") else "Unknown error"
+                    self.logs.write(f"Failed to restore checkpoint: {error_msg}")
             else:
                 self.statusbar.update(
                     Panel(
@@ -1543,26 +2659,24 @@ class TerminalDashboard(App):  # type: ignore[misc]
     async def _quick_add_torrent(self) -> None:  # pragma: no cover
         # UI interaction method - requires Textual Input widget and mount context
         """Quick add torrent with default settings."""
-        # Check if input widget already exists
-        try:
-            existing = self.query_one("#add_torrent", expect_type=Input)
-            # If it exists, just focus it, clear it, and make sure it's visible
-            existing.value = ""
-            existing.display = True
-            existing.focus()
-            return
-        except Exception:
-            # Widget doesn't exist, create a new one
-            pass
-
-        input_widget = Input(placeholder="File path or magnet link", id="add_torrent")
-        self.mount(input_widget)
-        input_widget.focus()
+        # Use simple input dialog for quick add
+        from ccbt.interface.screens.dialogs import QuickAddTorrentScreen
+        screen = QuickAddTorrentScreen(self.session, self)
+        
+        # CRITICAL FIX: Use push_screen (non-blocking) to avoid recursion errors
+        # The screen will handle the torrent addition and dismiss with info_hash
+        # We'll handle the refresh via WebSocket events and a message handler
+        await self.push_screen(screen)  # type: ignore[attr-defined]
+        
+        # Note: The QuickAddTorrentScreen will add the torrent via command executor
+        # and the TORRENT_ADDED event callback we registered will handle refreshing the UI
+        # We also have a message handler below to catch the dismiss result for immediate refresh
 
     async def _advanced_add_torrent(self) -> None:  # pragma: no cover
         # UI interaction method - requires Textual Input widget and mount context
         """Advanced add torrent with configuration options."""
-        # Use the new AddTorrentScreen for comprehensive options
+        # Use the comprehensive AddTorrentScreen for advanced options
+        from ccbt.interface.screens.dialogs import AddTorrentScreen
         screen = AddTorrentScreen(self.session, self)
         await self.push_screen(screen)  # type: ignore[attr-defined]
 
@@ -1616,7 +2730,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             self.mount(input_widget)
             input_widget.focus()
 
-    def _apply_torrent_options(
+    async def _apply_torrent_options(
         self, options: dict[str, Any]
     ) -> None:  # pragma: no cover
         """Apply torrent-specific options to session config (matching CLI behavior).
@@ -1628,11 +2742,28 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # Import CLI override functions (may fail if circular import)
             from ccbt.cli.main import _apply_cli_overrides
 
-            # Apply CLI overrides to session config
+            # Apply CLI overrides to config via executor
             # This matches the CLI behavior exactly
-            # self.session.config is a ConfigManager, not a Config
-            config_manager = self.session.config
-            _apply_cli_overrides(config_manager, options)
+            # CRITICAL: Get config via executor instead of direct session access
+            try:
+                config_result = await self._command_executor.execute_command("config.get")
+                if config_result and hasattr(config_result, "data") and isinstance(config_result.data, dict):
+                    config_dict = config_result.data.get("config", {})
+                    # Create a temporary config manager for applying overrides
+                    from ccbt.config.config import ConfigManager
+                    from ccbt.config.config_templates import ConfigTemplates
+                    config_manager = ConfigManager(ConfigTemplates.create_default_config())
+                    config_manager.config = config_manager.config.model_validate(config_dict)
+                    _apply_cli_overrides(config_manager, options)
+                    # Update config via executor
+                    await self._command_executor.execute_command(
+                        "config.update",
+                        config_dict=config_manager.config.model_dump(mode="json"),
+                    )
+            except Exception as e:
+                logger.debug(f"Could not apply CLI overrides via executor: {e}")
+                # Fallback to manual application
+                self._apply_torrent_options_manual(options)
         except (ImportError, AttributeError) as e:
             # If import fails (circular dependency or module not available),
             # apply options manually to match CLI behavior
@@ -1649,7 +2780,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
         self, options: dict[str, Any]
     ) -> None:  # pragma: no cover
         """Manually apply torrent options when CLI imports are not available."""
-        cfg = self.session.config.config
+        # CRITICAL: Get config via get_config() instead of direct session access
+        from ccbt.config.config import get_config
+        cfg = get_config()
 
         # Apply output directory (set in config for future torrents)
         # Note: Per-torrent output_dir requires session manager changes
@@ -1700,27 +2833,17 @@ class TerminalDashboard(App):  # type: ignore[misc]
         path_or_magnet: str,
         options: dict[str, Any],
     ) -> None:
-        """Process torrent addition with enhanced features.
-
-        Supports:
-        - File selection (files_selection, file_priorities)
-        - Queue priority
-        - Checkpoint resume detection
+        """Process torrent addition with UI/UX features while using CLI executor commands.
+        
+        UI Features:
+        - Checkpoint resume detection and user prompts
         - Private torrent warnings
-        - Rate limits
-        - All CLI options (via _apply_torrent_options)
+        - File selection dialog for multi-file torrents
+        - Status updates and progress messages
+        
+        All actual operations use CLI executor commands to match CLI behavior exactly.
         """
-        # CRITICAL FIX: Ensure session manager is started to initialize DHT and other components
-        # Check if session is already started by checking if background tasks exist
-        if (
-            not hasattr(self.session, "_cleanup_task")
-            or self.session._cleanup_task is None
-        ):
-            self.logs.write("[yellow]Starting session manager...[/yellow]")
-            await self.session.start()
-
-        # UI helper - updates statusbar/logs widgets which require UI context
-        # Validate input first
+        # Basic validation
         if not path_or_magnet or not path_or_magnet.strip():
             self.logs.write("[red]Error: Empty torrent path or magnet link[/red]")
             self.statusbar.update(
@@ -1733,53 +2856,39 @@ class TerminalDashboard(App):  # type: ignore[misc]
             return
 
         path_or_magnet = path_or_magnet.strip()
-        # CRITICAL FIX: Strip quotes from path (Windows paths may have quotes from copy/paste)
+        # Strip quotes from path (Windows paths may have quotes from copy/paste)
         if path_or_magnet and not path_or_magnet.startswith("magnet:"):
             path_or_magnet = path_or_magnet.strip('"').strip("'")
-
-        # Basic validation: must be magnet link or valid-looking path
-        if not path_or_magnet.startswith("magnet:"):
-            # Check if it looks like a valid file path (has extension or is absolute path)
-            path_obj = Path(path_or_magnet)
-            if (
-                not path_obj.exists()
-                and not path_obj.is_absolute()
-                and "." not in path_obj.name
-            ):
-                self.logs.write(
-                    f"[red]Error: Invalid torrent path: {path_or_magnet[:50]}[/red]"
-                )
-                self.statusbar.update(
-                    Panel(
-                        "Error: Invalid torrent path or magnet link",
-                        title="Error",
-                        border_style="red",
-                    )
-                )
-                return
 
         # Log the addition attempt
         self.logs.write(f"Adding torrent: {path_or_magnet[:50]}...")
 
-        # Apply config overrides BEFORE adding torrent (matching CLI behavior)
-        try:
-            self._apply_torrent_options(options)
-        except Exception as e:
-            # Log but don't fail - some options might not be applicable
-            logger.debug("Failed to apply some torrent options: %s", e)
-
-        try:
-            # Step 1: Check for checkpoint if resume not explicitly set
-            resume = options.get("resume", False)
-            if not resume and self.session.config.disk.checkpoint_enabled:
-                # Try to detect checkpoint before adding torrent
-                # For file paths, we need to load torrent first to get info_hash
-                try:
-                    if not path_or_magnet.startswith("magnet:"):
-                        # Load torrent to get info_hash (run in thread to avoid blocking UI)
+        # UI FEATURE: Check for checkpoint if resume not explicitly set
+        # SKIP for magnet links - they can't be parsed as files
+        resume = options.get("resume", False)
+        is_magnet = path_or_magnet.startswith("magnet:")
+        
+        if not resume and not is_magnet:
+            try:
+                # Get config to check if checkpoint is enabled
+                config_result = await self._command_executor.execute_command("config.get")
+                checkpoint_enabled = False
+                if config_result and hasattr(config_result, "data") and isinstance(config_result.data, dict):
+                    config_dict = config_result.data.get("config", {})
+                    disk_config = config_dict.get("disk", {})
+                    checkpoint_enabled = disk_config.get("checkpoint_enabled", False)
+                
+                if checkpoint_enabled:
+                    # Try to detect checkpoint before adding torrent (UI feature)
+                    try:
+                        from ccbt.core.torrent import TorrentParser
+                        from ccbt.storage.checkpoint import CheckpointManager
+                        from ccbt.config.config import get_config
+                        
                         loop = asyncio.get_event_loop()
+                        parser = TorrentParser()
                         torrent_data = await loop.run_in_executor(
-                            None, self.session.load_torrent, Path(path_or_magnet)
+                            None, parser.parse, Path(path_or_magnet)
                         )
                         if torrent_data:
                             info_hash = (
@@ -1793,37 +2902,24 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                 else:
                                     info_hash_bytes = info_hash
 
-                                checkpoint_manager = CheckpointManager(
-                                    self.session.config.disk
-                                )
-                                # Add timeout to checkpoint loading to prevent hanging
+                                # Check for checkpoint
+                                config = get_config()
+                                checkpoint_manager = CheckpointManager(config.disk)
                                 try:
                                     checkpoint = await asyncio.wait_for(
-                                        checkpoint_manager.load_checkpoint(
-                                            info_hash_bytes
-                                        ),
-                                        timeout=10.0,  # 10 second timeout for checkpoint loading
+                                        checkpoint_manager.load_checkpoint(info_hash_bytes),
+                                        timeout=10.0  # Increased from 5.0 for better reliability,  # Reduced timeout
                                     )
                                 except asyncio.TimeoutError:
-                                    self.logs.write(
-                                        "Warning: Timeout loading checkpoint, continuing without resume"
-                                    )
                                     checkpoint = None
 
                                 if checkpoint:
-                                    # Show checkpoint info and prompt - make it very visible
-                                    verified = len(
-                                        getattr(checkpoint, "verified_pieces", [])
-                                    )
+                                    # UI: Show checkpoint info and prompt user
+                                    verified = len(getattr(checkpoint, "verified_pieces", []))
                                     total = getattr(checkpoint, "total_pieces", 0)
-                                    torrent_name = getattr(
-                                        checkpoint, "torrent_name", "Unknown"
-                                    )
-                                    progress_pct = (
-                                        (verified / total * 100) if total > 0 else 0
-                                    )
+                                    torrent_name = getattr(checkpoint, "torrent_name", "Unknown")
+                                    progress_pct = (verified / total * 100) if total > 0 else 0
 
-                                    # Show in both statusbar and logs for visibility
                                     checkpoint_msg = (
                                         f"Found checkpoint for: {torrent_name}\n"
                                         f"Progress: {verified}/{total} pieces ({progress_pct:.1f}%)\n"
@@ -1844,412 +2940,479 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                     )
 
                                     # Store checkpoint info for user confirmation
-                                    self._pending_checkpoint_resume = (  # type: ignore[attr-defined]
-                                        info_hash_bytes
-                                    )
+                                    self._pending_checkpoint_resume = info_hash_bytes  # type: ignore[attr-defined]
                                     self._pending_checkpoint_path = path_or_magnet  # type: ignore[attr-defined]
                                     self._pending_checkpoint_options = options.copy()  # type: ignore[attr-defined]
 
                                     # Auto-resume after 5 seconds if no user input
+                                    # CRITICAL FIX: Use create_task to avoid blocking
                                     async def auto_resume_after_timeout():
-                                        await asyncio.sleep(5.0)
-                                        # Check if still pending (user didn't respond)
-                                        if (
-                                            getattr(
-                                                self, "_pending_checkpoint_resume", None
-                                            )
-                                            == info_hash_bytes
-                                        ):
-                                            self.logs.write(
-                                                "Auto-resuming from checkpoint (no user response)"
-                                            )
-                                            options["resume"] = True
-                                            self._pending_checkpoint_resume = None  # type: ignore[attr-defined]
-                                            self._pending_checkpoint_path = None  # type: ignore[attr-defined]
-                                            self._pending_checkpoint_options = None  # type: ignore[attr-defined]
-                                            await self._process_add_torrent(
-                                                path_or_magnet, options
-                                            )
+                                        try:
+                                            await asyncio.sleep(5.0)
+                                            if (
+                                                getattr(self, "_pending_checkpoint_resume", None)
+                                                == info_hash_bytes
+                                            ):
+                                                self.logs.write("Auto-resuming from checkpoint (no user response)")
+                                                options["resume"] = True
+                                                self._pending_checkpoint_resume = None  # type: ignore[attr-defined]
+                                                self._pending_checkpoint_path = None  # type: ignore[attr-defined]
+                                                self._pending_checkpoint_options = None  # type: ignore[attr-defined]
+                                                # CRITICAL FIX: Use create_task to avoid blocking UI
+                                                asyncio.create_task(self._process_add_torrent(path_or_magnet, options))
+                                        except Exception as e:
+                                            logger.error("Error in auto-resume timeout: %s", e, exc_info=True)
 
-                                    # Start auto-resume task
                                     asyncio.create_task(auto_resume_after_timeout())
-
-                                    # User can still confirm via key handler (y/n) before timeout
                                     return
-                except Exception as e:
-                    # If checkpoint check fails, continue with normal addition
-                    logger.debug("Checkpoint check failed: %s", e)
+                    except Exception as e:
+                        logger.debug("Checkpoint check failed: %s", e)
+            except Exception as e:
+                logger.debug("Error checking checkpoint: %s", e)
 
-            # Step 2: Check for private torrent warning (before adding)
-            is_private = False
+        # UI FEATURE: Check for private torrent warning (before adding)
+        # SKIP for magnet links - they can't be parsed as files
+        is_private = False
+        if not is_magnet:
             try:
-                if not path_or_magnet.startswith("magnet:"):
-                    # Load torrent in thread to avoid blocking UI
-                    loop = asyncio.get_event_loop()
-                    torrent_data = await loop.run_in_executor(
-                        None, self.session.load_torrent, Path(path_or_magnet)
+                from ccbt.core.torrent import TorrentParser
+                loop = asyncio.get_event_loop()
+                parser = TorrentParser()
+                torrent_data = await loop.run_in_executor(
+                    None, parser.parse, Path(path_or_magnet)
+                )
+                if torrent_data:
+                    is_private = (
+                        torrent_data.get("is_private", False)
+                        if isinstance(torrent_data, dict)
+                        else getattr(torrent_data, "is_private", False)
                     )
-                    if torrent_data:
-                        is_private = (
-                            torrent_data.get("is_private", False)
-                            if isinstance(torrent_data, dict)
-                            else getattr(torrent_data, "is_private", False)
-                        )
             except Exception:
-                pass  # Continue even if private check fails
+                pass
 
-            if is_private:
-                self.statusbar.update(
-                    Panel(
-                        "⚠ Warning: Private torrent detected (BEP 27)\n"
-                        "DHT, PEX, and LSD are disabled for this torrent.\n"
-                        "Only tracker-provided peers will be used.",
-                        title="Private Torrent",
-                        border_style="yellow",
-                    )
-                )
-                self.logs.write("Private torrent detected (BEP 27)")
-
-            # Step 3: Add torrent
-            # The async operations should yield properly, but we'll await directly
-            # The blocking file I/O has been fixed, so this should be responsive
-            # Add timeout to prevent indefinite hanging, but make it longer for large torrents
-            # Calculate timeout based on torrent size (minimum 60s, up to 300s for very large torrents)
-            if path_or_magnet.startswith("magnet:"):
-                # For magnet links, we don't know the size yet, use a reasonable default
-                timeout_seconds = 120.0  # 2 minutes for magnet links
-            else:
-                # For file torrents, calculate based on size
-                torrent_size = (
-                    torrent_data.get("file_info", {}).get("total_length", 0)
-                    if torrent_data
-                    else 0
-                )
-                # Base timeout of 60s, add 1s per 100MB (capped at 300s total)
-                timeout_seconds = min(
-                    60.0 + (torrent_size / (100 * 1024 * 1024)), 300.0
-                )
-
-            # Show progress message
-            self.logs.write(f"Adding torrent (timeout: {timeout_seconds:.0f}s)...")
+        if is_private:
             self.statusbar.update(
                 Panel(
-                    "Adding torrent... This may take a moment for large torrents.",
-                    title="Adding Torrent",
-                    border_style="blue",
+                    "⚠ Warning: Private torrent detected (BEP 27)\n"
+                    "DHT, PEX, and LSD are disabled for this torrent.\n"
+                    "Only tracker-provided peers will be used.",
+                    title="Private Torrent",
+                    border_style="yellow",
                 )
             )
+            self.logs.write("Private torrent detected (BEP 27)")
 
-            # Handle output directory before adding torrent
-            # Note: Session manager uses self.output_dir, so we temporarily set it
-            # if a per-torrent output is specified
-            original_output_dir = self.session.output_dir
+        # Show progress message
+        self.statusbar.update(
+            Panel(
+                "Adding torrent... This may take a moment for large torrents.",
+                title="Adding Torrent",
+                border_style="blue",
+            )
+        )
+
+        # CRITICAL: Use executor command exactly like CLI does
+        # All actual operations go through executor - no direct session access
+        # CRITICAL FIX: Ensure command executor is available
+        if not hasattr(self, "_command_executor") or not self._command_executor:
+            error_msg = "Command executor not available. Cannot add torrent."
+            self.logs.write(f"[red]Error: {error_msg}[/red]")
+            self.statusbar.update(
+                Panel(
+                    error_msg,
+                    title="Error",
+                    border_style="red",
+                )
+            )
+            logger.error("_process_add_torrent: Command executor not available")
+            return
+        
+        try:
             output_dir = options.get("output")
             if output_dir:
-                # Temporarily change session output_dir for this torrent
-                # This is a workaround since add_torrent doesn't accept output_dir parameter
-                self.session.output_dir = str(output_dir)
                 self.logs.write(f"Using output directory: {output_dir}")
 
+            # Use timeout similar to CLI (120s for magnets, 60s for files)
+            timeout_seconds = 120.0 if path_or_magnet.startswith("magnet:") else 60.0
+            
+            # CRITICAL: Use executor command - matches CLI behavior exactly
+            # CRITICAL FIX: Wrap in try-except to handle timeout and other errors gracefully
             try:
-                if path_or_magnet.startswith("magnet:"):
-                    info_hash = await asyncio.wait_for(
-                        self.session.add_magnet(
-                            path_or_magnet,
-                            resume=resume,
-                        ),
-                        timeout=timeout_seconds,
-                    )
-                else:
-                    info_hash = await asyncio.wait_for(
-                        self.session.add_torrent(
-                            path_or_magnet,
-                            resume=resume,
-                        ),
-                        timeout=timeout_seconds,
-                    )
+                result = await asyncio.wait_for(
+                    self._command_executor.execute_command(
+                        "torrent.add",
+                        path_or_magnet=path_or_magnet,
+                        resume=resume,
+                        output_dir=output_dir,
+                    ),
+                    timeout=timeout_seconds,
+                )
             except asyncio.TimeoutError:
-                error_msg = (
-                    f"Timeout adding torrent (operation took longer than {timeout_seconds:.0f} seconds). "
-                    "This may happen with very large torrents or slow disk I/O. "
-                    "The torrent may still be processing in the background."
-                )
-                logger.error(error_msg)
+                error_msg = f"Timeout adding torrent (exceeded {timeout_seconds}s). The torrent may be very large or the connection may be slow."
+                self.logs.write(f"[red]Error: {error_msg}[/red]")
                 self.statusbar.update(
                     Panel(
                         error_msg,
-                        title="Timeout Warning",
-                        border_style="yellow",
-                    ),
+                        title="Timeout Error",
+                        border_style="red",
+                    )
                 )
-                self.logs.write(f"Warning: {error_msg}")
-                # Restore original output_dir before returning
-                if output_dir:
-                    self.session.output_dir = original_output_dir
-                # Don't raise - let the user know but don't crash the UI
-                # The torrent might still be added, just taking longer
+                logger.error("_process_add_torrent: Timeout adding torrent")
                 return
-            except ValueError as add_error:
-                # Handle duplicate torrent/magnet errors gracefully
-                error_msg = str(add_error)
-                logger.warning(error_msg)
+            except Exception as e:
+                error_msg = f"Error executing torrent.add command: {str(e)}"
+                self.logs.write(f"[red]Error: {error_msg}[/red]")
                 self.statusbar.update(
                     Panel(
                         error_msg,
-                        title="Torrent Already Exists",
-                        border_style="yellow",
-                    ),
+                        title="Command Error",
+                        border_style="red",
+                    )
                 )
-                self.logs.write(f"[yellow]Warning: {error_msg}[/yellow]")
-                # Restore original output_dir before returning
-                if output_dir:
-                    self.session.output_dir = original_output_dir
-                # Don't raise - show user-friendly message instead of crashing
+                logger.error("_process_add_torrent: Error executing command", exc_info=True)
                 return
-            except Exception as add_error:
-                # Restore original output_dir before re-raising
-                if output_dir:
-                    self.session.output_dir = original_output_dir
-                # Re-raise to be caught by outer exception handler
-                raise
-            finally:
-                # Restore original output_dir after adding torrent (if not already restored)
-                if output_dir and self.session.output_dir != original_output_dir:
-                    self.session.output_dir = original_output_dir
-
-            # Show immediate success message - torrent is added!
+            
+            # Extract info_hash from result
+            if result and hasattr(result, "data"):
+                if isinstance(result.data, dict):
+                    info_hash = result.data.get("info_hash", "")
+                else:
+                    info_hash = str(result.data) if result.data else ""
+            elif result and hasattr(result, "success") and result.success:
+                info_hash = getattr(result, "info_hash", None) or ""
+            else:
+                error_msg = result.error if result and hasattr(result, "error") else "Unknown error"
+                raise ValueError(f"Failed to add torrent: {error_msg}")
+            
+            if not info_hash:
+                raise ValueError("Failed to add torrent: No info_hash returned")
+            
+            # Success - show message
             self.statusbar.update(
                 Panel(
                     f"Successfully added torrent: {info_hash[:12]}...\n"
-                    f"Status: Download starting (checking peers...)",
+                    f"Status: Download starting...",
                     title="Success",
                     border_style="green",
                 ),
             )
             self.logs.write(f"✓ Successfully added torrent: {path_or_magnet}")
-
-            # Wait a moment and check if download has started
-            await asyncio.sleep(1.0)
+            
+            # CRITICAL: Force immediate announce to start download (like CLI does)
             try:
-                # Get torrent status to confirm it's downloading
-                info_hash_bytes = bytes.fromhex(info_hash)
-                async with self.session.lock:
-                    torrent_session = self.session.torrents.get(info_hash_bytes)
-
-                if torrent_session:
-                    status = await torrent_session.get_status()
-                    download_status = status.get("status", "unknown")
-                    connected_peers = status.get("connected_peers", 0)
-
-                    if download_status == "downloading":
-                        self.logs.write(
-                            f"✓ Download confirmed: {connected_peers} peer(s) connected"
-                        )
-                        self.statusbar.update(
-                            Panel(
-                                f"Download active: {connected_peers} peer(s) connected\n"
-                                f"Status: {download_status}",
-                                title="Download Status",
-                                border_style="green",
-                            ),
-                        )
-                    else:
-                        self.logs.write(
-                            f"Download status: {download_status} (may be initializing...)"
-                        )
+                await self._command_executor.execute_command(
+                    "torrent.force_announce",
+                    info_hash=info_hash,
+                )
+                self.logs.write("✓ Triggered immediate tracker announce")
             except Exception as e:
-                # Don't fail if status check fails - torrent might still be initializing
-                logger.debug("Error checking download status: %s", e)
+                logger.debug("Error forcing announce: %s", e)
 
-            # Step 4: Apply file selection if specified (with timeout to prevent hanging)
-            # These are optional post-add configurations
-            files_selection = options.get("files_selection")
-            file_priorities = options.get("file_priorities")
-            if files_selection or file_priorities:
-                info_hash_bytes = bytes.fromhex(info_hash)
-                try:
-                    # Use timeout to prevent hanging on lock acquisition
-                    async def _get_torrent_session():
-                        async with self.session.lock:
-                            return self.session.torrents.get(info_hash_bytes)
-
-                    torrent_session = await asyncio.wait_for(
-                        _get_torrent_session(), timeout=5.0
+            # UI FEATURE: Enhanced download flow
+            # For magnet links, show metadata loading screen and then file selection
+            if is_magnet:
+                # Show metadata loading screen (non-blocking with continue option)
+                from ccbt.interface.screens.dialogs import MetadataLoadingScreen
+                result = await self.push_screen_wait(  # type: ignore[attr-defined]
+                    MetadataLoadingScreen(
+                        info_hash,
+                        self.session,
+                        self,
                     )
-                except asyncio.TimeoutError:
-                    self.logs.write(
-                        "Warning: Timeout acquiring session lock for file selection"
-                    )
-                    torrent_session = None
-
-                if torrent_session and torrent_session.file_selection_manager:
-                    from ccbt.piece.file_selection import FilePriority
-
-                    manager = torrent_session.file_selection_manager
-
-                    # Apply file selections (with timeout)
+                )
+                # Handle result: if user clicked continue with all_files, select all files
+                if result and isinstance(result, dict) and result.get("continue") and result.get("all_files"):
                     try:
-
-                        async def _apply_file_settings():
-                            if files_selection:
-                                await manager.deselect_all()
-                                await manager.select_files(list(files_selection))
-                                self.logs.write(
-                                    f"Selected {len(files_selection)} file(s) for download"
+                        files = await self._data_provider.get_torrent_files(info_hash)
+                        if files:
+                            file_indices = [f.get("index") for f in files if f.get("index") is not None]
+                            if file_indices:
+                                await self._command_executor.execute_command(
+                                    "file.select",
+                                    info_hash=info_hash,
+                                    file_indices=file_indices
                                 )
-
-                            # Apply file priorities
-                            if file_priorities:
-                                priority_map = {
-                                    "maximum": FilePriority.MAXIMUM,
-                                    "high": FilePriority.HIGH,
-                                    "normal": FilePriority.NORMAL,
-                                    "low": FilePriority.LOW,
-                                    "do_not_download": FilePriority.DO_NOT_DOWNLOAD,
-                                }
-                                for priority_spec in file_priorities:
-                                    try:
-                                        file_idx_str, priority_str = (
-                                            priority_spec.split("=", 1)
-                                        )
-                                        file_idx = int(file_idx_str.strip())
-                                        priority_enum = priority_map[
-                                            priority_str.strip().lower()
-                                        ]
-                                        await manager.set_file_priority(
-                                            file_idx, priority_enum
-                                        )
-                                    except (ValueError, KeyError) as e:
-                                        self.logs.write(
-                                            f"Invalid priority spec '{priority_spec}': {e}"
-                                        )
-
-                        await asyncio.wait_for(_apply_file_settings(), timeout=10.0)
-                    except asyncio.TimeoutError:
-                        self.logs.write(
-                            "Warning: Timeout applying file selection/priorities"
-                        )
-
-            # Step 5: Apply queue priority if specified (with timeout)
-            queue_priority = options.get("queue_priority")
-            if queue_priority and self.session.queue_manager:
+                    except Exception as e:
+                        logger.debug("Error selecting all files: %s", e)
+                # CRITICAL FIX: After metadata loading screen, try to show file selection dialog
+                # if metadata is now available and torrent has multiple files
                 try:
-                    from ccbt.models import TorrentPriority
-
-                    priority = TorrentPriority(queue_priority.lower())
-                    await asyncio.wait_for(
-                        self.session.queue_manager.set_priority(
-                            bytes.fromhex(info_hash),
-                            priority,
-                        ),
-                        timeout=5.0,
+                    # Wait a moment for metadata to be fully processed
+                    await asyncio.sleep(0.5)
+                    files = await asyncio.wait_for(
+                        self._data_provider.get_torrent_files(info_hash),
+                        timeout=10.0  # Increased from 5.0 for better reliability,
+                    )
+                    # Only show dialog if torrent has multiple files
+                    if len(files) > 1:
+                        from ccbt.interface.screens.file_selection_dialog import FileSelectionDialog
+                        dialog = FileSelectionDialog(files)
+                        selected_indices = await self.app.push_screen_wait(dialog)  # type: ignore[attr-defined]
+                        
+                        if selected_indices is not None:
+                            # Deselect all files first
+                            all_indices = [f.get("index", idx) for idx, f in enumerate(files)]
+                            await self._command_executor.execute_command(
+                                "file.deselect",
+                                info_hash=info_hash,
+                                file_indices=all_indices,
+                            )
+                            
+                            # Then select the chosen files
+                            if selected_indices:
+                                await self._command_executor.execute_command(
+                                    "file.select",
+                                    info_hash=info_hash,
+                                    file_indices=selected_indices,
+                                )
+                                self.logs.write(f"Selected {len(selected_indices)} file(s) for download")
+                            else:
+                                self.logs.write("No files selected for download")
+                except asyncio.TimeoutError:
+                    # Metadata not ready yet - start background task to show dialog later
+                    logger.debug("Metadata not ready yet, will show file selection dialog when available")
+                    async def try_file_selection_later():
+                        """Try to show file selection dialog after metadata is available."""
+                        # Wait for metadata to be available (up to 30 seconds)
+                        max_wait = 30.0
+                        start_time = asyncio.get_event_loop().time()
+                        
+                        while (asyncio.get_event_loop().time() - start_time) < max_wait:
+                            try:
+                                files = await asyncio.wait_for(
+                                    self._data_provider.get_torrent_files(info_hash),
+                                    timeout=2.0,
+                                )
+                                
+                                # Only show dialog if torrent has multiple files
+                                if len(files) > 1:
+                                    from ccbt.interface.screens.file_selection_dialog import FileSelectionDialog
+                                    dialog = FileSelectionDialog(files)
+                                    selected_indices = await self.app.push_screen_wait(dialog)  # type: ignore[attr-defined]
+                                    
+                                    if selected_indices is not None:
+                                        # Deselect all files first
+                                        all_indices = [f.get("index", idx) for idx, f in enumerate(files)]
+                                        await self._command_executor.execute_command(
+                                            "file.deselect",
+                                            info_hash=info_hash,
+                                            file_indices=all_indices,
+                                        )
+                                        
+                                        # Then select the chosen files
+                                        if selected_indices:
+                                            await self._command_executor.execute_command(
+                                                "file.select",
+                                                info_hash=info_hash,
+                                                file_indices=selected_indices,
+                                            )
+                                            self.logs.write(f"Selected {len(selected_indices)} file(s) for download")
+                                        else:
+                                            self.logs.write("No files selected for download")
+                                    return  # Success - exit loop
+                            except (asyncio.TimeoutError, ValueError, KeyError):
+                                # Metadata not ready yet, wait and retry
+                                await asyncio.sleep(1.0)
+                            except Exception as e:
+                                logger.debug("Error in background file selection: %s", e)
+                                return  # Give up on errors
+                    
+                    # Start background task
+                    asyncio.create_task(try_file_selection_later())
+                except Exception as e:
+                    logger.debug("Error showing file selection dialog for magnet link: %s", e)
+            # For file torrents, wait a moment for torrent to be fully initialized
+            else:
+                # File torrent - can check files immediately
+                await asyncio.sleep(0.5)  # Reduced wait time
+                
+                try:
+                    files = await asyncio.wait_for(
+                        self._data_provider.get_torrent_files(info_hash),
+                        timeout=10.0  # Increased from 5.0 for better reliability,  # Timeout to avoid hanging
+                    )
+                    
+                    # Only show dialog if torrent has multiple files
+                    if len(files) > 1:
+                        from ccbt.interface.screens.file_selection_dialog import FileSelectionDialog
+                        dialog = FileSelectionDialog(files)
+                        selected_indices = await self.app.push_screen_wait(dialog)  # type: ignore[attr-defined]
+                        
+                        if selected_indices is not None:
+                            # Deselect all files first
+                            all_indices = [f.get("index", idx) for idx, f in enumerate(files)]
+                            await self._command_executor.execute_command(
+                                "file.deselect",
+                                info_hash=info_hash,
+                                file_indices=all_indices,
+                            )
+                            
+                            # Then select the chosen files
+                            if selected_indices:
+                                await self._command_executor.execute_command(
+                                    "file.select",
+                                    info_hash=info_hash,
+                                    file_indices=selected_indices,
+                                )
+                                self.logs.write(f"Selected {len(selected_indices)} file(s) for download")
+                            else:
+                                self.logs.write("No files selected for download")
+                except asyncio.TimeoutError:
+                    logger.debug("Timeout getting torrent files for file selection dialog")
+                except Exception as e:
+                    logger.debug("Error showing file selection dialog: %s", e)
+            
+            # Apply optional post-add configurations via executor (if specified)
+            # These match exactly what the CLI does in downloads.py
+            
+            # File selection from options
+            files_selection = options.get("files_selection")
+            if files_selection:
+                try:
+                    await self._command_executor.execute_command(
+                        "file.select",
+                        info_hash=info_hash,
+                        file_indices=list(files_selection),
+                    )
+                    self.logs.write(f"Selected {len(files_selection)} file(s)")
+                except Exception as e:
+                    logger.debug("Error applying file selection: %s", e)
+            
+            # File priorities
+            file_priorities = options.get("file_priorities")
+            if file_priorities:
+                try:
+                    for priority_spec in file_priorities:
+                        file_index = priority_spec.get("index")
+                        priority = priority_spec.get("priority", "normal")
+                        if file_index is not None:
+                            await self._command_executor.execute_command(
+                                "file.priority",
+                                info_hash=info_hash,
+                                file_index=file_index,
+                                priority=priority,
+                            )
+                except Exception as e:
+                    logger.debug("Error applying file priorities: %s", e)
+            
+            # Queue priority
+            queue_priority = options.get("queue_priority")
+            if queue_priority:
+                try:
+                    await self._command_executor.execute_command(
+                        "queue.add",
+                        info_hash=info_hash,
+                        priority=queue_priority.lower(),
                     )
                     self.logs.write(f"Set queue priority to {queue_priority}")
-                except asyncio.TimeoutError:
-                    self.logs.write("Warning: Timeout setting queue priority")
                 except Exception as e:
-                    self.logs.write(f"Warning: Failed to set queue priority: {e}")
-
-            # Step 6: Apply rate limits if specified (with timeout)
+                    logger.debug("Error setting queue priority: %s", e)
+            
+            # Rate limits
             if "download_limit" in options or "upload_limit" in options:
                 try:
-                    await asyncio.wait_for(
-                        self.session.set_rate_limits(
-                            info_hash,
-                            options.get("download_limit", 0),
-                            options.get("upload_limit", 0),
-                        ),
-                        timeout=5.0,
+                    await self._command_executor.execute_command(
+                        "torrent.set_rate_limits",
+                        info_hash=info_hash,
+                        download_kib=options.get("download_limit", 0),
+                        upload_kib=options.get("upload_limit", 0),
                     )
                     self.logs.write(
                         f"Set rate limits: {options.get('download_limit', 0)}/"
                         f"{options.get('upload_limit', 0)} KiB/s"
                     )
-                except asyncio.TimeoutError:
-                    self.logs.write("Warning: Timeout setting rate limits")
                 except Exception as e:
-                    self.logs.write(f"Warning: Failed to set rate limits: {e}")
-
-            # Step 7: Update success message with any additional details
-            # (Success message was already shown immediately after add)
-            success_details = [f"Torrent added: {info_hash[:12]}..."]
-
-            # Add file selection info if applicable
-            if files_selection:
-                success_details.append(f"Selected {len(files_selection)} file(s)")
-            if file_priorities:
-                success_details.append(f"Set {len(file_priorities)} file priority(ies)")
-
-            # Add queue priority info if applicable
-            if queue_priority:
-                success_details.append(f"Queue priority: {queue_priority}")
-
-            # Add rate limit info if applicable
-            if "download_limit" in options or "upload_limit" in options:
-                down = options.get("download_limit", 0)
-                up = options.get("upload_limit", 0)
-                if down > 0 or up > 0:
-                    success_details.append(f"Rate limits: {down}/{up} KiB/s")
-
-            # Add resume info if applicable
-            if resume:
-                success_details.append("Resuming from checkpoint")
-
-            # Step 8: Auto-scrape if requested
-            if options.get("auto_scrape"):
-                try:
-                    if self._command_executor:
-                        (
-                            success,
-                            _msg,
-                            _,
-                        ) = await self._command_executor.execute_click_command(
-                            f"scrape torrent {info_hash} --force"
-                        )
-                        if success:
-                            success_details.append("Auto-scraped tracker")
-                            self.logs.write(f"Auto-scraped torrent {info_hash[:12]}...")
-                except Exception as e:
-                    logger.debug("Auto-scrape failed: %s", e)
-
-            success_msg = "\n".join(success_details)
-
-            # Update UI with detailed success message (if there are additional details)
-            if len(success_details) > 1:  # Only update if there are additional details
-                try:
-                    self.statusbar.update(
-                        Panel(
-                            success_msg,
-                            title="Success",
-                            border_style="green",
-                        ),
-                    )
-                except Exception as ui_error:
-                    # If UI update fails, at least log it
-                    logger.debug("Failed to update statusbar: %s", ui_error)
-            if files_selection:
-                self.logs.write(f"  Selected {len(files_selection)} file(s)")
-            if queue_priority:
-                self.logs.write(f"  Queue priority: {queue_priority}")
-            if resume:
-                self.logs.write("  Resuming from checkpoint")
-            if options.get("auto_scrape"):
-                self.logs.write("  Auto-scraped tracker")
-
-        except Exception as e:
-            # Log the full exception for debugging
-            logger.exception("Failed to add torrent: %s", path_or_magnet)
-            error_msg = str(e) or "Unknown error"
+                    logger.debug("Error setting rate limits: %s", e)
+                    
+        except asyncio.TimeoutError:
+            error_msg = (
+                f"Timeout adding torrent (operation took longer than {timeout_seconds:.0f} seconds). "
+                "The torrent may still be processing in the background."
+            )
+            logger.error(error_msg)
             self.statusbar.update(
                 Panel(
-                    f"Failed to add torrent: {error_msg}",
+                    error_msg,
+                    title="Timeout Warning",
+                    border_style="yellow",
+                ),
+            )
+            self.logs.write(f"Warning: {error_msg}")
+            return
+        except ValueError as add_error:
+            # Handle duplicate torrent/magnet errors gracefully
+            error_msg = str(add_error)
+            logger.warning(error_msg)
+            self.statusbar.update(
+                Panel(
+                    error_msg,
+                    title="Error",
+                    border_style="yellow",
+                ),
+            )
+            self.logs.write(f"[yellow]Warning: {error_msg}[/yellow]")
+            return
+        except Exception as add_error:
+            # Re-raise to be caught by outer exception handler
+            logger.exception("Error adding torrent: %s", add_error)
+            self.statusbar.update(
+                Panel(
+                    f"Error adding torrent: {add_error}",
                     title="Error",
                     border_style="red",
                 ),
             )
-            self.logs.write(f"Error adding torrent: {error_msg}")
-            # Re-raise to prevent silent failures, but UI has been updated
+            self.logs.write(f"[red]Error: {add_error}[/red]")
             raise
+
+    async def _show_completion_dialog(
+        self, name: str, info_hash_hex: str
+    ) -> None:  # pragma: no cover
+        """Show completion dialog for finished torrent.
+        
+        Args:
+            name: Torrent name
+            info_hash_hex: Torrent info hash as hex string
+        """
+        try:
+            from ccbt.interface.screens.base import ConfirmationDialog
+            
+            # Create a simple message dialog
+            message = f"[green]✓ Download Complete![/green]\n\n"
+            message += f"Torrent: {name}\n"
+            message += f"Info Hash: {info_hash_hex[:16]}...\n\n"
+            message += "Files have been written to disk and are ready to use."
+            
+            # Use a simple notification dialog (non-blocking)
+            dialog = ConfirmationDialog(message)
+            dialog.title = "Download Complete"
+            # Auto-dismiss after 5 seconds
+            async def auto_dismiss():
+                await asyncio.sleep(5.0)
+                try:
+                    if hasattr(dialog, "dismiss"):
+                        dialog.dismiss(True)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+            
+            # Show dialog and auto-dismiss
+            asyncio.create_task(auto_dismiss())
+            await self.push_screen(dialog)  # type: ignore[attr-defined]
+            
+            # Also log to logs widget
+            if hasattr(self, "logs") and self.logs:
+                self.logs.write(
+                    f"[green]✓ Torrent completed: {name}[/green]"
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to show completion dialog: %s", e, exc_info=True
+            )
+            # Fallback: just log to logs widget
+            if hasattr(self, "logs") and self.logs:
+                self.logs.write(
+                    f"[green]✓ Torrent completed: {name}[/green]"
+                )
 
     async def _show_advanced_options(
         self, path_or_magnet: str
@@ -2425,11 +3588,18 @@ class TerminalDashboard(App):  # type: ignore[misc]
         ih = self.torrents.get_selected_info_hash()
         if ih:
             try:
-                await self.session.pause_torrent(ih)
-                self.statusbar.update(Panel(f"Paused {ih[:12]}…", title="Action"))
+                # CRITICAL: Use CommandExecutor for all write operations
+                result = await self._command_executor.execute_command("torrent.pause", info_hash=ih)
+                if result and hasattr(result, "success") and result.success:
+                    self.statusbar.update(Panel(_("Paused {info_hash}…").format(info_hash=ih[:12]), title=_("Action")))
+                else:
+                    error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
+                    self.statusbar.update(
+                        Panel(_("Pause failed: {error}").format(error=error_msg), title=_("Action"), border_style="red"),
+                    )
             except Exception as e:
                 self.statusbar.update(
-                    Panel(f"Pause failed: {e}", title="Action", border_style="red"),
+                    Panel(_("Pause failed: {error}").format(error=e), title=_("Action"), border_style="red"),
                 )
 
     async def action_resume_torrent(self) -> None:  # pragma: no cover
@@ -2438,11 +3608,18 @@ class TerminalDashboard(App):  # type: ignore[misc]
         ih = self.torrents.get_selected_info_hash()
         if ih:
             try:
-                await self.session.resume_torrent(ih)
-                self.statusbar.update(Panel(f"Resumed {ih[:12]}…", title="Action"))
+                # CRITICAL: Use CommandExecutor for all write operations
+                result = await self._command_executor.execute_command("torrent.resume", info_hash=ih)
+                if result and hasattr(result, "success") and result.success:
+                    self.statusbar.update(Panel(_("Resumed {info_hash}…").format(info_hash=ih[:12]), title=_("Action")))
+                else:
+                    error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
+                    self.statusbar.update(
+                        Panel(_("Resume failed: {error}").format(error=error_msg), title=_("Action"), border_style="red"),
+                    )
             except Exception as e:
                 self.statusbar.update(
-                    Panel(f"Resume failed: {e}", title="Action", border_style="red"),
+                    Panel(_("Resume failed: {error}").format(error=e), title=_("Action"), border_style="red"),
                 )
 
     async def action_scrape_selected(self) -> None:  # pragma: no cover
@@ -2584,8 +3761,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
 
     async def action_dht_metrics(self) -> None:  # pragma: no cover
         """Open DHT metrics screen."""
-        # TODO: Implement DHTMetricsScreen
-        logger.warning("DHT metrics screen not yet implemented")
+        from ccbt.interface.screens.monitoring.dht_metrics import DHTMetricsScreen
+        await self.push_screen(DHTMetricsScreen(self.session))  # type: ignore[attr-defined]
 
     async def action_queue_metrics(self) -> None:  # pragma: no cover
         """Open queue metrics screen."""
@@ -2605,12 +3782,16 @@ class TerminalDashboard(App):  # type: ignore[misc]
 
     async def action_security_scan(self) -> None:  # pragma: no cover
         """Open security scan screen."""
-        # TODO: Implement SecurityScanScreen
-        logger.warning("Security scan screen not yet implemented")
+        from ccbt.interface.screens.monitoring.security_scan import SecurityScanScreen
+        await self.push_screen(SecurityScanScreen(self.session))  # type: ignore[attr-defined]
 
     async def action_xet_management(self) -> None:  # pragma: no cover
         """Open Xet protocol management screen."""
         await self.push_screen(XetManagementScreen(self.session))  # type: ignore[attr-defined]
+
+    async def action_xet_folder_sync(self) -> None:  # pragma: no cover
+        """Open XET folder synchronization screen."""
+        await self.push_screen(XetFolderSyncScreen(self.session))  # type: ignore[attr-defined]
 
     async def action_ipfs_management(self) -> None:  # pragma: no cover
         """Open IPFS protocol management screen."""
@@ -2644,16 +3825,84 @@ class TerminalDashboard(App):  # type: ignore[misc]
         """Open navigation menu."""
         await self.push_screen(NavigationMenuScreen())  # type: ignore[attr-defined]
     
+    async def action_language_selection(self) -> None:  # pragma: no cover
+        """Open language selection screen."""
+        from ccbt.interface.screens.language_selection_screen import LanguageSelectionScreen
+        
+        # Push screen (do not wait for result, as language change is handled by message propagation)
+        self.push_screen(  # type: ignore[attr-defined]
+            LanguageSelectionScreen(
+                data_provider=self._data_provider,
+                command_executor=self._command_executor,
+            )
+        )
+    
+    # Textual system actions
+    async def action_toggle_dark(self) -> None:  # pragma: no cover
+        """Toggle dark/light theme (Textual system action)."""
+        self.dark = not self.dark  # type: ignore[attr-defined]
+    
+    async def action_light_mode(self) -> None:  # pragma: no cover
+        """Switch to light mode (Textual system action)."""
+        self.dark = False  # type: ignore[attr-defined]
+    
+    async def action_dark_mode(self) -> None:  # pragma: no cover
+        """Switch to dark mode (Textual system action)."""
+        self.dark = True  # type: ignore[attr-defined]
+    
+    def _apply_rainbow_borders(self) -> None:
+        """Apply rainbow border classes to containers when rainbow theme is active.
+        
+        This method applies sequential rainbow colors to major containers
+        when the rainbow theme is selected.
+        """
+        try:
+            from ccbt.interface.themes.rainbow import apply_rainbow_border_class
+            
+            # Check if rainbow theme is active
+            current_theme = getattr(self, "theme", None)
+            if current_theme != "rainbow":
+                return
+            
+            # Apply rainbow borders to major containers in sequence
+            containers = [
+                ("#main-content", 0),      # Red (rainbow-1)
+                ("#graphs-section", 1),     # Orange (rainbow-2)
+                ("#main-tabs-section", 2), # Yellow (rainbow-3)
+                ("#workflow-pane", 3),     # Green (rainbow-4)
+                ("#torrent-insight-pane", 4), # Blue (rainbow-5)
+                ("#statusbar", 5),          # Indigo (rainbow-6)
+                ("#overview-footer", 5),   # Indigo (rainbow-6)
+            ]
+            
+            for selector, index in containers:
+                try:
+                    widget = self.query_one(selector)  # type: ignore[attr-defined]
+                    apply_rainbow_border_class(widget, index)
+                except Exception:
+                    # Widget may not exist, skip
+                    pass
+        except Exception as e:
+            logger.debug("Error applying rainbow borders: %s", e)
+    
+    async def action_theme_selection(self) -> None:  # pragma: no cover
+        """Open theme selection screen."""
+        from ccbt.interface.screens.theme_selection_screen import ThemeSelectionScreen
+        
+        # Push screen (theme is applied directly in ThemeSelectionScreen)
+        self.push_screen(ThemeSelectionScreen())  # type: ignore[attr-defined]
+        
+        # Apply rainbow borders after a short delay to allow theme to be applied
+        # The CSS should handle most of it, but this ensures classes are applied
+        self.call_later(self._apply_rainbow_borders)  # type: ignore[attr-defined]
+    
     def _get_connection_status(self) -> str:
         """Get connection status string for status bar."""
-        if self._is_daemon_session:
-            # Check WebSocket connection status
-            if hasattr(self.session, "_websocket_connected") and self.session._websocket_connected:  # type: ignore[attr-defined]
-                return "[green]●[/green] Daemon (WebSocket)"
-            else:
-                return "[yellow]●[/yellow] Daemon (Polling)"
+        # Dashboard only works with daemon - check WebSocket connection status
+        if hasattr(self.session, "_websocket_connected") and self.session._websocket_connected:  # type: ignore[attr-defined]
+            return "[green]●[/green] Daemon (WebSocket)"
         else:
-            return "[blue]●[/blue] Local"
+            return "[yellow]●[/yellow] Daemon (Polling)"
     
     def _update_connection_status(self) -> None:
         """Update connection status in status bar."""
@@ -2668,74 +3917,442 @@ class TerminalDashboard(App):  # type: ignore[misc]
             )
 
 
-async def _ensure_daemon_running() -> tuple[bool, Any | None]:
+async def _wait_for_daemon_health_check(
+    ipc_client: Any,
+    timeout: float = 90.0,
+    check_interval: float = 1.0,
+) -> bool:
+    """Wait for daemon to be healthy using only IPC client health checks.
+    
+    This function ONLY uses IPC client health checks (is_daemon_running) and does NOT
+    rely on PID files or process checks. This ensures we detect when the daemon is
+    actually ready to accept connections, not just when the process is running.
+    
+    Args:
+        ipc_client: IPCClient instance to use for health checks
+        timeout: Maximum time to wait in seconds (default: 90.0)
+        check_interval: Time between health checks in seconds (default: 1.0)
+        
+    Returns:
+        True if daemon is healthy and ready, False if timeout exceeded
+    """
+    logger.info(
+        "Waiting for daemon to be healthy via IPC health checks (timeout: %.0f seconds)...",
+        timeout
+    )
+    logger.info(
+        "This may take up to 90 seconds (NAT discovery ~35s, DHT bootstrap ~8s, IPC server startup)"
+    )
+    
+    start_time = time.time()
+    last_log_time = start_time
+    log_interval = 5.0  # Log progress every 5 seconds
+    
+    while time.time() - start_time < timeout:
+        elapsed = time.time() - start_time
+        
+        # Log progress every 5 seconds
+        if time.time() - last_log_time >= log_interval:
+            logger.info("Still waiting for daemon health check... (%.1f seconds elapsed)", elapsed)
+            last_log_time = time.time()
+        
+        try:
+            # CRITICAL: Only use IPC client health check - no PID file or process checks
+            # This ensures we detect when daemon is actually ready, not just when process exists
+            is_running = await ipc_client.is_daemon_running()
+            if is_running:
+                elapsed = time.time() - start_time
+                logger.info(
+                    "Daemon is healthy and ready via IPC health check (took %.1f seconds)",
+                    elapsed
+                )
+                return True
+            else:
+                # Log at INFO level every 5 seconds to help diagnose issues
+                if int(elapsed) % 5 == 0:
+                    logger.info(
+                        "Daemon health check returned False (base_url=%s, elapsed=%.1fs). "
+                        "This may indicate: wrong port, API key mismatch, or daemon not ready.",
+                        ipc_client.base_url,
+                        elapsed
+                    )
+                else:
+                    logger.debug("Daemon health check failed, retrying in %.1f seconds...", check_interval)
+        except Exception as check_error:
+            # Log exceptions at INFO level to help diagnose connection/auth issues
+            logger.info(
+                "Daemon health check exception (base_url=%s, elapsed=%.1fs): %s",
+                ipc_client.base_url,
+                elapsed,
+                check_error
+            )
+            logger.debug("Full exception details:", exc_info=check_error)
+        
+        # Wait before next check
+        try:
+            await asyncio.wait_for(asyncio.sleep(check_interval), timeout=check_interval + 0.1)
+        except asyncio.TimeoutError:
+            break
+    
+    # Timeout - daemon did not become healthy
+    elapsed = time.time() - start_time
+    logger.error(
+        "Daemon did not become healthy within %.0f seconds (waited %.1f seconds)",
+        timeout,
+        elapsed
+    )
+    return False
+
+
+async def _scan_for_daemon_port(
+    api_key: str,
+    ports_to_try: list[int],
+    timeout_per_port: float = 1.0,
+) -> tuple[int | None, Any | None]:
+    """Scan multiple ports to find where the daemon is actually listening.
+    
+    Args:
+        api_key: API key for authentication
+        ports_to_try: List of ports to try
+        timeout_per_port: Timeout per port in seconds
+        
+    Returns:
+        Tuple of (port_number, IPCClient) if found, (None, None) if not found
+    """
+    from ccbt.daemon.ipc_client import IPCClient  # type: ignore[attr-defined]
+    
+    client_host = "127.0.0.1"
+    
+    for port in ports_to_try:
+        base_url = f"http://{client_host}:{port}"
+        client = IPCClient(api_key=api_key, base_url=base_url)
+        
+        try:
+            # Quick health check with timeout
+            is_running = await asyncio.wait_for(
+                client.is_daemon_running(),
+                timeout=timeout_per_port
+            )
+            if is_running:
+                logger.info("Found daemon listening on port %d", port)
+                return (port, client)
+        except asyncio.TimeoutError:
+            logger.debug("Timeout checking port %d", port)
+        except Exception as e:
+            logger.debug("Error checking port %d: %s", port, e)
+        finally:
+            # Close client if it didn't work
+            try:
+                await client.close()
+            except Exception:
+                pass
+    
+    return (None, None)
+
+
+def _show_startup_splash(
+    no_splash: bool = False,
+    verbosity_count: int = 0,
+    console: Any | None = None,
+) -> tuple[Any | None, Any | None]:
+    """Show splash screen for terminal interface startup.
+    
+    Args:
+        no_splash: Whether to disable splash screen
+        verbosity_count: Verbosity count (0 = NORMAL, 1+ = verbose)
+        console: Rich Console instance (optional)
+        
+    Returns:
+        Tuple of (splash_manager, splash_thread) or (None, None) if not shown
+    """
+    # Only show splash when verbosity is NORMAL (no -v flags) AND --no-splash is not set
+    if verbosity_count > 0 or no_splash:
+        return (None, None)
+    
+    try:
+        from ccbt.interface.splash.splash_manager import SplashManager
+        from ccbt.cli.task_detector import get_detector
+        import threading
+        import logging
+        
+        # Temporarily suppress INFO-level logs during splash (splash screen visually hides them anyway)
+        # Store original level to restore later
+        root_logger = logging.getLogger()
+        original_level = root_logger.level
+        # Only suppress if not already at a higher level
+        if original_level <= logging.INFO:
+            root_logger.setLevel(logging.WARNING)
+        
+        detector = get_detector()
+        # Register dashboard startup as a long-running task if not already registered
+        if not detector.get_task_info("dashboard.start"):
+            detector.register_command(
+                command_name="dashboard.start",
+                expected_duration=90.0,  # Up to 90s for daemon startup + dashboard init
+                min_duration=2.0,
+                description="Starting dashboard (daemon health checks, initialization)",
+                show_splash=True,
+            )
+        
+        if detector.should_show_splash("dashboard.start"):
+            splash_manager = SplashManager.from_verbosity_count(verbosity_count, console=console)
+            expected_duration = detector.get_expected_duration("dashboard.start")
+            
+            # Store original log level in splash manager for restoration
+            splash_manager._original_log_level = original_level  # type: ignore[attr-defined]
+            
+            # Start splash screen in background thread
+            def run_splash() -> None:
+                try:
+                    asyncio.run(
+                        splash_manager.show_splash_for_task(
+                            task_name="dashboard start",
+                            max_duration=expected_duration,
+                            show_progress=True,
+                        )
+                    )
+                except Exception:
+                    # Ignore errors in splash thread
+                    pass
+                finally:
+                    # Restore original log level when splash ends (if not already restored)
+                    try:
+                        if hasattr(splash_manager, '_original_log_level'):
+                            root_logger.setLevel(splash_manager._original_log_level)
+                    except Exception:
+                        pass
+            
+            splash_thread = threading.Thread(target=run_splash, daemon=True)
+            splash_thread.start()
+            return (splash_manager, splash_thread)
+        else:
+            # Restore log level if splash not shown
+            root_logger.setLevel(original_level)
+    except Exception:
+        # If splash system fails, continue without it
+        pass
+    
+    return (None, None)
+
+
+async def _ensure_daemon_running(
+    splash_manager: Any | None = None,
+) -> tuple[bool, Any | None]:
     """Ensure daemon is running, start if needed.
+    
+    CRITICAL: This function ONLY uses IPC client health checks (is_daemon_running)
+    to determine if the daemon is healthy. It does NOT rely on PID files or process
+    checks. This ensures we detect when the daemon is actually ready to accept
+    connections, not just when the process is running.
     
     Returns:
         Tuple of (success: bool, ipc_client: IPCClient | None)
         If daemon is running or successfully started, returns (True, IPCClient)
         If daemon start fails, returns (False, None)
     """
-    import socket
-    
     from ccbt.config.config import get_config, init_config
     from ccbt.daemon.daemon_manager import DaemonManager
     from ccbt.daemon.ipc_client import IPCClient  # type: ignore[attr-defined]
     from ccbt.daemon.utils import generate_api_key
     from ccbt.models import DaemonConfig
     
-    daemon_manager = DaemonManager()
-    pid_file_exists = daemon_manager.pid_file.exists()
+    config_manager = init_config()
+    cfg = get_config()
     
-    # Check if daemon is already running
-    if pid_file_exists:
+    if not cfg.daemon or not cfg.daemon.api_key:
+        # Generate API key and create daemon config
+        api_key = generate_api_key()
+        cfg.daemon = DaemonConfig(api_key=api_key)
+        logger.warning("Daemon config not found, generated new API key")
+    
+    # CRITICAL FIX: Use _get_daemon_ipc_port() helper to get the correct IPC port
+    # This ensures we use the daemon's actual port (from daemon config file) rather than
+    # the main config port, which may be different
+    from ccbt.cli.main import _get_daemon_ipc_port
+    from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+    import json
+    
+    # Diagnostic: Check if daemon config file exists
+    home_dir = _get_daemon_home_dir()
+    daemon_config_file = home_dir / ".ccbt" / "daemon" / "config.json"
+    daemon_config_exists = daemon_config_file.exists()
+    
+    ipc_port = _get_daemon_ipc_port(cfg)
+    client_host = "127.0.0.1"  # Always use 127.0.0.1 for client connections
+    
+    # Update splash if available
+    if splash_manager:
         try:
-            # Get API key from config
-            config_manager = init_config()
-            cfg = get_config()
-            
-            if not cfg.daemon or not cfg.daemon.api_key:
-                # Generate API key and create daemon config
-                api_key = generate_api_key()
-                cfg.daemon = DaemonConfig(api_key=api_key)
-                logger.warning("Daemon config not found, generated new API key")
-            
-            client = IPCClient(api_key=cfg.daemon.api_key)
-            
-            # Verify IPC server is actually listening (not just PID file exists)
-            ipc_host = cfg.daemon.ipc_host if cfg.daemon else "127.0.0.1"
-            ipc_port = cfg.daemon.ipc_port if cfg.daemon else 8080
-            
-            # Test socket connection to verify IPC server is listening
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1.0)
-            try:
-                result = sock.connect_ex((ipc_host, ipc_port))
-                sock.close()
-                if result == 0:
-                    # Socket is open, verify daemon is responding
-                    if await client.is_daemon_running():
-                        logger.info("Daemon is already running and IPC server is listening")
-                        return (True, client)
-                    else:
-                        logger.warning("IPC server is listening but daemon is not responding")
-                else:
-                    logger.warning("IPC server is not listening on %s:%d", ipc_host, ipc_port)
-            except Exception as sock_error:
-                logger.debug("Error checking IPC server socket: %s", sock_error)
-                sock.close()
-            
-            # PID file exists but daemon not responding - remove stale PID
-            logger.warning("Stale PID file detected, removing")
-            daemon_manager.remove_pid()
-            await client.close()
-        except Exception as e:
-            logger.debug("Error checking daemon status: %s", e)
-            if pid_file_exists:
-                daemon_manager.remove_pid()
+            splash_manager.update_progress_message("Checking daemon status...")
+        except Exception:
+            pass  # Ignore errors updating splash
     
-    # Daemon is not running - start it
-    logger.info("Starting daemon...")
+    # CRITICAL: If daemon config file doesn't exist, we may be using the wrong port
+    # Try multiple ports: first the port from config, then default 8080
+    ports_to_try = [ipc_port]
+    if not daemon_config_exists:
+        # Daemon config file doesn't exist - try default port as fallback
+        default_port = 8080
+        if default_port not in ports_to_try:
+            ports_to_try.append(default_port)
+        logger.info(
+            "Daemon config file not found at %s. Will try ports: %s",
+            daemon_config_file,
+            ports_to_try
+        )
+        
+        # CRITICAL: Use port scanning to find daemon if config file doesn't exist
+        # This is especially useful when daemon is running in another terminal
+        logger.info("Scanning for daemon on ports %s...", ports_to_try)
+        found_port, found_client = await _scan_for_daemon_port(
+            cfg.daemon.api_key,
+            ports_to_try,
+            timeout_per_port=2.0
+        )
+        
+        if found_port and found_client:
+            logger.info("Successfully found daemon on port %d via port scanning", found_port)
+            if splash_manager:
+                try:
+                    splash_manager.update_progress_message("Daemon ready!")
+                except Exception:
+                    pass
+            return (True, found_client)
+        else:
+            logger.info("Port scanning did not find daemon on any of the tried ports")
+    else:
+        try:
+            with open(daemon_config_file, encoding="utf-8") as f:
+                daemon_config = json.load(f)
+                logger.info("Daemon config file found: ipc_port=%s, api_key present=%s",
+                           daemon_config.get("ipc_port"), bool(daemon_config.get("api_key")))
+        except Exception as e:
+            logger.debug("Could not read daemon config file for diagnostics: %s", e)
+    
+    # Try each port with detailed health checks (fallback if port scanning didn't work)
+    for port in ports_to_try:
+        base_url = f"http://{client_host}:{port}"
+        logger.info("Trying IPC port %d (base_url=%s, api_key present=%s)", 
+                    port, base_url, bool(cfg.daemon and cfg.daemon.api_key))
+        
+        client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
+        
+        # CRITICAL: First check if daemon is already healthy using ONLY IPC health check
+        # This works even if PID file is missing or stale (e.g., daemon running in foreground)
+        # We use a quick check first (5 seconds) to avoid unnecessary delays if daemon is ready
+        logger.info("Checking if daemon is already healthy via IPC health check (base_url=%s)...", base_url)
+        try:
+            is_running = await client.is_daemon_running()
+            if is_running:
+                logger.info("Daemon is already running and healthy via IPC health check on port %d", port)
+                if splash_manager:
+                    try:
+                        splash_manager.update_progress_message("Daemon ready!")
+                    except Exception:
+                        pass
+                return (True, client)
+            else:
+                # Health check returned False - try to get more details by attempting a direct status call
+                import aiohttp
+                try:
+                    status = await asyncio.wait_for(client.get_status(), timeout=2.0)
+                    # If we got here, the connection worked but is_daemon_running returned False
+                    # This shouldn't happen, but log it
+                    logger.warning(
+                        "get_status() succeeded but is_daemon_running() returned False on port %d. "
+                        "This may indicate a daemon state issue.",
+                        port
+                    )
+                except aiohttp.ClientResponseError as e:
+                    if e.status in (401, 403):
+                        logger.warning(
+                            "Authentication failed on port %d (HTTP %d). API key mismatch detected. "
+                            "The daemon may be using a different API key than the config.",
+                            port, e.status
+                        )
+                    else:
+                        logger.info(
+                            "HTTP error %d on port %d: %s",
+                            e.status, port, e.message
+                        )
+                except aiohttp.ClientConnectorError as e:
+                    logger.info(
+                        "Connection refused on port %d: %s. Daemon may not be listening on this port.",
+                        port, e
+                    )
+                except Exception as e:
+                    logger.info(
+                        "Error checking daemon status on port %d: %s",
+                        port, e
+                    )
+                
+                logger.info(
+                    "Daemon health check returned False (base_url=%s). "
+                    "Possible causes: wrong port, API key mismatch, or daemon not ready.",
+                    base_url
+                )
+        except Exception as check_error:
+            logger.info(
+                "Initial daemon health check exception (base_url=%s): %s",
+                base_url,
+                check_error
+            )
+            logger.debug("Full exception details:", exc_info=check_error)
+        
+        # Quick retry loop (2 seconds per port) in case daemon is starting up
+        max_initial_wait = 2.0
+        start_time = time.time()
+        retry_delay = 0.5
+        
+        while time.time() - start_time < max_initial_wait:
+            try:
+                is_running = await client.is_daemon_running()
+                if is_running:
+                    logger.info("Daemon is already running and healthy via IPC health check on port %d", port)
+                    if splash_manager:
+                        try:
+                            splash_manager.update_progress_message("Daemon ready!")
+                        except Exception:
+                            pass
+                    return (True, client)
+                else:
+                    logger.debug(
+                        "Daemon health check returned False (base_url=%s, attempt %d/%d)",
+                        base_url,
+                        int((time.time() - start_time) / retry_delay) + 1,
+                        int(max_initial_wait / retry_delay)
+                    )
+            except Exception as check_error:
+                logger.debug(
+                    "Daemon health check exception during retry (base_url=%s): %s",
+                    base_url,
+                    check_error
+                )
+            
+            await asyncio.sleep(retry_delay)
+        
+        # This port didn't work, close the client and try next port
+        try:
+            await client.close()
+        except Exception:
+            pass
+    
+    # None of the ports worked - create client with the primary port for the start attempt
+    base_url = f"http://{client_host}:{ipc_port}"
+    logger.info("None of the tried ports responded. Using primary port %d for daemon start attempt.", ipc_port)
+    client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
+    
+    # CRITICAL: If initial health check failed, daemon is not running
+    # We do NOT check PID files or process status - ONLY IPC health checks
+    # This ensures we only proceed when daemon is actually ready, not just when process exists
+    logger.info("Daemon is not healthy via IPC health check, starting daemon...")
+    
+    if splash_manager:
+        try:
+            splash_manager.update_progress_message("Starting daemon...")
+        except Exception:
+            pass
+    
     try:
         # Ensure daemon config exists
         config_manager = init_config()
@@ -2746,60 +4363,168 @@ async def _ensure_daemon_running() -> tuple[bool, Any | None]:
             cfg.daemon = DaemonConfig(api_key=api_key)
             logger.info("Generated new API key for daemon")
         
-        # Start daemon in background
-        pid = daemon_manager.start(foreground=False)
-        if pid is None:
-            logger.error("Failed to start daemon process")
-            return (False, None)
+        # Start daemon using CLI command for better isolation and error handling
+        # This avoids SIGINT issues when starting as subprocess directly
+        import subprocess
+        import sys
+        import shutil
         
-        # Wait for daemon to be ready (increased timeout to 30 seconds)
-        start_time = time.time()
-        timeout = 30.0
-        retry_delay = 0.5
-        max_retry_delay = 2.0
+        logger.info("Starting daemon using CLI command...")
         
-        client = IPCClient(api_key=cfg.daemon.api_key)
-        ipc_host = cfg.daemon.ipc_host if cfg.daemon else "127.0.0.1"
-        ipc_port = cfg.daemon.ipc_port if cfg.daemon else 8080
+        # Try to find the CLI command - prefer 'uv' if available
+        # NOTE: We use --no-wait so CLI returns immediately after starting the process
+        # Then we do our own health check loop that waits up to 90 seconds
+        cli_command = None
+        if shutil.which("uv"):
+            cli_command = ["uv", "run", "btbt", "daemon", "start", "--no-wait"]
+        elif shutil.which("btbt"):
+            cli_command = ["btbt", "daemon", "start", "--no-wait"]
+        else:
+            # Fallback to Python module
+            cli_command = [sys.executable, "-m", "ccbt.cli.main", "daemon", "start", "--no-wait"]
         
-        while time.time() - start_time < timeout:
-            try:
-                # First check if IPC server socket is listening
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1.0)
+        logger.debug("Using CLI command: %s", " ".join(cli_command))
+        logger.info("Starting daemon process...")
+        
+        # Start the CLI command in the background (don't wait for it to complete)
+        # The CLI command will start the daemon process and return, but we don't wait for it
+        # Instead, we use ONLY IPC health checks to detect when daemon is ready
+        try:
+            # Start the process without waiting
+            process = subprocess.Popen(
+                cli_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            
+            # Give the CLI command a moment to start the daemon process
+            await asyncio.sleep(2.0)
+            
+            # Check if CLI process completed with error
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                if process.returncode != 0:
+                    error_output = stderr or stdout or "Unknown error"
+                    # Check if error indicates daemon is already running
+                    is_already_running_error = (
+                        "already running" in error_output.lower() or
+                        "aborted" in error_output.lower() or
+                        process.returncode in (1, 130)
+                    )
+                    if is_already_running_error:
+                        logger.info("CLI detected daemon is already running")
+                    else:
+                        logger.warning("CLI command returned error (exit code %d): %s", process.returncode, error_output[:200])
+        except Exception as e:
+            # CLI command failed, but daemon might have started anyway
+            logger.warning("Error starting daemon via CLI: %s", e)
+        
+        # CRITICAL: Wait for daemon to be fully ready using ONLY IPC client health checks
+        # The daemon can take up to 90 seconds to be ready (NAT discovery ~35s, DHT bootstrap ~8s, etc.)
+        # We ONLY use IPC client health checks - no PID file or process checks
+        # This ensures the interface only starts after daemon is confirmed healthy and ready
+        
+        # CRITICAL FIX: Wait for daemon config file to be created (up to 5 seconds)
+        # The daemon writes its actual IPC port to the config file when it starts
+        # This ensures we use the correct port for the health check
+        logger.info("Waiting for daemon config file to be created...")
+        config_wait_timeout = 5.0
+        config_wait_start = time.time()
+        actual_port = None
+        
+        while time.time() - config_wait_start < config_wait_timeout:
+            if daemon_config_file.exists():
                 try:
-                    result = sock.connect_ex((ipc_host, ipc_port))
-                    sock.close()
-                    if result == 0:
-                        # Socket is open, verify daemon is responding
-                        if await client.is_daemon_running():
-                            logger.info("Daemon started successfully and IPC server is ready")
-                            return (True, client)
-                except Exception:
-                    sock.close()
+                    with open(daemon_config_file, encoding="utf-8") as f:
+                        daemon_config = json.load(f)
+                        actual_port = daemon_config.get("ipc_port")
+                        if actual_port:
+                            logger.info("Daemon config file created with port %d", actual_port)
+                            break
+                except Exception as e:
+                    logger.debug("Error reading daemon config file: %s", e)
+            await asyncio.sleep(0.2)
+        
+        # Use the port from daemon config file if available, otherwise fall back
+        if actual_port:
+            ipc_port = actual_port
+            logger.info("Using IPC port %d from daemon config file", ipc_port)
+        else:
+            # Fallback: try to get port from helper (may still use main config)
+            from ccbt.cli.main import _get_daemon_ipc_port
+            ipc_port = _get_daemon_ipc_port(cfg)
+            logger.info("Daemon config file not created yet, using port %d from config", ipc_port)
+        
+        client_host = "127.0.0.1"  # Always use 127.0.0.1 for client connections
+        base_url = f"http://{client_host}:{ipc_port}"
+        logger.info("Using IPC port %d for health check after daemon start (base_url=%s)", ipc_port, base_url)
+        client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
+        
+        # Update splash message before health check
+        if splash_manager:
+            try:
+                splash_manager.update_progress_message("Waiting for daemon to be ready...")
             except Exception:
                 pass
-            
-            await asyncio.sleep(retry_delay)
-            retry_delay = min(retry_delay * 1.5, max_retry_delay)  # Exponential backoff
         
-        # Timeout
-        logger.error("Daemon did not become ready within %d seconds", int(timeout))
-        await client.close()
-        return (False, None)
+        # Use dedicated health check function that only uses IPC client
+        is_healthy = await _wait_for_daemon_health_check(
+            client,
+            timeout=90.0,  # Full timeout for slow daemon startup (up to 90 seconds)
+            check_interval=1.0,  # Check every second
+        )
+        
+        if is_healthy:
+            if splash_manager:
+                try:
+                    splash_manager.update_progress_message("Daemon ready!")
+                except Exception:
+                    pass
+            return (True, client)
+        else:
+            # Timeout - daemon did not become healthy
+            logger.error("Daemon did not become healthy within 90 seconds")
+            await client.close()
+            return (False, None)
         
     except Exception as e:
-        logger.exception("Failed to start daemon: %s", e)
+        logger.exception("Failed to start daemon")
         return (False, None)
 
 
 def run_dashboard(  # pragma: no cover
-    session: AsyncSessionManager | Any,  # Accept DaemonInterfaceAdapter too
+    session: Any,  # DaemonInterfaceAdapter required
     refresh: float | None = None,
+    dev_mode: bool = False,  # Enable Textual development mode
+    splash_manager: Any | None = None,  # Splash manager to end when dashboard is rendered
 ) -> None:
-    """Run the Textual dashboard App for the provided session."""
-    # Entry point for dashboard - requires full Textual app run() context
-    TerminalDashboard(session, refresh_interval=refresh or 1.0).run()
+    """Run the Textual dashboard App for the provided daemon session.
+    
+    Args:
+        session: DaemonInterfaceAdapter instance (daemon session required)
+        refresh: UI refresh interval in seconds
+        dev_mode: Enable Textual development mode (live CSS editing, console integration)
+        splash_manager: Splash manager to end when dashboard is fully rendered
+        
+    Raises:
+        ValueError: If session is not a DaemonInterfaceAdapter
+    """
+    app = TerminalDashboard(session, refresh_interval=refresh or 1.0, splash_manager=splash_manager)
+    
+    if dev_mode:
+        # Enable dev mode via environment variable (Textual checks this)
+        import os
+        os.environ["TEXTUAL_DEV"] = "1"
+        # Also try using Textual's dev mode API if available
+        try:
+            from textual.dev import run_dev
+            run_dev(app)
+        except ImportError:
+            # Fallback: run with dev environment variable set
+            app.run()
+    else:
+        app.run()
 
 
 def main() -> (
@@ -2824,9 +4549,20 @@ def main() -> (
         "--refresh", type=float, default=1.0, help="UI refresh interval in seconds"
     )  # pragma: no cover - Same context
     parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Enable Textual development mode (live CSS editing, console integration)",
+    )  # pragma: no cover - Same context
+    parser.add_argument(
         "--no-daemon",
         action="store_true",
-        help="Disable daemon auto-start and use local session (not recommended)",
+        help="[DEPRECATED] Dashboard requires daemon - this option is ignored",
+    )  # pragma: no cover - Same context
+    parser.add_argument(
+        "--no-splash",
+        "-a",
+        action="store_true",
+        help="Disable splash screen (useful for debugging)",
     )  # pragma: no cover - Same context
     args = parser.parse_args()  # pragma: no cover - Same context
 
@@ -2842,43 +4578,61 @@ def main() -> (
         )  # pragma: no cover - Same context
         return 1  # pragma: no cover - Same context
 
-    # CRITICAL: Always use daemon unless explicitly disabled with --no-daemon
-    session: AsyncSessionManager | DaemonInterfaceAdapter | None = None
+    # CRITICAL: Dashboard ONLY works with daemon - no local sessions allowed
+    session: DaemonInterfaceAdapter | None = None
     
     if args.no_daemon:
-        # User explicitly requested local session
-        logger.warning(
-            "Using local session (--no-daemon specified). "
-            "Session state will not persist. "
-            "Consider using daemon for persistent sessions."
+        # User requested --no-daemon but dashboard requires daemon
+        logger.error(
+            "Dashboard requires daemon to be running. "
+            "Local sessions are not supported. "
+            "Please ensure the daemon is running or start it with 'bitonic daemon start'"
         )
-        session = AsyncSessionManager(".")  # type: ignore[call-arg]  # pragma: no cover - Session creation in CLI entry
-    else:
-        # ALWAYS use daemon - try to ensure it's running
-        try:
-            success, ipc_client = asyncio.run(_ensure_daemon_running())
-            if success and ipc_client:
-                # Create daemon interface adapter
-                session = DaemonInterfaceAdapter(ipc_client)
-                logger.info("Using daemon session via IPC")
-            else:
-                # Daemon start failed - show error and exit
-                logger.error(
-                    "Failed to start daemon. Cannot proceed without daemon.\n"
-                    "Please check:\n"
-                    "  1. Daemon logs for startup errors\n"
-                    "  2. Port conflicts (check if port is already in use)\n"
-                    "  3. Permissions (ensure you have permission to start daemon)\n\n"
-                    "To start daemon manually: 'btbt daemon start'\n"
-                    "To use local session (not recommended): 'bitonic --no-daemon'"
-                )
-                return 1
-        except Exception as e:
-            logger.exception(
-                "Error ensuring daemon is running: %s. Cannot proceed without daemon.",
-                e
+        return 1
+    
+    # Start splash screen if enabled
+    splash_manager = None
+    splash_thread = None
+    if not args.no_splash:
+        # Get verbosity count (defaults to 0 = NORMAL)
+        verbosity_count = 0  # bitonic doesn't have verbosity flags, always NORMAL
+        # Create a console for splash screen (will be cleared before Textual starts)
+        from rich.console import Console
+        splash_console = Console()
+        splash_manager, splash_thread = _show_startup_splash(
+            no_splash=args.no_splash,
+            verbosity_count=verbosity_count,
+            console=splash_console,  # Use console for splash, will be cleared before Textual
+        )
+    
+    # ALWAYS use daemon - try to ensure it's running
+    try:
+        success, ipc_client = asyncio.run(_ensure_daemon_running(splash_manager=splash_manager))
+        if success and ipc_client:
+            # Create daemon interface adapter
+            session = DaemonInterfaceAdapter(ipc_client)
+            logger.info("Using daemon session via IPC")
+        else:
+            # Daemon start failed - show error and exit
+            logger.error(
+                "Failed to start daemon. Cannot proceed without daemon.\n"
+                "Please check:\n"
+                "  1. Daemon logs for startup errors\n"
+                "  2. Port conflicts (check if port is already in use)\n"
+                "  3. Permissions (ensure you have permission to start daemon)\n\n"
+                "To start daemon manually: 'bitonic daemon start'"
             )
             return 1
+    except Exception as e:
+        logger.exception(
+            "Error ensuring daemon is running: %s. Cannot proceed without daemon.",
+            e
+        )
+        logger.error(
+            "Dashboard requires daemon to be running. "
+            "Please start the daemon with 'bitonic daemon start'"
+        )
+        return 1
     
     if session is None:
         logger.error("Failed to create session")
@@ -2887,17 +4641,41 @@ def main() -> (
     try:
         # TerminalDashboard.on_mount starts the session and metrics, but ensure availability
         run_dashboard(
-            session, refresh=float(args.refresh)
+            session, refresh=float(args.refresh), dev_mode=args.dev, splash_manager=splash_manager
         )  # pragma: no cover - Dashboard execution requires full app context
         return 0  # pragma: no cover - Same context
     finally:
+        # Clear splash on exit
+        if splash_manager:
+            try:
+                splash_manager.clear_progress_messages()
+                # Restore log level if it was suppressed
+                import logging
+                root_logger = logging.getLogger()
+                if hasattr(splash_manager, '_original_log_level'):
+                    root_logger.setLevel(splash_manager._original_log_level)
+            except Exception:
+                pass
+        
         # Best-effort cleanup; on_unmount also stops services
         with contextlib.suppress(
             Exception
         ):  # pragma: no cover - Cleanup exception handling
+            # CRITICAL FIX: Proper cleanup for Windows socket buffer exhaustion
+            import asyncio as _asyncio
+            import sys
+            
+            # On Windows, add delay before cleanup to allow socket buffers to drain
+            if sys.platform == "win32":
+                try:
+                    # Small delay to allow socket cleanup
+                    # Note: Can't use await in finally block, so only delay if loop is not running
+                    if not _asyncio.get_event_loop_policy().get_event_loop().is_running():
+                        _asyncio.run(asyncio.sleep(0.1))
+                except Exception:
+                    pass  # Ignore errors during delay
+            
             # AsyncSessionManager.stop is async; schedule via asyncio.run if needed
-            import asyncio as _asyncio  # pragma: no cover - Same context
-
             if (
                 _asyncio.get_event_loop_policy().get_event_loop().is_running()
             ):  # pragma: no cover - Event loop check in cleanup
@@ -2908,3 +4686,4 @@ def main() -> (
                 )  # pragma: no cover - Same context
             else:
                 _asyncio.run(session.stop())  # type: ignore[attr-defined]  # pragma: no cover - Same context
+

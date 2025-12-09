@@ -125,13 +125,23 @@ async def store_infohash_sample(
     try:
         existing_data = await dht_client.get_data(index_key, public_key=public_key)
         if existing_data:
+            # Decode bytes to dict first, then decode storage value
+            from ccbt.core.bencode import BencodeDecoder
             from ccbt.discovery.dht_storage import (
                 DHTMutableData,
                 DHTStorageKeyType,
                 decode_storage_value,
             )
 
-            decoded = decode_storage_value(existing_data, DHTStorageKeyType.MUTABLE)
+            try:
+                decoder = BencodeDecoder(existing_data)
+                value_dict = decoder.decode()
+                if isinstance(value_dict, dict):
+                    decoded = decode_storage_value(value_dict, DHTStorageKeyType.MUTABLE)
+                else:
+                    decoded = None
+            except Exception:
+                decoded = None
             if isinstance(decoded, DHTMutableData):
                 existing_entry = decode_index_entry(decoded)
                 seq = decoded.seq + 1  # Increment sequence for update
@@ -161,7 +171,11 @@ async def store_infohash_sample(
         from ccbt.discovery.dht_storage import encode_storage_value
 
         encoded_value = encode_storage_value(mutable_data)
-        success_count = await dht_client.put_data(index_key, encoded_value)
+        # Encode dict to bytes for put_data
+        from ccbt.core.bencode import BencodeEncoder
+
+        encoded_bytes = BencodeEncoder().encode(encoded_value)
+        success_count = await dht_client.put_data(index_key, encoded_bytes)
         if success_count > 0:
             logger.debug(
                 "Stored infohash sample in DHT index: key=%s, name=%s",

@@ -104,7 +104,39 @@ repos:
         entry: uv run mkdocs build -f dev/mkdocs.yml
         language: system
         types: [markdown]
-        files: ^(docs/.*\.md|README\.md|dev/mkdocs\.yml)$
+        files: ^(docs/.*\.md|docs/blog/.*\.md|README\.md|dev/mkdocs\.yml)$
         pass_filenames: false
+      - id: check-translations
+        name: check-translations
+        entry: uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt
+        language: system
+        types: [python]
+        files: ^ccbt/cli/.*\.py$
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: validate-po
+        name: validate-po
+        entry: uv run python -m ccbt.i18n.scripts.validate_po
+        language: system
+        types: [text]
+        files: ^ccbt/i18n/locales/.*/LC_MESSAGES/.*\.po$
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: validate-version
+        name: validate-version
+        entry: uv run python dev/scripts/validate_version.py
+        language: system
+        types: [python]
+        files: ^(pyproject\.toml|ccbt/__init__\.py)$
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: validate-changelog
+        name: validate-changelog
+        entry: uv run python dev/scripts/validate_changelog.py
+        language: system
+        types: [python]
+        files: ^(ccbt/.*\.py|tests/.*\.py|dev/.*\.py)$
+        pass_filenames: false
+        stages: [pre-commit]
 
 

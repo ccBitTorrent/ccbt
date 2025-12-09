@@ -232,7 +232,7 @@ class AnomalyDetector:
         for metric_name, current_value in current_metrics.items():
             if metric_name not in self.statistical_baselines[peer_id]:
                 # Initialize baseline
-                self.statistical_baselines[peer_id][metric_name] = {
+                self.statistical_baselines[peer_id][metric_name] = {  # type: ignore[assignment]
                     "mean": current_value,
                     "std": 0.0,
                     "count": 1,
@@ -559,7 +559,7 @@ class AnomalyDetector:
     ) -> None:
         """Update statistical baseline for a metric."""
         if metric_name not in self.statistical_baselines[peer_id]:
-            self.statistical_baselines[peer_id][metric_name] = {
+            self.statistical_baselines[peer_id][metric_name] = {  # type: ignore[assignment]
                 "mean": value,
                 "std": 0.0,
                 "count": 1,

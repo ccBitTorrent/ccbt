@@ -331,7 +331,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
                     else:
                         await self._navigate_to_section()
                 except Exception as e:
-                    self.logger.exception("Error in action_select: %s", e)
+                    self.logger.exception("Error in action_select")
                     try:
                         info = self.query_one("#info", Static)
                         info.update(
@@ -354,7 +354,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
                 # Fallback to manual navigation
                 await self._navigate_to_section()
         except Exception as e:
-            self.logger.exception("Error in action_select: %s", e)
+            self.logger.exception("Error in action_select")
             try:
                 info = self.query_one("#info", Static)
                 info.update(
@@ -372,7 +372,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
         try:
             sections_table = self.query_one("#sections", DataTable)
         except Exception as e:
-            self.logger.exception("Failed to get sections table: %s", e)
+            self.logger.exception("Failed to get sections table")
             # Don't raise - show error to user instead
             try:
                 info = self.query_one("#info", Static)
@@ -462,7 +462,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
                     GlobalConfigDetailScreen(self.session, section_name=section_name)
                 )
             except Exception as e:
-                self.logger.exception("Failed to push GlobalConfigDetailScreen: %s", e)
+                self.logger.exception("Failed to push GlobalConfigDetailScreen")
                 # Show error to user instead of crashing
                 try:
                     info = self.query_one("#info", Static)
@@ -491,7 +491,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
                     )
                 )
             except Exception as e:
-                self.logger.exception("Failed to show error message: %s", e)
+                self.logger.exception("Failed to show error message")
                 # Don't raise - prevent app crash
 
 
@@ -552,7 +552,7 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
             editors_container = self.query_one("#editors", Container)
             errors_widget = self.query_one("#errors", Static)
         except Exception as e:
-            self.logger.exception("Failed to query widgets in on_mount: %s", e)
+            self.logger.exception("Failed to query widgets in on_mount")
             # Try to show error on screen if possible - query again with error handling
             try:
                 # Query content again with proper error handling
@@ -612,7 +612,7 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
                     pass
                 return
         except Exception as e:
-            self.logger.exception("Failed to load config: %s", e)
+            self.logger.exception("Failed to load config")
             try:
                 content.update(
                     Panel(
@@ -784,7 +784,7 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
                 self._editors[opt_key] = editor
                 editors_container.mount(editor)
             except Exception as e:
-                self.logger.exception("Failed to create editor for %s: %s", opt_key, e)
+                self.logger.exception("Failed to create editor for %s", opt_key)
                 # Continue with other editors instead of crashing
                 continue
 

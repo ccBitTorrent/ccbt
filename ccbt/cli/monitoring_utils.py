@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from rich.console import Console
 
+from ccbt.i18n import _
 from ccbt.monitoring import (
     AlertManager,
     DashboardManager,
@@ -18,4 +19,5 @@ async def start_monitoring(_session: AsyncSessionManager, console: Console) -> N
     TracingManager()
     DashboardManager()
     await metrics_collector.start()
-    console.print("[green]Monitoring started[/green]")  # pragma: no cover
+    console.print(_("[green]Monitoring started[/green]"))  # pragma: no cover
+

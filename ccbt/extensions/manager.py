@@ -8,6 +8,7 @@ all BitTorrent protocol extensions.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -56,6 +57,7 @@ class ExtensionManager:
         self.extensions: dict[str, Any] = {}
         self.extension_states: dict[str, ExtensionState] = {}
         self.peer_extensions: dict[str, dict[str, Any]] = {}  # peer_id -> extensions
+        self.logger = logging.getLogger(__name__)
 
         # Initialize extensions
         self._initialize_extensions()
@@ -610,11 +612,67 @@ class ExtensionManager:
     def set_peer_extensions(self, peer_id: str, extensions: dict[str, Any]) -> None:
         """Set peer extensions."""
         self.peer_extensions[peer_id] = extensions
+        
+        # Extract SSL capability from extension handshake data
+        if "ssl" in self.extensions:
+            ssl_ext = self.extensions["ssl"]
+            if hasattr(ssl_ext, "decode_handshake"):
+                # Check if extensions dict contains SSL extension data
+                # BEP 10 format: extensions dict may have nested "m" dict with extension names
+                # or direct extension data
+                ssl_supported = False
+                
+                # Check for SSL in extension message map (BEP 10 "m" field)
+                if isinstance(extensions, dict):
+                    m_dict = extensions.get("m") or extensions.get(b"m", {})
+                    if isinstance(m_dict, dict):
+                        # SSL extension may be registered with message ID
+                        # Check if "ssl" is in the message map
+                        if "ssl" in m_dict or b"ssl" in m_dict:
+                            ssl_supported = True
+                    
+                    # Also check for direct SSL extension data in handshake
+                    # Some implementations may include extension capabilities directly
+                    if not ssl_supported:
+                        ssl_supported = ssl_ext.decode_handshake(extensions)
+                
+                # Store SSL capability in peer_extensions
+                if peer_id not in self.peer_extensions:
+                    self.peer_extensions[peer_id] = {}
+                if not isinstance(self.peer_extensions[peer_id], dict):
+                    self.peer_extensions[peer_id] = {"raw": self.peer_extensions[peer_id]}
+                
+                # Store SSL capability
+                self.peer_extensions[peer_id]["ssl"] = ssl_supported
+                
+                self.logger.debug(
+                    "SSL capability for peer %s: %s (extracted from extension handshake)",
+                    peer_id,
+                    ssl_supported,
+                )
 
     def peer_supports_extension(self, peer_id: str, extension_name: str) -> bool:
         """Check if peer supports extension."""
         peer_extensions = self.peer_extensions.get(peer_id, {})
-        return extension_name in peer_extensions
+        if not isinstance(peer_extensions, dict):
+            return False
+        
+        # For SSL, check if ssl capability is stored (boolean value)
+        if extension_name == "ssl":
+            ssl_capable = peer_extensions.get("ssl")
+            return ssl_capable is True
+        
+        # For other extensions, check if extension name is in the dict
+        # or in the "m" message map
+        if extension_name in peer_extensions:
+            return True
+        
+        # Check in "m" dict (BEP 10 message map)
+        m_dict = peer_extensions.get("m") or peer_extensions.get(b"m", {})
+        if isinstance(m_dict, dict):
+            return extension_name in m_dict or (isinstance(extension_name, str) and extension_name.encode() in m_dict)
+        
+        return False
 
     def get_extension_capabilities(self, extension_name: str) -> dict[str, Any]:
         """Get extension capabilities."""

@@ -55,6 +55,7 @@ class ExecutorManager:
 
         Returns:
             ExecutorManager instance
+
         """
         if cls._instance is None:
             cls._instance = cls()
@@ -68,6 +69,7 @@ class ExecutorManager:
 
         Returns:
             Unique ID (using id() of the object)
+
         """
         return id(session_manager)
 
@@ -104,6 +106,7 @@ class ExecutorManager:
         Raises:
             ValueError: If neither session_manager nor ipc_client is provided
             RuntimeError: If executor creation fails or session reference mismatch
+
         """
         if session_manager is None and ipc_client is None:
             raise ValueError(
@@ -117,13 +120,13 @@ class ExecutorManager:
         if session_manager is not None:
             session_id = self._get_session_id(session_manager)
             session_key = "session_manager"
-            session_obj = session_manager
+            _session_obj = session_manager  # Reserved for future use
         else:
             # For IPC client, use the client object ID
             assert ipc_client is not None
             session_id = self._get_session_id(ipc_client)
             session_key = "ipc_client"
-            session_obj = ipc_client
+            _session_obj = ipc_client  # Reserved for future use
 
         # Check if executor already exists
         if session_id in self._executors:
@@ -251,6 +254,7 @@ class ExecutorManager:
         Args:
             session_manager: AsyncSessionManager instance (for local sessions)
             ipc_client: IPCClient instance (for daemon sessions)
+
         """
         if session_manager is None and ipc_client is None:
             return
@@ -278,6 +282,18 @@ class ExecutorManager:
         self._executors.clear()
         self._session_refs.clear()
         self._ipc_clients.clear()
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

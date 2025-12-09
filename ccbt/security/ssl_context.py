@@ -61,19 +61,30 @@ class SSLContextBuilder:
             ca_path = Path(ssl_config.ssl_ca_certificates).expanduser()
             if not ca_path.exists():
                 msg = f"CA certificates path does not exist: {ca_path}"
+                self.logger.error(msg)
                 raise ValueError(msg)
 
-            if ca_path.is_file():
-                # Single CA certificate file
-                context.load_verify_locations(cafile=str(ca_path))
-            elif ca_path.is_dir():
-                # Directory containing CA certificates
-                context.load_verify_locations(capath=str(ca_path))
-            else:
-                msg = f"CA certificates path is not a file or directory: {ca_path}"
-                raise ValueError(msg)
+            try:
+                if ca_path.is_file():
+                    # Single CA certificate file
+                    context.load_verify_locations(cafile=str(ca_path))
+                elif ca_path.is_dir():
+                    # Directory containing CA certificates
+                    context.load_verify_locations(capath=str(ca_path))
+                else:
+                    msg = f"CA certificates path is not a file or directory: {ca_path}"
+                    self.logger.error(msg)
+                    raise ValueError(msg)
 
-            self.logger.info("Loaded custom CA certificates from %s", ca_path)
+                self.logger.info("Loaded custom CA certificates from %s", ca_path)
+            except ssl.SSLError as e:
+                msg = f"Failed to load CA certificates from {ca_path}: {e}"
+                self.logger.error(msg, exc_info=True)
+                raise OSError(msg) from e
+            except OSError as e:
+                msg = f"Failed to read CA certificates from {ca_path}: {e}"
+                self.logger.error(msg, exc_info=True)
+                raise
 
         # Set protocol version
         protocol = self._get_protocol_version(ssl_config.ssl_protocol_version)
@@ -95,17 +106,28 @@ class SSLContextBuilder:
 
             if not cert_path.exists():
                 msg = f"Client certificate file does not exist: {cert_path}"
+                self.logger.error(msg)
                 raise ValueError(msg)
             if not key_path.exists():
                 msg = f"Client key file does not exist: {key_path}"
+                self.logger.error(msg)
                 raise ValueError(msg)
 
-            context.load_cert_chain(str(cert_path), str(key_path))
-            self.logger.info(  # pragma: no cover - Logging statement, tested indirectly via successful SSL context creation
-                "Loaded client certificate from %s with key %s",
-                cert_path,
-                key_path,
-            )
+            try:
+                context.load_cert_chain(str(cert_path), str(key_path))
+                self.logger.info(  # pragma: no cover - Logging statement, tested indirectly via successful SSL context creation
+                    "Loaded client certificate from %s with key %s",
+                    cert_path,
+                    key_path,
+                )
+            except ssl.SSLError as e:
+                msg = f"Failed to load client certificate from {cert_path}: {e}"
+                self.logger.error(msg, exc_info=True)
+                raise OSError(msg) from e
+            except OSError as e:
+                msg = f"Failed to read client certificate from {cert_path}: {e}"
+                self.logger.error(msg, exc_info=True)
+                raise
 
         # Set security options
         # Disable insecure protocols (OP_NO_SSLv2/v3 still needed for older Python versions)

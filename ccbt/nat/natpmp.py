@@ -155,7 +155,7 @@ async def get_gateway_ip() -> ipaddress.IPv4Address | None:
 
     # Fallback: try netifaces if available
     try:
-        import netifaces  # Optional dependency
+        import netifaces  # type: ignore[unresolved-import] # Optional dependency
 
         gateways = netifaces.gateways()
         default = gateways.get("default")

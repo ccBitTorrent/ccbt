@@ -44,6 +44,8 @@ def pytest_configure(config):
         ("chaos", "marks tests as chaos tests"),
         ("property", "marks tests as property-based tests"),
         ("queue", "marks tests as queue management tests"),
+        ("compatibility", "marks tests as compatibility/live tests (run in CI only)"),
+        ("consensus", "marks tests as consensus mechanism tests"),
     ]
     for name, desc in markers:
         config.addinivalue_line("markers", f"{name}: {desc}")
@@ -416,6 +418,26 @@ def reset_config_manager_encryption_cache():
 def tmp_storage(tmp_path):
     """Provide a temporary storage directory for file/disk tests."""
     return tmp_path
+
+
+@pytest.fixture
+def mock_dht_client():
+    """Create a properly configured mock DHT client for tests.
+    
+    This fixture provides a mock AsyncDHTClient with all required methods
+    to prevent AttributeError and timeout issues in tests.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+    
+    mock_dht = MagicMock()
+    mock_dht.start = AsyncMock()
+    mock_dht.stop = AsyncMock()
+    mock_dht.wait_for_bootstrap = AsyncMock(return_value=True)
+    mock_dht.routing_table = MagicMock()
+    mock_dht.routing_table.nodes = {}
+    mock_dht.get_peers = AsyncMock(return_value=[])
+    mock_dht.add_peer_callback = MagicMock()
+    return mock_dht
 
 
 def create_test_torrent_dict(

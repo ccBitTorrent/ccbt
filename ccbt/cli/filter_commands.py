@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ccbt.config.config import ConfigManager
+from ccbt.i18n import _
 from ccbt.security import FilterMode
 from ccbt.security.security_manager import SecurityManager
 
@@ -48,9 +49,9 @@ def filter_add(ctx, ip_range: str, mode: str, priority: int) -> None:
 
         if not security_manager.ip_filter:
             console.print(
-                "[red]IP filter not initialized. Please enable it in configuration.[/red]"
+                _("[red]IP filter not initialized. Please enable it in configuration.[/red]")
             )
-            msg = "IP filter not available"
+            msg = _("IP filter not available")
             raise click.ClickException(msg)
 
         filter_mode = FilterMode.BLOCK if mode == "block" else FilterMode.ALLOW
@@ -58,17 +59,18 @@ def filter_add(ctx, ip_range: str, mode: str, priority: int) -> None:
         if security_manager.ip_filter.add_rule(
             ip_range, mode=filter_mode, priority=priority
         ):
-            console.print(f"[green]✓[/green] Added filter rule: {ip_range} ({mode})")
+            console.print(_("[green]✓[/green] Added filter rule: {ip_range} ({mode})").format(ip_range=ip_range, mode=mode))
         else:
-            console.print(f"[red]✗[/red] Failed to add filter rule: {ip_range}")
-            msg = f"Invalid IP range: {ip_range}"
-            raise click.ClickException(msg)
+            console.print(_("[red]✗[/red] Failed to add filter rule: {ip_range}").format(ip_range=ip_range))
+            invalid_ip_msg = _("Invalid IP range: {ip_range}").format(ip_range=ip_range)
+            raise click.ClickException(invalid_ip_msg)
 
     try:
         asyncio.run(_add_rule())
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @filter_group.command("remove")
@@ -87,22 +89,23 @@ def filter_remove(ctx, ip_range: str) -> None:
         await security_manager.load_ip_filter(config)
 
         if not security_manager.ip_filter:  # pragma: no cover - Error path: IP filter not initialized, tested via success path
-            console.print("[red]IP filter not initialized.[/red]")
-            msg = "IP filter not available"
+            console.print(_("[red]IP filter not initialized.[/red]"))
+            msg = _("IP filter not available")
             raise click.ClickException(msg)
 
         if security_manager.ip_filter.remove_rule(ip_range):
-            console.print(f"[green]✓[/green] Removed filter rule: {ip_range}")
+            console.print(_("[green]✓[/green] Removed filter rule: {ip_range}").format(ip_range=ip_range))
         else:
-            console.print(f"[yellow]Rule not found: {ip_range}[/yellow]")
-            msg = f"Rule not found: {ip_range}"
+            console.print(_("[yellow]Rule not found: {ip_range}[/yellow]").format(ip_range=ip_range))
+            msg = _("Rule not found: {ip_range}").format(ip_range=ip_range)
             raise click.ClickException(msg)
 
     try:
         asyncio.run(_remove_rule())
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @filter_group.command("list")
@@ -126,7 +129,7 @@ def filter_list(ctx, fmt: str) -> None:
         await security_manager.load_ip_filter(config)
 
         if not security_manager.ip_filter:  # pragma: no cover - Error path: IP filter not initialized, tested via success path
-            console.print("[yellow]IP filter not initialized or disabled.[/yellow]")
+            console.print(_("[yellow]IP filter not initialized or disabled.[/yellow]"))
             return
 
         rules = security_manager.ip_filter.get_rules()
@@ -147,7 +150,7 @@ def filter_list(ctx, fmt: str) -> None:
             return
 
         if not rules:
-            console.print("[yellow]No filter rules configured.[/yellow]")
+            console.print(_("[yellow]No filter rules configured.[/yellow]"))
             return
 
         table = Table(title="IP Filter Rules")
@@ -165,13 +168,14 @@ def filter_list(ctx, fmt: str) -> None:
             )
 
         console.print(table)
-        console.print(f"\n[bold]Total: {len(rules)} rules[/bold]")
+        console.print(_("\n[bold]Total: {count} rules[/bold]").format(count=len(rules)))
 
     try:
         asyncio.run(_list_rules())
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @filter_group.command("load")
@@ -197,7 +201,7 @@ def filter_load(ctx, file_path: str, mode: str | None) -> None:
 
         if not security_manager.ip_filter:  # pragma: no cover - Error path: IP filter not initialized, tested via success path
             console.print(
-                "[red]IP filter not initialized. Please enable it in configuration.[/red]"
+                _("[red]IP filter not initialized. Please enable it in configuration.[/red]")
             )
             msg = "IP filter not available"
             raise click.ClickException(msg)
@@ -208,7 +212,7 @@ def filter_load(ctx, file_path: str, mode: str | None) -> None:
         ):  # pragma: no cover - Optional mode parameter, tested via default (None) path
             filter_mode = FilterMode.BLOCK if mode == "block" else FilterMode.ALLOW
 
-        console.print(f"[cyan]Loading filter from: {file_path}[/cyan]")
+        console.print(_("[cyan]Loading filter from: {file_path}[/cyan]").format(file_path=file_path))
         loaded, errors = await security_manager.ip_filter.load_from_file(
             file_path, mode=filter_mode
         )
@@ -216,21 +220,22 @@ def filter_load(ctx, file_path: str, mode: str | None) -> None:
         if (
             loaded > 0
         ):  # pragma: no cover - Load success message, tested via load failure path
-            console.print(f"[green]✓[/green] Loaded {loaded} rules from {file_path}")
+            console.print(_("[green]✓[/green] Loaded {loaded} rules from {file_path}").format(loaded=loaded, file_path=file_path))
         if errors > 0:  # pragma: no cover - Error warning, tested via no errors path
-            console.print(f"[yellow]⚠[/yellow] {errors} errors encountered")
+            console.print(_("[yellow]⚠[/yellow] {errors} errors encountered").format(errors=errors))
         if (
             loaded == 0 and errors > 0
         ):  # pragma: no cover - Complete load failure, tested via success path
-            console.print(f"[red]✗[/red] Failed to load rules from {file_path}")
-            msg = f"Failed to load filter file: {file_path}"
+            console.print(_("[red]✗[/red] Failed to load rules from {file_path}").format(file_path=file_path))
+            msg = _("Failed to load filter file: {file_path}").format(file_path=file_path)
             raise click.ClickException(msg)
 
     try:
         asyncio.run(_load_file())
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @filter_group.command("update")
@@ -248,29 +253,29 @@ def filter_update(ctx) -> None:
         await security_manager.load_ip_filter(config)
 
         if not security_manager.ip_filter:  # pragma: no cover - Error path: IP filter not initialized, tested via success path
-            console.print("[red]IP filter not initialized.[/red]")
-            msg = "IP filter not available"
+            console.print(_("[red]IP filter not initialized.[/red]"))
+            msg = _("IP filter not available")
             raise click.ClickException(msg)
 
         ip_filter_config = getattr(getattr(config, "security", None), "ip_filter", None)
         if (
             not ip_filter_config
         ):  # pragma: no cover - No filter config path, tested via config present
-            console.print("[yellow]No filter URLs configured.[/yellow]")
+            console.print(_("[yellow]No filter URLs configured.[/yellow]"))
             return
 
         filter_urls = getattr(ip_filter_config, "filter_urls", [])
         if (
             not filter_urls
         ):  # pragma: no cover - No filter URLs path, tested via URLs present
-            console.print("[yellow]No filter URLs configured.[/yellow]")
+            console.print(_("[yellow]No filter URLs configured.[/yellow]"))
             return
 
         cache_dir = getattr(ip_filter_config, "filter_cache_dir", "~/.ccbt/filters")
         update_interval = getattr(ip_filter_config, "filter_update_interval", 86400.0)
 
         console.print(
-            f"[cyan]Updating filter lists from {len(filter_urls)} URL(s)...[/cyan]"
+            _("[cyan]Updating filter lists from {count} URL(s)...[/cyan]").format(count=len(filter_urls))
         )
 
         results = await security_manager.ip_filter.update_filter_lists(
@@ -282,12 +287,12 @@ def filter_update(ctx) -> None:
 
         if success_count > 0:
             console.print(
-                f"[green]✓[/green] Successfully updated {success_count} filter list(s)"
+                _("[green]✓[/green] Successfully updated {count} filter list(s)").format(count=success_count)
             )
-            console.print(f"[green]✓[/green] Loaded {total_loaded} total rules")
+            console.print(_("[green]✓[/green] Loaded {total_loaded} total rules").format(total_loaded=total_loaded))
         else:  # pragma: no cover - Update failure path, tested via success path
-            console.print("[red]✗[/red] Failed to update filter lists")
-            msg = "Filter update failed"
+            console.print(_("[red]✗[/red] Failed to update filter lists"))
+            msg = _("Filter update failed")
             raise click.ClickException(msg)
 
         for (
@@ -299,15 +304,16 @@ def filter_update(ctx) -> None:
             if (
                 success
             ):  # pragma: no cover - Success URL display, tested via failure path
-                console.print(f"  [green]✓[/green] {url}: {loaded} rules")
+                console.print(_("  [green]✓[/green] {url}: {loaded} rules").format(url=url, loaded=loaded))
             else:  # pragma: no cover - Failed URL display, tested via success path
-                console.print(f"  [red]✗[/red] {url}: failed")
+                console.print(_("  [red]✗[/red] {url}: failed").format(url=url))
 
     try:
         asyncio.run(_update_lists())
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @filter_group.command("stats")
@@ -325,7 +331,7 @@ def filter_stats(ctx) -> None:
         await security_manager.load_ip_filter(config)
 
         if not security_manager.ip_filter:  # pragma: no cover - Error path: IP filter not initialized, tested via success path
-            console.print("[yellow]IP filter not initialized or disabled.[/yellow]")
+            console.print(_("[yellow]IP filter not initialized or disabled.[/yellow]"))
             return
 
         stats = security_manager.ip_filter.get_filter_statistics()
@@ -341,31 +347,32 @@ def filter_stats(ctx) -> None:
             else "block"
         )
 
-        console.print("\n[bold]IP Filter Statistics[/bold]\n")
-        console.print(f"  [cyan]Enabled:[/cyan] {'Yes' if enabled else 'No'}")
-        console.print(f"  [cyan]Mode:[/cyan] {mode.upper()}")
-        console.print(f"  [cyan]Total Rules:[/cyan] {stats['total_rules']}")
-        console.print(f"  [cyan]IPv4 Ranges:[/cyan] {stats['ipv4_ranges']}")
-        console.print(f"  [cyan]IPv6 Ranges:[/cyan] {stats['ipv6_ranges']}")
-        console.print(f"  [cyan]Total Checks:[/cyan] {stats['matches']}")
-        console.print(f"  [cyan]Blocked:[/cyan] {stats['blocks']}")
-        console.print(f"  [cyan]Allowed:[/cyan] {stats['allows']}")
+        console.print(_("\n[bold]IP Filter Statistics[/bold]\n"))
+        console.print(_("  [cyan]Enabled:[/cyan] {enabled}").format(enabled="Yes" if enabled else "No"))
+        console.print(_("  [cyan]Mode:[/cyan] {mode}").format(mode=mode.upper()))
+        console.print(_("  [cyan]Total Rules:[/cyan] {total_rules}").format(total_rules=stats["total_rules"]))
+        console.print(_("  [cyan]IPv4 Ranges:[/cyan] {ipv4_ranges}").format(ipv4_ranges=stats["ipv4_ranges"]))
+        console.print(_("  [cyan]IPv6 Ranges:[/cyan] {ipv6_ranges}").format(ipv6_ranges=stats["ipv6_ranges"]))
+        console.print(_("  [cyan]Total Checks:[/cyan] {matches}").format(matches=stats["matches"]))
+        console.print(_("  [cyan]Blocked:[/cyan] {blocks}").format(blocks=stats["blocks"]))
+        console.print(_("  [cyan]Allowed:[/cyan] {allows}").format(allows=stats["allows"]))
 
         if stats["last_update"]:
             from datetime import datetime, timezone
 
             last_update = datetime.fromtimestamp(stats["last_update"], tz=timezone.utc)
             console.print(
-                f"  [cyan]Last Update:[/cyan] {last_update.strftime('%Y-%m-%d %H:%M:%S')}"
+                _("  [cyan]Last Update:[/cyan] {timestamp}").format(timestamp=last_update.strftime("%Y-%m-%d %H:%M:%S"))
             )
         else:
-            console.print("  [cyan]Last Update:[/cyan] Never")
+            console.print(_("  [cyan]Last Update:[/cyan] Never"))
 
     try:
         asyncio.run(_show_stats())
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e
 
 
 @filter_group.command("test")
@@ -384,7 +391,7 @@ def filter_test(ctx, ip: str) -> None:
         await security_manager.load_ip_filter(config)
 
         if not security_manager.ip_filter:  # pragma: no cover - Error path: IP filter not initialized, tested via success path
-            console.print("[yellow]IP filter not initialized or disabled.[/yellow]")
+            console.print(_("[yellow]IP filter not initialized or disabled.[/yellow]"))
             return
 
         is_blocked = security_manager.ip_filter.is_blocked(ip)
@@ -396,29 +403,31 @@ def filter_test(ctx, ip: str) -> None:
             if ipaddress.ip_address(ip) in rule.network
         ]
 
-        console.print("\n[bold]IP Filter Test[/bold]\n")
-        console.print(f"  [cyan]IP Address:[/cyan] {ip}")
-        console.print(
-            f"  [cyan]Status:[/cyan] {'[red]BLOCKED[/red]' if is_blocked else '[green]ALLOWED[/green]'}"
-        )
+        console.print(_("\n[bold]IP Filter Test[/bold]\n"))
+        console.print(_("  [cyan]IP Address:[/cyan] {ip}").format(ip=ip))
+        status_text = _("[red]BLOCKED[/red]") if is_blocked else _("[green]ALLOWED[/green]")
+        console.print(_("  [cyan]Status:[/cyan] {status}").format(status=status_text))
 
         if (
             matching_rules
         ):  # pragma: no cover - Matching rules display, tested via no matches path
-            console.print(f"\n  [cyan]Matching Rules:[/cyan] {len(matching_rules)}")
+            console.print(_("\n  [cyan]Matching Rules:[/cyan] {count}").format(count=len(matching_rules)))
             for rule in matching_rules:
                 console.print(
-                    f"    - {rule.network} ({rule.mode.value}, priority: {rule.priority})"
+                    _("    - {network} ({mode}, priority: {priority})").format(
+                        network=rule.network, mode=rule.mode.value, priority=rule.priority
+                    )
                 )
         else:  # pragma: no cover - No matching rules path, tested via matches present
-            console.print("\n  [cyan]Matching Rules:[/cyan] None")
+            console.print(_("\n  [cyan]Matching Rules:[/cyan] None"))
 
     try:
         asyncio.run(_test_ip())
     except ValueError as e:
-        console.print(f"[red]Invalid IP address: {ip}[/red]")
-        msg = f"Invalid IP address: {e}"
+        console.print(_("[red]Invalid IP address: {ip}[/red]").format(ip=ip))
+        msg = _("Invalid IP address: {error}").format(error=e)
         raise click.ClickException(msg) from e
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
-        raise click.ClickException(str(e)) from e
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        error_msg = str(e)
+        raise click.ClickException(error_msg) from e

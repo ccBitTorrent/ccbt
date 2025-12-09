@@ -64,7 +64,9 @@ async def show_status(adapter: LocalSessionAdapter, console: Console) -> None:
             async with session.scrape_cache_lock:
                 total_seeders = sum(r.seeders for r in session.scrape_cache.values())
                 total_leechers = sum(r.leechers for r in session.scrape_cache.values())
-            scrape_details = f"Cached: {scrape_cache_size}, Total Seeders: {total_seeders}, Total Leechers: {total_leechers}"
+            scrape_details = _("Cached: {cache_size}, Total Seeders: {seeders}, Total Leechers: {leechers}").format(
+                cache_size=scrape_cache_size, seeders=total_seeders, leechers=total_leechers
+            )
         else:
             scrape_details = _("No cached results")
 
@@ -159,40 +161,52 @@ async def show_status(adapter: LocalSessionAdapter, console: Console) -> None:
 
             socket_manager = await UTPSocketManager.get_instance()
             stats = socket_manager.get_statistics()
-            utp_status = "Enabled"
-            utp_details = (
-                f"Connections: {stats['active_connections']} | "
-                f"Packets: {stats['total_packets_sent']}/{stats['total_packets_received']} | "
-                f"Bytes: {stats['total_bytes_sent']}/{stats['total_bytes_received']}"
+            utp_status = _("Enabled")
+            utp_details = _(
+                "Connections: {connections} | "
+                "Packets: {sent}/{received} | "
+                "Bytes: {bytes_sent}/{bytes_received}"
+            ).format(
+                connections=stats['active_connections'],
+                sent=stats['total_packets_sent'],
+                received=stats['total_packets_received'],
+                bytes_sent=stats['total_bytes_sent'],
+                bytes_received=stats['total_bytes_received'],
             )
         except Exception:
-            utp_status = "Enabled"
-            utp_details = "Socket manager not initialized"
+            utp_status = _("Enabled")
+            utp_details = _("Socket manager not initialized")
     else:
-        utp_status = "Disabled"
-        utp_details = "Not configured"
-    table.add_row("uTP", utp_status, utp_details)  # pragma: no cover
+        utp_status = _("Disabled")
+        utp_details = _("Not configured")
+    table.add_row(_("uTP"), utp_status, utp_details)  # pragma: no cover
 
     protocol_v2_config = session.config.network.protocol_v2
     if protocol_v2_config.enable_protocol_v2:
-        v2_status = "Enabled"
-        v2_details = f"Prefer v2: {protocol_v2_config.prefer_protocol_v2} | Hybrid: {protocol_v2_config.support_hybrid} | Timeout: {protocol_v2_config.v2_handshake_timeout}s"
+        v2_status = _("Enabled")
+        v2_details = _(
+            "Prefer v2: {prefer_v2} | Hybrid: {hybrid} | Timeout: {timeout}s"
+        ).format(
+            prefer_v2=protocol_v2_config.prefer_protocol_v2,
+            hybrid=protocol_v2_config.support_hybrid,
+            timeout=protocol_v2_config.v2_handshake_timeout,
+        )
     else:
-        v2_status = "Disabled"
-        v2_details = "Not enabled"
-    table.add_row("Protocol v2 (BEP 52)", v2_status, v2_details)  # pragma: no cover
+        v2_status = _("Disabled")
+        v2_details = _("Not enabled")
+    table.add_row(_("Protocol v2 (BEP 52)"), v2_status, v2_details)  # pragma: no cover
 
     webtorrent_config = session.config.network.webtorrent
     if webtorrent_config.enable_webtorrent:
-        webtorrent_status = "Disabled"
-        webtorrent_details = "Not initialized"
+        webtorrent_status = _("Disabled")
+        webtorrent_details = _("Not initialized")
         try:
             from ccbt.protocols.webtorrent import (
                 WebTorrentProtocol,  # type: ignore[attr-defined]
             )
 
             webrtc_connections = 0
-            signaling_status = "Stopped"
+            signaling_status = _("Stopped")
             if hasattr(session, "protocols"):
                 for protocol in (
                     session.protocols.values()
@@ -200,41 +214,291 @@ async def show_status(adapter: LocalSessionAdapter, console: Console) -> None:
                     else []
                 ):
                     if (
-                        isinstance(protocol, WebTorrentProtocol)
-                        and WebTorrentProtocol is not None
+                        WebTorrentProtocol is not None
+                        and isinstance(protocol, WebTorrentProtocol)
                     ):
                         webtorrent_protocol = protocol  # type: ignore[assignment]
                         webrtc_connections = len(webtorrent_protocol.webrtc_connections)  # type: ignore[attr-defined]
                         signaling_status = (
-                            "Running"
+                            _("Running")
                             if webtorrent_protocol.websocket_server is not None  # type: ignore[attr-defined]
-                            else "Stopped"
+                            else _("Stopped")
                         )
-                        webtorrent_status = "Enabled"
-                        webtorrent_details = (
-                            f"Connections: {webrtc_connections}, "
-                            f"Signaling: {signaling_status} "
-                            f"({webtorrent_config.webtorrent_host}:{webtorrent_config.webtorrent_port})"
+                        webtorrent_status = _("Enabled")
+                        webtorrent_details = _(
+                            "Connections: {connections}, "
+                            "Signaling: {signaling} "
+                            "({host}:{port})"
+                        ).format(
+                            connections=webrtc_connections,
+                            signaling=signaling_status,
+                            host=webtorrent_config.webtorrent_host,
+                            port=webtorrent_config.webtorrent_port,
                         )
                         break
 
-            if webtorrent_status == "Enabled":
+            if webtorrent_status == _("Enabled"):
                 table.add_row(
-                    "WebTorrent", webtorrent_status, webtorrent_details
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
                 )  # pragma: no cover
             else:
                 table.add_row(
-                    "WebTorrent",
-                    "Enabled (Not Started)",
-                    f"Port: {webtorrent_config.webtorrent_port}, STUN: {len(webtorrent_config.webtorrent_stun_servers)} server(s)",
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
                 )  # pragma: no cover
         except (ImportError, AttributeError):
             table.add_row(
-                "WebTorrent", "Enabled (Dependency Missing)", "aiortc not installed"
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
             )  # pragma: no cover
     else:
         table.add_row(
-            "WebTorrent", "Disabled", "Not enabled in configuration"
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
+        )  # pragma: no cover
+
+    console.print(table)  # pragma: no cover
+
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
+                )  # pragma: no cover
+            else:
+                table.add_row(
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
+                )  # pragma: no cover
+        except (ImportError, AttributeError):
+            table.add_row(
+                _("WebTorrent"), _("Enabled (Dependency Missing)"), _("aiortc not installed")
+            )  # pragma: no cover
+    else:
+        table.add_row(
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
         )  # pragma: no cover
 
     console.print(table)  # pragma: no cover

@@ -46,6 +46,12 @@ class TorrentState(BaseModel):
     uploaded: int = Field(0, description="Uploaded bytes")
     torrent_file_path: str | None = Field(None, description="Path to torrent file")
     magnet_uri: str | None = Field(None, description="Magnet URI if added via magnet")
+    per_torrent_options: dict[str, Any] | None = Field(
+        None, description="Per-torrent configuration options"
+    )
+    rate_limits: dict[str, int] | None = Field(
+        None, description="Per-torrent rate limits: {down_kib: int, up_kib: int}"
+    )
 
 
 class SessionState(BaseModel):

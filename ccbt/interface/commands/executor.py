@@ -84,19 +84,32 @@ class CommandExecutor:
         self._click_cli = main_cli  # pragma: no cover - CommandExecutor initialization
 
     async def execute_command(
-        self, command: str, args: list[str], current_info_hash: str | None = None
-    ) -> tuple[bool, str, Any]:
-        """Execute a CLI command.
+        self, command: str, *args: Any, **kwargs: Any
+    ) -> Any:
+        """Execute a CLI command or executor command.
 
         Args:
-            command: Command name (e.g., "files", "limits", "config")
-            args: Command arguments
-            current_info_hash: Current torrent info hash (hex) for context
+            command: Command name (e.g., "files", "limits", "config", or "xet.add_xet_folder")
+            *args: Command arguments (for CLI commands)
+            **kwargs: Keyword arguments (for executor commands)
 
         Returns:
-            Tuple of (success: bool, message: str, result: Any)
+            CommandResult or tuple of (success: bool, message: str, result: Any)
         """
         try:  # pragma: no cover - CommandExecutor.execute_command, tested via integration
+            # Check if this is an executor command (starts with "xet.", "torrent.", etc.)
+            if "." in command:
+                # This is an executor command, route directly to executor
+                try:
+                    result = await self._executor.execute(command, *args, **kwargs)
+                    return result
+                except Exception as e:
+                    from ccbt.executor.base import CommandResult
+                    return CommandResult(
+                        success=False,
+                        error=f"Error executing {command}: {e!s}",
+                    )
+            
             # Map CLI command names to executor commands for commands that need info_hash
             # All commands now route through executor.execute() for consistency
             command_mapping: dict[str, str] = {
@@ -105,6 +118,9 @@ class CommandExecutor:
                 "stop": "torrent.remove",
                 "remove": "torrent.remove",
             }
+            
+            # Handle legacy tuple return format for CLI commands
+            current_info_hash = kwargs.get("current_info_hash")
             
             # If command has a mapping and we have current_info_hash, route through executor
             if command in command_mapping and current_info_hash:

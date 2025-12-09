@@ -64,10 +64,10 @@ class NATManager:
             return False
 
         # CRITICAL FIX: Add retry logic with exponential backoff for NAT discovery
-        # Retry delays: 5s, 10s, 20s (3 attempts total)
-        max_attempts = 3
-        retry_delays = [5.0, 10.0, 20.0]
-        
+        # Retry delays: 2s, 4s (2 attempts total) - optimized for faster startup
+        max_attempts = 2
+        retry_delays = [2.0, 4.0]
+
         # Mark discovery as attempted
         self._discovery_attempted = True
 
@@ -120,13 +120,12 @@ class NATManager:
                         # Reset discovery attempted flag on success
                         self._discovery_attempted = False
                         return True
-                    else:
-                        # UPnP discovery returned False - no device found
-                        self.logger.debug(
-                            "UPnP discovery returned False (attempt %d/%d) - no device found",
-                            attempt + 1,
-                            max_attempts,
-                        )
+                    # UPnP discovery returned False - no device found
+                    self.logger.debug(
+                        "UPnP discovery returned False (attempt %d/%d) - no device found",
+                        attempt + 1,
+                        max_attempts,
+                    )
                 except UPnPError as e:
                     # Enhanced UPnP discovery error logging
                     error_msg = str(e)
@@ -431,12 +430,11 @@ class NATManager:
                             f"Consider manually forwarding this port in your router settings."
                         )
 
-                    self.logger.error(
-                        "Port mapping failed via %s (attempt %d/%d): %s",
+                    self.logger.exception(
+                        "Port mapping failed via %s (attempt %d/%d)",
                         self.active_protocol or "unknown",
                         attempt + 1,
                         max_attempts,
-                        e,
                     )
                     self.logger.warning(
                         "Failed to map port %s:%s via %s - %s",
@@ -653,12 +651,14 @@ class NATManager:
             return False
 
     async def map_listen_ports(self) -> None:
-        """Map all required ports (TCP listen, UDP peer, UDP tracker, DHT).
+        """Map all required ports (TCP listen, UDP peer, UDP tracker, DHT, XET).
 
         CRITICAL FIX: Maps both TCP and UDP for all applicable ports to ensure
         proper NAT traversal. For listen_port, both TCP and UDP are mapped.
         For tracker_udp_port, both TCP and UDP are mapped if different from listen_port.
         DHT port is UDP only.
+        XET protocol port is UDP only.
+        XET multicast port is UDP only (usually not needed for multicast).
         """
         # CRITICAL FIX: Track mapping results for diagnostics
         mapping_results = []
@@ -672,6 +672,16 @@ class NATManager:
         configured_tracker_udp_port = (
             self.config.network.tracker_udp_port
             or self.config.network.listen_port
+        )
+        # XET protocol port (uses listen_port_udp if not set)
+        configured_xet_port = (
+            self.config.network.xet_port
+            or self.config.network.listen_port_udp
+            or self.config.network.listen_port
+        )
+        # XET multicast port
+        configured_xet_multicast_port = getattr(
+            self.config.network, "xet_multicast_port", None
         )
 
         # CRITICAL FIX: Map both TCP and UDP for listen ports
@@ -761,7 +771,7 @@ class NATManager:
                 # CRITICAL FIX: Verify mapping was actually created and uses correct ports
                 verified = False
                 internal_port_match = False
-                external_port_match = False
+                # external_port_match = False  # Reserved for future use
                 if result:
                     mappings = await self.port_mapping_manager.get_all_mappings()
                     for m in mappings:
@@ -770,7 +780,7 @@ class NATManager:
                             and m.external_port == configured_udp_port
                         ):
                             verified = True
-                            external_port_match = True
+                            # external_port_match = True  # Reserved for future use
                             if m.internal_port == configured_udp_port:
                                 internal_port_match = True
                             else:
@@ -956,6 +966,167 @@ class NATManager:
                         dht_port,
                     )
 
+        # Map XET protocol port if enabled and XET is enabled
+        if (
+            self.config.nat.map_xet_port
+            and hasattr(self.config, "xet_sync")
+            and self.config.xet_sync
+            and self.config.xet_sync.enable_xet
+        ):
+            # Check if XET port is different from already mapped ports
+            xet_port_different = (
+                configured_xet_port != configured_tcp_port
+                and configured_xet_port != configured_udp_port
+                and configured_xet_port != configured_tracker_udp_port
+            )
+            # Also check if different from DHT port
+            dht_port = getattr(self.config.discovery, "dht_port", None)
+            if dht_port:
+                xet_port_different = xet_port_different and configured_xet_port != dht_port
+
+            if xet_port_different:
+                # Map UDP for XET protocol port (only if different from other ports)
+                if configured_xet_port <= 0 or configured_xet_port > 65535:
+                    self.logger.error(
+                        "NAT: Invalid configured XET port %d (must be 1-65535), skipping XET port mapping",
+                        configured_xet_port,
+                    )
+                else:
+                    result = await self.map_port(
+                        configured_xet_port,
+                        configured_xet_port,
+                        "udp",
+                    )
+                    # Verify mapping was actually created
+                    verified = False
+                    internal_port_match = False
+                    if result:
+                        mappings = await self.port_mapping_manager.get_all_mappings()
+                        for m in mappings:
+                            if (
+                                m.protocol == "udp"
+                                and m.external_port == configured_xet_port
+                            ):
+                                verified = True
+                                if m.internal_port == configured_xet_port:
+                                    internal_port_match = True
+                                break
+
+                    mapping_results.append(
+                        ("UDP (XET)", configured_xet_port, result and verified)
+                    )
+                    if result and verified and internal_port_match:
+                        self.logger.info(
+                            "NAT: Successfully mapped and verified XET UDP port %d",
+                            configured_xet_port,
+                        )
+                    elif result and verified and not internal_port_match:
+                        self.logger.warning(
+                            "NAT: XET UDP port %d mapped but internal port mismatch detected",
+                            configured_xet_port,
+                        )
+                    elif result and not verified:
+                        self.logger.warning(
+                            "NAT: XET UDP port %d mapping reported success but verification failed",
+                            configured_xet_port,
+                        )
+                    else:
+                        self.logger.warning(
+                            "NAT: Failed to map XET UDP port %d - XET protocol communication may fail",
+                            configured_xet_port,
+                        )
+            else:
+                self.logger.debug(
+                    "NAT: XET port %d is same as another mapped port, skipping duplicate mapping",
+                    configured_xet_port,
+                )
+
+        # Map XET multicast port if enabled (usually not needed for multicast)
+        if (
+            self.config.nat.map_xet_multicast_port
+            and configured_xet_multicast_port
+            and hasattr(self.config, "xet_sync")
+            and self.config.xet_sync
+            and self.config.xet_sync.enable_xet
+        ):
+            # Check if multicast port is different from already mapped ports
+            multicast_port_different = (
+                configured_xet_multicast_port != configured_tcp_port
+                and configured_xet_multicast_port != configured_udp_port
+                and configured_xet_multicast_port != configured_tracker_udp_port
+                and configured_xet_multicast_port != configured_xet_port
+            )
+            dht_port = getattr(self.config.discovery, "dht_port", None)
+            if dht_port:
+                multicast_port_different = (
+                    multicast_port_different
+                    and configured_xet_multicast_port != dht_port
+                )
+
+            if multicast_port_different:
+                # Map UDP for XET multicast port
+                if (
+                    configured_xet_multicast_port <= 0
+                    or configured_xet_multicast_port > 65535
+                ):
+                    self.logger.error(
+                        "NAT: Invalid configured XET multicast port %d (must be 1-65535), skipping XET multicast port mapping",
+                        configured_xet_multicast_port,
+                    )
+                else:
+                    result = await self.map_port(
+                        configured_xet_multicast_port,
+                        configured_xet_multicast_port,
+                        "udp",
+                    )
+                    # Verify mapping was actually created
+                    verified = False
+                    internal_port_match = False
+                    if result:
+                        mappings = await self.port_mapping_manager.get_all_mappings()
+                        for m in mappings:
+                            if (
+                                m.protocol == "udp"
+                                and m.external_port == configured_xet_multicast_port
+                            ):
+                                verified = True
+                                if m.internal_port == configured_xet_multicast_port:
+                                    internal_port_match = True
+                                break
+
+                    mapping_results.append(
+                        (
+                            "UDP (XET Multicast)",
+                            configured_xet_multicast_port,
+                            result and verified,
+                        )
+                    )
+                    if result and verified and internal_port_match:
+                        self.logger.info(
+                            "NAT: Successfully mapped and verified XET multicast UDP port %d",
+                            configured_xet_multicast_port,
+                        )
+                    elif result and verified and not internal_port_match:
+                        self.logger.warning(
+                            "NAT: XET multicast UDP port %d mapped but internal port mismatch detected",
+                            configured_xet_multicast_port,
+                        )
+                    elif result and not verified:
+                        self.logger.warning(
+                            "NAT: XET multicast UDP port %d mapping reported success but verification failed",
+                            configured_xet_multicast_port,
+                        )
+                    else:
+                        self.logger.warning(
+                            "NAT: Failed to map XET multicast UDP port %d - XET multicast may not work across NAT",
+                            configured_xet_multicast_port,
+                        )
+            else:
+                self.logger.debug(
+                    "NAT: XET multicast port %d is same as another mapped port, skipping duplicate mapping",
+                    configured_xet_multicast_port,
+                )
+
         # CRITICAL FIX: Log summary of all port mappings for diagnostics
         successful_mappings = [r for r in mapping_results if r[2]]
         failed_mappings = [r for r in mapping_results if not r[2]]
@@ -991,9 +1162,21 @@ class NATManager:
 
         """
         start_time = asyncio.get_event_loop().time()
-        check_interval = 0.5  # Check every 500ms
+        check_interval = 0.2  # Check every 200ms (optimized for faster detection)
 
+        # First check immediately (no delay) - mappings may already be complete
+        mappings = await self.port_mapping_manager.get_all_mappings()
+        if mappings:
+            # At least one mapping exists
+            self.logger.info(
+                "NAT: Port mapping confirmed immediately (%d mapping(s) active)",
+                len(mappings),
+            )
+            return True
+
+        # Then check with intervals
         while (asyncio.get_event_loop().time() - start_time) < timeout:
+            await asyncio.sleep(check_interval)
             mappings = await self.port_mapping_manager.get_all_mappings()
             if mappings:
                 # At least one mapping exists
@@ -1002,9 +1185,6 @@ class NATManager:
                     len(mappings),
                 )
                 return True
-
-            # Wait before next check
-            await asyncio.sleep(check_interval)
 
         # Timeout expired
         mappings = await self.port_mapping_manager.get_all_mappings()

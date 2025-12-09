@@ -1,44 +1,515 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ccBitTorrent 0.1.0\n"
-"Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-01-01 00:00+0000\n"
-"PO-Revision-Date: 2025-11-10 21:18\n"
-"Last-Translator: ccBitTorrent Team\n"
-"Language-Team: Hindi\n"
-"Language: hi\n"
-"MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=UTF-8\n"
-"Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Project-Id-Version: ccBitTorrent 0.1.0\n""Language: hi
+"Content-Type: text/plain; charset=UTF-8
 
 
-msgid "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
-msgstr "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+msgid ""
+"\n"
+"  [cyan]Matching Rules:[/cyan] None\n"
+msgstr ""
+"\n"
+"  [cyan]मिलान नियम:[/cyan] कोई नहीं\n"
 
-msgid "\\n[bold cyan]File Selection[/bold cyan]"
-msgstr "\\n[bold cyan]File Selection[/bold cyan]"
+msgid ""
+"\n"
+"  [cyan]Matching Rules:[/cyan] {count}\n"
+msgstr ""
+"\n"
+"  [cyan]मिलान नियम:[/cyan] {count}\n"
 
-msgid "\\n[bold]File selection[/bold]"
-msgstr "\\n[bold]File selection[/bold]"
+msgid ""
+"\n"
+"Available Commands:\n"
+"  help          - Show this help message\n"
+"  status        - Show current status\n"
+"  peers         - Show connected peers\n"
+"  files         - Show file information\n"
+"  pause         - Pause download\n"
+"  resume        - Resume download\n"
+"  stop          - Stop download\n"
+"  quit          - Quit application\n"
+"  clear         - Clear screen\n"
+"        \n"
+msgstr ""
+"\n"
+"उपलब्ध कमांड:\n"
+"  help          - यह सहायता संदेश दिखाएं\n"
+"  status        - वर्तमान स्थिति दिखाएं\n"
+"  peers         - जुड़े हुए पीयर दिखाएं\n"
+"  files         - फ़ाइल जानकारी दिखाएं\n"
+"  pause         - डाउनलोड रोकें\n"
+"  resume        - डाउनलोड फिर से शुरू करें\n"
+"  stop          - डाउनलोड बंद करें\n"
+"  quit          - एप्लिकेशन बंद करें\n"
+"  clear         - स्क्रीन साफ़ करें\n"
+"        \n"
 
-msgid "\\n[yellow]Commands:[/yellow]"
-msgstr "\\n[yellow]Commands:[/yellow]"
+msgid ""
+"\n"
+"[bold cyan]Cache Statistics:[/bold cyan]\n"
+msgstr ""
+"\n"
+"[bold cyan]कैश सांख्यिकी:[/bold cyan]\n"
 
-msgid "\\n[yellow]File selection cancelled, using defaults[/yellow]"
-msgstr "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgid ""
+"\n"
+"[bold cyan]File Selection[/bold cyan]\n"
+msgstr ""
+"\n"
+"[bold cyan]फ़ाइल चयन[/bold cyan]\n"
 
-msgid "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
-msgstr "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgid ""
+"\n"
+"[bold]Active Port Mappings:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]सक्रिय पोर्ट मैपिंग:[/bold]\n"
 
-msgid "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
-msgstr "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgid ""
+"\n"
+"[bold]File selection[/bold]\n"
+msgstr ""
+"\n"
+"[bold]फ़ाइल चयन[/bold]\n"
 
-msgid "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
-msgstr "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgid ""
+"\n"
+"[bold]IP Filter Statistics[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]IP फ़िल्टर सांख्यिकी[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]IP Filter Test[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]IP फ़िल्टर परीक्षण[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]Runtime Status:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]रनटाइम स्थिति:[/bold]\n"
+
+msgid ""
+"\n"
+"[bold]Sample chunks (last {limit} accessed):[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]नमूना चंक (अंतिम {limit} एक्सेस किए गए):[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]Statistics:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]सांख्यिकी:[/bold]\n"
+
+msgid ""
+"\n"
+"[bold]Total: {count} rules[/bold]\n"
+msgstr ""
+"\n"
+"[bold]कुल: {count} नियम[/bold]\n"
+
+msgid ""
+"\n"
+"[cyan]Connection Diagnostics[/cyan]\n"
+"\n"
+msgstr ""
+"\n"
+"[cyan]कनेक्शन निदान[/cyan]\n"
+"\n"
+
+msgid ""
+"\n"
+"[cyan]Proxy Statistics:[/cyan]\n"
+msgstr ""
+"\n"
+"[cyan]प्रॉक्सी सांख्यिकी:[/cyan]\n"
+
+msgid ""
+"\n"
+"[cyan]Status:[/cyan] {status}\n"
+msgstr ""
+"\n"
+"[cyan]स्थिति:[/cyan] {status}\n"
+
+msgid ""
+"\n"
+"[green]Diagnostic complete![/green]\n"
+msgstr ""
+"\n"
+"[green]निदान पूर्ण![/green]\n"
+
+msgid ""
+"\n"
+"[green]✓ Discovery successful![/green]\n"
+msgstr ""
+"\n"
+"[green]✓ खोज सफल![/green]\n"
+
+msgid ""
+"\n"
+"[green]✓[/green] No connection issues detected\n"
+msgstr ""
+"\n"
+"[green]✓[/green] कोई कनेक्शन समस्या का पता नहीं चला\n"
+
+msgid ""
+"\n"
+"[yellow]2. DHT Status[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]२. DHT स्थिति[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]3. Tracker Configuration[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]३. Tracker कॉन्फ़िगरेशन[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]4. NAT Configuration[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]४. NAT कॉन्फ़िगरेशन[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]5. Listen Port[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]५. सुनने वाला पोर्ट[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]6. Session Initialization Test[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]६. सत्र आरंभीकरण परीक्षण[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Commands:[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]कमांड:[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Connection Issues[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]कनेक्शन समस्याएं[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Download interrupted by user[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]डाउनलोड उपयोगकर्ता द्वारा बाधित[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]File selection cancelled, using defaults[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]फ़ाइल चयन रद्द, डिफ़ॉल्ट का उपयोग[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Runtime Status:[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]रनटाइम स्थिति:[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Session Summary[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]सत्र सारांश[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Shutting down daemon...[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]डेमन बंद कर रहा है...[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]TCP Server Status[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]TCP सर्वर स्थिति[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]उपयोग: files select <सूचकांक>, files deselect <सूचकांक>, files priority <सूचकांक> <प्राथमिकता>[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Warning: No peers connected after 30 seconds[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]चेतावनी: ३० सेकंड के बाद कोई पीयर जुड़ा नहीं[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]✗ No NAT devices discovered[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]✗ कोई NAT उपकरण नहीं मिला[/yellow]\n"
+
+msgid "    - {network} ({mode}, priority: {priority})"
+msgstr "    - {network} ({mode}, प्राथमिकता: {priority})"
+
+msgid "  - {hash}... ({format})"
+msgstr "  - {hash}... ({format})"
+
+msgid "  Active Downloading: {count}"
+msgstr "  सक्रिय डाउनलोड: {count}"
+
+msgid "  Active Mappings: {mappings}"
+msgstr "  सक्रिय मैपिंग: {mappings}"
+
+msgid "  Active Seeding: {count}"
+msgstr "  सक्रिय सीडिंग: {count}"
+
+msgid "  Add the peer first using 'tonic allowlist add'"
+msgstr "  पहले 'tonic allowlist add' का उपयोग करके पीयर जोड़ें"
+
+msgid "  Auth failures: {count}"
+msgstr "  प्रमाणीकरण विफलताएं: {count}"
+
+msgid "  Auto Map Ports: {status}"
+msgstr "  स्वचालित पोर्ट मैपिंग: {status}"
+
+msgid "  Bypass list: {value}"
+msgstr "  बायपास सूची: {value}"
+
+msgid "  Cache DB: {path}"
+msgstr "  कैश DB: {path}"
+
+msgid "  Certificate: {path}"
+msgstr "  प्रमाणपत्र: {path}"
+
+msgid "  Chunk size range: {min}-{max} bytes"
+msgstr "  चंक आकार सीमा: {min}-{max} बाइट्स"
+
+msgid "  Chunk store: {path}"
+msgstr "  चंक स्टोर: {path}"
+
+msgid "  Compression: {enabled}"
+msgstr "  संपीड़न: {enabled}"
+
+msgid "  Configuration saved to: {location}"
+msgstr "  कॉन्फ़िगरेशन सहेजा गया: {location}"
+
+msgid "  Current mode: {mode}"
+msgstr "  वर्तमान मोड: {mode}"
+
+msgid "  DHT Enabled: {status}"
+msgstr "  DHT सक्षम: {status}"
+
+msgid "  DHT Port: {port}"
+msgstr "  DHT पोर्ट: {port}"
+
+msgid "  DHT Routing Table: {size} nodes"
+msgstr "  DHT रूटिंग टेबल: {size} नोड्स"
+
+msgid "  Deduplication: {enabled}"
+msgstr "  डीडुप्लिकेशन: {enabled}"
+
+msgid "  Enabled: {enabled}"
+msgstr "  सक्षम: {enabled}"
+
+msgid "  External IP: {ip}"
+msgstr "  बाहरी IP: {ip}"
+
+msgid "  External: {port}"
+msgstr "  बाहरी: {port}"
+
+msgid "  Failed: {count}"
+msgstr "  विफल: {count}"
+
+msgid "  For peers: {value}"
+msgstr "  पीयर के लिए: {value}"
+
+msgid "  For trackers: {value}"
+msgstr "  ट्रैकर के लिए: {value}"
+
+msgid "  For webseeds: {value}"
+msgstr "  वेबसीड के लिए: {value}"
+
+msgid "  HTTP Trackers: {status}"
+msgstr "  HTTP ट्रैकर: {status}"
+
+msgid "  Host: {host}:{port}"
+msgstr "  होस्ट: {host}:{port}"
+
+msgid "  Internal: {port}"
+msgstr "  आंतरिक: {port}"
+
+msgid "  Key: {path}"
+msgstr "  कुंजी: {path}"
+
+msgid "  Make sure NAT traversal is enabled and a device is discovered"
+msgstr "  सुनिश्चित करें कि NAT traversal सक्षम है और एक उपकरण खोजा गया है"
+
+msgid "  Make sure NAT-PMP or UPnP is enabled on your router"
+msgstr "  सुनिश्चित करें कि आपके राउटर पर NAT-PMP या UPnP सक्षम है"
+
+msgid "  Mode: {mode}"
+msgstr "  मोड: {mode}"
+
+msgid "  NAT-PMP: {status}"
+msgstr "  NAT-PMP: {status}"
+
+msgid "  Output directory: {dir}"
+msgstr "  आउटपुट निर्देशिका: {dir}"
+
+msgid "  P2P CAS client: Active"
+msgstr "  P2P CAS क्लाइंट: सक्रिय"
+
+msgid "  P2P CAS client: Not initialized"
+msgstr "  P2P CAS क्लाइंट: आरंभीकृत नहीं"
+
+msgid "  P2P CAS: {enabled}"
+msgstr "  P2P CAS: {enabled}"
+
+msgid "  Paused: {count}"
+msgstr "  रोका गया: {count}"
+
+msgid "  Protocol not active (session may not be running)"
+msgstr "  प्रोटोकॉल सक्रिय नहीं (सत्र चल नहीं रहा हो सकता है)"
+
+msgid "  Protocol state: {state}"
+msgstr "  प्रोटोकॉल स्थिति: {state}"
+
+msgid "  Protocol: {method}"
+msgstr "  प्रोटोकॉल: {method}"
+
+msgid "  Protocol: {protocol}"
+msgstr "  प्रोटोकॉल: {protocol}"
+
+msgid "  Queued: {count}"
+msgstr "  कतार में: {count}"
+
+msgid "  Running: {status}"
+msgstr "  चल रहा है: {status}"
+
+msgid "  Serving: {status}"
+msgstr "  सेवा दे रहा है: {status}"
+
+msgid "  Sessions with Peers: {count}"
+msgstr "  पीयर के साथ सत्र: {count}"
+
+msgid "  Source peers: {peers}"
+msgstr "  स्रोत पीयर: {peers}"
+
+msgid "  Successful: {count}"
+msgstr "  सफल: {count}"
+
+msgid "  Sync mode: {mode}"
+msgstr "  सिंक मोड: {mode}"
+
+msgid "  TCP Enabled: {status}"
+msgstr "  TCP सक्षम: {status}"
+
+msgid "  TCP Port: {port}"
+msgstr "  TCP पोर्ट: {port}"
+
+msgid "  Target chunk size: {size} bytes"
+msgstr "  लक्ष्य चंक आकार: {size} बाइट्स"
+
+msgid "  This would fetch the .tonic file and start syncing"
+msgstr "  यह .tonic फ़ाइल प्राप्त करेगा और सिंक शुरू करेगा"
+
+msgid "  Total Connections: {count}"
+msgstr "  कुल कनेक्शन: {count}"
+
+msgid "  Total Sessions: {count}"
+msgstr "  कुल सत्र: {count}"
+
+msgid "  Total connections: {count}"
+msgstr "  कुल कनेक्शन: {count}"
+
+msgid "  Total: {count}"
+msgstr "  कुल: {count}"
+
+msgid "  Type: {type}"
+msgstr "  प्रकार: {type}"
+
+msgid "  UDP Trackers: {status}"
+msgstr "  UDP ट्रैकर: {status}"
+
+msgid "  UPnP: {status}"
+msgstr "  UPnP: {status}"
+
+msgid "  Unable to connect to active session"
+msgstr "  सक्रिय सत्र से कनेक्ट नहीं हो सका"
+
+msgid "  Use 'ccbt tonic status' to check sync status"
+msgstr "  सिंक स्थिति जांचने के लिए 'ccbt tonic status' का उपयोग करें"
+
+msgid "  Username: {username}"
+msgstr "  उपयोगकर्ता नाम: {username}"
+
+msgid "  [cyan]Allowed:[/cyan] {allows}"
+msgstr "  [cyan]अनुमत:[/cyan] {allows}"
+
+msgid "  [cyan]Blocked:[/cyan] {blocks}"
+msgstr "  [cyan]अवरुद्ध:[/cyan] {blocks}"
+
+msgid "  [cyan]Enabled:[/cyan] {enabled}"
+msgstr "  [cyan]सक्षम:[/cyan] {enabled}"
+
+msgid "  [cyan]IP Address:[/cyan] {ip}"
+msgstr "  [cyan]IP पता:[/cyan] {ip}"
+
+msgid "  [cyan]IPv4 Ranges:[/cyan] {ipv4_ranges}"
+msgstr "  [cyan]IPv4 श्रेणियां:[/cyan] {ipv4_ranges}"
+
+msgid "  [cyan]IPv6 Ranges:[/cyan] {ipv6_ranges}"
+msgstr "  [cyan]IPv6 श्रेणियां:[/cyan] {ipv6_ranges}"
+
+msgid "  [cyan]Last Update:[/cyan] Never"
+msgstr "  [cyan]अंतिम अपडेट:[/cyan] कभी नहीं"
+
+msgid "  [cyan]Last Update:[/cyan] {timestamp}"
+msgstr "  [cyan]अंतिम अपडेट:[/cyan] {timestamp}"
+
+msgid "  [cyan]Mode:[/cyan] {mode}"
+msgstr "  [cyan]मोड:[/cyan] {mode}"
+
+msgid "  [cyan]Status:[/cyan] {status}"
+msgstr "  [cyan]स्थिति:[/cyan] {status}"
+
+msgid "  [cyan]Total Checks:[/cyan] {matches}"
+msgstr "  [cyan]कुल जांच:[/cyan] {matches}"
+
+msgid "  [cyan]Total Rules:[/cyan] {total_rules}"
+msgstr "  [cyan]कुल नियम:[/cyan] {total_rules}"
 
 msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
-msgstr "  [cyan]deselect <index>[/cyan] - एक फ़ाइल का चयन रद्द करें"
+msgstr "  [cyan]deselect <सूचकांक>[/cyan] - फ़ाइल का चयन रद्द करें"
 
 msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
 msgstr "  [cyan]deselect-all[/cyan] - सभी फ़ाइलों का चयन रद्द करें"
@@ -46,17 +517,61 @@ msgstr "  [cyan]deselect-all[/cyan] - सभी फ़ाइलों का च
 msgid "  [cyan]done[/cyan] - Finish selection and start download"
 msgstr "  [cyan]done[/cyan] - चयन समाप्त करें और डाउनलोड शुरू करें"
 
-msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
-msgstr "  [cyan]priority <index> <priority>[/cyan] - प्राथमिकता सेट करें (do_not_download/low/normal/high/maximum)"
+msgid ""
+"  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)\n"
+msgstr ""
+"  [cyan]priority <सूचकांक> <प्राथमिकता>[/cyan] - प्राथमिकता सेट करें (do_not_download/low/normal/high/maximum)\n"
 
 msgid "  [cyan]select <index>[/cyan] - Select a file"
-msgstr "  [cyan]select <index>[/cyan] - एक फ़ाइल चुनें"
+msgstr "  [cyan]select <सूचकांक>[/cyan] - फ़ाइल चुनें"
 
 msgid "  [cyan]select-all[/cyan] - Select all files"
 msgstr "  [cyan]select-all[/cyan] - सभी फ़ाइलें चुनें"
 
+msgid "  [green]✓[/green] Can bind to port {port}"
+msgstr "  [green]✓[/green] पोर्ट {port} पर बाइंड कर सकते हैं"
+
+msgid "  [green]✓[/green] Session initialized successfully"
+msgstr "  [green]✓[/green] सत्र सफलतापूर्वक आरंभ किया गया"
+
+msgid "  [green]✓[/green] TCP server initialized"
+msgstr "  [green]✓[/green] TCP सर्वर आरंभ किया गया"
+
+msgid "  [green]✓[/green] {url}: {loaded} rules"
+msgstr "  [green]✓[/green] {url}: {loaded} नियम"
+
+msgid "  [red]✗[/red] Cannot bind to port: {e}"
+msgstr "  [red]✗[/red] पोर्ट पर बाइंड नहीं कर सकते: {e}"
+
+msgid "  [red]✗[/red] NAT manager not initialized"
+msgstr "  [red]✗[/red] NAT प्रबंधक आरंभ नहीं किया गया"
+
+msgid "  [red]✗[/red] Session initialization failed: {e}"
+msgstr "  [red]✗[/red] सत्र आरंभीकरण विफल: {e}"
+
+msgid "  [red]✗[/red] TCP server not initialized"
+msgstr "  [red]✗[/red] TCP सर्वर आरंभ नहीं किया गया"
+
+msgid "  [red]✗[/red] {url}: failed"
+msgstr "  [red]✗[/red] {url}: विफल"
+
+msgid "  [yellow]⚠[/yellow] DHT client not initialized"
+msgstr "  [yellow]⚠[/yellow] DHT क्लाइंट आरंभ नहीं किया गया"
+
+msgid "  [yellow]⚠[/yellow] TCP server not initialized"
+msgstr "  [yellow]⚠[/yellow] TCP सर्वर आरंभ नहीं किया गया"
+
+msgid "  uTP Enabled: {status}"
+msgstr "  uTP सक्षम: {status}"
+
+msgid "  {msg}"
+msgstr "  {msg}"
+
+msgid "  {warning}"
+msgstr "  {warning}"
+
 msgid "  • Check if torrent has active seeders"
-msgstr "  • जांचें कि क्या टोरेंट में सक्रिय सीडर हैं"
+msgstr "  • जांचें कि torrent में सक्रिय सीडर हैं"
 
 msgid "  • Ensure DHT is enabled: --enable-dht"
 msgstr "  • सुनिश्चित करें कि DHT सक्षम है: --enable-dht"
@@ -67,11 +582,29 @@ msgstr "  • कनेक्शन स्थिति जांचने के
 msgid "  • Verify NAT/firewall settings"
 msgstr "  • NAT/फ़ायरवॉल सेटिंग्स सत्यापित करें"
 
-msgid " | Files: {selected}/{total} selected"
-msgstr " | फ़ाइलें: {selected}/{total} चयनित"
+msgid "  ⚠ {warning}"
+msgstr "  ⚠ {warning}"
 
-msgid " | Private: {count}"
-msgstr " | निजी: {count}"
+msgid "(no options set)"
+msgstr "(कोई विकल्प सेट नहीं)"
+
+msgid "- [yellow]{issue}[/yellow]"
+msgstr "- [yellow]{issue}[/yellow]"
+
+msgid "- {id}: {severity} rule={rule} value={value}"
+msgstr "- {id}: {severity} नियम={rule} मान={value}"
+
+msgid "- {name}: metric={metric}, cond={condition}, severity={severity}"
+msgstr "- {name}: मीट्रिक={metric}, शर्त={condition}, गंभीरता={severity}"
+
+msgid "ACK Interval"
+msgstr "ACK अंतराल"
+
+msgid "ACK packet send interval"
+msgstr "ACK पैकेट भेजने का अंतराल"
+
+msgid "API key or Ed25519 key manager required for WebSocket connection"
+msgstr "WebSocket कनेक्शन के लिए API कुंजी या Ed25519 कुंजी प्रबंधक आवश्यक है"
 
 msgid "Active"
 msgstr "सक्रिय"
@@ -79,11 +612,25 @@ msgstr "सक्रिय"
 msgid "Active Alerts"
 msgstr "सक्रिय अलर्ट"
 
-msgid "Active: {count}"
-msgstr "सक्रिय: {count}"
+msgid "Add Tracker"
+msgstr "ट्रैकर जोड़ें"
+
+msgid ""
+"Add tracker functionality not yet implemented. Use CLI command: torrent.add_tracker\n"
+msgstr ""
+"ट्रैकर जोड़ने की कार्यक्षमता अभी तक लागू नहीं की गई है। CLI कमांड का उपयोग करें: torrent.add_tracker\n"
+
+msgid "Advanced"
+msgstr "उन्नत"
 
 msgid "Advanced Add"
 msgstr "उन्नत जोड़ें"
+
+msgid "Advanced configuration (experimental features)"
+msgstr "उन्नत कॉन्फ़िगरेशन (प्रायोगिक सुविधाएं)"
+
+msgid "Advanced configuration - Data provider/Executor not available"
+msgstr "उन्नत कॉन्फ़िगरेशन - डेटा प्रदाता/एग्ज़ीक्यूटर उपलब्ध नहीं"
 
 msgid "Alert Rules"
 msgstr "अलर्ट नियम"
@@ -91,23 +638,116 @@ msgstr "अलर्ट नियम"
 msgid "Alerts"
 msgstr "अलर्ट"
 
+msgid "All {total} file(s) verified successfully"
+msgstr "सभी {total} फ़ाइलें सफलतापूर्वक सत्यापित"
+
+msgid "Announce sent"
+msgstr "घोषणा भेजी गई"
+
 msgid "Announce: Failed"
-msgstr "घोषणा: असफल"
+msgstr "घोषणा: विफल"
 
 msgid "Announce: {status}"
 msgstr "घोषणा: {status}"
 
 msgid "Are you sure you want to quit?"
-msgstr "क्या आप वाकई बंद करना चाहते हैं?"
+msgstr "क्या आप वाकई बाहर निकलना चाहते हैं?"
+
+msgid "Auto-tuned configuration saved to {path}"
+msgstr "स्वचालित-ट्यून कॉन्फ़िगरेशन {path} में सहेजा गया"
+
+msgid "Auto-tuning warnings:"
+msgstr "स्वचालित-ट्यूनिंग चेतावनियां:"
 
 msgid "Automatically restart daemon if needed (without prompt)"
-msgstr "आवश्यक होने पर स्वचालित रूप से डेमॉन पुनरारंभ करें (प्रॉम्प्ट के बिना)"
+msgstr "आवश्यकता होने पर स्वचालित रूप से डेमन पुनः आरंभ करें (प्रॉम्प्ट के बिना)"
+
+msgid "Available keys: {keys}"
+msgstr "उपलब्ध कुंजियां: {keys}"
+
+msgid "Available locales: {locales}"
+msgstr "उपलब्ध स्थानीय: {locales}"
+
+msgid "Backup complete"
+msgstr "बैकअप पूर्ण"
+
+msgid "Backup created: {path}"
+msgstr "बैकअप बनाया गया: {path}"
+
+msgid "Backup failed"
+msgstr "बैकअप विफल"
+
+msgid "Ban Peer"
+msgstr "पीयर प्रतिबंधित करें"
+
+msgid "Bandwidth"
+msgstr "बैंडविड्थ"
+
+msgid "Bandwidth configuration - Data provider/Executor not available"
+msgstr "बैंडविड्थ कॉन्फ़िगरेशन - डेटा प्रदाता/एग्ज़ीक्यूटर उपलब्ध नहीं"
 
 msgid "Browse"
 msgstr "ब्राउज़ करें"
 
+msgid ""
+"CRITICAL: PID file exists (initial=%s, current=%s, path=%s) but code reached local session creation! This will cause port conflicts. Aborting.\n"
+msgstr ""
+"गंभीर: PID फ़ाइल मौजूद है (initial=%s, current=%s, path=%s) लेकिन कोड स्थानीय सत्र निर्माण तक पहुंच गया! यह पोर्ट संघर्ष का कारण बनेगा। रद्द कर रहे हैं।\n"
+
+msgid "Cache entries: {count}"
+msgstr "कैश प्रविष्टियां: {count}"
+
+msgid "Cache hit rate: {rate:.2f}%"
+msgstr "कैश हिट दर: {rate:.2f}%"
+
+msgid "Cache size: {size} bytes"
+msgstr "कैश आकार: {size} बाइट्स"
+
+msgid "Cached Scrape Results"
+msgstr "कैश किए गए स्क्रैप परिणाम"
+
+msgid "Cancel"
+msgstr "रद्द करें"
+
+msgid "Cannot auto-resume checkpoint"
+msgstr "चेकपॉइंट स्वचालित रूप से फिर से शुरू नहीं कर सकते"
+
+msgid ""
+"Cannot connect to daemon at %s: %s (daemon may not be running or IPC server not started)\n"
+msgstr ""
+"डेमन से %s पर कनेक्ट नहीं हो सका: %s (डेमन चल नहीं रहा हो सकता है या IPC सर्वर शुरू नहीं हुआ)\n"
+
+msgid "Cannot specify both --hybrid and --v1"
+msgstr "एक साथ --hybrid और --v1 निर्दिष्ट नहीं कर सकते"
+
+msgid "Cannot specify both --v2 and --hybrid"
+msgstr "एक साथ --v2 और --hybrid निर्दिष्ट नहीं कर सकते"
+
+msgid "Cannot specify both --v2 and --v1"
+msgstr "एक साथ --v2 और --v1 निर्दिष्ट नहीं कर सकते"
+
 msgid "Capability"
 msgstr "क्षमता"
+
+msgid "Choked"
+msgstr "अवरुद्ध"
+
+msgid "Cleaning up old checkpoints..."
+msgstr "पुराने चेकपॉइंट साफ कर रहे हैं..."
+
+msgid "Cleanup complete"
+msgstr "सफाई पूर्ण"
+
+msgid "Click on 'Global' tab to configure this section"
+msgstr "इस अनुभाग को कॉन्फ़िगर करने के लिए 'Global' टैब पर क्लिक करें"
+
+msgid "Client"
+msgstr "क्लाइंट"
+
+msgid ""
+"Client error checking daemon status at %s: %s (daemon may be starting up)\n"
+msgstr ""
+"डेमन स्थिति जांचने में क्लाइंट त्रुटि %s: %s (डेमन शुरू हो रहा हो सकता है)\n"
 
 msgid "Commands: "
 msgstr "कमांड: "
@@ -118,89 +758,603 @@ msgstr "पूर्ण"
 msgid "Completed (Scrape)"
 msgstr "पूर्ण (स्क्रैप)"
 
-msgid "Component"
-msgstr "घटक"
+msgid "Compressing backup..."
+msgstr "बैकअप संपीड़ित कर रहे हैं..."
 
 msgid "Condition"
 msgstr "शर्त"
 
+msgid "Config"
+msgstr "कॉन्फ़िग"
+
 msgid "Config Backups"
 msgstr "कॉन्फ़िग बैकअप"
+
+msgid "Configuration differences:"
+msgstr "कॉन्फ़िगरेशन अंतर:"
+
+msgid "Configuration exported to {path}"
+msgstr "कॉन्फ़िगरेशन {path} में निर्यात किया गया"
 
 msgid "Configuration file path"
 msgstr "कॉन्फ़िगरेशन फ़ाइल पथ"
 
+msgid "Configuration imported to {path}"
+msgstr "कॉन्फ़िगरेशन {path} में आयात किया गया"
+
+msgid "Configuration restored from {path}"
+msgstr "कॉन्फ़िगरेशन {path} से पुनर्स्थापित किया गया"
+
+msgid "Configuration section"
+msgstr "कॉन्फ़िगरेशन अनुभाग"
+
+msgid ""
+"Configuration: {type}\n"
+"\n"
+"This configuration section is not yet fully implemented.\n"
+msgstr ""
+"कॉन्फ़िगरेशन: {type}\n"
+"\n"
+"यह कॉन्फ़िगरेशन अनुभाग अभी तक पूरी तरह से लागू नहीं किया गया है।\n"
+
 msgid "Confirm"
 msgstr "पुष्टि करें"
-
-msgid "Connected"
-msgstr "जुड़ा हुआ"
 
 msgid "Connected Peers"
 msgstr "जुड़े हुए पीयर"
 
-msgid "Count: {count}{file_info}{private_info}"
-msgstr "गिनती: {count}{file_info}{private_info}"
+msgid "Connecting to daemon at %s (PID file exists)"
+msgstr "डेमन से %s पर कनेक्ट हो रहे हैं (PID फ़ाइल मौजूद है)"
+
+msgid "Connection Timeout"
+msgstr "कनेक्शन टाइमआउट"
+
+msgid "Connection timeout in seconds"
+msgstr "कनेक्शन टाइमआउट (सेकंड में)"
+
+msgid "Copy Info Hash"
+msgstr "जानकारी हैश कॉपी करें"
+
+msgid ""
+"Could not connect to daemon (no PID file): %s - will create local session\n"
+msgstr ""
+"डेमन से कनेक्ट नहीं हो सका (कोई PID फ़ाइल नहीं): %s - स्थानीय सत्र बनाएगा\n"
+
+msgid "Could not find file index"
+msgstr "फ़ाइल सूचकांक नहीं मिला"
+
+msgid "Could not get torrent output directory"
+msgstr "torrent आउटपुट निर्देशिका प्राप्त नहीं कर सका"
+
+msgid "Could not read daemon config file: %s"
+msgstr "डेमन कॉन्फ़िग फ़ाइल पढ़ नहीं सका: %s"
+
+msgid "Could not read daemon config from ConfigManager: %s"
+msgstr "ConfigManager से डेमन कॉन्फ़िग पढ़ नहीं सका: %s"
+
+msgid "Could not save daemon config to config file: %s"
+msgstr "डेमन कॉन्फ़िग को कॉन्फ़िग फ़ाइल में सहेज नहीं सका: %s"
+
+msgid "Could not send shutdown request, using signal..."
+msgstr "शटडाउन अनुरोध भेज नहीं सका, सिग्नल का उपयोग कर रहे हैं..."
 
 msgid "Create backup before migration"
-msgstr "स्थानांतरण से पहले बैकअप बनाएं"
+msgstr "माइग्रेशन से पहले बैकअप बनाएं"
 
-msgid "DHT"
-msgstr "DHT"
+msgid "Creating backup..."
+msgstr "बैकअप बना रहे हैं..."
+
+msgid "Current chunks: {count}"
+msgstr "वर्तमान चंक: {count}"
+
+msgid "Current locale: {locale}"
+msgstr "वर्तमान स्थानीय: {locale}"
+
+msgid ""
+"Daemon PID file exists but API key not found in config. Cannot route to daemon. Please check daemon configuration.\n"
+msgstr ""
+"डेमन PID फ़ाइल मौजूद है लेकिन कॉन्फ़िग में API कुंजी नहीं मिली। डेमन पर रूट नहीं कर सकते। कृपया डेमन कॉन्फ़िगरेशन जांचें।\n"
+
+msgid "Daemon config file exists but ipc_port not found, trying main config"
+msgstr ""
+
+msgid ""
+"Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...\n"
+msgstr ""
+
+msgid ""
+"Daemon connection timeout (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+
+msgid "Daemon is accessible and ready (attempt %d/%d, took %.1fs)"
+msgstr ""
+
+msgid ""
+"Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+
+msgid ""
+"Daemon is marked as running but not accessible after %d attempts (elapsed %.1fs)\n"
+msgstr ""
+
+msgid "Daemon is not running"
+msgstr ""
+
+msgid "Daemon is not running, nothing to restart"
+msgstr ""
+
+msgid "Daemon is not running, restart not needed"
+msgstr ""
+
+msgid ""
+"Daemon is not running. File management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+
+msgid ""
+"Daemon is not running. NAT management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+
+msgid ""
+"Daemon is not running. Queue management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+
+msgid ""
+"Daemon is not running. Scrape commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+
+msgid "Daemon restarted successfully (PID: %d)"
+msgstr ""
+
+msgid "Daemon stopped"
+msgstr ""
+
+msgid "Daemon stopped gracefully"
+msgstr ""
 
 msgid "Description"
-msgstr "विवरण"
+msgstr ""
+
+msgid "Description: {desc}"
+msgstr ""
+
+msgid "Deselect All"
+msgstr ""
+
+msgid "Deselected {count} file(s)"
+msgstr ""
 
 msgid "Details"
-msgstr "विवरण"
+msgstr ""
 
-msgid "Disabled"
-msgstr "अक्षम"
+msgid "Diff written to {path}"
+msgstr ""
+
+msgid "Direct session access not available in daemon mode"
+msgstr ""
+
+msgid "Disk I/O configuration (preallocation, hashing, checkpoints)"
+msgstr ""
+
+msgid "Do Not Download"
+msgstr ""
 
 msgid "Download"
-msgstr "डाउनलोड"
+msgstr ""
+
+msgid "Download Limit"
+msgstr ""
+
+msgid "Download Rate"
+msgstr ""
 
 msgid "Download Speed"
-msgstr "डाउनलोड गति"
+msgstr ""
 
 msgid "Download paused"
-msgstr "डाउनलोड रोक दिया गया"
+msgstr ""
 
 msgid "Download resumed"
-msgstr "डाउनलोड फिर से शुरू किया गया"
+msgstr ""
 
 msgid "Download stopped"
-msgstr "डाउनलोड बंद कर दिया गया"
+msgstr ""
 
 msgid "Downloaded"
-msgstr "डाउनलोड किया गया"
+msgstr ""
+
+msgid "Downloaders"
+msgstr ""
+
+msgid "Downloading"
+msgstr ""
 
 msgid "Downloading {name}"
-msgstr "{name} डाउनलोड हो रहा है"
+msgstr ""
 
 msgid "ETA"
-msgstr "अनुमानित समय"
+msgstr ""
 
-msgid "Enable debug mode"
-msgstr "डीबग मोड सक्षम करें"
-
-msgid "Enable verbose output"
-msgstr "वर्बोज़ आउटपुट सक्षम करें"
+msgid "Enable debug mode (deprecated, use -vv)"
+msgstr ""
 
 msgid "Enabled"
-msgstr "सक्षम"
+msgstr ""
 
-msgid "Error reading scrape cache"
-msgstr "स्क्रैप कैश पढ़ने में त्रुटि"
+msgid "Encrypting backup..."
+msgstr ""
+
+msgid "Error"
+msgstr ""
+
+msgid "Error adding tracker: {error}"
+msgstr ""
+
+msgid "Error banning peer: {error}"
+msgstr ""
+
+msgid ""
+"Error checking daemon accessibility (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...\n"
+msgstr ""
+
+msgid ""
+"Error checking daemon accessibility after %d attempts (elapsed %.1fs): %s\n"
+msgstr ""
+
+msgid "Error checking daemon stage: %s"
+msgstr ""
+
+msgid ""
+"Error checking if daemon is running (Windows-specific issue?): %s - PID file exists, will attempt IPC connection\n"
+msgstr ""
+
+msgid "Error checking if restart is needed: %s"
+msgstr ""
+
+msgid "Error closing HTTP session: %s"
+msgstr ""
+
+msgid "Error closing IPC client: %s"
+msgstr ""
+
+msgid "Error closing WebSocket: %s"
+msgstr ""
+
+msgid "Error comparing configs: {e}"
+msgstr ""
+
+msgid "Error creating backup: {e}"
+msgstr ""
+
+msgid "Error creating torrent"
+msgstr ""
+
+msgid "Error deselecting files: {error}"
+msgstr ""
+
+msgid "Error exporting configuration: {e}"
+msgstr "कॉन्फ़िगरेशन निर्यात करने में त्रुटि: {e}"
+
+msgid "Error forcing announce: {error}"
+msgstr "घोषणा बाध्य करने में त्रुटि: {error}"
+
+msgid "Error generating schema: {e}"
+msgstr "स्कीमा उत्पन्न करने में त्रुटि: {e}"
+
+msgid "Error getting daemon status: %s"
+msgstr "डेमन स्थिति प्राप्त करने में त्रुटि: %s"
+
+msgid "Error importing configuration: {e}"
+msgstr "कॉन्फ़िगरेशन आयात करने में त्रुटि: {e}"
+
+msgid "Error in socket pre-check: %s"
+msgstr "सॉकेट पूर्व-जांच में त्रुटि: %s"
+
+msgid "Error listing backups: {e}"
+msgstr "बैकअप सूचीबद्ध करने में त्रुटि: {e}"
+
+msgid "Error listing profiles: {e}"
+msgstr "प्रोफ़ाइल सूचीबद्ध करने में त्रुटि: {e}"
+
+msgid "Error listing templates: {e}"
+msgstr "टेम्प्लेट सूचीबद्ध करने में त्रुटि: {e}"
+
+msgid "Error loading torrent configuration: {error}"
+msgstr "torrent कॉन्फ़िगरेशन लोड करने में त्रुटि: {error}"
+
+msgid "Error opening folder: {error}"
+msgstr "फ़ोल्डर खोलने में त्रुटि: {error}"
+
+msgid "Error processing file %s: %s"
+msgstr "फ़ाइल %s प्रसंस्करण में त्रुटि: %s"
+
+msgid "Error reading PID file after retries: %s"
+msgstr "पुनः प्रयास के बाद PID फ़ाइल पढ़ने में त्रुटि: %s"
+
+msgid "Error reading PID file: %s"
+msgstr "PID फ़ाइल पढ़ने में त्रुटि: %s"
+
+msgid "Error receiving WebSocket event: %s"
+msgstr "WebSocket इवेंट प्राप्त करने में त्रुटि: %s"
+
+msgid "Error removing tracker: {error}"
+msgstr "ट्रैकर हटाने में त्रुटि: {error}"
+
+msgid "Error restarting daemon: %s"
+msgstr "डेमन पुनः आरंभ करने में त्रुटि: %s"
+
+msgid "Error restoring backup: {e}"
+msgstr "बैकअप पुनर्स्थापित करने में त्रुटि: {e}"
+
+msgid "Error routing to daemon (PID file exists): %s"
+msgstr "डेमन पर रूट करने में त्रुटि (PID फ़ाइल मौजूद है): %s"
+
+msgid "Error routing to daemon (no PID file): %s - will create local session"
+msgstr "डेमन पर रूट करने में त्रुटि (कोई PID फ़ाइल नहीं): %s - स्थानीय सत्र बनाएगा"
+
+msgid "Error selecting files: {error}"
+msgstr "फ़ाइलें चुनने में त्रुटि: {error}"
+
+msgid "Error sending shutdown request: %s"
+msgstr "शटडाउन अनुरोध भेजने में त्रुटि: %s"
+
+msgid "Error setting file priority: {error}"
+msgstr "फ़ाइल प्राथमिकता सेट करने में त्रुटि: {error}"
+
+msgid "Error starting daemon: %s"
+msgstr "डेमन शुरू करने में त्रुटि: %s"
+
+msgid "Error stopping daemon: %s"
+msgstr "डेमन रोकने में त्रुटि: %s"
+
+msgid "Error verifying files: {error}"
+msgstr "फ़ाइलें सत्यापित करने में त्रुटि: {error}"
+
+msgid "Error waiting for daemon with progress: %s"
+msgstr "प्रगति के साथ डेमन की प्रतीक्षा में त्रुटि: %s"
+
+msgid "Error waiting for daemon: %s"
+msgstr "डेमन की प्रतीक्षा में त्रुटि: %s"
+
+msgid "Error with auto-tuning: {e}"
+msgstr "स्वचालित-ट्यूनिंग में त्रुटि: {e}"
+
+msgid "Error with profile: {e}"
+msgstr "प्रोफ़ाइल में त्रुटि: {e}"
+
+msgid "Error with template: {e}"
+msgstr "टेम्प्लेट में त्रुटि: {e}"
+
+msgid "Error: {error}"
+msgstr "त्रुटि: {error}"
+
+msgid "Eviction rate: {rate:.2f} /sec"
+msgstr "निष्कासन दर: {rate:.2f} /सेकंड"
+
+msgid "Exceeded maximum wait time (%.1fs) for daemon readiness"
+msgstr "डेमन तत्परता के लिए अधिकतम प्रतीक्षा समय (%.1fs) पार कर गया"
+
+msgid "Expected type: {type_name}"
+msgstr "अपेक्षित प्रकार: {type_name}"
 
 msgid "Explore"
 msgstr "अन्वेषण करें"
 
+msgid "Export complete"
+msgstr "निर्यात पूर्ण"
+
+msgid "Exporting checkpoint..."
+msgstr "चेकपॉइंट निर्यात कर रहे हैं..."
+
 msgid "Failed"
-msgstr "असफल"
+msgstr "विफल"
+
+msgid "Failed to add content"
+msgstr "सामग्री जोड़ने में विफल"
+
+msgid "Failed to add magnet link"
+msgstr "magnet लिंक जोड़ने में विफल"
+
+msgid "Failed to add peer to allowlist"
+msgstr "पीयर को allowlist में जोड़ने में विफल"
+
+msgid "Failed to add torrent"
+msgstr "torrent जोड़ने में विफल"
+
+msgid "Failed to add torrent to daemon"
+msgstr "डेमन में torrent जोड़ने में विफल"
+
+msgid "Failed to announce: {error}"
+msgstr "घोषणा करने में विफल: {error}"
+
+msgid "Failed to ban peer: {error}"
+msgstr "पीयर प्रतिबंधित करने में विफल: {error}"
+
+msgid "Failed to calculate progress: %s"
+msgstr "प्रगति गणना करने में विफल: %s"
+
+msgid "Failed to cleanup Xet cache"
+msgstr "Xet कैश साफ़ करने में विफल"
+
+msgid "Failed to clear queue"
+msgstr "कतार साफ़ करने में विफल"
+
+msgid "Failed to collect custom metrics: %s"
+msgstr "कस्टम मीट्रिक एकत्र करने में विफल: %s"
+
+msgid "Failed to collect performance metrics: %s"
+msgstr "प्रदर्शन मीट्रिक एकत्र करने में विफल: %s"
+
+msgid "Failed to collect system metrics: %s"
+msgstr "सिस्टम मीट्रिक एकत्र करने में विफल: %s"
+
+msgid "Failed to copy info hash: {error}"
+msgstr "जानकारी हैश कॉपी करने में विफल: {error}"
+
+msgid "Failed to deselect all files"
+msgstr "सभी फ़ाइलों का चयन रद्द करने में विफल"
+
+msgid "Failed to deselect files"
+msgstr "फ़ाइलों का चयन रद्द करने में विफल"
+
+msgid "Failed to deselect files: {error}"
+msgstr "फ़ाइलों का चयन रद्द करने में विफल: {error}"
+
+msgid "Failed to disable io_uring: %s"
+msgstr "io_uring अक्षम करने में विफल: %s"
+
+msgid "Failed to discover NAT"
+msgstr "NAT खोजने में विफल"
+
+msgid "Failed to enable io_uring: %s"
+msgstr "io_uring सक्षम करने में विफल: %s"
+
+msgid "Failed to generate .tonic file"
+msgstr ".tonic फ़ाइल उत्पन्न करने में विफल"
+
+msgid "Failed to generate tonic link"
+msgstr "tonic लिंक उत्पन्न करने में विफल"
+
+msgid "Failed to get NAT status"
+msgstr "NAT स्थिति प्राप्त करने में विफल"
+
+msgid "Failed to get Xet cache info"
+msgstr "Xet कैश जानकारी प्राप्त करने में विफल"
+
+msgid "Failed to get Xet stats"
+msgstr "Xet आँकड़े प्राप्त करने में विफल"
+
+msgid "Failed to get content"
+msgstr "सामग्री प्राप्त करने में विफल"
+
+msgid "Failed to get metrics interval from config: %s"
+msgstr "कॉन्फ़िग से मीट्रिक अंतराल प्राप्त करने में विफल: %s"
+
+msgid "Failed to get peers"
+msgstr "पीयर प्राप्त करने में विफल"
+
+msgid "Failed to get queue"
+msgstr "कतार प्राप्त करने में विफल"
+
+msgid "Failed to get runtime status: %s"
+msgstr "रनटाइम स्थिति प्राप्त करने में विफल: %s"
+
+msgid "Failed to get stats"
+msgstr "आँकड़े प्राप्त करने में विफल"
+
+msgid "Failed to get sync mode"
+msgstr "सिंक मोड प्राप्त करने में विफल"
+
+msgid "Failed to get sync status"
+msgstr "सिंक स्थिति प्राप्त करने में विफल"
+
+msgid "Failed to list aliases"
+msgstr "उपनाम सूचीबद्ध करने में विफल"
+
+msgid "Failed to list allowlist"
+msgstr "allowlist सूचीबद्ध करने में विफल"
+
+msgid "Failed to list files"
+msgstr "फ़ाइलें सूचीबद्ध करने में विफल"
+
+msgid "Failed to list scrape results"
+msgstr "स्क्रैप परिणाम सूचीबद्ध करने में विफल"
+
+msgid "Failed to load filter file: {file_path}"
+msgstr "फ़िल्टर फ़ाइल लोड करने में विफल: {file_path}"
+
+msgid "Failed to map port"
+msgstr "पोर्ट मैप करने में विफल"
+
+msgid "Failed to move in queue"
+msgstr "कतार में स्थानांतरित करने में विफल"
+
+msgid "Failed to parse config value: %s"
+msgstr "कॉन्फ़िग मान पार्स करने में विफल: %s"
+
+msgid "Failed to pause torrent"
+msgstr "torrent रोकने में विफल"
+
+msgid "Failed to pin content"
+msgstr "सामग्री पिन करने में विफल"
+
+msgid "Failed to refresh mappings"
+msgstr "मैपिंग ताज़ा करने में विफल"
 
 msgid "Failed to register torrent in session"
-msgstr "सत्र में टोरेंट पंजीकृत करने में विफल"
+msgstr "सत्र में torrent पंजीकृत करने में विफल"
+
+msgid "Failed to remove alias"
+msgstr "उपनाम हटाने में विफल"
+
+msgid "Failed to remove from queue"
+msgstr "कतार से हटाने में विफल"
+
+msgid "Failed to remove peer from allowlist"
+msgstr "allowlist से पीयर हटाने में विफल"
+
+msgid "Failed to remove tracker: {error}"
+msgstr "ट्रैकर हटाने में विफल: {error}"
+
+msgid "Failed to resume torrent"
+msgstr "torrent फिर से शुरू करने में विफल"
+
+msgid "Failed to save configuration to file: %s"
+msgstr "कॉन्फ़िगरेशन फ़ाइल में सहेजने में विफल: %s"
+
+msgid "Failed to scrape torrent"
+msgstr "torrent स्क्रैप करने में विफल"
+
+msgid "Failed to select all files"
+msgstr "सभी फ़ाइलें चुनने में विफल"
+
+msgid "Failed to select files"
+msgstr "फ़ाइलें चुनने में विफल"
+
+msgid "Failed to select files: {error}"
+msgstr "फ़ाइलें चुनने में विफल: {error}"
+
+msgid "Failed to set alias"
+msgstr "उपनाम सेट करने में विफल"
+
+msgid "Failed to set file priority"
+msgstr "फ़ाइल प्राथमिकता सेट करने में विफल"
+
+msgid "Failed to set first piece priority: %s"
+msgstr "पहला टुकड़ा प्राथमिकता सेट करने में विफल: %s"
+
+msgid "Failed to set last piece priority: %s"
+msgstr "अंतिम टुकड़ा प्राथमिकता सेट करने में विफल: %s"
+
+msgid "Failed to set priority"
+msgstr "प्राथमिकता सेट करने में विफल"
+
+msgid "Failed to set priority: {error}"
+msgstr "प्राथमिकता सेट करने में विफल: {error}"
+
+msgid "Failed to set sync mode"
+msgstr "सिंक मोड सेट करने में विफल"
+
+msgid "Failed to sign WebSocket request: %s"
+msgstr "WebSocket अनुरोध पर हस्ताक्षर करने में विफल: %s"
+
+msgid "Failed to sign request with Ed25519: %s"
+msgstr "Ed25519 के साथ अनुरोध पर हस्ताक्षर करने में विफल: %s"
+
+msgid "Failed to start sync"
+msgstr "सिंक शुरू करने में विफल"
+
+msgid "Failed to stop daemon"
+msgstr "डेमन रोकने में विफल"
+
+msgid "Failed to unmap port"
+msgstr "पोर्ट अनमैप करने में विफल"
+
+msgid "Failed to unpin content"
+msgstr "सामग्री अनपिन करने में विफल"
 
 msgid "File"
 msgstr "फ़ाइल"
@@ -209,16 +1363,65 @@ msgid "File Name"
 msgstr "फ़ाइल नाम"
 
 msgid "File selection not available for this torrent"
-msgstr "इस टोरेंट के लिए फ़ाइल चयन उपलब्ध नहीं है"
+msgstr "इस torrent के लिए फ़ाइल चयन उपलब्ध नहीं"
 
 msgid "Files"
 msgstr "फ़ाइलें"
 
+msgid "Filter update failed"
+msgstr "फ़िल्टर अपडेट विफल"
+
+msgid "Folder not found: {folder}"
+msgstr "फ़ोल्डर नहीं मिला: {folder}"
+
+msgid "Force Announce"
+msgstr "बाध्य घोषणा"
+
+msgid "Found {count} potential issues"
+msgstr "{count} संभावित समस्याएं मिलीं"
+
+msgid ""
+"Full configuration editing is available in the Global Config screen. Press 'g' to open it.\n"
+msgstr ""
+"पूर्ण कॉन्फ़िगरेशन संपादन Global Config स्क्रीन में उपलब्ध है। इसे खोलने के लिए 'g' दबाएं।\n"
+
+msgid ""
+"Full configuration editing requires navigating to the Global Config screen\n"
+msgstr ""
+"पूर्ण कॉन्फ़िगरेशन संपादन के लिए Global Config स्क्रीन पर नेविगेट करना आवश्यक है\n"
+
+msgid "General"
+msgstr "सामान्य"
+
+msgid "General configuration - Data provider/Executor not available"
+msgstr "सामान्य कॉन्फ़िगरेशन - डेटा प्रदाता/एग्ज़ीक्यूटर उपलब्ध नहीं"
+
+msgid "Generated new API key for daemon"
+msgstr "डेमन के लिए नई API कुंजी उत्पन्न की गई"
+
+msgid "Generating {format} torrent..."
+msgstr "{format} torrent उत्पन्न कर रहे हैं..."
+
+msgid "Global"
+msgstr "वैश्विक"
+
 msgid "Global Config"
 msgstr "वैश्विक कॉन्फ़िग"
 
+msgid "Global Configuration"
+msgstr "वैश्विक कॉन्फ़िगरेशन"
+
+msgid "Graceful shutdown timeout, forcing stop"
+msgstr "सुंदर शटडाउन टाइमआउट, बलपूर्वक रोक रहे हैं"
+
+msgid "Graphs"
+msgstr "ग्राफ़"
+
 msgid "Help"
-msgstr "सहायता"
+msgstr "मदद"
+
+msgid "High"
+msgstr "उच्च"
 
 msgid "History"
 msgstr "इतिहास"
@@ -229,20 +1432,93 @@ msgstr "ID"
 msgid "IP"
 msgstr "IP"
 
-msgid "IP Filter"
-msgstr "IP फ़िल्टर"
+msgid "IP Address"
+msgstr "IP पता"
+
+msgid "IP filter not available"
+msgstr "IP फ़िल्टर उपलब्ध नहीं"
+
+msgid ""
+"IPCClient.get_daemon_pid: Checking pid_file=%s (home_dir=%s, exists=%s)\n"
+msgstr ""
+"IPCClient.get_daemon_pid: pid_file=%s जांच रहे हैं (home_dir=%s, exists=%s)\n"
 
 msgid "IPFS"
 msgstr "IPFS"
 
+msgid "Idle"
+msgstr "निष्क्रिय"
+
+msgid "Inactive"
+msgstr "निष्क्रिय"
+
+msgid "Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)"
+msgstr "वर्बोसिटी बढ़ाएं (-v: verbose, -vv: debug, -vvv: trace)"
+
+msgid "Info"
+msgstr "जानकारी"
+
 msgid "Info Hash"
 msgstr "जानकारी हैश"
+
+msgid "Info hash copied to clipboard"
+msgstr "जानकारी हैश क्लिपबोर्ड पर कॉपी किया गया"
+
+msgid "Info hash: {hash}"
+msgstr "जानकारी हैश: {hash}"
+
+msgid "Initial Rate"
+msgstr "प्रारंभिक दर"
+
+msgid "Initial send rate"
+msgstr "प्रारंभिक भेजने की दर"
 
 msgid "Interactive backup"
 msgstr "इंटरैक्टिव बैकअप"
 
+msgid "Invalid IP address: {error}"
+msgstr "अमान्य IP पता: {error}"
+
+msgid "Invalid IP range: {ip_range}"
+msgstr "अमान्य IP सीमा: {ip_range}"
+
+msgid "Invalid configuration: {e}"
+msgstr "अमान्य कॉन्फ़िगरेशन: {e}"
+
+msgid "Invalid info hash format"
+msgstr "अमान्य जानकारी हैश प्रारूप"
+
+msgid "Invalid info hash format: %s"
+msgstr "अमान्य जानकारी हैश प्रारूप: %s"
+
+msgid "Invalid info hash length in magnet link"
+msgstr "magnet लिंक में अमान्य जानकारी हैश लंबाई"
+
+msgid ""
+"Invalid locale '{current_locale}' specified. Falling back to 'en'. Available locales: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu\n"
+msgstr ""
+"अमान्य स्थानीय '{current_locale}' निर्दिष्ट किया गया। 'en' पर वापस जा रहे हैं। उपलब्ध स्थानीय: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu\n"
+
+msgid "Invalid magnet link - missing 'xt=urn:btih:' parameter"
+msgstr "अमान्य magnet लिंक - 'xt=urn:btih:' पैरामीटर गायब है"
+
+msgid "Invalid magnet link format"
+msgstr "अमान्य magnet लिंक प्रारूप"
+
+msgid "Invalid magnet link format - must start with 'magnet:?'"
+msgstr "अमान्य magnet लिंक प्रारूप - 'magnet:?' से शुरू होना चाहिए"
+
+msgid "Invalid peer selection"
+msgstr "अमान्य पीयर चयन"
+
+msgid "Invalid profile '{name}': {errors}"
+msgstr "अमान्य प्रोफ़ाइल '{name}': {errors}"
+
+msgid "Invalid template '{name}': {errors}"
+msgstr "अमान्य टेम्प्लेट '{name}': {errors}"
+
 msgid "Invalid torrent file format"
-msgstr "अमान्य टोरेंट फ़ाइल प्रारूप"
+msgstr "अमान्य torrent फ़ाइल प्रारूप"
 
 msgid "Key"
 msgstr "कुंजी"
@@ -253,20 +1529,86 @@ msgstr "कुंजी नहीं मिली: {key}"
 msgid "Last Scrape"
 msgstr "अंतिम स्क्रैप"
 
-msgid "Leechers"
-msgstr "लीचर"
+msgid "Last Update"
+msgstr "अंतिम अपडेट"
 
 msgid "Leechers (Scrape)"
-msgstr "लीचर (स्क्रैप)"
+msgstr "लीचर्स (स्क्रैप)"
+
+msgid "Loading configuration..."
+msgstr "कॉन्फ़िगरेशन लोड हो रहा है..."
+
+msgid "Loading torrent configuration..."
+msgstr "torrent कॉन्फ़िगरेशन लोड हो रहा है..."
+
+msgid "Low"
+msgstr "कम"
 
 msgid "MIGRATED"
-msgstr "स्थानांतरित"
+msgstr "माइग्रेट किया गया"
+
+msgid "MTU"
+msgstr "MTU"
+
+msgid "Magnet command: PID file check - exists=%s, path=%s"
+msgstr "Magnet कमांड: PID फ़ाइल जांच - exists=%s, path=%s"
+
+msgid "Magnet link must contain 'xt=urn:btih:' parameter"
+msgstr "Magnet लिंक में 'xt=urn:btih:' पैरामीटर होना चाहिए"
+
+msgid "Magnet link must start with 'magnet:?'"
+msgstr "Magnet लिंक 'magnet:?' से शुरू होना चाहिए"
+
+msgid "Max Rate"
+msgstr "अधिकतम दर"
+
+msgid "Max Retransmits"
+msgstr "अधिकतम पुनः प्रसारण"
+
+msgid "Max Window Size"
+msgstr "अधिकतम विंडो आकार"
+
+msgid "Maximum"
+msgstr "अधिकतम"
+
+msgid "Maximum UDP packet size"
+msgstr "अधिकतम UDP पैकेट आकार"
+
+msgid "Maximum receive window size"
+msgstr "अधिकतम प्राप्त विंडो आकार"
+
+msgid "Maximum retransmission attempts"
+msgstr "अधिकतम पुनः प्रसारण प्रयास"
+
+msgid "Maximum send rate"
+msgstr "अधिकतम भेजने की दर"
 
 msgid "Menu"
 msgstr "मेनू"
 
 msgid "Metric"
-msgstr "मेट्रिक"
+msgstr "मीट्रिक"
+
+msgid "Migrating checkpoint format from {from_fmt} to {to_fmt}..."
+msgstr "चेकपॉइंट प्रारूप {from_fmt} से {to_fmt} में माइग्रेट कर रहे हैं..."
+
+msgid "Migration complete"
+msgstr "माइग्रेशन पूर्ण"
+
+msgid "Min Rate"
+msgstr "न्यूनतम दर"
+
+msgid "Minimum send rate"
+msgstr "न्यूनतम भेजने की दर"
+
+msgid "Model '{model}' not found in Config"
+msgstr "कॉन्फ़िग में मॉडल '{model}' नहीं मिला"
+
+msgid "Modified"
+msgstr "संशोधित"
+
+msgid "N/A"
+msgstr "उपलब्ध नहीं"
 
 msgid "NAT Management"
 msgstr "NAT प्रबंधन"
@@ -277,23 +1619,32 @@ msgstr "नाम"
 msgid "Network"
 msgstr "नेटवर्क"
 
+msgid "Network configuration (connections, timeouts, rate limits)"
+msgstr "नेटवर्क कॉन्फ़िगरेशन (कनेक्शन, टाइमआउट, दर सीमाएं)"
+
+msgid "Network configuration - Data provider/Executor not available"
+msgstr "नेटवर्क कॉन्फ़िगरेशन - डेटा प्रदाता/एग्ज़ीक्यूटर उपलब्ध नहीं"
+
+msgid "Never"
+msgstr "कभी नहीं"
+
 msgid "No"
-msgstr "नहीं"
+msgstr ""
+
+msgid "No PID file found, checking for daemon via _get_executor()"
+msgstr ""
 
 msgid "No active alerts"
-msgstr "कोई सक्रिय अलर्ट नहीं"
+msgstr ""
 
 msgid "No alert rules"
 msgstr "कोई अलर्ट नियम नहीं"
 
 msgid "No alert rules configured"
-msgstr "कोई अलर्ट नियम कॉन्फ़िगर नहीं किया गया"
+msgstr "कोई अलर्ट नियम कॉन्फ़िगर नहीं किए गए"
 
 msgid "No backups found"
 msgstr "कोई बैकअप नहीं मिला"
-
-msgid "No cached results"
-msgstr "कोई कैश्ड परिणाम नहीं"
 
 msgid "No checkpoints"
 msgstr "कोई चेकपॉइंट नहीं"
@@ -301,8 +1652,43 @@ msgstr "कोई चेकपॉइंट नहीं"
 msgid "No config file to backup"
 msgstr "बैकअप के लिए कोई कॉन्फ़िग फ़ाइल नहीं"
 
+msgid "No configuration file to backup"
+msgstr "बैकअप के लिए कोई कॉन्फ़िगरेशन फ़ाइल नहीं"
+
+msgid "No daemon PID file found - daemon is not running"
+msgstr "डेमन PID फ़ाइल नहीं मिली - डेमन चल नहीं रहा"
+
+msgid "No daemon config or API key found - will create local session"
+msgstr "डेमन कॉन्फ़िग या API कुंजी नहीं मिली - स्थानीय सत्र बनाएगा"
+
+msgid ""
+"No daemon detected (PID file doesn't exist), creating local session. PID file path: %s\n"
+msgstr ""
+"कोई डेमन नहीं मिला (PID फ़ाइल मौजूद नहीं), स्थानीय सत्र बना रहे हैं। PID फ़ाइल पथ: %s\n"
+
+msgid "No file selected"
+msgstr "कोई फ़ाइल चयनित नहीं"
+
+msgid "No files to deselect"
+msgstr "चयन रद्द करने के लिए कोई फ़ाइल नहीं"
+
+msgid "No files to select"
+msgstr "चुनने के लिए कोई फ़ाइल नहीं"
+
+msgid "No locales directory found"
+msgstr "कोई स्थानीय निर्देशिका नहीं मिली"
+
+msgid "No magnet URI provided"
+msgstr "कोई magnet URI प्रदान नहीं किया गया"
+
+msgid "No magnet URI provided for add_magnet operation."
+msgstr "add_magnet ऑपरेशन के लिए कोई magnet URI प्रदान नहीं किया गया।"
+
+msgid "No peer selected"
+msgstr "कोई पीयर चयनित नहीं"
+
 msgid "No peers connected"
-msgstr "कोई पीयर जुड़ा नहीं है"
+msgstr "कोई पीयर जुड़े नहीं"
 
 msgid "No profiles available"
 msgstr "कोई प्रोफ़ाइल उपलब्ध नहीं"
@@ -311,34 +1697,107 @@ msgid "No templates available"
 msgstr "कोई टेम्प्लेट उपलब्ध नहीं"
 
 msgid "No torrent active"
-msgstr "कोई सक्रिय टोरेंट नहीं"
+msgstr "कोई सक्रिय torrent नहीं"
 
-msgid "Nodes: {count}"
-msgstr "नोड: {count}"
+msgid "No torrent path or magnet provided"
+msgstr "torrent पथ या magnet प्रदान नहीं किया गया"
 
-msgid "Not available"
-msgstr "उपलब्ध नहीं"
+msgid "No tracker selected"
+msgstr "कोई ट्रैकर चयनित नहीं"
 
-msgid "Not configured"
-msgstr "कॉन्फ़िगर नहीं किया गया"
+msgid "No trackers found"
+msgstr "कोई ट्रैकर नहीं मिला"
+
+msgid "Normal"
+msgstr "सामान्य"
 
 msgid "Not supported"
 msgstr "समर्थित नहीं"
 
+msgid "Note"
+msgstr "नोट"
+
 msgid "OK"
-msgstr "ठीक"
+msgstr "ठीक है"
+
+msgid "Open Folder"
+msgstr "फ़ोल्डर खोलें"
+
+msgid "Opened folder: {path}"
+msgstr "फ़ोल्डर खोला गया: {path}"
 
 msgid "Operation not supported"
 msgstr "ऑपरेशन समर्थित नहीं"
 
+msgid "Option"
+msgstr "विकल्प"
+
+msgid "Output directory not available"
+msgstr "आउटपुट निर्देशिका उपलब्ध नहीं"
+
+msgid "PEX: Failed"
+msgstr "PEX: विफल"
+
 msgid "PEX: {status}"
 msgstr "PEX: {status}"
+
+msgid "PID file contains invalid PID: %d, removing"
+msgstr "PID फ़ाइल में अमान्य PID है: %d, हटा रहे हैं"
+
+msgid "PID file contains invalid data: %r, removing"
+msgstr "PID फ़ाइल में अमान्य डेटा है: %r, हटा रहे हैं"
+
+msgid "PID file is empty, removing"
+msgstr "PID फ़ाइल खाली है, हटा रहे हैं"
+
+msgid "Parsing files and building file tree..."
+msgstr "फ़ाइलें पार्स कर रहे हैं और फ़ाइल ट्री बना रहे हैं..."
+
+msgid "Parsing files and building hybrid metadata..."
+msgstr "फ़ाइलें पार्स कर रहे हैं और हाइब्रिड मेटाडेटा बना रहे हैं..."
+
+msgid "Path"
+msgstr "पथ"
 
 msgid "Pause"
 msgstr "रोकें"
 
+msgid "Pause failed: {error}"
+msgstr "रोकने में विफल: {error}"
+
+msgid "Peer banning not yet implemented. Selected peer: {ip}:{port}"
+msgstr "पीयर प्रतिबंध अभी तक लागू नहीं किया गया। चयनित पीयर: {ip}:{port}"
+
+msgid "Peer {ip}:{port} banned"
+msgstr "पीयर {ip}:{port} प्रतिबंधित"
+
 msgid "Peers"
 msgstr "पीयर"
+
+msgid "Per-Torrent"
+msgstr ""
+
+msgid "Per-Torrent Config: {hash}..."
+msgstr ""
+
+msgid "Per-Torrent Configuration"
+msgstr ""
+
+msgid "Per-Torrent Configuration: {name}"
+msgstr ""
+
+msgid "Per-Torrent tab - Data provider or executor not available"
+msgstr "प्रति-Torrent टैब - डेटा प्रदाता या एक्सेक्यूटर उपलब्ध नहीं"
+
+msgid ""
+"Per-torrent configuration - Data provider/Executor or torrent not available\n"
+msgstr ""
+"प्रति-torrent कॉन्फ़िगरेशन - डेटा प्रदाता/एक्सेक्यूटर या torrent उपलब्ध नहीं\n"
+
+msgid ""
+"Per-torrent rate limits and priority can be configured via the CLI or executor commands.\n"
+msgstr ""
+"प्रति-torrent दर सीमाएं और प्राथमिकता CLI या एक्सेक्यूटर कमांड के माध्यम से कॉन्फ़िगर की जा सकती हैं।\n"
 
 msgid "Performance"
 msgstr "प्रदर्शन"
@@ -346,17 +1805,47 @@ msgstr "प्रदर्शन"
 msgid "Pieces"
 msgstr "टुकड़े"
 
+msgid "Please select a torrent first"
+msgstr "कृपया पहले एक torrent चुनें"
+
 msgid "Port"
 msgstr "पोर्ट"
 
-msgid "Port: {port}"
-msgstr "पोर्ट: {port}"
+msgid "Prefer over TCP"
+msgstr "TCP से अधिक पसंद करें"
+
+msgid "Prefer uTP when both TCP and uTP are available"
+msgstr "जब TCP और uTP दोनों उपलब्ध हों तो uTP को प्राथमिकता दें"
+
+msgid "Preferences"
+msgstr "प्राथमिकताएं"
+
+msgid "Preferences tab - Executor not available"
+msgstr "प्राथमिकताएं टैब - एक्सेक्यूटर उपलब्ध नहीं"
+
+msgid "Press Ctrl+C to stop the daemon"
+msgstr "डेमन रोकने के लिए Ctrl+C दबाएं"
+
+msgid "Press Enter to configure this section"
+msgstr "इस अनुभाग को कॉन्फ़िगर करने के लिए Enter दबाएं"
 
 msgid "Priority"
 msgstr "प्राथमिकता"
 
 msgid "Private"
 msgstr "निजी"
+
+msgid "Profile '{name}' not found"
+msgstr "प्रोफ़ाइल '{name}' नहीं मिली"
+
+msgid "Profile applied to {path}"
+msgstr "प्रोफ़ाइल {path} पर लागू की गई"
+
+msgid "Profile config written to {path}"
+msgstr "प्रोफ़ाइल कॉन्फ़िग {path} में लिखा गया"
+
+msgid "Profile: {name}"
+msgstr "प्रोफ़ाइल: {name}"
 
 msgid "Profiles"
 msgstr "प्रोफ़ाइल"
@@ -365,10 +1854,19 @@ msgid "Progress"
 msgstr "प्रगति"
 
 msgid "Property"
-msgstr "संपत्ति"
+msgstr "गुण"
 
 msgid "Proxy Config"
 msgstr "प्रॉक्सी कॉन्फ़िग"
+
+msgid "Public key must be 32 bytes (64 hex characters)"
+msgstr "सार्वजनिक कुंजी 32 बाइट (64 हेक्स वर्ण) होनी चाहिए"
+
+msgid "PyYAML is required for YAML export"
+msgstr "YAML निर्यात के लिए PyYAML आवश्यक है"
+
+msgid "PyYAML is required for YAML import"
+msgstr "YAML आयात के लिए PyYAML आवश्यक है"
 
 msgid "PyYAML is required for YAML output"
 msgstr "YAML आउटपुट के लिए PyYAML आवश्यक है"
@@ -377,28 +1875,82 @@ msgid "Quick Add"
 msgstr "त्वरित जोड़ें"
 
 msgid "Quit"
-msgstr "बंद करें"
+msgstr "बाहर निकलें"
+
+msgid "RTT multiplier for retransmit timeout"
+msgstr "पुनः प्रसारण टाइमआउट के लिए RTT गुणक"
+
+msgid "Rate limit configuration (global and per-torrent)"
+msgstr "दर सीमा कॉन्फ़िगरेशन (वैश्विक और प्रति-torrent)"
 
 msgid "Rate limits disabled"
 msgstr "दर सीमाएं अक्षम"
 
 msgid "Rate limits set to 1024 KiB/s"
-msgstr "दर सीमाएं 1024 KiB/s पर सेट"
+msgstr "दर सीमाएं 1024 KiB/s पर सेट की गईं"
+
+msgid "Read IPC port %d from daemon config file (authoritative source)"
+msgstr "डेमन कॉन्फ़िग फ़ाइल से IPC पोर्ट %d पढ़ा गया (प्राधिकृत स्रोत)"
+
+msgid "Rehash: Failed"
+msgstr "रीहैश: विफल"
 
 msgid "Rehash: {status}"
 msgstr "रीहैश: {status}"
 
+msgid "Remaining chunks: {count}"
+msgstr "शेष टुकड़े: {count}"
+
+msgid "Remove"
+msgstr "हटाएं"
+
+msgid "Remove Tracker"
+msgstr "ट्रैकर हटाएं"
+
+msgid "Remove failed: {error}"
+msgstr "हटाने में विफल: {error}"
+
+msgid "Remove tracker not yet implemented. Selected tracker: {url}"
+msgstr "ट्रैकर हटाना अभी तक लागू नहीं किया गया। चयनित ट्रैकर: {url}"
+
+msgid "Reset specific key only (otherwise resets all options)"
+msgstr "केवल विशिष्ट कुंजी रीसेट करें (अन्यथा सभी विकल्प रीसेट करता है)"
+
+msgid "Restart daemon now?"
+msgstr "अभी डेमन पुनः आरंभ करें?"
+
+msgid "Restore complete"
+msgstr "पुनर्स्थापना पूर्ण"
+
+msgid "Restore failed"
+msgstr "पुनर्स्थापना विफल"
+
+msgid "Restoring checkpoint..."
+msgstr "चेकपॉइंट पुनर्स्थापित कर रहे हैं..."
+
 msgid "Resume"
 msgstr "फिर से शुरू करें"
+
+msgid "Resume failed: {error}"
+msgstr "फिर से शुरू करने में विफल: {error}"
+
+msgid "Resume from checkpoint?"
+msgstr "चेकपॉइंट से फिर से शुरू करें?"
+
+msgid "Resuming {name}"
+msgstr "{name} फिर से शुरू कर रहे हैं"
+
+msgid "Retransmit Timeout Factor"
+msgstr "पुनः प्रसारण टाइमआउट कारक"
 
 msgid "Rule"
 msgstr "नियम"
 
+msgid "Rule not found: {ip_range}"
+msgstr "नियम नहीं मिला: {ip_range}"
+
 msgid "Rule not found: {name}"
 msgstr "नियम नहीं मिला: {name}"
-
-msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
-msgstr "नियम: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, ब्लॉक: {blocks}"
 
 msgid "Running"
 msgstr "चल रहा है"
@@ -406,32 +1958,104 @@ msgstr "चल रहा है"
 msgid "SSL Config"
 msgstr "SSL कॉन्फ़िग"
 
+msgid "Save checkpoint after reset"
+msgstr "रीसेट के बाद चेकपॉइंट सहेजें"
+
+msgid "Save checkpoint immediately after setting option"
+msgstr "विकल्प सेट करने के तुरंत बाद चेकपॉइंट सहेजें"
+
+msgid "Saving torrent to {path}..."
+msgstr "torrent {path} में सहेज रहे हैं..."
+
+msgid "Scanning folder and calculating chunks..."
+msgstr "फ़ोल्डर स्कैन कर रहे हैं और टुकड़े गणना कर रहे हैं..."
+
+msgid "Schema written to {path}"
+msgstr "स्कीमा {path} में लिखा गया"
+
 msgid "Scrape Results"
 msgstr "स्क्रैप परिणाम"
+
+msgid "Scrape: Failed"
+msgstr "स्क्रैप: विफल"
 
 msgid "Scrape: {status}"
 msgstr "स्क्रैप: {status}"
 
+msgid "Search torrents..."
+msgstr "torrent खोजें..."
+
+msgid "Section"
+msgstr "अनुभाग"
+
 msgid "Section not found: {section}"
 msgstr "अनुभाग नहीं मिला: {section}"
+
+msgid "Section: {section}"
+msgstr "अनुभाग: {section}"
+
+msgid "Security"
+msgstr "सुरक्षा"
 
 msgid "Security Scan"
 msgstr "सुरक्षा स्कैन"
 
-msgid "Seeders"
-msgstr "सीडर"
+msgid "Security configuration - Data provider/Executor not available"
+msgstr "सुरक्षा कॉन्फ़िगरेशन - डेटा प्रदाता/एग्ज़ीक्यूटर उपलब्ध नहीं"
+
+msgid "Security settings (encryption, IP filtering, SSL)"
+msgstr "सुरक्षा सेटिंग्स (एन्क्रिप्शन, IP फ़िल्टरिंग, SSL)"
 
 msgid "Seeders (Scrape)"
-msgstr "सीडर (स्क्रैप)"
+msgstr "सीडर्स (स्क्रैप)"
+
+msgid "Seeding"
+msgstr "सीडिंग"
+
+msgid "Seeds"
+msgstr "सीड्स"
+
+msgid "Select All"
+msgstr "सभी चुनें"
+
+msgid "Select File Priority"
+msgstr "फ़ाइल प्राथमिकता चुनें"
+
+msgid "Select Priority"
+msgstr "प्राथमिकता चुनें"
+
+msgid "Select a section to configure"
+msgstr "कॉन्फ़िगर करने के लिए एक अनुभाग चुनें"
+
+msgid "Select a section to configure. Press Enter to edit, Escape to go back."
+msgstr "कॉन्फ़िगर करने के लिए एक अनुभाग चुनें। संपादित करने के लिए Enter दबाएं, वापस जाने के लिए Escape दबाएं।"
+
+msgid "Select a sub-tab to view configuration options"
+msgstr "कॉन्फ़िगरेशन विकल्प देखने के लिए एक उप-टैब चुनें"
+
+msgid "Select a sub-tab to view torrents"
+msgstr "torrent देखने के लिए एक उप-टैब चुनें"
+
+msgid "Select a tab to view content"
+msgstr "सामग्री देखने के लिए एक टैब चुनें"
+
+msgid "Select a torrent and sub-tab to view details"
+msgstr "विवरण देखने के लिए एक torrent और उप-टैब चुनें"
 
 msgid "Select files to download"
-msgstr "डाउनलोड के लिए फ़ाइलें चुनें"
+msgstr "डाउनलोड करने के लिए फ़ाइलें चुनें"
 
 msgid "Selected"
 msgstr "चयनित"
 
-msgid "Session"
-msgstr "सत्र"
+msgid "Selected {count} file(s)"
+msgstr "{count} फ़ाइल(ें) चयनित"
+
+msgid "Set Priority"
+msgstr "प्राथमिकता सेट करें"
+
+msgid "Set priority to {priority} for file"
+msgstr "फ़ाइल के लिए प्राथमिकता {priority} पर सेट करें"
 
 msgid "Set value in global config file"
 msgstr "वैश्विक कॉन्फ़िग फ़ाइल में मान सेट करें"
@@ -455,13 +2079,30 @@ msgid "Skip confirmation prompt"
 msgstr "पुष्टिकरण प्रॉम्प्ट छोड़ें"
 
 msgid "Skip daemon restart even if needed"
-msgstr "आवश्यक होने पर भी डेमॉन पुनरारंभ छोड़ें"
+msgstr "आवश्यक होने पर भी डेमन पुनः आरंभ छोड़ें"
 
 msgid "Snapshot failed: {error}"
-msgstr "स्नैपशॉट असफल: {error}"
+msgstr "स्नैपशॉट विफल: {error}"
 
 msgid "Snapshot saved to {path}"
 msgstr "स्नैपशॉट {path} में सहेजा गया"
+
+msgid ""
+"Socket connection test to %s:%d failed (result=%d). Port may not be open or firewall blocking. Proceeding with HTTP check anyway.\n"
+msgstr ""
+
+msgid ""
+"Socket test returned 10035 (WSAEWOULDBLOCK) on Windows for %s:%d. This may be a false positive - proceeding with HTTP check.\n"
+msgstr ""
+
+msgid "Source path does not exist: %s"
+msgstr ""
+
+msgid "Starting daemon..."
+msgstr "डेमन शुरू कर रहे हैं..."
+
+msgid "Starting file verification..."
+msgstr "फ़ाइल सत्यापन शुरू कर रहे हैं..."
 
 msgid "Status"
 msgstr "स्थिति"
@@ -469,134 +2110,290 @@ msgstr "स्थिति"
 msgid "Status: "
 msgstr "स्थिति: "
 
+msgid "Stopping daemon for restart..."
+msgstr "पुनः आरंभ के लिए डेमन रोक रहे हैं..."
+
+msgid "Stopping daemon..."
+msgstr "डेमन रोक रहे हैं..."
+
+msgid "Stopping daemon... ({elapsed:.1f}s)"
+msgstr "डेमन रोक रहे हैं... ({elapsed:.1f} सेकंड)"
+
+msgid "Storage"
+msgstr "भंडारण"
+
+msgid "Storage configuration - Data provider/Executor not available"
+msgstr "भंडारण कॉन्फ़िगरेशन - डेटा प्रदाता/एग्ज़ीक्यूटर उपलब्ध नहीं"
+
 msgid "Supported"
-msgstr "समर्थित"
+msgstr ""
 
 msgid "System Capabilities"
-msgstr "सिस्टम क्षमताएं"
+msgstr ""
 
 msgid "System Capabilities Summary"
-msgstr "सिस्टम क्षमताएं सारांश"
+msgstr ""
 
 msgid "System Resources"
-msgstr "सिस्टम संसाधन"
+msgstr ""
+
+msgid "System recommendations:"
+msgstr ""
+
+msgid "Template '{name}' not found"
+msgstr ""
+
+msgid "Template applied to {path}"
+msgstr ""
+
+msgid "Template config written to {path}"
+msgstr ""
+
+msgid "Template: {name}"
+msgstr ""
 
 msgid "Templates"
-msgstr "टेम्प्लेट"
+msgstr ""
+
+msgid "Templates: {templates}"
+msgstr ""
+
+msgid "This will modify your configuration file. Continue?"
+msgstr ""
+
+msgid ""
+"Timeout checking daemon accessibility (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+
+msgid ""
+"Timeout checking daemon accessibility after %d attempts (elapsed %.1fs)\n"
+msgstr ""
+
+msgid ""
+"Timeout checking daemon status at %s (daemon may be starting up or overloaded)\n"
+msgstr ""
 
 msgid "Timestamp"
-msgstr "समय चिह्न"
+msgstr ""
+
+msgid "Top profile entries:"
+msgstr ""
 
 msgid "Torrent Config"
-msgstr "टोरेंट कॉन्फ़िग"
+msgstr "Torrent कॉन्फ़िग"
 
 msgid "Torrent Status"
-msgstr "टोरेंट स्थिति"
+msgstr "Torrent स्थिति"
 
 msgid "Torrent file not found"
-msgstr "टोरेंट फ़ाइल नहीं मिली"
+msgstr "Torrent फ़ाइल नहीं मिली"
 
 msgid "Torrent not found"
-msgstr "टोरेंट नहीं मिला"
+msgstr "Torrent नहीं मिला"
+
+msgid "Torrent paused"
+msgstr "Torrent रोक दिया गया"
+
+msgid "Torrent removed"
+msgstr ""
+
+msgid "Torrent resumed"
+msgstr ""
+
+msgid "Torrent saved to {path}"
+msgstr ""
+
+msgid "Torrent {hash}... not found"
+msgstr ""
 
 msgid "Torrents"
-msgstr "टोरेंट"
+msgstr ""
+
+msgid "Torrents tab - Data provider or executor not available"
+msgstr ""
 
 msgid "Torrents: {count}"
-msgstr "टोरेंट: {count}"
+msgstr ""
 
-msgid "Tracker Scrape"
-msgstr "ट्रैकर स्क्रैप"
+msgid "Total chunks: {count}"
+msgstr "कुल टुकड़े: {count}"
+
+msgid "Tracker removed: {url}"
+msgstr "ट्रैकर हटाया गया: {url}"
+
+msgid "Trackers"
+msgstr "ट्रैकर्स"
 
 msgid "Type"
-msgstr "प्रकार"
+msgstr ""
+
+msgid "URL"
+msgstr ""
+
+msgid "Unexpected error checking daemon status at %s: %s"
+msgstr ""
 
 msgid "Unknown"
-msgstr "अज्ञात"
+msgstr ""
+
+msgid "Unknown error"
+msgstr ""
+
+msgid "Unknown operation: %s"
+msgstr ""
 
 msgid "Unknown subcommand"
-msgstr "अज्ञात उपकमांड"
+msgstr ""
 
 msgid "Unknown subcommand: {sub}"
-msgstr "अज्ञात उपकमांड: {sub}"
+msgstr ""
+
+msgid "Unlimited"
+msgstr ""
+
+msgid "Updated config file with daemon configuration"
+msgstr "डेमन कॉन्फ़िगरेशन के साथ कॉन्फ़िग फ़ाइल अपडेट की गई"
 
 msgid "Upload"
 msgstr "अपलोड"
 
+msgid "Upload Limit"
+msgstr "अपलोड सीमा"
+
+msgid "Upload Rate"
+msgstr "अपलोड दर"
+
 msgid "Upload Speed"
 msgstr "अपलोड गति"
 
+msgid "Uploading"
+msgstr "अपलोड हो रहा है"
+
 msgid "Uptime: {uptime:.1f}s"
-msgstr "अपटाइम: {uptime:.1f}से"
+msgstr ""
 
 msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
-msgstr "उपयोग: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr ""
 
 msgid "Usage: backup <info_hash> <dest>"
-msgstr "उपयोग: backup <info_hash> <dest>"
+msgstr ""
 
 msgid "Usage: checkpoint list"
-msgstr "उपयोग: checkpoint list"
+msgstr ""
 
 msgid "Usage: config [show|get|set|reload] ..."
-msgstr "उपयोग: config [show|get|set|reload] ..."
+msgstr ""
 
 msgid "Usage: config get <key.path>"
-msgstr "उपयोग: config get <key.path>"
+msgstr ""
 
 msgid "Usage: config set <key.path> <value>"
-msgstr "उपयोग: config set <key.path> <value>"
+msgstr ""
 
 msgid "Usage: config_backup list|create [desc]|restore <file>"
-msgstr "उपयोग: config_backup list|create [desc]|restore <file>"
+msgstr ""
 
 msgid "Usage: config_diff <file1> <file2>"
-msgstr "उपयोग: config_diff <file1> <file2>"
+msgstr ""
 
 msgid "Usage: config_export <toml|json|yaml> <output>"
-msgstr "उपयोग: config_export <toml|json|yaml> <output>"
+msgstr ""
 
 msgid "Usage: config_import <toml|json|yaml> <input>"
-msgstr "उपयोग: config_import <toml|json|yaml> <input>"
+msgstr ""
+
+msgid "Usage: disk [show|stats|config <key> <value>|monitor]"
+msgstr ""
 
 msgid "Usage: export <path>"
-msgstr "उपयोग: export <path>"
+msgstr ""
 
 msgid "Usage: import <path>"
-msgstr "उपयोग: import <path>"
+msgstr ""
 
 msgid "Usage: limits [show|set] <info_hash> [down up]"
-msgstr "उपयोग: limits [show|set] <info_hash> [down up]"
+msgstr ""
 
 msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
-msgstr "उपयोग: limits set <info_hash> <down_kib> <up_kib>"
+msgstr ""
 
-msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
-msgstr "उपयोग: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgid ""
+"Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]\n"
+msgstr ""
+
+msgid "Usage: network [show|stats|config <key> <value>|optimize|monitor]"
+msgstr ""
 
 msgid "Usage: profile list | profile apply <name>"
-msgstr "उपयोग: profile list | profile apply <name>"
+msgstr ""
 
 msgid "Usage: restore <backup_file>"
-msgstr "उपयोग: restore <backup_file>"
+msgstr ""
 
 msgid "Usage: template list | template apply <name> [merge]"
-msgstr "उपयोग: template list | template apply <name> [merge]"
+msgstr ""
 
 msgid "Use --confirm to proceed with reset"
-msgstr "रीसेट के साथ आगे बढ़ने के लिए --confirm का उपयोग करें"
+msgstr ""
+
+msgid "Use --confirm to proceed with restore"
+msgstr ""
+
+msgid "Use --force to force kill"
+msgstr ""
+
+msgid "Using IPC port %d from main config"
+msgstr ""
+
+msgid "Using daemon executor for magnet command"
+msgstr ""
+
+msgid "Using default IPC port 8080 (daemon config file may not exist)"
+msgstr ""
+
+msgid "V1 torrent generation not yet implemented"
+msgstr ""
 
 msgid "VALID"
-msgstr "मान्य"
+msgstr ""
 
 msgid "Value"
-msgstr "मान"
+msgstr ""
+
+msgid ""
+"Verification complete: {verified} verified, {failed} failed out of {total}\n"
+msgstr ""
+
+msgid "Verification failed: {error}"
+msgstr ""
+
+msgid "Verify Files"
+msgstr ""
+
+msgid "Warnings:"
+msgstr "चेतावनियाँ:"
+
+msgid "WebSocket error: %s"
+msgstr ""
+
+msgid "WebSocket receive loop error: %s"
+msgstr ""
 
 msgid "Welcome"
-msgstr "स्वागत है"
+msgstr ""
+
+msgid ""
+"Windows-specific error checking daemon (os.kill() issue): %s - no PID file found, will create local session\n"
+msgstr ""
+
+msgid "Writing export file..."
+msgstr ""
+
+msgid "XET Folders"
+msgstr ""
 
 msgid "Xet"
-msgstr "Xet"
+msgstr ""
 
 msgid "Yes"
 msgstr "हाँ"
@@ -604,242 +2401,1490 @@ msgstr "हाँ"
 msgid "Yes (BEP 27)"
 msgstr "हाँ (BEP 27)"
 
+msgid "[blue]Progress: {verified}/{total} pieces verified[/blue]"
+msgstr ""
+
+msgid "[blue]Running: {command}[/blue]"
+msgstr ""
+
+msgid ""
+"[bold]Aliases ({count}):[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Allowlist ({count} peers):[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Configuration:[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]Discovering NAT devices...[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Mapping {protocol} port {port}...[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]NAT Traversal Status[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Removing {protocol} port mapping for port {port}...[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]Sync Mode for: {path}[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Sync Status for: {path}[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Cache Information[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Deduplication Cache Statistics[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Protocol Status[/bold]\n"
+"\n"
+msgstr ""
+
 msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
-msgstr "[cyan]मैग्नेट लिंक जोड़ रहे हैं और मेटाडेटा प्राप्त कर रहे हैं...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Checking for existing daemon instance...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Creating {format} torrent...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Download:[/cyan] {rate:.2f} KiB/s"
+msgstr ""
 
 msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
-msgstr "[cyan]डाउनलोड हो रहा है: {progress:.1f}% ({peers} पीयर)[/cyan]"
+msgstr ""
 
-msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
-msgstr "[cyan]डाउनलोड हो रहा है: {progress:.1f}% ({rate:.2f} MB/s, {peers} पीयर)[/cyan]"
+msgid ""
+"[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]\n"
+msgstr ""
+
+msgid "[cyan]Initializing configuration...[/cyan]"
+msgstr ""
 
 msgid "[cyan]Initializing session components...[/cyan]"
-msgstr "[cyan]सत्र घटक आरंभ कर रहे हैं...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Loading filter from: {file_path}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Parsed tonic link: {name}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Restarting daemon...[/cyan]"
+msgstr ""
+
+msgid ""
+"[cyan]Running diagnostic checks...[/cyan]\n"
+"\n"
+msgstr ""
+
+msgid "[cyan]Starting daemon in background...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Starting daemon in foreground mode...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Starting sync for: {name}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Testing proxy connection to {host}:{port}...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Torrents:[/cyan] {num_torrents}"
+msgstr ""
 
 msgid "[cyan]Troubleshooting:[/cyan]"
-msgstr "[cyan]समस्या निवारण:[/cyan]"
+msgstr ""
 
-msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
-msgstr "[cyan]सत्र घटकों के तैयार होने की प्रतीक्षा (अधिकतम 60s)...[/cyan]"
+msgid "[cyan]Updating filter lists from {count} URL(s)...[/cyan]"
+msgstr ""
 
-msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
-msgstr "[dim]डेमॉन कमांड का उपयोग करने या पहले डेमॉन को रोकने पर विचार करें: 'btbt daemon exit'[/dim]"
+msgid "[cyan]Upload:[/cyan] {rate:.2f} KiB/s"
+msgstr ""
+
+msgid "[cyan]Uptime:[/cyan] {uptime:.1f}s"
+msgstr ""
+
+msgid "[cyan]Using custom IPC port: {port}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Waiting for daemon to be ready...[/cyan]"
+msgstr ""
+
+msgid "[dim]  uv run btbt daemon start --foreground[/dim]"
+msgstr ""
+
+msgid ""
+"[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]\n"
+msgstr ""
+
+msgid ""
+"[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]\n"
+msgstr ""
+
+msgid "[dim]Info hash v1 (SHA-1): {hash}...[/dim]"
+msgstr ""
+
+msgid "[dim]Info hash v2 (SHA-256): {hash}...[/dim]"
+msgstr ""
+
+msgid "[dim]No active port mappings[/dim]"
+msgstr ""
+
+msgid "[dim]Output: {path}[/dim]"
+msgstr ""
+
+msgid "[dim]Please restart manually: 'btbt daemon restart'[/dim]"
+msgstr ""
+
+msgid "[dim]Please restart the daemon manually: 'btbt daemon restart'[/dim]"
+msgstr ""
+
+msgid "[dim]Protocol: {method}[/dim]"
+msgstr ""
+
+msgid "[dim]Source: {path}[/dim]"
+msgstr ""
+
+msgid "[dim]Trackers: {count}[/dim]"
+msgstr ""
+
+msgid ""
+"[dim]Try running with --foreground flag to see detailed error output:[/dim]\n"
+msgstr ""
+
+msgid "[dim]Use 'btbt daemon status' to check daemon status[/dim]"
+msgstr ""
+
+msgid "[dim]Use -v flag for more details or check daemon logs[/dim]"
+msgstr ""
+
+msgid "[dim]Web seeds: {count}[/dim]"
+msgstr ""
+
+msgid "[green]ALLOWED[/green]"
+msgstr ""
+
+msgid "[green]Active Protocol:[/green] {method}"
+msgstr ""
+
+msgid "[green]Added alert rule {name}[/green]"
+msgstr ""
+
+msgid "[green]Added to IPFS:[/green] {cid}"
+msgstr ""
 
 msgid "[green]All files selected[/green]"
-msgstr "[green]सभी फ़ाइलें चयनित[/green]"
+msgstr ""
 
 msgid "[green]Applied auto-tuned configuration[/green]"
-msgstr "[green]स्वचालित-ट्यून कॉन्फ़िगरेशन लागू किया गया[/green]"
+msgstr ""
 
 msgid "[green]Applied profile {name}[/green]"
-msgstr "[green]प्रोफ़ाइल {name} लागू की गई[/green]"
+msgstr ""
 
 msgid "[green]Applied template {name}[/green]"
-msgstr "[green]टेम्प्लेट {name} लागू किया गया[/green]"
+msgstr ""
+
+msgid "[green]Applying {preset} optimizations...[/green]"
+msgstr ""
 
 msgid "[green]Backup created: {path}[/green]"
-msgstr "[green]बैकअप बनाया गया: {path}[/green]"
+msgstr ""
+
+msgid "[green]Benchmark results:[/green] {results}"
+msgstr ""
+
+msgid ""
+"[green]CA certificates path set to {path}. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid "[green]Checkpoint for {hash} is valid[/green]"
+msgstr ""
+
+msgid "[green]Checkpoint for {info_hash} is valid[/green]"
+msgstr ""
+
+msgid "[green]Checkpoint saved[/green]"
+msgstr ""
+
+msgid "[green]Checkpoint valid[/green]"
+msgstr ""
 
 msgid "[green]Cleaned up {count} old checkpoints[/green]"
-msgstr "[green]{count} पुराने चेकपॉइंट साफ किए गए[/green]"
+msgstr ""
 
 msgid "[green]Cleared active alerts[/green]"
-msgstr "[green]सक्रिय अलर्ट साफ किए गए[/green]"
+msgstr ""
+
+msgid "[green]Cleared all active alerts[/green]"
+msgstr ""
+
+msgid "[green]Cleared queue[/green]"
+msgstr ""
+
+msgid ""
+"[green]Client certificate set. Configuration saved to {config_file}[/green]\n"
+msgstr ""
 
 msgid "[green]Configuration reloaded[/green]"
-msgstr "[green]कॉन्फ़िगरेशन पुनः लोड किया गया[/green]"
+msgstr ""
 
 msgid "[green]Configuration restored[/green]"
-msgstr "[green]कॉन्फ़िगरेशन पुनर्स्थापित किया गया[/green]"
+msgstr ""
+
+msgid "[green]Connected to daemon[/green]"
+msgstr ""
 
 msgid "[green]Connected to {count} peer(s)[/green]"
-msgstr "[green]{count} पीयर से जुड़ा[/green]"
+msgstr ""
+
+msgid "[green]Content pinned[/green]"
+msgstr ""
+
+msgid "[green]Content saved to:[/green] {output}"
+msgstr ""
+
+msgid "[green]Daemon is running[/green] (PID: {pid})"
+msgstr ""
+
+msgid "[green]Daemon restarted successfully[/green]"
+msgstr ""
 
 msgid "[green]Daemon status: {status}[/green]"
-msgstr "[green]डेमॉन स्थिति: {status}[/green]"
+msgstr ""
+
+msgid "[green]Daemon stopped gracefully[/green]"
+msgstr ""
+
+msgid "[green]Deleted checkpoint for {hash}[/green]"
+msgstr ""
+
+msgid "[green]Deleted checkpoint for {info_hash}[/green]"
+msgstr ""
+
+msgid "[green]Deselected all files[/green]"
+msgstr ""
+
+msgid "[green]Deselected {count} file(s)[/green]"
+msgstr ""
 
 msgid "[green]Download completed, stopping session...[/green]"
-msgstr "[green]डाउनलोड पूर्ण, सत्र रोक रहे हैं...[/green]"
+msgstr ""
 
 msgid "[green]Download completed: {name}[/green]"
-msgstr "[green]डाउनलोड पूर्ण: {name}[/green]"
+msgstr ""
 
 msgid "[green]Exported checkpoint to {path}[/green]"
-msgstr "[green]चेकपॉइंट {path} में निर्यात किया गया[/green]"
+msgstr ""
 
 msgid "[green]Exported configuration to {out}[/green]"
-msgstr "[green]कॉन्फ़िगरेशन {out} में निर्यात किया गया[/green]"
+msgstr ""
+
+msgid "[green]External IP:[/green] {ip}"
+msgstr ""
+
+msgid "[green]Found checkpoint for: {torrent_name}[/green]"
+msgstr ""
 
 msgid "[green]Imported configuration[/green]"
-msgstr "[green]कॉन्फ़िगरेशन आयात किया गया[/green]"
+msgstr ""
+
+msgid "[green]Loaded alert rules from {path}[/green]"
+msgstr ""
+
+msgid "[green]Loaded {count} alert rules from {path}[/green]"
+msgstr ""
 
 msgid "[green]Loaded {count} rules[/green]"
-msgstr "[green]{count} नियम लोड किए गए[/green]"
+msgstr ""
+
+msgid "[green]Locale set to: {locale_code}[/green]"
+msgstr ""
 
 msgid "[green]Magnet added successfully: {hash}...[/green]"
-msgstr "[green]मैग्नेट सफलतापूर्वक जोड़ा गया: {hash}...[/green]"
+msgstr ""
 
 msgid "[green]Magnet added to daemon: {hash}[/green]"
-msgstr "[green]मैग्नेट डेमॉन में जोड़ा गया: {hash}[/green]"
+msgstr ""
+
+msgid "[green]Magnet link added to daemon: {info_hash}[/green]"
+msgstr ""
 
 msgid "[green]Metadata fetched successfully![/green]"
-msgstr "[green]मेटाडेटा सफलतापूर्वक प्राप्त किया गया![/green]"
+msgstr ""
 
 msgid "[green]Migrated checkpoint to {path}[/green]"
-msgstr "[green]चेकपॉइंट {path} में स्थानांतरित किया गया[/green]"
+msgstr ""
 
 msgid "[green]Monitoring started[/green]"
-msgstr "[green]निगरानी शुरू की गई[/green]"
+msgstr ""
+
+msgid "[green]Moved to position {position}[/green]"
+msgstr ""
+
+msgid "[green]Network configuration looks optimal![/green]"
+msgstr ""
+
+msgid "[green]No checkpoints older than {days} days found[/green]"
+msgstr ""
+
+msgid ""
+"[green]Optimizations applied successfully![/green]\n"
+"[yellow]Note: Some changes may require restart to take effect.[/yellow]\n"
+msgstr ""
+
+msgid "[green]Optimizations saved to {path}[/green]"
+msgstr ""
+
+msgid "[green]Paused torrent[/green]"
+msgstr ""
+
+msgid "[green]Peer validation hooks are enabled by configuration[/green]"
+msgstr ""
+
+msgid "[green]Performing basic configuration scan...[/green]"
+msgstr ""
+
+msgid "[green]Pinned:[/green] {cid}"
+msgstr ""
+
+msgid "[green]Proxy configuration saved to {config_file}[/green]"
+msgstr ""
+
+msgid "[green]Proxy configuration updated successfully[/green]"
+msgstr ""
+
+msgid "[green]Proxy has been disabled[/green]"
+msgstr ""
+
+msgid "[green]Removed alert rule {name}[/green]"
+msgstr ""
+
+msgid "[green]Removed torrent from queue[/green]"
+msgstr ""
+
+msgid "[green]Reset all options for torrent {hash}[/green]"
+msgstr ""
+
+msgid "[green]Reset {key} for torrent {hash}[/green]"
+msgstr ""
+
+msgid ""
+"[green]Restored checkpoint for: {name}[/green]\n"
+"Info hash: {hash}\n"
+msgstr ""
+
+msgid "[green]Resumed torrent[/green]"
+msgstr ""
 
 msgid "[green]Resuming download from checkpoint...[/green]"
-msgstr "[green]चेकपॉइंट से डाउनलोड फिर से शुरू कर रहे हैं...[/green]"
+msgstr ""
+
+msgid "[green]Resuming from checkpoint[/green]"
+msgstr ""
 
 msgid "[green]Rule added[/green]"
-msgstr "[green]नियम जोड़ा गया[/green]"
+msgstr ""
 
 msgid "[green]Rule evaluated[/green]"
-msgstr "[green]नियम मूल्यांकन किया गया[/green]"
+msgstr ""
 
 msgid "[green]Rule removed[/green]"
-msgstr "[green]नियम हटाया गया[/green]"
+msgstr ""
+
+msgid ""
+"[green]SSL certificate verification enabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for peers disabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for peers enabled (experimental). Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for trackers disabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid ""
+"[green]SSL for trackers enabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid "[green]Saved alert rules to {path}[/green]"
+msgstr ""
 
 msgid "[green]Saved rules[/green]"
-msgstr "[green]नियम सहेजे गए[/green]"
+msgstr ""
+
+msgid "[green]Selected all files[/green]"
+msgstr ""
 
 msgid "[green]Selected file {idx}[/green]"
-msgstr "[green]फ़ाइल {idx} चयनित[/green]"
+msgstr ""
 
 msgid "[green]Selected {count} file(s) for download[/green]"
-msgstr "[green]डाउनलोड के लिए {count} फ़ाइल(ें) चयनित[/green]"
+msgstr ""
+
+msgid "[green]Selected {count} file(s)[/green]"
+msgstr ""
+
+msgid "[green]Set file {index} priority to {priority}[/green]"
+msgstr ""
 
 msgid "[green]Set priority for file {idx} to {priority}[/green]"
-msgstr "[green]फ़ाइल {idx} के लिए प्राथमिकता {priority} सेट की गई[/green]"
+msgstr ""
+
+msgid "[green]Set priority to {priority}[/green]"
+msgstr ""
+
+msgid "[green]Set {key} = {value} for torrent {hash}[/green]"
+msgstr ""
 
 msgid "[green]Starting web interface on http://{host}:{port}[/green]"
-msgstr "[green]http://{host}:{port} पर वेब इंटरफ़ेस शुरू कर रहे हैं[/green]"
+msgstr ""
+
+msgid "[green]Successfully resumed download: {hash}[/green]"
+msgstr ""
+
+msgid "[green]Successfully resumed download: {resumed_info_hash}[/green]"
+msgstr ""
+
+msgid ""
+"[green]TLS protocol version set to {version}. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+
+msgid "[green]Tested rule {name} with value {value}[/green]"
+msgstr ""
 
 msgid "[green]Torrent added to daemon: {hash}[/green]"
-msgstr "[green]टोरेंट डेमॉन में जोड़ा गया: {hash}[/green]"
+msgstr ""
+
+msgid "[green]Torrent added to daemon: {info_hash}[/green]"
+msgstr ""
+
+msgid "[green]Unpinned:[/green] {cid}"
+msgstr ""
 
 msgid "[green]Updated runtime configuration[/green]"
-msgstr "[green]रनटाइम कॉन्फ़िगरेशन अपडेट किया गया[/green]"
+msgstr ""
+
+msgid "[green]Updated {key} to {value}[/green]"
+msgstr ""
 
 msgid "[green]Wrote metrics to {out}[/green]"
-msgstr "[green]मेट्रिक्स {out} में लिखे गए[/green]"
+msgstr ""
+
+msgid "[green]Wrote metrics to {path}[/green]"
+msgstr ""
+
+msgid "[green]✓ Port mapping removed[/green]"
+msgstr ""
+
+msgid "[green]✓ Port mapping successful![/green]"
+msgstr ""
+
+msgid "[green]✓ Port mappings refreshed[/green]"
+msgstr ""
+
+msgid "[green]✓ Proxy connection test successful[/green]"
+msgstr ""
+
+msgid "[green]✓ Torrent created successfully: {path}[/green]"
+msgstr ""
+
+msgid "[green]✓[/green] Added filter rule: {ip_range} ({mode})"
+msgstr ""
+
+msgid "[green]✓[/green] Added peer {peer_id} to allowlist"
+msgstr ""
+
+msgid ""
+"[green]✓[/green] Added peer {peer_id} to allowlist with alias '{alias}'\n"
+msgstr ""
+
+msgid "[green]✓[/green] Cleaned {cleaned} unused chunks"
+msgstr ""
+
+msgid "[green]✓[/green] Configuration saved to {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Daemon process started (PID {pid})"
+msgstr ""
+
+msgid ""
+"[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)\n"
+msgstr ""
+
+msgid "[green]✓[/green] Folder sync started"
+msgstr ""
+
+msgid "[green]✓[/green] Generated .tonic file: {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Generated new API key for daemon"
+msgstr ""
+
+msgid "[green]✓[/green] Generated tonic?: link:"
+msgstr ""
+
+msgid "[green]✓[/green] Loaded {loaded} rules from {file_path}"
+msgstr ""
+
+msgid "[green]✓[/green] Loaded {total_loaded} total rules"
+msgstr ""
+
+msgid "[green]✓[/green] Removed alias for peer {peer_id}"
+msgstr ""
+
+msgid "[green]✓[/green] Removed filter rule: {ip_range}"
+msgstr ""
+
+msgid "[green]✓[/green] Removed peer {peer_id} from allowlist"
+msgstr ""
+
+msgid "[green]✓[/green] Set alias '{alias}' for peer {peer_id}"
+msgstr ""
+
+msgid "[green]✓[/green] Set {key} = {value}"
+msgstr ""
+
+msgid "[green]✓[/green] Successfully updated {count} filter list(s)"
+msgstr ""
+
+msgid "[green]✓[/green] Sync mode updated"
+msgstr ""
+
+msgid "[green]✓[/green] Tonic link:"
+msgstr ""
+
+msgid "[green]✓[/green] Updated config file: {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Xet protocol enabled"
+msgstr ""
+
+msgid "[green]✓[/green] uTP configuration reset to defaults"
+msgstr ""
+
+msgid "[green]✓[/green] uTP transport enabled"
+msgstr ""
+
+msgid "[red]--name is required to remove a rule[/red]"
+msgstr ""
+
+msgid "[red]--name is required to test a rule[/red]"
+msgstr ""
+
+msgid "[red]--name, --metric and --condition are required to add a rule[/red]"
+msgstr ""
+
+msgid "[red]--value is required with --test[/red]"
+msgstr ""
+
+msgid "[red]BLOCKED[/red]"
+msgstr ""
 
 msgid "[red]Backup failed: {msgs}[/red]"
-msgstr "[red]बैकअप असफल: {msgs}[/red]"
+msgstr ""
+
+msgid "[red]Certificate file does not exist: {path}[/red]"
+msgstr ""
+
+msgid "[red]Certificate path must be a file: {path}[/red]"
+msgstr ""
+
+msgid "[red]Configuration key not found: {key}[/red]"
+msgstr ""
+
+msgid "[red]Content not found: {cid}[/red]"
+msgstr ""
+
+msgid "[red]Daemon is not running[/red]"
+msgstr ""
+
+msgid "[red]Daemon process crashed[/red]"
+msgstr ""
+
+msgid "[red]Dashboard error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Directories not yet supported[/red]"
+msgstr ""
+
+msgid "[red]Error adding content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error adding peer to allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling SSL for peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling SSL for trackers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling certificate verification: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error during cleanup: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling SSL for peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling SSL for trackers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling certificate verification: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error ensuring daemon is running: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error generating .tonic file: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error generating tonic link: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting SSL status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting stats: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting sync mode: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error listing aliases: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error listing allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error pinning content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error removing alias: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error removing peer from allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error restarting daemon: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving cache info: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving disk statistics: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving network statistics: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving stats: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting CA certificates path: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting alias: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting client certificate: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting protocol version: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting sync mode: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error starting sync: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error unpinning content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error updating configuration: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --hybrid and --v1[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --v2 and --hybrid[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --v2 and --v1[/red]"
+msgstr ""
+
+msgid "[red]Error: Could not load torrent file {torrent_file}[/red]"
+msgstr ""
 
 msgid "[red]Error: Could not parse magnet link[/red]"
-msgstr "[red]त्रुटि: मैग्नेट लिंक पार्स नहीं कर सका[/red]"
+msgstr ""
+
+msgid "[red]Error: Info hash must be 40 hex characters[/red]"
+msgstr ""
+
+msgid "[red]Error: Piece length must be a power of 2[/red]"
+msgstr ""
+
+msgid "[red]Error: Piece length must be at least 16 KiB (16384 bytes)[/red]"
+msgstr ""
+
+msgid "[red]Error: Source directory is empty[/red]"
+msgstr ""
+
+msgid "[red]Error: Source path does not exist: {path}[/red]"
+msgstr ""
 
 msgid "[red]Error: {error}[/red]"
-msgstr "[red]त्रुटि: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error:[/red] Invalid value for {key}: {value}"
+msgstr ""
+
+msgid "[red]Error:[/red] Unknown configuration key: {key}"
+msgstr ""
+
+msgid "[red]Export not available in daemon mode[/red]"
+msgstr ""
 
 msgid "[red]Failed to add magnet link: {error}[/red]"
-msgstr "[red]मैग्नेट लिंक जोड़ने में विफल: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to clear active alerts: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to create session[/red]"
+msgstr ""
+
+msgid "[red]Failed to disable proxy: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to get proxy status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to load alert rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to load rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to pause: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to reset options: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to restart daemon[/red]"
+msgstr ""
+
+msgid "[red]Failed to resume: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to run tests: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to save rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set alias for peer {peer_id}[/red]"
+msgstr ""
 
 msgid "[red]Failed to set config: {error}[/red]"
-msgstr "[red]कॉन्फ़िग सेट करने में विफल: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set option: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set proxy configuration: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n"
+"[yellow]Please check:[/yellow]\n"
+"  1. Daemon logs for startup errors\n"
+"  2. Port conflicts (check if port is already in use)\n"
+"  3. Permissions (ensure you have permission to start daemon)\n"
+"\n"
+"[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
+"[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]\n"
+msgstr ""
+
+msgid "[red]Failed to stop: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to test proxy: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to test rule: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed: {error}[/red]"
+msgstr ""
 
 msgid "[red]File not found: {error}[/red]"
-msgstr "[red]फ़ाइल नहीं मिली: {error}[/red]"
+msgstr ""
+
+msgid "[red]File not found: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]IP filter not initialized. Please enable it in configuration.[/red]\n"
+msgstr ""
+
+msgid "[red]IP filter not initialized.[/red]"
+msgstr ""
+
+msgid "[red]IPFS protocol not available[/red]"
+msgstr ""
+
+msgid "[red]Import not available in daemon mode[/red]"
+msgstr ""
+
+msgid "[red]Invalid IP address: {ip}[/red]"
+msgstr ""
 
 msgid "[red]Invalid arguments[/red]"
-msgstr "[red]Invalid arguments[/red]"
+msgstr ""
 
 msgid "[red]Invalid file index: {idx}[/red]"
-msgstr "[red]अमान्य फ़ाइल सूचकांक: {idx}[/red]"
+msgstr ""
 
 msgid "[red]Invalid file index[/red]"
-msgstr "[red]अमान्य फ़ाइल सूचकांक[/red]"
+msgstr ""
 
 msgid "[red]Invalid info hash format: {hash}[/red]"
-msgstr "[red]अमान्य जानकारी हैश प्रारूप: {hash}[/red]"
+msgstr ""
 
-msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
-msgstr "[red]अमान्य प्राथमिकता. उपयोग करें: do_not_download/low/normal/high/maximum[/red]"
+msgid "[red]Invalid info hash format[/red]"
+msgstr ""
 
-msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
-msgstr "[red]अमान्य प्राथमिकता: {priority}. उपयोग करें: do_not_download/low/normal/high/maximum[/red]"
+msgid "[red]Invalid magnet link: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]\n"
+msgstr ""
+
+msgid ""
+"[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]\n"
+msgstr ""
+
+msgid "[red]Invalid public key: {e}[/red]"
+msgstr ""
 
 msgid "[red]Invalid torrent file: {error}[/red]"
-msgstr "[red]अमान्य टोरेंट फ़ाइल: {error}[/red]"
+msgstr ""
+
+msgid "[red]Invalid value for {key}: {error}[/red]"
+msgstr ""
+
+msgid "[red]Key file does not exist: {path}[/red]"
+msgstr ""
 
 msgid "[red]Key not found: {key}[/red]"
-msgstr "[red]कुंजी नहीं मिली: {key}[/red]"
+msgstr ""
+
+msgid "[red]Key path must be a file: {path}[/red]"
+msgstr ""
+
+msgid "[red]Metrics error: {e}[/red]"
+msgstr ""
 
 msgid "[red]No checkpoint found for {hash}[/red]"
-msgstr "[red]{hash} के लिए कोई चेकपॉइंट नहीं मिला[/red]"
+msgstr ""
+
+msgid "[red]No stats found for CID: {cid}[/red]"
+msgstr ""
+
+msgid "[red]Path does not exist: {path}[/red]"
+msgstr ""
+
+msgid "[red]Path must be a file or directory: {path}[/red]"
+msgstr ""
+
+msgid "[red]Peer {peer_id} not found in allowlist[/red]"
+msgstr ""
+
+msgid "[red]Proxy error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Proxy host and port must be configured[/red]"
+msgstr ""
 
 msgid "[red]PyYAML not installed[/red]"
-msgstr "[red]PyYAML स्थापित नहीं है[/red]"
+msgstr ""
 
 msgid "[red]Reload failed: {error}[/red]"
-msgstr "[red]पुनः लोड असफल: {error}[/red]"
+msgstr ""
 
 msgid "[red]Restore failed: {msgs}[/red]"
-msgstr "[red]पुनर्स्थापना असफल: {msgs}[/red]"
+msgstr ""
+
+msgid "[red]Rule not found: {name}[/red]"
+msgstr ""
+
+msgid "[red]Specify CID or use --all[/red]"
+msgstr ""
+
+msgid "[red]Tonic file not found: {path}[/red]"
+msgstr ""
+
+msgid "[red]Torrent not found or option not set[/red]"
+msgstr ""
+
+msgid "[red]Torrent not found: {hash}[/red]"
+msgstr ""
+
+msgid "[red]Unexpected error during resume: {e}[/red]"
+msgstr ""
+
+msgid "[red]Unknown configuration key: {key}[/red]"
+msgstr ""
+
+msgid "[red]Validation error: {e}[/red]"
+msgstr ""
 
 msgid "[red]{error}[/red]"
-msgstr "[red]{error}[/red]"
+msgstr ""
+
+msgid "[red]✗ Failed to remove port mapping[/red]"
+msgstr ""
+
+msgid "[red]✗ Port mapping failed[/red]"
+msgstr ""
+
+msgid "[red]✗ Proxy connection test failed[/red]"
+msgstr ""
+
+msgid "[red]✗[/red] Daemon is already running with PID {pid}"
+msgstr ""
+
+msgid ""
+"[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)\n"
+msgstr ""
+
+msgid ""
+"[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting\n"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to add filter rule: {ip_range}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to load rules from {file_path}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to start daemon: {e}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to update filter lists"
+msgstr ""
+
+msgid "[yellow]1. Network Connectivity[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]API key not found in config, cannot get detailed status[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Active Protocol:[/yellow] None (not discovered)"
+msgstr ""
 
 msgid "[yellow]All files deselected[/yellow]"
-msgstr "[yellow]सभी फ़ाइलों का चयन रद्द कर दिया गया[/yellow]"
+msgstr ""
+
+msgid "[yellow]Allowlist is empty[/yellow]"
+msgstr ""
+
+msgid "[yellow]Automatic repair not implemented[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]CA certificates path set to {path} (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]CA certificates path set to {path} (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Checkpoint for {hash} is missing or invalid[/yellow]"
+msgstr ""
+
+msgid "[yellow]Checkpoint missing/invalid[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Client certificate set (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Client certificate set (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid "[yellow]Configuration changes require daemon restart.[/yellow]"
+msgstr ""
+
+msgid "[yellow]Could not get detailed status via IPC[/yellow]"
+msgstr ""
+
+msgid "[yellow]Could not save to config file: {error}[/yellow]"
+msgstr ""
 
 msgid "[yellow]Debug mode not yet implemented[/yellow]"
-msgstr "[yellow]डीबग मोड अभी तक लागू नहीं किया गया[/yellow]"
+msgstr ""
 
 msgid "[yellow]Deselected file {idx}[/yellow]"
-msgstr "[yellow]फ़ाइल {idx} का चयन रद्द कर दिया गया[/yellow]"
+msgstr ""
+
+msgid "[yellow]Disk I/O manager not running. Statistics unavailable.[/yellow]"
+msgstr ""
 
 msgid "[yellow]Download interrupted by user[/yellow]"
-msgstr "[yellow]उपयोगकर्ता द्वारा डाउनलोड बाधित[/yellow]"
+msgstr ""
+
+msgid "[yellow]Dry run: Would clean chunks older than {days} days[/yellow]"
+msgstr ""
+
+msgid "[yellow]External IP not available[/yellow]"
+msgstr ""
+
+msgid "[yellow]External IP:[/yellow] Not available"
+msgstr ""
+
+msgid "[yellow]Failed to generate tonic link[/yellow]"
+msgstr ""
+
+msgid "[yellow]Failed to move torrent[/yellow]"
+msgstr ""
 
 msgid "[yellow]Fetching metadata from peers...[/yellow]"
-msgstr "[yellow]पीयर से मेटाडेटा प्राप्त कर रहे हैं...[/yellow]"
+msgstr ""
+
+msgid "[yellow]Found checkpoint for: {name}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Found checkpoint for: {torrent_name}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]IP filter not initialized or disabled.[/yellow]"
+msgstr ""
 
 msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
-msgstr "[yellow]अमान्य प्राथमिकता विनिर्देश '{spec}': {error}[/yellow]"
+msgstr ""
 
-msgid "[yellow]Keeping session alive[/yellow]"
-msgstr "[yellow]सत्र जीवित रख रहे हैं[/yellow]"
+msgid "[yellow]NAT Status[/yellow]"
+msgstr ""
+
+msgid "[yellow]No active alerts[/yellow]"
+msgstr ""
+
+msgid "[yellow]No alert rules defined[/yellow]"
+msgstr ""
+
+msgid "[yellow]No alias found for peer {peer_id}[/yellow]"
+msgstr ""
+
+msgid "[yellow]No aliases found in allowlist[/yellow]"
+msgstr ""
+
+msgid "[yellow]No cached scrape results[/yellow]"
+msgstr ""
+
+msgid "[yellow]No checkpoint found for {hash}[/yellow]"
+msgstr ""
+
+msgid "[yellow]No checkpoint found for {info_hash}[/yellow]"
+msgstr ""
 
 msgid "[yellow]No checkpoints found[/yellow]"
-msgstr "[yellow]कोई चेकपॉइंट नहीं मिला[/yellow]"
+msgstr ""
+
+msgid "[yellow]No chunks in cache[/yellow]"
+msgstr ""
+
+msgid "[yellow]No config file found - configuration not persisted[/yellow]"
+msgstr ""
+
+msgid "[yellow]No filter URLs configured.[/yellow]"
+msgstr ""
+
+msgid "[yellow]No filter rules configured.[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]No optimizations were applied (already optimal or unsupported)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]No performance action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]No recover action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]No security action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]Non-interactive mode, starting fresh download[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Note: This change is temporary and will be lost on restart. Use config file for persistent changes.[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Note: Update config file to persist locale setting[/yellow]"
+msgstr ""
+
+msgid "[yellow]Note:[/yellow] Configuration change is runtime-only"
+msgstr ""
+
+msgid "[yellow]Optimization cancelled[/yellow]"
+msgstr ""
+
+msgid "[yellow]Peer {peer_id} not found in allowlist[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Please provide the original torrent file or magnet link[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Please use --v2 or --hybrid flags for now.[/yellow]"
+msgstr ""
+
+msgid "[yellow]Proxy configuration not found[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Proxy has been disabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid "[yellow]Proxy is not enabled[/yellow]"
+msgstr ""
+
+msgid "[yellow]Real-time monitoring not yet implemented[/yellow]"
+msgstr ""
+
+msgid "[yellow]Refresh completed with warnings[/yellow]"
+msgstr ""
+
+msgid "[yellow]Rich not available, starting fresh download[/yellow]"
+msgstr ""
+
+msgid "[yellow]Rule not found: {ip_range}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended). Configuration saved to {config_file}[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended, configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended, skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification enabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers disabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]SSL for peers disabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers enabled (experimental, configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers enabled (experimental, skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers disabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers disabled (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers enabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]SSL for trackers enabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Starting fresh download[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]TLS protocol version set to {version} (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]TLS protocol version set to {version} (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]The daemon process crashed during initialization.[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Tonic link sync not yet fully implemented[/yellow]"
+msgstr ""
+
+msgid "[yellow]Torrent not found in queue[/yellow]"
+msgstr ""
+
+msgid "[yellow]Torrent not found[/yellow]"
+msgstr ""
 
 msgid "[yellow]Torrent session ended[/yellow]"
-msgstr "[yellow]टोरेंट सत्र समाप्त[/yellow]"
+msgstr ""
 
 msgid "[yellow]Unknown command: {cmd}[/yellow]"
-msgstr "[yellow]अज्ञात कमांड: {cmd}[/yellow]"
+msgstr ""
 
-msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
-msgstr "[yellow]चेतावनी: डेमॉन चल रहा है. स्थानीय सत्र शुरू करने से पोर्ट संघर्ष हो सकता है.[/yellow]"
+msgid ""
+"[yellow]Use --list/--list-active, --add, --remove, --clear-active, --test, --load or --save[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Using local session (--no-daemon specified). Session state will not persist.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Daemon is running. Diagnostics will test local session which may cause port conflicts.[/yellow]\n"
+"[dim]Consider stopping the daemon first: 'btbt daemon exit'[/dim]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]\n"
+msgstr ""
 
 msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
-msgstr "[yellow]चेतावनी: सत्र रोकने में त्रुटि: {error}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Error stopping session: {e}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Failed to select files: {error}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Failed to set queue priority: {error}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Xet protocol is disabled[/yellow]"
+msgstr ""
+
+msgid "[yellow]{key} is not set[/yellow]"
+msgstr ""
 
 msgid "[yellow]{warning}[/yellow]"
-msgstr "[yellow]{warning}[/yellow]"
+msgstr ""
+
+msgid "[yellow]⚠[/yellow] Could not save daemon config to config file: {e}"
+msgstr ""
+
+msgid ""
+"[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet\n"
+msgstr ""
+
+msgid ""
+"[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})\n"
+msgstr ""
+
+msgid "[yellow]⚠[/yellow] {errors} errors encountered"
+msgstr ""
+
+msgid "[yellow]✓[/yellow] Xet protocol disabled"
+msgstr ""
+
+msgid "[yellow]✓[/yellow] uTP transport disabled"
+msgstr ""
+
+msgid "_get_daemon_ipc_port: Checking config_file=%s (home_dir=%s)"
+msgstr ""
+
+msgid "_get_executor() returned: executor=%s, is_daemon=%s"
+msgstr ""
 
 msgid "ccBitTorrent Interactive CLI"
-msgstr "ccBitTorrent इंटरैक्टिव CLI"
+msgstr ""
 
-msgid "ccBitTorrent Status"
-msgstr "ccBitTorrent स्थिति"
+msgid "enable_dht={value}"
+msgstr ""
 
-msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
-msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgid "enable_pex={value}"
+msgstr ""
+
+msgid "failed"
+msgstr ""
+
+msgid ""
+"help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema\n"
+msgstr ""
+
+msgid "succeeded"
+msgstr ""
 
 msgid "uTP Config"
-msgstr "uTP कॉन्फ़िग"
+msgstr ""
+
+msgid "uTP Configuration"
+msgstr ""
+
+msgid "uTP configuration reset to defaults via CLI"
+msgstr ""
+
+msgid "uTP configuration updated: %s = %s"
+msgstr ""
+
+msgid "uTP transport disabled via CLI"
+msgstr ""
+
+msgid "uTP transport enabled"
+msgstr ""
+
+msgid "uTP transport enabled via CLI"
+msgstr ""
 
 msgid "{count} features"
-msgstr "{count} सुविधाएं"
+msgstr ""
 
 msgid "{count} items"
-msgstr "{count} आइटम"
+msgstr ""
 
 msgid "{elapsed:.0f}s ago"
-msgstr "{elapsed:.0f}से पहले"
+msgstr ""
+
+msgid "{key} = {value}"
+msgstr ""
+
+msgid "{key}: {value}"
+msgstr ""
+
+msgid ""
+"{msg}\n"
+"\n"
+"PID file path: {path}\n"
+msgstr ""
+
+msgid "{sub_tab} configuration - Coming soon"
+msgstr ""
+
+msgid "{sub_tab} content for torrent {hash}... - Coming soon"
+msgstr ""
+
+msgid "{type} Configuration"
+msgstr ""
+
+msgid "↑ Speed"
+msgstr ""
+
+msgid "↓ Speed"
+msgstr ""
+
+msgid "✓ Configuration is valid"
+msgstr ""
+
+msgid "✓ No system compatibility warnings"
+msgstr ""
+
+msgid "✗ Configuration validation failed: {e}"
+msgstr ""
+

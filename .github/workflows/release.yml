@@ -21,6 +21,29 @@ jobs:
         with:
           fetch-depth: 0  # Full history for version detection
       
+      - name: Validate version
+        run: |
+          VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          
+          echo "Current version: $VERSION"
+          
+          # Main branch: version must be >= 0.1.0
+          if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -eq 0 ]; then
+            echo "❌ Main branch release requires version >= 0.1.0, got $VERSION"
+            exit 1
+          fi
+          
+          # Check version consistency
+          INIT_VERSION=$(grep -E '__version__' ccbt/__init__.py | sed "s/.*['\"]\(.*\)['\"].*/\1/" || echo "")
+          if [ -n "$INIT_VERSION" ] && [ "$VERSION" != "$INIT_VERSION" ]; then
+            echo "❌ Version mismatch: pyproject.toml=$VERSION, __init__.py=$INIT_VERSION"
+            exit 1
+          fi
+          
+          echo "✅ Version validation passed: $VERSION"
+      
       - name: Install UV
         uses: astral-sh/setup-uv@v4
         with:
@@ -110,48 +133,35 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
       
-      - name: Generate release notes
+      - name: Generate release notes using GitHub API
         id: release_notes
-        run: |
-          VERSION="${{ steps.get_version.outputs.version }}"
-          RELEASE_NOTES=""
-          
-          # Try to get commits since last tag
-          if LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null); then
-            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" 2>/dev/null || echo "")
-            if [ -n "$COMMITS" ]; then
-              RELEASE_NOTES="## Changes since ${LAST_TAG}
-
-${COMMITS}"
-            fi
-          fi
-          
-          # Try to read CHANGELOG.md if it exists
-          if [ -f CHANGELOG.md ]; then
-            # Extract version section from CHANGELOG
-            CHANGELOG_SECTION=$(awk -v version="$VERSION" '
-              /^## \[/ { in_section = ($0 ~ "\\[" version "\\]") }
-              in_section { print }
-              /^## \[/ && !in_section && prev_in_section { exit }
-              { prev_in_section = in_section }
-            ' CHANGELOG.md)
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const tagName = context.ref.replace('refs/tags/', '');
             
-            if [ -n "$CHANGELOG_SECTION" ]; then
-              RELEASE_NOTES="$CHANGELOG_SECTION"
-            fi
-          fi
-          
-          # Fallback if no changelog found
-          if [ -z "$RELEASE_NOTES" ]; then
-            RELEASE_NOTES="## Release v${VERSION}
-
-See [CHANGELOG.md](CHANGELOG.md) for details."
-          fi
-          
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
-          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-        continue-on-error: true
+            // Get previous tag
+            let previousTag = null;
+            try {
+              const { execSync } = require('child_process');
+              const result = execSync('git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo ""', { encoding: 'utf-8' });
+              previousTag = result.trim() || null;
+            } catch (e) {
+              // No previous tag, this is the first release
+            }
+            
+            // Generate release notes using GitHub API
+            const { data } = await github.rest.repos.generateReleaseNotes({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tagName,
+              previous_tag_name: previousTag,
+              generate_release_notes: true,
+            });
+            
+            core.setOutput('notes', data.body);
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
