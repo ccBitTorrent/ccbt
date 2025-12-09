@@ -29,12 +29,30 @@ if TYPE_CHECKING:  # pragma: no cover - type checking only
 class XetProtocol(Protocol):
     """Xet protocol implementation for content-defined chunking and P2P CAS."""
 
-    def __init__(self, dht_client=None, tracker_client=None):
+    def __init__(
+        self,
+        dht_client=None,
+        tracker_client=None,
+        pex_manager=None,
+        lpd_client=None,
+        multicast_broadcaster=None,
+        gossip_manager=None,
+        flooding_client=None,
+        catalog=None,
+        bloom_filter=None,
+    ):
         """Initialize Xet protocol.
 
         Args:
             dht_client: Optional DHT client for chunk discovery
             tracker_client: Optional tracker client for chunk announcements
+            pex_manager: Optional PEX manager for peer exchange
+            lpd_client: Optional Local Peer Discovery client
+            multicast_broadcaster: Optional multicast broadcaster for local network
+            gossip_manager: Optional gossip protocol manager
+            flooding_client: Optional controlled flooding client
+            catalog: Optional chunk catalog for bulk queries
+            bloom_filter: Optional bloom filter for chunk availability
 
         """
         super().__init__(ProtocolType.XET)
@@ -55,6 +73,13 @@ class XetProtocol(Protocol):
         # Dependencies
         self.dht_client = dht_client
         self.tracker_client = tracker_client
+        self.pex_manager = pex_manager
+        self.lpd_client = lpd_client
+        self.multicast_broadcaster = multicast_broadcaster
+        self.gossip_manager = gossip_manager
+        self.flooding_client = flooding_client
+        self.catalog = catalog
+        self.bloom_filter = bloom_filter
 
         # P2P CAS client
         self.cas_client: P2PCASClient | None = None
@@ -65,13 +90,30 @@ class XetProtocol(Protocol):
     async def start(self) -> None:
         """Start Xet protocol."""
         try:
-            # Initialize P2P CAS client
+            # Initialize P2P CAS client with all discovery mechanisms
             if self.dht_client or self.tracker_client:
                 self.cas_client = P2PCASClient(
                     dht_client=self.dht_client,
                     tracker_client=self.tracker_client,
+                    bloom_filter=self.bloom_filter,
+                    catalog=self.catalog,
                 )
                 self.logger.info("Xet P2P CAS client initialized")
+
+            # Start discovery mechanisms if available
+            if self.lpd_client:
+                try:
+                    await self.lpd_client.start()
+                    self.logger.info("Local Peer Discovery started")
+                except Exception as e:
+                    self.logger.warning("Failed to start LPD: %s", e)
+
+            if self.gossip_manager:
+                try:
+                    await self.gossip_manager.start()
+                    self.logger.info("Gossip protocol started")
+                except Exception as e:
+                    self.logger.warning("Failed to start gossip: %s", e)
 
             # Set state to connected
             self.set_state(ProtocolState.CONNECTED)
@@ -98,6 +140,19 @@ class XetProtocol(Protocol):
             if self.cas_client:
                 # CAS client cleanup if needed
                 self.cas_client = None
+
+            # Stop discovery mechanisms
+            if self.lpd_client:
+                try:
+                    await self.lpd_client.stop()
+                except Exception as e:
+                    self.logger.warning("Error stopping LPD: %s", e)
+
+            if self.gossip_manager:
+                try:
+                    await self.gossip_manager.stop()
+                except Exception as e:
+                    self.logger.warning("Error stopping gossip: %s", e)
 
             # Set state to disconnected
             self.set_state(ProtocolState.DISCONNECTED)
@@ -321,6 +376,40 @@ class XetProtocol(Protocol):
                         "Error querying tracker for torrent peers: %s", e
                     )
 
+            # Strategy 2b: Local Peer Discovery (LPD) for local network
+            if self.lpd_client:
+                try:
+                    if hasattr(self.lpd_client, "discover_peers"):
+                        lpd_peers = await self.lpd_client.discover_peers(timeout=2.0)
+                        if lpd_peers:
+                            from ccbt.models import PeerInfo
+                            for ip, port in lpd_peers:
+                                peers.append(PeerInfo(ip=ip, port=port))
+                            self.logger.debug(
+                                "Found %d peers via LPD for torrent %s",
+                                len(lpd_peers),
+                                torrent_info.name,
+                            )
+                except Exception as e:
+                    self.logger.warning("Error querying LPD for peers: %s", e)
+
+            # Strategy 2c: Peer Exchange (PEX) for chunk availability
+            if self.pex_manager and chunk_hashes_to_query:
+                try:
+                    if hasattr(self.pex_manager, "get_peers_with_chunks"):
+                        pex_peers = await self.pex_manager.get_peers_with_chunks(
+                            chunk_hashes_to_query[:20]  # Limit queries
+                        )
+                        if pex_peers:
+                            peers.extend(pex_peers)
+                            self.logger.debug(
+                                "Found %d peers via PEX for torrent %s",
+                                len(pex_peers),
+                                torrent_info.name,
+                            )
+                except Exception as e:
+                    self.logger.warning("Error querying PEX for peers: %s", e)
+
             # Strategy 3: Extract chunk hashes from Xet metadata if available
             # This is the primary method for chunk discovery when Xet is enabled
             chunk_hashes_to_query: list[bytes] = []
@@ -359,37 +448,144 @@ class XetProtocol(Protocol):
                     len(chunk_hashes_to_query),
                 )
 
+            # Strategy 3b: Pre-filter using Bloom Filters
+            if self.bloom_filter and chunk_hashes_to_query:
+                try:
+                    # Filter chunks that might be available based on bloom filter
+                    filtered_chunks = []
+                    for chunk_hash in chunk_hashes_to_query:
+                        if self.bloom_filter.has_chunk(chunk_hash):
+                            filtered_chunks.append(chunk_hash)
+                    if filtered_chunks:
+                        chunk_hashes_to_query = filtered_chunks
+                        self.logger.debug(
+                            "Bloom filter filtered to %d potentially available chunks",
+                            len(filtered_chunks),
+                        )
+                except Exception as e:
+                    self.logger.warning("Error using bloom filter: %s", e)
+
             # Query for peers that have specific chunks
             if chunk_hashes_to_query:
                 try:
-                    # Query for peers for each chunk hash
-                    chunk_peer_tasks = [
-                        self.cas_client.find_chunk_peers(chunk_hash)
-                        for chunk_hash in chunk_hashes_to_query[
-                            :20
-                        ]  # Limit to 20 queries
-                    ]
-                    chunk_peer_results = await asyncio.gather(
-                        *chunk_peer_tasks, return_exceptions=True
-                    )
+                    # Check catalog first for fast bulk lookup
+                    if self.catalog or (
+                        hasattr(self.cas_client, "catalog") and self.cas_client.catalog
+                    ):
+                        catalog_to_use = self.catalog or self.cas_client.catalog
+                        try:
+                            catalog_results = await catalog_to_use.get_peers_by_chunks(
+                                chunk_hashes_to_query[:50]
+                            )
+                            # Add catalog results
+                            for chunk_hash, catalog_peers in catalog_results.items():
+                                if catalog_peers:
+                                    from ccbt.models import PeerInfo
 
-                    for result in chunk_peer_results:
-                        if isinstance(result, list):
-                            peers.extend(result)
-                            # Track discovered chunks
-                            for peer in result:
-                                if hasattr(peer, "chunk_hashes"):
-                                    discovered_chunks.update(peer.chunk_hashes)  # type: ignore[attr-defined]
+                                    for ip, port in catalog_peers:
+                                        peers.append(PeerInfo(ip=ip, port=port))
+                                    discovered_chunks.add(chunk_hash)
+                            self.logger.debug(
+                                "Found %d chunks in catalog",
+                                len(catalog_results),
+                            )
+                        except Exception as e:
+                            self.logger.warning("Error querying catalog: %s", e)
 
+                    # Use batch query if available, otherwise parallel queries
+                    if hasattr(self.cas_client, "find_chunks_peers_batch"):
+                        # Batch query for better performance
+                        chunk_peer_map = await self.cas_client.find_chunks_peers_batch(
+                            chunk_hashes_to_query[:50]  # Configurable limit
+                        )
+                        # Flatten results
+                        for chunk_hash, chunk_peers in chunk_peer_map.items():
+                            peers.extend(chunk_peers)
+                            discovered_chunks.add(chunk_hash)
+                    else:
+                        # Fallback to parallel queries with semaphore for rate limiting
+                        from asyncio import Semaphore
+
+                        semaphore = Semaphore(50)  # Max 50 concurrent queries
+
+                        async def query_with_limit(chunk_hash: bytes) -> list[PeerInfo]:
+                            async with semaphore:
+                                return await self.cas_client.find_chunk_peers(chunk_hash)
+
+                        chunk_peer_tasks = [
+                            query_with_limit(chunk_hash)
+                            for chunk_hash in chunk_hashes_to_query[:50]  # Configurable limit
+                        ]
+                        chunk_peer_results = await asyncio.gather(
+                            *chunk_peer_tasks, return_exceptions=True
+                        )
+
+                        for i, result in enumerate(chunk_peer_results):
+                            if isinstance(result, list):
+                                peers.extend(result)
+                                if i < len(chunk_hashes_to_query):
+                                    discovered_chunks.add(chunk_hashes_to_query[i])
+                                    # Track discovered chunks
+                                    for peer in result:
+                                        if hasattr(peer, "chunk_hashes"):
+                                            discovered_chunks.update(peer.chunk_hashes)  # type: ignore[attr-defined]
+                except Exception as e:
+                    self.logger.warning("Error during chunk discovery: %s", e)
+
+            self.logger.debug(
+                "Found %d peers via chunk discovery for torrent %s",
+                len(peers),
+                torrent_info.name,
+            )
+
+            # Strategy 4: Broadcast chunk announcements via multicast if enabled
+            if self.multicast_broadcaster and chunk_hashes_to_query:
+                try:
+                    for chunk_hash in chunk_hashes_to_query[:10]:  # Limit broadcasts
+                        await self.multicast_broadcaster.broadcast_chunk_announcement(
+                            chunk_hash
+                        )
                     self.logger.debug(
-                        "Found %d peers via chunk discovery for torrent %s",
-                        len(peers),
-                        torrent_info.name,
+                        "Broadcast %d chunk announcements via multicast",
+                        min(10, len(chunk_hashes_to_query)),
                     )
                 except Exception as e:
-                    self.logger.warning("Error during chunk peer discovery: %s", e)
+                    self.logger.warning("Error broadcasting chunk announcements: %s", e)
 
-            # Strategy 5: Query using info_hash_v2 if available (BEP 52)
+            # Strategy 5: Gossip protocol for chunk availability propagation
+            if self.gossip_manager and chunk_hashes_to_query:
+                try:
+                    for chunk_hash in chunk_hashes_to_query[:5]:  # Limit gossip
+                        await self.gossip_manager.propagate_chunk_update(chunk_hash)
+                    self.logger.debug(
+                        "Propagated %d chunk updates via gossip",
+                        min(5, len(chunk_hashes_to_query)),
+                    )
+                except Exception as e:
+                    self.logger.warning("Error propagating chunk updates via gossip: %s", e)
+
+            # Strategy 6: Controlled flooding for urgent chunk announcements
+            if self.flooding_client and chunk_hashes_to_query:
+                try:
+                    # Only flood high-priority chunks (first few)
+                    urgent_chunks = chunk_hashes_to_query[:3]
+                    for chunk_hash in urgent_chunks:
+                        await self.flooding_client.flood_message(
+                            {
+                                "type": "chunk_announcement",
+                                "chunk_hash": chunk_hash.hex(),
+                                "torrent_info_hash": torrent_info.info_hash.hex(),
+                            },
+                            ttl=3,  # Limit propagation distance
+                        )
+                    self.logger.debug(
+                        "Flooded %d urgent chunk announcements",
+                        len(urgent_chunks),
+                    )
+                except Exception as e:
+                    self.logger.warning("Error flooding chunk announcements: %s", e)
+
+            # Strategy 7: Query using info_hash_v2 if available (BEP 52)
             # Protocol v2 torrents have better structure for Xet integration
             # since they use SHA-256 hashes which align with Xet's BLAKE3-256 format
             if torrent_info.info_hash_v2:

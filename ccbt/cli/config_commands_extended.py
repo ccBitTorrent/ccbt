@@ -64,6 +64,7 @@ from ccbt.config.config_conditional import ConditionalConfig
 from ccbt.config.config_diff import ConfigDiff
 from ccbt.config.config_schema import ConfigSchema
 from ccbt.config.config_templates import ConfigProfiles, ConfigTemplates
+from ccbt.i18n import _
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -143,7 +144,7 @@ def schema_cmd(format_: str, model: str | None, output: str | None):
                 model_class = getattr(Config, model)  # pragma: no cover
                 schema = ConfigSchema.generate_schema(model_class)  # pragma: no cover
             else:
-                click.echo(f"Model '{model}' not found in Config")
+                click.echo(_("Model '{model}' not found in Config").format(model=model))
                 return
         else:
             # Generate full schema
@@ -158,7 +159,7 @@ def schema_cmd(format_: str, model: str | None, output: str | None):
             except (
                 ImportError
             ):  # pragma: no cover - Should not occur if PyYAML is dependency
-                click.echo("PyYAML is required for YAML output")  # pragma: no cover
+                click.echo(_("PyYAML is required for YAML output"))  # pragma: no cover
                 return  # pragma: no cover
         else:
             output_text = json.dumps(schema, indent=2)
@@ -166,14 +167,14 @@ def schema_cmd(format_: str, model: str | None, output: str | None):
         # Output
         if output:
             Path(output).write_text(output_text, encoding="utf-8")
-            click.echo(f"Schema written to {output}")
+            click.echo(_("Schema written to {path}").format(path=output))
         else:
             click.echo(output_text)
 
     except (
         Exception
     ) as e:  # pragma: no cover - Error handling for schema generation failures
-        click.echo(f"Error generating schema: {e}")  # pragma: no cover
+        click.echo(_("Error generating schema: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -218,24 +219,24 @@ def template_cmd(
         # Validate template
         is_valid, errors = ConfigTemplates.validate_template(template_name)
         if not is_valid:
-            click.echo(f"Invalid template '{template_name}': {', '.join(errors)}")
+            click.echo(_("Invalid template '{name}': {errors}").format(name=template_name, errors=", ".join(errors)))
             return
 
         # Get template info
         template_config = ConfigTemplates.get_template(template_name)
         if not template_config:
             click.echo(
-                f"Template '{template_name}' not found"
+                _("Template '{name}' not found").format(name=template_name)
             )  # pragma: no cover - Early return for missing template; tested but coverage tool doesn't track this path reliably due to mocking
             return  # pragma: no cover - Early return for missing template; tested but coverage tool doesn't track this path reliably due to mocking
 
         # Get template metadata
         template_metadata = ConfigTemplates.TEMPLATES.get(template_name)
         if template_metadata:
-            click.echo(f"Template: {template_metadata['name']}")
-            click.echo(f"Description: {template_metadata['description']}")
+            click.echo(_("Template: {name}").format(name=template_metadata["name"]))
+            click.echo(_("Description: {desc}").format(desc=template_metadata["description"]))
         else:
-            click.echo(f"Template: {template_name}")
+            click.echo(_("Template: {name}").format(name=template_name))
 
         if apply:
             # Load old config before modification
@@ -252,12 +253,12 @@ def template_cmd(
 
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(target_path):
-                click.echo("OK")  # pragma: no cover - Test mode protection path
+                click.echo(_("OK"))  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
 
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_text(toml.dumps(applied_config), encoding="utf-8")
-            click.echo(f"Template applied to {target_path}")
+            click.echo(_("Template applied to {path}").format(path=target_path))
 
             # Check if restart is needed
             try:
@@ -281,17 +282,17 @@ def template_cmd(
                         auto_restart=auto_restart,
                     )
             except Exception as e:
-                logger.debug("Error checking if restart is needed: %s", e)
+                logger.debug(_("Error checking if restart is needed: %s"), e)
                 # Don't fail the command if restart check fails
         elif output:
             # Show template configuration
             Path(output).write_text(toml.dumps(template_config), encoding="utf-8")
-            click.echo(f"Template config written to {output}")
+            click.echo(_("Template config written to {path}").format(path=output))
         else:
             click.echo(toml.dumps(template_config))
 
     except Exception as e:  # pragma: no cover - Error handling for template operations
-        click.echo(f"Error with template: {e}")  # pragma: no cover
+        click.echo(_("Error with template: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -336,25 +337,25 @@ def profile_cmd(
         # Validate profile
         is_valid, errors = ConfigProfiles.validate_profile(profile_name)
         if not is_valid:
-            click.echo(f"Invalid profile '{profile_name}': {', '.join(errors)}")
+            click.echo(_("Invalid profile '{name}': {errors}").format(name=profile_name, errors=", ".join(errors)))
             return
 
         # Get profile info
         profile_config = ConfigProfiles.get_profile(profile_name)
         if not profile_config:
             click.echo(
-                f"Profile '{profile_name}' not found"
+                _("Profile '{name}' not found").format(name=profile_name)
             )  # pragma: no cover - Early return for missing profile; tested but coverage tool doesn't track this path reliably due to mocking
             return  # pragma: no cover - Early return for missing profile; tested but coverage tool doesn't track this path reliably due to mocking
 
         # Get profile metadata
         profile_metadata = ConfigProfiles.PROFILES.get(profile_name)
         if profile_metadata:
-            click.echo(f"Profile: {profile_metadata['name']}")
-            click.echo(f"Description: {profile_metadata['description']}")
-            click.echo(f"Templates: {', '.join(profile_metadata['templates'])}")
+            click.echo(_("Profile: {name}").format(name=profile_metadata["name"]))
+            click.echo(_("Description: {desc}").format(desc=profile_metadata["description"]))
+            click.echo(_("Templates: {templates}").format(templates=", ".join(profile_metadata["templates"])))
         else:
-            click.echo(f"Profile: {profile_name}")
+            click.echo(_("Profile: {name}").format(name=profile_name))
 
         if apply:
             # Load old config before modification
@@ -371,12 +372,12 @@ def profile_cmd(
 
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(target_path):
-                click.echo("OK")  # pragma: no cover - Test mode protection path
+                click.echo(_("OK"))  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
 
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_text(toml.dumps(applied_config), encoding="utf-8")
-            click.echo(f"Profile applied to {target_path}")
+            click.echo(_("Profile applied to {path}").format(path=target_path))
 
             # Check if restart is needed
             try:
@@ -400,19 +401,19 @@ def profile_cmd(
                         auto_restart=auto_restart,
                     )
             except Exception as e:
-                logger.debug("Error checking if restart is needed: %s", e)
+                logger.debug(_("Error checking if restart is needed: %s"), e)
                 # Don't fail the command if restart check fails
         else:
             # Show profile configuration
             profile_config = ConfigProfiles.apply_profile({}, profile_name)
             if output:
                 Path(output).write_text(toml.dumps(profile_config), encoding="utf-8")
-                click.echo(f"Profile config written to {output}")
+                click.echo(_("Profile config written to {path}").format(path=output))
             else:
                 click.echo(toml.dumps(profile_config))
 
     except Exception as e:  # pragma: no cover - Error handling for profile operations
-        click.echo(f"Error with profile: {e}")  # pragma: no cover
+        click.echo(_("Error with profile: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -436,7 +437,7 @@ def backup_cmd(description: str, compress: bool, config_file: str | None):
     try:
         cm = ConfigManager(config_file)
         if not cm.config_file:
-            click.echo("No configuration file to backup")
+            click.echo(_("No configuration file to backup"))
             return
 
         backup_manager = ConfigBackup()
@@ -448,18 +449,18 @@ def backup_cmd(description: str, compress: bool, config_file: str | None):
         )
 
         if success:
-            click.echo(f"Backup created: {backup_path}")
+            click.echo(_("Backup created: {path}").format(path=backup_path))
             for message in log_messages:
-                click.echo(f"  {message}")
+                click.echo(_("  {msg}").format(msg=message))
         else:
-            click.echo("Backup failed")
+            click.echo(_("Backup failed"))
             for message in log_messages:
-                click.echo(f"  {message}")
+                click.echo(_("  {msg}").format(msg=message))
 
     except (
         Exception
     ) as e:  # pragma: no cover - Error handling for backup creation failures
-        click.echo(f"Error creating backup: {e}")  # pragma: no cover
+        click.echo(_("Error creating backup: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -475,7 +476,7 @@ def restore_cmd(backup_file: str, confirm: bool, config_file: str | None):
     """Restore configuration from backup."""
     try:
         if not confirm:
-            click.echo("Use --confirm to proceed with restore")
+            click.echo(_("Use --confirm to proceed with restore"))
             return
 
         backup_manager = ConfigBackup()
@@ -485,18 +486,18 @@ def restore_cmd(backup_file: str, confirm: bool, config_file: str | None):
         )
 
         if success:
-            click.echo(f"Configuration restored from {backup_file}")
+            click.echo(_("Configuration restored from {path}").format(path=backup_file))
             for message in log_messages:
-                click.echo(f"  {message}")
+                click.echo(_("  {msg}").format(msg=message))
         else:
-            click.echo("Restore failed")
+            click.echo(_("Restore failed"))
             for message in log_messages:
-                click.echo(f"  {message}")
+                click.echo(_("  {msg}").format(msg=message))
 
     except (
         Exception
     ) as e:  # pragma: no cover - Error handling for backup restore failures
-        click.echo(f"Error restoring backup: {e}")  # pragma: no cover
+        click.echo(_("Error restoring backup: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -515,7 +516,7 @@ def list_backups_cmd(format_: str):
         backups = backup_manager.list_backups()
 
         if not backups:  # pragma: no cover - Edge case when no backups exist
-            click.echo("No backups found")  # pragma: no cover
+            click.echo(_("No backups found"))  # pragma: no cover
             return  # pragma: no cover
 
         if format_ == "json":
@@ -541,7 +542,7 @@ def list_backups_cmd(format_: str):
     except (
         Exception
     ) as e:  # pragma: no cover - Error handling for list-backups failures
-        click.echo(f"Error listing backups: {e}")  # pragma: no cover
+        click.echo(_("Error listing backups: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -569,19 +570,19 @@ def diff_cmd(config1: str, config2: str, format_: str, output: str | None):
 
         if output:
             Path(output).write_text(json.dumps(diff_result, indent=2), encoding="utf-8")
-            click.echo(f"Diff written to {output}")
+            click.echo(_("Diff written to {path}").format(path=output))
         elif format_ == "json":
             click.echo(json.dumps(diff_result, indent=2))
         else:
             # Unified format
-            click.echo("Configuration differences:")
+            click.echo(_("Configuration differences:"))
             for key, value in diff_result.items():
-                click.echo(f"{key}: {value}")
+                click.echo(_("{key}: {value}").format(key=key, value=value))
 
     except (
         Exception
     ) as e:  # pragma: no cover - Error handling for diff comparison failures
-        click.echo(f"Error comparing configs: {e}")  # pragma: no cover
+        click.echo(_("Error comparing configs: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -698,9 +699,9 @@ def auto_tune_cmd(
 
             # Show warnings
             if warnings:
-                click.echo("Auto-tuning warnings:")
+                click.echo(_("Auto-tuning warnings:"))
                 for warning in warnings:
-                    click.echo(f"  {warning}")
+                    click.echo(_("  {warning}").format(warning=warning))
 
             # Save tuned configuration
             target_path = Path(output) if output else Path.cwd() / "ccbt_tuned.toml"
@@ -709,13 +710,13 @@ def auto_tune_cmd(
             if target_path.name == "ccbt.toml" and _should_skip_project_local_write(
                 target_path
             ):
-                click.echo("OK")  # pragma: no cover - Test mode protection path
+                click.echo(_("OK"))  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
 
             config_data = tuned_config.model_dump(mode="json")
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_text(toml.dumps(config_data), encoding="utf-8")
-            click.echo(f"Auto-tuned configuration saved to {target_path}")
+            click.echo(_("Auto-tuned configuration saved to {path}").format(path=target_path))
 
             # Check if restart is needed (only if writing to the active config file)
             if target_path.name == "ccbt.toml" or (
@@ -742,18 +743,18 @@ def auto_tune_cmd(
                             auto_restart=auto_restart,
                         )
                 except Exception as e:
-                    logger.debug("Error checking if restart is needed: %s", e)
+                    logger.debug(_("Error checking if restart is needed: %s"), e)
                     # Don't fail the command if restart check fails
         else:  # pragma: no cover - Show-only mode without applying
             # Show recommendations  # pragma: no cover
             recommendations = (
                 conditional_config.get_system_recommendations()
             )  # pragma: no cover
-            click.echo("System recommendations:")  # pragma: no cover
+            click.echo(_("System recommendations:"))  # pragma: no cover
             click.echo(json.dumps(recommendations, indent=2))  # pragma: no cover
 
     except Exception as e:  # pragma: no cover - Error handling for auto-tune operations
-        click.echo(f"Error with auto-tuning: {e}")  # pragma: no cover
+        click.echo(_("Error with auto-tuning: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -790,17 +791,17 @@ def export_cmd(format_: str, output: str, config_file: str | None):
             except (
                 ImportError
             ):  # pragma: no cover - Should not occur if PyYAML is dependency
-                click.echo("PyYAML is required for YAML export")  # pragma: no cover
+                click.echo(_("PyYAML is required for YAML export"))  # pragma: no cover
                 return  # pragma: no cover
         else:
             output_text = toml.dumps(config_data)
 
         # Write to file
         Path(output).write_text(output_text, encoding="utf-8")
-        click.echo(f"Configuration exported to {output}")
+        click.echo(_("Configuration exported to {path}").format(path=output))
 
     except Exception as e:  # pragma: no cover - File I/O error handling
-        click.echo(f"Error exporting configuration: {e}")  # pragma: no cover
+        click.echo(_("Error exporting configuration: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -873,7 +874,7 @@ def import_cmd(
             except (
                 ImportError
             ):  # pragma: no cover - Should not occur if PyYAML is dependency
-                click.echo("PyYAML is required for YAML import")  # pragma: no cover
+                click.echo(_("PyYAML is required for YAML import"))  # pragma: no cover
                 return  # pragma: no cover
         else:
             config_data = toml.loads(file_content)
@@ -885,7 +886,7 @@ def import_cmd(
 
             Config.model_validate(config_data)
         except Exception as e:  # pragma: no cover - Invalid config validation error
-            click.echo(f"Invalid configuration: {e}")  # pragma: no cover
+            click.echo(_("Invalid configuration: {e}").format(e=e))  # pragma: no cover
             return  # pragma: no cover
 
         # Save to target
@@ -898,12 +899,12 @@ def import_cmd(
 
         # Safety: avoid overwriting project-local config during tests
         if _should_skip_project_local_write(target_path):
-            click.echo("OK")  # pragma: no cover - Test mode protection path
+            click.echo(_("OK"))  # pragma: no cover - Test mode protection path
             return  # pragma: no cover - Test mode protection path
 
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(toml.dumps(config_data), encoding="utf-8")
-        click.echo(f"Configuration imported to {target_path}")
+        click.echo(_("Configuration imported to {path}").format(path=target_path))
 
         # Check if restart is needed
         try:
@@ -927,13 +928,13 @@ def import_cmd(
                     auto_restart=auto_restart,
                 )
         except Exception as e:
-            logger.debug("Error checking if restart is needed: %s", e)
+            logger.debug(_("Error checking if restart is needed: %s"), e)
             # Don't fail the command if restart check fails
 
     except (
         Exception
     ) as e:  # pragma: no cover - Error handling for import file I/O failures
-        click.echo(f"Error importing configuration: {e}")  # pragma: no cover
+        click.echo(_("Error importing configuration: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -951,7 +952,7 @@ def validate_cmd(config_file: str | None, detailed: bool):
         config = cm.config
 
         # Basic validation (this happens during ConfigManager creation)
-        click.echo("✓ Configuration is valid")
+        click.echo(_("✓ Configuration is valid"))
 
         if detailed:
             # Additional validation using conditional config
@@ -959,14 +960,14 @@ def validate_cmd(config_file: str | None, detailed: bool):
             _is_valid, warnings = conditional_config.validate_against_system(config)
 
             if warnings:
-                click.echo("Warnings:")
+                click.echo(_("Warnings:"))
                 for warning in warnings:
-                    click.echo(f"  ⚠ {warning}")
+                    click.echo(_("  ⚠ {warning}").format(warning=warning))
             else:
-                click.echo("✓ No system compatibility warnings")
+                click.echo(_("✓ No system compatibility warnings"))
 
     except Exception as e:  # pragma: no cover - Error handling for validation failures
-        click.echo(f"✗ Configuration validation failed: {e}")  # pragma: no cover
+        click.echo(_("✗ Configuration validation failed: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -999,7 +1000,7 @@ def list_templates_cmd(format_: str):
     except (
         Exception
     ) as e:  # pragma: no cover - Error handling for list-templates failures
-        click.echo(f"Error listing templates: {e}")  # pragma: no cover
+        click.echo(_("Error listing templates: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -1034,5 +1035,6 @@ def list_profiles_cmd(format_: str):
     except (
         Exception
     ) as e:  # pragma: no cover - Error handling for list-profiles failures
-        click.echo(f"Error listing profiles: {e}")  # pragma: no cover
+        click.echo(_("Error listing profiles: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
+

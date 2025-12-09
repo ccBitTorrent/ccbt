@@ -238,10 +238,15 @@ class PexBinder:
                     await session.download_manager.start_download(peer_list)
                     if session.download_manager.peer_manager:
                         pm = session.download_manager.peer_manager
-                        pm.on_peer_connected = session._on_peer_connected
-                        pm.on_peer_disconnected = session._on_peer_disconnected
-                        pm.on_piece_received = session._on_peer_piece_received
-                        pm.on_bitfield_received = session._on_peer_bitfield_received
+                        # Use download_manager callbacks (they exist there, not on session)
+                        if hasattr(session.download_manager, "_on_peer_connected"):
+                            pm.on_peer_connected = session.download_manager._on_peer_connected
+                        if hasattr(session.download_manager, "_on_peer_disconnected"):
+                            pm.on_peer_disconnected = session.download_manager._on_peer_disconnected
+                        if hasattr(session.download_manager, "_on_piece_received"):
+                            pm.on_piece_received = session.download_manager._on_piece_received
+                        if hasattr(session.download_manager, "_on_bitfield_received"):
+                            pm.on_bitfield_received = session.download_manager._on_bitfield_received
                     setattr(session.download_manager, "_download_started", True)  # noqa: B010
                 else:
                     helper = PeerConnectionHelper(session)
@@ -287,6 +292,183 @@ class PeerConnectionHelper:
 
         """
         self.session = session
+        self.logger = session.logger
+        
+        # IMPROVEMENT: Track peer quality ranking metrics
+        self._peer_quality_metrics = {
+            "total_rankings": 0,
+            "total_peers_ranked": 0,
+            "quality_scores": [],
+            "last_ranking": {
+                "timestamp": 0.0,
+                "peers_ranked": 0,
+                "average_score": 0.0,
+                "high_quality_count": 0,
+                "medium_quality_count": 0,
+                "low_quality_count": 0,
+            },
+        }
+
+    def _rank_peers_by_quality(
+        self, peer_list: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Rank peers by quality before connection.
+        
+        Quality factors:
+        1. Historical performance (if available from security manager)
+        2. Connection success rate
+        3. Geographic proximity (lower latency estimate)
+        4. Upload/download ratio (if available)
+        
+        Args:
+            peer_list: List of peer dictionaries
+            
+        Returns:
+            Ranked list of peers (best quality first)
+        """
+        if not peer_list:
+            return []
+        
+        # Get security manager for historical performance data
+        security_manager = None
+        if hasattr(self.session, "download_manager"):
+            security_manager = getattr(
+                self.session.download_manager, "security_manager", None
+            )
+        
+        scored_peers = []
+        for peer in peer_list:
+            ip = peer.get("ip", "")
+            port = peer.get("port", 0)
+            peer_key = f"{ip}:{port}"
+            
+            score = 0.0
+            factors = []
+            
+            # Factor 1: Historical performance (0.0-1.0, weight: 0.4)
+            if security_manager and hasattr(security_manager, "get_peer_reputation"):
+                try:
+                    reputation = security_manager.get_peer_reputation(peer_key, ip)
+                    if reputation:
+                        # Use reputation score (0.0-1.0)
+                        perf_score = reputation.reputation_score
+                        score += perf_score * 0.4
+                        factors.append(f"perf={perf_score:.2f}")
+                        
+                        # Penalize blacklisted peers
+                        if reputation.is_blacklisted:
+                            score = -1.0  # Strongly penalize
+                            factors.append("blacklisted")
+                except Exception:
+                    pass  # No reputation data available
+            
+            # Factor 2: Connection success rate estimate (0.0-1.0, weight: 0.2)
+            # For new peers, assume moderate success rate
+            # For peers with history, use actual success rate
+            success_rate = 0.5  # Default for unknown peers
+            if security_manager and hasattr(security_manager, "get_peer_reputation"):
+                try:
+                    reputation = security_manager.get_peer_reputation(peer_key, ip)
+                    if reputation and hasattr(reputation, "success_rate"):
+                        success_rate = reputation.success_rate
+                except Exception:
+                    pass
+            score += success_rate * 0.2
+            factors.append(f"success={success_rate:.2f}")
+            
+            # Factor 3: Source quality (0.0-1.0, weight: 0.2)
+            # DHT and tracker peers are generally more reliable than PEX
+            source = peer.get("peer_source", "unknown")
+            source_scores = {
+                "tracker": 1.0,
+                "dht": 0.9,
+                "pex": 0.7,
+                "incoming": 0.8,
+                "dht_node": 0.6,
+                "unknown": 0.5,
+            }
+            source_score = source_scores.get(source, 0.5)
+            score += source_score * 0.2
+            factors.append(f"source={source}")
+            
+            # Factor 4: Geographic proximity estimate (0.0-1.0, weight: 0.05 - reduced to allow distant peers)
+            # RELAXED: Reduced weight from 0.2 to 0.05 to allow connecting to slower/distant peers
+            # Simple heuristic: assume peers from same country/region have lower latency
+            # For now, use a simple hash-based estimate (can be improved with GeoIP)
+            # This is a placeholder - in production, use actual GeoIP lookup
+            proximity_score = 0.5  # Default moderate proximity
+            # TODO: Implement actual GeoIP lookup for better proximity estimation
+            # RELAXED: Use minimal weight to avoid penalizing distant but useful peers
+            proximity_weight = getattr(
+                self.session.config.network,
+                "peer_quality_proximity_weight",
+                0.05,  # Default to 0.05 instead of 0.2
+            )
+            score += proximity_score * proximity_weight
+            factors.append(f"proximity={proximity_score:.2f}(w={proximity_weight:.2f})")
+            
+            scored_peers.append((score, peer, factors))
+        
+        # Sort by score (descending) - best peers first
+        scored_peers.sort(key=lambda x: x[0], reverse=True)
+        
+        # IMPROVEMENT: Track peer quality metrics
+        current_time = time.time()
+        quality_scores = [score for score, _, _ in scored_peers if score >= 0.0]
+        high_quality = sum(1 for s in quality_scores if s > 0.7)
+        medium_quality = sum(1 for s in quality_scores if 0.3 < s <= 0.7)
+        low_quality = sum(1 for s in quality_scores if s <= 0.3)
+        avg_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+        
+        self._peer_quality_metrics["total_rankings"] += 1
+        self._peer_quality_metrics["total_peers_ranked"] += len(quality_scores)
+        self._peer_quality_metrics["quality_scores"].extend(quality_scores)
+        if len(self._peer_quality_metrics["quality_scores"]) > 1000:
+            # Keep only last 1000 scores
+            self._peer_quality_metrics["quality_scores"] = self._peer_quality_metrics["quality_scores"][-1000:]
+        
+        self._peer_quality_metrics["last_ranking"] = {
+            "timestamp": current_time,
+            "peers_ranked": len(quality_scores),
+            "average_score": avg_score,
+            "high_quality_count": high_quality,
+            "medium_quality_count": medium_quality,
+            "low_quality_count": low_quality,
+        }
+        
+        # IMPROVEMENT: Emit event for peer quality ranking
+        try:
+            from ccbt.utils.events import emit_event, EventType, Event
+            asyncio.create_task(emit_event(Event(
+                event_type=EventType.PEER_QUALITY_RANKED.value,
+                data={
+                    "info_hash": self.session.info.info_hash.hex() if hasattr(self.session, "info") else "",
+                    "torrent_name": self.session.info.name if hasattr(self.session, "info") else "",
+                    "total_peers": len(quality_scores),
+                    "average_score": avg_score,
+                    "high_quality_count": high_quality,
+                    "medium_quality_count": medium_quality,
+                    "low_quality_count": low_quality,
+                },
+            )))
+        except Exception as e:
+            self.logger.debug("Failed to emit peer quality ranked event: %s", e)
+        
+        # Log top peers for debugging
+        if scored_peers:
+            top_5 = scored_peers[:5]
+            self.logger.debug(
+                "Top 5 ranked peers: %s",
+                ", ".join(
+                    [
+                        f"{p[1].get('ip')}:{p[1].get('port')} (score={p[0]:.2f}, {', '.join(p[2])})"
+                        for p in top_5
+                    ]
+                ),
+            )
+        
+        # Return ranked peer list (without scores, filter out blacklisted)
+        return [peer for score, peer, _ in scored_peers if score >= 0.0]
 
     async def connect_peers_to_download(self, peer_list: list[dict[str, Any]]) -> None:
         """Connect peers to the download manager after download has started.
@@ -321,9 +503,29 @@ class PeerConnectionHelper:
             )
             return
 
+        # IMPROVEMENT: Peer quality-based prioritization
+        # Rank peers by quality before connecting
+        self.session.logger.debug(
+            "Ranking %d peer(s) by quality before connection for %s",
+            len(peer_list),
+            self.session.info.name if hasattr(self.session, "info") else "unknown",
+        )
+        ranked_peers = self._rank_peers_by_quality(peer_list)
+        
+        # CRITICAL FIX: Log quality filtering results
+        filtered_count = len(peer_list) - len(ranked_peers)
+        if filtered_count > 0:
+            self.session.logger.debug(
+                "Quality filter removed %d peer(s) (input: %d, output: %d) for %s",
+                filtered_count,
+                len(peer_list),
+                len(ranked_peers),
+                self.session.info.name if hasattr(self.session, "info") else "unknown",
+            )
+        
         # CRITICAL FIX: Add detailed logging for peer connection attempts
         peer_sources = {}
-        for peer in peer_list:
+        for peer in ranked_peers:
             source = peer.get("peer_source", "unknown")
             peer_sources[source] = peer_sources.get(source, 0) + 1
 
@@ -331,10 +533,14 @@ class PeerConnectionHelper:
             [f"{count} from {source}" for source, count in peer_sources.items()]
         )
         self.session.logger.info(
-            "Attempting to connect %d peer(s) to download (%s)",
-            len(peer_list),
+            "Attempting to connect %d peer(s) to download (%s) - ranked by quality for %s",
+            len(ranked_peers),
             source_summary,
+            self.session.info.name if hasattr(self.session, "info") else "unknown",
         )
+        
+        # Use ranked peers instead of original list
+        peer_list = ranked_peers
 
         # Update peer discovery metrics
         for peer in peer_list:
@@ -470,6 +676,12 @@ class PeerConnectionHelper:
                     )
 
         if peer_manager and hasattr(peer_manager, "connect_to_peers"):
+            self.session.logger.info(
+                "Peer manager ready: connecting %d peer(s) from %s for %s",
+                len(peer_list),
+                peer_manager_source,
+                self.session.info.name if hasattr(self.session, "info") else "unknown",
+            )
             self.session.logger.debug(
                 "Using peer_manager from %s to connect %d peers",
                 peer_manager_source,
@@ -519,7 +731,17 @@ class PeerConnectionHelper:
             try:
                 # async_main.AsyncDownloadManager: peer_manager is already started by start_download()
                 # Just connect the new peers
+                self.session.logger.info(
+                    "🔗 PEER CONNECTION: Calling connect_to_peers() with %d peer(s) for %s",
+                    len(peer_list),
+                    self.session.info.name if hasattr(self.session, "info") else "unknown",
+                )
                 await peer_manager.connect_to_peers(peer_list)  # type: ignore[attr-defined]
+                self.session.logger.info(
+                    "✅ PEER CONNECTION: connect_to_peers() completed for %d peer(s) for %s",
+                    len(peer_list),
+                    self.session.info.name if hasattr(self.session, "info") else "unknown",
+                )
                 # CRITICAL FIX: connect_to_peers() returns after scheduling tasks, not after connections complete
                 # Wait a short time for connections to establish, then check actual connection count
                 await asyncio.sleep(2.0)  # Give connections time to establish

@@ -87,6 +87,14 @@ description: Development patterns and coding standards for ccBitTorrent
 - **Encryption support** for sensitive data
 - **IP filtering** via [`ccbt/security/security_manager.py`](mdc:ccbt/security/security_manager.py)
 
+### Windows Path Resolution
+- **CRITICAL**: Use `_get_daemon_home_dir()` helper from `ccbt/daemon/daemon_manager.py` for all daemon-related paths
+- **Why**: Windows can resolve `Path.home()` or `os.path.expanduser("~")` differently in different processes, especially with spaces in usernames
+- **Pattern**: Helper tries multiple methods (`expanduser`, `USERPROFILE`, `HOME`, `Path.home()`) and uses `Path.resolve()` for canonical path
+- **Usage**: Always use helper instead of direct `Path.home()` or `os.path.expanduser("~")` for daemon PID files, state directories, config files
+- **Files affected**: `DaemonManager`, `StateManager`, `IPCClient`, any code that reads/writes daemon PID file or state
+- **Result**: Ensures daemon and CLI use same canonical path, preventing detection failures
+
 ## Testing Patterns
 - **Markers**: Use pytest markers (`@pytest.mark.unit`, `@pytest.mark.integration`, etc.) defined in [`dev/pytest.ini`](mdc:dev/pytest.ini)
 - **Coverage target**: 99% project-wide, 90% patch (see [`dev/.codecov.yml`](mdc:dev/.codecov.yml))

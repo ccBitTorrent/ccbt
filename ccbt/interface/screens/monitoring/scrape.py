@@ -96,8 +96,31 @@ class ScrapeResultsScreen(MonitoringScreen):  # type: ignore[misc]
             results_table = self.query_one("#results_table", Static)
 
             # Get all cached scrape results
-            async with self.session.scrape_cache_lock:
-                scrape_results = list(self.session.scrape_cache.values())
+            # CRITICAL FIX: Handle both AsyncSessionManager and DaemonInterfaceAdapter
+            scrape_results = []
+            if hasattr(self.session, "scrape_cache_lock") and hasattr(self.session, "scrape_cache"):
+                # Direct session manager access
+                async with self.session.scrape_cache_lock:
+                    scrape_results = list(self.session.scrape_cache.values())
+            elif hasattr(self.session, "_executor_adapter"):
+                # DaemonInterfaceAdapter - use executor adapter to get scrape results
+                from ccbt.executor.session_adapter import DaemonSessionAdapter
+                if isinstance(self.session._executor_adapter, DaemonSessionAdapter):
+                    # Use IPC client to get scrape results
+                    try:
+                        scrape_list_response = await self.session._executor_adapter.list_scrape_results()
+                        if scrape_list_response and hasattr(scrape_list_response, "results"):
+                            scrape_results = scrape_list_response.results
+                    except Exception as e:
+                        logger.debug("Error getting scrape results via executor: %s", e)
+                        # Fallback: try to get via command executor
+                        if hasattr(self, "_command_executor") and self._command_executor:
+                            try:
+                                result = await self._command_executor.execute_command("scrape.list")
+                                if result and hasattr(result, "results"):
+                                    scrape_results = result.results
+                            except Exception:
+                                pass
 
             # Build status panel
             status_lines = [

@@ -14,6 +14,7 @@ class TorrentStatus(str, Enum):
     DOWNLOADING = "downloading"
     SEEDING = "seeding"
     PAUSED = "paused"
+    CANCELLED = "cancelled"
     ERROR = "error"
 
 

@@ -77,6 +77,20 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Published version: $VERSION"
       
+      - name: Validate version for main branch
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          
+          # Main branch: version must be >= 0.1.0
+          if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -eq 0 ]; then
+            echo "❌ Main branch PyPI publication requires version >= 0.1.0, got $VERSION"
+            echo "   Use dev branch workflow for 0.0.x versions"
+            exit 1
+          fi
+          echo "✅ Version validation passed: $VERSION"
+      
       - name: Verify publication
         run: |
           echo "⏳ Waiting 10 seconds for PyPI to propagate..."
@@ -99,4 +113,70 @@ jobs:
           echo "**Package Links:**" >> $GITHUB_STEP_SUMMARY
           echo "- PyPI: https://pypi.org/project/ccbt/" >> $GITHUB_STEP_SUMMARY
           echo "- Installation: \`uv pip install ccbt==$VERSION\`" >> $GITHUB_STEP_SUMMARY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

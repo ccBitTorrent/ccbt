@@ -636,7 +636,7 @@ msgstr ""
             # Get msgstr (next line)
             if i < len(lines) and lines[i].startswith('msgstr "'):
                 msgstr_line = lines[i]
-                msgstr = msgstr_line[8:-1]  # Remove 'msgstr "' and trailing '"'
+                _ = msgstr_line[8:-1]  # Remove 'msgstr "' and trailing '"' (not used in this implementation)
                 i += 1
 
                 # Check if we have a translation
@@ -682,7 +682,7 @@ msgstr ""
 
 
 if __name__ == "__main__":
-    base_dir = Path(__file__).parent / "locales"
+    base_dir = Path(__file__).parent.parent / "locales"
     template_path = base_dir / "en" / "LC_MESSAGES" / "ccbt.pot"
 
     # Generate Spanish

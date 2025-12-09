@@ -1,3 +1,4 @@
+
 """Configuration utilities for CLI commands.
 
 Provides functions to detect config changes requiring daemon restart
@@ -12,6 +13,7 @@ from rich.console import Console
 from rich.prompt import Confirm
 
 from ccbt.config.config import ConfigManager
+from ccbt.i18n import _
 from ccbt.daemon.daemon_manager import DaemonManager
 from ccbt.daemon.ipc_client import IPCClient  # type: ignore[attr-defined]
 from ccbt.utils.logging_config import get_logger
@@ -184,11 +186,11 @@ async def _restart_daemon_async(force: bool = False) -> bool:
     daemon_manager = DaemonManager()
 
     if not daemon_manager.is_running():
-        logger.debug("Daemon is not running, nothing to restart")
+        logger.debug(_("Daemon is not running, nothing to restart"))
         return False
 
     # Stop daemon
-    logger.info("Stopping daemon for restart...")
+    logger.info(_("Stopping daemon for restart..."))
     try:
         config_manager = init_config()
         cfg = get_config()
@@ -207,24 +209,24 @@ async def _restart_daemon_async(force: bool = False) -> bool:
                         timeout = 30.0
                         while time.time() - start_time < timeout:
                             if not daemon_manager.is_running():
-                                logger.info("Daemon stopped gracefully")
+                                logger.info(_("Daemon stopped gracefully"))
                                 break
                             await asyncio.sleep(0.5)
                         else:
                             # Timeout, force stop
-                            logger.warning("Graceful shutdown timeout, forcing stop")
+                            logger.warning(_("Graceful shutdown timeout, forcing stop"))
                             daemon_manager.stop(timeout=5.0, force=True)
                 finally:
                     await client.close()
             except Exception as e:
-                logger.debug("Error sending shutdown request: %s", e)
+                logger.debug(_("Error sending shutdown request: %s"), e)
                 # Fallback to signal-based shutdown
                 daemon_manager.stop(timeout=30.0, force=force)
         else:
             # No API key, use signal-based shutdown
             daemon_manager.stop(timeout=30.0, force=force)
     except Exception as e:
-        logger.exception("Error stopping daemon: %s", e)
+        logger.exception(_("Error stopping daemon: %s"), e)
         return False
 
     # Wait a moment for process to fully exit
@@ -233,17 +235,17 @@ async def _restart_daemon_async(force: bool = False) -> bool:
     await asyncio.sleep(0.5)
 
     # Start daemon
-    logger.info("Starting daemon...")
+    logger.info(_("Starting daemon..."))
     try:
         pid = daemon_manager.start(foreground=False)
         if pid:
             # Wait a moment for daemon to initialize
             await asyncio.sleep(1.0)
-            logger.info("Daemon restarted successfully (PID: %d)", pid)
+            logger.info(_("Daemon restarted successfully (PID: %d)"), pid)
             return True
         return False
     except Exception as e:
-        logger.exception("Error starting daemon: %s", e)
+        logger.exception(_("Error starting daemon: %s"), e)
         return False
 
 
@@ -271,7 +273,7 @@ def restart_daemon_if_needed(
 
     daemon_manager = DaemonManager()
     if not daemon_manager.is_running():
-        logger.debug("Daemon is not running, restart not needed")
+        logger.debug(_("Daemon is not running, restart not needed"))
         return False
 
     # Determine if we should restart
@@ -281,16 +283,16 @@ def restart_daemon_if_needed(
     elif auto_restart is False:
         should_restart = False
         console.print(
-            "[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]"
+            _("[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]")
         )
         console.print(
-            "[dim]Please restart the daemon manually: 'btbt daemon restart'[/dim]"
+            _("[dim]Please restart the daemon manually: 'btbt daemon restart'[/dim]")
         )
     else:
         # Prompt user
-        console.print("[yellow]Configuration changes require daemon restart.[/yellow]")
+        console.print(_("[yellow]Configuration changes require daemon restart.[/yellow]"))
         should_restart = Confirm.ask(
-            "Restart daemon now?",
+            _("Restart daemon now?"),
             default=True,
         )
 
@@ -298,19 +300,19 @@ def restart_daemon_if_needed(
         return False
 
     # Perform restart
-    console.print("[cyan]Restarting daemon...[/cyan]")
+    console.print(_("[cyan]Restarting daemon...[/cyan]"))
     try:
         import asyncio
 
         success = asyncio.run(_restart_daemon_async(force=force))
         if success:
-            console.print("[green]Daemon restarted successfully[/green]")
+            console.print(_("[green]Daemon restarted successfully[/green]"))
             return True
-        console.print("[red]Failed to restart daemon[/red]")
-        console.print("[dim]Please restart manually: 'btbt daemon restart'[/dim]")
+        console.print(_("[red]Failed to restart daemon[/red]"))
+        console.print(_("[dim]Please restart manually: 'btbt daemon restart'[/dim]"))
         return False
     except Exception as e:
-        logger.exception("Error restarting daemon: %s", e)
-        console.print(f"[red]Error restarting daemon: {e}[/red]")
-        console.print("[dim]Please restart manually: 'btbt daemon restart'[/dim]")
+        logger.exception(_("Error restarting daemon: %s"), e)
+        console.print(_("[red]Error restarting daemon: {e}[/red]").format(e=e))
+        console.print(_("[dim]Please restart manually: 'btbt daemon restart'[/dim]"))
         return False

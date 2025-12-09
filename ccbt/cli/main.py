@@ -36,6 +36,8 @@ from ccbt.cli.monitoring_commands import alerts as alerts_cmd
 from ccbt.cli.monitoring_commands import dashboard as dashboard_cmd
 from ccbt.cli.monitoring_commands import metrics as metrics_cmd
 from ccbt.cli.progress import ProgressManager
+from ccbt.cli.torrent_config_commands import torrent as torrent_group
+from ccbt.cli.verbosity import VerbosityManager
 from ccbt.config.config import Config, ConfigManager, get_config, init_config
 from ccbt.daemon.daemon_manager import DaemonManager
 from ccbt.daemon.ipc_client import IPCClient  # type: ignore[attr-defined]
@@ -51,10 +53,205 @@ from ccbt.session.session import AsyncSessionManager
 
 logger = logging.getLogger(__name__)
 
+# Exception message templates
+def _daemon_not_responding_msg(max_total_wait: float) -> str:
+    """Generate daemon not responding error message."""
+    return (
+        f"Daemon PID file exists but daemon is not responding after {max_total_wait:.1f}s.\n"
+        "Possible causes:\n"
+        "  - Daemon is still starting up (wait a few seconds and try again)\n"
+        "  - Daemon crashed (check logs or run 'btbt daemon status')\n"
+        "  - IPC server is not accessible (check firewall/network settings)\n\n"
+        "To resolve:\n"
+        "  1. Run 'btbt daemon status' to check if daemon is actually running\n"
+        "  2. If daemon is not running, remove stale PID file: 'btbt daemon exit --force'\n"
+        "  3. If you want to run locally instead, stop the daemon: 'btbt daemon exit'"
+    )
+
+
+def _daemon_timeout_msg(elapsed: float) -> str:
+    """Generate daemon timeout error message."""
+    return (
+        f"Daemon PID file exists but daemon is not responding (timeout after {elapsed:.1f}s).\n"
+        "The daemon may be starting up or may have crashed.\n\n"
+        "To resolve:\n"
+        "  1. Run 'btbt daemon status' to check daemon state\n"
+        "  2. Check daemon logs for errors\n"
+        "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
+        "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
+    )
+
+
+# Exception message constants
+DAEMON_API_KEY_MISSING_MSG = (
+    "Daemon PID file exists but API key is missing from config. "
+    "Run 'btbt daemon status' to check daemon state, or restart the daemon."
+)
+
+DAEMON_NOT_RESPONDING_MSG = (
+    "Daemon PID file exists but daemon is not responding. "
+    "The daemon may be starting up or may have crashed.\n\n"
+    "To resolve:\n"
+    "  1. Run 'btbt daemon status' to check daemon state\n"
+    "  2. Wait a few seconds if daemon is still starting up\n"
+    "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
+    "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
+)
+
+DAEMON_TIMEOUT_MSG = (
+    "Daemon PID file exists but daemon is not responding (timeout). "
+    "The daemon may be starting up or may have crashed.\n\n"
+    "To resolve:\n"
+    "  1. Run 'btbt daemon status' to check daemon state\n"
+    "  2. Wait a few seconds if daemon is still starting up\n"
+    "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
+    "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
+)
+
+DAEMON_EXECUTOR_NOT_AVAILABLE_MSG = (
+    "Daemon PID file exists but executor is not available. "
+    "This indicates a serious initialization error."
+)
+
+DAEMON_CRITICAL_ERROR_MSG = (
+    "CRITICAL ERROR: Daemon PID file exists but code path reached local session creation. "
+    "This indicates a bug in daemon detection logic.\n\n"
+    "Cannot create local session as it would cause port conflicts.\n\n"
+    "To resolve:\n"
+    "  1. Stop the daemon: 'btbt daemon exit'\n"
+    "  2. Report this as a bug if daemon is not running"
+)
+
+DAEMON_WEB_INTERFACE_CONFLICT_MSG = (
+    "Daemon is running. Cannot start local web interface while daemon is active.\n"
+    "This would cause port conflicts and resource conflicts.\n\n"
+    "To resolve:\n"
+    "  1. Stop the daemon first: 'btbt daemon exit'\n"
+    "  2. Or use the daemon's web interface if available\n"
+    "  3. Or use daemon commands instead of local commands"
+)
+
+DAEMON_DEBUG_MODE_CONFLICT_MSG = (
+    "Daemon is running. Cannot start local debug mode while daemon is active.\n"
+    "This would cause port conflicts and resource conflicts.\n\n"
+    "To resolve:\n"
+    "  1. Stop the daemon first: 'btbt daemon exit'\n"
+    "  2. Or use daemon commands for debugging\n"
+    "  3. Or check daemon logs for debugging information"
+)
+
+DAEMON_RESUME_CONFLICT_MSG = (
+    "Daemon is running. Cannot resume from checkpoint using local session while daemon is active.\n"
+    "This would cause port conflicts and resource conflicts.\n\n"
+    "To resolve:\n"
+    "  1. Stop the daemon first: 'btbt daemon exit'\n"
+    "  2. Or add the torrent to the daemon and let it resume automatically\n"
+    "  3. The daemon will automatically resume from checkpoints when adding torrents"
+)
+
+
+def _daemon_connection_error_msg(error: Exception) -> str:
+    """Generate daemon connection error message."""
+    return (
+        f"Daemon PID file exists but cannot connect to daemon (error: {error}).\n"
+        "The daemon may be starting up or may have crashed.\n\n"
+        "To resolve:\n"
+        "  1. Run 'btbt daemon status' to check daemon state\n"
+        "  2. Check if IPC server is running on the configured port\n"
+        "  3. Verify API key in config matches daemon's API key\n"
+        "  4. If daemon crashed, restart it: 'btbt daemon start'\n"
+        "  5. If you want to run locally, stop the daemon: 'btbt daemon exit'"
+    )
+
+
+def _daemon_not_accessible_msg(elapsed: float) -> str:
+    """Generate daemon not accessible error message."""
+    return (
+        f"Daemon PID file exists but daemon is not accessible after {elapsed:.1f}s.\n"
+        "The daemon may be starting up or may have crashed.\n\n"
+        "To resolve:\n"
+        "  1. Run 'btbt daemon status' to check daemon state\n"
+        "  2. Check daemon logs for startup errors\n"
+        "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
+        "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
+    )
+
+
+def _daemon_error_connecting_msg(error: Exception) -> str:
+    """Generate daemon error connecting message."""
+    return (
+        f"Daemon PID file exists but error occurred while connecting: {error}.\n"
+        "The daemon may be starting up or may have crashed.\n\n"
+        "To resolve:\n"
+        "  1. Run 'btbt daemon status' to check daemon state\n"
+        "  2. Check daemon logs for connection errors\n"
+        "  3. Verify IPC server is accessible on the configured port\n"
+        "  4. If daemon crashed, restart it: 'btbt daemon start'\n"
+        "  5. If you want to run locally, stop the daemon: 'btbt daemon exit'"
+    )
+
+
+def _unknown_operation_msg(operation: str) -> str:
+    """Generate unknown operation error message."""
+    return (
+        f"Unknown operation '{operation}' requested but daemon PID file exists. "
+        "This should not happen - please report this as a bug."
+    )
+
+
+def _error_executing_operation_msg(operation: str, error: Exception) -> str:
+    """Generate error executing operation message."""
+    return f"Error executing {operation} on daemon: {error}"
+
 
 def _raise_cli_error(message: str) -> None:
     """Raise a ClickException with the given message."""
     raise click.ClickException(message) from None
+
+
+def _get_daemon_ipc_port(cfg: Any) -> int:
+    """Get daemon IPC port from config or daemon config file.
+    
+    Args:
+        cfg: Config object from get_config()
+        
+    Returns:
+        IPC port number (default: 8080)
+    
+    CRITICAL: This must match the daemon's actual IPC port to prevent connection failures.
+    The daemon writes its IPC port to ~/.ccbt/daemon/config.json when it starts.
+
+    """
+    # CRITICAL FIX: Always try to read from daemon config file FIRST (most reliable source)
+    # The daemon writes its actual IPC port here when it starts, so this is authoritative
+    # This MUST be checked before main config to ensure we use the daemon's actual port
+    import json
+
+    # CRITICAL FIX: Use consistent path resolution helper
+    from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+    home_dir = _get_daemon_home_dir()
+    daemon_config_file = home_dir / ".ccbt" / "daemon" / "config.json"
+    logger.debug(_("_get_daemon_ipc_port: Checking config_file=%s (home_dir=%s)"), daemon_config_file, home_dir)
+    if daemon_config_file.exists():
+        try:
+            with open(daemon_config_file, encoding="utf-8") as f:
+                daemon_config = json.load(f)
+                ipc_port = daemon_config.get("ipc_port")
+                if ipc_port:
+                    logger.debug(_("Read IPC port %d from daemon config file (authoritative source)"), ipc_port)
+                    return ipc_port
+                logger.debug(_("Daemon config file exists but ipc_port not found, trying main config"))
+        except Exception as e:
+            logger.debug(_("Could not read daemon config file: %s"), e)
+
+    # Fallback to main config (if daemon config file doesn't exist or doesn't have ipc_port)
+    if cfg.daemon and cfg.daemon.ipc_port:
+        logger.debug(_("Using IPC port %d from main config"), cfg.daemon.ipc_port)
+        return cfg.daemon.ipc_port
+
+    # Default fallback (should rarely be used if daemon is running)
+    logger.debug(_("Using default IPC port 8080 (daemon config file may not exist)"))
+    return 8080
 
 
 async def _route_to_daemon_if_running(
@@ -89,8 +286,8 @@ async def _route_to_daemon_if_running(
             # On Windows, is_running() might raise exceptions due to os.kill() issues
             # If PID file exists, we'll still attempt IPC connection
             logger.debug(
-                "Error checking if daemon is running (Windows-specific issue?): %s - "
-                "PID file exists, will attempt IPC connection",
+                _("Error checking if daemon is running (Windows-specific issue?): %s - "
+                "PID file exists, will attempt IPC connection"),
                 e,
             )
             # Don't set daemon_running = False here - we'll check via IPC instead
@@ -101,26 +298,26 @@ async def _route_to_daemon_if_running(
     # The IPC connection is the definitive test of whether the daemon is accessible
     if not pid_file_exists and not daemon_running:
         # No PID file and not running - daemon is definitely not running
-        logger.debug("No daemon PID file found - daemon is not running")
+        logger.debug(_("No daemon PID file found - daemon is not running"))
         return False
 
     # Get API key from config
-    config_manager = init_config()
     cfg = get_config()
 
     if not cfg.daemon or not cfg.daemon.api_key:
         if pid_file_exists or daemon_running:
             logger.warning(
-                "Daemon PID file exists but API key not found in config. "
-                "Cannot route to daemon. Please check daemon configuration."
+                _("Daemon PID file exists but API key not found in config. "
+                "Cannot route to daemon. Please check daemon configuration.")
             )
             # Don't return False here - we want to raise an error in the caller
             # to prevent local session creation
-            raise click.ClickException(
+            api_key_missing_msg = (
                 "Daemon appears to be running but API key is missing from config. "
                 "Run 'btbt daemon status' to check daemon state, or restart the daemon."
             )
-        logger.debug("No daemon config or API key found - will create local session")
+            raise click.ClickException(api_key_missing_msg)
+        logger.debug(_("No daemon config or API key found - will create local session"))
         return False
 
     client: IPCClient | None = None
@@ -129,10 +326,9 @@ async def _route_to_daemon_if_running(
         # Explicitly use host/port from config to ensure consistency with daemon
         # Note: If server binds to 0.0.0.0, client can still connect via 127.0.0.1
         # So we always use 127.0.0.1 for client connections (works with both 0.0.0.0 and 127.0.0.1 server bindings)
-        ipc_host = cfg.daemon.ipc_host if cfg.daemon else "0.0.0.0"
         # For client connection, always use 127.0.0.1 (works with server binding to 0.0.0.0 or 127.0.0.1)
         client_host = "127.0.0.1"
-        ipc_port = cfg.daemon.ipc_port if cfg.daemon else 8080
+        ipc_port = _get_daemon_ipc_port(cfg)
         base_url = f"http://{client_host}:{ipc_port}"
         client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
 
@@ -154,22 +350,13 @@ async def _route_to_daemon_if_running(
             elapsed = asyncio.get_event_loop().time() - start_time
             if elapsed >= max_total_wait:
                 logger.debug(
-                    "Exceeded maximum wait time (%.1fs) for daemon readiness",
+                    _("Exceeded maximum wait time (%.1fs) for daemon readiness"),
                     max_total_wait,
                 )
                 # If PID file exists, this is an error condition
                 if pid_file_exists:
-                    raise click.ClickException(
-                        f"Daemon PID file exists but daemon is not responding after {max_total_wait:.1f}s.\n"
-                        "Possible causes:\n"
-                        "  - Daemon is still starting up (wait a few seconds and try again)\n"
-                        "  - Daemon crashed (check logs or run 'btbt daemon status')\n"
-                        "  - IPC server is not accessible (check firewall/network settings)\n\n"
-                        "To resolve:\n"
-                        "  1. Run 'btbt daemon status' to check if daemon is actually running\n"
-                        "  2. If daemon is not running, remove stale PID file: 'btbt daemon exit --force'\n"
-                        "  3. If you want to run locally instead, stop the daemon: 'btbt daemon exit'"
-                    )
+                    error_msg = _daemon_not_responding_msg(max_total_wait)
+                    raise click.ClickException(error_msg)
                 return False
 
             try:
@@ -179,7 +366,7 @@ async def _route_to_daemon_if_running(
                 )
                 if is_accessible:
                     logger.debug(
-                        "Daemon is accessible and ready (attempt %d/%d, took %.1fs)",
+                        _("Daemon is accessible and ready (attempt %d/%d, took %.1fs)"),
                         attempt + 1,
                         max_retries,
                         elapsed,
@@ -187,8 +374,8 @@ async def _route_to_daemon_if_running(
                     break
                 if attempt < max_retries - 1:
                     logger.debug(
-                        "Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), "
-                        "retrying in %.1fs...",
+                        _("Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), "
+                        "retrying in %.1fs..."),
                         attempt + 1,
                         max_retries,
                         elapsed,
@@ -198,11 +385,11 @@ async def _route_to_daemon_if_running(
                     retry_delay = min(
                         retry_delay * 1.5, 2.0
                     )  # Exponential backoff, capped at 2s
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as err:
                 if attempt < max_retries - 1:
                     logger.debug(
-                        "Timeout checking daemon accessibility (attempt %d/%d, elapsed %.1fs), "
-                        "retrying in %.1fs...",
+                        _("Timeout checking daemon accessibility (attempt %d/%d, elapsed %.1fs), "
+                        "retrying in %.1fs..."),
                         attempt + 1,
                         max_retries,
                         elapsed,
@@ -214,27 +401,20 @@ async def _route_to_daemon_if_running(
                     )  # Exponential backoff, capped at 2s
                 else:
                     logger.debug(
-                        "Timeout checking daemon accessibility after %d attempts (elapsed %.1fs)",
+                        _("Timeout checking daemon accessibility after %d attempts (elapsed %.1fs)"),
                         max_retries,
                         elapsed,
                     )
                     # If PID file exists, this is an error condition
                     if pid_file_exists:
-                        raise click.ClickException(
-                            f"Daemon PID file exists but daemon is not responding (timeout after {elapsed:.1f}s).\n"
-                            "The daemon may be starting up or may have crashed.\n\n"
-                            "To resolve:\n"
-                            "  1. Run 'btbt daemon status' to check daemon state\n"
-                            "  2. Check daemon logs for errors\n"
-                            "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
-                            "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-                        )
+                        error_msg = _daemon_timeout_msg(elapsed)
+                        raise click.ClickException(error_msg) from err
                     return False
             except Exception as e:
                 if attempt < max_retries - 1:
                     logger.debug(
-                        "Error checking daemon accessibility (attempt %d/%d, elapsed %.1fs): %s, "
-                        "retrying in %.1fs...",
+                        _("Error checking daemon accessibility (attempt %d/%d, elapsed %.1fs): %s, "
+                        "retrying in %.1fs..."),
                         attempt + 1,
                         max_retries,
                         elapsed,
@@ -247,63 +427,48 @@ async def _route_to_daemon_if_running(
                     )  # Exponential backoff, capped at 2s
                 else:
                     logger.debug(
-                        "Error checking daemon accessibility after %d attempts (elapsed %.1fs): %s",
+                        _("Error checking daemon accessibility after %d attempts (elapsed %.1fs): %s"),
                         max_retries,
                         elapsed,
                         e,
                     )
                     # If PID file exists, this is an error condition
                     if pid_file_exists:
-                        raise click.ClickException(
-                            f"Daemon PID file exists but cannot connect to daemon (error: {e}).\n"
-                            "The daemon may be starting up or may have crashed.\n\n"
-                            "To resolve:\n"
-                            "  1. Run 'btbt daemon status' to check daemon state\n"
-                            "  2. Check if IPC server is running on the configured port\n"
-                            "  3. Verify API key in config matches daemon's API key\n"
-                            "  4. If daemon crashed, restart it: 'btbt daemon start'\n"
-                            "  5. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-                        )
+                        error_msg = _daemon_connection_error_msg(e)
+                        raise click.ClickException(error_msg) from e
                     return False
 
         if not is_accessible:
             elapsed = asyncio.get_event_loop().time() - start_time
             logger.debug(
-                "Daemon is marked as running but not accessible after %d attempts (elapsed %.1fs)",
+                _("Daemon is marked as running but not accessible after %d attempts (elapsed %.1fs)"),
                 max_retries,
                 elapsed,
             )
             # If PID file exists, this is an error condition
             if pid_file_exists:
-                raise click.ClickException(
-                    f"Daemon PID file exists but daemon is not accessible after {elapsed:.1f}s.\n"
-                    "The daemon may be starting up or may have crashed.\n\n"
-                    "To resolve:\n"
-                    "  1. Run 'btbt daemon status' to check daemon state\n"
-                    "  2. Check daemon logs for startup errors\n"
-                    "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
-                    "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-                )
+                error_msg = _daemon_not_accessible_msg(elapsed)
+                raise click.ClickException(error_msg)
             return False
 
         # CRITICAL FIX: Perform the requested operation using executor
         # Wrap in try-except to ensure client is properly closed even on errors
-        from ccbt.executor import DaemonSessionAdapter, UnifiedCommandExecutor
+        # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+        from ccbt.executor.manager import ExecutorManager
 
-        adapter = DaemonSessionAdapter(client)
-        executor = UnifiedCommandExecutor(adapter)
+        executor_manager = ExecutorManager.get_instance()
+        executor = executor_manager.get_executor(ipc_client=client)
         console = Console()
 
         try:
             if operation == "add_torrent":
                 path_or_magnet = args[0] if args else kwargs.get("path_or_magnet", "")
                 if not path_or_magnet:
-                    logger.warning("No torrent path or magnet provided")
+                    logger.warning(_("No torrent path or magnet provided"))
                     # If PID file exists, raise exception instead of returning False
                     if pid_file_exists:
-                        raise click.ClickException(
-                            "No torrent path or magnet provided for add_torrent operation."
-                        )
+                        no_torrent_msg = "No torrent path or magnet provided for add_torrent operation."
+                        raise click.ClickException(no_torrent_msg)
                     return False
 
                 result = await executor.execute(
@@ -315,7 +480,7 @@ async def _route_to_daemon_if_running(
 
                 if not result.success:
                     raise click.ClickException(
-                        result.error or "Failed to add torrent to daemon"
+                        result.error or _("Failed to add torrent to daemon")
                     )
 
                 info_hash = result.data["info_hash"]
@@ -329,12 +494,11 @@ async def _route_to_daemon_if_running(
             if operation == "add_magnet":
                 magnet_uri = args[0] if args else kwargs.get("magnet_uri", "")
                 if not magnet_uri:
-                    logger.warning("No magnet URI provided")
+                    logger.warning(_("No magnet URI provided"))
                     # If PID file exists, raise exception instead of returning False
                     if pid_file_exists:
-                        raise click.ClickException(
-                            "No magnet URI provided for add_magnet operation."
-                        )
+                        no_magnet_msg = _("No magnet URI provided for add_magnet operation.")
+                        raise click.ClickException(no_magnet_msg)
                     return False
 
                 result = await executor.execute(
@@ -367,14 +531,12 @@ async def _route_to_daemon_if_running(
                 console.print(_("Torrents: {count}").format(count=status.num_torrents))
                 console.print(_("Uptime: {uptime:.1f}s").format(uptime=status.uptime))
                 return True
-            logger.warning("Unknown operation: %s", operation)
+            logger.warning(_("Unknown operation: %s"), operation)
             # CRITICAL: If PID file exists, we should not return False
             # This indicates a programming error
             if pid_file_exists:
-                raise click.ClickException(
-                    f"Unknown operation '{operation}' requested but daemon PID file exists. "
-                    "This should not happen - please report this as a bug."
-                )
+                error_msg = _unknown_operation_msg(operation)
+                raise click.ClickException(error_msg)
             return False
         except click.ClickException:
             # Re-raise ClickException (user-facing errors)
@@ -382,13 +544,11 @@ async def _route_to_daemon_if_running(
         except Exception as op_error:
             # Log the error and re-raise as ClickException for user visibility
             logger.exception(
-                "Error executing operation '%s' on daemon: %s",
+                "Error executing operation '%s' on daemon",
                 operation,
-                op_error,
             )
-            raise click.ClickException(
-                f"Error executing {operation} on daemon: {op_error}"
-            ) from op_error
+            error_msg = _error_executing_operation_msg(operation, op_error)
+            raise click.ClickException(error_msg) from op_error
 
     except click.ClickException:
         # Re-raise ClickException (these are user-facing errors about daemon state)
@@ -413,32 +573,24 @@ async def _route_to_daemon_if_running(
 
         # If PID file exists, this is an error condition - don't silently fall back
         if pid_file_exists:
-            logger.warning("Error routing to daemon (PID file exists): %s", e)
-            raise click.ClickException(
-                f"Daemon PID file exists but error occurred while connecting: {e}.\n"
-                "The daemon may be starting up or may have crashed.\n\n"
-                "To resolve:\n"
-                "  1. Run 'btbt daemon status' to check daemon state\n"
-                "  2. Check daemon logs for connection errors\n"
-                "  3. Verify IPC server is accessible on the configured port\n"
-                "  4. If daemon crashed, restart it: 'btbt daemon start'\n"
-                "  5. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-            )
+            logger.warning(_("Error routing to daemon (PID file exists): %s"), e)
+            error_msg = _daemon_error_connecting_msg(e)
+            raise click.ClickException(error_msg) from e
 
         if is_windows_kill_error:
             logger.debug(
-                "Windows-specific error checking daemon (os.kill() issue): %s - "
-                "no PID file found, will create local session",
+                _("Windows-specific error checking daemon (os.kill() issue): %s - "
+                "no PID file found, will create local session"),
                 e,
             )
         elif is_connection_error:
             logger.debug(
-                "Could not connect to daemon (no PID file): %s - will create local session",
+                _("Could not connect to daemon (no PID file): %s - will create local session"),
                 e,
             )
         else:
             logger.debug(
-                "Error routing to daemon (no PID file): %s - will create local session",
+                _("Error routing to daemon (no PID file): %s - will create local session"),
                 e,
             )
 
@@ -449,7 +601,7 @@ async def _route_to_daemon_if_running(
             try:
                 await client.close()
             except Exception as e:
-                logger.debug("Error closing IPC client: %s", e)
+                logger.debug(_("Error closing IPC client: %s"), e)
 
 
 async def _get_executor() -> tuple[Any | None, bool]:
@@ -462,8 +614,6 @@ async def _get_executor() -> tuple[Any | None, bool]:
         Raises ClickException if daemon PID exists but cannot connect
 
     """
-    from ccbt.executor import DaemonSessionAdapter, UnifiedCommandExecutor
-
     daemon_manager = DaemonManager()
     pid_file_exists = daemon_manager.pid_file.exists()
 
@@ -471,21 +621,19 @@ async def _get_executor() -> tuple[Any | None, bool]:
         return (None, False)
 
     # Get API key from config
-    config_manager = init_config()
     cfg = get_config()
 
     if not cfg.daemon or not cfg.daemon.api_key:
-        raise click.ClickException(
-            "Daemon PID file exists but API key is missing from config. "
-            "Run 'btbt daemon status' to check daemon state, or restart the daemon."
-        )
+        raise click.ClickException(DAEMON_API_KEY_MISSING_MSG)
 
     # Explicitly use host/port from config to ensure consistency with daemon
     # CRITICAL FIX: Always use 127.0.0.1 for client connections (works with server binding to 0.0.0.0 or 127.0.0.1)
     # Server binding to 0.0.0.0 listens on all interfaces, including 127.0.0.1
-    ipc_port = cfg.daemon.ipc_port if cfg.daemon else 8080
+    # CRITICAL FIX: Use helper function to read IPC port from config or daemon config file
+    ipc_port = _get_daemon_ipc_port(cfg)
     client_host = "127.0.0.1"  # Always use 127.0.0.1 for client connections
     base_url = f"http://{client_host}:{ipc_port}"
+    logger.debug(_("Connecting to daemon at %s (PID file exists)"), base_url)
     client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
 
     # Verify daemon is accessible with retry logic (similar to _route_to_daemon_if_running)
@@ -503,17 +651,8 @@ async def _get_executor() -> tuple[Any | None, bool]:
         elapsed = asyncio.get_event_loop().time() - start_time
         if elapsed >= max_total_wait:
             await client.close()
-            raise click.ClickException(
-                f"Daemon PID file exists but daemon is not responding after {max_total_wait:.1f}s.\n"
-                "Possible causes:\n"
-                "  - Daemon is still starting up (wait a few seconds and try again)\n"
-                "  - Daemon crashed (check logs or run 'btbt daemon status')\n"
-                "  - IPC server is not accessible (check firewall/network settings)\n\n"
-                "To resolve:\n"
-                "  1. Run 'btbt daemon status' to check if daemon is actually running\n"
-                "  2. If daemon is not running, remove stale PID file: 'btbt daemon exit --force'\n"
-                "  3. If you want to run locally instead, stop the daemon: 'btbt daemon exit'"
-            )
+            error_msg = _daemon_not_responding_msg(max_total_wait)
+            raise click.ClickException(error_msg)
 
         try:
             is_accessible = await asyncio.wait_for(
@@ -522,7 +661,7 @@ async def _get_executor() -> tuple[Any | None, bool]:
             )
             if is_accessible:
                 logger.debug(
-                    "Daemon is accessible and ready (attempt %d/%d, took %.1fs)",
+                    _("Daemon is accessible and ready (attempt %d/%d, took %.1fs)"),
                     attempt + 1,
                     max_retries,
                     elapsed,
@@ -530,8 +669,8 @@ async def _get_executor() -> tuple[Any | None, bool]:
                 break
             if attempt < max_retries - 1:
                 logger.debug(
-                    "Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), "
-                    "retrying in %.1fs...",
+                    _("Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), "
+                    "retrying in %.1fs..."),
                     attempt + 1,
                     max_retries,
                     elapsed,
@@ -541,10 +680,10 @@ async def _get_executor() -> tuple[Any | None, bool]:
                 retry_delay = min(
                     retry_delay * 1.5, 2.0
                 )  # Exponential backoff, capped at 2s
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as err:
             if attempt < max_retries - 1:
                 logger.debug(
-                    "Daemon connection timeout (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...",
+                    _("Daemon connection timeout (attempt %d/%d, elapsed %.1fs), retrying in %.1fs..."),
                     attempt + 1,
                     max_retries,
                     elapsed,
@@ -554,19 +693,12 @@ async def _get_executor() -> tuple[Any | None, bool]:
                 retry_delay = min(retry_delay * 1.5, 2.0)
             else:
                 await client.close()
-                raise click.ClickException(
-                    "Daemon PID file exists but daemon is not responding (timeout). "
-                    "The daemon may be starting up or may have crashed.\n\n"
-                    "To resolve:\n"
-                    "  1. Run 'btbt daemon status' to check daemon state\n"
-                    "  2. Wait a few seconds if daemon is still starting up\n"
-                    "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
-                    "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-                )
+                error_msg = _daemon_timeout_msg(elapsed)
+                raise click.ClickException(error_msg) from err
         except Exception as e:
             if attempt < max_retries - 1:
                 logger.debug(
-                    "Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...",
+                    _("Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs..."),
                     attempt + 1,
                     max_retries,
                     elapsed,
@@ -577,18 +709,12 @@ async def _get_executor() -> tuple[Any | None, bool]:
                 retry_delay = min(retry_delay * 1.5, 2.0)
             else:
                 await client.close()
-                raise click.ClickException(
-                    f"Daemon PID file exists but cannot connect to daemon: {e}.\n\n"
-                    "To resolve:\n"
-                    "  1. Run 'btbt daemon status' to check daemon state\n"
-                    "  2. Check if IPC server is running on the configured port\n"
-                    "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
-                    "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-                ) from e
+                error_msg = _daemon_connection_error_msg(e)
+                raise click.ClickException(error_msg) from e
 
     if not is_accessible:
         await client.close()
-        raise click.ClickException(
+        timeout_msg = (
             "Daemon PID file exists but daemon is not responding after all retries. "
             "The daemon may be starting up or may have crashed.\n\n"
             "To resolve:\n"
@@ -597,10 +723,16 @@ async def _get_executor() -> tuple[Any | None, bool]:
             "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
             "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
         )
+        raise click.ClickException(timeout_msg)
 
-    # Daemon is accessible - create adapter and executor
-    adapter = DaemonSessionAdapter(client)
-    executor = UnifiedCommandExecutor(adapter)
+    # Daemon is accessible - create executor via ExecutorManager
+    # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+    # This prevents duplicate executors and ensures proper session reference management
+    # ExecutorManager will create DaemonSessionAdapter internally when ipc_client is provided
+    from ccbt.executor.manager import ExecutorManager
+
+    executor_manager = ExecutorManager.get_instance()
+    executor = executor_manager.get_executor(ipc_client=client)
     return (executor, True)
 
 
@@ -621,21 +753,19 @@ async def _check_daemon_and_get_client() -> tuple[bool, IPCClient | None]:
         return (False, None)
 
     # Get API key from config
-    config_manager = init_config()
     cfg = get_config()
 
     if not cfg.daemon or not cfg.daemon.api_key:
-        raise click.ClickException(
-            "Daemon PID file exists but API key is missing from config. "
-            "Run 'btbt daemon status' to check daemon state, or restart the daemon."
-        )
+        raise click.ClickException(DAEMON_API_KEY_MISSING_MSG)
 
     # Explicitly use host/port from config to ensure consistency with daemon
     # CRITICAL FIX: Always use 127.0.0.1 for client connections (works with server binding to 0.0.0.0 or 127.0.0.1)
     # Server binding to 0.0.0.0 listens on all interfaces, including 127.0.0.1
-    ipc_port = cfg.daemon.ipc_port if cfg.daemon else 8080
+    # CRITICAL FIX: Use helper function to read IPC port from config or daemon config file
+    ipc_port = _get_daemon_ipc_port(cfg)
     client_host = "127.0.0.1"  # Always use 127.0.0.1 for client connections
     base_url = f"http://{client_host}:{ipc_port}"
+    logger.debug(_("Connecting to daemon at %s (PID file exists)"), base_url)
     client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
 
     # Verify daemon is accessible
@@ -646,30 +776,14 @@ async def _check_daemon_and_get_client() -> tuple[bool, IPCClient | None]:
         )
         if not is_accessible:
             await client.close()
-            raise click.ClickException(
-                "Daemon PID file exists but daemon is not responding. "
-                "The daemon may be starting up or may have crashed.\n\n"
-                "To resolve:\n"
-                "  1. Run 'btbt daemon status' to check daemon state\n"
-                "  2. Wait a few seconds if daemon is still starting up\n"
-                "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
-                "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-            )
+            raise click.ClickException(DAEMON_NOT_RESPONDING_MSG)
         return (True, client)
-    except asyncio.TimeoutError:
+    except asyncio.TimeoutError as err:
         await client.close()
-        raise click.ClickException(
-            "Daemon PID file exists but daemon is not responding (timeout). "
-            "The daemon may be starting up or may have crashed.\n\n"
-            "To resolve:\n"
-            "  1. Run 'btbt daemon status' to check daemon state\n"
-            "  2. Wait a few seconds if daemon is still starting up\n"
-            "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
-            "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-        )
+        raise click.ClickException(DAEMON_TIMEOUT_MSG) from err
     except Exception as e:
         await client.close()
-        raise click.ClickException(
+        error_msg = (
             f"Daemon PID file exists but cannot connect to daemon: {e}.\n\n"
             "To resolve:\n"
             "  1. Run 'btbt daemon status' to check daemon state\n"
@@ -677,6 +791,7 @@ async def _check_daemon_and_get_client() -> tuple[bool, IPCClient | None]:
             "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
             "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
         )
+        raise click.ClickException(error_msg) from e
 
 
 def _ensure_no_daemon_or_warn() -> bool:
@@ -720,6 +835,21 @@ def _get_config_from_context(ctx: click.Context) -> ConfigManager:
     if ctx and ctx.obj and "config" in ctx.obj:
         return ConfigManager(ctx.obj["config"])
     return init_config()
+
+
+async def _ensure_local_session_safe(force_local: bool = False) -> AsyncSessionManager:
+    """Create and start a local AsyncSessionManager safely.
+
+    Args:
+        force_local: If True, ensures local session is created even if daemon is running
+
+    Returns:
+        Started AsyncSessionManager instance
+
+    """
+    session = AsyncSessionManager(".")
+    await session.start()
+    return session
 
 
 # Helper to apply CLI overrides to the runtime config
@@ -833,12 +963,12 @@ def _apply_strategy_overrides(cfg: Config, options: dict[str, Any]) -> None:
         try:
             cfg.strategy.first_piece_priority = True  # type: ignore[attr-defined]
         except Exception as e:
-            logger.debug("Failed to set first piece priority: %s", e)
+            logger.debug(_("Failed to set first piece priority: %s"), e)
     if options.get("last_piece_priority"):
         try:
             cfg.strategy.last_piece_priority = True  # type: ignore[attr-defined]
         except Exception as e:
-            logger.debug("Failed to set last piece priority: %s", e)
+            logger.debug(_("Failed to set last piece priority: %s"), e)
     if options.get("optimistic_unchoke_interval") is not None:
         cfg.network.optimistic_unchoke_interval = float(
             options["optimistic_unchoke_interval"],
@@ -873,12 +1003,12 @@ def _apply_disk_overrides(cfg: Config, options: dict[str, Any]) -> None:
         try:
             cfg.disk.enable_io_uring = True  # type: ignore[attr-defined]
         except Exception as e:
-            logger.debug("Failed to enable io_uring: %s", e)
+            logger.debug(_("Failed to enable io_uring: %s"), e)
     if options.get("disable_io_uring"):
         try:
             cfg.disk.enable_io_uring = False  # type: ignore[attr-defined]
         except Exception as e:
-            logger.debug("Failed to disable io_uring: %s", e)
+            logger.debug(_("Failed to disable io_uring: %s"), e)
     if options.get("direct_io"):
         cfg.disk.direct_io = True
     if options.get("sync_writes"):
@@ -918,128 +1048,178 @@ def _apply_limit_overrides(cfg: Config, options: dict[str, Any]) -> None:
     type=click.Path(exists=True),
     help=_("Configuration file path"),
 )
-@click.option("--verbose", "-v", is_flag=True, help=_("Enable verbose output"))
-@click.option("--debug", "-d", is_flag=True, help=_("Enable debug mode"))
+@click.option(
+    "--verbose",
+    "-v",
+    count=True,
+    help=_("Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)"),
+)
+@click.option("--debug", "-d", is_flag=True, help=_("Enable debug mode (deprecated, use -vv)"))
 @click.pass_context
 def cli(ctx, config, verbose, debug):
     """CcBitTorrent - High-performance BitTorrent client."""
     ctx.ensure_object(dict)
     ctx.obj["config"] = config
-    ctx.obj["verbose"] = verbose
+    # Convert debug flag to verbosity count for backward compatibility
+    if debug:
+        verbose = max(verbose, 2)  # -d is equivalent to -vv
+    ctx.obj["verbosity"] = verbose
+    ctx.obj["verbose"] = verbose > 0  # Keep for backward compatibility
     ctx.obj["debug"] = debug
 
-    # Initialize global configuration early
+    # Initialize verbosity manager and update logging level
+    verbosity_manager = VerbosityManager.from_count(verbose)
+    ctx.obj["verbosity_manager"] = verbosity_manager
+
+    # CRITICAL: Initialize translations FIRST, before any user-facing output
+    # This ensures all subsequent strings are properly translated
     config_manager = None
+    translation_manager = None
     with contextlib.suppress(Exception):
         config_manager = init_config(config)
         if config_manager:
-            # Initialize translations
-            TranslationManager(config_manager.config)
+            # Initialize translations immediately after config
+            translation_manager = TranslationManager(config_manager.config)
+
+            # Validate locale and warn if invalid
+            from ccbt.i18n import _is_valid_locale, get_locale
+
+            current_locale = get_locale()
+            if not _is_valid_locale(current_locale):
+                # Log warning but continue with default locale
+                logger.warning(
+                    _("Invalid locale '{current_locale}' specified. "
+                    "Falling back to 'en'. Available locales: "
+                    "en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu").format(
+                        current_locale=current_locale
+                    )
+                )
+            # Update logging level based on verbosity
+            cfg = config_manager.config
+            if hasattr(cfg, "observability"):
+                from ccbt.models import LogLevel
+                from ccbt.utils.logging_config import setup_logging
+
+                # Temporarily override log level based on verbosity
+                original_log_level = cfg.observability.log_level
+
+                # Map verbosity to log level: -v=INFO, -vv/-vvv=DEBUG
+                if verbosity_manager.is_debug():
+                    cfg.observability.log_level = LogLevel.DEBUG
+                elif verbosity_manager.is_verbose():
+                    cfg.observability.log_level = LogLevel.INFO
+                # else: keep original level (usually INFO)
+
+                # Setup logging with verbosity-aware level
+                setup_logging(cfg.observability)
+
+                # Restore original log level (verbosity only affects console output)
+                cfg.observability.log_level = original_log_level
 
     # docs command removed; docs are maintained in repository
 
 
 @cli.command()
 @click.argument("torrent_file", type=click.Path(exists=True))
-@click.option("--output", "-o", type=click.Path(), help="Output directory")
-@click.option("--interactive", "-i", is_flag=True, help="Start interactive mode")
-@click.option("--monitor", "-m", is_flag=True, help="Enable monitoring")
+@click.option("--output", "-o", type=click.Path(), help=_("Output directory"))
+@click.option("--interactive", "-i", is_flag=True, help=_("Start interactive mode"))
+@click.option("--monitor", "-m", is_flag=True, help=_("Enable monitoring"))
 @click.option(
     "--resume",
     "-r",
     is_flag=True,
-    help="Resume from checkpoint if available",
+    help=_("Resume from checkpoint if available"),
 )
-@click.option("--no-checkpoint", is_flag=True, help="Disable checkpointing")
-@click.option("--checkpoint-dir", type=click.Path(), help="Checkpoint directory")
-@click.option("--listen-port", type=int, help="Listen port")
-@click.option("--max-peers", type=int, help="Maximum global peers")
-@click.option("--max-peers-per-torrent", type=int, help="Maximum peers per torrent")
-@click.option("--pipeline-depth", type=int, help="Request pipeline depth")
-@click.option("--block-size-kib", type=int, help="Block size (KiB)")
-@click.option("--connection-timeout", type=float, help="Connection timeout (s)")
-@click.option("--download-limit", type=int, help="Global download limit (KiB/s)")
-@click.option("--upload-limit", type=int, help="Global upload limit (KiB/s)")
-@click.option("--dht-port", type=int, help="DHT port")
-@click.option("--enable-dht", is_flag=True, help="Enable DHT")
-@click.option("--disable-dht", is_flag=True, help="Disable DHT")
+@click.option("--no-checkpoint", is_flag=True, help=_("Disable checkpointing"))
+@click.option("--checkpoint-dir", type=click.Path(), help=_("Checkpoint directory"))
+@click.option("--listen-port", type=int, help=_("Listen port"))
+@click.option("--max-peers", type=int, help=_("Maximum global peers"))
+@click.option("--max-peers-per-torrent", type=int, help=_("Maximum peers per torrent"))
+@click.option("--pipeline-depth", type=int, help=_("Request pipeline depth"))
+@click.option("--block-size-kib", type=int, help=_("Block size (KiB)"))
+@click.option("--connection-timeout", type=float, help=_("Connection timeout (s)"))
+@click.option("--download-limit", type=int, help=_("Global download limit (KiB/s)"))
+@click.option("--upload-limit", type=int, help=_("Global upload limit (KiB/s)"))
+@click.option("--dht-port", type=int, help=_("DHT port"))
+@click.option("--enable-dht", is_flag=True, help=_("Enable DHT"))
+@click.option("--disable-dht", is_flag=True, help=_("Disable DHT"))
 @click.option(
     "--piece-selection",
     type=click.Choice(["round_robin", "rarest_first", "sequential"]),
 )
-@click.option("--endgame-threshold", type=float, help="Endgame threshold (0..1)")
-@click.option("--hash-workers", type=int, help="Hash verification workers")
-@click.option("--disk-workers", type=int, help="Disk I/O workers")
-@click.option("--use-mmap", is_flag=True, help="Use memory mapping")
-@click.option("--no-mmap", is_flag=True, help="Disable memory mapping")
-@click.option("--mmap-cache-mb", type=int, help="MMap cache size (MB)")
-@click.option("--write-batch-kib", type=int, help="Write batch size (KiB)")
-@click.option("--write-buffer-kib", type=int, help="Write buffer size (KiB)")
+@click.option("--endgame-threshold", type=float, help=_("Endgame threshold (0..1)"))
+@click.option("--hash-workers", type=int, help=_("Hash verification workers"))
+@click.option("--disk-workers", type=int, help=_("Disk I/O workers"))
+@click.option("--use-mmap", is_flag=True, help=_("Use memory mapping"))
+@click.option("--no-mmap", is_flag=True, help=_("Disable memory mapping"))
+@click.option("--mmap-cache-mb", type=int, help=_("MMap cache size (MB)"))
+@click.option("--write-batch-kib", type=int, help=_("Write batch size (KiB)"))
+@click.option("--write-buffer-kib", type=int, help=_("Write buffer size (KiB)"))
 @click.option("--preallocate", type=click.Choice(["none", "sparse", "full"]))
-@click.option("--sparse-files", is_flag=True, help="Enable sparse files")
-@click.option("--no-sparse-files", is_flag=True, help="Disable sparse files")
+@click.option("--sparse-files", is_flag=True, help=_("Enable sparse files"))
+@click.option("--no-sparse-files", is_flag=True, help=_("Disable sparse files"))
 @click.option(
     "--enable-io-uring",
     is_flag=True,
-    help="Enable io_uring on Linux if available",
+    help=_("Enable io_uring on Linux if available"),
 )
-@click.option("--disable-io-uring", is_flag=True, help="Disable io_uring usage")
+@click.option("--disable-io-uring", is_flag=True, help=_("Disable io_uring usage"))
 @click.option(
     "--direct-io",
     is_flag=True,
-    help="Enable direct I/O for writes when supported",
+    help=_("Enable direct I/O for writes when supported"),
 )
-@click.option("--sync-writes", is_flag=True, help="Enable fsync after batched writes")
+@click.option("--sync-writes", is_flag=True, help=_("Enable fsync after batched writes"))
 @click.option(
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
 )
-@click.option("--enable-metrics", is_flag=True, help="Enable metrics")
-@click.option("--disable-metrics", is_flag=True, help="Disable metrics")
-@click.option("--metrics-port", type=int, help="Metrics port")
-@click.option("--enable-ipv6", is_flag=True, help="Enable IPv6")
-@click.option("--disable-ipv6", is_flag=True, help="Disable IPv6")
-@click.option("--enable-tcp", is_flag=True, help="Enable TCP transport")
-@click.option("--disable-tcp", is_flag=True, help="Disable TCP transport")
-@click.option("--enable-utp", is_flag=True, help="Enable uTP transport")
-@click.option("--disable-utp", is_flag=True, help="Disable uTP transport")
-@click.option("--enable-encryption", is_flag=True, help="Enable protocol encryption")
-@click.option("--disable-encryption", is_flag=True, help="Disable protocol encryption")
-@click.option("--tcp-nodelay", is_flag=True, help="Enable TCP_NODELAY")
-@click.option("--no-tcp-nodelay", is_flag=True, help="Disable TCP_NODELAY")
-@click.option("--socket-rcvbuf-kib", type=int, help="Socket receive buffer (KiB)")
-@click.option("--socket-sndbuf-kib", type=int, help="Socket send buffer (KiB)")
-@click.option("--listen-interface", type=str, help="Listen interface")
-@click.option("--peer-timeout", type=float, help="Peer timeout (s)")
-@click.option("--dht-timeout", type=float, help="DHT timeout (s)")
-@click.option("--min-block-size-kib", type=int, help="Minimum block size (KiB)")
-@click.option("--max-block-size-kib", type=int, help="Maximum block size (KiB)")
-@click.option("--enable-http-trackers", is_flag=True, help="Enable HTTP trackers")
-@click.option("--disable-http-trackers", is_flag=True, help="Disable HTTP trackers")
-@click.option("--enable-udp-trackers", is_flag=True, help="Enable UDP trackers")
-@click.option("--disable-udp-trackers", is_flag=True, help="Disable UDP trackers")
+@click.option("--enable-metrics", is_flag=True, help=_("Enable metrics"))
+@click.option("--disable-metrics", is_flag=True, help=_("Disable metrics"))
+@click.option("--metrics-port", type=int, help=_("Metrics port"))
+@click.option("--enable-ipv6", is_flag=True, help=_("Enable IPv6"))
+@click.option("--disable-ipv6", is_flag=True, help=_("Disable IPv6"))
+@click.option("--enable-tcp", is_flag=True, help=_("Enable TCP transport"))
+@click.option("--disable-tcp", is_flag=True, help=_("Disable TCP transport"))
+@click.option("--enable-utp", is_flag=True, help=_("Enable uTP transport"))
+@click.option("--disable-utp", is_flag=True, help=_("Disable uTP transport"))
+@click.option("--enable-encryption", is_flag=True, help=_("Enable protocol encryption"))
+@click.option("--disable-encryption", is_flag=True, help=_("Disable protocol encryption"))
+@click.option("--tcp-nodelay", is_flag=True, help=_("Enable TCP_NODELAY"))
+@click.option("--no-tcp-nodelay", is_flag=True, help=_("Disable TCP_NODELAY"))
+@click.option("--socket-rcvbuf-kib", type=int, help=_("Socket receive buffer (KiB)"))
+@click.option("--socket-sndbuf-kib", type=int, help=_("Socket send buffer (KiB)"))
+@click.option("--listen-interface", type=str, help=_("Listen interface"))
+@click.option("--peer-timeout", type=float, help=_("Peer timeout (s)"))
+@click.option("--dht-timeout", type=float, help=_("DHT timeout (s)"))
+@click.option("--min-block-size-kib", type=int, help=_("Minimum block size (KiB)"))
+@click.option("--max-block-size-kib", type=int, help=_("Maximum block size (KiB)"))
+@click.option("--enable-http-trackers", is_flag=True, help=_("Enable HTTP trackers"))
+@click.option("--disable-http-trackers", is_flag=True, help=_("Disable HTTP trackers"))
+@click.option("--enable-udp-trackers", is_flag=True, help=_("Enable UDP trackers"))
+@click.option("--disable-udp-trackers", is_flag=True, help=_("Disable UDP trackers"))
 @click.option(
     "--tracker-announce-interval",
     type=float,
-    help="Tracker announce interval (s)",
+    help=_("Tracker announce interval (s)"),
 )
 @click.option(
     "--tracker-scrape-interval",
     type=float,
-    help="Tracker scrape interval (s)",
+    help=_("Tracker scrape interval (s)"),
 )
-@click.option("--pex-interval", type=float, help="PEX interval (s)")
-@click.option("--endgame-duplicates", type=int, help="Endgame duplicate requests")
-@click.option("--streaming-mode", is_flag=True, help="Enable streaming mode")
-@click.option("--first-piece-priority", is_flag=True, help="Prioritize first piece")
-@click.option("--last-piece-priority", is_flag=True, help="Prioritize last piece")
+@click.option("--pex-interval", type=float, help=_("PEX interval (s)"))
+@click.option("--endgame-duplicates", type=int, help=_("Endgame duplicate requests"))
+@click.option("--streaming-mode", is_flag=True, help=_("Enable streaming mode"))
+@click.option("--first-piece-priority", is_flag=True, help=_("Prioritize first piece"))
+@click.option("--last-piece-priority", is_flag=True, help=_("Prioritize last piece"))
 @click.option(
     "--optimistic-unchoke-interval",
     type=float,
-    help="Optimistic unchoke interval (s)",
+    help=_("Optimistic unchoke interval (s)"),
 )
-@click.option("--unchoke-interval", type=float, help="Unchoke interval (s)")
-@click.option("--metrics-interval", type=float, help="Metrics interval (s)")
+@click.option("--unchoke-interval", type=float, help=_("Unchoke interval (s)"))
+@click.option("--metrics-interval", type=float, help=_("Metrics interval (s)"))
 @click.pass_context
 def download(
     ctx,
@@ -1056,8 +1236,36 @@ def download(
     console = Console()
 
     try:
-        # Get executor (daemon or local) - this handles daemon detection and routing
-        executor, is_daemon = asyncio.run(_get_executor())
+        # CRITICAL FIX: Always check for daemon PID file FIRST before calling _get_executor()
+        # This prevents any possibility of creating a local session when daemon is running
+        daemon_manager = DaemonManager()
+        pid_file_exists = daemon_manager.pid_file.exists()
+
+        if pid_file_exists:
+            # Daemon PID file exists - MUST use daemon, never create local session
+            # _get_executor() will raise exception if connection fails (prevents fallback to local)
+            try:
+                executor, is_daemon = asyncio.run(_get_executor())
+                if executor is None or not is_daemon:
+                    # This should never happen if PID file exists - _get_executor() should raise
+                    raise click.ClickException(DAEMON_EXECUTOR_NOT_AVAILABLE_MSG)
+            except click.ClickException:
+                # Re-raise ClickException (these are user-facing errors about daemon state)
+                raise
+            except Exception as e:
+                # Any other exception from _get_executor() means daemon connection failed
+                error_msg = _(
+                    "Daemon PID file exists but cannot connect to daemon: {error}\n\n"
+                    "To resolve:\n"
+                    "  1. Run 'btbt daemon status' to check daemon state\n"
+                    "  2. Check IPC port configuration matches daemon port\n"
+                    "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
+                    "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
+                ).format(error=e)
+                raise click.ClickException(error_msg) from e
+        else:
+            # No PID file - safe to check for daemon via _get_executor() (will return None if not running)
+            executor, is_daemon = asyncio.run(_get_executor())
 
         if executor is not None and is_daemon:
             # Daemon is running - use daemon executor
@@ -1070,11 +1278,12 @@ def download(
                         resume=resume,
                     )
                     if not result.success:
-                        raise click.ClickException(
-                            f"Failed to add torrent to daemon: {result.error}"
-                        )
+                        error_msg = f"Failed to add torrent to daemon: {result.error}"
+                        raise click.ClickException(error_msg)
                     console.print(
-                        f"[green]Torrent added to daemon: {result.data.get('info_hash', 'unknown')}[/green]"
+                        _("[green]Torrent added to daemon: {info_hash}[/green]").format(
+                            info_hash=result.data.get("info_hash", "unknown")
+                        )
                     )
                 finally:
                     # Clean up IPC client for short-lived commands
@@ -1084,13 +1293,21 @@ def download(
                             if ipc_client and hasattr(ipc_client, "close"):
                                 await ipc_client.close()  # type: ignore[attr-defined]
                         except Exception as e:
-                            logger.debug("Error closing IPC client: %s", e)
+                            logger.debug(_("Error closing IPC client: %s"), e)
 
             asyncio.run(_add_torrent_to_daemon())
             return
 
+        # CRITICAL FIX: Double-check daemon PID file before creating local session
+        # This is a safety check - if we reach here, PID file should NOT exist
+        # (because we checked it at the start and _get_executor() would have raised if it existed)
+        if pid_file_exists:
+            # This should never happen - we checked at the start and _get_executor() should have raised
+            raise click.ClickException(DAEMON_CRITICAL_ERROR_MSG)
+
         # No daemon running - create local session and executor
-        from ccbt.executor import LocalSessionAdapter, UnifiedCommandExecutor
+        # CRITICAL FIX: Use ExecutorManager for consistency, even for local sessions
+        from ccbt.executor.manager import ExecutorManager
 
         # Load configuration
         config_manager = ConfigManager(ctx.obj["config"])
@@ -1112,9 +1329,10 @@ def download(
         # NOTE: This only runs when daemon is confirmed NOT running - no port conflicts possible
         asyncio.run(session.start())
 
-        # Create executor with local adapter
-        adapter = LocalSessionAdapter(session)
-        executor = UnifiedCommandExecutor(adapter)
+        # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+        # This prevents duplicate executors and ensures proper session reference management
+        executor_manager = ExecutorManager.get_instance()
+        executor = executor_manager.get_executor(session_manager=session)
 
         # Load torrent
         torrent_path = Path(torrent_file)
@@ -1122,7 +1340,7 @@ def download(
 
         if not torrent_data:
             console.print(
-                f"[red]Error: Could not load torrent file {torrent_file}[/red]",
+                _("[red]Error: Could not load torrent file {torrent_file}[/red]").format(torrent_file=torrent_file),
             )
             msg = "Command failed"
             _raise_cli_error(msg)
@@ -1148,7 +1366,9 @@ def download(
 
             if checkpoint:
                 console.print(
-                    f"[yellow]Found checkpoint for: {getattr(checkpoint, 'torrent_name', 'Unknown')}[/yellow]",
+                    _("[yellow]Found checkpoint for: {torrent_name}[/yellow]").format(
+                        torrent_name=getattr(checkpoint, "torrent_name", "Unknown")
+                    ),
                 )
                 console.print(
                     f"[blue]Progress: {len(getattr(checkpoint, 'verified_pieces', []))}/{getattr(checkpoint, 'total_pieces', 0)} pieces verified[/blue]",
@@ -1167,16 +1387,16 @@ def download(
                         )
                         if should_resume:
                             resume = True
-                            console.print("[green]Resuming from checkpoint[/green]")
+                            console.print(_("[green]Resuming from checkpoint[/green]"))
                         else:
-                            console.print("[yellow]Starting fresh download[/yellow]")
+                            console.print(_("[yellow]Starting fresh download[/yellow]"))
                     except ImportError:
                         console.print(
-                            "[yellow]Rich not available, starting fresh download[/yellow]",
+                            _("[yellow]Rich not available, starting fresh download[/yellow]"),
                         )
                 else:
                     console.print(
-                        "[yellow]Non-interactive mode, starting fresh download[/yellow]",
+                        _("[yellow]Non-interactive mode, starting fresh download[/yellow]"),
                     )
 
         # Set output directory
@@ -1226,104 +1446,104 @@ def download(
 
 @cli.command()
 @click.argument("magnet_link")
-@click.option("--output", "-o", type=click.Path(), help="Output directory")
-@click.option("--interactive", "-i", is_flag=True, help="Start interactive mode")
+@click.option("--output", "-o", type=click.Path(), help=_("Output directory"))
+@click.option("--interactive", "-i", is_flag=True, help=_("Start interactive mode"))
 @click.option(
     "--resume",
     "-r",
     is_flag=True,
-    help="Resume from checkpoint if available",
+    help=_("Resume from checkpoint if available"),
 )
-@click.option("--no-checkpoint", is_flag=True, help="Disable checkpointing")
-@click.option("--checkpoint-dir", type=click.Path(), help="Checkpoint directory")
-@click.option("--listen-port", type=int, help="Listen port")
-@click.option("--max-peers", type=int, help="Maximum global peers")
-@click.option("--max-peers-per-torrent", type=int, help="Maximum peers per torrent")
-@click.option("--pipeline-depth", type=int, help="Request pipeline depth")
-@click.option("--block-size-kib", type=int, help="Block size (KiB)")
-@click.option("--connection-timeout", type=float, help="Connection timeout (s)")
-@click.option("--download-limit", type=int, help="Global download limit (KiB/s)")
-@click.option("--upload-limit", type=int, help="Global upload limit (KiB/s)")
-@click.option("--dht-port", type=int, help="DHT port")
-@click.option("--enable-dht", is_flag=True, help="Enable DHT")
-@click.option("--disable-dht", is_flag=True, help="Disable DHT")
+@click.option("--no-checkpoint", is_flag=True, help=_("Disable checkpointing"))
+@click.option("--checkpoint-dir", type=click.Path(), help=_("Checkpoint directory"))
+@click.option("--listen-port", type=int, help=_("Listen port"))
+@click.option("--max-peers", type=int, help=_("Maximum global peers"))
+@click.option("--max-peers-per-torrent", type=int, help=_("Maximum peers per torrent"))
+@click.option("--pipeline-depth", type=int, help=_("Request pipeline depth"))
+@click.option("--block-size-kib", type=int, help=_("Block size (KiB)"))
+@click.option("--connection-timeout", type=float, help=_("Connection timeout (s)"))
+@click.option("--download-limit", type=int, help=_("Global download limit (KiB/s)"))
+@click.option("--upload-limit", type=int, help=_("Global upload limit (KiB/s)"))
+@click.option("--dht-port", type=int, help=_("DHT port"))
+@click.option("--enable-dht", is_flag=True, help=_("Enable DHT"))
+@click.option("--disable-dht", is_flag=True, help=_("Disable DHT"))
 @click.option(
     "--piece-selection",
     type=click.Choice(["round_robin", "rarest_first", "sequential"]),
 )
-@click.option("--endgame-threshold", type=float, help="Endgame threshold (0..1)")
-@click.option("--hash-workers", type=int, help="Hash verification workers")
-@click.option("--disk-workers", type=int, help="Disk I/O workers")
-@click.option("--use-mmap", is_flag=True, help="Use memory mapping")
-@click.option("--no-mmap", is_flag=True, help="Disable memory mapping")
-@click.option("--mmap-cache-mb", type=int, help="MMap cache size (MB)")
-@click.option("--write-batch-kib", type=int, help="Write batch size (KiB)")
-@click.option("--write-buffer-kib", type=int, help="Write buffer size (KiB)")
+@click.option("--endgame-threshold", type=float, help=_("Endgame threshold (0..1)"))
+@click.option("--hash-workers", type=int, help=_("Hash verification workers"))
+@click.option("--disk-workers", type=int, help=_("Disk I/O workers"))
+@click.option("--use-mmap", is_flag=True, help=_("Use memory mapping"))
+@click.option("--no-mmap", is_flag=True, help=_("Disable memory mapping"))
+@click.option("--mmap-cache-mb", type=int, help=_("MMap cache size (MB)"))
+@click.option("--write-batch-kib", type=int, help=_("Write batch size (KiB)"))
+@click.option("--write-buffer-kib", type=int, help=_("Write buffer size (KiB)"))
 @click.option("--preallocate", type=click.Choice(["none", "sparse", "full"]))
-@click.option("--sparse-files", is_flag=True, help="Enable sparse files")
-@click.option("--no-sparse-files", is_flag=True, help="Disable sparse files")
+@click.option("--sparse-files", is_flag=True, help=_("Enable sparse files"))
+@click.option("--no-sparse-files", is_flag=True, help=_("Disable sparse files"))
 @click.option(
     "--enable-io-uring",
     is_flag=True,
-    help="Enable io_uring on Linux if available",
+    help=_("Enable io_uring on Linux if available"),
 )
-@click.option("--disable-io-uring", is_flag=True, help="Disable io_uring usage")
+@click.option("--disable-io-uring", is_flag=True, help=_("Disable io_uring usage"))
 @click.option(
     "--direct-io",
     is_flag=True,
-    help="Enable direct I/O for writes when supported",
+    help=_("Enable direct I/O for writes when supported"),
 )
-@click.option("--sync-writes", is_flag=True, help="Enable fsync after batched writes")
+@click.option("--sync-writes", is_flag=True, help=_("Enable fsync after batched writes"))
 @click.option(
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
 )
-@click.option("--enable-metrics", is_flag=True, help="Enable metrics")
-@click.option("--disable-metrics", is_flag=True, help="Disable metrics")
-@click.option("--metrics-port", type=int, help="Metrics port")
-@click.option("--enable-ipv6", is_flag=True, help="Enable IPv6")
-@click.option("--disable-ipv6", is_flag=True, help="Disable IPv6")
-@click.option("--enable-tcp", is_flag=True, help="Enable TCP transport")
-@click.option("--disable-tcp", is_flag=True, help="Disable TCP transport")
-@click.option("--enable-utp", is_flag=True, help="Enable uTP transport")
-@click.option("--disable-utp", is_flag=True, help="Disable uTP transport")
-@click.option("--enable-encryption", is_flag=True, help="Enable protocol encryption")
-@click.option("--disable-encryption", is_flag=True, help="Disable protocol encryption")
-@click.option("--tcp-nodelay", is_flag=True, help="Enable TCP_NODELAY")
-@click.option("--no-tcp-nodelay", is_flag=True, help="Disable TCP_NODELAY")
-@click.option("--socket-rcvbuf-kib", type=int, help="Socket receive buffer (KiB)")
-@click.option("--socket-sndbuf-kib", type=int, help="Socket send buffer (KiB)")
-@click.option("--listen-interface", type=str, help="Listen interface")
-@click.option("--peer-timeout", type=float, help="Peer timeout (s)")
-@click.option("--dht-timeout", type=float, help="DHT timeout (s)")
-@click.option("--min-block-size-kib", type=int, help="Minimum block size (KiB)")
-@click.option("--max-block-size-kib", type=int, help="Maximum block size (KiB)")
-@click.option("--enable-http-trackers", is_flag=True, help="Enable HTTP trackers")
-@click.option("--disable-http-trackers", is_flag=True, help="Disable HTTP trackers")
-@click.option("--enable-udp-trackers", is_flag=True, help="Enable UDP trackers")
-@click.option("--disable-udp-trackers", is_flag=True, help="Disable UDP trackers")
+@click.option("--enable-metrics", is_flag=True, help=_("Enable metrics"))
+@click.option("--disable-metrics", is_flag=True, help=_("Disable metrics"))
+@click.option("--metrics-port", type=int, help=_("Metrics port"))
+@click.option("--enable-ipv6", is_flag=True, help=_("Enable IPv6"))
+@click.option("--disable-ipv6", is_flag=True, help=_("Disable IPv6"))
+@click.option("--enable-tcp", is_flag=True, help=_("Enable TCP transport"))
+@click.option("--disable-tcp", is_flag=True, help=_("Disable TCP transport"))
+@click.option("--enable-utp", is_flag=True, help=_("Enable uTP transport"))
+@click.option("--disable-utp", is_flag=True, help=_("Disable uTP transport"))
+@click.option("--enable-encryption", is_flag=True, help=_("Enable protocol encryption"))
+@click.option("--disable-encryption", is_flag=True, help=_("Disable protocol encryption"))
+@click.option("--tcp-nodelay", is_flag=True, help=_("Enable TCP_NODELAY"))
+@click.option("--no-tcp-nodelay", is_flag=True, help=_("Disable TCP_NODELAY"))
+@click.option("--socket-rcvbuf-kib", type=int, help=_("Socket receive buffer (KiB)"))
+@click.option("--socket-sndbuf-kib", type=int, help=_("Socket send buffer (KiB)"))
+@click.option("--listen-interface", type=str, help=_("Listen interface"))
+@click.option("--peer-timeout", type=float, help=_("Peer timeout (s)"))
+@click.option("--dht-timeout", type=float, help=_("DHT timeout (s)"))
+@click.option("--min-block-size-kib", type=int, help=_("Minimum block size (KiB)"))
+@click.option("--max-block-size-kib", type=int, help=_("Maximum block size (KiB)"))
+@click.option("--enable-http-trackers", is_flag=True, help=_("Enable HTTP trackers"))
+@click.option("--disable-http-trackers", is_flag=True, help=_("Disable HTTP trackers"))
+@click.option("--enable-udp-trackers", is_flag=True, help=_("Enable UDP trackers"))
+@click.option("--disable-udp-trackers", is_flag=True, help=_("Disable UDP trackers"))
 @click.option(
     "--tracker-announce-interval",
     type=float,
-    help="Tracker announce interval (s)",
+    help=_("Tracker announce interval (s)"),
 )
 @click.option(
     "--tracker-scrape-interval",
     type=float,
-    help="Tracker scrape interval (s)",
+    help=_("Tracker scrape interval (s)"),
 )
-@click.option("--pex-interval", type=float, help="PEX interval (s)")
-@click.option("--endgame-duplicates", type=int, help="Endgame duplicate requests")
-@click.option("--streaming-mode", is_flag=True, help="Enable streaming mode")
-@click.option("--first-piece-priority", is_flag=True, help="Prioritize first piece")
-@click.option("--last-piece-priority", is_flag=True, help="Prioritize last piece")
+@click.option("--pex-interval", type=float, help=_("PEX interval (s)"))
+@click.option("--endgame-duplicates", type=int, help=_("Endgame duplicate requests"))
+@click.option("--streaming-mode", is_flag=True, help=_("Enable streaming mode"))
+@click.option("--first-piece-priority", is_flag=True, help=_("Prioritize first piece"))
+@click.option("--last-piece-priority", is_flag=True, help=_("Prioritize last piece"))
 @click.option(
     "--optimistic-unchoke-interval",
     type=float,
-    help="Optimistic unchoke interval (s)",
+    help=_("Optimistic unchoke interval (s)"),
 )
-@click.option("--unchoke-interval", type=float, help="Unchoke interval (s)")
-@click.option("--metrics-interval", type=float, help="Metrics interval (s)")
+@click.option("--unchoke-interval", type=float, help=_("Unchoke interval (s)"))
+@click.option("--metrics-interval", type=float, help=_("Metrics interval (s)"))
 @click.pass_context
 def magnet(
     ctx,
@@ -1350,10 +1570,48 @@ def magnet(
 
         async def _magnet_operation():
             """Handle magnet operation in a single event loop."""
-            # Get executor (daemon or local) - this handles daemon detection and routing
-            executor, is_daemon = await _get_executor()
+            # CRITICAL FIX: Always check for daemon PID file FIRST before calling _get_executor()
+            # This prevents any possibility of creating a local session when daemon is running
+            daemon_manager = DaemonManager()
+            pid_file_exists = daemon_manager.pid_file.exists()
+            pid_file_path = daemon_manager.pid_file
+
+            logger.debug(
+                _("Magnet command: PID file check - exists=%s, path=%s"),
+                pid_file_exists,
+                pid_file_path,
+            )
+
+            if pid_file_exists:
+                # Daemon PID file exists - MUST use daemon, never create local session
+                # _get_executor() will raise exception if connection fails (prevents fallback to local)
+                try:
+                    executor, is_daemon = await _get_executor()
+                    if executor is None or not is_daemon:
+                        # This should never happen if PID file exists - _get_executor() should raise
+                        raise click.ClickException(DAEMON_EXECUTOR_NOT_AVAILABLE_MSG)
+                except click.ClickException:
+                    # Re-raise ClickException (these are user-facing errors about daemon state)
+                    raise
+                except Exception as e:
+                    # Any other exception from _get_executor() means daemon connection failed
+                    error_msg = (
+                        f"Daemon PID file exists but cannot connect to daemon: {e}\n\n"
+                        "To resolve:\n"
+                        "  1. Run 'btbt daemon status' to check daemon state\n"
+                        "  2. Check IPC port configuration matches daemon port\n"
+                        "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
+                        "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
+                    )
+                    raise click.ClickException(error_msg) from e
+            else:
+                # No PID file - safe to check for daemon via _get_executor() (will return None if not running)
+                logger.debug(_("No PID file found, checking for daemon via _get_executor()"))
+                executor, is_daemon = await _get_executor()
+                logger.debug(_("_get_executor() returned: executor=%s, is_daemon=%s"), executor is not None, is_daemon)
 
             if executor is not None and is_daemon:
+                logger.debug(_("Using daemon executor for magnet command"))
                 # Daemon is running - use daemon executor
                 try:
                     result = await executor.execute(
@@ -1363,11 +1621,12 @@ def magnet(
                         resume=_resume[0],
                     )
                     if not result.success:
-                        raise click.ClickException(
-                            f"Failed to add magnet link to daemon: {result.error}"
-                        )
+                        error_msg = f"Failed to add magnet link to daemon: {result.error}"
+                        raise click.ClickException(error_msg)
                     console.print(
-                        f"[green]Magnet link added to daemon: {result.data.get('info_hash', 'unknown')}[/green]"
+                        _("[green]Magnet link added to daemon: {info_hash}[/green]").format(
+                            info_hash=result.data.get("info_hash", "unknown")
+                        )
                     )
                 finally:
                     # Clean up IPC client for short-lived commands
@@ -1377,11 +1636,34 @@ def magnet(
                             if ipc_client and hasattr(ipc_client, "close"):
                                 await ipc_client.close()  # type: ignore[attr-defined]
                         except Exception as e:
-                            logger.debug("Error closing IPC client: %s", e)
+                            logger.debug(_("Error closing IPC client: %s"), e)
                 return
 
+            # CRITICAL FIX: Double-check daemon PID file before creating local session
+            # This is a safety check - if we reach here, PID file should NOT exist
+            # (because we checked it at the start and _get_executor() would have raised if it existed)
+            # But we check again as a defensive measure
+            # CRITICAL: Re-check PID file in case it was created between initial check and now
+            current_pid_file_exists = daemon_manager.pid_file.exists()
+            if current_pid_file_exists or pid_file_exists:
+                logger.error(
+                    _("CRITICAL: PID file exists (initial=%s, current=%s, path=%s) but code reached local session creation! "
+                    "This will cause port conflicts. Aborting."),
+                    pid_file_exists,
+                    current_pid_file_exists,
+                    daemon_manager.pid_file,
+                )
+                error_msg = _("{msg}\n\nPID file path: {path}").format(msg=DAEMON_CRITICAL_ERROR_MSG, path=daemon_manager.pid_file)
+                raise click.ClickException(error_msg)
+
+            logger.debug(
+                _("No daemon detected (PID file doesn't exist), creating local session. PID file path: %s"),
+                daemon_manager.pid_file,
+            )
+
             # No daemon running - create local session and executor
-            from ccbt.executor import LocalSessionAdapter, UnifiedCommandExecutor
+            # CRITICAL FIX: Use ExecutorManager for consistency, even for local sessions
+            from ccbt.executor.manager import ExecutorManager
 
             # Load configuration
             config_manager = ConfigManager(ctx.obj["config"])
@@ -1402,9 +1684,10 @@ def magnet(
             # NOTE: This only runs when daemon is confirmed NOT running - no port conflicts possible
             await session.start()
 
-            # Create executor with local adapter
-            adapter = LocalSessionAdapter(session)
-            executor = UnifiedCommandExecutor(adapter)
+            # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+            # This prevents duplicate executors and ensures proper session reference management
+            executor_manager = ExecutorManager.get_instance()
+            executor = executor_manager.get_executor(session_manager=session)
 
             # Parse magnet link
             torrent_data = session.parse_magnet_link(_magnet_link)
@@ -1433,10 +1716,13 @@ def magnet(
 
                 if checkpoint:
                     console.print(
-                        f"[yellow]Found checkpoint for: {getattr(checkpoint, 'torrent_name', 'Unknown')}[/yellow]",
+                        _("[yellow]Found checkpoint for: {name}[/yellow]").format(name=getattr(checkpoint, 'torrent_name', 'Unknown')),
                     )
                     console.print(
-                        f"[blue]Progress: {len(getattr(checkpoint, 'verified_pieces', []))}/{getattr(checkpoint, 'total_pieces', 0)} pieces verified[/blue]",
+                        _("[blue]Progress: {verified}/{total} pieces verified[/blue]").format(
+                            verified=len(getattr(checkpoint, 'verified_pieces', [])),
+                            total=getattr(checkpoint, 'total_pieces', 0)
+                        ),
                     )
 
                     # Prompt user if not in non-interactive mode
@@ -1447,23 +1733,23 @@ def magnet(
 
                         try:
                             should_resume = Confirm.ask(
-                                "Resume from checkpoint?",
+                                _("Resume from checkpoint?"),
                                 default=True,
                             )
                             if should_resume:
                                 _resume[0] = True
-                                console.print("[green]Resuming from checkpoint[/green]")
+                                console.print(_("[green]Resuming from checkpoint[/green]"))
                             else:
                                 console.print(
-                                    "[yellow]Starting fresh download[/yellow]"
+                                    _("[yellow]Starting fresh download[/yellow]")
                                 )
                         except ImportError:
                             console.print(
-                                "[yellow]Rich not available, starting fresh download[/yellow]",
+                                _("[yellow]Rich not available, starting fresh download[/yellow]"),
                             )
                     else:
                         console.print(
-                            "[yellow]Non-interactive mode, starting fresh download[/yellow]",
+                            _("[yellow]Non-interactive mode, starting fresh download[/yellow]"),
                         )
 
             # Set output directory
@@ -1496,8 +1782,8 @@ def magnet(
         return
 
     except ValueError as e:
-        console.print(f"[red]Invalid magnet link: {e}[/red]")
-        msg = "Invalid magnet link format"
+        console.print(_("[red]Invalid magnet link: {e}[/red]").format(e=e))
+        msg = _("Invalid magnet link format")
         raise click.ClickException(msg) from e
     except Exception as e:
         console.print(_("[red]Error: {error}[/red]").format(error=e))
@@ -1505,8 +1791,8 @@ def magnet(
 
 
 @cli.command()
-@click.option("--port", "-p", type=int, default=9090, help="Port for web interface")
-@click.option("--host", "-h", default="localhost", help="Host for web interface")
+@click.option("--port", "-p", type=int, default=9090, help=_("Port for web interface"))
+@click.option("--host", "-h", default="localhost", help=_("Host for web interface"))
 @click.pass_context
 def web(ctx, port, host):
     """Start web interface."""
@@ -1519,14 +1805,7 @@ def web(ctx, port, host):
         pid_file_exists = daemon_manager.pid_file.exists()
 
         if pid_file_exists:
-            raise click.ClickException(
-                "Daemon is running. Cannot start local web interface while daemon is active.\n"
-                "This would cause port conflicts and resource conflicts.\n\n"
-                "To resolve:\n"
-                "  1. Stop the daemon first: 'btbt daemon exit'\n"
-                "  2. Or use the daemon's web interface if available\n"
-                "  3. Or use daemon commands instead of local commands"
-            )
+            raise click.ClickException(DAEMON_WEB_INTERFACE_CONFLICT_MSG)
 
         # Load configuration
         ConfigManager(ctx.obj["config"])
@@ -1562,11 +1841,14 @@ def interactive(ctx):
 
         if executor is None:
             # No daemon running - create local session and executor
-            from ccbt.executor import LocalSessionAdapter, UnifiedCommandExecutor
+            # CRITICAL FIX: Use ExecutorManager for consistency
+            from ccbt.executor.manager import ExecutorManager
 
             session = AsyncSessionManager(".")
-            adapter = LocalSessionAdapter(session)
-            executor = UnifiedCommandExecutor(adapter)
+            executor_manager = ExecutorManager.get_instance()
+            executor = executor_manager.get_executor(session_manager=session)
+            # Get adapter from executor for InteractiveCLI
+            adapter = executor.adapter
 
             # Start interactive CLI with local session
             interactive_cli = InteractiveCLI(
@@ -1590,13 +1872,14 @@ def status(ctx):
     """Show client status."""
     console = Console()
 
-    try:
-        # Get executor (daemon or local) - this handles daemon detection and routing
-        executor, is_daemon = asyncio.run(_get_executor())
+    async def _get_status_async() -> None:
+        """Async helper for status command."""
+        try:
+            # Get executor (daemon or local) - this handles daemon detection and routing
+            executor, is_daemon = await _get_executor()
 
-        if executor is not None and is_daemon:
-            # Daemon is running - use daemon executor to get status
-            async def _get_daemon_status():
+            if executor is not None and is_daemon:
+                # Daemon is running - use daemon executor to get status
                 try:
                     # Use IPC client directly to get daemon status
                     ipc_client = executor.adapter.ipc_client
@@ -1635,25 +1918,29 @@ def status(ctx):
                             if ipc_client and hasattr(ipc_client, "close"):
                                 await ipc_client.close()  # type: ignore[attr-defined]
                         except Exception as e:
-                            logger.debug("Error closing IPC client: %s", e)
+                            logger.debug(_("Error closing IPC client: %s"), e)
+                return
 
-            asyncio.run(_get_daemon_status())
-            return
+            # No daemon running - create local session and show status
+            # Load configuration
+            ConfigManager(ctx.obj["config"])
 
-        # No daemon running - create local session and show status
-        # Load configuration
-        ConfigManager(ctx.obj["config"])
+            # Create session for local status (only when daemon is NOT running)
+            session = AsyncSessionManager(".")
 
-        # Create session for local status (only when daemon is NOT running)
-        session = AsyncSessionManager(".")
+            # Create adapter and show status
+            from ccbt.cli.status import show_status
+            from ccbt.executor.session_adapter import LocalSessionAdapter
 
-        # Create adapter and show status
-        from ccbt.cli.status import show_status
-        from ccbt.executor.session_adapter import LocalSessionAdapter
+            adapter = LocalSessionAdapter(session)
+            await show_status(adapter, console)
 
-        adapter = LocalSessionAdapter(session)
-        asyncio.run(show_status(adapter, console))
+        except Exception as e:
+            console.print(_("[red]Error: {error}[/red]").format(error=e))
+            raise click.ClickException(str(e)) from e
 
+    try:
+        asyncio.run(_get_status_async())
     except Exception as e:
         console.print(_("[red]Error: {error}[/red]").format(error=e))
         raise click.ClickException(str(e)) from e
@@ -1679,8 +1966,8 @@ def config(ctx):
 
 
 @cli.command()
-@click.option("--set", "locale_code", help="Set locale (e.g., 'en', 'es', 'fr')")
-@click.option("--list", "list_locales", is_flag=True, help="List available locales")
+@click.option("--set", "locale_code", help=_("Set locale (e.g., 'en', 'es', 'fr')"))
+@click.option("--list", "list_locales", is_flag=True, help=_("List available locales"))
 @click.pass_context
 def language(ctx, locale_code: str | None, list_locales: bool) -> None:
     """Manage language/locale settings."""
@@ -1700,13 +1987,13 @@ def language(ctx, locale_code: str | None, list_locales: bool) -> None:
                 for d in locale_dir.iterdir()
                 if d.is_dir() and d.name != "__pycache__"
             ]
-            console.print(f"Available locales: {', '.join(sorted(locales))}")
+            console.print(_("Available locales: {locales}").format(locales=', '.join(sorted(locales))))
         else:
-            console.print("No locales directory found")
-        console.print(f"Current locale: {get_locale()}")
+            console.print(_("No locales directory found"))
+        console.print(_("Current locale: {locale}").format(locale=get_locale()))
     elif locale_code:
         set_locale(locale_code)
-        console.print(f"[green]Locale set to: {locale_code}[/green]")
+        console.print(_("[green]Locale set to: {locale_code}[/green]").format(locale_code=locale_code))
         # Optionally update config
         try:
             config_manager = ConfigManager(ctx.obj["config"])
@@ -1716,12 +2003,12 @@ def language(ctx, locale_code: str | None, list_locales: bool) -> None:
                 # For persistence, user should update config file manually
                 TranslationManager(config_manager.config)
                 console.print(
-                    "[yellow]Note: Update config file to persist locale setting[/yellow]"
+                    _("[yellow]Note: Update config file to persist locale setting[/yellow]")
                 )
         except Exception:
             pass
     else:
-        console.print(f"Current locale: {get_locale()}")
+        console.print(_("Current locale: {locale}").format(locale=get_locale()))
 
 
 @cli.command()
@@ -1737,14 +2024,7 @@ def debug(ctx):
         pid_file_exists = daemon_manager.pid_file.exists()
 
         if pid_file_exists:
-            raise click.ClickException(
-                "Daemon is running. Cannot start local debug mode while daemon is active.\n"
-                "This would cause port conflicts and resource conflicts.\n\n"
-                "To resolve:\n"
-                "  1. Stop the daemon first: 'btbt daemon exit'\n"
-                "  2. Or use daemon commands for debugging\n"
-                "  3. Or check daemon logs for debugging information"
-            )
+            raise click.ClickException(DAEMON_DEBUG_MODE_CONFLICT_MSG)
 
         # Load configuration
         ConfigManager(ctx.obj["config"])
@@ -1771,7 +2051,7 @@ def checkpoints():
     "-f",
     type=click.Choice(["json", "binary", "both"]),
     default="both",
-    help="Show checkpoints in specific format",
+    help=_("Show checkpoints in specific format"),
 )
 @click.pass_context
 def list_checkpoints(ctx, _checkpoint_format):
@@ -1802,8 +2082,29 @@ def list_checkpoints(ctx, _checkpoint_format):
         table.add_column("Size", style="blue")
         table.add_column("Created", style="magenta")
         table.add_column("Updated", style="yellow")
+        table.add_column("State", style="yellow")
 
         for checkpoint in checkpoints:
+            # Try to load checkpoint to get state info
+            checkpoint_data = None
+            try:
+                checkpoint_data = asyncio.run(
+                    checkpoint_manager.load_checkpoint(checkpoint.info_hash)
+                )
+            except Exception:
+                pass
+
+            state_info = "unknown"
+            if checkpoint_data:
+                if hasattr(checkpoint_data, "session_state") and checkpoint_data.session_state:
+                    state_info = checkpoint_data.session_state
+                elif hasattr(checkpoint_data, "verified_pieces") and hasattr(checkpoint_data, "total_pieces"):
+                    progress = len(checkpoint_data.verified_pieces) / max(checkpoint_data.total_pieces, 1)
+                    if progress >= 1.0:
+                        state_info = "completed"
+                    else:
+                        state_info = f"{progress:.1%}"
+
             table.add_row(
                 checkpoint.info_hash.hex()[:16] + "...",
                 checkpoint.checkpoint_format.value,
@@ -1816,6 +2117,7 @@ def list_checkpoints(ctx, _checkpoint_format):
                     "%Y-%m-%d %H:%M:%S",
                     time.localtime(checkpoint.updated_at),
                 ),
+                state_info,
             )
 
         console.print(table)
@@ -1831,12 +2133,12 @@ def list_checkpoints(ctx, _checkpoint_format):
     "-d",
     type=int,
     default=30,
-    help="Remove checkpoints older than N days",
+    help=_("Remove checkpoints older than N days"),
 )
 @click.option(
     "--dry-run",
     is_flag=True,
-    help="Show what would be deleted without actually deleting",
+    help=_("Show what would be deleted without actually deleting"),
 )
 @click.pass_context
 def clean_checkpoints(ctx, days, dry_run):
@@ -1861,16 +2163,20 @@ def clean_checkpoints(ctx, days, dry_run):
 
             if not old_checkpoints:
                 console.print(
-                    f"[green]No checkpoints older than {days} days found[/green]",
+                    _("[green]No checkpoints older than {days} days found[/green]").format(days=days),
                 )
                 return
 
             console.print(
-                f"[yellow]Would delete {len(old_checkpoints)} checkpoints older than {days} days:[/yellow]",
+                _("[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]").format(
+                    count=len(old_checkpoints), days=days
+                ),
             )
             for checkpoint in old_checkpoints:
+                format_value = getattr(checkpoint, "format", None)
+                format_str = format_value.value if format_value and hasattr(format_value, "value") else "unknown"
                 console.print(
-                    f"  - {checkpoint.info_hash.hex()[:16]}... ({checkpoint.format.value})",
+                    f"  - {checkpoint.info_hash.hex()[:16]}... ({format_str})",
                 )
         else:
             # Actually clean up
@@ -1919,9 +2225,9 @@ def delete_checkpoint(ctx, info_hash):
         deleted = asyncio.run(checkpoint_manager.delete_checkpoint(info_hash_bytes))
 
         if deleted:
-            console.print(f"[green]Deleted checkpoint for {info_hash}[/green]")
+            console.print(_("[green]Deleted checkpoint for {info_hash}[/green]").format(info_hash=info_hash))
         else:
-            console.print(f"[yellow]No checkpoint found for {info_hash}[/yellow]")
+            console.print(_("[yellow]No checkpoint found for {info_hash}[/yellow]").format(info_hash=info_hash))
 
     except Exception as e:
         console.print(_("[red]Error: {error}[/red]").format(error=e))
@@ -1949,7 +2255,7 @@ def verify_checkpoint_cmd(ctx, info_hash):
             _raise_cli_error(msg)
         valid = asyncio.run(checkpoint_manager.verify_checkpoint(info_hash_bytes))
         if valid:
-            console.print(f"[green]Checkpoint for {info_hash} is valid[/green]")
+            console.print(_("[green]Checkpoint for {info_hash} is valid[/green]").format(info_hash=info_hash))
         else:
             console.print(
                 f"[yellow]Checkpoint for {info_hash} is missing or invalid[/yellow]",
@@ -1972,7 +2278,7 @@ def verify_checkpoint_cmd(ctx, info_hash):
     "output_path",
     type=click.Path(),
     required=True,
-    help="Output file path",
+    help=_("Output file path"),
 )
 @click.pass_context
 def export_checkpoint_cmd(ctx, info_hash, format_, output_path):
@@ -2010,15 +2316,15 @@ def export_checkpoint_cmd(ctx, info_hash, format_, output_path):
     "destination",
     type=click.Path(),
     required=True,
-    help="Backup destination path",
+    help=_("Backup destination path"),
 )
 @click.option(
     "--compress",
     is_flag=True,
     default=True,
-    help="Compress backup (default: yes)",
+    help=_("Compress backup (default: yes)"),
 )
-@click.option("--encrypt", is_flag=True, help="Encrypt backup with generated key")
+@click.option("--encrypt", is_flag=True, help=_("Encrypt backup with generated key"))
 @click.pass_context
 def backup_checkpoint_cmd(ctx, info_hash, destination, compress, encrypt):
     """Backup a checkpoint to a destination path."""
@@ -2060,7 +2366,7 @@ def backup_checkpoint_cmd(ctx, info_hash, destination, compress, encrypt):
     "info_hash",
     type=str,
     default=None,
-    help="Expected info hash (hex)",
+    help=_("Expected info hash (hex)"),
 )
 @click.pass_context
 def restore_checkpoint_cmd(ctx, backup_file, info_hash):
@@ -2132,10 +2438,186 @@ def migrate_checkpoint_cmd(ctx, info_hash, from_format, to_format):
         raise click.ClickException(str(e)) from e
 
 
+@checkpoints.command("reload")
+@click.argument("info_hash")
+@click.option(
+    "--peers/--no-peers",
+    default=True,
+    help=_("Reconnect to peers from checkpoint"),
+)
+@click.option(
+    "--trackers/--no-trackers",
+    default=True,
+    help=_("Refresh tracker state from checkpoint"),
+)
+@click.pass_context
+def checkpoint_reload(ctx, info_hash, peers, trackers):
+    """Quick reload checkpoint for a torrent (incremental reload)."""
+    console = Console()
+
+    try:
+        config_manager = ConfigManager(ctx.obj["config"])
+        config = config_manager.config
+
+        # Check if daemon is running
+        daemon_manager = DaemonManager()
+        if daemon_manager.is_running():
+            # Use daemon executor
+            from ccbt.executor.session_adapter import get_executor
+
+            async def _reload_via_daemon() -> None:
+                executor, _ = await get_executor()
+                if not executor:
+                    raise click.ClickException(
+                        _("Cannot connect to daemon. Start daemon with: 'btbt daemon start'")
+                    )
+
+                try:
+                    result = await executor.execute(
+                        "checkpoint.reload",
+                        info_hash=info_hash,
+                        reload_peers=peers,
+                        reload_trackers=trackers,
+                    )
+                    if not result.success:
+                        raise click.ClickException(result.error or _("Failed to reload checkpoint"))
+                    console.print(
+                        _("[green]Checkpoint reloaded for {hash}[/green]").format(hash=info_hash)
+                    )
+                finally:
+                    if hasattr(executor.adapter, "ipc_client"):
+                        await executor.adapter.ipc_client.close()
+
+            asyncio.run(_reload_via_daemon())
+        else:
+            # Use local session
+            from ccbt.session.session import AsyncSessionManager
+            from ccbt.session.checkpoint_operations import CheckpointOperations
+
+            session = AsyncSessionManager(".")
+            checkpoint_ops = CheckpointOperations(session)
+
+            try:
+                info_hash_bytes = bytes.fromhex(info_hash)
+            except ValueError:
+                console.print(
+                    _("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash)
+                )
+                raise click.ClickException(_("Invalid info hash format"))
+
+            success = asyncio.run(
+                checkpoint_ops.quick_reload(info_hash_bytes)
+            )
+
+            if success:
+                console.print(
+                    _("[green]Checkpoint reloaded for {hash}[/green]").format(hash=info_hash)
+                )
+            else:
+                console.print(
+                    _("[yellow]Failed to reload checkpoint for {hash}[/yellow]").format(hash=info_hash)
+                )
+                raise click.ClickException(_("Failed to reload checkpoint"))
+
+    except Exception as e:
+        console.print(_("[red]Error: {error}[/red]").format(error=e))
+        raise click.ClickException(str(e)) from e
+
+
+@checkpoints.command("refresh")
+@click.argument("info_hash")
+@click.option(
+    "--peers/--no-peers",
+    default=True,
+    help=_("Reconnect to peers from checkpoint"),
+)
+@click.option(
+    "--trackers/--no-trackers",
+    default=True,
+    help=_("Refresh tracker state from checkpoint"),
+)
+@click.pass_context
+def checkpoint_refresh(ctx, info_hash, peers, trackers):
+    """Refresh checkpoint state without full restart."""
+    console = Console()
+
+    try:
+        config_manager = ConfigManager(ctx.obj["config"])
+        config = config_manager.config
+
+        # Check if daemon is running
+        daemon_manager = DaemonManager()
+        if daemon_manager.is_running():
+            # Use daemon executor
+            from ccbt.executor.session_adapter import get_executor
+
+            async def _refresh_via_daemon() -> None:
+                executor, _ = await get_executor()
+                if not executor:
+                    raise click.ClickException(
+                        _("Cannot connect to daemon. Start daemon with: 'btbt daemon start'")
+                    )
+
+                try:
+                    result = await executor.execute(
+                        "checkpoint.refresh",
+                        info_hash=info_hash,
+                        reload_peers=peers,
+                        reload_trackers=trackers,
+                    )
+                    if not result.success:
+                        raise click.ClickException(result.error or _("Failed to refresh checkpoint"))
+                    console.print(
+                        _("[green]Checkpoint refreshed for {hash}[/green]").format(hash=info_hash)
+                    )
+                finally:
+                    if hasattr(executor.adapter, "ipc_client"):
+                        await executor.adapter.ipc_client.close()
+
+            asyncio.run(_refresh_via_daemon())
+        else:
+            # Use local session
+            from ccbt.session.session import AsyncSessionManager
+            from ccbt.session.checkpoint_operations import CheckpointOperations
+
+            session = AsyncSessionManager(".")
+            checkpoint_ops = CheckpointOperations(session)
+
+            try:
+                info_hash_bytes = bytes.fromhex(info_hash)
+            except ValueError:
+                console.print(
+                    _("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash)
+                )
+                raise click.ClickException(_("Invalid info hash format"))
+
+            success = asyncio.run(
+                checkpoint_ops.refresh_checkpoint(
+                    info_hash_bytes,
+                    reload_peers=peers,
+                    reload_trackers=trackers,
+                )
+            )
+
+            if success:
+                console.print(
+                    _("[green]Checkpoint refreshed for {hash}[/green]").format(hash=info_hash)
+                )
+            else:
+                console.print(
+                    _("[yellow]Failed to refresh checkpoint for {hash}[/yellow]").format(hash=info_hash)
+                )
+                raise click.ClickException(_("Failed to refresh checkpoint"))
+
+    except Exception as e:
+        console.print(_("[red]Error: {error}[/red]").format(error=e))
+        raise click.ClickException(str(e)) from e
+
+
 @cli.command()
 @click.argument("info_hash")
-@click.option("--output", "-o", type=click.Path(), help="Output directory")
-@click.option("--interactive", "-i", is_flag=True, help="Start interactive mode")
+@click.option("--output", "-o", type=click.Path(), help=_("Output directory"))
+@click.option("--interactive", "-i", is_flag=True, help=_("Start interactive mode"))
 @click.pass_context
 def resume(ctx, info_hash, _output, interactive):
     """Resume download from checkpoint."""
@@ -2148,14 +2630,7 @@ def resume(ctx, info_hash, _output, interactive):
         pid_file_exists = daemon_manager.pid_file.exists()
 
         if pid_file_exists:
-            raise click.ClickException(
-                "Daemon is running. Cannot resume from checkpoint using local session while daemon is active.\n"
-                "This would cause port conflicts and resource conflicts.\n\n"
-                "To resolve:\n"
-                "  1. Stop the daemon first: 'btbt daemon exit'\n"
-                "  2. Or add the torrent to the daemon and let it resume automatically\n"
-                "  3. The daemon will automatically resume from checkpoints when adding torrents"
-            )
+            raise click.ClickException(DAEMON_RESUME_CONFLICT_MSG)
 
         # Load configuration
         config_manager = ConfigManager(ctx.obj["config"])
@@ -2188,10 +2663,15 @@ def resume(ctx, info_hash, _output, interactive):
             _raise_cli_error(msg)
 
         console.print(
-            f"[green]Found checkpoint for: {getattr(checkpoint, 'torrent_name', 'Unknown')}[/green]"
+            _("[green]Found checkpoint for: {torrent_name}[/green]").format(
+                torrent_name=getattr(checkpoint, "torrent_name", "Unknown")
+            )
         )
         console.print(
-            f"[blue]Progress: {len(getattr(checkpoint, 'verified_pieces', []))}/{getattr(checkpoint, 'total_pieces', 0)} pieces verified[/blue]",
+            _("[blue]Progress: {verified}/{total} pieces verified[/blue]").format(
+                verified=len(getattr(checkpoint, 'verified_pieces', [])),
+                total=getattr(checkpoint, 'total_pieces', 0)
+            ),
         )
 
         # Check if checkpoint can be auto-resumed
@@ -2202,12 +2682,12 @@ def resume(ctx, info_hash, _output, interactive):
 
         if not can_auto_resume:
             console.print(
-                "[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]",
+                _("[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]"),
             )
             console.print(
-                "[yellow]Please provide the original torrent file or magnet link[/yellow]",
+                _("[yellow]Please provide the original torrent file or magnet link[/yellow]"),
             )
-            msg = "Cannot auto-resume checkpoint"
+            msg = _("Cannot auto-resume checkpoint")
             _raise_cli_error(msg)
 
         # Start session manager and resume
@@ -2239,7 +2719,9 @@ async def resume_download(
         )
 
         console.print(
-            f"[green]Successfully resumed download: {resumed_info_hash}[/green]",
+            _("[green]Successfully resumed download: {resumed_info_hash}[/green]").format(
+                resumed_info_hash=resumed_info_hash
+            ),
         )
 
         if interactive:
@@ -2276,22 +2758,22 @@ async def resume_download(
 
                     if torrent_status.get("status") == "seeding":
                         console.print(
-                            f"[green]Download completed: {checkpoint.torrent_name}[/green]",
+                            _("[green]Download completed: {name}[/green]").format(name=checkpoint.torrent_name),
                         )
                         break
 
                     await asyncio.sleep(1)
 
     except ValueError as e:
-        console.print(f"[red]Validation error: {e}[/red]")
+        console.print(_("[red]Validation error: {e}[/red]").format(e=e))
         msg = "Resume failed due to validation error"
         raise click.ClickException(msg) from e
     except FileNotFoundError as e:
-        console.print(f"[red]File not found: {e}[/red]")
+        console.print(_("[red]File not found: {e}[/red]").format(e=e))
         msg = "Resume failed - torrent file not found"
         raise click.ClickException(msg) from e
     except Exception as e:
-        console.print(f"[red]Unexpected error during resume: {e}[/red]")
+        console.print(_("[red]Unexpected error during resume: {e}[/red]").format(e=e))
         msg = "Resume failed due to unexpected error"
         raise click.ClickException(msg) from e
     finally:
@@ -2439,9 +2921,31 @@ async def start_debug_mode(_session: AsyncSessionManager, console: Console) -> N
 
 
 # Register external command groups at import time so they appear in --help
+# Make tonic_commands optional since it requires cryptography
+try:
+    from ccbt.cli.tonic_commands import tonic as tonic_group
+except ImportError:
+    tonic_group = None  # type: ignore[assignment, misc]
+
+from ccbt.cli.queue_commands import queue as queue_group
+from ccbt.cli.torrent_commands import global_controls as global_controls_group
+from ccbt.cli.torrent_commands import torrent as torrent_control_group
+from ccbt.cli.torrent_commands import peer as peer_group
+from ccbt.cli.torrent_commands import pex as pex_group
+from ccbt.cli.torrent_commands import dht as dht_group
+from ccbt.cli.file_commands import files as files_group
+
 cli.add_command(config_group)
 cli.add_command(config_extended)
 cli.add_command(daemon_group)
+cli.add_command(torrent_group)
+cli.add_command(torrent_control_group)
+cli.add_command(global_controls_group)
+cli.add_command(peer_group)
+cli.add_command(pex_group)
+cli.add_command(dht_group)
+cli.add_command(queue_group)
+cli.add_command(files_group)
 cli.add_command(dashboard_cmd)
 cli.add_command(alerts_cmd)
 cli.add_command(metrics_cmd)
@@ -2449,6 +2953,8 @@ cli.add_command(performance_cmd)
 cli.add_command(security_cmd)
 cli.add_command(recover_cmd)
 cli.add_command(test_cmd)
+if tonic_group is not None:
+    cli.add_command(tonic_group)
 
 
 def main():

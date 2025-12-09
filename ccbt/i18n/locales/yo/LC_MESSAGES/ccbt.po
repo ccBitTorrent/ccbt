@@ -1,227 +1,1445 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ccBitTorrent 0.1.0\n"
-"Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-01-01 00:00+0000\n"
-"PO-Revision-Date: 2025-11-10 21:50\n"
-"Last-Translator: ccBitTorrent Team\n"
-"Language-Team: Yoruba Translation Team\n"
-"Language: yo\n"
-"MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=UTF-8\n"
-"Content-Transfer-Encoding: 8bit\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Project-Id-Version: ccBitTorrent 0.1.0\n""Language: yo
+"Content-Type: text/plain; charset=UTF-8
 
 
-msgid "\nAvailable Commands:\n  help          - Show this help message\n  status        - Show current status\n  peers         - Show connected peers\n  files         - Show file information\n  pause         - Pause download\n  resume        - Resume download\n  stop          - Stop download\n  quit          - Quit application\n  clear         - Clear screen\n        "
-msgstr "\nÀwọn Àṣẹ Tí Wà:\n  help          - Fihàn ìrànlọ́wọ́ yìí\n  status        - Fihàn ìpàdé lọ́wọ́lọ́wọ́\n  peers         - Fihàn àwọn ẹgbẹ́ tí dípọ̀\n  files         - Fihàn àlàyé fáìlì\n  pause         - Dúró ìgbàsílẹ̀\n  resume        - Tún bẹ̀rẹ̀ ìgbàsílẹ̀\n  stop          - Dákẹ́ ìgbàsílẹ̀\n  quit          - Jáde kúrò nínú ohun èlò\n  clear         - Mọ́ skríìnì\n        "
+msgid ""
+"\n"
+"  [cyan]Matching Rules:[/cyan] None\n"
+msgstr ""
+"\n"
+"  [cyan]Awọn Ofin Ibaramu:[/cyan] Ko si\n"
 
-msgid "\n[bold cyan]File Selection[/bold cyan]"
-msgstr "\n[bold cyan]Ìyàn Fáìlì[/bold cyan]"
+msgid ""
+"\n"
+"  [cyan]Matching Rules:[/cyan] {count}\n"
+msgstr ""
+"\n"
+"  [cyan]Awọn Ofin Ibaramu:[/cyan] {count}\n"
 
-msgid "\n[bold]File selection[/bold]"
-msgstr "\n[bold]Ìyàn fáìlì[/bold]"
+msgid ""
+"\n"
+"Available Commands:\n"
+"  help          - Show this help message\n"
+"  status        - Show current status\n"
+"  peers         - Show connected peers\n"
+"  files         - Show file information\n"
+"  pause         - Pause download\n"
+"  resume        - Resume download\n"
+"  stop          - Stop download\n"
+"  quit          - Quit application\n"
+"  clear         - Clear screen\n"
+"        \n"
+msgstr ""
+"\n"
+"Awọn Iṣẹ Ti o Wa:\n"
+"  iranlọwọ      - Ṣe afihan ifiranṣẹ iranlọwọ yii\n"
+"  ipo           - Ṣe afihan ipo lọwọlọwọ\n"
+"  awọn ẹgbẹ     - Ṣe afihan awọn ẹgbẹ ti o sopọ mọ\n"
+"  awọn faili    - Ṣe afihan alaye faili\n"
+"  duro          - Duro gbigba\n"
+"  tẹsiwaju      - Tẹsiwaju gbigba\n"
+"  duro          - Duro gbigba\n"
+"  jade          - Jade lati ohun elo\n"
+"  nu kuro       - Nu kuro ni iboju\n"
+"        \n"
 
-msgid "\n[yellow]Commands:[/yellow]"
-msgstr "\n[yellow]Àwọn Àṣẹ:[/yellow]"
+msgid ""
+"\n"
+"[bold cyan]Cache Statistics:[/bold cyan]\n"
+msgstr ""
+"\n"
+"[bold cyan]Awọn Iṣiro Cache:[/bold cyan]\n"
 
-msgid "\n[yellow]File selection cancelled, using defaults[/yellow]"
-msgstr "\n[yellow]Ìyàn fáìlì ti fagilé, ń lo àwọn àyípadà[/yellow]"
+msgid ""
+"\n"
+"[bold cyan]File Selection[/bold cyan]\n"
+msgstr ""
+"\n"
+"[bold cyan]Aṣayan Faili[/bold cyan]\n"
 
-msgid "\n[yellow]Tracker Scrape Statistics:[/yellow]"
-msgstr "\n[yellow]Ìṣirò Tracker Scrape:[/yellow]"
+msgid ""
+"\n"
+"[bold]Active Port Mappings:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]Awọn Iṣeto Port Ti n Ṣiṣẹ:[/bold]\n"
 
-msgid "\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
-msgstr "\n[yellow]Lo: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgid ""
+"\n"
+"[bold]File selection[/bold]\n"
+msgstr ""
+"\n"
+"[bold]Aṣayan faili[/bold]\n"
 
-msgid "\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
-msgstr "\n[yellow]Àkíyèsí: Kò sí àwọn ẹgbẹ́ tí dípọ̀ lẹ́yìn ìṣẹ́jú 30[/yellow]"
+msgid ""
+"\n"
+"[bold]IP Filter Statistics[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]Awọn Iṣiro Aṣẹ IP[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]IP Filter Test[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]Idanwo Aṣẹ IP[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]Runtime Status:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]Ipo Iṣiṣẹ:[/bold]\n"
+
+msgid ""
+"\n"
+"[bold]Sample chunks (last {limit} accessed):[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]Awọn Chunk Apeere (ti o kọja {limit} ti a wọle si):[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]Statistics:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]Awọn Iṣiro:[/bold]\n"
+
+msgid ""
+"\n"
+"[bold]Total: {count} rules[/bold]\n"
+msgstr ""
+"\n"
+"[bold]Lapapọ: {count} awọn ofin[/bold]\n"
+
+msgid ""
+"\n"
+"[cyan]Connection Diagnostics[/cyan]\n"
+"\n"
+msgstr ""
+"\n"
+"[cyan]Awọn Iṣayẹwo Asopọ[/cyan]\n"
+"\n"
+
+msgid ""
+"\n"
+"[cyan]Proxy Statistics:[/cyan]\n"
+msgstr ""
+"\n"
+"[cyan]Awọn Iṣiro Proxy:[/cyan]\n"
+
+msgid ""
+"\n"
+"[cyan]Status:[/cyan] {status}\n"
+msgstr ""
+"\n"
+"[cyan]Ipo:[/cyan] {status}\n"
+
+msgid ""
+"\n"
+"[green]Diagnostic complete![/green]\n"
+msgstr ""
+"\n"
+"[green]Iṣayẹwo ti pari![/green]\n"
+
+msgid ""
+"\n"
+"[green]✓ Discovery successful![/green]\n"
+msgstr ""
+"\n"
+"[green]✓ Wiwa ti aṣeyọri![/green]\n"
+
+msgid ""
+"\n"
+"[green]✓[/green] No connection issues detected\n"
+msgstr ""
+"\n"
+"[green]✓[/green] Ko si awọn iṣoro asopọ ti a rii\n"
+
+msgid ""
+"\n"
+"[yellow]2. DHT Status[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]2. Ipo DHT[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]3. Tracker Configuration[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]3. Iṣeto Tracker[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]4. NAT Configuration[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]4. Iṣeto NAT[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]5. Listen Port[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]5. Port Gbigbọ[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]6. Session Initialization Test[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]6. Idanwo Ipilẹ Session[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Commands:[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Awọn Iṣẹ:[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Connection Issues[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Awọn Iṣoro Asopọ[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Download interrupted by user[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Gbigba ti a da duro nipasẹ olumulo[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]File selection cancelled, using defaults[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Aṣayan faili ti a fagilee, a n lo awọn aiyipada[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Runtime Status:[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Ipo Iṣiṣẹ:[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Session Summary[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Akojọ Session[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Shutting down daemon...[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Ti n pa daemon...[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]TCP Server Status[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Ipo Olupin TCP[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Lo: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Warning: No peers connected after 30 seconds[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]Ikilo: Ko si awọn ẹgbẹ ti o sopọ mọ lẹhin awọn aaya 30[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]✗ No NAT devices discovered[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]✗ Ko si awọn ẹrọ NAT ti a rii[/yellow]\n"
+
+msgid "    - {network} ({mode}, priority: {priority})"
+msgstr "    - {network} ({mode}, ipa pataki: {priority})"
+
+msgid "  - {hash}... ({format})"
+msgstr "  - {hash}... ({format})"
+
+msgid "  Active Downloading: {count}"
+msgstr "  Gbigba Ti n Ṣiṣẹ: {count}"
+
+msgid "  Active Mappings: {mappings}"
+msgstr "  Awọn Iṣeto Ti n Ṣiṣẹ: {mappings}"
+
+msgid "  Active Seeding: {count}"
+msgstr "  Igbasilẹ Ti n Ṣiṣẹ: {count}"
+
+msgid "  Add the peer first using 'tonic allowlist add'"
+msgstr "  Fi ẹgbẹ naa kun ni akọkọ pẹlu 'tonic allowlist add'"
+
+msgid "  Auth failures: {count}"
+msgstr "  Awọn Iṣekuṣẹ Aṣẹ: {count}"
+
+msgid "  Auto Map Ports: {status}"
+msgstr "  Awọn Port Iṣeto Aifọwọyi: {status}"
+
+msgid "  Bypass list: {value}"
+msgstr "  Akojọ Bypass: {value}"
+
+msgid "  Cache DB: {path}"
+msgstr "  DB Cache: {path}"
+
+msgid "  Certificate: {path}"
+msgstr "  Iwe-ẹri: {path}"
+
+msgid "  Chunk size range: {min}-{max} bytes"
+msgstr "  Iwọn Chunk Iwọn: {min}-{max} bytes"
+
+msgid "  Chunk store: {path}"
+msgstr "  Ibi ipamọ Chunk: {path}"
+
+msgid "  Compression: {enabled}"
+msgstr "  Iṣiṣẹ: {enabled}"
+
+msgid "  Configuration saved to: {location}"
+msgstr "  Iṣeto ti a fipamọ si: {location}"
+
+msgid "  Current mode: {mode}"
+msgstr "  Ọna lọwọlọwọ: {mode}"
+
+msgid "  DHT Enabled: {status}"
+msgstr "  DHT Ti Mu: {status}"
+
+msgid "  DHT Port: {port}"
+msgstr "  Port DHT: {port}"
+
+msgid "  DHT Routing Table: {size} nodes"
+msgstr "  Tabili Routing DHT: {size} awọn node"
+
+msgid "  Deduplication: {enabled}"
+msgstr "  Deduplication: {enabled}"
+
+msgid "  Enabled: {enabled}"
+msgstr "  Ti Mu: {enabled}"
+
+msgid "  External IP: {ip}"
+msgstr "  IP Ita: {ip}"
+
+msgid "  External: {port}"
+msgstr "  Ita: {port}"
+
+msgid "  Failed: {count}"
+msgstr "  Ti Kuna: {count}"
+
+msgid "  For peers: {value}"
+msgstr "  Fun awọn ẹgbẹ: {value}"
+
+msgid "  For trackers: {value}"
+msgstr "  Fun awọn tracker: {value}"
+
+msgid "  For webseeds: {value}"
+msgstr "  Fun awọn webseed: {value}"
+
+msgid "  HTTP Trackers: {status}"
+msgstr "  Awọn Tracker HTTP: {status}"
+
+msgid "  Host: {host}:{port}"
+msgstr "  Olupin: {host}:{port}"
+
+msgid "  Internal: {port}"
+msgstr "  Inu: {port}"
+
+msgid "  Key: {path}"
+msgstr "  Bọtini: {path}"
+
+msgid "  Make sure NAT traversal is enabled and a device is discovered"
+msgstr "  Rii daju pe NAT traversal ti mu ati pe ẹrọ kan ti a rii"
+
+msgid "  Make sure NAT-PMP or UPnP is enabled on your router"
+msgstr "  Rii daju pe NAT-PMP tabi UPnP ti mu lori router rẹ"
+
+msgid "  Mode: {mode}"
+msgstr "  Ọna: {mode}"
+
+msgid "  NAT-PMP: {status}"
+msgstr "  NAT-PMP: {status}"
+
+msgid "  Output directory: {dir}"
+msgstr "  Ibi ipamọ Oju-ọna: {dir}"
+
+msgid "  P2P CAS client: Active"
+msgstr "  Onibara P2P CAS: Ti n Ṣiṣẹ"
+
+msgid "  P2P CAS client: Not initialized"
+msgstr "  Onibara P2P CAS: Ko ti pilẹ"
+
+msgid "  P2P CAS: {enabled}"
+msgstr "  P2P CAS: {enabled}"
+
+msgid "  Paused: {count}"
+msgstr "  Ti Duro: {count}"
+
+msgid "  Protocol not active (session may not be running)"
+msgstr "  Protocol ko ti n Ṣiṣẹ (session le ma ṣiṣẹ)"
+
+msgid "  Protocol state: {state}"
+msgstr "  Ipo Protocol: {state}"
+
+msgid "  Protocol: {method}"
+msgstr "  Protocol: {method}"
+
+msgid "  Protocol: {protocol}"
+msgstr "  Protocol: {protocol}"
+
+msgid "  Queued: {count}"
+msgstr "  Ti o wa ni Queue: {count}"
+
+msgid "  Running: {status}"
+msgstr "  Ti n Ṣiṣẹ: {status}"
+
+msgid "  Serving: {status}"
+msgstr "  Ti n Pinpin: {status}"
+
+msgid "  Sessions with Peers: {count}"
+msgstr "  Awọn Session pẹlu Awọn Ẹgbẹ: {count}"
+
+msgid "  Source peers: {peers}"
+msgstr "  Awọn ẹgbẹ orisun: {peers}"
+
+msgid "  Successful: {count}"
+msgstr "  Aṣeyọri: {count}"
+
+msgid "  Sync mode: {mode}"
+msgstr "  Ọna Sync: {mode}"
+
+msgid "  TCP Enabled: {status}"
+msgstr "  TCP Ti Mu: {status}"
+
+msgid "  TCP Port: {port}"
+msgstr "  Port TCP: {port}"
+
+msgid "  Target chunk size: {size} bytes"
+msgstr "  Iwọn Chunk Ipa: {size} bytes"
+
+msgid "  This would fetch the .tonic file and start syncing"
+msgstr "  Eyi yoo gba faili .tonic ati bẹrẹ sync"
+
+msgid "  Total Connections: {count}"
+msgstr "  Lapapọ Awọn Asopọ: {count}"
+
+msgid "  Total Sessions: {count}"
+msgstr "  Lapapọ Awọn Session: {count}"
+
+msgid "  Total connections: {count}"
+msgstr "  Lapapọ awọn asopọ: {count}"
+
+msgid "  Total: {count}"
+msgstr "  Lapapọ: {count}"
+
+msgid "  Type: {type}"
+msgstr "  Iru: {type}"
+
+msgid "  UDP Trackers: {status}"
+msgstr "  Awọn Tracker UDP: {status}"
+
+msgid "  UPnP: {status}"
+msgstr "  UPnP: {status}"
+
+msgid "  Unable to connect to active session"
+msgstr "  Ko le sopọ mọ session ti n Ṣiṣẹ"
+
+msgid "  Use 'ccbt tonic status' to check sync status"
+msgstr "  Lo 'ccbt tonic status' lati ṣayẹwo ipo sync"
+
+msgid "  Username: {username}"
+msgstr "  Orukọ olumulo: {username}"
+
+msgid "  [cyan]Allowed:[/cyan] {allows}"
+msgstr "  [cyan]Ti Gba Laye:[/cyan] {allows}"
+
+msgid "  [cyan]Blocked:[/cyan] {blocks}"
+msgstr "  [cyan]Ti Dẹnu:[/cyan] {blocks}"
+
+msgid "  [cyan]Enabled:[/cyan] {enabled}"
+msgstr "  [cyan]Ti Mu:[/cyan] {enabled}"
+
+msgid "  [cyan]IP Address:[/cyan] {ip}"
+msgstr "  [cyan]Adirẹsi IP:[/cyan] {ip}"
+
+msgid "  [cyan]IPv4 Ranges:[/cyan] {ipv4_ranges}"
+msgstr "  [cyan]Awọn Iwọn IPv4:[/cyan] {ipv4_ranges}"
+
+msgid "  [cyan]IPv6 Ranges:[/cyan] {ipv6_ranges}"
+msgstr "  [cyan]Awọn Iwọn IPv6:[/cyan] {ipv6_ranges}"
+
+msgid "  [cyan]Last Update:[/cyan] Never"
+msgstr "  [cyan]Imudojuiwọn Ikẹhin:[/cyan] Rara"
+
+msgid "  [cyan]Last Update:[/cyan] {timestamp}"
+msgstr "  [cyan]Imudojuiwọn Ikẹhin:[/cyan] {timestamp}"
+
+msgid "  [cyan]Mode:[/cyan] {mode}"
+msgstr "  [cyan]Ọna:[/cyan] {mode}"
+
+msgid "  [cyan]Status:[/cyan] {status}"
+msgstr "  [cyan]Ipo:[/cyan] {status}"
+
+msgid "  [cyan]Total Checks:[/cyan] {matches}"
+msgstr "  [cyan]Lapapọ Awọn Iṣayẹwo:[/cyan] {matches}"
+
+msgid "  [cyan]Total Rules:[/cyan] {total_rules}"
+msgstr "  [cyan]Lapapọ Awọn Ofin:[/cyan] {total_rules}"
 
 msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
-msgstr "  [cyan]deselect <index>[/cyan] - Yọ fáìlì kúrò"
+msgstr "  [cyan]deselect <index>[/cyan] - Yọ faili kan kuro"
 
 msgid "  [cyan]deselect-all[/cyan] - Deselect all files"
-msgstr "  [cyan]deselect-all[/cyan] - Yọ gbogbo àwọn fáìlì kúrò"
+msgstr "  [cyan]deselect-all[/cyan] - Yọ gbogbo awọn faili kuro"
 
 msgid "  [cyan]done[/cyan] - Finish selection and start download"
-msgstr "  [cyan]done[/cyan] - Parí ìyàn àti bẹ̀rẹ̀ ìgbàsílẹ̀"
+msgstr "  [cyan]done[/cyan] - Pari aṣayan ati bẹrẹ gbigba"
 
-msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
-msgstr "  [cyan]priority <index> <priority>[/cyan] - Ṣètò àkànkàn (do_not_download/low/normal/high/maximum)"
+msgid ""
+"  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)\n"
+msgstr ""
+"  [cyan]priority <index> <priority>[/cyan] - Ṣeto ipa pataki (do_not_download/low/normal/high/maximum)\n"
 
 msgid "  [cyan]select <index>[/cyan] - Select a file"
-msgstr "  [cyan]select <index>[/cyan] - Yàn fáìlì"
+msgstr "  [cyan]select <index>[/cyan] - Yan faili kan"
 
 msgid "  [cyan]select-all[/cyan] - Select all files"
-msgstr "  [cyan]select-all[/cyan] - Yàn gbogbo àwọn fáìlì"
+msgstr "  [cyan]select-all[/cyan] - Yan gbogbo awọn faili"
+
+msgid "  [green]✓[/green] Can bind to port {port}"
+msgstr "  [green]✓[/green] O le sopọ mọ port {port}"
+
+msgid "  [green]✓[/green] Session initialized successfully"
+msgstr "  [green]✓[/green] Session ti pilẹ ni aṣeyọri"
+
+msgid "  [green]✓[/green] TCP server initialized"
+msgstr "  [green]✓[/green] Olupin TCP ti pilẹ"
+
+msgid "  [green]✓[/green] {url}: {loaded} rules"
+msgstr "  [green]✓[/green] {url}: {loaded} awọn ofin"
+
+msgid "  [red]✗[/red] Cannot bind to port: {e}"
+msgstr "  [red]✗[/red] Ko le sopọ mọ port: {e}"
+
+msgid "  [red]✗[/red] NAT manager not initialized"
+msgstr "  [red]✗[/red] Olutọju NAT ko ti pilẹ"
+
+msgid "  [red]✗[/red] Session initialization failed: {e}"
+msgstr "  [red]✗[/red] Ipilẹ Session ti kuna: {e}"
+
+msgid "  [red]✗[/red] TCP server not initialized"
+msgstr "  [red]✗[/red] Olupin TCP ko ti pilẹ"
+
+msgid "  [red]✗[/red] {url}: failed"
+msgstr "  [red]✗[/red] {url}: ti kuna"
+
+msgid "  [yellow]⚠[/yellow] DHT client not initialized"
+msgstr "  [yellow]⚠[/yellow] Onibara DHT ko ti pilẹ"
+
+msgid "  [yellow]⚠[/yellow] TCP server not initialized"
+msgstr "  [yellow]⚠[/yellow] Olupin TCP ko ti pilẹ"
+
+msgid "  uTP Enabled: {status}"
+msgstr "  uTP Ti Mu: {status}"
+
+msgid "  {msg}"
+msgstr ""
+
+msgid "  {warning}"
+msgstr ""
 
 msgid "  • Check if torrent has active seeders"
-msgstr "  • Ṣàyẹ̀wò bí torrent bá ní àwọn olùgbìn tó nṣiṣẹ́"
+msgstr "  • Ṣayẹwo boya torrent ni awọn igbasilẹ ti n Ṣiṣẹ"
 
 msgid "  • Ensure DHT is enabled: --enable-dht"
-msgstr "  • Rí dájú pé DHT ti mú ṣiṣẹ́: --enable-dht"
+msgstr "  • Rii daju pe DHT ti mu: --enable-dht"
 
 msgid "  • Run 'btbt diagnose-connections' to check connection status"
-msgstr "  • Ṣe 'btbt diagnose-connections' láti ṣàyẹ̀wò ìpàdé ìdípọ̀"
+msgstr "  • Ṣe 'btbt diagnose-connections' lati ṣayẹwo ipo asopọ"
 
 msgid "  • Verify NAT/firewall settings"
-msgstr "  • Jẹ́rìí àwọn ètò NAT/firewall"
+msgstr "  • Jẹrisi awọn iṣeto NAT/firewall"
 
-msgid " | Files: {selected}/{total} selected"
-msgstr " | Àwọn Fáìlì: {selected}/{total} tí a yàn"
+msgid "  ⚠ {warning}"
+msgstr ""
 
-msgid " | Private: {count}"
-msgstr " | Ìkọ̀kọ̀: {count}"
+msgid "(no options set)"
+msgstr "(ko si awọn aṣayan ti a ṣeto)"
+
+msgid "- [yellow]{issue}[/yellow]"
+msgstr "- [yellow]{issue}[/yellow]"
+
+msgid "- {id}: {severity} rule={rule} value={value}"
+msgstr "- {id}: {severity} ofin={rule} iye={value}"
+
+msgid "- {name}: metric={metric}, cond={condition}, severity={severity}"
+msgstr "- {name}: metiriki={metric}, ipo={condition}, iwọn={severity}"
+
+msgid "ACK Interval"
+msgstr "Iwọn Aarin ACK"
+
+msgid "ACK packet send interval"
+msgstr "Iwọn aarin fifiranṣẹ pakiti ACK"
+
+msgid "API key or Ed25519 key manager required for WebSocket connection"
+msgstr "Bọtini API tabi olutọju bọtini Ed25519 nilo fun asopọ WebSocket"
 
 msgid "Active"
-msgstr "Nṣiṣẹ"
+msgstr "Ti n Ṣiṣẹ"
 
 msgid "Active Alerts"
-msgstr "Àkíyèsí Tó Nṣiṣẹ"
+msgstr "Awọn Ikilo Ti n Ṣiṣẹ"
 
-msgid "Active: {count}"
-msgstr "Nṣiṣẹ: {count}"
+msgid "Add Tracker"
+msgstr "Fi Tracker Kun"
+
+msgid ""
+"Add tracker functionality not yet implemented. Use CLI command: torrent.add_tracker\n"
+msgstr ""
+"Ẹya fifi tracker kun ko ti ṣe imuṣẹṣẹ sibẹsibẹ. Lo iṣẹ CLI: torrent.add_tracker\n"
+
+msgid "Advanced"
+msgstr "Ti o Ga"
 
 msgid "Advanced Add"
-msgstr "Ìròpò Àtẹ̀lẹ̀"
+msgstr "Fi Ti o Ga Kun"
+
+msgid "Advanced configuration (experimental features)"
+msgstr "Iṣeto ti o ga (awọn ẹya idanwo)"
+
+msgid "Advanced configuration - Data provider/Executor not available"
+msgstr "Iṣeto ti o ga - Olupese Data/Executor ko wa"
 
 msgid "Alert Rules"
-msgstr "Àwọn Ìlànà Àkíyèsí"
+msgstr "Awọn Ofin Ikilo"
 
 msgid "Alerts"
-msgstr "Àkíyèsí"
+msgstr "Awọn Ikilo"
+
+msgid "All {total} file(s) verified successfully"
+msgstr "Gbogbo {total} faili ti a jẹrisi ni aṣeyọri"
+
+msgid "Announce sent"
+msgstr "Ifiranṣẹ ti a fi ranṣẹ"
 
 msgid "Announce: Failed"
-msgstr "Ìfihàn: Kò ṣe"
+msgstr "Ifiranṣẹ: Ti Kuna"
 
 msgid "Announce: {status}"
-msgstr "Ìfihàn: {status}"
+msgstr "Ifiranṣẹ: {status}"
 
 msgid "Are you sure you want to quit?"
-msgstr "Ṣé o dájú pé o fẹ́ jáde?"
+msgstr "O da ọ loju pe o fẹ jade?"
+
+msgid "Auto-tuned configuration saved to {path}"
+msgstr "Iṣeto ti a tun aifọwọyi ti a fipamọ si {path}"
+
+msgid "Auto-tuning warnings:"
+msgstr "Awọn ikilo ti a tun aifọwọyi:"
 
 msgid "Automatically restart daemon if needed (without prompt)"
-msgstr "Tún bẹ̀rẹ̀ daemon laifọwọ́yí tí ó bá wúlò (láìsí ìbéèrè)"
+msgstr "Tun bẹrẹ daemon aifọwọyi ti o ba nilo (laisi ikilo)"
+
+msgid "Available keys: {keys}"
+msgstr "Awọn bọtini ti o wa: {keys}"
+
+msgid "Available locales: {locales}"
+msgstr "Awọn agbegbe ti o wa: {locales}"
+
+msgid "Backup complete"
+msgstr "Igbasilẹ ti pari"
+
+msgid "Backup created: {path}"
+msgstr "Igbasilẹ ti a ṣẹda: {path}"
+
+msgid "Backup failed"
+msgstr "Igbasilẹ ti kuna"
+
+msgid "Ban Peer"
+msgstr "Dẹnu Ẹgbẹ"
+
+msgid "Bandwidth"
+msgstr "Iyara ẹrọ ayelujara"
+
+msgid "Bandwidth configuration - Data provider/Executor not available"
+msgstr "Iṣeto iyara ẹrọ ayelujara - Olupese Data/Executor ko wa"
 
 msgid "Browse"
-msgstr "Ṣàwárí"
+msgstr "Ṣayẹwo"
+
+msgid ""
+"CRITICAL: PID file exists (initial=%s, current=%s, path=%s) but code reached local session creation! This will cause port conflicts. Aborting.\n"
+msgstr ""
+"PATAKI: Faili PID wa (akọkọ=%s, lọwọlọwọ=%s, ọna=%s) ṣugbọn koodu de ibi ṣiṣẹda session agbegbe! Eyi yoo fa awọn ijakadi port. Ti n duro.\n"
+
+msgid "Cache entries: {count}"
+msgstr "Awọn iforukọsilẹ Cache: {count}"
+
+msgid "Cache hit rate: {rate:.2f}%"
+msgstr "Iye Cache hit: {rate:.2f}%"
+
+msgid "Cache size: {size} bytes"
+msgstr "Iwọn Cache: {size} bytes"
+
+msgid "Cached Scrape Results"
+msgstr "Awọn Abajade Scrape Ti a Fipamọ"
+
+msgid "Cancel"
+msgstr "Fagilee"
+
+msgid "Cannot auto-resume checkpoint"
+msgstr "Ko le tẹsiwaju checkpoint aifọwọyi"
+
+msgid ""
+"Cannot connect to daemon at %s: %s (daemon may not be running or IPC server not started)\n"
+msgstr ""
+"Ko le sopọ mọ daemon ni %s: %s (daemon le ma ṣiṣẹ tabi olupin IPC ko ti bẹrẹ)\n"
+
+msgid "Cannot specify both --hybrid and --v1"
+msgstr "Ko le ṣe alaye mejeeji --hybrid ati --v1"
+
+msgid "Cannot specify both --v2 and --hybrid"
+msgstr "Ko le ṣe alaye mejeeji --v2 ati --hybrid"
+
+msgid "Cannot specify both --v2 and --v1"
+msgstr "Ko le ṣe alaye mejeeji --v2 ati --v1"
 
 msgid "Capability"
-msgstr "Agbára"
+msgstr "Agbara"
+
+msgid "Choked"
+msgstr "Ti Dẹnu"
+
+msgid "Cleaning up old checkpoints..."
+msgstr "Ti n nu awọn checkpoint atijọ kuro..."
+
+msgid "Cleanup complete"
+msgstr "Imu kuro ti pari"
+
+msgid "Click on 'Global' tab to configure this section"
+msgstr "Tẹ lori tab 'Global' lati ṣeto apakan yii"
+
+msgid "Client"
+msgstr "Onibara"
+
+msgid ""
+"Client error checking daemon status at %s: %s (daemon may be starting up)\n"
+msgstr ""
+"Aṣiṣe onibara nitori ṣayẹwo ipo daemon ni %s: %s (daemon le ti n bẹrẹ)\n"
 
 msgid "Commands: "
-msgstr "Àwọn Àṣẹ: "
+msgstr "Awọn Iṣẹ: "
 
 msgid "Completed"
-msgstr "Tí Parí"
+msgstr "Ti Pari"
 
 msgid "Completed (Scrape)"
-msgstr "Tí Parí (Scrape)"
+msgstr "Ti Pari (Scrape)"
 
-msgid "Component"
-msgstr "Apá"
+msgid "Compressing backup..."
+msgstr "Ti n dẹ backup..."
 
 msgid "Condition"
-msgstr "Ìpàdé"
+msgstr "Ipo"
+
+msgid "Config"
+msgstr "Iṣeto"
 
 msgid "Config Backups"
-msgstr "Àwọn Ìgbàgbẹ́ Ètò"
+msgstr "Awọn Igbasilẹ Iṣeto"
+
+msgid "Configuration differences:"
+msgstr "Awọn iyatọ Iṣeto:"
+
+msgid "Configuration exported to {path}"
+msgstr "Iṣeto ti a gbe jade si {path}"
 
 msgid "Configuration file path"
-msgstr "Ọ̀nà fáìlì ètò"
+msgstr "Ọna faili iṣeto"
+
+msgid "Configuration imported to {path}"
+msgstr "Iṣeto ti a wọle si {path}"
+
+msgid "Configuration restored from {path}"
+msgstr "Iṣeto ti a mu pada lati {path}"
+
+msgid "Configuration section"
+msgstr "Apakan iṣeto"
+
+msgid ""
+"Configuration: {type}\n"
+"\n"
+"This configuration section is not yet fully implemented.\n"
+msgstr ""
+"Iṣeto: {type}\n"
+"\n"
+"Apakan iṣeto yii ko ti ṣe imuṣẹṣẹ ni kikun sibẹsibẹ.\n"
 
 msgid "Confirm"
-msgstr "Jẹ́rìí"
-
-msgid "Connected"
-msgstr "Tí Dípọ̀"
+msgstr "Jẹrisi"
 
 msgid "Connected Peers"
-msgstr "Àwọn Ẹgbẹ́ Tí Dípọ̀"
+msgstr "Awọn Ẹgbẹ Ti o Sopọ Mọ"
 
-msgid "Count: {count}{file_info}{private_info}"
-msgstr "Ìka: {count}{file_info}{private_info}"
+msgid "Connecting to daemon at %s (PID file exists)"
+msgstr "Ti n sopọ mọ daemon ni %s (faili PID wa)"
+
+msgid "Connection Timeout"
+msgstr "Aago Asopọ"
+
+msgid "Connection timeout in seconds"
+msgstr "Aago asopọ ni awọn aaya"
+
+msgid "Copy Info Hash"
+msgstr "Ṣe Afẹyinti Info Hash"
+
+msgid ""
+"Could not connect to daemon (no PID file): %s - will create local session\n"
+msgstr ""
+"Ko le sopọ mọ daemon (ko si faili PID): %s - yoo ṣẹda session agbegbe\n"
+
+msgid "Could not find file index"
+msgstr "Ko le rii index faili"
+
+msgid "Could not get torrent output directory"
+msgstr "Ko le gba ibi ipamọ oju-ọna torrent"
+
+msgid "Could not read daemon config file: %s"
+msgstr "Ko le ka faili iṣeto daemon: %s"
+
+msgid "Could not read daemon config from ConfigManager: %s"
+msgstr "Ko le ka iṣeto daemon lati ConfigManager: %s"
+
+msgid "Could not save daemon config to config file: %s"
+msgstr "Ko le fipamọ iṣeto daemon si faili iṣeto: %s"
+
+msgid "Could not send shutdown request, using signal..."
+msgstr "Ko le fi ibeere duro ranṣẹ, a n lo aami..."
 
 msgid "Create backup before migration"
-msgstr "Ṣẹ̀dá ìgbàgbẹ́ ṣáájú ìgbérí"
+msgstr "Ṣẹda backup ṣaaju iṣipopada"
 
-msgid "DHT"
-msgstr "DHT"
+msgid "Creating backup..."
+msgstr "Ti n ṣẹda backup..."
+
+msgid "Current chunks: {count}"
+msgstr "Awọn chunk lọwọlọwọ: {count}"
+
+msgid "Current locale: {locale}"
+msgstr "Agbegbe lọwọlọwọ: {locale}"
+
+msgid ""
+"Daemon PID file exists but API key not found in config. Cannot route to daemon. Please check daemon configuration.\n"
+msgstr ""
+"Faili PID Daemon wa ṣugbọn ko rii bọtini API ni iṣeto. Ko le rọọtẹ si daemon. Jọwọ ṣayẹwo iṣeto daemon.\n"
+
+msgid "Daemon config file exists but ipc_port not found, trying main config"
+msgstr "Faili iṣeto daemon wa ṣugbọn ko rii ipc_port, a n gbiyanju iṣeto pataki"
+
+msgid ""
+"Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...\n"
+msgstr ""
+"Aṣiṣe asopọ daemon (igbiyanju %d/%d, ti lo %.1fs): %s, a n tun gbiyanju ni %.1fs...\n"
+
+msgid ""
+"Daemon connection timeout (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+"Aago asopọ daemon (igbiyanju %d/%d, ti lo %.1fs), a n tun gbiyanju ni %.1fs...\n"
+
+msgid "Daemon is accessible and ready (attempt %d/%d, took %.1fs)"
+msgstr "Daemon wa ati ti ṣetan (igbiyanju %d/%d, mu %.1fs)"
+
+msgid ""
+"Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+"Daemon ti a sọmọ gẹgẹbi ti n Ṣiṣẹ ṣugbọn ko wọ (igbiyanju %d/%d, ti lo %.1fs), a n tun gbiyanju ni %.1fs...\n"
+
+msgid ""
+"Daemon is marked as running but not accessible after %d attempts (elapsed %.1fs)\n"
+msgstr ""
+"Daemon ti a sọmọ gẹgẹbi ti n Ṣiṣẹ ṣugbọn ko wọ lẹhin awọn igbiyanju %d (ti lo %.1fs)\n"
+
+msgid "Daemon is not running"
+msgstr "Daemon ko ti n Ṣiṣẹ"
+
+msgid "Daemon is not running, nothing to restart"
+msgstr "Daemon ko ti n Ṣiṣẹ, ko si nkankan lati tun bẹrẹ"
+
+msgid "Daemon is not running, restart not needed"
+msgstr "Daemon ko ti n Ṣiṣẹ, ko nilo tun bẹrẹ"
+
+msgid ""
+"Daemon is not running. File management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"Daemon ko ti n Ṣiṣẹ. Awọn iṣẹ iṣakoso faili nilo daemon lati Ṣiṣẹ.\n"
+"Bẹrẹ daemon pẹlu: 'btbt daemon start'\n"
+
+msgid ""
+"Daemon is not running. NAT management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"Daemon ko ti n Ṣiṣẹ. Awọn iṣẹ iṣakoso NAT nilo daemon lati Ṣiṣẹ.\n"
+"Bẹrẹ daemon pẹlu: 'btbt daemon start'\n"
+
+msgid ""
+"Daemon is not running. Queue management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"Daemon ko ti n Ṣiṣẹ. Awọn iṣẹ iṣakoso Queue nilo daemon lati Ṣiṣẹ.\n"
+"Bẹrẹ daemon pẹlu: 'btbt daemon start'\n"
+
+msgid ""
+"Daemon is not running. Scrape commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"Daemon ko ti n Ṣiṣẹ. Awọn iṣẹ Scrape nilo daemon lati Ṣiṣẹ.\n"
+"Bẹrẹ daemon pẹlu: 'btbt daemon start'\n"
+
+msgid "Daemon restarted successfully (PID: %d)"
+msgstr "Daemon ti tun bẹrẹ ni aṣeyọri (PID: %d)"
+
+msgid "Daemon stopped"
+msgstr "Daemon ti duro"
+
+msgid "Daemon stopped gracefully"
+msgstr "Daemon ti duro ni ọfẹ"
 
 msgid "Description"
-msgstr "Àpèjúwe"
+msgstr "Apejuwe"
+
+msgid "Description: {desc}"
+msgstr "Apejuwe: {desc}"
+
+msgid "Deselect All"
+msgstr "Yọ Gbogbo Kuro"
+
+msgid "Deselected {count} file(s)"
+msgstr "Ti yọ {count} faili kuro"
 
 msgid "Details"
-msgstr "Àwọn Àlàyé"
+msgstr "Awọn Alaye"
 
-msgid "Disabled"
-msgstr "Tí Dínkù"
+msgid "Diff written to {path}"
+msgstr "Diff ti a kọ si {path}"
+
+msgid "Direct session access not available in daemon mode"
+msgstr "Wiwọle session taara ko wa ni ọna daemon"
+
+msgid "Disk I/O configuration (preallocation, hashing, checkpoints)"
+msgstr "Iṣeto Disk I/O (tẹlẹ aṣayan, hashing, awọn checkpoint)"
+
+msgid "Do Not Download"
+msgstr "Ma Gba"
 
 msgid "Download"
-msgstr "Ìgbàsílẹ̀"
+msgstr "Gbigba"
+
+msgid "Download Limit"
+msgstr "Idiwọn Gbigba"
+
+msgid "Download Rate"
+msgstr "Iwọn Gbigba"
 
 msgid "Download Speed"
-msgstr "Ìyára Ìgbàsílẹ̀"
+msgstr "Iyara Gbigba"
 
 msgid "Download paused"
-msgstr "Ìgbàsílẹ̀ dínkù"
+msgstr "Gbigba ti duro"
 
 msgid "Download resumed"
-msgstr "Ìgbàsílẹ̀ tún bẹ̀rẹ̀"
+msgstr "Gbigba ti tẹsiwaju"
 
 msgid "Download stopped"
-msgstr "Ìgbàsílẹ̀ dákẹ́"
+msgstr "Gbigba ti duro"
 
 msgid "Downloaded"
-msgstr "Tí Gbà"
+msgstr "Ti Gba"
+
+msgid "Downloaders"
+msgstr "Awọn Olugba"
+
+msgid "Downloading"
+msgstr "Ti n Gba"
 
 msgid "Downloading {name}"
-msgstr "Ń Gbà {name}"
+msgstr "Ti n Gba {name}"
 
 msgid "ETA"
-msgstr "Àkókò Tí Ó Parí"
+msgstr "ETA"
 
-msgid "Enable debug mode"
-msgstr "Mú àwọn ìṣòro ṣiṣẹ́"
-
-msgid "Enable verbose output"
-msgstr "Mú ìjádé tó pọ̀ ṣiṣẹ́"
+msgid "Enable debug mode (deprecated, use -vv)"
+msgstr "Mu ọna debug mu (ti a fagilee, lo -vv)"
 
 msgid "Enabled"
-msgstr "Tí Mú Ṣiṣẹ́"
+msgstr "Ti Mu"
 
-msgid "Error reading scrape cache"
-msgstr "Àṣìṣe nínú kíkà scrape cache"
+msgid "Encrypting backup..."
+msgstr "Ti n ṣe ikọkọ backup..."
+
+msgid "Error"
+msgstr "Aṣiṣe"
+
+msgid "Error adding tracker: {error}"
+msgstr "Aṣiṣe nitori fifi tracker kun: {error}"
+
+msgid "Error banning peer: {error}"
+msgstr "Aṣiṣe nitori fifi ẹgbẹ dẹnu: {error}"
+
+msgid ""
+"Error checking daemon accessibility (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...\n"
+msgstr ""
+"Aṣiṣe nitori ṣayẹwo wiwọle daemon (igbiyanju %d/%d, ti lo %.1fs): %s, a n tun gbiyanju ni %.1fs...\n"
+
+msgid ""
+"Error checking daemon accessibility after %d attempts (elapsed %.1fs): %s\n"
+msgstr ""
+"Aṣiṣe nitori ṣayẹwo wiwọle daemon lẹhin awọn igbiyanju %d (ti lo %.1fs): %s\n"
+
+msgid "Error checking daemon stage: %s"
+msgstr "Aṣiṣe nitori ṣayẹwo ipo daemon: %s"
+
+msgid ""
+"Error checking if daemon is running (Windows-specific issue?): %s - PID file exists, will attempt IPC connection\n"
+msgstr ""
+"Aṣiṣe nitori ṣayẹwo boya daemon ti n Ṣiṣẹ (iṣoro Windows pataki?): %s - Faili PID wa, yoo gbiyanju asopọ IPC\n"
+
+msgid "Error checking if restart is needed: %s"
+msgstr "Aṣiṣe nitori ṣayẹwo boya tun bẹrẹ nilo: %s"
+
+msgid "Error closing HTTP session: %s"
+msgstr "Aṣiṣe nitori pipade session HTTP: %s"
+
+msgid "Error closing IPC client: %s"
+msgstr "Aṣiṣe nitori pipade onibara IPC: %s"
+
+msgid "Error closing WebSocket: %s"
+msgstr "Aṣiṣe nitori pipade WebSocket: %s"
+
+msgid "Error comparing configs: {e}"
+msgstr "Aṣiṣe nitori fifi awọn iṣeto ṣe afiwe: {e}"
+
+msgid "Error creating backup: {e}"
+msgstr "Aṣiṣe nitori ṣiṣẹda backup: {e}"
+
+msgid "Error creating torrent"
+msgstr "Aṣiṣe nitori ṣiṣẹda torrent"
+
+msgid "Error deselecting files: {error}"
+msgstr "Aṣiṣe nitori yiyọ awọn faili kuro: {error}"
+
+msgid "Error exporting configuration: {e}"
+msgstr "Aṣiṣe nitori gbigbe iṣeto jade: {e}"
+
+msgid "Error forcing announce: {error}"
+msgstr "Aṣiṣe nitori fifi ifiranṣẹ mu: {error}"
+
+msgid "Error generating schema: {e}"
+msgstr "Aṣiṣe nitori ṣiṣẹda schema: {e}"
+
+msgid "Error getting daemon status: %s"
+msgstr "Aṣiṣe nitori gbigba ipo daemon: %s"
+
+msgid "Error importing configuration: {e}"
+msgstr "Aṣiṣe nitori wiwọle iṣeto: {e}"
+
+msgid "Error in socket pre-check: %s"
+msgstr "Aṣiṣe ni idanwo tẹlẹ socket: %s"
+
+msgid "Error listing backups: {e}"
+msgstr "Aṣiṣe nitori atokọ awọn backup: {e}"
+
+msgid "Error listing profiles: {e}"
+msgstr "Aṣiṣe nitori atokọ awọn profaili: {e}"
+
+msgid "Error listing templates: {e}"
+msgstr "Aṣiṣe nitori atokọ awọn awoṣe: {e}"
+
+msgid "Error loading torrent configuration: {error}"
+msgstr "Aṣiṣe nitori fifi iṣeto torrent sori ẹrọ: {error}"
+
+msgid "Error opening folder: {error}"
+msgstr "Aṣiṣe nitori ṣii folda: {error}"
+
+msgid "Error processing file %s: %s"
+msgstr "Aṣiṣe nitori ṣiṣẹ faili %s: %s"
+
+msgid "Error reading PID file after retries: %s"
+msgstr "Aṣiṣe nitori kika faili PID lẹhin awọn igbiyanju: %s"
+
+msgid "Error reading PID file: %s"
+msgstr "Aṣiṣe nitori kika faili PID: %s"
+
+msgid "Error receiving WebSocket event: %s"
+msgstr "Aṣiṣe nitori gbigba iṣẹlẹ WebSocket: %s"
+
+msgid "Error removing tracker: {error}"
+msgstr "Aṣiṣe nitori yiyọ tracker kuro: {error}"
+
+msgid "Error restarting daemon: %s"
+msgstr "Aṣiṣe nitori tun bẹrẹ daemon: %s"
+
+msgid "Error restoring backup: {e}"
+msgstr "Aṣiṣe nitori mu backup pada: {e}"
+
+msgid "Error routing to daemon (PID file exists): %s"
+msgstr "Aṣiṣe nitori rọọtẹ si daemon (faili PID wa): %s"
+
+msgid "Error routing to daemon (no PID file): %s - will create local session"
+msgstr "Aṣiṣe nitori rọọtẹ si daemon (ko si faili PID): %s - yoo ṣẹda session agbegbe"
+
+msgid "Error selecting files: {error}"
+msgstr "Aṣiṣe nitori yiyan awọn faili: {error}"
+
+msgid "Error sending shutdown request: %s"
+msgstr "Aṣiṣe nitori fifi ibeere duro ranṣẹ: %s"
+
+msgid "Error setting file priority: {error}"
+msgstr "Aṣiṣe nitori ṣiṣeto ipa pataki faili: {error}"
+
+msgid "Error starting daemon: %s"
+msgstr "Aṣiṣe nitori bẹrẹ daemon: %s"
+
+msgid "Error stopping daemon: %s"
+msgstr "Aṣiṣe nitori duro daemon: %s"
+
+msgid "Error verifying files: {error}"
+msgstr "Aṣiṣe nitori jẹrisi awọn faili: {error}"
+
+msgid "Error waiting for daemon with progress: %s"
+msgstr "Aṣiṣe nitori duro fun daemon pẹlu ilọsiwaju: %s"
+
+msgid "Error waiting for daemon: %s"
+msgstr "Aṣiṣe nitori duro fun daemon: %s"
+
+msgid "Error with auto-tuning: {e}"
+msgstr "Aṣiṣe pẹlu auto-tuning: {e}"
+
+msgid "Error with profile: {e}"
+msgstr "Aṣiṣe pẹlu profaili: {e}"
+
+msgid "Error with template: {e}"
+msgstr "Aṣiṣe pẹlu awoṣe: {e}"
+
+msgid "Error: {error}"
+msgstr "Aṣiṣe: {error}"
+
+msgid "Eviction rate: {rate:.2f} /sec"
+msgstr "Iwọn fifi jade: {rate:.2f} /aaya"
+
+msgid "Exceeded maximum wait time (%.1fs) for daemon readiness"
+msgstr "Ti kọja aago duro ti o pọ julọ (%.1fs) fun iṣetan daemon"
+
+msgid "Expected type: {type_name}"
+msgstr "Iru ti a reti: {type_name}"
 
 msgid "Explore"
-msgstr "Ṣàwárí"
+msgstr "Ṣayẹwo"
+
+msgid "Export complete"
+msgstr "Gbigbe jade ti pari"
+
+msgid "Exporting checkpoint..."
+msgstr "Ti n gbe checkpoint jade..."
 
 msgid "Failed"
-msgstr "Kò Ṣe"
+msgstr "Ti Kuna"
+
+msgid "Failed to add content"
+msgstr "Ti kuna lati fi akoonu kun"
+
+msgid "Failed to add magnet link"
+msgstr "Ti kuna lati fi ọna asopọ magnet kun"
+
+msgid "Failed to add peer to allowlist"
+msgstr "Ti kuna lati fi ẹgbẹ kun si akojọ gba laaye"
+
+msgid "Failed to add torrent"
+msgstr "Ti kuna lati fi torrent kun"
+
+msgid "Failed to add torrent to daemon"
+msgstr "Ti kuna lati fi torrent kun si daemon"
+
+msgid "Failed to announce: {error}"
+msgstr "Ti kuna lati fi ranṣẹ: {error}"
+
+msgid "Failed to ban peer: {error}"
+msgstr "Ti kuna lati dẹnu ẹgbẹ: {error}"
+
+msgid "Failed to calculate progress: %s"
+msgstr "Ti kuna lati ṣe iṣiro ilọsiwaju: %s"
+
+msgid "Failed to cleanup Xet cache"
+msgstr "Ti kuna lati nu Xet cache kuro"
+
+msgid "Failed to clear queue"
+msgstr "Ti kuna lati nu queue kuro"
+
+msgid "Failed to collect custom metrics: %s"
+msgstr "Ti kuna lati gba awọn metiriki aṣa: %s"
+
+msgid "Failed to collect performance metrics: %s"
+msgstr "Ti kuna lati gba awọn metiriki iṣẹ: %s"
+
+msgid "Failed to collect system metrics: %s"
+msgstr "Ti kuna lati gba awọn metiriki eto: %s"
+
+msgid "Failed to copy info hash: {error}"
+msgstr "Ti kuna lati ṣe afẹyinti info hash: {error}"
+
+msgid "Failed to deselect all files"
+msgstr "Ti kuna lati yọ gbogbo awọn faili kuro"
+
+msgid "Failed to deselect files"
+msgstr "Ti kuna lati yọ awọn faili kuro"
+
+msgid "Failed to deselect files: {error}"
+msgstr "Ti kuna lati yọ awọn faili kuro: {error}"
+
+msgid "Failed to disable io_uring: %s"
+msgstr "Ti kuna lati mu io_uring duro: %s"
+
+msgid "Failed to discover NAT"
+msgstr "Ti kuna lati rii NAT"
+
+msgid "Failed to enable io_uring: %s"
+msgstr "Ti kuna lati mu io_uring mu: %s"
+
+msgid "Failed to generate .tonic file"
+msgstr "Ti kuna lati ṣẹda faili .tonic"
+
+msgid "Failed to generate tonic link"
+msgstr "Ti kuna lati ṣẹda ọna asopọ tonic"
+
+msgid "Failed to get NAT status"
+msgstr "Ti kuna lati gba ipo NAT"
+
+msgid "Failed to get Xet cache info"
+msgstr "Ti kuna lati gba alaye Xet cache"
+
+msgid "Failed to get Xet stats"
+msgstr "Ti kuna lati gba awọn iṣiro Xet"
+
+msgid "Failed to get content"
+msgstr "Ti kuna lati gba akoonu"
+
+msgid "Failed to get metrics interval from config: %s"
+msgstr "Ti kuna lati gba iwọn aarin metiriki lati iṣeto: %s"
+
+msgid "Failed to get peers"
+msgstr "Ti kuna lati gba awọn ẹgbẹ"
+
+msgid "Failed to get queue"
+msgstr "Ti kuna lati gba queue"
+
+msgid "Failed to get runtime status: %s"
+msgstr "Ti kuna lati gba ipo iṣiṣẹ: %s"
+
+msgid "Failed to get stats"
+msgstr "Ti kuna lati gba awọn iṣiro"
+
+msgid "Failed to get sync mode"
+msgstr "Ti kuna lati gba ọna sync"
+
+msgid "Failed to get sync status"
+msgstr "Ti kuna lati gba ipo sync"
+
+msgid "Failed to list aliases"
+msgstr "Ti kuna lati atokọ awọn orukọ miiran"
+
+msgid "Failed to list allowlist"
+msgstr "Ti kuna lati atokọ akojọ gba laaye"
+
+msgid "Failed to list files"
+msgstr "Ti kuna lati atokọ awọn faili"
+
+msgid "Failed to list scrape results"
+msgstr "Ti kuna lati atokọ awọn abajade scrape"
+
+msgid "Failed to load filter file: {file_path}"
+msgstr "Ti kuna lati fi faili aṣẹ sori ẹrọ: {file_path}"
+
+msgid "Failed to map port"
+msgstr "Ti kuna lati ṣeto port"
+
+msgid "Failed to move in queue"
+msgstr "Ti kuna lati gbe ni queue"
+
+msgid "Failed to parse config value: %s"
+msgstr "Ti kuna lati ṣe ayẹwo iye iṣeto: %s"
+
+msgid "Failed to pause torrent"
+msgstr "Ti kuna lati duro torrent"
+
+msgid "Failed to pin content"
+msgstr "Ti kuna lati pin akoonu"
+
+msgid "Failed to refresh mappings"
+msgstr "Ti kuna lati tun awọn iṣeto"
 
 msgid "Failed to register torrent in session"
-msgstr "Kò ṣeé fi torrent forúkọ sílé nínú àkókò"
+msgstr "Ti kuna lati forukọsilẹ torrent ni session"
+
+msgid "Failed to remove alias"
+msgstr "Ti kuna lati yọ orukọ miiran kuro"
+
+msgid "Failed to remove from queue"
+msgstr "Ti kuna lati yọ kuro lati queue"
+
+msgid "Failed to remove peer from allowlist"
+msgstr "Ti kuna lati yọ ẹgbẹ kuro lati akojọ gba laaye"
+
+msgid "Failed to remove tracker: {error}"
+msgstr "Ti kuna lati yọ tracker kuro: {error}"
+
+msgid "Failed to resume torrent"
+msgstr "Ti kuna lati tẹsiwaju torrent"
+
+msgid "Failed to save configuration to file: %s"
+msgstr "Ti kuna lati fipamọ iṣeto si faili: %s"
+
+msgid "Failed to scrape torrent"
+msgstr "Ti kuna lati scrape torrent"
+
+msgid "Failed to select all files"
+msgstr "Ti kuna lati yan gbogbo awọn faili"
+
+msgid "Failed to select files"
+msgstr "Ti kuna lati yan awọn faili"
+
+msgid "Failed to select files: {error}"
+msgstr "Ti kuna lati yan awọn faili: {error}"
+
+msgid "Failed to set alias"
+msgstr "Ti kuna lati ṣeto orukọ miiran"
+
+msgid "Failed to set file priority"
+msgstr "Ti kuna lati ṣeto ipa pataki faili"
+
+msgid "Failed to set first piece priority: %s"
+msgstr "Ti kuna lati ṣeto ipa pataki apakan akọkọ: %s"
+
+msgid "Failed to set last piece priority: %s"
+msgstr "Ti kuna lati ṣeto ipa pataki apakan ikẹhin: %s"
+
+msgid "Failed to set priority"
+msgstr "Ti kuna lati ṣeto ipa pataki"
+
+msgid "Failed to set priority: {error}"
+msgstr "Ti kuna lati ṣeto ipa pataki: {error}"
+
+msgid "Failed to set sync mode"
+msgstr "Ti kuna lati ṣeto ọna sync"
+
+msgid "Failed to sign WebSocket request: %s"
+msgstr "Ti kuna lati fi aami ibeere WebSocket: %s"
+
+msgid "Failed to sign request with Ed25519: %s"
+msgstr "Ti kuna lati fi ibeere aami pẹlu Ed25519: %s"
+
+msgid "Failed to start sync"
+msgstr "Ti kuna lati bẹrẹ sync"
+
+msgid "Failed to stop daemon"
+msgstr "Ti kuna lati duro daemon"
+
+msgid "Failed to unmap port"
+msgstr "Ti kuna lati yọ port kuro"
+
+msgid "Failed to unpin content"
+msgstr "Ti kuna lati yọ pin akoonu kuro"
 
 msgid "File"
-msgstr "Fáìlì"
+msgstr "Faili"
 
 msgid "File Name"
-msgstr "Orúkọ Fáìlì"
+msgstr "Orukọ Faili"
 
 msgid "File selection not available for this torrent"
-msgstr "Ìyàn fáìlì kò sí fún torrent yìí"
+msgstr "Aṣayan faili ko wa fun torrent yii"
 
 msgid "Files"
-msgstr "Àwọn Fáìlì"
+msgstr "Awọn Faili"
+
+msgid "Filter update failed"
+msgstr "Imudojuiwọn aṣẹ ti kuna"
+
+msgid "Folder not found: {folder}"
+msgstr "Ko rii folda: {folder}"
+
+msgid "Force Announce"
+msgstr "Fi Ifiranṣẹ Mu"
+
+msgid "Found {count} potential issues"
+msgstr "Ri awọn iṣoro ti o ṣee ṣe {count}"
+
+msgid ""
+"Full configuration editing is available in the Global Config screen. Press 'g' to open it.\n"
+msgstr ""
+"Ṣiṣatunkọ iṣeto pipe wa ni iboju Iṣeto Agbaye. Tẹ 'g' lati ṣii rẹ.\n"
+
+msgid ""
+"Full configuration editing requires navigating to the Global Config screen\n"
+msgstr ""
+"Ṣiṣatunkọ iṣeto pipe nilo lati lọ si iboju Iṣeto Agbaye\n"
+
+msgid "General"
+msgstr "Gbogbogbo"
+
+msgid "General configuration - Data provider/Executor not available"
+msgstr "Iṣeto gbogbogbo - Olupese Data/Executor ko wa"
+
+msgid "Generated new API key for daemon"
+msgstr "Ti ṣẹda bọtini API tuntun fun daemon"
+
+msgid "Generating {format} torrent..."
+msgstr "Ti n ṣẹda torrent {format}..."
+
+msgid "Global"
+msgstr "Agbaye"
 
 msgid "Global Config"
-msgstr "Ètò Gbogbogbò"
+msgstr "Iṣeto Agbaye"
+
+msgid "Global Configuration"
+msgstr "Iṣeto Agbaye"
+
+msgid "Graceful shutdown timeout, forcing stop"
+msgstr "Aago duro ti o dara ti kọja, a n fi agbara duro"
+
+msgid "Graphs"
+msgstr "Awọn Girafu"
 
 msgid "Help"
-msgstr "Ìrànlọ́wọ́"
+msgstr "Iranlọwọ"
+
+msgid "High"
+msgstr "Ga"
 
 msgid "History"
-msgstr "Ìtàn"
+msgstr "Itan"
 
 msgid "ID"
 msgstr "ID"
@@ -229,617 +1447,2505 @@ msgstr "ID"
 msgid "IP"
 msgstr "IP"
 
-msgid "IP Filter"
-msgstr "Àtẹ̀jáde IP"
+msgid "IP Address"
+msgstr "Adirẹsi IP"
+
+msgid "IP filter not available"
+msgstr "Aṣẹ IP ko wa"
+
+msgid ""
+"IPCClient.get_daemon_pid: Checking pid_file=%s (home_dir=%s, exists=%s)\n"
+msgstr ""
+"IPCClient.get_daemon_pid: Ti n ṣayẹwo pid_file=%s (home_dir=%s, wa=%s)\n"
 
 msgid "IPFS"
 msgstr "IPFS"
 
+msgid "Idle"
+msgstr "Idle"
+
+msgid "Inactive"
+msgstr "Ko ti n Ṣiṣẹ"
+
+msgid "Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)"
+msgstr "Mu ọrọ pọ (-v: verbose, -vv: debug, -vvv: trace)"
+
+msgid "Info"
+msgstr "Alaye"
+
 msgid "Info Hash"
-msgstr "Hash Àlàyé"
+msgstr "Hash Alaye"
+
+msgid "Info hash copied to clipboard"
+msgstr "Hash alaye ti a ṣe afẹyinti si clipboard"
+
+msgid "Info hash: {hash}"
+msgstr "Hash alaye: {hash}"
+
+msgid "Initial Rate"
+msgstr "Iwọn Akọkọ"
+
+msgid "Initial send rate"
+msgstr "Iwọn fifiranṣẹ akọkọ"
 
 msgid "Interactive backup"
-msgstr "Ìgbàgbẹ́ ìbaraẹnisọrọ̀"
+msgstr "Backup ti o n ṣiṣẹpọ"
+
+msgid "Invalid IP address: {error}"
+msgstr "Adirẹsi IP ti ko tọ: {error}"
+
+msgid "Invalid IP range: {ip_range}"
+msgstr "Iwọn IP ti ko tọ: {ip_range}"
+
+msgid "Invalid configuration: {e}"
+msgstr "Iṣeto ti ko tọ: {e}"
+
+msgid "Invalid info hash format"
+msgstr "Fọọmu hash alaye ti ko tọ"
+
+msgid "Invalid info hash format: %s"
+msgstr "Fọọmu hash alaye ti ko tọ: %s"
+
+msgid "Invalid info hash length in magnet link"
+msgstr "Gigun hash alaye ti ko tọ ni ọna asopọ magnet"
+
+msgid ""
+"Invalid locale '{current_locale}' specified. Falling back to 'en'. Available locales: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu\n"
+msgstr ""
+"Agbegbe ti ko tọ '{current_locale}' ti a ṣe alaye. A n pada si 'en'. Awọn agbegbe ti o wa: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu\n"
+
+msgid "Invalid magnet link - missing 'xt=urn:btih:' parameter"
+msgstr "Ọna asopọ magnet ti ko tọ - o kuna 'xt=urn:btih:' parameter"
+
+msgid "Invalid magnet link format"
+msgstr "Fọọmu ọna asopọ magnet ti ko tọ"
+
+msgid "Invalid magnet link format - must start with 'magnet:?'"
+msgstr "Fọọmu ọna asopọ magnet ti ko tọ - gbọdọ bẹrẹ pẹlu 'magnet:?'"
+
+msgid "Invalid peer selection"
+msgstr "Aṣayan ẹgbẹ ti ko tọ"
+
+msgid "Invalid profile '{name}': {errors}"
+msgstr "Profaili ti ko tọ '{name}': {errors}"
+
+msgid "Invalid template '{name}': {errors}"
+msgstr "Awoṣe ti ko tọ '{name}': {errors}"
 
 msgid "Invalid torrent file format"
-msgstr "Àwọn ètò fáìlì torrent kò tọ́"
+msgstr "Fọọmu faili torrent ti ko tọ"
 
 msgid "Key"
-msgstr "Ọ̀nà"
+msgstr "Bọtini"
 
 msgid "Key not found: {key}"
-msgstr "Ọ̀nà kò rí: {key}"
+msgstr "Ko rii bọtini: {key}"
 
 msgid "Last Scrape"
-msgstr "Scrape Tó Kẹ́hìn"
+msgstr "Scrape Ikẹhin"
 
-msgid "Leechers"
-msgstr "Àwọn Olùgbà"
+msgid "Last Update"
+msgstr "Imudojuiwọn Ikẹhin"
 
 msgid "Leechers (Scrape)"
-msgstr "Àwọn Olùgbà (Scrape)"
+msgstr "Awọn Olugba (Scrape)"
+
+msgid "Loading configuration..."
+msgstr "Ti n fi iṣeto sori ẹrọ..."
+
+msgid "Loading torrent configuration..."
+msgstr "Ti n fi iṣeto torrent sori ẹrọ..."
+
+msgid "Low"
+msgstr "Kere"
 
 msgid "MIGRATED"
-msgstr "TÍ GBÉRÍ"
+msgstr "TI A ṢIPOPADA"
+
+msgid "MTU"
+msgstr "MTU"
+
+msgid "Magnet command: PID file check - exists=%s, path=%s"
+msgstr "Iṣẹ Magnet: ṣayẹwo faili PID - wa=%s, ọna=%s"
+
+msgid "Magnet link must contain 'xt=urn:btih:' parameter"
+msgstr "Ọna asopọ magnet gbọdọ ni 'xt=urn:btih:' parameter"
+
+msgid "Magnet link must start with 'magnet:?'"
+msgstr "Ọna asopọ magnet gbọdọ bẹrẹ pẹlu 'magnet:?'"
+
+msgid "Max Rate"
+msgstr "Iwọn Ti o Pọ Julọ"
+
+msgid "Max Retransmits"
+msgstr "Awọn Iṣe-ranṣẹ Ti o Pọ Julọ"
+
+msgid "Max Window Size"
+msgstr "Iwọn Window Ti o Pọ Julọ"
+
+msgid "Maximum"
+msgstr "Ti o Pọ Julọ"
+
+msgid "Maximum UDP packet size"
+msgstr "Iwọn pakiti UDP ti o pọ julọ"
+
+msgid "Maximum receive window size"
+msgstr "Iwọn window gbigba ti o pọ julọ"
+
+msgid "Maximum retransmission attempts"
+msgstr "Awọn igbiyanju iṣe-ranṣẹ ti o pọ julọ"
+
+msgid "Maximum send rate"
+msgstr "Iwọn fifiranṣẹ ti o pọ julọ"
 
 msgid "Menu"
-msgstr "Àtòjọ"
+msgstr "Akojọ"
 
 msgid "Metric"
-msgstr "Métíríkì"
+msgstr "Metiriki"
+
+msgid "Migrating checkpoint format from {from_fmt} to {to_fmt}..."
+msgstr "Ti n ṣipopada fọọmu checkpoint lati {from_fmt} si {to_fmt}..."
+
+msgid "Migration complete"
+msgstr "Iṣipopada ti pari"
+
+msgid "Min Rate"
+msgstr "Iwọn Ti o Kere Julọ"
+
+msgid "Minimum send rate"
+msgstr "Iwọn fifiranṣẹ ti o kere julọ"
+
+msgid "Model '{model}' not found in Config"
+msgstr "Ko rii Model '{model}' ni Iṣeto"
+
+msgid "Modified"
+msgstr "Ti a Ṣe Ayipada"
+
+msgid "N/A"
+msgstr "Ko Si"
 
 msgid "NAT Management"
-msgstr "Ìṣàkóso NAT"
+msgstr "Iṣakoso NAT"
 
 msgid "Name"
-msgstr "Orúkọ"
+msgstr "Orukọ"
 
 msgid "Network"
-msgstr "Nẹ́tíwọ̀kì"
+msgstr "Ẹrọ ayelujara"
+
+msgid "Network configuration (connections, timeouts, rate limits)"
+msgstr "Iṣeto ẹrọ ayelujara (awọn asopọ, awọn aago, awọn idiwọn iwọn)"
+
+msgid "Network configuration - Data provider/Executor not available"
+msgstr "Iṣeto ẹrọ ayelujara - Olupese Data/Executor ko wa"
+
+msgid "Never"
+msgstr "Rara"
 
 msgid "No"
-msgstr "Bẹ́ẹ̀ kọ́"
+msgstr "Rara"
+
+msgid "No PID file found, checking for daemon via _get_executor()"
+msgstr "Ko rii faili PID, ti n ṣayẹwo fun daemon nipasẹ _get_executor()"
 
 msgid "No active alerts"
-msgstr "Kò sí àkíyèsí tó nṣiṣẹ́"
+msgstr "Ko si awọn ikilo ti n Ṣiṣẹ"
 
 msgid "No alert rules"
-msgstr "Kò sí àwọn ìlànà àkíyèsí"
+msgstr "Ko si awọn ofin ikilo"
 
 msgid "No alert rules configured"
-msgstr "Kò sí àwọn ìlànà àkíyèsí tí a ṣètò"
+msgstr "Ko si awọn ofin ikilo ti a ṣeto"
 
 msgid "No backups found"
-msgstr "Kò sí àwọn ìgbàgbẹ́ tí a rí"
-
-msgid "No cached results"
-msgstr "Kò sí àwọn èsì tí a ṣàkójọ"
+msgstr "Ko rii awọn backup"
 
 msgid "No checkpoints"
-msgstr "Kò sí àwọn ibi ìgbéyẹ̀wò"
+msgstr "Ko si awọn checkpoint"
 
 msgid "No config file to backup"
-msgstr "Kò sí fáìlì ètò láti ṣe ìgbàgbẹ́"
+msgstr "Ko si faili iṣeto lati ṣe backup"
+
+msgid "No configuration file to backup"
+msgstr "Ko si faili iṣeto lati ṣe backup"
+
+msgid "No daemon PID file found - daemon is not running"
+msgstr "Ko rii faili PID daemon - daemon ko ti n Ṣiṣẹ"
+
+msgid "No daemon config or API key found - will create local session"
+msgstr "Ko rii iṣeto daemon tabi bọtini API - yoo ṣẹda session agbegbe"
+
+msgid ""
+"No daemon detected (PID file doesn't exist), creating local session. PID file path: %s\n"
+msgstr ""
+"Ko rii daemon (faili PID ko wa), ti n ṣẹda session agbegbe. Ọna faili PID: %s\n"
+
+msgid "No file selected"
+msgstr "Ko si faili ti a yan"
+
+msgid "No files to deselect"
+msgstr "Ko si awọn faili lati yọ kuro"
+
+msgid "No files to select"
+msgstr "Ko si awọn faili lati yan"
+
+msgid "No locales directory found"
+msgstr "Ko rii folda locales"
+
+msgid "No magnet URI provided"
+msgstr "Ko funni URI magnet"
+
+msgid "No magnet URI provided for add_magnet operation."
+msgstr "Ko funni URI magnet fun iṣẹ add_magnet."
+
+msgid "No peer selected"
+msgstr "Ko si ẹgbẹ ti a yan"
 
 msgid "No peers connected"
-msgstr "Kò sí àwọn ẹgbẹ́ tí dípọ̀"
+msgstr "Ko si awọn ẹgbẹ ti o sopọ mọ"
 
 msgid "No profiles available"
-msgstr "Kò sí àwọn àkọlé tí wà"
+msgstr "Ko si awọn profaili ti o wa"
 
 msgid "No templates available"
-msgstr "Kò sí àwọn àpẹrẹ tí wà"
+msgstr "Ko si awọn awoṣe ti o wa"
 
 msgid "No torrent active"
-msgstr "Kò sí torrent tó nṣiṣẹ́"
+msgstr "Ko si torrent ti n Ṣiṣẹ"
 
-msgid "Nodes: {count}"
-msgstr "Àwọn Nóòdù: {count}"
+msgid "No torrent path or magnet provided"
+msgstr "Ko funni ọna torrent tabi magnet"
 
-msgid "Not available"
-msgstr "Kò Wà"
+msgid "No tracker selected"
+msgstr "Ko si tracker ti a yan"
 
-msgid "Not configured"
-msgstr "Kò ṣètò"
+msgid "No trackers found"
+msgstr "Ko rii awọn tracker"
+
+msgid "Normal"
+msgstr "Deede"
 
 msgid "Not supported"
-msgstr "Kò ṣeé gbà"
+msgstr "Ko ti ni Atilẹyin"
+
+msgid "Note"
+msgstr "Akiyesi"
 
 msgid "OK"
-msgstr "Dájú"
+msgstr "Dara"
+
+msgid "Open Folder"
+msgstr "Ṣii Folda"
+
+msgid "Opened folder: {path}"
+msgstr "Ti ṣii folda: {path}"
 
 msgid "Operation not supported"
-msgstr "Ìṣẹ́ kò ṣeé gbà"
+msgstr "Iṣẹ ko ti ni Atilẹyin"
+
+msgid "Option"
+msgstr "Aṣayan"
+
+msgid "Output directory not available"
+msgstr "Ibi ipamọ oju-ọna ko wa"
+
+msgid "PEX: Failed"
+msgstr "PEX: Ti Kuna"
 
 msgid "PEX: {status}"
 msgstr "PEX: {status}"
 
+msgid "PID file contains invalid PID: %d, removing"
+msgstr "Faili PID ni PID ti ko tọ: %d, ti n yọ kuro"
+
+msgid "PID file contains invalid data: %r, removing"
+msgstr "Faili PID ni data ti ko tọ: %r, ti n yọ kuro"
+
+msgid "PID file is empty, removing"
+msgstr "Faili PID jẹ ofofo, ti n yọ kuro"
+
+msgid "Parsing files and building file tree..."
+msgstr "Ti n ṣe ayẹwo awọn faili ati kọ igi faili..."
+
+msgid "Parsing files and building hybrid metadata..."
+msgstr "Ti n ṣe ayẹwo awọn faili ati kọ metadata hybrid..."
+
+msgid "Path"
+msgstr "Ọna"
+
 msgid "Pause"
-msgstr "Dúró"
+msgstr "Duro"
+
+msgid "Pause failed: {error}"
+msgstr "Duro ti kuna: {error}"
+
+msgid "Peer banning not yet implemented. Selected peer: {ip}:{port}"
+msgstr "Fifi ẹgbẹ dẹnu ko ti ṣe imuṣẹṣẹ sibẹsibẹ. Ẹgbẹ ti a yan: {ip}:{port}"
+
+msgid "Peer {ip}:{port} banned"
+msgstr "Ẹgbẹ {ip}:{port} ti dẹnu"
 
 msgid "Peers"
-msgstr "Àwọn Ẹgbẹ́"
+msgstr "Awọn Ẹgbẹ"
+
+msgid "Per-Torrent"
+msgstr "Fun Torrent Kọọkan"
+
+msgid "Per-Torrent Config: {hash}..."
+msgstr "Iṣeto Fun Torrent Kọọkan: {hash}..."
+
+msgid "Per-Torrent Configuration"
+msgstr "Iṣeto Fun Torrent Kọọkan"
+
+msgid "Per-Torrent Configuration: {name}"
+msgstr "Iṣeto Fun Torrent Kọọkan: {name}"
+
+msgid "Per-Torrent tab - Data provider or executor not available"
+msgstr "Tab Fun Torrent Kọọkan - Olupese Data tabi executor ko wa"
+
+msgid ""
+"Per-torrent configuration - Data provider/Executor or torrent not available\n"
+msgstr ""
+"Iṣeto fun torrent kọọkan - Olupese Data/Executor tabi torrent ko wa\n"
+
+msgid ""
+"Per-torrent rate limits and priority can be configured via the CLI or executor commands.\n"
+msgstr ""
+"Awọn idiwọn iwọn fun torrent kọọkan ati ipa pataki le ṣeto nipasẹ awọn iṣẹ CLI tabi executor.\n"
 
 msgid "Performance"
-msgstr "Ìṣẹ́"
+msgstr "Iṣẹ"
 
 msgid "Pieces"
-msgstr "Àwọn Ẹyà"
+msgstr "Awọn Apakan"
+
+msgid "Please select a torrent first"
+msgstr "Jọwọ yan torrent kan ni akọkọ"
 
 msgid "Port"
-msgstr "Pọ́ọ̀tì"
+msgstr "Port"
 
-msgid "Port: {port}"
-msgstr "Pọ́ọ̀tì: {port}"
+msgid "Prefer over TCP"
+msgstr "Yan ju TCP lọ"
+
+msgid "Prefer uTP when both TCP and uTP are available"
+msgstr "Yan uTP nigba ti TCP ati uTP mejeeji wa"
+
+msgid "Preferences"
+msgstr "Awọn Aṣayan"
+
+msgid "Preferences tab - Executor not available"
+msgstr "Tab Awọn Aṣayan - Executor ko wa"
+
+msgid "Press Ctrl+C to stop the daemon"
+msgstr "Tẹ Ctrl+C lati duro daemon"
+
+msgid "Press Enter to configure this section"
+msgstr "Tẹ Enter lati ṣeto apakan yii"
 
 msgid "Priority"
-msgstr "Àkànkàn"
+msgstr "Ipa Pataki"
 
 msgid "Private"
-msgstr "Ìkọ̀kọ̀"
+msgstr "Ti Ikọkọ"
+
+msgid "Profile '{name}' not found"
+msgstr "Ko rii Profaili '{name}'"
+
+msgid "Profile applied to {path}"
+msgstr "Profaili ti a lo si {path}"
+
+msgid "Profile config written to {path}"
+msgstr "Iṣeto profaili ti a kọ si {path}"
+
+msgid "Profile: {name}"
+msgstr "Profaili: {name}"
 
 msgid "Profiles"
-msgstr "Àwọn Àkọlé"
+msgstr "Awọn Profaili"
 
 msgid "Progress"
-msgstr "Ìlọsíwájú"
+msgstr "Ilọsiwaju"
 
 msgid "Property"
-msgstr "Ohun"
+msgstr "Ọja"
 
 msgid "Proxy Config"
-msgstr "Ètò Proxy"
+msgstr "Iṣeto Proxy"
+
+msgid "Public key must be 32 bytes (64 hex characters)"
+msgstr "Bọtini gbangba gbọdọ jẹ 32 bytes (64 awọn lẹta hex)"
+
+msgid "PyYAML is required for YAML export"
+msgstr "PyYAML nilo fun gbigbe YAML jade"
+
+msgid "PyYAML is required for YAML import"
+msgstr "PyYAML nilo fun wiwọle YAML"
 
 msgid "PyYAML is required for YAML output"
-msgstr "PyYAML wúlò fún ìjádé YAML"
+msgstr "PyYAML nilo fun oju-ọna YAML"
 
 msgid "Quick Add"
-msgstr "Ìròpò Kíákíá"
+msgstr "Fi Ni Yara"
 
 msgid "Quit"
-msgstr "Jáde"
+msgstr "Jade"
+
+msgid "RTT multiplier for retransmit timeout"
+msgstr "Iye-ọpọlọpọ RTT fun aago iṣe-ranṣẹ"
+
+msgid "Rate limit configuration (global and per-torrent)"
+msgstr "Iṣeto idiwọn iwọn (agbaye ati fun torrent kọọkan)"
 
 msgid "Rate limits disabled"
-msgstr "Àwọn ààlà ìyára dínkù"
+msgstr "Awọn idiwọn iwọn ti mu duro"
 
 msgid "Rate limits set to 1024 KiB/s"
-msgstr "Àwọn ààlà ìyára ṣètò sí 1024 KiB/s"
+msgstr "Awọn idiwọn iwọn ti a ṣeto si 1024 KiB/s"
+
+msgid "Read IPC port %d from daemon config file (authoritative source)"
+msgstr "Ka port IPC %d lati faili iṣeto daemon (orisun ti o ni agbara)"
+
+msgid "Rehash: Failed"
+msgstr "Rehash: Ti Kuna"
 
 msgid "Rehash: {status}"
 msgstr "Rehash: {status}"
 
+msgid "Remaining chunks: {count}"
+msgstr "Awọn chunk ti o ku: {count}"
+
+msgid "Remove"
+msgstr "Yọ Kuro"
+
+msgid "Remove Tracker"
+msgstr "Yọ Tracker Kuro"
+
+msgid "Remove failed: {error}"
+msgstr "Yiyọ kuro ti kuna: {error}"
+
+msgid "Remove tracker not yet implemented. Selected tracker: {url}"
+msgstr "Yiyọ tracker kuro ko ti ṣe imuṣẹṣẹ sibẹsibẹ. Tracker ti a yan: {url}"
+
+msgid "Reset specific key only (otherwise resets all options)"
+msgstr "Tun ṣeto bọtini pataki nikan (bẹẹni a tun ṣeto gbogbo awọn aṣayan)"
+
+msgid "Restart daemon now?"
+msgstr "Tun bẹrẹ daemon ni bayi?"
+
+msgid "Restore complete"
+msgstr "Mu pada ti pari"
+
+msgid "Restore failed"
+msgstr "Mu pada ti kuna"
+
+msgid "Restoring checkpoint..."
+msgstr "Ti n mu checkpoint pada..."
+
 msgid "Resume"
-msgstr "Tún Bẹ̀rẹ̀"
+msgstr "Tẹsiwaju"
+
+msgid "Resume failed: {error}"
+msgstr "Tẹsiwaju ti kuna: {error}"
+
+msgid "Resume from checkpoint?"
+msgstr "Tẹsiwaju lati checkpoint?"
+
+msgid "Resuming {name}"
+msgstr "Ti n tẹsiwaju {name}"
+
+msgid "Retransmit Timeout Factor"
+msgstr "Iye-ọpọlọpọ Aago Iṣe-ranṣẹ"
 
 msgid "Rule"
-msgstr "Ìlànà"
+msgstr "Ofin"
+
+msgid "Rule not found: {ip_range}"
+msgstr "Ko rii ofin: {ip_range}"
 
 msgid "Rule not found: {name}"
-msgstr "Ìlànà kò rí: {name}"
-
-msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
-msgstr "Àwọn Ìlànà: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Àwọn Dídì: {blocks}"
+msgstr "Ko rii ofin: {name}"
 
 msgid "Running"
-msgstr "Ń Ṣiṣẹ́"
+msgstr "Ti n Ṣiṣẹ"
 
 msgid "SSL Config"
-msgstr "Ètò SSL"
+msgstr "Iṣeto SSL"
+
+msgid "Save checkpoint after reset"
+msgstr "Fipamọ checkpoint lẹhin tun ṣeto"
+
+msgid "Save checkpoint immediately after setting option"
+msgstr "Fipamọ checkpoint ni kikankan lẹhin ṣiṣeto aṣayan"
+
+msgid "Saving torrent to {path}..."
+msgstr "Ti n fipamọ torrent si {path}..."
+
+msgid "Scanning folder and calculating chunks..."
+msgstr "Ti n ṣayẹwo folda ati ṣe iṣiro awọn chunk..."
+
+msgid "Schema written to {path}"
+msgstr "Schema ti a kọ si {path}"
 
 msgid "Scrape Results"
-msgstr "Àwọn Èsì Scrape"
+msgstr "Awọn Abajade Scrape"
+
+msgid "Scrape: Failed"
+msgstr "Scrape: Ti Kuna"
 
 msgid "Scrape: {status}"
 msgstr "Scrape: {status}"
 
+msgid "Search torrents..."
+msgstr "Wa awọn torrent..."
+
+msgid "Section"
+msgstr "Apakan"
+
 msgid "Section not found: {section}"
-msgstr "Apá kò rí: {section}"
+msgstr "Ko rii apakan: {section}"
+
+msgid "Section: {section}"
+msgstr "Apakan: {section}"
+
+msgid "Security"
+msgstr "Aabo"
 
 msgid "Security Scan"
-msgstr "Ìwádìí Ààbò"
+msgstr "Iṣayẹwo Aabo"
 
-msgid "Seeders"
-msgstr "Àwọn Olùgbìn"
+msgid "Security configuration - Data provider/Executor not available"
+msgstr "Iṣeto aabo - Olupese Data/Executor ko wa"
+
+msgid "Security settings (encryption, IP filtering, SSL)"
+msgstr "Awọn iṣeto aabo (ikọkọ, aṣẹ IP, SSL)"
 
 msgid "Seeders (Scrape)"
-msgstr "Àwọn Olùgbìn (Scrape)"
+msgstr "Awọn Igbasilẹ (Scrape)"
+
+msgid "Seeding"
+msgstr "Ti n Pinpin"
+
+msgid "Seeds"
+msgstr "Awọn Igbasilẹ"
+
+msgid "Select All"
+msgstr "Yan Gbogbo"
+
+msgid "Select File Priority"
+msgstr "Yan Ipa Pataki Faili"
+
+msgid "Select Priority"
+msgstr "Yan Ipa Pataki"
+
+msgid "Select a section to configure"
+msgstr "Yan apakan kan lati ṣeto"
+
+msgid "Select a section to configure. Press Enter to edit, Escape to go back."
+msgstr "Yan apakan kan lati ṣeto. Tẹ Enter lati ṣatunkọ, Escape lati pada."
+
+msgid "Select a sub-tab to view configuration options"
+msgstr "Yan sub-tab kan lati wo awọn aṣayan iṣeto"
+
+msgid "Select a sub-tab to view torrents"
+msgstr "Yan sub-tab kan lati wo awọn torrent"
+
+msgid "Select a tab to view content"
+msgstr "Yan tab kan lati wo akoonu"
+
+msgid "Select a torrent and sub-tab to view details"
+msgstr "Yan torrent kan ati sub-tab lati wo awọn alaye"
 
 msgid "Select files to download"
-msgstr "Yàn àwọn fáìlì láti gbà"
+msgstr "Yan awọn faili lati gba"
 
 msgid "Selected"
-msgstr "Tí A Yàn"
+msgstr "Ti a Yan"
 
-msgid "Session"
-msgstr "Àkókò"
+msgid "Selected {count} file(s)"
+msgstr "Ti yan {count} faili"
+
+msgid "Set Priority"
+msgstr "Ṣeto Ipa Pataki"
+
+msgid "Set priority to {priority} for file"
+msgstr "Ṣeto ipa pataki si {priority} fun faili"
 
 msgid "Set value in global config file"
-msgstr "Ṣètò ìye nínú fáìlì ètò gbogbogbò"
+msgstr "Ṣeto iye ni faili iṣeto agbaye"
 
 msgid "Set value in project local ccbt.toml"
-msgstr "Ṣètò ìye nínú ccbt.toml agbègbè iṣẹ́"
+msgstr "Ṣeto iye ni ccbt.toml agbegbe iṣẹ"
 
 msgid "Severity"
-msgstr "Ìwọ̀n"
+msgstr "Iwọn"
 
 msgid "Show specific key path (e.g. network.listen_port)"
-msgstr "Fihàn ọ̀nà ọ̀nà pàtàkì (àpẹrẹ. network.listen_port)"
+msgstr "Ṣe afihan ọna bọtini pataki (apẹrẹ. network.listen_port)"
 
 msgid "Show specific section key path (e.g. network)"
-msgstr "Fihàn ọ̀nà ọ̀nà apá pàtàkì (àpẹrẹ. network)"
+msgstr "Ṣe afihan ọna bọtini apakan pataki (apẹrẹ. network)"
 
 msgid "Size"
-msgstr "Ìwọ̀n"
+msgstr "Iwọn"
 
 msgid "Skip confirmation prompt"
-msgstr "Fò ìbéèrè ìjẹ́rìí"
+msgstr "Fọwọsi ikilo jẹrisi"
 
 msgid "Skip daemon restart even if needed"
-msgstr "Fò títún bẹ̀rẹ̀ daemon bí ó tilẹ̀ jẹ́ pé ó wúlò"
+msgstr "Fọwọsi tun bẹrẹ daemon paapaa ti o ba nilo"
 
 msgid "Snapshot failed: {error}"
-msgstr "Àwòrán kò ṣe: {error}"
+msgstr "Snapshot ti kuna: {error}"
 
 msgid "Snapshot saved to {path}"
-msgstr "Àwòrán tí a fipamọ́ sí {path}"
+msgstr "Snapshot ti a fipamọ si {path}"
+
+msgid ""
+"Socket connection test to %s:%d failed (result=%d). Port may not be open or firewall blocking. Proceeding with HTTP check anyway.\n"
+msgstr ""
+"Idanwo asopọ socket si %s:%d ti kuna (abajade=%d). Port le ma ṣii tabi firewall ti dẹnu. A n tẹsiwaju pẹlu ṣayẹwo HTTP paapaa.\n"
+
+msgid ""
+"Socket test returned 10035 (WSAEWOULDBLOCK) on Windows for %s:%d. This may be a false positive - proceeding with HTTP check.\n"
+msgstr ""
+"Idanwo socket pada 10035 (WSAEWOULDBLOCK) lori Windows fun %s:%d. Eyi le jẹ aṣiṣe - a n tẹsiwaju pẹlu ṣayẹwo HTTP.\n"
+
+msgid "Source path does not exist: %s"
+msgstr "Ọna orisun ko wa: %s"
+
+msgid "Starting daemon..."
+msgstr "Ti n bẹrẹ daemon..."
+
+msgid "Starting file verification..."
+msgstr "Ti n bẹrẹ jẹrisi faili..."
 
 msgid "Status"
-msgstr "Ìpàdé"
+msgstr "Ipo"
 
 msgid "Status: "
-msgstr "Ìpàdé: "
+msgstr "Ipo: "
+
+msgid "Stopping daemon for restart..."
+msgstr "Ti n duro daemon fun tun bẹrẹ..."
+
+msgid "Stopping daemon..."
+msgstr "Ti n duro daemon..."
+
+msgid "Stopping daemon... ({elapsed:.1f}s)"
+msgstr "Ti n duro daemon... ({elapsed:.1f}s)"
+
+msgid "Storage"
+msgstr "Ibi Ipamọ"
+
+msgid "Storage configuration - Data provider/Executor not available"
+msgstr "Iṣeto ibi ipamọ - Olupese Data/Executor ko wa"
 
 msgid "Supported"
-msgstr "Tí A Gbà"
+msgstr "Ti ni Atilẹyin"
 
 msgid "System Capabilities"
-msgstr "Àwọn Agbára Ètò"
+msgstr "Awọn Agbara Eto"
 
 msgid "System Capabilities Summary"
-msgstr "Àkójọ Àwọn Agbára Ètò"
+msgstr "Akojọ Awọn Agbara Eto"
 
 msgid "System Resources"
-msgstr "Àwọn Ohun Ètò"
+msgstr "Awọn Ohun Eto"
+
+msgid "System recommendations:"
+msgstr "Awọn imọran eto:"
+
+msgid "Template '{name}' not found"
+msgstr "Ko rii Awoṣe '{name}'"
+
+msgid "Template applied to {path}"
+msgstr "Awoṣe ti a lo si {path}"
+
+msgid "Template config written to {path}"
+msgstr "Iṣeto awoṣe ti a kọ si {path}"
+
+msgid "Template: {name}"
+msgstr "Awoṣe: {name}"
 
 msgid "Templates"
-msgstr "Àwọn Àpẹrẹ"
+msgstr "Awọn Awoṣe"
+
+msgid "Templates: {templates}"
+msgstr "Awọn Awoṣe: {templates}"
+
+msgid "This will modify your configuration file. Continue?"
+msgstr "Eyi yoo ṣe ayipada faili iṣeto rẹ. Tẹsiwaju?"
+
+msgid ""
+"Timeout checking daemon accessibility (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+"Aago nitori ṣayẹwo wiwọle daemon (igbiyanju %d/%d, ti lo %.1fs), a n tun gbiyanju ni %.1fs...\n"
+
+msgid ""
+"Timeout checking daemon accessibility after %d attempts (elapsed %.1fs)\n"
+msgstr ""
+"Aago nitori ṣayẹwo wiwọle daemon lẹhin awọn igbiyanju %d (ti lo %.1fs)\n"
+
+msgid ""
+"Timeout checking daemon status at %s (daemon may be starting up or overloaded)\n"
+msgstr ""
+"Aago nitori ṣayẹwo ipo daemon ni %s (daemon le ti n bẹrẹ tabi ti o pọ julọ)\n"
 
 msgid "Timestamp"
-msgstr "Àkókò Àmì"
+msgstr "Aago"
+
+msgid "Top profile entries:"
+msgstr "Awọn iforukọsilẹ profaili ti o ga julọ:"
 
 msgid "Torrent Config"
-msgstr "Ètò Torrent"
+msgstr "Iṣeto Torrent"
 
 msgid "Torrent Status"
-msgstr "Ìpàdé Torrent"
+msgstr "Ipo Torrent"
 
 msgid "Torrent file not found"
-msgstr "Fáìlì torrent kò rí"
+msgstr "Ko rii faili torrent"
 
 msgid "Torrent not found"
-msgstr "Torrent kò rí"
+msgstr "Ko rii torrent"
+
+msgid "Torrent paused"
+msgstr "Torrent ti duro"
+
+msgid "Torrent removed"
+msgstr "Torrent ti yọ kuro"
+
+msgid "Torrent resumed"
+msgstr "Torrent ti tẹsiwaju"
+
+msgid "Torrent saved to {path}"
+msgstr "Torrent ti a fipamọ si {path}"
+
+msgid "Torrent {hash}... not found"
+msgstr "Ko rii Torrent {hash}..."
 
 msgid "Torrents"
-msgstr "Àwọn Torrent"
+msgstr "Awọn Torrent"
+
+msgid "Torrents tab - Data provider or executor not available"
+msgstr "Tab Awọn Torrent - Olupese Data tabi executor ko wa"
 
 msgid "Torrents: {count}"
-msgstr "Àwọn Torrent: {count}"
+msgstr "Awọn Torrent: {count}"
 
-msgid "Tracker Scrape"
-msgstr "Scrape Tracker"
+msgid "Total chunks: {count}"
+msgstr "Lapapọ awọn chunk: {count}"
+
+msgid "Tracker removed: {url}"
+msgstr "Tracker ti yọ kuro: {url}"
+
+msgid "Trackers"
+msgstr "Awọn Tracker"
 
 msgid "Type"
-msgstr "Ìrí"
+msgstr "Iru"
+
+msgid "URL"
+msgstr "URL"
+
+msgid "Unexpected error checking daemon status at %s: %s"
+msgstr "Aṣiṣe ti ko reti nitori ṣayẹwo ipo daemon ni %s: %s"
 
 msgid "Unknown"
-msgstr "Àìmọ̀"
+msgstr "Aimọ"
+
+msgid "Unknown error"
+msgstr "Aṣiṣe aimọ"
+
+msgid "Unknown operation: %s"
+msgstr "Iṣẹ aimọ: %s"
 
 msgid "Unknown subcommand"
-msgstr "Àṣẹ kékeré àìmọ̀"
+msgstr "Iṣẹ-ẹlẹhin aimọ"
 
 msgid "Unknown subcommand: {sub}"
-msgstr "Àṣẹ kékeré àìmọ̀: {sub}"
+msgstr "Iṣẹ-ẹlẹhin aimọ: {sub}"
+
+msgid "Unlimited"
+msgstr "Ailopin"
+
+msgid "Updated config file with daemon configuration"
+msgstr "Ti ṣe imudojuiwọn faili iṣeto pẹlu iṣeto daemon"
 
 msgid "Upload"
-msgstr "Ìgbékalẹ̀"
+msgstr "Gbigbe Soke"
+
+msgid "Upload Limit"
+msgstr "Idiwọn Gbigbe Soke"
+
+msgid "Upload Rate"
+msgstr "Iwọn Gbigbe Soke"
 
 msgid "Upload Speed"
-msgstr "Ìyára Ìgbékalẹ̀"
+msgstr "Iyara Gbigbe Soke"
+
+msgid "Uploading"
+msgstr "Ti n Gbigbe Soke"
 
 msgid "Uptime: {uptime:.1f}s"
-msgstr "Àkókò Ṣiṣẹ́: {uptime:.1f}s"
+msgstr "Aago Ṣiṣẹ: {uptime:.1f}s"
 
 msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
-msgstr "Lílò: alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr "Lilo: alerts list|list-active|add|remove|clear|load|save|test ..."
 
 msgid "Usage: backup <info_hash> <dest>"
-msgstr "Lílò: backup <info_hash> <dest>"
+msgstr "Lilo: backup <info_hash> <dest>"
 
 msgid "Usage: checkpoint list"
-msgstr "Lílò: checkpoint list"
+msgstr "Lilo: checkpoint list"
 
 msgid "Usage: config [show|get|set|reload] ..."
-msgstr "Lílò: config [show|get|set|reload] ..."
+msgstr "Lilo: config [show|get|set|reload] ..."
 
 msgid "Usage: config get <key.path>"
-msgstr "Lílò: config get <key.path>"
+msgstr "Lilo: config get <key.path>"
 
 msgid "Usage: config set <key.path> <value>"
-msgstr "Lílò: config set <key.path> <value>"
+msgstr "Lilo: config set <key.path> <value>"
 
 msgid "Usage: config_backup list|create [desc]|restore <file>"
-msgstr "Lílò: config_backup list|create [desc]|restore <file>"
+msgstr "Lilo: config_backup list|create [desc]|restore <file>"
 
 msgid "Usage: config_diff <file1> <file2>"
-msgstr "Lílò: config_diff <file1> <file2>"
+msgstr "Lilo: config_diff <file1> <file2>"
 
 msgid "Usage: config_export <toml|json|yaml> <output>"
-msgstr "Lílò: config_export <toml|json|yaml> <output>"
+msgstr "Lilo: config_export <toml|json|yaml> <output>"
 
 msgid "Usage: config_import <toml|json|yaml> <input>"
-msgstr "Lílò: config_import <toml|json|yaml> <input>"
+msgstr "Lilo: config_import <toml|json|yaml> <input>"
+
+msgid "Usage: disk [show|stats|config <key> <value>|monitor]"
+msgstr "Lilo: disk [show|stats|config <key> <value>|monitor]"
 
 msgid "Usage: export <path>"
-msgstr "Lílò: export <path>"
+msgstr "Lilo: export <path>"
 
 msgid "Usage: import <path>"
-msgstr "Lílò: import <path>"
+msgstr "Lilo: import <path>"
 
 msgid "Usage: limits [show|set] <info_hash> [down up]"
-msgstr "Lílò: limits [show|set] <info_hash> [down up]"
+msgstr "Lilo: limits [show|set] <info_hash> [down up]"
 
 msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
-msgstr "Lílò: limits set <info_hash> <down_kib> <up_kib>"
+msgstr "Lilo: limits set <info_hash> <down_kib> <up_kib>"
 
-msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
-msgstr "Lílò: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
+msgid ""
+"Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]\n"
+msgstr ""
+"Lilo: metrics show [system|performance|all] | metrics export [json|prometheus] [output]\n"
+
+msgid "Usage: network [show|stats|config <key> <value>|optimize|monitor]"
+msgstr "Lilo: network [show|stats|config <key> <value>|optimize|monitor]"
 
 msgid "Usage: profile list | profile apply <name>"
-msgstr "Lílò: profile list | profile apply <name>"
+msgstr "Lilo: profile list | profile apply <name>"
 
 msgid "Usage: restore <backup_file>"
-msgstr "Lílò: restore <backup_file>"
+msgstr "Lilo: restore <backup_file>"
 
 msgid "Usage: template list | template apply <name> [merge]"
-msgstr "Lílò: template list | template apply <name> [merge]"
+msgstr "Lilo: template list | template apply <name> [merge]"
 
 msgid "Use --confirm to proceed with reset"
-msgstr "Lo --confirm láti tẹ̀síwájú pẹ̀lú títún ṣètò"
+msgstr "Lo --confirm lati tẹsiwaju pẹlu tun ṣeto"
+
+msgid "Use --confirm to proceed with restore"
+msgstr "Lo --confirm lati tẹsiwaju pẹlu mu pada"
+
+msgid "Use --force to force kill"
+msgstr "Lo --force lati fi agbara pa"
+
+msgid "Using IPC port %d from main config"
+msgstr "Nlo port IPC %d lati iṣeto pataki"
+
+msgid "Using daemon executor for magnet command"
+msgstr "Nlo executor daemon fun iṣẹ magnet"
+
+msgid "Using default IPC port 8080 (daemon config file may not exist)"
+msgstr "Nlo port IPC aiyipada 8080 (faili iṣeto daemon le ma wa)"
+
+msgid "V1 torrent generation not yet implemented"
+msgstr "Ṣiṣẹda torrent V1 ko ti ṣe imuṣẹṣẹ sibẹsibẹ"
 
 msgid "VALID"
-msgstr "TỌ́"
+msgstr "TI TỌ"
 
 msgid "Value"
-msgstr "Ìye"
+msgstr "Iye"
+
+msgid ""
+"Verification complete: {verified} verified, {failed} failed out of {total}\n"
+msgstr ""
+"Jẹrisi ti pari: {verified} ti a jẹrisi, {failed} ti kuna lati {total}\n"
+
+msgid "Verification failed: {error}"
+msgstr "Jẹrisi ti kuna: {error}"
+
+msgid "Verify Files"
+msgstr "Jẹrisi Awọn Faili"
+
+msgid "Warnings:"
+msgstr "Awọn Ikilo:"
+
+msgid "WebSocket error: %s"
+msgstr "Aṣiṣe WebSocket: %s"
+
+msgid "WebSocket receive loop error: %s"
+msgstr "Aṣiṣe loop gbigba WebSocket: %s"
 
 msgid "Welcome"
-msgstr "Káàbọ̀"
+msgstr "Kaabo"
+
+msgid ""
+"Windows-specific error checking daemon (os.kill() issue): %s - no PID file found, will create local session\n"
+msgstr ""
+"Aṣiṣe Windows pataki nitori ṣayẹwo daemon (iṣoro os.kill()): %s - ko rii faili PID, yoo ṣẹda session agbegbe\n"
+
+msgid "Writing export file..."
+msgstr "Ti n kọ faili gbigbe jade..."
+
+msgid "XET Folders"
+msgstr "Awọn Folda XET"
 
 msgid "Xet"
 msgstr "Xet"
 
 msgid "Yes"
-msgstr "Bẹ́ẹ̀ni"
+msgstr "Bẹẹni"
 
 msgid "Yes (BEP 27)"
-msgstr "Bẹ́ẹ̀ni (BEP 27)"
+msgstr "Bẹẹni (BEP 27)"
+
+msgid "[blue]Progress: {verified}/{total} pieces verified[/blue]"
+msgstr "[blue]Ilọsiwaju: {verified}/{total} awọn apakan ti a jẹrisi[/blue]"
+
+msgid "[blue]Running: {command}[/blue]"
+msgstr "[blue]Ti n Ṣiṣẹ: {command}[/blue]"
+
+msgid ""
+"[bold]Aliases ({count}):[/bold]\n"
+"\n"
+msgstr ""
+"[bold]Awọn Orukọ Miiran ({count}):[/bold]\n"
+"\n"
+
+msgid ""
+"[bold]Allowlist ({count} peers):[/bold]\n"
+"\n"
+msgstr ""
+"[bold]Akojọ Gba Laye ({count} awọn ẹgbẹ):[/bold]\n"
+"\n"
+
+msgid "[bold]Configuration:[/bold]"
+msgstr "[bold]Iṣeto:[/bold]"
+
+msgid ""
+"[bold]Discovering NAT devices...[/bold]\n"
+"\n"
+msgstr ""
+"[bold]Ti n Rii Awọn Ẹrọ NAT...[/bold]\n"
+"\n"
+
+msgid "[bold]Mapping {protocol} port {port}...[/bold]"
+msgstr "[bold]Ti n Ṣeto port {protocol} {port}...[/bold]"
+
+msgid ""
+"[bold]NAT Traversal Status[/bold]\n"
+"\n"
+msgstr ""
+"[bold]Ipo NAT Traversal[/bold]\n"
+"\n"
+
+msgid "[bold]Removing {protocol} port mapping for port {port}...[/bold]"
+msgstr "[bold]Ti n Yọ iṣeto port {protocol} fun port {port} kuro...[/bold]"
+
+msgid ""
+"[bold]Sync Mode for: {path}[/bold]\n"
+"\n"
+msgstr ""
+"[bold]Ọna Sync fun: {path}[/bold]\n"
+"\n"
+
+msgid ""
+"[bold]Sync Status for: {path}[/bold]\n"
+"\n"
+msgstr ""
+"[bold]Ipo Sync fun: {path}[/bold]\n"
+"\n"
+
+msgid ""
+"[bold]Xet Cache Information[/bold]\n"
+"\n"
+msgstr ""
+"[bold]Alaye Xet Cache[/bold]\n"
+"\n"
+
+msgid ""
+"[bold]Xet Deduplication Cache Statistics[/bold]\n"
+"\n"
+msgstr ""
+"[bold]Awọn Iṣiro Xet Deduplication Cache[/bold]\n"
+"\n"
+
+msgid ""
+"[bold]Xet Protocol Status[/bold]\n"
+"\n"
+msgstr ""
+"[bold]Ipo Xet Protocol[/bold]\n"
+"\n"
 
 msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
-msgstr "[cyan]Ń ṣàfikún ìjápọ̀ magnet àti gbà metadata...[/cyan]"
+msgstr "[cyan]Ti n Fi ọna asopọ magnet kun ati gba metadata...[/cyan]"
+
+msgid "[cyan]Checking for existing daemon instance...[/cyan]"
+msgstr "[cyan]Ti n Ṣayẹwo fun instance daemon ti o wa tẹlẹ...[/cyan]"
+
+msgid "[cyan]Creating {format} torrent...[/cyan]"
+msgstr "[cyan]Ti n Ṣẹda torrent {format}...[/cyan]"
+
+msgid "[cyan]Download:[/cyan] {rate:.2f} KiB/s"
+msgstr "[cyan]Gbigba:[/cyan] {rate:.2f} KiB/s"
 
 msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
-msgstr "[cyan]Ń Gbà: {progress:.1f}% ({peers} àwọn ẹgbẹ́)[/cyan]"
+msgstr "[cyan]Ti n Gba: {progress:.1f}% ({peers} awọn ẹgbẹ)[/cyan]"
 
-msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
-msgstr "[cyan]Ń Gbà: {progress:.1f}% ({rate:.2f} MB/s, {peers} àwọn ẹgbẹ́)[/cyan]"
+msgid ""
+"[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]\n"
+msgstr ""
+"[cyan]Ti n Gba: {progress:.1f}% ({rate:.2f} MB/s, {peers} awọn ẹgbẹ)[/cyan]\n"
+
+msgid "[cyan]Initializing configuration...[/cyan]"
+msgstr "[cyan]Ti n Bẹrẹ iṣeto...[/cyan]"
 
 msgid "[cyan]Initializing session components...[/cyan]"
-msgstr "[cyan]Ń bẹ̀rẹ̀ àwọn apá àkókò...[/cyan]"
+msgstr "[cyan]Ti n Bẹrẹ awọn apakan session...[/cyan]"
+
+msgid "[cyan]Loading filter from: {file_path}[/cyan]"
+msgstr "[cyan]Ti n Fi aṣẹ sori ẹrọ lati: {file_path}[/cyan]"
+
+msgid "[cyan]Parsed tonic link: {name}[/cyan]"
+msgstr "[cyan]Ọna asopọ tonic ti a ṣe ayẹwo: {name}[/cyan]"
+
+msgid "[cyan]Restarting daemon...[/cyan]"
+msgstr "[cyan]Ti n Tun bẹrẹ daemon...[/cyan]"
+
+msgid ""
+"[cyan]Running diagnostic checks...[/cyan]\n"
+"\n"
+msgstr ""
+"[cyan]Ti n Ṣe awọn iṣayẹwo iwadii...[/cyan]\n"
+"\n"
+
+msgid "[cyan]Starting daemon in background...[/cyan]"
+msgstr "[cyan]Ti n Bẹrẹ daemon ni ẹhin...[/cyan]"
+
+msgid "[cyan]Starting daemon in foreground mode...[/cyan]"
+msgstr "[cyan]Ti n Bẹrẹ daemon ni ọna iwaju...[/cyan]"
+
+msgid "[cyan]Starting sync for: {name}[/cyan]"
+msgstr "[cyan]Ti n Bẹrẹ sync fun: {name}[/cyan]"
+
+msgid "[cyan]Testing proxy connection to {host}:{port}...[/cyan]"
+msgstr "[cyan]Ti n Danwo asopọ proxy si {host}:{port}...[/cyan]"
+
+msgid "[cyan]Torrents:[/cyan] {num_torrents}"
+msgstr "[cyan]Awọn Torrent:[/cyan] {num_torrents}"
 
 msgid "[cyan]Troubleshooting:[/cyan]"
-msgstr "[cyan]Ìṣọdọtun:[/cyan]"
+msgstr "[cyan]Iṣoro:[/cyan]"
 
-msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
-msgstr "[cyan]Ń dúró fún àwọn apá àkókò láti ṣeé ṣe (ààlà 60s)...[/cyan]"
+msgid "[cyan]Updating filter lists from {count} URL(s)...[/cyan]"
+msgstr "[cyan]Ti n Ṣe imudojuiwọn awọn akojọ aṣẹ lati {count} URL...[/cyan]"
 
-msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
-msgstr "[dim]Rò pé o lo àwọn àṣẹ daemon tàbí dákẹ́ daemon kíákíá: 'btbt daemon exit'[/dim]"
+msgid "[cyan]Upload:[/cyan] {rate:.2f} KiB/s"
+msgstr "[cyan]Gbigbe Soke:[/cyan] {rate:.2f} KiB/s"
+
+msgid "[cyan]Uptime:[/cyan] {uptime:.1f}s"
+msgstr "[cyan]Aago Ṣiṣẹ:[/cyan] {uptime:.1f}s"
+
+msgid "[cyan]Using custom IPC port: {port}[/cyan]"
+msgstr "[cyan]Nlo port IPC aṣa: {port}[/cyan]"
+
+msgid "[cyan]Waiting for daemon to be ready...[/cyan]"
+msgstr "[cyan]Ti n Duro fun daemon lati ṣetan...[/cyan]"
+
+msgid "[dim]  uv run btbt daemon start --foreground[/dim]"
+msgstr "[dim]  uv run btbt daemon start --foreground[/dim]"
+
+msgid ""
+"[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]\n"
+msgstr ""
+"[dim]Ṣe akiyesi lilo awọn iṣẹ daemon tabi duro daemon ni akọkọ: 'btbt daemon exit'[/dim]\n"
+
+msgid ""
+"[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]\n"
+msgstr ""
+"[dim]Daemon le ti n bẹrẹ sibẹsibẹ. Lo 'btbt daemon status' lati ṣayẹwo.[/dim]\n"
+
+msgid "[dim]Info hash v1 (SHA-1): {hash}...[/dim]"
+msgstr "[dim]Hash alaye v1 (SHA-1): {hash}...[/dim]"
+
+msgid "[dim]Info hash v2 (SHA-256): {hash}...[/dim]"
+msgstr "[dim]Hash alaye v2 (SHA-256): {hash}...[/dim]"
+
+msgid "[dim]No active port mappings[/dim]"
+msgstr "[dim]Ko si awọn iṣeto port ti n Ṣiṣẹ[/dim]"
+
+msgid "[dim]Output: {path}[/dim]"
+msgstr "[dim]Oju-ọna: {path}[/dim]"
+
+msgid "[dim]Please restart manually: 'btbt daemon restart'[/dim]"
+msgstr "[dim]Jọwọ tun bẹrẹ ni ọwọ: 'btbt daemon restart'[/dim]"
+
+msgid "[dim]Please restart the daemon manually: 'btbt daemon restart'[/dim]"
+msgstr "[dim]Jọwọ tun bẹrẹ daemon ni ọwọ: 'btbt daemon restart'[/dim]"
+
+msgid "[dim]Protocol: {method}[/dim]"
+msgstr "[dim]Protocol: {method}[/dim]"
+
+msgid "[dim]Source: {path}[/dim]"
+msgstr "[dim]Orisun: {path}[/dim]"
+
+msgid "[dim]Trackers: {count}[/dim]"
+msgstr "[dim]Awọn Tracker: {count}[/dim]"
+
+msgid ""
+"[dim]Try running with --foreground flag to see detailed error output:[/dim]\n"
+msgstr ""
+"[dim]Gbiyanju ṣiṣẹ pẹlu aami --foreground lati wo oju-ọna aṣiṣe ti o pọ:[/dim]\n"
+
+msgid "[dim]Use 'btbt daemon status' to check daemon status[/dim]"
+msgstr "[dim]Lo 'btbt daemon status' lati ṣayẹwo ipo daemon[/dim]"
+
+msgid "[dim]Use -v flag for more details or check daemon logs[/dim]"
+msgstr "[dim]Lo aami -v fun awọn alaye diẹ sii tabi ṣayẹwo awọn log daemon[/dim]"
+
+msgid "[dim]Web seeds: {count}[/dim]"
+msgstr "[dim]Awọn Igbasilẹ Web: {count}[/dim]"
+
+msgid "[green]ALLOWED[/green]"
+msgstr "[green]TI GBA LAYE[/green]"
+
+msgid "[green]Active Protocol:[/green] {method}"
+msgstr "[green]Protocol Ti n Ṣiṣẹ:[/green] {method}"
+
+msgid "[green]Added alert rule {name}[/green]"
+msgstr "[green]Ti fi ofin ikilo {name} kun[/green]"
+
+msgid "[green]Added to IPFS:[/green] {cid}"
+msgstr "[green]Ti fi kun si IPFS:[/green] {cid}"
 
 msgid "[green]All files selected[/green]"
-msgstr "[green]Àwọn fáìlì gbogbo tí a yàn[/green]"
+msgstr "[green]Gbogbo awọn faili ti a yan[/green]"
 
 msgid "[green]Applied auto-tuned configuration[/green]"
-msgstr "[green]Ètò tí a ṣàtúnṣe laifọwọ́yí ti wà[/green]"
+msgstr "[green]Ti lo iṣeto ti a tun aifọwọyi[/green]"
 
 msgid "[green]Applied profile {name}[/green]"
-msgstr "[green]Àkọlé {name} ti wà[/green]"
+msgstr "[green]Ti lo profaili {name}[/green]"
 
 msgid "[green]Applied template {name}[/green]"
-msgstr "[green]Àpẹrẹ {name} ti wà[/green]"
+msgstr "[green]Ti lo awoṣe {name}[/green]"
+
+msgid "[green]Applying {preset} optimizations...[/green]"
+msgstr "[green]Ti n Lo awọn optimization {preset}...[/green]"
 
 msgid "[green]Backup created: {path}[/green]"
-msgstr "[green]Ìgbàgbẹ́ ti ṣẹ̀dá: {path}[/green]"
+msgstr "[green]Backup ti a ṣẹda: {path}[/green]"
+
+msgid "[green]Benchmark results:[/green] {results}"
+msgstr "[green]Awọn abajade benchmark:[/green] {results}"
+
+msgid ""
+"[green]CA certificates path set to {path}. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]Ọna awọn iwe-ẹri CA ti a ṣeto si {path}. Iṣeto ti a fipamọ si {config_file}[/green]\n"
+
+msgid "[green]Checkpoint for {hash} is valid[/green]"
+msgstr "[green]Checkpoint fun {hash} ti tọ[/green]"
+
+msgid "[green]Checkpoint for {info_hash} is valid[/green]"
+msgstr "[green]Checkpoint fun {info_hash} ti tọ[/green]"
+
+msgid "[green]Checkpoint saved[/green]"
+msgstr "[green]Checkpoint ti a fipamọ[/green]"
+
+msgid "[green]Checkpoint valid[/green]"
+msgstr "[green]Checkpoint ti tọ[/green]"
 
 msgid "[green]Cleaned up {count} old checkpoints[/green]"
-msgstr "[green]A ti ṣe ìmọ́tẹ̀ {count} àwọn ibi ìgbéyẹ̀wò tí ó kù[/green]"
+msgstr "[green]Ti nu awọn checkpoint atijọ {count} kuro[/green]"
 
 msgid "[green]Cleared active alerts[/green]"
-msgstr "[green]Àwọn àkíyèsí tó nṣiṣẹ́ ti pa[/green]"
+msgstr "[green]Ti nu awọn ikilo ti n Ṣiṣẹ kuro[/green]"
+
+msgid "[green]Cleared all active alerts[/green]"
+msgstr "[green]Ti nu gbogbo awọn ikilo ti n Ṣiṣẹ kuro[/green]"
+
+msgid "[green]Cleared queue[/green]"
+msgstr "[green]Ti nu queue kuro[/green]"
+
+msgid ""
+"[green]Client certificate set. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]Iwe-ẹri onibara ti a ṣeto. Iṣeto ti a fipamọ si {config_file}[/green]\n"
 
 msgid "[green]Configuration reloaded[/green]"
-msgstr "[green]Ètò ti tún ṣe[/green]"
+msgstr "[green]Iṣeto ti a tun fi sori ẹrọ[/green]"
 
 msgid "[green]Configuration restored[/green]"
-msgstr "[green]Ètò ti padà[/green]"
+msgstr "[green]Iṣeto ti a mu pada[/green]"
+
+msgid "[green]Connected to daemon[/green]"
+msgstr "[green]Ti sopọ mọ daemon[/green]"
 
 msgid "[green]Connected to {count} peer(s)[/green]"
-msgstr "[green]Tí dípọ̀ sí {count} ẹgbẹ́[/green]"
+msgstr "[green]Ti sopọ mọ {count} ọmọ-ẹgbẹ[/green]"
+
+msgid "[green]Content pinned[/green]"
+msgstr "[green]Akonu ti a fi sinu[/green]"
+
+msgid "[green]Content saved to:[/green] {output}"
+msgstr "[green]Akonu ti a fi pamọ si:[/green] {output}"
+
+msgid "[green]Daemon is running[/green] (PID: {pid})"
+msgstr "[green]Daemon n ṣiṣẹ[/green] (PID: {pid})"
+
+msgid "[green]Daemon restarted successfully[/green]"
+msgstr "[green]Daemon ti a tun bẹrẹ ni aṣeyọri[/green]"
 
 msgid "[green]Daemon status: {status}[/green]"
-msgstr "[green]Ìpàdé daemon: {status}[/green]"
+msgstr "[green]Ipo daemon: {status}[/green]"
+
+msgid "[green]Daemon stopped gracefully[/green]"
+msgstr "[green]Daemon ti a duro pẹlẹpẹlẹ[/green]"
+
+msgid "[green]Deleted checkpoint for {hash}[/green]"
+msgstr "[green]A ti pa aami-ipamọ fun {hash}[/green]"
+
+msgid "[green]Deleted checkpoint for {info_hash}[/green]"
+msgstr "[green]A ti pa aami-ipamọ fun {info_hash}[/green]"
+
+msgid "[green]Deselected all files[/green]"
+msgstr "[green]A ti yọ gbogbo awọn faili kuro[/green]"
+
+msgid "[green]Deselected {count} file(s)[/green]"
+msgstr "[green]A ti yọ {count} faili kuro[/green]"
 
 msgid "[green]Download completed, stopping session...[/green]"
-msgstr "[green]Ìgbàsílẹ̀ ti parí, ń dákẹ́ àkókò...[/green]"
+msgstr "[green]Ṣiṣe igbasilẹ ti pari, n duro aṣẹ...[/green]"
 
 msgid "[green]Download completed: {name}[/green]"
-msgstr "[green]Ìgbàsílẹ̀ ti parí: {name}[/green]"
+msgstr "[green]Ṣiṣe igbasilẹ ti pari: {name}[/green]"
 
 msgid "[green]Exported checkpoint to {path}[/green]"
-msgstr "[green]Ibi ìgbéyẹ̀wò ti jádé sí {path}[/green]"
+msgstr "[green]A ti jade aami-ipamọ si {path}[/green]"
 
 msgid "[green]Exported configuration to {out}[/green]"
-msgstr "[green]Ètò ti jádé sí {out}[/green]"
+msgstr "[green]A ti jade iṣeto si {out}[/green]"
+
+msgid "[green]External IP:[/green] {ip}"
+msgstr "[green]IP ita:[/green] {ip}"
+
+msgid "[green]Found checkpoint for: {torrent_name}[/green]"
+msgstr "[green]A ri aami-ipamọ fun: {torrent_name}[/green]"
 
 msgid "[green]Imported configuration[/green]"
-msgstr "[green]Ètò ti wọlé[/green]"
+msgstr "[green]A ti wọle iṣeto[/green]"
+
+msgid "[green]Loaded alert rules from {path}[/green]"
+msgstr "[green]A ti gbe awọn ofin ikilo jade lati {path}[/green]"
+
+msgid "[green]Loaded {count} alert rules from {path}[/green]"
+msgstr "[green]A ti gbe {count} ofin ikilo jade lati {path}[/green]"
 
 msgid "[green]Loaded {count} rules[/green]"
-msgstr "[green]{count} ìlànà ti wọlé[/green]"
+msgstr "[green]A ti gbe {count} ofin jade[/green]"
+
+msgid "[green]Locale set to: {locale_code}[/green]"
+msgstr "[green]Agbegbe ti a ṣeto si: {locale_code}[/green]"
 
 msgid "[green]Magnet added successfully: {hash}...[/green]"
-msgstr "[green]Ìjápọ̀ magnet ti ṣàfikún ní àṣeyọrí: {hash}...[/green]"
+msgstr "[green]Magnet ti a fi kun ni aṣeyọri: {hash}...[/green]"
 
 msgid "[green]Magnet added to daemon: {hash}[/green]"
-msgstr "[green]Ìjápọ̀ magnet ti ṣàfikún sí daemon: {hash}[/green]"
+msgstr "[green]Magnet ti a fi kun si daemon: {hash}[/green]"
+
+msgid "[green]Magnet link added to daemon: {info_hash}[/green]"
+msgstr "[green]Ọna asopọ Magnet ti a fi kun si daemon: {info_hash}[/green]"
 
 msgid "[green]Metadata fetched successfully![/green]"
-msgstr "[green]Metadata ti gbà ní àṣeyọrí![/green]"
+msgstr "[green]Metadata ti a gba ni aṣeyọri![/green]"
 
 msgid "[green]Migrated checkpoint to {path}[/green]"
-msgstr "[green]Ibi ìgbéyẹ̀wò ti gbérí sí {path}[/green]"
+msgstr "[green]A ti gbe aami-ipamọ si {path}[/green]"
 
 msgid "[green]Monitoring started[/green]"
-msgstr "[green]Ìtọ́sọ́nà ti bẹ̀rẹ̀[/green]"
+msgstr "[green]Igbasilẹ ti bẹrẹ[/green]"
+
+msgid "[green]Moved to position {position}[/green]"
+msgstr "[green]A ti gbe si ipo {position}[/green]"
+
+msgid "[green]Network configuration looks optimal![/green]"
+msgstr "[green]Iṣeto nẹtiwọọki dabi ti o dara julọ![/green]"
+
+msgid "[green]No checkpoints older than {days} days found[/green]"
+msgstr "[green]Ko si awọn aami-ipamọ ti o ju {days} ọjọ jẹ ti a ri[/green]"
+
+msgid ""
+"[green]Optimizations applied successfully![/green]\n"
+"[yellow]Note: Some changes may require restart to take effect.[/yellow]\n"
+msgstr ""
+"[green]Awọn iyara ti a lo ni aṣeyọri![/green]\n"
+"[yellow]Akiyesi: Awọn ayipada diẹ le nilo tun bẹrẹ lati mu ipa.[/yellow]\n"
+
+msgid "[green]Optimizations saved to {path}[/green]"
+msgstr "[green]Awọn iyara ti a fi pamọ si {path}[/green]"
+
+msgid "[green]Paused torrent[/green]"
+msgstr "[green]Torrent ti a duro[/green]"
+
+msgid "[green]Peer validation hooks are enabled by configuration[/green]"
+msgstr "[green]Awọn kooku ijiṣẹ ọmọ-ẹgbẹ ti mu ṣiṣẹ nipasẹ iṣeto[/green]"
+
+msgid "[green]Performing basic configuration scan...[/green]"
+msgstr "[green]N ṣe ayẹwo iṣeto ipilẹ...[/green]"
+
+msgid "[green]Pinned:[/green] {cid}"
+msgstr "[green]Ti a fi sinu:[/green] {cid}"
+
+msgid "[green]Proxy configuration saved to {config_file}[/green]"
+msgstr "[green]Iṣeto proxy ti a fi pamọ si {config_file}[/green]"
+
+msgid "[green]Proxy configuration updated successfully[/green]"
+msgstr "[green]Iṣeto proxy ti a ṣe imudojuiwọn ni aṣeyọri[/green]"
+
+msgid "[green]Proxy has been disabled[/green]"
+msgstr "[green]Proxy ti a mu ṣiṣẹ kuro[/green]"
+
+msgid "[green]Removed alert rule {name}[/green]"
+msgstr "[green]A ti yọ ofin ikilo {name} kuro[/green]"
+
+msgid "[green]Removed torrent from queue[/green]"
+msgstr "[green]A ti yọ torrent kuro lati ẹgbọn[/green]"
+
+msgid "[green]Reset all options for torrent {hash}[/green]"
+msgstr "[green]A ti tun ṣeto gbogbo awọn aṣayan fun torrent {hash}[/green]"
+
+msgid "[green]Reset {key} for torrent {hash}[/green]"
+msgstr "[green]A ti tun ṣeto {key} fun torrent {hash}[/green]"
+
+msgid ""
+"[green]Restored checkpoint for: {name}[/green]\n"
+"Info hash: {hash}\n"
+msgstr ""
+"[green]A ti mu aami-ipamọ pada fun: {name}[/green]\n"
+"Info hash: {hash}\n"
+
+msgid "[green]Resumed torrent[/green]"
+msgstr "[green]Torrent ti a tun bẹrẹ[/green]"
 
 msgid "[green]Resuming download from checkpoint...[/green]"
-msgstr "[green]Ń tún bẹ̀rẹ̀ ìgbàsílẹ̀ láti ibi ìgbéyẹ̀wò...[/green]"
+msgstr "[green]N tun bẹrẹ igbasilẹ lati aami-ipamọ...[/green]"
+
+msgid "[green]Resuming from checkpoint[/green]"
+msgstr "[green]N tun bẹrẹ lati aami-ipamọ[/green]"
 
 msgid "[green]Rule added[/green]"
-msgstr "[green]Ìlànà ti ṣàfikún[/green]"
+msgstr "[green]Ofin ti a fi kun[/green]"
 
 msgid "[green]Rule evaluated[/green]"
-msgstr "[green]Ìlànà ti ṣàyẹ̀wò[/green]"
+msgstr "[green]Ofin ti a ṣe ayẹwo[/green]"
 
 msgid "[green]Rule removed[/green]"
-msgstr "[green]Ìlànà ti yọ kúrò[/green]"
+msgstr "[green]Ofin ti a yọ kuro[/green]"
+
+msgid ""
+"[green]SSL certificate verification enabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]Ijẹrisi iwe-ẹri SSL ti mu ṣiṣẹ. Iṣeto ti a fi pamọ si {config_file}[/green]\n"
+
+msgid ""
+"[green]SSL for peers disabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]SSL fun awọn ọmọ-ẹgbẹ ti mu ṣiṣẹ kuro. Iṣeto ti a fi pamọ si {config_file}[/green]\n"
+
+msgid ""
+"[green]SSL for peers enabled (experimental). Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]SSL fun awọn ọmọ-ẹgbẹ ti mu ṣiṣẹ (idanwo). Iṣeto ti a fi pamọ si {config_file}[/green]\n"
+
+msgid ""
+"[green]SSL for trackers disabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]SSL fun awọn tracker ti mu ṣiṣẹ kuro. Iṣeto ti a fi pamọ si {config_file}[/green]\n"
+
+msgid ""
+"[green]SSL for trackers enabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]SSL fun awọn tracker ti mu ṣiṣẹ. Iṣeto ti a fi pamọ si {config_file}[/green]\n"
+
+msgid "[green]Saved alert rules to {path}[/green]"
+msgstr "[green]A ti fi awọn ofin ikilo pamọ si {path}[/green]"
 
 msgid "[green]Saved rules[/green]"
-msgstr "[green]Àwọn ìlànà ti fipamọ́[/green]"
+msgstr "[green]Awọn ofin ti a fi pamọ[/green]"
+
+msgid "[green]Selected all files[/green]"
+msgstr "[green]A ti yan gbogbo awọn faili[/green]"
 
 msgid "[green]Selected file {idx}[/green]"
-msgstr "[green]Fáìlì {idx} tí a yàn[/green]"
+msgstr "[green]Faili {idx} ti a yan[/green]"
 
 msgid "[green]Selected {count} file(s) for download[/green]"
-msgstr "[green]{count} fáìlì tí a yàn fún ìgbàsílẹ̀[/green]"
+msgstr "[green]A ti yan {count} faili fun igbasilẹ[/green]"
+
+msgid "[green]Selected {count} file(s)[/green]"
+msgstr "[green]A ti yan {count} faili[/green]"
+
+msgid "[green]Set file {index} priority to {priority}[/green]"
+msgstr "[green]A ti ṣeto ipa-ọrọ faili {index} si {priority}[/green]"
 
 msgid "[green]Set priority for file {idx} to {priority}[/green]"
-msgstr "[green]Àkànkàn fáìlì {idx} ti ṣètò sí {priority}[/green]"
+msgstr "[green]A ti ṣeto ipa-ọrọ fun faili {idx} si {priority}[/green]"
+
+msgid "[green]Set priority to {priority}[/green]"
+msgstr "[green]A ti ṣeto ipa-ọrọ si {priority}[/green]"
+
+msgid "[green]Set {key} = {value} for torrent {hash}[/green]"
+msgstr "[green]A ti ṣeto {key} = {value} fun torrent {hash}[/green]"
 
 msgid "[green]Starting web interface on http://{host}:{port}[/green]"
-msgstr "[green]Ń bẹ̀rẹ̀ kiolesura wẹ́ẹ̀bù lórí http://{host}:{port}[/green]"
+msgstr "[green]N bẹrẹ oju-ọjọ wẹẹbu lori http://{host}:{port}[/green]"
+
+msgid "[green]Successfully resumed download: {hash}[/green]"
+msgstr "[green]Ṣiṣe igbasilẹ ti a tun bẹrẹ ni aṣeyọri: {hash}[/green]"
+
+msgid "[green]Successfully resumed download: {resumed_info_hash}[/green]"
+msgstr "[green]Ṣiṣe igbasilẹ ti a tun bẹrẹ ni aṣeyọri: {resumed_info_hash}[/green]"
+
+msgid ""
+"[green]TLS protocol version set to {version}. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]Ẹya protocol TLS ti a ṣeto si {version}. Iṣeto ti a fi pamọ si {config_file}[/green]\n"
+
+msgid "[green]Tested rule {name} with value {value}[/green]"
+msgstr "[green]A ti ṣe idanwo ofin {name} pẹlu iye {value}[/green]"
 
 msgid "[green]Torrent added to daemon: {hash}[/green]"
-msgstr "[green]Torrent ti ṣàfikún sí daemon: {hash}[/green]"
+msgstr "[green]Torrent ti a fi kun si daemon: {hash}[/green]"
+
+msgid "[green]Torrent added to daemon: {info_hash}[/green]"
+msgstr "[green]Torrent ti a fi kun si daemon: {info_hash}[/green]"
+
+msgid "[green]Unpinned:[/green] {cid}"
+msgstr "[green]Ti a yọ kuro:[/green] {cid}"
 
 msgid "[green]Updated runtime configuration[/green]"
-msgstr "[green]Ètò àkókò ṣiṣẹ́ ti ṣàtúnṣe[/green]"
+msgstr "[green]Iṣeto akoko-ṣiṣẹ ti a ṣe imudojuiwọn[/green]"
+
+msgid "[green]Updated {key} to {value}[/green]"
+msgstr "[green]A ti ṣe imudojuiwọn {key} si {value}[/green]"
 
 msgid "[green]Wrote metrics to {out}[/green]"
-msgstr "[green]Àwọn métíríkì ti kọ sí {out}[/green]"
+msgstr "[green]A ti kọ awọn metiriki si {out}[/green]"
+
+msgid "[green]Wrote metrics to {path}[/green]"
+msgstr "[green]A ti kọ awọn metiriki si {path}[/green]"
+
+msgid "[green]✓ Port mapping removed[/green]"
+msgstr "[green]✓ A ti yọ iṣeto pọọti kuro[/green]"
+
+msgid "[green]✓ Port mapping successful![/green]"
+msgstr "[green]✓ Iṣeto pọọti ni aṣeyọri![/green]"
+
+msgid "[green]✓ Port mappings refreshed[/green]"
+msgstr "[green]✓ Awọn iṣeto pọọti ti a tun ṣe[/green]"
+
+msgid "[green]✓ Proxy connection test successful[/green]"
+msgstr "[green]✓ Idanwo ibatan proxy ni aṣeyọri[/green]"
+
+msgid "[green]✓ Torrent created successfully: {path}[/green]"
+msgstr "[green]✓ Torrent ti a ṣẹda ni aṣeyọri: {path}[/green]"
+
+msgid "[green]✓[/green] Added filter rule: {ip_range} ({mode})"
+msgstr "[green]✓[/green] Ofin aṣẹ ti a fi kun: {ip_range} ({mode})"
+
+msgid "[green]✓[/green] Added peer {peer_id} to allowlist"
+msgstr "[green]✓[/green] Ọmọ-ẹgbẹ {peer_id} ti a fi kun si atilẹyin-akojọ"
+
+msgid ""
+"[green]✓[/green] Added peer {peer_id} to allowlist with alias '{alias}'\n"
+msgstr ""
+"[green]✓[/green] Ọmọ-ẹgbẹ {peer_id} ti a fi kun si atilẹyin-akojọ pẹlu orukọ-ipamọ '{alias}'\n"
+
+msgid "[green]✓[/green] Cleaned {cleaned} unused chunks"
+msgstr "[green]✓[/green] A ti nu {cleaned} awọn nkan ti a ko lo"
+
+msgid "[green]✓[/green] Configuration saved to {file}"
+msgstr "[green]✓[/green] Iṣeto ti a fi pamọ si {file}"
+
+msgid "[green]✓[/green] Daemon process started (PID {pid})"
+msgstr "[green]✓[/green] Iṣẹ daemon ti bẹrẹ (PID {pid})"
+
+msgid ""
+"[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)\n"
+msgstr ""
+"[green]✓[/green] Daemon ti bẹrẹ ni aṣeyọri (PID {pid}, mu {elapsed:.1f}s)\n"
+
+msgid "[green]✓[/green] Folder sync started"
+msgstr "[green]✓[/green] Iṣopọ foda ti bẹrẹ"
+
+msgid "[green]✓[/green] Generated .tonic file: {file}"
+msgstr "[green]✓[/green] Faili .tonic ti a ṣẹda: {file}"
+
+msgid "[green]✓[/green] Generated new API key for daemon"
+msgstr "[green]✓[/green] API key tuntun ti a ṣẹda fun daemon"
+
+msgid "[green]✓[/green] Generated tonic?: link:"
+msgstr "[green]✓[/green] Tonic ti a ṣẹda?: ọna asopọ:"
+
+msgid "[green]✓[/green] Loaded {loaded} rules from {file_path}"
+msgstr "[green]✓[/green] A ti gbe awọn ofin {loaded} jade lati {file_path}"
+
+msgid "[green]✓[/green] Loaded {total_loaded} total rules"
+msgstr "[green]✓[/green] A ti gbe awọn ofin {total_loaded} lapapọ jade"
+
+msgid "[green]✓[/green] Removed alias for peer {peer_id}"
+msgstr "[green]✓[/green] A ti yọ orukọ-ipamọ kuro fun ọmọ-ẹgbẹ {peer_id}"
+
+msgid "[green]✓[/green] Removed filter rule: {ip_range}"
+msgstr "[green]✓[/green] A ti yọ ofin aṣẹ kuro: {ip_range}"
+
+msgid "[green]✓[/green] Removed peer {peer_id} from allowlist"
+msgstr "[green]✓[/green] A ti yọ ọmọ-ẹgbẹ {peer_id} kuro lati atilẹyin-akojọ"
+
+msgid "[green]✓[/green] Set alias '{alias}' for peer {peer_id}"
+msgstr "[green]✓[/green] A ti ṣeto orukọ-ipamọ '{alias}' fun ọmọ-ẹgbẹ {peer_id}"
+
+msgid "[green]✓[/green] Set {key} = {value}"
+msgstr "[green]✓[/green] A ti ṣeto {key} = {value}"
+
+msgid "[green]✓[/green] Successfully updated {count} filter list(s)"
+msgstr "[green]✓[/green] A ti ṣe imudojuiwọn atokọ aṣẹ {count} ni aṣeyọri"
+
+msgid "[green]✓[/green] Sync mode updated"
+msgstr "[green]✓[/green] Ọna iṣopọ ti a ṣe imudojuiwọn"
+
+msgid "[green]✓[/green] Tonic link:"
+msgstr "[green]✓[/green] Ọna asopọ Tonic:"
+
+msgid "[green]✓[/green] Updated config file: {file}"
+msgstr "[green]✓[/green] Faili iṣeto ti a ṣe imudojuiwọn: {file}"
+
+msgid "[green]✓[/green] Xet protocol enabled"
+msgstr "[green]✓[/green] Protocol Xet ti mu ṣiṣẹ"
+
+msgid "[green]✓[/green] uTP configuration reset to defaults"
+msgstr "[green]✓[/green] Iṣeto uTP ti a tun ṣeto si awọn aiyipada"
+
+msgid "[green]✓[/green] uTP transport enabled"
+msgstr "[green]✓[/green] Gbigbe uTP ti mu ṣiṣẹ"
+
+msgid "[red]--name is required to remove a rule[/red]"
+msgstr "[red]--name nilo lati yọ ofin kuro[/red]"
+
+msgid "[red]--name is required to test a rule[/red]"
+msgstr "[red]--name nilo lati danwo ofin[/red]"
+
+msgid "[red]--name, --metric and --condition are required to add a rule[/red]"
+msgstr "[red]--name, --metric ati --condition nilo lati fi ofin kun[/red]"
+
+msgid "[red]--value is required with --test[/red]"
+msgstr "[red]--value nilo pẹlu --test[/red]"
+
+msgid "[red]BLOCKED[/red]"
+msgstr "[red]TI DẸNẸ[/red]"
 
 msgid "[red]Backup failed: {msgs}[/red]"
-msgstr "[red]Ìgbàgbẹ́ kò ṣe: {msgs}[/red]"
+msgstr "[red]Igbasilẹ ti kuna: {msgs}[/red]"
+
+msgid "[red]Certificate file does not exist: {path}[/red]"
+msgstr "[red]Faili iwe-ẹri ko si: {path}[/red]"
+
+msgid "[red]Certificate path must be a file: {path}[/red]"
+msgstr "[red]Ọna iwe-ẹri gbọdọ jẹ faili: {path}[/red]"
+
+msgid "[red]Configuration key not found: {key}[/red]"
+msgstr "[red]Bọtini iṣeto ko ri: {key}[/red]"
+
+msgid "[red]Content not found: {cid}[/red]"
+msgstr "[red]Akoonu ko ri: {cid}[/red]"
+
+msgid "[red]Daemon is not running[/red]"
+msgstr "[red]Daemon ko n ṣiṣẹ[/red]"
+
+msgid "[red]Daemon process crashed[/red]"
+msgstr "[red]Iṣẹ daemon ti fọ[/red]"
+
+msgid "[red]Dashboard error: {e}[/red]"
+msgstr "[red]Aṣiṣe dashboard: {e}[/red]"
+
+msgid "[red]Directories not yet supported[/red]"
+msgstr "[red]Awọn aaye ko tii ṣe atilẹyin[/red]"
+
+msgid "[red]Error adding content: {e}[/red]"
+msgstr "[red]Aṣiṣe nini fifi akoonu kun: {e}[/red]"
+
+msgid "[red]Error adding peer to allowlist: {e}[/red]"
+msgstr "[red]Aṣiṣe nini fifi ọmọ-ẹgbẹ kun si atilẹyin-akojọ: {e}[/red]"
+
+msgid "[red]Error disabling SSL for peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling SSL for trackers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error disabling certificate verification: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error during cleanup: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling SSL for peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling SSL for trackers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error enabling certificate verification: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error ensuring daemon is running: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error generating .tonic file: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error generating tonic link: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting SSL status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting peers: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting stats: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error getting sync mode: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error listing aliases: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error listing allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error pinning content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error removing alias: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error removing peer from allowlist: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error restarting daemon: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving cache info: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving disk statistics: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving network statistics: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error retrieving stats: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting CA certificates path: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting alias: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting client certificate: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting protocol version: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error setting sync mode: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error starting sync: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error unpinning content: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error updating configuration: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --hybrid and --v1[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --v2 and --hybrid[/red]"
+msgstr ""
+
+msgid "[red]Error: Cannot specify both --v2 and --v1[/red]"
+msgstr ""
+
+msgid "[red]Error: Could not load torrent file {torrent_file}[/red]"
+msgstr ""
 
 msgid "[red]Error: Could not parse magnet link[/red]"
-msgstr "[red]Àṣìṣe: Kò ṣeé ṣàlàyé ìjápọ̀ magnet[/red]"
+msgstr ""
+
+msgid "[red]Error: Info hash must be 40 hex characters[/red]"
+msgstr ""
+
+msgid "[red]Error: Piece length must be a power of 2[/red]"
+msgstr ""
+
+msgid "[red]Error: Piece length must be at least 16 KiB (16384 bytes)[/red]"
+msgstr ""
+
+msgid "[red]Error: Source directory is empty[/red]"
+msgstr ""
+
+msgid "[red]Error: Source path does not exist: {path}[/red]"
+msgstr ""
 
 msgid "[red]Error: {error}[/red]"
-msgstr "[red]Àṣìṣe: {error}[/red]"
+msgstr ""
+
+msgid "[red]Error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error:[/red] Invalid value for {key}: {value}"
+msgstr ""
+
+msgid "[red]Error:[/red] Unknown configuration key: {key}"
+msgstr ""
+
+msgid "[red]Export not available in daemon mode[/red]"
+msgstr ""
 
 msgid "[red]Failed to add magnet link: {error}[/red]"
-msgstr "[red]Kò ṣeé ṣàfikún ìjápọ̀ magnet: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to clear active alerts: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to create session[/red]"
+msgstr ""
+
+msgid "[red]Failed to disable proxy: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to get proxy status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to load alert rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to load rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to pause: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to reset options: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to restart daemon[/red]"
+msgstr ""
+
+msgid "[red]Failed to resume: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to run tests: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to save rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set alias for peer {peer_id}[/red]"
+msgstr ""
 
 msgid "[red]Failed to set config: {error}[/red]"
-msgstr "[red]Kò ṣeé ṣètò ètò: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set option: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set proxy configuration: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n"
+"[yellow]Please check:[/yellow]\n"
+"  1. Daemon logs for startup errors\n"
+"  2. Port conflicts (check if port is already in use)\n"
+"  3. Permissions (ensure you have permission to start daemon)\n"
+"\n"
+"[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
+"[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]\n"
+msgstr ""
+
+msgid "[red]Failed to stop: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to test proxy: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to test rule: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed: {error}[/red]"
+msgstr ""
 
 msgid "[red]File not found: {error}[/red]"
-msgstr "[red]Fáìlì kò rí: {error}[/red]"
+msgstr ""
+
+msgid "[red]File not found: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]IP filter not initialized. Please enable it in configuration.[/red]\n"
+msgstr ""
+
+msgid "[red]IP filter not initialized.[/red]"
+msgstr ""
+
+msgid "[red]IPFS protocol not available[/red]"
+msgstr ""
+
+msgid "[red]Import not available in daemon mode[/red]"
+msgstr ""
+
+msgid "[red]Invalid IP address: {ip}[/red]"
+msgstr ""
 
 msgid "[red]Invalid arguments[/red]"
-msgstr "[red]Àwọn àtúnṣe kò tọ́[/red]"
+msgstr ""
 
 msgid "[red]Invalid file index: {idx}[/red]"
-msgstr "[red]Fáhìrísì fáìlì kò tọ́: {idx}[/red]"
+msgstr ""
 
 msgid "[red]Invalid file index[/red]"
-msgstr "[red]Fáhìrísì fáìlì kò tọ́[/red]"
+msgstr ""
 
 msgid "[red]Invalid info hash format: {hash}[/red]"
-msgstr "[red]Àwọn ètò hash àlàyé kò tọ́: {hash}[/red]"
+msgstr ""
 
-msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
-msgstr "[red]Àkànkàn kò tọ́. Lo: do_not_download/low/normal/high/maximum[/red]"
+msgid "[red]Invalid info hash format[/red]"
+msgstr ""
 
-msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
-msgstr "[red]Àkànkàn kò tọ́: {priority}. Lo: do_not_download/low/normal/high/maximum[/red]"
+msgid "[red]Invalid magnet link: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]\n"
+msgstr ""
+
+msgid ""
+"[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]\n"
+msgstr ""
+
+msgid "[red]Invalid public key: {e}[/red]"
+msgstr ""
 
 msgid "[red]Invalid torrent file: {error}[/red]"
-msgstr "[red]Fáìlì torrent kò tọ́: {error}[/red]"
+msgstr ""
+
+msgid "[red]Invalid value for {key}: {error}[/red]"
+msgstr ""
+
+msgid "[red]Key file does not exist: {path}[/red]"
+msgstr ""
 
 msgid "[red]Key not found: {key}[/red]"
-msgstr "[red]Ọ̀nà kò rí: {key}[/red]"
+msgstr ""
+
+msgid "[red]Key path must be a file: {path}[/red]"
+msgstr ""
+
+msgid "[red]Metrics error: {e}[/red]"
+msgstr ""
 
 msgid "[red]No checkpoint found for {hash}[/red]"
-msgstr "[red]Kò sí ibi ìgbéyẹ̀wò tí a rí fún {hash}[/red]"
+msgstr ""
+
+msgid "[red]No stats found for CID: {cid}[/red]"
+msgstr ""
+
+msgid "[red]Path does not exist: {path}[/red]"
+msgstr ""
+
+msgid "[red]Path must be a file or directory: {path}[/red]"
+msgstr ""
+
+msgid "[red]Peer {peer_id} not found in allowlist[/red]"
+msgstr ""
+
+msgid "[red]Proxy error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Proxy host and port must be configured[/red]"
+msgstr ""
 
 msgid "[red]PyYAML not installed[/red]"
-msgstr "[red]PyYAML kò fi sílẹ̀[/red]"
+msgstr ""
 
 msgid "[red]Reload failed: {error}[/red]"
-msgstr "[red]Títún ṣe kò ṣe: {error}[/red]"
+msgstr ""
 
 msgid "[red]Restore failed: {msgs}[/red]"
-msgstr "[red]Ìpadà kò ṣe: {msgs}[/red]"
+msgstr ""
+
+msgid "[red]Rule not found: {name}[/red]"
+msgstr ""
+
+msgid "[red]Specify CID or use --all[/red]"
+msgstr ""
+
+msgid "[red]Tonic file not found: {path}[/red]"
+msgstr ""
+
+msgid "[red]Torrent not found or option not set[/red]"
+msgstr ""
+
+msgid "[red]Torrent not found: {hash}[/red]"
+msgstr ""
+
+msgid "[red]Unexpected error during resume: {e}[/red]"
+msgstr ""
+
+msgid "[red]Unknown configuration key: {key}[/red]"
+msgstr ""
+
+msgid "[red]Validation error: {e}[/red]"
+msgstr ""
 
 msgid "[red]{error}[/red]"
-msgstr "[red]{error}[/red]"
+msgstr ""
+
+msgid "[red]✗ Failed to remove port mapping[/red]"
+msgstr ""
+
+msgid "[red]✗ Port mapping failed[/red]"
+msgstr ""
+
+msgid "[red]✗ Proxy connection test failed[/red]"
+msgstr ""
+
+msgid "[red]✗[/red] Daemon is already running with PID {pid}"
+msgstr ""
+
+msgid ""
+"[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)\n"
+msgstr ""
+
+msgid ""
+"[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting\n"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to add filter rule: {ip_range}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to load rules from {file_path}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to start daemon: {e}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to update filter lists"
+msgstr ""
+
+msgid "[yellow]1. Network Connectivity[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]API key not found in config, cannot get detailed status[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Active Protocol:[/yellow] None (not discovered)"
+msgstr ""
 
 msgid "[yellow]All files deselected[/yellow]"
-msgstr "[yellow]Àwọn fáìlì gbogbo tí a yọ kúrò[/yellow]"
+msgstr ""
+
+msgid "[yellow]Allowlist is empty[/yellow]"
+msgstr ""
+
+msgid "[yellow]Automatic repair not implemented[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]CA certificates path set to {path} (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]CA certificates path set to {path} (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Checkpoint for {hash} is missing or invalid[/yellow]"
+msgstr ""
+
+msgid "[yellow]Checkpoint missing/invalid[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Client certificate set (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Client certificate set (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid "[yellow]Configuration changes require daemon restart.[/yellow]"
+msgstr ""
+
+msgid "[yellow]Could not get detailed status via IPC[/yellow]"
+msgstr ""
+
+msgid "[yellow]Could not save to config file: {error}[/yellow]"
+msgstr ""
 
 msgid "[yellow]Debug mode not yet implemented[/yellow]"
-msgstr "[yellow]Àwọn àkókò ìṣọdọtun kò tíì ṣe[/yellow]"
+msgstr ""
 
 msgid "[yellow]Deselected file {idx}[/yellow]"
-msgstr "[yellow]Fáìlì {idx} tí a yọ kúrò[/yellow]"
+msgstr ""
+
+msgid "[yellow]Disk I/O manager not running. Statistics unavailable.[/yellow]"
+msgstr ""
 
 msgid "[yellow]Download interrupted by user[/yellow]"
-msgstr "[yellow]Ìgbàsílẹ̀ tí olùlo dákẹ́[/yellow]"
+msgstr ""
+
+msgid "[yellow]Dry run: Would clean chunks older than {days} days[/yellow]"
+msgstr ""
+
+msgid "[yellow]External IP not available[/yellow]"
+msgstr ""
+
+msgid "[yellow]External IP:[/yellow] Not available"
+msgstr ""
+
+msgid "[yellow]Failed to generate tonic link[/yellow]"
+msgstr ""
+
+msgid "[yellow]Failed to move torrent[/yellow]"
+msgstr ""
 
 msgid "[yellow]Fetching metadata from peers...[/yellow]"
-msgstr "[yellow]Ń gbà metadata láti àwọn ẹgbẹ́...[/yellow]"
+msgstr ""
+
+msgid "[yellow]Found checkpoint for: {name}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Found checkpoint for: {torrent_name}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]IP filter not initialized or disabled.[/yellow]"
+msgstr ""
 
 msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
-msgstr "[yellow]Àkànkàn '{spec}' kò tọ́: {error}[/yellow]"
+msgstr ""
 
-msgid "[yellow]Keeping session alive[/yellow]"
-msgstr "[yellow]Ń ṣàgbà àkókò[/yellow]"
+msgid "[yellow]NAT Status[/yellow]"
+msgstr ""
+
+msgid "[yellow]No active alerts[/yellow]"
+msgstr ""
+
+msgid "[yellow]No alert rules defined[/yellow]"
+msgstr ""
+
+msgid "[yellow]No alias found for peer {peer_id}[/yellow]"
+msgstr ""
+
+msgid "[yellow]No aliases found in allowlist[/yellow]"
+msgstr ""
+
+msgid "[yellow]No cached scrape results[/yellow]"
+msgstr ""
+
+msgid "[yellow]No checkpoint found for {hash}[/yellow]"
+msgstr ""
+
+msgid "[yellow]No checkpoint found for {info_hash}[/yellow]"
+msgstr ""
 
 msgid "[yellow]No checkpoints found[/yellow]"
-msgstr "[yellow]Kò sí àwọn ibi ìgbéyẹ̀wò tí a rí[/yellow]"
+msgstr ""
+
+msgid "[yellow]No chunks in cache[/yellow]"
+msgstr ""
+
+msgid "[yellow]No config file found - configuration not persisted[/yellow]"
+msgstr ""
+
+msgid "[yellow]No filter URLs configured.[/yellow]"
+msgstr ""
+
+msgid "[yellow]No filter rules configured.[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]No optimizations were applied (already optimal or unsupported)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]No performance action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]No recover action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]No security action specified[/yellow]"
+msgstr ""
+
+msgid "[yellow]Non-interactive mode, starting fresh download[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Note: This change is temporary and will be lost on restart. Use config file for persistent changes.[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Note: Update config file to persist locale setting[/yellow]"
+msgstr ""
+
+msgid "[yellow]Note:[/yellow] Configuration change is runtime-only"
+msgstr ""
+
+msgid "[yellow]Optimization cancelled[/yellow]"
+msgstr ""
+
+msgid "[yellow]Peer {peer_id} not found in allowlist[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Please provide the original torrent file or magnet link[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Please use --v2 or --hybrid flags for now.[/yellow]"
+msgstr ""
+
+msgid "[yellow]Proxy configuration not found[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Proxy has been disabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid "[yellow]Proxy is not enabled[/yellow]"
+msgstr ""
+
+msgid "[yellow]Real-time monitoring not yet implemented[/yellow]"
+msgstr ""
+
+msgid "[yellow]Refresh completed with warnings[/yellow]"
+msgstr ""
+
+msgid "[yellow]Rich not available, starting fresh download[/yellow]"
+msgstr ""
+
+msgid "[yellow]Rule not found: {ip_range}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended). Configuration saved to {config_file}[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended, configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended, skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification enabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers disabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]SSL for peers disabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers enabled (experimental, configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers enabled (experimental, skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers disabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers disabled (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers enabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]SSL for trackers enabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Starting fresh download[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]TLS protocol version set to {version} (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]TLS protocol version set to {version} (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]The daemon process crashed during initialization.[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Tonic link sync not yet fully implemented[/yellow]"
+msgstr ""
+
+msgid "[yellow]Torrent not found in queue[/yellow]"
+msgstr ""
+
+msgid "[yellow]Torrent not found[/yellow]"
+msgstr ""
 
 msgid "[yellow]Torrent session ended[/yellow]"
-msgstr "[yellow]Àkókò torrent ti parí[/yellow]"
+msgstr ""
 
 msgid "[yellow]Unknown command: {cmd}[/yellow]"
-msgstr "[yellow]Àṣẹ àìmọ̀: {cmd}[/yellow]"
+msgstr ""
 
-msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
-msgstr "[yellow]Àkíyèsí: Daemon ń ṣiṣẹ́. Bíríbẹ̀rẹ̀ àkókò agbègbè lè fa ìjà àwọn pọ́ọ̀tì.[/yellow]"
+msgid ""
+"[yellow]Use --list/--list-active, --add, --remove, --clear-active, --test, --load or --save[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Using local session (--no-daemon specified). Session state will not persist.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Daemon is running. Diagnostics will test local session which may cause port conflicts.[/yellow]\n"
+"[dim]Consider stopping the daemon first: 'btbt daemon exit'[/dim]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]\n"
+msgstr ""
 
 msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
-msgstr "[yellow]Àkíyèsí: Àṣìṣe nínú dídákẹ́ àkókò: {error}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Error stopping session: {e}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Failed to select files: {error}[/yellow]"
+msgstr ""
+
+msgid "[yellow]Warning: Failed to set queue priority: {error}[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Xet protocol is disabled[/yellow]"
+msgstr ""
+
+msgid "[yellow]{key} is not set[/yellow]"
+msgstr ""
 
 msgid "[yellow]{warning}[/yellow]"
-msgstr "[yellow]{warning}[/yellow]"
+msgstr ""
+
+msgid "[yellow]⚠[/yellow] Could not save daemon config to config file: {e}"
+msgstr ""
+
+msgid ""
+"[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet\n"
+msgstr ""
+
+msgid ""
+"[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})\n"
+msgstr ""
+
+msgid "[yellow]⚠[/yellow] {errors} errors encountered"
+msgstr ""
+
+msgid "[yellow]✓[/yellow] Xet protocol disabled"
+msgstr ""
+
+msgid "[yellow]✓[/yellow] uTP transport disabled"
+msgstr ""
+
+msgid "_get_daemon_ipc_port: Checking config_file=%s (home_dir=%s)"
+msgstr ""
+
+msgid "_get_executor() returned: executor=%s, is_daemon=%s"
+msgstr ""
 
 msgid "ccBitTorrent Interactive CLI"
-msgstr "ccBitTorrent CLI Ìbaraẹnisọrọ̀"
+msgstr ""
 
-msgid "ccBitTorrent Status"
-msgstr "Ìpàdé ccBitTorrent"
+msgid "enable_dht={value}"
+msgstr ""
 
-msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
-msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgid "enable_pex={value}"
+msgstr ""
+
+msgid "failed"
+msgstr ""
+
+msgid ""
+"help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema\n"
+msgstr ""
+
+msgid "succeeded"
+msgstr ""
 
 msgid "uTP Config"
-msgstr "Ètò uTP"
+msgstr ""
+
+msgid "uTP Configuration"
+msgstr ""
+
+msgid "uTP configuration reset to defaults via CLI"
+msgstr ""
+
+msgid "uTP configuration updated: %s = %s"
+msgstr ""
+
+msgid "uTP transport disabled via CLI"
+msgstr ""
+
+msgid "uTP transport enabled"
+msgstr ""
+
+msgid "uTP transport enabled via CLI"
+msgstr ""
 
 msgid "{count} features"
-msgstr "{count} àwọn ẹ̀yà"
+msgstr ""
 
 msgid "{count} items"
-msgstr "{count} àwọn nǹkan"
+msgstr ""
 
 msgid "{elapsed:.0f}s ago"
-msgstr "Ọjọ́ {elapsed:.0f}s sẹ́yìn"
+msgstr ""
+
+msgid "{key} = {value}"
+msgstr ""
+
+msgid "{key}: {value}"
+msgstr ""
+
+msgid ""
+"{msg}\n"
+"\n"
+"PID file path: {path}\n"
+msgstr ""
+
+msgid "{sub_tab} configuration - Coming soon"
+msgstr ""
+
+msgid "{sub_tab} content for torrent {hash}... - Coming soon"
+msgstr ""
+
+msgid "{type} Configuration"
+msgstr ""
+
+msgid "↑ Speed"
+msgstr ""
+
+msgid "↓ Speed"
+msgstr ""
+
+msgid "✓ Configuration is valid"
+msgstr ""
+
+msgid "✓ No system compatibility warnings"
+msgstr ""
+
+msgid "✗ Configuration validation failed: {e}"
+msgstr ""
+

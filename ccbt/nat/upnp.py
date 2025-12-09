@@ -14,8 +14,8 @@ try:
 except (
     ImportError
 ):  # pragma: no cover - defensive import fallback, tested via integration
-    # Fallback for systems without defusedxml
-    import xml.etree.ElementTree as ET
+    # Fallback for systems without defusedxml (should never happen as defusedxml is required)
+    import xml.etree.ElementTree as ET  # nosec B405 - Fallback only, defusedxml is required dependency
 
     warnings.warn(  # pragma: no cover - defensive import fallback
         "defusedxml not installed. XML parsing may be vulnerable to attacks. "
@@ -57,7 +57,7 @@ def build_msearch_request(search_target: str | None = None) -> bytes:
     """
     if search_target is None:
         search_target = UPNP_IGD_SERVICE_TYPE
-    
+
     # Build M-SEARCH message
     # CRITICAL FIX: MX (Maximum wait time) should be at least 1-5 seconds
     # Some routers need time to respond, so we use 3 seconds
@@ -111,7 +111,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
 
     # CRITICAL FIX: Get local network interfaces for proper multicast binding
     import sys
-    
+
     # Try to get local IP address for multicast interface binding
     local_ip = None
     try:
@@ -130,15 +130,15 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            
+
             # CRITICAL FIX: Windows-specific multicast configuration
             if sys.platform == "win32":
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                
+
                 # CRITICAL FIX: Set multicast TTL (required on Windows)
                 # TTL of 2 allows packets to traverse one router hop (local network)
                 sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-                
+
                 # CRITICAL FIX: Set multicast interface BEFORE binding
                 # This tells Windows which interface to use for sending multicast
                 if local_ip:
@@ -154,7 +154,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
             # Binding to specific port 0 lets OS choose ephemeral port
             # On Windows, binding to 0.0.0.0:0 is required for multicast
             try:
-                sock.bind(("0.0.0.0", 0))
+                sock.bind(("0.0.0.0", 0))  # nosec B104 - Multicast socket must bind to 0.0.0.0 for SSDP discovery
                 logger.debug("Bound socket to 0.0.0.0:0 for multicast")
             except OSError as e:
                 logger.debug("Failed to bind socket: %s", e)
@@ -166,7 +166,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                     except OSError as e2:
                         logger.debug("Failed to bind to local IP: %s", e2)
                         raise
-            
+
             # CRITICAL FIX: Join multicast group properly
             # IP_ADD_MEMBERSHIP is required to receive multicast packets
             multicast_ip = socket.inet_aton(SSDP_MULTICAST_IP)
@@ -180,7 +180,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                 except OSError as e:
                     logger.debug("Failed to join multicast group on %s: %s, trying INADDR_ANY", local_ip, e)
                     # Fallback to INADDR_ANY
-                    mreq = multicast_ip + socket.inet_aton("0.0.0.0")
+                    mreq = multicast_ip + socket.inet_aton("0.0.0.0")  # nosec B104 - Multicast membership fallback to INADDR_ANY for SSDP
                     try:
                         sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
                         logger.debug("Joined SSDP multicast group %s on all interfaces", SSDP_MULTICAST_IP)
@@ -189,7 +189,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         # Continue anyway - some systems don't require explicit membership
             else:
                 # Use INADDR_ANY (0.0.0.0) to receive on all interfaces
-                mreq = multicast_ip + socket.inet_aton("0.0.0.0")
+                mreq = multicast_ip + socket.inet_aton("0.0.0.0")  # nosec B104 - Multicast membership uses INADDR_ANY for all interfaces
                 try:
                     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
                     logger.debug("Joined SSDP multicast group %s on all interfaces", SSDP_MULTICAST_IP)
@@ -210,7 +210,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                 UPNP_IGD_DEVICE_TYPE,   # Fallback to device type
                 "ssdp:all",              # Last resort: search for all devices
             ]
-            
+
             for search_idx, search_target in enumerate(search_targets):
                 request = build_msearch_request(search_target)
                 try:
@@ -237,7 +237,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
             # Routers need time to process M-SEARCH and send responses
             # MX header says 3 seconds, so wait at least 0.5s before checking
             await asyncio.sleep(0.5)
-            
+
             # CRITICAL FIX: Use asyncio for non-blocking socket operations
             # Socket is already set to non-blocking above
             start_time = asyncio.get_event_loop().time()
@@ -266,7 +266,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         addr[1],
                         len(data),
                     )
-                    
+
                     headers = parse_ssdp_response(data)
                     logger.debug("SSDP response headers: %s", list(headers.keys()))
 
@@ -274,7 +274,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                     st = headers.get("st", "")
                     nt = headers.get("nt", "")
                     location = headers.get("location", "")
-                    
+
                     logger.debug(
                         "SSDP response: ST=%s, NT=%s, Location=%s",
                         st[:100] if st else "(empty)",
@@ -291,7 +291,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         or "WANIPConnection" in st
                         or "WANIPConnection" in nt
                     )
-                    
+
                     if is_igd:
                         if location and location not in seen_locations:
                             seen_locations.add(location)
@@ -433,7 +433,7 @@ async def fetch_device_description(location_url: str) -> dict[str, str]:
                 )
                 await asyncio.sleep(0.5)
                 continue
-            raise last_error
+            raise last_error from e
         except aiohttp.ClientError as e:
             last_error = UPnPError(f"Network error fetching device description: {e}")
             if attempt < max_retries - 1:
@@ -445,7 +445,7 @@ async def fetch_device_description(location_url: str) -> dict[str, str]:
                 )
                 await asyncio.sleep(0.5)
                 continue
-            raise last_error
+            raise last_error from e
 
     if xml_content is None:
         # All retries exhausted
@@ -577,11 +577,11 @@ async def send_soap_action(
         # Even on HTTP 500, the response body may contain useful SOAP fault information
         try:
             root = ET.fromstring(response_xml)  # noqa: S314  # nosec B314 - defusedxml.ElementTree.fromstring
-        except ET.ParseError:
+        except ET.ParseError as e:
             # If we can't parse XML and status is not 200, raise HTTP error
             if http_status != 200:
                 msg = f"SOAP action failed: HTTP {http_status} (response not parseable as XML)"
-                raise UPnPError(msg)
+                raise UPnPError(msg) from e
             raise
 
         # Extract response parameters

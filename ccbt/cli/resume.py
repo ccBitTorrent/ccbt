@@ -7,6 +7,7 @@ from rich.console import Console
 
 from ccbt.cli.interactive import InteractiveCLI
 from ccbt.cli.progress import ProgressManager
+from ccbt.i18n import _
 from ccbt.session.session import AsyncSessionManager
 
 
@@ -28,29 +29,36 @@ async def resume_download(
         cleanup_task = getattr(session, "_cleanup_task", None)
         if cleanup_task is None:
             await session.start()
-        console.print("[green]Resuming download from checkpoint...[/green]")
+        console.print(_("[green]Resuming download from checkpoint...[/green]"))
         resumed_info_hash = await session.resume_from_checkpoint(
             info_hash_bytes,
             checkpoint,
         )
         console.print(
-            f"[green]Successfully resumed download: {resumed_info_hash}[/green]"
+            _("[green]Successfully resumed download: {hash}[/green]").format(
+                hash=resumed_info_hash
+            )
         )
 
         if interactive:
-            interactive_cli = InteractiveCLI(session, console)
+            from ccbt.executor.manager import ExecutorManager
+
+            executor_manager = ExecutorManager.get_instance()
+            executor = executor_manager.get_executor(session_manager=session)
+            adapter = executor.adapter
+            interactive_cli = InteractiveCLI(executor, adapter, console, session=session)
             await interactive_cli.run()
         else:
             progress_manager = ProgressManager(console)
             with progress_manager.create_progress() as progress:
                 task = progress.add_task(
-                    f"Resuming {checkpoint.torrent_name}",
+                    _("Resuming {name}").format(name=checkpoint.torrent_name),
                     total=100,
                 )
                 while True:
                     torrent_status = await session.get_torrent_status(resumed_info_hash)
                     if not torrent_status:
-                        console.print("[yellow]Torrent session ended[/yellow]")
+                        console.print(_("[yellow]Torrent session ended[/yellow]"))
                         break
                     progress.update(
                         task,
@@ -58,7 +66,9 @@ async def resume_download(
                     )
                     if torrent_status.get("status") == "seeding":
                         console.print(
-                            f"[green]Download completed: {checkpoint.torrent_name}[/green]"
+                            _("[green]Download completed: {name}[/green]").format(
+                                name=checkpoint.torrent_name
+                            )
                         )
                         break
                     await asyncio.sleep(1)
@@ -66,4 +76,4 @@ async def resume_download(
         try:
             await session.stop()
         except Exception as e:
-            console.print(f"[yellow]Warning: Error stopping session: {e}[/yellow]")
+            console.print(_("[yellow]Warning: Error stopping session: {e}[/yellow]").format(e=e))

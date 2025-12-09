@@ -16,9 +16,6 @@ from ccbt.discovery.tracker_udp_client import (
     TrackerEvent,
     TrackerResponse,
     TrackerSession,
-    get_udp_tracker_client,
-    init_udp_tracker,
-    shutdown_udp_tracker,
 )
 
 
@@ -661,28 +658,48 @@ class TestAsyncUDPTrackerClientScrape:
 
 
 class TestAsyncUDPTrackerClientModuleFunctions:
-    """Test module-level functions."""
+    """Test AsyncUDPTrackerClient direct usage (singleton functions removed in refactoring)."""
 
-    def test_get_udp_tracker_client(self):
-        """Test get_udp_tracker_client function."""
-        client = get_udp_tracker_client()
+    def test_create_client_directly(self):
+        """Test creating AsyncUDPTrackerClient directly."""
+        client = AsyncUDPTrackerClient()
         assert isinstance(client, AsyncUDPTrackerClient)
+        assert client.our_peer_id is not None
+        assert len(client.our_peer_id) == 20
 
     @pytest.mark.asyncio
-    async def test_init_udp_tracker(self):
-        """Test init_udp_tracker function."""
-        client = await init_udp_tracker()
-        assert isinstance(client, AsyncUDPTrackerClient)
+    async def test_start_and_stop_client(self):
+        """Test starting and stopping AsyncUDPTrackerClient."""
+        client = AsyncUDPTrackerClient()
+        await client.start()
         assert client.transport is not None
-
-        await shutdown_udp_tracker()
+        await client.stop()
+        # Should not crash if stop is called multiple times
         await client.stop()
 
     @pytest.mark.asyncio
+    async def test_client_lifecycle(self):
+        """Test full client lifecycle."""
+        client = AsyncUDPTrackerClient()
+        await client.start()
+        assert client.transport is not None
+        await client.stop()
+        # Verify cleanup
+        assert client.transport is None
+
+
+    @pytest.mark.asyncio
     async def test_shutdown_udp_tracker(self):
-        """Test shutdown_udp_tracker function."""
-        client = await init_udp_tracker()
-        await shutdown_udp_tracker()
+        """Test stopping UDP tracker client (replaces removed shutdown_udp_tracker function)."""
+        # Module-level functions (get_udp_tracker_client, init_udp_tracker, shutdown_udp_tracker)
+        # were removed during refactoring. UDP tracker client is now managed through
+        # session manager or used directly. This test verifies direct client usage.
+        client = AsyncUDPTrackerClient()
+        await client.start()
+        assert client.transport is not None
+        await client.stop()
         # Should not crash if called multiple times
-        await shutdown_udp_tracker()
+        await client.stop()
+        # Verify cleanup
+        assert client.transport is None
 

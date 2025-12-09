@@ -68,13 +68,17 @@ def validate_po_file(po_path: Path) -> tuple[bool, list[str]]:
     return len(errors) == 0, errors
 
 
-def validate_all() -> None:
-    """Validate all .po files."""
+def validate_all() -> int:
+    """Validate all .po files.
+    
+    Returns:
+        0 if all files are valid, 1 if any have errors
+    """
     base_dir = Path(__file__).parent.parent / "locales"
 
     if not base_dir.exists():
         print(f"Locales directory not found: {base_dir}")
-        return None
+        return 1
 
     print("PO File Validation\n" + "=" * 50)
 
@@ -93,17 +97,17 @@ def validate_all() -> None:
 
         print(f"\n{lang_dir.name.upper()}:")
         if is_valid:
-            print("  ✓ Valid")
+            print("  [OK] Valid")
         else:
-            print("  ✗ Invalid")
+            print("  [ERROR] Invalid")
             all_valid = False
             for error in errors:
                 print(f"    - {error}")
 
     if all_valid:
-        print("\n✓ All .po files are valid")
+        print("\n[OK] All .po files are valid")
         return 0
-    print("\n✗ Some .po files have errors")
+    print("\n[ERROR] Some .po files have errors")
     return 1
 
 

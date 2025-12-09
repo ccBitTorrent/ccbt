@@ -180,12 +180,14 @@ class InteractiveCLI:
                 resume=resume,
             )
             if not result.success:
-                raise RuntimeError(result.error or "Failed to add torrent")
+                add_torrent_error_msg = result.error or _("Failed to add torrent")
+                raise RuntimeError(add_torrent_error_msg)
             info_hash_hex = result.data["info_hash"]
         else:
             # Fallback to session method for dict data (not a file path)
             if not self.session:
-                raise RuntimeError("Direct session access not available in daemon mode")
+                session_error_msg = _("Direct session access not available in daemon mode")
+                raise RuntimeError(session_error_msg)
             info_hash_hex = await self.session.add_torrent(torrent_data, resume=resume)
         self.current_info_hash_hex = info_hash_hex
 
@@ -197,7 +199,11 @@ class InteractiveCLI:
                 torrent_session = self.session.torrents.get(info_hash_bytes)
 
         # Show interactive file selection if torrent has files and file manager exists
-        if torrent_session and torrent_session.file_selection_manager:
+        if (
+            torrent_session
+            and hasattr(torrent_session, "file_selection_manager")
+            and torrent_session.file_selection_manager is not None
+        ):
             await self._interactive_file_selection(
                 torrent_session.file_selection_manager
             )
@@ -538,7 +544,7 @@ class InteractiveCLI:
                     0,
                 ) or torrent.get("total_pieces", 0)
         except Exception as e:
-            logger.debug("Failed to calculate progress: %s", e)
+            logger.debug(_("Failed to calculate progress: %s"), e)
 
     async def cmd_help(self, _args: list[str]) -> None:
         """Show help."""
@@ -736,7 +742,15 @@ Available Commands:
             self.console.print(_("File selection not available for this torrent"))
             return
 
-        file_manager = torrent_session.file_selection_manager
+        # Type narrowing: file_selection_manager is guaranteed to be non-None after checks
+        from ccbt.piece.file_selection import FileSelectionManager
+
+        file_selection_manager = torrent_session.file_selection_manager
+        if not isinstance(file_selection_manager, FileSelectionManager):
+            self.console.print(_("File selection not available for this torrent"))
+            return
+
+        file_manager: FileSelectionManager = file_selection_manager
 
         # Handle commands if provided
         if len(args) > 0:
@@ -754,7 +768,7 @@ Available Commands:
             if cmd == "select" and len(args) > 1:
                 try:
                     file_idx = int(args[1])
-                    await file_manager.select_file(file_idx)
+                    await file_manager.select_file(file_idx)  # type: ignore[attr-defined]
                     self.console.print(
                         _("[green]Selected file {idx}[/green]").format(idx=file_idx)
                     )
@@ -764,7 +778,7 @@ Available Commands:
             if cmd == "deselect" and len(args) > 1:
                 try:
                     file_idx = int(args[1])
-                    await file_manager.deselect_file(file_idx)
+                    await file_manager.deselect_file(file_idx)  # type: ignore[attr-defined]
                     self.console.print(
                         _("[yellow]Deselected file {idx}[/yellow]").format(idx=file_idx)
                     )
@@ -776,7 +790,7 @@ Available Commands:
                     file_idx = int(args[1])
                     priority_str = args[2].lower()
                     if priority_str in priority_map:
-                        await file_manager.set_file_priority(
+                        await file_manager.set_file_priority(  # type: ignore[attr-defined]
                             file_idx, priority_map[priority_str]
                         )
                         self.console.print(
@@ -795,7 +809,7 @@ Available Commands:
                 return
 
         # Display files table
-        all_states = file_manager.get_all_file_states()
+        all_states = file_manager.get_all_file_states()  # type: ignore[attr-defined]
         table = Table(title=_("Files"))
         table.add_column("#", style="cyan", width=5)
         table.add_column(_("Selected"), style="green", width=10)
@@ -806,7 +820,7 @@ Available Commands:
 
         for file_idx in sorted(all_states.keys()):
             state = all_states[file_idx]
-            file_info = file_manager.torrent_info.files[file_idx]
+            file_info = file_manager.torrent_info.files[file_idx]  # type: ignore[attr-defined]
             selected_mark = "[green]✓[/green]" if state.selected else "[red]✗[/red]"
             priority_str = state.priority.name.lower()
 
@@ -1134,7 +1148,15 @@ Available Commands:
                     _("[red]Failed to pause: {error}[/red]").format(error=result.error)
                 )
                 return
-        self.console.print(_("Download paused"))
+            
+            # Show checkpoint status
+            checkpoint_info = ""
+            if result.data and result.data.get("checkpoint_saved"):
+                checkpoint_info = _(" (checkpoint saved)")
+            
+            self.console.print(
+                _("Download paused{checkpoint_info}").format(checkpoint_info=checkpoint_info)
+            )
 
     async def cmd_resume(self, _args: list[str]) -> None:
         """Resume download."""
@@ -1151,7 +1173,18 @@ Available Commands:
                     _("[red]Failed to resume: {error}[/red]").format(error=result.error)
                 )
                 return
-        self.console.print(_("Download resumed"))
+            
+            # Show checkpoint restoration status
+            checkpoint_info = ""
+            if result.data:
+                if result.data.get("checkpoint_restored"):
+                    checkpoint_info = _(" (checkpoint restored)")
+                elif result.data.get("checkpoint_not_found"):
+                    checkpoint_info = _(" (no checkpoint found)")
+            
+            self.console.print(
+                _("Download resumed{checkpoint_info}").format(checkpoint_info=checkpoint_info)
+            )
 
     async def cmd_stop(self, _args: list[str]) -> None:
         """Stop download."""
@@ -1172,6 +1205,48 @@ Available Commands:
             )
             return
         self.console.print(_("Download stopped"))
+
+    async def cmd_cancel(self, _args: list[str]) -> None:
+        """Cancel download (pause but keep in session)."""
+        if not self.current_torrent:
+            self.console.print(_("No torrent active"))
+            return
+
+        if self.current_info_hash_hex:
+            result = await self.executor.execute(
+                "torrent.cancel", info_hash=self.current_info_hash_hex
+            )
+            if not result.success:
+                self.console.print(
+                    _("[red]Failed to cancel: {error}[/red]").format(error=result.error)
+                )
+                return
+            
+            # Show checkpoint status
+            checkpoint_info = ""
+            if result.data and result.data.get("checkpoint_saved"):
+                checkpoint_info = _(" (checkpoint saved)")
+            
+            self.console.print(
+                _("Download cancelled{checkpoint_info}").format(checkpoint_info=checkpoint_info)
+            )
+
+    async def cmd_force_start(self, _args: list[str]) -> None:
+        """Force start download (bypass queue limits)."""
+        if not self.current_torrent:
+            self.console.print(_("No torrent active"))
+            return
+
+        if self.current_info_hash_hex:
+            result = await self.executor.execute(
+                "torrent.force_start", info_hash=self.current_info_hash_hex
+            )
+            if not result.success:
+                self.console.print(
+                    _("[red]Failed to force start: {error}[/red]").format(error=result.error)
+                )
+                return
+        self.console.print(_("Download force started"))
 
     async def cmd_quit(self, _args: list[str]) -> None:
         """Quit application."""
@@ -1261,32 +1336,738 @@ Available Commands:
             return
         if args[0] == "dht":
             cfg.discovery.enable_dht = not cfg.discovery.enable_dht
-            self.console.print(f"enable_dht={cfg.discovery.enable_dht}")
+            self.console.print(_("enable_dht={value}").format(value=cfg.discovery.enable_dht))
         elif args[0] == "pex":
             cfg.discovery.enable_pex = not cfg.discovery.enable_pex
-            self.console.print(f"enable_pex={cfg.discovery.enable_pex}")
+            self.console.print(_("enable_pex={value}").format(value=cfg.discovery.enable_pex))
 
-    async def cmd_disk(self, _args: list[str]) -> None:
-        """Show disk configuration settings."""
+    async def cmd_disk(self, args: list[str]) -> None:
+        """Show or configure disk I/O settings.
+
+        Usage:
+          disk - Show disk configuration and statistics
+          disk show - Show full disk configuration
+          disk stats - Show disk I/O statistics
+          disk config <key> <value> - Set configuration value (temporary)
+          disk monitor - Real-time monitoring (not implemented yet)
+        """
+        if not args:
+            # Default: show both config and stats
+            await self._show_disk_config()
+            self.console.print()
+            await self._show_disk_stats()
+            return
+
+        subcommand = args[0].lower()
+        if subcommand == "show":
+            await self._show_disk_config()
+        elif subcommand == "stats":
+            await self._show_disk_stats()
+        elif subcommand == "config" and len(args) >= 3:
+            key = args[1]
+            value = args[2]
+            await self._update_disk_config(key, value)
+        elif subcommand == "monitor":
+            self.console.print(
+                _("[yellow]Real-time monitoring not yet implemented[/yellow]")
+            )
+        else:
+            self.console.print(_("Usage: disk [show|stats|config <key> <value>|monitor]"))
+
+    async def _show_disk_config(self) -> None:
+        """Display comprehensive disk configuration."""
+        from rich.table import Table
+
         cfg = get_config()
-        self.console.print(
-            {
-                "preallocate": cfg.disk.preallocate,
-                "write_batch_kib": cfg.disk.write_batch_kib,
-                "use_mmap": cfg.disk.use_mmap,
-            },
+        table = Table(title=_("Disk I/O Configuration"), show_header=True)
+        table.add_column("Setting", style="cyan")
+        table.add_column("Value", style="green")
+        table.add_column("Description", style="dim")
+
+        # Preallocation
+        table.add_row(
+            "Preallocation",
+            str(cfg.disk.preallocate),
+            "File space preallocation strategy",
         )
 
-    async def cmd_network(self, _args: list[str]) -> None:
-        """Show or configure network settings."""
-        cfg = get_config()
-        self.console.print(
-            {
-                "listen_port": cfg.network.listen_port,
-                "pipeline_depth": cfg.network.pipeline_depth,
-                "block_size_kib": cfg.network.block_size_kib,
-            },
+        # Write settings
+        table.add_row(
+            "Write Batch Size",
+            f"{cfg.disk.write_batch_kib} KiB",
+            "Size of write batches",
         )
+        table.add_row(
+            "Write Buffer Size",
+            f"{cfg.disk.write_buffer_kib} KiB",
+            "Write buffer size",
+        )
+        table.add_row(
+            "Write Batch Timeout",
+            f"{cfg.disk.write_batch_timeout_ms} ms",
+            "Timeout for write batching",
+        )
+        table.add_row(
+            "Write Batch Timeout Adaptive",
+            "Yes" if cfg.disk.write_batch_timeout_adaptive else "No",
+            "Adaptive timeout based on storage type",
+        )
+        table.add_row(
+            "Write Queue Priority",
+            "Yes" if cfg.disk.write_queue_priority else "No",
+            "Priority queue for writes",
+        )
+
+        # Memory mapping
+        table.add_row(
+            "Use MMAP",
+            "Yes" if cfg.disk.use_mmap else "No",
+            "Use memory-mapped I/O",
+        )
+        table.add_row(
+            "MMAP Cache Size",
+            f"{cfg.disk.mmap_cache_mb} MB",
+            "Memory-mapped cache size",
+        )
+        table.add_row(
+            "MMAP Cache Adaptive",
+            "Yes" if cfg.disk.mmap_cache_adaptive else "No",
+            "Adaptive cache sizing",
+        )
+
+        # Workers
+        table.add_row(
+            "Disk Workers",
+            str(cfg.disk.disk_workers),
+            "Number of disk I/O workers",
+        )
+        table.add_row(
+            "Disk Workers Adaptive",
+            "Yes" if cfg.disk.disk_workers_adaptive else "No",
+            "Dynamic worker adjustment",
+        )
+        table.add_row(
+            "Disk Workers Min",
+            str(cfg.disk.disk_workers_min),
+            "Minimum disk workers",
+        )
+        table.add_row(
+            "Disk Workers Max",
+            str(cfg.disk.disk_workers_max),
+            "Maximum disk workers",
+        )
+
+        # Advanced features
+        table.add_row(
+            "Direct I/O",
+            "Yes" if cfg.disk.direct_io else "No",
+            "Bypass page cache",
+        )
+        table.add_row(
+            "io_uring",
+            "Yes" if cfg.disk.enable_io_uring else "No",
+            "Use io_uring on Linux",
+        )
+        table.add_row(
+            "Sync Writes",
+            "Yes" if cfg.disk.sync_writes else "No",
+            "Synchronize writes to disk",
+        )
+
+        # Hash verification
+        table.add_row(
+            "Hash Workers",
+            str(cfg.disk.hash_workers),
+            "Hash verification workers",
+        )
+        table.add_row(
+            "Hash Chunk Size",
+            f"{cfg.disk.hash_chunk_size // 1024} KiB",
+            "Hash verification chunk size",
+        )
+
+        self.console.print(table)
+
+    async def _show_disk_stats(self) -> None:
+        """Display disk I/O statistics."""
+        from rich.table import Table
+
+        try:
+            # Try to get disk I/O manager from session
+            disk_io = None
+            if self.session and hasattr(self.session, "disk_io_manager"):
+                disk_io = self.session.disk_io_manager
+            else:
+                # Fallback to deprecated singleton
+                from ccbt.storage.disk_io_init import get_disk_io_manager
+
+                with contextlib.suppress(Exception):
+                    disk_io = get_disk_io_manager()
+
+            if not disk_io or not getattr(disk_io, "_running", False):
+                self.console.print(
+                    _("[yellow]Disk I/O manager not running. Statistics unavailable.[/yellow]")
+                )
+                return
+
+            stats = disk_io.stats
+            cache_stats = disk_io.get_cache_stats()
+
+            # I/O Statistics
+            io_table = Table(title=_("Disk I/O Statistics"))
+            io_table.add_column("Metric", style="cyan")
+            io_table.add_column("Value", style="green")
+
+            io_table.add_row("Total Writes", f"{stats.get('writes', 0):,}")
+            io_table.add_row(
+                "Bytes Written",
+                f"{stats.get('bytes_written', 0) / (1024 * 1024):.2f} MB",
+            )
+            io_table.add_row(
+                "Queue Full Errors", f"{stats.get('queue_full_errors', 0):,}"
+            )
+            io_table.add_row(
+                "Preallocations", f"{stats.get('preallocations', 0):,}"
+            )
+            io_table.add_row(
+                "Worker Adjustments",
+                f"{stats.get('worker_adjustments', 0):,}",
+            )
+            io_table.add_row(
+                "Direct I/O Operations",
+                f"{stats.get('direct_io_operations', 0):,}",
+            )
+            io_table.add_row(
+                "io_uring Operations",
+                f"{stats.get('io_uring_operations', 0):,}",
+            )
+
+            # Cache Statistics
+            cache_table = Table(title=_("Cache Statistics"))
+            cache_table.add_column("Metric", style="cyan")
+            cache_table.add_column("Value", style="green")
+
+            cache_table.add_row(
+                "Cache Entries", f"{cache_stats.get('entries', 0):,}"
+            )
+            cache_table.add_row(
+                "Cache Size",
+                f"{cache_stats.get('total_size', 0) / (1024 * 1024):.2f} MB",
+            )
+            cache_table.add_row(
+                "Cache Hits", f"{cache_stats.get('cache_hits', 0):,}"
+            )
+            cache_table.add_row(
+                "Cache Misses", f"{cache_stats.get('cache_misses', 0):,}"
+            )
+            hit_rate = cache_stats.get("hit_rate_percent")
+            if hit_rate is not None:
+                cache_table.add_row("Hit Rate", f"{hit_rate:.2f}%")
+            eviction_rate = cache_stats.get("eviction_rate_per_sec")
+            if eviction_rate is not None:
+                cache_table.add_row("Eviction Rate", f"{eviction_rate:.2f} /sec")
+            efficiency = cache_stats.get("cache_efficiency_percent")
+            if efficiency is not None:
+                cache_table.add_row("Cache Efficiency", f"{efficiency:.2f}%")
+
+            self.console.print(io_table)
+            self.console.print()
+            self.console.print(cache_table)
+
+        except Exception as e:
+            self.console.print(
+                _("[red]Error retrieving disk statistics: {error}[/red]").format(
+                    error=e
+                )
+            )
+            logger.exception("Failed to get disk statistics")
+
+    async def _update_disk_config(self, key: str, value: str) -> None:
+        """Update disk configuration value (temporary, session-only).
+
+        Args:
+            key: Configuration key to update
+            value: New value
+        """
+        cfg = get_config()
+        disk_config = cfg.disk
+
+        try:
+            # Map common keys to config attributes
+            key_mapping = {
+                "write_batch_kib": "write_batch_kib",
+                "write_buffer_kib": "write_buffer_kib",
+                "disk_workers": "disk_workers",
+                "use_mmap": "use_mmap",
+                "mmap_cache_mb": "mmap_cache_mb",
+                "direct_io": "direct_io",
+                "enable_io_uring": "enable_io_uring",
+            }
+
+            if key not in key_mapping:
+                self.console.print(
+                    _("[red]Unknown configuration key: {key}[/red]").format(key=key)
+                )
+                self.console.print(
+                    _("Available keys: {keys}").format(
+                        keys=", ".join(key_mapping.keys())
+                    )
+                )
+                return
+
+            attr_name = key_mapping[key]
+            attr = getattr(disk_config, attr_name, None)
+
+            if attr is None:
+                self.console.print(
+                    _("[red]Configuration key not found: {key}[/red]").format(key=key)
+                )
+                return
+
+            # Convert value based on type
+            if isinstance(attr, bool):
+                new_value = value.lower() in ("true", "yes", "1", "on")
+            elif isinstance(attr, int):
+                new_value = int(value)
+            elif isinstance(attr, float):
+                new_value = float(value)
+            else:
+                new_value = value
+
+            # Validate and set
+            setattr(disk_config, attr_name, new_value)
+            self.console.print(
+                _("[green]Updated {key} to {value}[/green]").format(
+                    key=key, value=new_value
+                )
+            )
+            self.console.print(
+                _(
+                    "[yellow]Note: This change is temporary and will be lost on restart. "
+                    "Use config file for persistent changes.[/yellow]"
+                )
+            )
+
+        except ValueError as e:
+            self.console.print(
+                _("[red]Invalid value for {key}: {error}[/red]").format(key=key, error=e)
+            )
+        except Exception as e:
+            self.console.print(
+                _("[red]Error updating configuration: {error}[/red]").format(error=e)
+            )
+            logger.exception("Failed to update disk config")
+
+    async def cmd_network(self, args: list[str]) -> None:
+        """Show or configure network settings.
+
+        Usage:
+          network - Show network configuration and statistics
+          network show - Show full network configuration
+          network stats - Show network I/O statistics
+          network config <key> <value> - Set configuration value (temporary)
+          network optimize - Show optimization recommendations
+          network monitor - Real-time monitoring (not implemented yet)
+        """
+        if not args:
+            # Default: show both config and stats
+            await self._show_network_config()
+            self.console.print()
+            await self._show_network_stats()
+            return
+
+        subcommand = args[0].lower()
+        if subcommand == "show":
+            await self._show_network_config()
+        elif subcommand == "stats":
+            await self._show_network_stats()
+        elif subcommand == "config" and len(args) >= 3:
+            key = args[1]
+            value = args[2]
+            await self._update_network_config(key, value)
+        elif subcommand == "optimize":
+            await self._show_network_optimizations()
+        elif subcommand == "monitor":
+            self.console.print(
+                _("[yellow]Real-time monitoring not yet implemented[/yellow]")
+            )
+        else:
+            self.console.print(
+                _("Usage: network [show|stats|config <key> <value>|optimize|monitor]")
+            )
+
+    async def _show_network_config(self) -> None:
+        """Display comprehensive network configuration."""
+        from rich.table import Table
+
+        cfg = get_config()
+        table = Table(title=_("Network Configuration"), show_header=True)
+        table.add_column("Setting", style="cyan")
+        table.add_column("Value", style="green")
+        table.add_column("Description", style="dim")
+
+        # Connection settings
+        table.add_row(
+            "Listen Port",
+            str(cfg.network.listen_port),
+            "TCP listen port",
+        )
+        table.add_row(
+            "Listen Port TCP",
+            str(cfg.network.listen_port_tcp or cfg.network.listen_port),
+            "TCP listen port (explicit)",
+        )
+        table.add_row(
+            "Listen Port UDP",
+            str(cfg.network.listen_port_udp or cfg.network.listen_port),
+            "UDP listen port (explicit)",
+        )
+        table.add_row(
+            "Max Global Peers",
+            str(cfg.network.max_global_peers),
+            "Maximum global peer connections",
+        )
+        table.add_row(
+            "Max Peers Per Torrent",
+            str(cfg.network.max_peers_per_torrent),
+            "Maximum peers per torrent",
+        )
+        table.add_row(
+            "Max Connections Per Peer",
+            str(cfg.network.max_connections_per_peer),
+            "Maximum connections per peer",
+        )
+
+        # Pipeline and block settings
+        table.add_row(
+            "Pipeline Depth",
+            str(cfg.network.pipeline_depth),
+            "Request pipeline depth",
+        )
+        table.add_row(
+            "Pipeline Adaptive Depth",
+            "Yes" if cfg.network.pipeline_adaptive_depth else "No",
+            "Adaptive pipeline depth",
+        )
+        table.add_row(
+            "Block Size",
+            f"{cfg.network.block_size_kib} KiB",
+            "Block size for requests",
+        )
+        table.add_row(
+            "Min Block Size",
+            f"{cfg.network.min_block_size_kib} KiB",
+            "Minimum block size",
+        )
+        table.add_row(
+            "Max Block Size",
+            f"{cfg.network.max_block_size_kib} KiB",
+            "Maximum block size",
+        )
+
+        # Socket settings
+        table.add_row(
+            "Socket RCV Buffer",
+            f"{cfg.network.socket_rcvbuf_kib} KiB",
+            "Socket receive buffer",
+        )
+        table.add_row(
+            "Socket SND Buffer",
+            f"{cfg.network.socket_sndbuf_kib} KiB",
+            "Socket send buffer",
+        )
+        table.add_row(
+            "Socket Adaptive Buffers",
+            "Yes" if cfg.network.socket_adaptive_buffers else "No",
+            "Adaptive buffer sizing",
+        )
+        table.add_row(
+            "TCP NoDelay",
+            "Yes" if cfg.network.tcp_nodelay else "No",
+            "Disable Nagle's algorithm",
+        )
+
+        # Timeouts
+        table.add_row(
+            "Connection Timeout",
+            f"{cfg.network.connection_timeout} s",
+            "Connection timeout",
+        )
+        table.add_row(
+            "Handshake Timeout",
+            f"{cfg.network.handshake_timeout} s",
+            "Handshake timeout",
+        )
+        table.add_row(
+            "Peer Timeout",
+            f"{cfg.network.peer_timeout} s",
+            "Peer inactivity timeout",
+        )
+        table.add_row(
+            "Timeout Adaptive",
+            "Yes" if cfg.network.timeout_adaptive else "No",
+            "Adaptive timeout calculation",
+        )
+
+        # Rate limiting
+        table.add_row(
+            "Global Download Limit",
+            f"{cfg.network.global_down_kib} KiB/s" if cfg.network.global_down_kib > 0 else "Unlimited",
+            "Global download rate limit",
+        )
+        table.add_row(
+            "Global Upload Limit",
+            f"{cfg.network.global_up_kib} KiB/s" if cfg.network.global_up_kib > 0 else "Unlimited",
+            "Global upload rate limit",
+        )
+
+        # Connection pool
+        table.add_row(
+            "Connection Pool Max",
+            str(cfg.network.connection_pool_max_connections),
+            "Maximum connections in pool",
+        )
+        table.add_row(
+            "Connection Pool Warmup",
+            "Yes" if cfg.network.connection_pool_warmup_enabled else "No",
+            "Enable connection warmup",
+        )
+
+        # Protocols
+        table.add_row(
+            "Enable TCP",
+            "Yes" if cfg.network.enable_tcp else "No",
+            "Enable TCP transport",
+        )
+        table.add_row(
+            "Enable uTP",
+            "Yes" if cfg.network.enable_utp else "No",
+            "Enable uTP transport",
+        )
+        table.add_row(
+            "Enable IPv6",
+            "Yes" if cfg.network.enable_ipv6 else "No",
+            "Enable IPv6 support",
+        )
+        table.add_row(
+            "Enable Encryption",
+            "Yes" if cfg.network.enable_encryption else "No",
+            "Enable protocol encryption",
+        )
+
+        self.console.print(table)
+
+    async def _show_network_stats(self) -> None:
+        """Display network I/O statistics."""
+        from rich.table import Table
+
+        try:
+            # Try to get network optimizer stats
+            from ccbt.utils.network_optimizer import get_network_optimizer
+
+            optimizer = get_network_optimizer()
+            stats = optimizer.get_stats()
+
+            # Connection Pool Statistics
+            pool_table = Table(title=_("Connection Pool Statistics"))
+            pool_table.add_column("Metric", style="cyan")
+            pool_table.add_column("Value", style="green")
+
+            pool_stats = stats.get("connection_pool", {})
+            if isinstance(pool_stats, dict):
+                pool_table.add_row(
+                    "Total Connections",
+                    f"{pool_stats.get('total_connections', 0):,}",
+                )
+                pool_table.add_row(
+                    "Active Connections",
+                    f"{pool_stats.get('active_connections', 0):,}",
+                )
+                pool_table.add_row(
+                    "Failed Connections",
+                    f"{pool_stats.get('failed_connections', 0):,}",
+                )
+                bytes_sent = pool_stats.get("bytes_sent", 0)
+                bytes_received = pool_stats.get("bytes_received", 0)
+                pool_table.add_row(
+                    "Bytes Sent",
+                    f"{bytes_sent / (1024 * 1024):.2f} MB" if bytes_sent > 0 else "0 B",
+                )
+                pool_table.add_row(
+                    "Bytes Received",
+                    f"{bytes_received / (1024 * 1024):.2f} MB" if bytes_received > 0 else "0 B",
+                )
+
+            # Socket Configuration
+            socket_table = Table(title=_("Socket Optimizations"))
+            socket_table.add_column("Socket Type", style="cyan")
+            socket_table.add_column("RCV Buffer", style="green")
+            socket_table.add_column("SND Buffer", style="green")
+
+            socket_configs = stats.get("socket_configs", {})
+            if isinstance(socket_configs, dict):
+                for sock_type, config in socket_configs.items():
+                    if isinstance(config, dict):
+                        rcvbuf = config.get("so_rcvbuf", 0)
+                        sndbuf = config.get("so_sndbuf", 0)
+                        socket_table.add_row(
+                            sock_type.replace("_", " ").title(),
+                            f"{rcvbuf / 1024:.1f} KiB" if rcvbuf > 0 else "N/A",
+                            f"{sndbuf / 1024:.1f} KiB" if sndbuf > 0 else "N/A",
+                        )
+
+            self.console.print(pool_table)
+            if socket_table.rows:
+                self.console.print()
+                self.console.print(socket_table)
+
+        except Exception as e:
+            self.console.print(
+                _("[red]Error retrieving network statistics: {error}[/red]").format(
+                    error=e
+                )
+            )
+            logger.exception("Failed to get network statistics")
+
+    async def _show_network_optimizations(self) -> None:
+        """Show network optimization recommendations."""
+        from rich.table import Table
+
+        cfg = get_config()
+        table = Table(title=_("Network Optimization Recommendations"))
+        table.add_column("Setting", style="cyan")
+        table.add_column("Current", style="yellow")
+        table.add_column("Recommended", style="green")
+        table.add_column("Reason", style="dim")
+
+        # Check pipeline depth
+        if cfg.network.pipeline_depth < 16:
+            table.add_row(
+                "Pipeline Depth",
+                str(cfg.network.pipeline_depth),
+                "16-32",
+                "Low pipeline depth may limit throughput",
+            )
+
+        # Check socket buffers
+        if cfg.network.socket_rcvbuf_kib < 256:
+            table.add_row(
+                "Socket RCV Buffer",
+                f"{cfg.network.socket_rcvbuf_kib} KiB",
+                "256+ KiB",
+                "Small buffers may limit high-speed connections",
+            )
+
+        # Check adaptive features
+        if not cfg.network.socket_adaptive_buffers:
+            table.add_row(
+                "Adaptive Buffers",
+                "Disabled",
+                "Enabled",
+                "Adaptive buffers optimize for connection characteristics",
+            )
+
+        if not cfg.network.pipeline_adaptive_depth:
+            table.add_row(
+                "Adaptive Pipeline",
+                "Disabled",
+                "Enabled",
+                "Adaptive pipeline optimizes for latency",
+            )
+
+        if not cfg.network.timeout_adaptive:
+            table.add_row(
+                "Adaptive Timeout",
+                "Disabled",
+                "Enabled",
+                "Adaptive timeout improves connection reliability",
+            )
+
+        if table.rows:
+            self.console.print(table)
+        else:
+            self.console.print(
+                _("[green]Network configuration looks optimal![/green]")
+            )
+
+    async def _update_network_config(self, key: str, value: str) -> None:
+        """Update network configuration value (temporary, session-only).
+
+        Args:
+            key: Configuration key to update
+            value: New value
+        """
+        cfg = get_config()
+        network_config = cfg.network
+
+        try:
+            # Map common keys to config attributes
+            key_mapping = {
+                "pipeline_depth": "pipeline_depth",
+                "block_size_kib": "block_size_kib",
+                "max_global_peers": "max_global_peers",
+                "max_peers_per_torrent": "max_peers_per_torrent",
+                "connection_timeout": "connection_timeout",
+                "socket_rcvbuf_kib": "socket_rcvbuf_kib",
+                "socket_sndbuf_kib": "socket_sndbuf_kib",
+                "tcp_nodelay": "tcp_nodelay",
+                "global_down_kib": "global_down_kib",
+                "global_up_kib": "global_up_kib",
+            }
+
+            if key not in key_mapping:
+                self.console.print(
+                    _("[red]Unknown configuration key: {key}[/red]").format(key=key)
+                )
+                self.console.print(
+                    _("Available keys: {keys}").format(
+                        keys=", ".join(key_mapping.keys())
+                    )
+                )
+                return
+
+            attr_name = key_mapping[key]
+            attr = getattr(network_config, attr_name, None)
+
+            if attr is None:
+                self.console.print(
+                    _("[red]Configuration key not found: {key}[/red]").format(key=key)
+                )
+                return
+
+            # Convert value based on type
+            if isinstance(attr, bool):
+                new_value = value.lower() in ("true", "yes", "1", "on")
+            elif isinstance(attr, int):
+                new_value = int(value)
+            elif isinstance(attr, float):
+                new_value = float(value)
+            else:
+                new_value = value
+
+            # Validate and set
+            setattr(network_config, attr_name, new_value)
+            self.console.print(
+                _("[green]Updated {key} to {value}[/green]").format(
+                    key=key, value=new_value
+                )
+            )
+            self.console.print(
+                _(
+                    "[yellow]Note: This change is temporary and will be lost on restart. "
+                    "Use config file for persistent changes.[/yellow]"
+                )
+            )
+
+        except ValueError as e:
+            self.console.print(
+                _("[red]Invalid value for {key}: {error}[/red]").format(key=key, error=e)
+            )
+        except Exception as e:
+            self.console.print(
+                _("[red]Error updating configuration: {error}[/red]").format(error=e)
+            )
+            logger.exception("Failed to update network config")
 
     async def cmd_checkpoint(self, args: list[str]) -> None:
         """List checkpoints (basic).
@@ -2029,3 +2810,4 @@ Available Commands:
                 )
         else:
             self.console.print(_("Unknown subcommand: {sub}").format(sub=sub))
+

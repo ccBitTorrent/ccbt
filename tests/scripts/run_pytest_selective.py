@@ -154,6 +154,14 @@ def run_pytest(markers: str, coverage: bool = False) -> int:
     """
     cmd = [sys.executable, "-m", "pytest", "-c", "dev/pytest.ini", "tests/"]
 
+    # ALWAYS enforce timeouts - explicit timeout flags override any config
+    # Default: 600s (10 minutes) per test, thread-based timeout method
+    # This prevents tests from hanging indefinitely
+    cmd.extend([
+        "--timeout=600",
+        "--timeout-method=thread",
+    ])
+
     # Add marker filter if specified
     if markers:
         cmd.extend(["-m", markers])

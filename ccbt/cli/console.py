@@ -6,12 +6,11 @@ For spinner utilities and helper functions, see ccbt.utils.console_utils.
 
 from __future__ import annotations
 
-import sys
-
 from rich.console import Console
 
 # Re-export utilities from console_utils for convenience
 from ccbt.utils.console_utils import (
+    create_console,
     create_progress,
     print_error,
     print_info,
@@ -34,29 +33,6 @@ __all__ = [
     "safe_print_error",
     "spinner",
 ]
-
-
-def create_console() -> Console:
-    """Create a Rich Console with Windows encoding compatibility."""
-    if sys.platform == "win32":
-        try:
-            if hasattr(sys.stdout, "reconfigure") and callable(
-                getattr(sys.stdout, "reconfigure", None)
-            ):
-                sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
-            if hasattr(sys.stderr, "reconfigure") and callable(
-                getattr(sys.stderr, "reconfigure", None)
-            ):
-                sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
-        except Exception:
-            pass
-
-    return Console(
-        file=sys.stdout,
-        force_terminal=None,
-        legacy_windows=False,
-        safe_box=True,
-    )
 
 
 def safe_print_error(

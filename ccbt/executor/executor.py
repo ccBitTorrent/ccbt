@@ -18,6 +18,7 @@ from ccbt.executor.security_executor import SecurityExecutor
 from ccbt.executor.session_adapter import SessionAdapter
 from ccbt.executor.session_executor import SessionExecutor
 from ccbt.executor.torrent_executor import TorrentExecutor
+from ccbt.executor.xet_executor import XetExecutor
 
 
 class UnifiedCommandExecutor(CommandExecutor):
@@ -41,6 +42,7 @@ class UnifiedCommandExecutor(CommandExecutor):
         self.protocol_executor = ProtocolExecutor(adapter)
         self.session_executor = SessionExecutor(adapter)
         self.security_executor = SecurityExecutor(adapter)
+        self.xet_executor = XetExecutor(adapter)
 
     async def execute(
         self,
@@ -78,6 +80,8 @@ class UnifiedCommandExecutor(CommandExecutor):
             return await self.session_executor.execute(command, *args, **kwargs)
         if command.startswith("security."):
             return await self.security_executor.execute(command, *args, **kwargs)
+        if command.startswith("xet."):
+            return await self.xet_executor.execute(command, *args, **kwargs)
         return CommandResult(
             success=False,
             error=f"Unknown command: {command}",

@@ -1,49 +1,136 @@
 ---
-description: Documentation standards and structure for ccBitTorrent (MkDocs, reports embedding)
+description: Documentation standards and structure for ccBitTorrent (MkDocs, reports embedding, blog, multilingual)
 globs: "docs/**/*.md"
 ---
 # Documentation Standards
 
 ## Structure
 - Documentation in [`docs/`](mdc:docs/); site built with MkDocs using [`dev/mkdocs.yml`](mdc:dev/mkdocs.yml).
-- Add new pages under `docs/`; update navigation in `dev/mkdocs.yml`.
+- **Multilingual Structure**: Documentation organized by language in `docs/<lang>/` directories (e.g., `docs/en/`, `docs/es/`, `docs/fr/`).
+- **Default Language**: English content is in `docs/en/` (migrated from root `docs/`).
+- Add new pages under appropriate language directory; update navigation in `dev/mkdocs.yml`.
+- **Blog**: Blog posts located in `docs/blog/` with format `YYYY-MM-DD-slug.md`.
+
+## Multilingual Documentation
+
+### Language Support
+- **Supported Languages**: English (en), Spanish (es), French (fr), Japanese (ja), Korean (ko), Hindi (hi), Urdu (ur), Persian (fa), Thai (th), Chinese (zh)
+- **Default**: English (`docs/en/`)
+- **Plugin**: Uses `mkdocs-static-i18n` plugin configured in [`dev/mkdocs.yml`](mdc:dev/mkdocs.yml)
+- **Translation Guide**: See [`docs/en/i18n/translation-guide.md`](mdc:docs/en/i18n/translation-guide.md) for translation workflow
+
+### Creating Translations
+1. Copy English version from `docs/en/` to target language directory
+2. Translate content while preserving:
+   - Markdown formatting
+   - Code examples (keep in original language)
+   - File structure and organization
+   - Internal links (update paths to translated versions)
+3. Test build: `uv run mkdocs build --strict -f dev/mkdocs.yml`
+4. Verify language switcher functionality
+
+## Blog Functionality
+
+### Blog Structure
+- **Location**: `docs/blog/`
+- **Index**: `docs/blog/index.md` - Blog landing page
+- **Posts**: Format `YYYY-MM-DD-slug.md` (e.g., `2024-01-01-welcome.md`)
+- **Plugin**: `mkdocs-blog-plugin` configured in [`dev/mkdocs.yml`](mdc:dev/mkdocs.yml)
+
+### Creating Blog Posts
+1. Create markdown file in `docs/blog/` with date prefix
+2. Include frontmatter:
+   ```yaml
+   ---
+   title: Your Post Title
+   date: YYYY-MM-DD
+   author: Your Name
+   tags:
+     - tag1
+     - tag2
+   ---
+   ```
+3. Use `<!-- more -->` to separate excerpt from full content
+4. Follow existing blog post style
+5. Test in documentation build
+
+### Blog Guidelines
+- Keep posts relevant to ccBitTorrent
+- Use clear, engaging language
+- Include code examples where appropriate
+- Add relevant tags for discoverability
+- Link to related documentation
 
 ## Reports in Docs
-- Coverage HTML must be placed under `docs/reports/coverage/` so it can be linked as `reports/coverage/index.html` in nav.
-- Bandit JSON must be written to `docs/reports/bandit/bandit-report.json`. Render it in [`docs/reports/bandit/index.md`](mdc:docs/reports/bandit/index.md) using a fenced include:
+- **Coverage HTML**: Must be placed under `docs/en/reports/coverage/` so it can be linked as `en/reports/coverage/index.html` in nav.
+- **Bandit JSON**: Must be written to `docs/en/reports/bandit/bandit-report.json`. Render it in [`docs/en/reports/bandit/index.md`](mdc:docs/en/reports/bandit/index.md) using a fenced include:
 
 ```json
 --8<-- "reports/bandit/bandit-report.json"
 ```
 
 ## Build
-- Build docs: `uv run mkdocs build --strict -f dev/mkdocs.yml`.
+- **Build Command**: `uv run mkdocs build --strict -f dev/mkdocs.yml`
+- **Local Serve**: `uv run mkdocs serve -f dev/mkdocs.yml`
+- **Pre-commit**: Documentation build runs automatically on markdown file changes
+- **CI/CD**: Built in `.github/workflows/docs.yml` and deployed to GitHub Pages and Read the Docs
 
-## Writing
-- Use clear headers and short sections.
-- Use relative links for internal pages.
-- Provide bash/toml/python code blocks with syntax highlighting where appropriate.
+## MkDocs Configuration
 
----
-globs: docs/**/*.md,*.md
-description: Documentation standards and requirements
----
+### Plugins
+- **i18n**: `mkdocs-static-i18n` for multilingual support
+- **blog**: `mkdocs-blog-plugin` for blog functionality
+- **mkdocstrings**: Python API documentation
+- **git-revision-date-localized**: Last updated dates
+- **codeinclude**: Include code snippets
+- **coverage**: Coverage report integration
 
-# Documentation Standards
+### Material Theme Features
+- Navigation: tabs, sections, expand, path, indexes, top, tracking
+- Search: highlight, share, suggest
+- Content: code copy, annotate, select, tabs.link, tooltips
+- Language switcher: Automatic via i18n plugin
 
-## Documentation Structure
-Located in [docs/](mdc:docs/) directory:
+### Navigation
+- All navigation paths use language prefix (e.g., `en/index.md`, `en/getting-started.md`)
+- Blog appears in main navigation as `blog/index.md`
+- Update navigation in [`dev/mkdocs.yml`](mdc:dev/mkdocs.yml) `nav` section
 
-### Main Documentation
-- **README**: [docs/README.md](mdc:docs/README.md) - Project overview and quick start
-- **API Reference**: [docs/API.md](mdc:docs/API.md) - Complete API documentation
-- **Migration Guide**: [MIGRATION.md](mdc:MIGRATION.md) - Migration from v1 to v2
+## Writing Standards
 
-### Code Documentation
-- **Docstrings**: All public functions must have comprehensive docstrings
+### Markdown Formatting
+- Use clear headers and short sections
+- Use relative links for internal pages (within same language)
+- Provide bash/toml/python code blocks with syntax highlighting
+- Use Material theme features (admonitions, tabs, etc.)
+
+### Links
+- **Internal Links**: Use relative paths within language directory
+  - `[Getting Started](getting-started.md)` (same directory)
+  - `[API Reference](../API.md)` (parent directory)
+- **Cross-Language Links**: Use language prefix when linking to other languages
+  - `[English Version](../en/getting-started.md)`
+- **Blog Links**: Use `../blog/` prefix from language directories
+  - `[Blog](../blog/index.md)`
+
+### Code Examples
+- Keep code examples in original language (usually English)
+- Translate comments in code examples if appropriate
+- Preserve syntax highlighting
+- Include working, tested examples
+
+## Code Documentation Standards
+
+### Docstrings
+- **All public functions** must have comprehensive docstrings
 - **Type Hints**: All functions must have complete type annotations
 - **Examples**: Include usage examples in docstrings
 - **API Documentation**: Document all public APIs
+
+### Main Documentation Files
+- **Index**: [`docs/en/index.md`](mdc:docs/en/index.md) - Project overview and quick start
+- **API Reference**: [`docs/en/API.md`](mdc:docs/en/API.md) - Complete API documentation
+- **Getting Started**: [`docs/en/getting-started.md`](mdc:docs/en/getting-started.md) - Installation and first steps
 
 ## Documentation Requirements
 
@@ -132,6 +219,13 @@ Functions:
 - **Data Flow**: Document data flow through the system
 - **Integration Points**: Document external integrations
 
+## Documentation Maintenance
+- **Keep Updated**: Update documentation with code changes
+- **Version Control**: Track documentation changes
+- **Review Process**: Review documentation changes
+- **User Feedback**: Incorporate user feedback
+- **Multilingual Sync**: Keep translations synchronized with English source
+- **Blog Updates**: Regularly update blog with project news and features
 ## Code Examples
 
 ### Basic Usage
@@ -183,3 +277,46 @@ async def main():
 - **Version Control**: Track documentation changes
 - **Review Process**: Review documentation changes
 - **User Feedback**: Incorporate user feedback
+
+This module provides classes and functions for managing peer connections
+in the BitTorrent protocol. It handles peer discovery, connection
+establishment, message exchange, and connection lifecycle management.
+
+Classes:
+    Peer: Represents a peer connection
+    PeerConnection: Manages peer communication
+    PeerManager: Manages multiple peer connections
+
+Functions:
+    connect_to_peer: Establish connection to a peer
+    discover_peers: Discover peers via DHT or trackers
+"""
+```
+
+## Documentation Standards
+
+### Markdown Formatting
+- **Headers**: Use proper header hierarchy (H1, H2, H3)
+- **Code Blocks**: Use syntax highlighting for code examples
+- **Links**: Use relative links for internal documentation
+- **Tables**: Use markdown tables for structured data
+
+### API Documentation
+- **Complete Coverage**: Document all public APIs
+- **Type Information**: Include parameter and return types
+- **Examples**: Provide working code examples
+- **Error Handling**: Document possible exceptions
+
+### Architecture Documentation
+- **System Overview**: High-level system architecture
+- **Component Diagrams**: Visual representation of components
+- **Data Flow**: Document data flow through the system
+- **Integration Points**: Document external integrations
+
+## Documentation Maintenance
+- **Keep Updated**: Update documentation with code changes
+- **Version Control**: Track documentation changes
+- **Review Process**: Review documentation changes
+- **User Feedback**: Incorporate user feedback
+- **Multilingual Sync**: Keep translations synchronized with English source
+- **Blog Updates**: Regularly update blog with project news and features

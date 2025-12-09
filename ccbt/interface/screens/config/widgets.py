@@ -36,6 +36,19 @@ class ConfigValueEditor(Input):  # type: ignore[misc]
             description: Option description
             constraints: Validation constraints (min, max, etc.)
         """
+        # Normalize constraints first so we can assign attributes before super().__init__
+        normalized_constraints = constraints or {}
+
+        # Assign attributes that may be accessed during the superclass initialization.
+        # Textual's Input initializer immediately sets self.value which triggers our
+        # overridden validate_value(), so these fields must exist beforehand.
+        self.option_key = option_key
+        self.value_type = value_type
+        self.description = description
+        self.constraints = normalized_constraints
+        self._original_value = current_value
+        self._validation_error: str | None = None
+
         # Format initial value for display
         if value_type == "bool":
             initial_value = "true" if current_value else "false"
@@ -49,12 +62,6 @@ class ConfigValueEditor(Input):  # type: ignore[misc]
             initial_value = str(current_value)
 
         super().__init__(value=initial_value, *args, **kwargs)
-        self.option_key = option_key
-        self.value_type = value_type
-        self.description = description
-        self.constraints = constraints or {}
-        self._original_value = current_value
-        self._validation_error: str | None = None
         # Don't set validators on Input - we'll validate manually
         self.validators = None
 

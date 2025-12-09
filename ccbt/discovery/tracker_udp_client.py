@@ -4,6 +4,8 @@ High-performance async UDP tracker communication with retry logic,
 concurrent announces across multiple tracker tiers, and proper error handling.
 """
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import logging
@@ -11,7 +13,7 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 from ccbt.config.config import get_config
 
@@ -86,7 +88,9 @@ class AsyncUDPTrackerClient:
         self.config = get_config()
 
         if peer_id is None:
-            peer_id = b"-CC0101-" + b"x" * 12
+            from ccbt.utils.version import get_full_peer_id
+
+            peer_id = get_full_peer_id()
         self.our_peer_id = peer_id
 
         # Tracker sessions
@@ -125,8 +129,29 @@ class AsyncUDPTrackerClient:
         self._max_socket_recreation_backoff: float = 60.0  # Max backoff of 60 seconds
         self._socket_recreation_count: int = 0
         self._last_socket_health_check: float = 0.0
+        
+        # CRITICAL FIX: Immediate peer connection callback
+        # This allows sessions to connect peers immediately when tracker responses arrive
+        # instead of waiting for the announce loop to process them
+        self.on_peers_received: Callable[[list[dict[str, Any]], str], None] | None = None
 
         self.logger = logging.getLogger(__name__)
+    
+    async def _call_immediate_connection(self, peers: list[dict[str, Any]], tracker_url: str) -> None:
+        """Helper to call immediate connection callback asynchronously."""
+        if self.on_peers_received:
+            try:
+                # Call the callback - it should be async-safe
+                if asyncio.iscoroutinefunction(self.on_peers_received):
+                    await self.on_peers_received(peers, tracker_url)
+                else:
+                    self.on_peers_received(peers, tracker_url)
+            except Exception as e:
+                self.logger.warning(
+                    "Error in immediate peer connection callback: %s",
+                    e,
+                    exc_info=True,
+                )
 
     def _raise_connection_failed(self) -> None:
         """Raise ConnectionError for failed tracker connection."""
@@ -323,6 +348,10 @@ class AsyncUDPTrackerClient:
         try:
             # Set socket options
             try:
+                # CRITICAL FIX: Add SO_REUSEADDR for Windows socket binding
+                # This helps prevent "address already in use" errors and improves socket stability
+                sock.setsockopt(std_socket.SOL_SOCKET, std_socket.SO_REUSEADDR, 1)
+
                 sock.setsockopt(
                     std_socket.SOL_SOCKET, std_socket.SO_RCVBUF, 131072
                 )  # 128KB
@@ -360,9 +389,9 @@ class AsyncUDPTrackerClient:
                         f"Error: {e}\n\n"
                         f"{resolution}"
                     )
-                    self.logger.error(error_msg)
+                    self.logger.exception("UDP tracker port %d is already in use", configured_port)
                     raise RuntimeError(error_msg) from e
-                elif error_code == 10013:  # WSAEACCES
+                if error_code == 10013:  # WSAEACCES
                     from ccbt.utils.port_checker import get_permission_error_resolution
 
                     resolution = get_permission_error_resolution(
@@ -373,35 +402,34 @@ class AsyncUDPTrackerClient:
                         f"Error: {e}\n\n"
                         f"{resolution}"
                     )
-                    self.logger.error(error_msg)
+                    self.logger.exception("Permission denied binding to 0.0.0.0:%d", configured_port)
                     raise RuntimeError(error_msg) from e
-            else:
-                if error_code == 98:  # EADDRINUSE
-                    from ccbt.utils.port_checker import get_port_conflict_resolution
+            elif error_code == 98:  # EADDRINUSE
+                from ccbt.utils.port_checker import get_port_conflict_resolution
 
-                    resolution = get_port_conflict_resolution(configured_port, "udp")
-                    error_msg = (
-                        f"UDP tracker port {configured_port} is already in use.\n"
-                        f"Error: {e}\n\n"
-                        f"{resolution}"
-                    )
-                    self.logger.error(error_msg)
-                    raise RuntimeError(error_msg) from e
-                elif error_code == 13:  # EACCES
-                    from ccbt.utils.port_checker import get_permission_error_resolution
+                resolution = get_port_conflict_resolution(configured_port, "udp")
+                error_msg = (
+                    f"UDP tracker port {configured_port} is already in use.\n"
+                    f"Error: {e}\n\n"
+                    f"{resolution}"
+                )
+                self.logger.exception("UDP tracker port %d is already in use", configured_port)
+                raise RuntimeError(error_msg) from e
+            elif error_code == 13:  # EACCES
+                from ccbt.utils.port_checker import get_permission_error_resolution
 
-                    resolution = get_permission_error_resolution(
-                        configured_port, "udp", "network.tracker_udp_port"
-                    )
-                    error_msg = (
-                        f"Permission denied binding to 0.0.0.0:{configured_port}.\n"
-                        f"Error: {e}\n\n"
-                        f"{resolution}"
-                    )
-                    self.logger.error(error_msg)
-                    raise RuntimeError(error_msg) from e
+                resolution = get_permission_error_resolution(
+                    configured_port, "udp", "network.tracker_udp_port"
+                )
+                error_msg = (
+                    f"Permission denied binding to 0.0.0.0:{configured_port}.\n"
+                    f"Error: {e}\n\n"
+                    f"{resolution}"
+                )
+                self.logger.exception("Permission denied binding to 0.0.0.0:%d", configured_port)
+                raise RuntimeError(error_msg) from e
             # Re-raise other OSErrors as-is
-            self.logger.error("Failed to create UDP socket: %s", e)
+            self.logger.exception("Failed to create UDP socket")
             raise
 
         # Create datagram endpoint with the configured socket
@@ -410,9 +438,9 @@ class AsyncUDPTrackerClient:
                 lambda: UDPTrackerProtocol(self),
                 sock=sock,
             )
-        except Exception as e:
+        except Exception:
             sock.close()
-            self.logger.error("Failed to create datagram endpoint: %s", e)
+            self.logger.exception("Failed to create datagram endpoint")
             raise
 
         # Start cleanup task
@@ -451,6 +479,37 @@ class AsyncUDPTrackerClient:
             if sockname is None:
                 raise RuntimeError("Socket name not available after creation")
 
+            # CRITICAL FIX: On Windows, ensure socket is fully initialized in event loop
+            # before marking as ready. ProactorEventLoop needs more time for UDP sockets.
+            # Also verify we're using SelectorEventLoop (not ProactorEventLoop) for UDP support
+            import sys
+            if sys.platform == "win32":
+                loop = asyncio.get_event_loop()
+                is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
+                if is_proactor:
+                    # CRITICAL: ProactorEventLoop has known bugs with UDP (WinError 10022)
+                    # This should not happen if policy was set correctly in __init__.py
+                    self.logger.error(
+                        "CRITICAL: ProactorEventLoop detected for UDP socket! "
+                        "This will cause WinError 10022. Policy should have been set to "
+                        "WindowsSelectorEventLoopPolicy in ccbt/__init__.py. "
+                        "Falling back to longer wait, but UDP operations may fail."
+                    )
+                    # Wait longer for ProactorEventLoop to fully initialize UDP socket
+                    await asyncio.sleep(0.2)
+                else:
+                    # SelectorEventLoop also needs a brief moment
+                    await asyncio.sleep(0.05)
+                    self.logger.debug("Using SelectorEventLoop for UDP (correct for Windows)")
+
+            # Verify transport write buffer is ready
+            try:
+                write_limits = self.transport.get_write_buffer_limits()  # type: ignore[attr-defined]
+                if write_limits is None:
+                    self.logger.debug("Transport write buffer limits not available (may be normal)")
+            except Exception as e:
+                self.logger.debug("Could not get write buffer limits: %s", e)
+
             # Mark socket as ready only after verification
             self._socket_ready = True
 
@@ -467,10 +526,7 @@ class AsyncUDPTrackerClient:
             )
         except Exception as e:
             self._socket_ready = False
-            self.logger.error(
-                "Socket initialization verification failed: %s. Socket may not be ready.",
-                e,
-            )
+            self.logger.exception("Socket initialization verification failed. Socket may not be ready.")
             raise
 
     async def stop(self) -> None:
@@ -976,9 +1032,21 @@ class AsyncUDPTrackerClient:
                     loop = asyncio.get_event_loop()
                     is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
                     if sys.platform == "win32" and is_proactor:
-                        # Small delay to ensure socket state is synchronized on Windows Proactor
-                        await asyncio.sleep(0.01)
-                    
+                        # Longer delay for ProactorEventLoop to ensure socket state is synchronized
+                        await asyncio.sleep(0.1)  # Increased from 0.01s to 0.1s
+
+                        # Verify transport write buffer is ready
+                        try:
+                            write_limits = self.transport.get_write_buffer_limits()  # type: ignore[attr-defined]
+                            if write_limits is not None:
+                                self.logger.debug(
+                                    "Transport write buffer limits: high=%s, low=%s",
+                                    write_limits[0] if isinstance(write_limits, tuple) else write_limits,
+                                    write_limits[1] if isinstance(write_limits, tuple) and len(write_limits) > 1 else None,
+                                )
+                        except Exception as e:
+                            self.logger.debug("Could not check write buffer limits: %s", e)
+
                     # Wrap sendto in try/except to catch WinError 10022 and other socket errors
                     # These will be retried by the outer exception handler
                     try:
@@ -1094,11 +1162,16 @@ class AsyncUDPTrackerClient:
                             raise
 
                 # Wait for response with timeout
-                # CRITICAL FIX: Increased timeout from 10-14s to 20-30s for slow networks
-                # Initial timeout: 20s, increase by 2s per retry attempt
-                timeout = 20.0 + (
+                # CRITICAL FIX: Reduce timeout when socket errors are occurring
+                # If socket has recent errors, use shorter timeout to fail faster
+                base_timeout = 10.0  # Reduced from 20.0s
+                if self._socket_error_count > 0:
+                    # Reduce timeout when socket is having issues
+                    base_timeout = max(5.0, base_timeout - (self._socket_error_count * 2.0))
+
+                timeout = base_timeout + (
                     attempt * 2.0
-                )  # 20s, 22s, 24s, 26s, 28s for attempts 0-4
+                )  # 10s base (or less if errors), increase by 2s per retry attempt
                 self.logger.debug(
                     "Waiting for tracker response from %s:%d (timeout=%.1fs, attempt %d/%d)",
                     session.host,
@@ -1296,7 +1369,11 @@ class AsyncUDPTrackerClient:
                     session.port,
                 )
             else:
-                client_listen_port = int(self.config.network.listen_port)
+                # CRITICAL FIX: Use listen_port_tcp (or listen_port as fallback) to match actual configured port
+                client_listen_port = int(
+                    self.config.network.listen_port_tcp
+                    or self.config.network.listen_port
+                )
                 self.logger.warning(
                     "Port parameter is None for UDP tracker announce to %s:%d, using internal port %d. "
                     "This may prevent peers from connecting if behind NAT. "
@@ -1441,18 +1518,43 @@ class AsyncUDPTrackerClient:
                         raise
 
             # Wait for response with timeout
-            # CRITICAL FIX: Increased timeout from 15s to 30s for announce responses (trackers may be slow)
-            announce_timeout = 30.0  # 30 seconds for announce (increased from 15s for better reliability)
+            # CRITICAL FIX: Use adaptive timeout based on connection quality
+            # For first announce, use longer timeout. For subsequent announces, use shorter timeout if previous was fast
+            base_timeout = 30.0  # 30 seconds base timeout
+            if session.last_announce > 0:
+                # Previous announce exists - check if it was fast
+                # If previous response was fast (< 5s), use shorter timeout (20s)
+                # If previous response was slow (> 10s), use longer timeout (40s)
+                last_response_time = getattr(session, 'last_response_time', 0.0)
+                if last_response_time > 0 and last_response_time < 5.0:
+                    announce_timeout = 20.0  # Faster timeout for responsive trackers
+                elif last_response_time > 10.0:
+                    announce_timeout = 40.0  # Longer timeout for slow trackers
+                else:
+                    announce_timeout = base_timeout
+            else:
+                # First announce - use base timeout
+                announce_timeout = base_timeout
+            
+            start_time = time.time()
             try:
                 response = await self._wait_for_response(
                     transaction_id, timeout=announce_timeout
                 )  # pragma: no cover - Async network wait, tested separately
+                # Track response time for adaptive timeout
+                response_time = time.time() - start_time
+                session.last_response_time = response_time
             except asyncio.TimeoutError:
+                response_time = time.time() - start_time
+                session.last_response_time = response_time
                 self.logger.warning(
-                    "Announce timeout for tracker %s:%d (exceeded %.1fs)",
+                    "Announce timeout for tracker %s:%d (exceeded %.1fs timeout after %.1fs wait). "
+                    "This may indicate: (1) Tracker is slow/unresponsive, (2) Network issues, "
+                    "(3) Firewall blocking responses, or (4) Tracker is overloaded",
                     session.host,
                     session.port,
                     announce_timeout,
+                    response_time,
                 )
                 raise
 
@@ -1565,7 +1667,11 @@ class AsyncUDPTrackerClient:
                     session.port,
                 )
             else:
-                client_listen_port = int(self.config.network.listen_port)
+                # CRITICAL FIX: Use listen_port_tcp (or listen_port as fallback) to match actual configured port
+                client_listen_port = int(
+                    self.config.network.listen_port_tcp
+                    or self.config.network.listen_port
+                )
                 self.logger.warning(
                     "Port parameter is None for UDP tracker announce to %s:%d, using internal port %d. "
                     "This may prevent peers from connecting if behind NAT. "
@@ -2022,7 +2128,7 @@ class AsyncUDPTrackerClient:
                                                 p.isdigit() and 0 <= int(p) <= 255
                                                 for p in ip_parts
                                             )
-                                            and ip != "0.0.0.0"
+                                            and ip != "0.0.0.0"  # nosec B104 - IP validation check, not actual socket binding
                                             # CRITICAL: Don't filter 127.x.x.x, 169.254.x.x, or private IPs
                                             # These might be valid in NAT/VPN scenarios
                                         )
@@ -2041,6 +2147,7 @@ class AsyncUDPTrackerClient:
                                             "ip": ip,
                                             "port": port,
                                             "peer_source": "tracker",  # Mark peers from tracker responses (BEP 27)
+                                            "ssl_capable": None,  # Unknown until extension handshake
                                         }
                                         peers.append(peer_dict)
                                         # CRITICAL FIX: Log each parsed peer at INFO level for visibility
@@ -2133,6 +2240,27 @@ class AsyncUDPTrackerClient:
                         peers=peers,
                     )
                     future.set_result(response)
+                    
+                    # CRITICAL FIX: IMMEDIATE CONNECTION PATH - Connect peers as soon as they arrive
+                    # This bypasses the announce loop and connects peers immediately
+                    if peers and len(peers) > 0:
+                        self.logger.info(
+                            "✅ UDP TRACKER: Response ready with %d peer(s) (transaction_id=%d) - triggering immediate connection",
+                            len(peers),
+                            transaction_id,
+                        )
+                        # Call immediate connection callback if registered
+                        if self.on_peers_received:
+                            try:
+                                tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
+                                # Call callback asynchronously to avoid blocking
+                                asyncio.create_task(self._call_immediate_connection(peers, tracker_url))
+                            except Exception as e:
+                                self.logger.warning(
+                                    "Failed to trigger immediate peer connection: %s",
+                                    e,
+                                    exc_info=True,
+                                )
 
             elif action == TrackerAction.SCRAPE.value:
                 # Scrape response format:
@@ -2465,6 +2593,82 @@ class AsyncUDPTrackerClient:
                 "Failed to decode raw scrape response"
             )  # pragma: no cover - Decode raw scrape error handler, defensive error handling
             return {}  # pragma: no cover - Decode raw scrape error handler, defensive error handling
+
+
+class UDPTrackerProtocol(asyncio.DatagramProtocol):
+    """UDP protocol handler for tracker communication."""
+
+    def __init__(self, client: AsyncUDPTrackerClient):
+        """Initialize UDP protocol handler."""
+        self.client = client
+
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        """Handle incoming UDP datagram."""
+        self.client.handle_response(
+            data, addr
+        )  # pragma: no cover - UDP datagram callback, tested via handle_response directly
+
+    def error_received(
+        self, exc: Exception
+    ) -> None:  # pragma: no cover - UDP error callback, tested separately
+        """Handle UDP error.
+
+        CRITICAL: Only log errors, don't mark socket as invalid. The actual send operations
+        will handle errors via exceptions and can retry appropriately. This callback is
+        called asynchronously and may be called for transient errors.
+
+        Behavior is consistent with DHT and uTP implementations which also only log errors.
+        """
+        import sys
+
+        error_code = (
+            getattr(exc, "winerror", None) if hasattr(exc, "winerror") else None
+        )
+        error_code_alt = getattr(exc, "errno", None) if hasattr(exc, "errno") else None
+        error_msg = str(exc)
+
+        # Check if this is WinError 10022
+        is_winerror_10022 = (
+            error_code == 10022
+            or error_code_alt == 10022
+            or error_code_alt == 22  # Some systems use errno 22
+            or "10022" in error_msg
+            or ("Invalid argument" in error_msg and sys.platform == "win32")
+        )
+
+        if is_winerror_10022:
+            # WinError 10022: Invalid argument - may be transient on Windows ProactorEventLoop
+            # Reduce verbosity - only log WARNING once per interval, then DEBUG
+            # Don't mark socket as invalid - let send operations handle errors via exceptions
+            current_time = time.time()
+            time_since_last_warning = (
+                current_time - self.client._last_winerror_warning_time
+            )
+
+            if time_since_last_warning >= self.client._winerror_warning_interval:
+                # First warning in this interval - log at WARNING level
+                self.client.logger.warning(
+                    "UDP socket error (WinError 10022) detected: %s. "
+                    "This may be transient on Windows. Send operations will retry. "
+                    "Subsequent occurrences will be logged at DEBUG level.",
+                    exc,
+                )
+                self.client._last_winerror_warning_time = current_time
+            else:
+                # Subsequent warning in same interval - log at DEBUG level
+                self.client.logger.debug(
+                    "UDP socket error (WinError 10022) detected: %s", exc
+                )
+        else:
+            # Other errors should be logged at appropriate level
+            self.client.logger.debug(
+                "UDP error: %s", exc
+            )  # pragma: no cover - Logging statement, tested via other paths
+
+
+# Global UDP tracker client instance
+# Singleton pattern removed - UDP tracker client is now managed via AsyncSessionManager.udp_tracker_client
+# This ensures proper lifecycle management and prevents socket recreation issues
 
 
 class UDPTrackerProtocol(asyncio.DatagramProtocol):

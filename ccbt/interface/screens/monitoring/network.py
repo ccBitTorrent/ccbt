@@ -112,6 +112,71 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
                     upload_util = (upload_rate / max_upload) * 100.0
                     global_table.add_row("Upload Utilization", f"{upload_util:.1f}%")
 
+            # Add network connection statistics (RTT, bandwidth, BDP)
+            try:
+                from ccbt.monitoring import get_metrics_collector
+
+                mc = get_metrics_collector()
+                perf_data = mc.get_performance_metrics()
+
+                # RTT statistics
+                rtt_ms = perf_data.get("network_rtt_ms", 0.0)
+                rtt_min = perf_data.get("network_rtt_min_ms", 0.0)
+                rtt_max = perf_data.get("network_rtt_max_ms", 0.0)
+                rtt_avg = perf_data.get("network_rtt_avg_ms", 0.0)
+
+                if rtt_ms > 0:
+                    global_table.add_row("", "")  # Separator
+                    global_table.add_row("Network RTT", f"{rtt_ms:.1f} ms")
+                    if rtt_min > 0 and rtt_max > 0:
+                        global_table.add_row(
+                            "RTT Range", f"{rtt_min:.1f} - {rtt_max:.1f} ms"
+                        )
+                    if rtt_avg > 0:
+                        global_table.add_row("Average RTT", f"{rtt_avg:.1f} ms")
+
+                # Bandwidth statistics
+                bandwidth_mbps = perf_data.get("network_bandwidth_mbps", 0.0)
+                bandwidth_bps = perf_data.get("network_bandwidth_bps", 0.0)
+                if bandwidth_bps > 0:
+                    global_table.add_row("", "")  # Separator
+                    global_table.add_row(
+                        "Measured Bandwidth", f"{bandwidth_mbps:.2f} Mbps"
+                    )
+
+                # Connection statistics
+                total_conn = perf_data.get("network_total_connections", 0)
+                active_conn = perf_data.get("network_active_connections", 0)
+                failed_conn = perf_data.get("network_failed_connections", 0)
+                bytes_sent = perf_data.get("network_bytes_sent", 0)
+                bytes_received = perf_data.get("network_bytes_received", 0)
+
+                if total_conn > 0:
+                    global_table.add_row("", "")  # Separator
+                    global_table.add_row("Total Connections", f"{total_conn:,}")
+                    global_table.add_row("Active Connections", f"{active_conn:,}")
+                    if failed_conn > 0:
+                        global_table.add_row("Failed Connections", f"{failed_conn:,}")
+                    if bytes_sent > 0 or bytes_received > 0:
+                        global_table.add_row(
+                            "Bytes Sent", f"{bytes_sent / (1024**2):.2f} MB"
+                        )
+                        global_table.add_row(
+                            "Bytes Received", f"{bytes_received / (1024**2):.2f} MB"
+                        )
+
+                # BDP (Bandwidth-Delay Product)
+                bdp_bytes = perf_data.get("network_bdp_bytes", 0)
+                if bdp_bytes > 0:
+                    global_table.add_row("", "")  # Separator
+                    global_table.add_row(
+                        "BDP (Bandwidth-Delay Product)",
+                        f"{bdp_bytes / (1024**2):.2f} MB",
+                    )
+            except Exception:
+                # Metrics not available, skip network connection stats
+                pass
+
             global_stats_widget.update(Panel(global_table))
 
             # Per-torrent network quality

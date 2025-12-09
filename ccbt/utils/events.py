@@ -97,6 +97,13 @@ class EventType(Enum):
     XET_CHUNK_NOT_FOUND = "xet_chunk_not_found"
     XET_CHUNK_ERROR = "xet_chunk_error"
 
+    # XET Folder Sync events
+    FOLDER_CHANGED = "folder_changed"
+    FOLDER_SYNC_CHECK = "folder_sync_check"
+    FOLDER_SYNC_STARTED = "folder_sync_started"
+    FOLDER_SYNC_COMPLETED = "folder_sync_completed"
+    FOLDER_SYNC_ERROR = "folder_sync_error"
+
     # PEX events
     PEER_DISCOVERED = "peer_discovered"
     PEER_DROPPED = "peer_dropped"
@@ -105,6 +112,14 @@ class EventType(Enum):
     DHT_NODE_ADDED = "dht_node_added"
     DHT_NODE_REMOVED = "dht_node_removed"
     DHT_ERROR = "dht_error"
+    DHT_AGGRESSIVE_MODE_ENABLED = "dht_aggressive_mode_enabled"
+    DHT_AGGRESSIVE_MODE_DISABLED = "dht_aggressive_mode_disabled"
+    DHT_ITERATIVE_LOOKUP_COMPLETE = "dht_iterative_lookup_complete"
+    
+    # IMPROVEMENT: Peer quality events
+    PEER_QUALITY_RANKED = "peer_quality_ranked"
+    CONNECTION_POOL_QUALITY_CLEANUP = "connection_pool_quality_cleanup"
+    PEER_CHOKING_OPTIMIZED = "peer_choking_optimized"
 
     # WebSeed events
     WEBSEED_ADDED = "webseed_added"
@@ -177,6 +192,7 @@ class EventType(Enum):
     MONITORING_STARTED = "monitoring_started"
     MONITORING_STOPPED = "monitoring_stopped"
     MONITORING_ERROR = "monitoring_error"
+    MONITORING_HEARTBEAT = "monitoring_heartbeat"
 
     # Alert events
     ALERT_TRIGGERED = "alert_triggered"
@@ -382,11 +398,25 @@ class EventHandler(ABC):
 class EventBus:
     """Event bus for managing events and handlers."""
 
-    def __init__(self, max_queue_size: int = 10000):
+    def __init__(
+        self,
+        max_queue_size: int = 10000,
+        batch_size: int = 50,
+        batch_timeout: float = 0.05,
+        emit_timeout: float = 0.01,
+        queue_full_threshold: float = 0.9,
+        throttle_intervals: dict[str, float] | None = None,
+    ):
         """Initialize event bus.
 
         Args:
             max_queue_size: Maximum size of event queue
+            batch_size: Maximum number of events to process per batch
+            batch_timeout: Timeout in seconds to wait when collecting a batch
+            emit_timeout: Timeout in seconds when trying to emit to a full queue
+            queue_full_threshold: Queue fullness threshold (0.0-1.0) for dropping low-priority events
+            throttle_intervals: Dictionary mapping event types to throttle intervals in seconds.
+                If None, uses default throttling intervals.
 
         """
         self.max_queue_size = max_queue_size
@@ -399,12 +429,30 @@ class EventBus:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._task: asyncio.Task | None = None
 
+        # Batch processing configuration
+        self.batch_size = batch_size
+        self.batch_timeout = batch_timeout
+        self.emit_timeout = emit_timeout
+        self.queue_full_threshold = queue_full_threshold
+
+        self._throttle_times: dict[str, float] = {}
+        if throttle_intervals is not None:
+            self._throttle_intervals: dict[str, float] = throttle_intervals
+        else:
+            self._throttle_intervals: dict[str, float] = {
+                "dht_node_found": 0.1,  
+                "dht_node_added": 0.1,  
+                "monitoring_heartbeat": 1.0,  
+                "global_metrics_update": 0.5, 
+            }
+
         # Statistics
         self.stats = {
             "events_processed": 0,
             "events_dropped": 0,
             "handlers_registered": 0,
             "queue_size": 0,
+            "events_throttled": 0,
         }
 
     def register_handler(self, event_type: str, handler: EventHandler) -> None:
@@ -444,7 +492,6 @@ class EventBus:
                 )
             except ValueError:  # pragma: no cover
                 # Defensive: Handler already removed or never registered
-                # This should not occur in normal operation but protects against race conditions
                 pass
 
     async def emit(self, event: Event) -> None:
@@ -455,19 +502,20 @@ class EventBus:
 
         """
         try:
+            # Throttle high-frequency events
+            if event.event_type in self._throttle_intervals:
+                now = time.time()
+                last_emit = self._throttle_times.get(event.event_type, 0)
+                interval = self._throttle_intervals[event.event_type]
+                if now - last_emit < interval:
+                    self.stats["events_throttled"] += 1
+                    return  # Drop throttled event
+                self._throttle_times[event.event_type] = now
+
             # Add to replay buffer
             self.replay_buffer.append(event)
             if len(self.replay_buffer) > self.max_replay_events:
                 self.replay_buffer.pop(0)
-
-            # Add to queue
-            if self.event_queue.full():
-                self.stats["events_dropped"] += 1
-                self.logger.warning(
-                    "Event queue full, dropping event: %s",
-                    event.event_type,
-                )
-                return
 
             # If we somehow switched loops between start/emit, rebind queue lazily
             if self._loop is None:
@@ -475,17 +523,13 @@ class EventBus:
                     self._loop = asyncio.get_running_loop()
                 except RuntimeError:  # pragma: no cover
                     # Edge case: No running loop, get event loop instead
-                    # Rare in production as event bus should be started in async context
                     self._loop = asyncio.get_event_loop()
             try:
                 current_loop = asyncio.get_running_loop()
             except RuntimeError:  # pragma: no cover
-                # Edge case: No running loop detected
                 # Fallback to event loop for compatibility
                 current_loop = asyncio.get_event_loop()
             if self._loop is not current_loop:  # pragma: no cover
-                # Cross-loop queue migration - extremely difficult to test with real loop switching
-                # Requires actual event loop context switching which is complex and brittle in tests
                 # Recreate queue on current loop to avoid cross-loop errors
                 old_q = self.event_queue
                 self.event_queue = asyncio.Queue(maxsize=self.max_queue_size)
@@ -498,11 +542,47 @@ class EventBus:
                 except asyncio.QueueEmpty:
                     pass
 
-            await self.event_queue.put(event)
-            self.stats["queue_size"] = self.event_queue.qsize()
+            # Try non-blocking put first
+            try:
+                self.event_queue.put_nowait(event)
+                self.stats["queue_size"] = self.event_queue.qsize()
+            except asyncio.QueueFull:
+                # Queue is full - check if we should drop this event
+                # Drop low-priority events when queue is very full
+                should_drop = (
+                    event.priority.value < EventPriority.NORMAL.value
+                    and self.event_queue.qsize() >= self.max_queue_size * self.queue_full_threshold
+                )
+                
+                if should_drop:
+                    self.stats["events_dropped"] += 1
+                    if event.event_type not in self._throttle_intervals:
+                        self.logger.debug(
+                            "Event queue full, dropping low-priority event: %s (priority=%s)",
+                            event.event_type,
+                            event.priority.name,
+                        )
+                    return
+                
+                # This gives batch processing a chance to make room
+                try:
+                    await asyncio.wait_for(
+                        self.event_queue.put(event),
+                        timeout=self.emit_timeout,
+                    )
+                    self.stats["queue_size"] = self.event_queue.qsize()
+                except asyncio.TimeoutError:
+                    self.stats["events_dropped"] += 1
+                    if event.event_type not in self._throttle_intervals:
+                        self.logger.warning(
+                            "Event queue full, dropping event: %s (priority=%s)",
+                            event.event_type,
+                            event.priority.name,
+                        )
 
         except Exception:
             self.logger.exception("Failed to emit event")
+
 
     async def start(self) -> None:
         """Start the event bus."""
@@ -551,57 +631,121 @@ class EventBus:
             self._task = None
 
     async def _process_events(self) -> None:
-        """Process events from the queue."""
+        """Process events from the queue with batch processing."""
         while self.running:
             try:
-                event = await asyncio.wait_for(self.event_queue.get(), timeout=1.0)
-                await self._handle_event(event)
-                self.stats["events_processed"] += 1
-                self.stats["queue_size"] = self.event_queue.qsize()
+                # Collect a batch of events for parallel processing
+                batch: list[Event] = []
 
-            except asyncio.TimeoutError:
-                continue
+                # Get first event (blocking with timeout)
+                try:
+                    first_event = await asyncio.wait_for(
+                        self.event_queue.get(),
+                        timeout=self.batch_timeout,
+                    )
+                    batch.append(first_event)
+                except asyncio.TimeoutError:
+                    # No events available, continue to next iteration
+                    continue
+
+                # Collect additional events up to batch_size (non-blocking)
+                while len(batch) < self.batch_size:
+                    try:
+                        event = self.event_queue.get_nowait()
+                        batch.append(event)
+                    except asyncio.QueueEmpty:
+                        break
+
+                # Process batch in parallel
+                if batch:
+                    tasks = [self._handle_event(event) for event in batch]
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    self.stats["events_processed"] += len(batch)
+                    self.stats["queue_size"] = self.event_queue.qsize()
+
             except asyncio.CancelledError:
                 break
             except Exception:
-                self.logger.exception("Error processing event")
+                self.logger.exception("Error processing event batch")
 
     async def _handle_event(self, event: Event) -> None:
         """Handle a single event."""
+        start_time = time.time()
         try:
-            with LoggingContext(
-                "event_handle",
-                event_type=event.event_type,
-                event_id=event.event_id,
-            ):
-                # Get handlers for this event type
-                handlers = self.handlers.get(event.event_type, [])
+            # Get handlers for this event type
+            handlers = self.handlers.get(event.event_type, [])
 
-                # Also get handlers for wildcard events
-                wildcard_handlers = self.handlers.get("*", [])
-                all_handlers = handlers + wildcard_handlers
+            # Also get handlers for wildcard events
+            wildcard_handlers = self.handlers.get("*", [])
+            all_handlers = handlers + wildcard_handlers
 
-                if not all_handlers:
-                    self.logger.debug(
-                        "No handlers for event type: %s",
-                        event.event_type,
-                    )
-                    return
+            if not all_handlers:
+                # Only log at DEBUG for unhandled events to reduce noise
+                self.logger.debug(
+                    "No handlers registered for event: %s (id=%s)",
+                    event.event_type,
+                    event.event_id[:8] if event.event_id else "unknown",
+                )
+                return
 
-                # Process handlers
-                tasks = []
-                for handler in all_handlers:
-                    if handler.can_handle(event):
-                        task = asyncio.create_task(
-                            self._handle_with_handler(event, handler),
-                        )
-                        tasks.append(task)
+            # Filter handlers that can actually handle this event
+            processable_handlers = [h for h in all_handlers if h.can_handle(event)]
+            
+            if not processable_handlers:
+                self.logger.debug(
+                    "No processable handlers for event: %s (id=%s, registered=%d)",
+                    event.event_type,
+                    event.event_id[:8] if event.event_id else "unknown",
+                    len(all_handlers),
+                )
+                return
 
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
+            # Process handlers
+            tasks = []
+            for handler in processable_handlers:
+                task = asyncio.create_task(
+                    self._handle_with_handler(event, handler),
+                )
+                tasks.append(task)
+
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Only log slow event handling or important events at INFO level
+            duration = time.time() - start_time
+            important_events = {
+                "torrent_completed", "torrent_added", "torrent_removed",
+                "system_start", "system_stop", "system_error",
+                "peer_connected", "peer_disconnected",
+            }
+            
+            if duration > 0.1 or event.event_type in important_events:
+                # Log slow or important events at INFO level
+                self.logger.info(
+                    "Handled event: %s (id=%s, handlers=%d, duration=%.3fs)",
+                    event.event_type,
+                    event.event_id[:8] if event.event_id else "unknown",
+                    len(processable_handlers),
+                    duration,
+                )
+            else:
+                # Fast, routine events at DEBUG level
+                self.logger.debug(
+                    "Handled event: %s (id=%s, handlers=%d, duration=%.3fs)",
+                    event.event_type,
+                    event.event_id[:8] if event.event_id else "unknown",
+                    len(processable_handlers),
+                    duration,
+                )
 
         except Exception:
-            self.logger.exception("Error handling event")
+            duration = time.time() - start_time
+            self.logger.exception(
+                "Error handling event: %s (id=%s, duration=%.3fs)",
+                event.event_type,
+                event.event_id[:8] if event.event_id else "unknown",
+                duration,
+            )
 
     async def _handle_with_handler(self, event: Event, handler: EventHandler) -> None:
         """Handle event with a specific handler."""
@@ -643,6 +787,7 @@ class EventBus:
             "queue_size": self.stats["queue_size"],
             "events_processed": self.stats["events_processed"],
             "events_dropped": self.stats["events_dropped"],
+            "events_throttled": self.stats["events_throttled"],
             "handlers_registered": self.stats["handlers_registered"],
             "replay_buffer_size": len(self.replay_buffer),
         }
@@ -656,7 +801,32 @@ def get_event_bus() -> EventBus:
     """Get the global event bus."""
     global _event_bus
     if _event_bus is None:
-        _event_bus = EventBus()
+        # Try to get config, but don't fail if config isn't initialized yet
+        try:
+            from ccbt.config.config import get_config
+            
+            config = get_config()
+            obs_config = config.observability
+            
+            # Build throttle intervals from config
+            throttle_intervals = {
+                "dht_node_found": obs_config.event_bus_throttle_dht_node_found,
+                "dht_node_added": obs_config.event_bus_throttle_dht_node_added,
+                "monitoring_heartbeat": obs_config.event_bus_throttle_monitoring_heartbeat,
+                "global_metrics_update": obs_config.event_bus_throttle_global_metrics_update,
+            }
+            
+            _event_bus = EventBus(
+                max_queue_size=obs_config.event_bus_max_queue_size,
+                batch_size=obs_config.event_bus_batch_size,
+                batch_timeout=obs_config.event_bus_batch_timeout,
+                emit_timeout=obs_config.event_bus_emit_timeout,
+                queue_full_threshold=obs_config.event_bus_queue_full_threshold,
+                throttle_intervals=throttle_intervals,
+            )
+        except Exception:
+            # Fallback to defaults if config not available
+            _event_bus = EventBus()
     return _event_bus
 
 

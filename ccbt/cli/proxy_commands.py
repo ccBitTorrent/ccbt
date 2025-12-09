@@ -12,6 +12,7 @@ from rich.table import Table
 
 from ccbt.cli.config_commands import _find_project_root
 from ccbt.config.config import get_config
+from ccbt.i18n import _
 from ccbt.proxy.client import ProxyClient
 from ccbt.proxy.exceptions import ProxyError
 
@@ -136,33 +137,33 @@ def proxy_set(
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    "[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]"
+                    _("[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]")
                 )  # pragma: no cover - Test mode protection path
                 console.print(
-                    "[green]Proxy configuration updated successfully[/green]"
+                    _("[green]Proxy configuration updated successfully[/green]")
                 )  # pragma: no cover - Test mode protection path
                 console.print(
-                    f"  Host: {host}:{port}"
+                    _("  Host: {host}:{port}").format(host=host, port=port)
                 )  # pragma: no cover - Test mode protection path
                 console.print(
-                    f"  Type: {proxy_type}"
+                    _("  Type: {type}").format(type=proxy_type)
                 )  # pragma: no cover - Test mode protection path
                 if username:  # pragma: no cover - Test mode protection path
                     console.print(
-                        f"  Username: {username}"
+                        _("  Username: {username}").format(username=username)
                     )  # pragma: no cover - Test mode protection path
                 console.print(
-                    f"  For trackers: {for_trackers}"
+                    _("  For trackers: {value}").format(value=for_trackers)
                 )  # pragma: no cover - Test mode protection path
                 console.print(
-                    f"  For peers: {for_peers}"
+                    _("  For peers: {value}").format(value=for_peers)
                 )  # pragma: no cover - Test mode protection path
                 console.print(
-                    f"  For webseeds: {for_webseeds}"
+                    _("  For webseeds: {value}").format(value=for_webseeds)
                 )  # pragma: no cover - Test mode protection path
                 if bypass_list:  # pragma: no cover - Test mode protection path
                     console.print(
-                        f"  Bypass list: {bypass_list}"
+                        _("  Bypass list: {value}").format(value=bypass_list)
                     )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config.model_dump(mode="json")
@@ -170,26 +171,26 @@ def proxy_set(
             config_toml = config_manager.export(fmt="toml", encrypt_passwords=True)
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                f"[green]Proxy configuration saved to {config_manager.config_file}[/green]"
+                _("[green]Proxy configuration saved to {config_file}[/green]").format(config_file=config_manager.config_file)
             )
         else:
             console.print(
-                "[yellow]No config file found - configuration not persisted[/yellow]"
+                _("[yellow]No config file found - configuration not persisted[/yellow]")
             )
 
-        console.print("[green]Proxy configuration updated successfully[/green]")
-        console.print(f"  Host: {host}:{port}")
-        console.print(f"  Type: {proxy_type}")
+        console.print(_("[green]Proxy configuration updated successfully[/green]"))
+        console.print(_("  Host: {host}:{port}").format(host=host, port=port))
+        console.print(_("  Type: {type}").format(type=proxy_type))
         if username:
-            console.print(f"  Username: {username}")
-        console.print(f"  For trackers: {for_trackers}")
-        console.print(f"  For peers: {for_peers}")
-        console.print(f"  For webseeds: {for_webseeds}")
+            console.print(_("  Username: {username}").format(username=username))
+        console.print(_("  For trackers: {value}").format(value=for_trackers))
+        console.print(_("  For peers: {value}").format(value=for_peers))
+        console.print(_("  For webseeds: {value}").format(value=for_webseeds))
         if bypass_list:
-            console.print(f"  Bypass list: {bypass_list}")
+            console.print(_("  Bypass list: {value}").format(value=bypass_list))
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Failed to set proxy configuration: {e}[/red]")
+        console.print(_("[red]Failed to set proxy configuration: {e}[/red]").format(e=e))
         raise click.Abort from e
 
 
@@ -203,15 +204,15 @@ def proxy_test(_ctx) -> None:
         config = get_config()
 
         if not config.proxy or not config.proxy.enable_proxy:
-            console.print("[yellow]Proxy is not enabled[/yellow]")
+            console.print(_("[yellow]Proxy is not enabled[/yellow]"))
             raise click.Abort
 
         if not config.proxy.proxy_host or not config.proxy.proxy_port:
-            console.print("[red]Proxy host and port must be configured[/red]")
+            console.print(_("[red]Proxy host and port must be configured[/red]"))
             raise click.Abort
 
         console.print(
-            f"[cyan]Testing proxy connection to {config.proxy.proxy_host}:{config.proxy.proxy_port}...[/cyan]"
+            _("[cyan]Testing proxy connection to {host}:{port}...[/cyan]").format(host=config.proxy.proxy_host, port=config.proxy.proxy_port)
         )
 
         async def _test() -> bool:
@@ -227,23 +228,23 @@ def proxy_test(_ctx) -> None:
         result = asyncio.run(_test())
 
         if result:
-            console.print("[green]✓ Proxy connection test successful[/green]")
+            console.print(_("[green]✓ Proxy connection test successful[/green]"))
             stats = ProxyClient().get_stats()
-            console.print(f"  Total connections: {stats.connections_total}")
-            console.print(f"  Successful: {stats.connections_successful}")
-            console.print(f"  Failed: {stats.connections_failed}")
-            console.print(f"  Auth failures: {stats.auth_failures}")
+            console.print(_("  Total connections: {count}").format(count=stats.connections_total))
+            console.print(_("  Successful: {count}").format(count=stats.connections_successful))
+            console.print(_("  Failed: {count}").format(count=stats.connections_failed))
+            console.print(_("  Auth failures: {count}").format(count=stats.auth_failures))
         else:  # pragma: no cover - Proxy test failure path, tested via successful connection path
-            console.print("[red]✗ Proxy connection test failed[/red]")
+            console.print(_("[red]✗ Proxy connection test failed[/red]"))
             raise click.Abort
 
     except (
         ProxyError
     ) as e:  # pragma: no cover - CLI error handler for proxy-specific errors
-        console.print(f"[red]Proxy error: {e}[/red]")
+        console.print(_("[red]Proxy error: {e}[/red]").format(e=e))
         raise click.Abort from e
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Failed to test proxy: {e}[/red]")
+        console.print(_("[red]Failed to test proxy: {e}[/red]").format(e=e))
         raise click.Abort from e
 
 
@@ -261,7 +262,7 @@ def proxy_status(_ctx) -> None:
         config = get_config()
 
         if not config.proxy:
-            console.print("[yellow]Proxy configuration not found[/yellow]")
+            console.print(_("[yellow]Proxy configuration not found[/yellow]"))
             return
 
         table.add_row("Enabled", str(config.proxy.enable_proxy))
@@ -288,7 +289,7 @@ def proxy_status(_ctx) -> None:
         proxy_client = ProxyClient()
         stats = proxy_client.get_stats()
         if stats.connections_total > 0:
-            console.print("\n[cyan]Proxy Statistics:[/cyan]")
+            console.print(_("\n[cyan]Proxy Statistics:[/cyan]"))
             stats_table = Table()
             stats_table.add_column("Metric", style="cyan")
             stats_table.add_column("Value", style="green")
@@ -302,7 +303,7 @@ def proxy_status(_ctx) -> None:
             console.print(stats_table)
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Failed to get proxy status: {e}[/red]")
+        console.print(_("[red]Failed to get proxy status: {e}[/red]").format(e=e))
         raise click.Abort from e
 
 
@@ -330,21 +331,22 @@ def proxy_disable(_ctx) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    "[yellow]Proxy has been disabled (skipped write in test mode)[/yellow]"
+                    _("[yellow]Proxy has been disabled (skipped write in test mode)[/yellow]")
                 )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config_toml = config_manager.export(fmt="toml", encrypt_passwords=True)
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                f"[green]Proxy configuration saved to {config_manager.config_file}[/green]"
+                _("[green]Proxy configuration saved to {config_file}[/green]").format(config_file=config_manager.config_file)
             )
         else:
             console.print(
-                "[yellow]No config file found - configuration not persisted[/yellow]"
+                _("[yellow]No config file found - configuration not persisted[/yellow]")
             )
 
-        console.print("[green]Proxy has been disabled[/green]")
+        console.print(_("[green]Proxy has been disabled[/green]"))
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Failed to disable proxy: {e}[/red]")
+        console.print(_("[red]Failed to disable proxy: {e}[/red]").format(e=e))
         raise click.Abort from e
+

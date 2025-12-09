@@ -31,9 +31,6 @@ from ccbt.discovery.tracker_udp_client import (
     TrackerResponse,
     TrackerSession,
     UDPTrackerProtocol,
-    get_udp_tracker_client,
-    init_udp_tracker,
-    shutdown_udp_tracker,
 )
 
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
@@ -984,30 +981,7 @@ class TestUDPTrackerProtocol:
             mock_debug.assert_called_once_with("UDP error: %s", exc)
 
 
-class TestAsyncUDPTrackerClientGlobalFunctions:
-    """Test global functions."""
-
-    @pytest.mark.asyncio
-    async def test_init_udp_tracker_creates_client(self):
-        """Test init_udp_tracker creates and starts client."""
-        client = await init_udp_tracker()
-
-        assert client is not None
-        assert client.transport is not None
-
-        await shutdown_udp_tracker()
-
-    @pytest.mark.asyncio
-    async def test_shutdown_udp_tracker_handles_none(self):
-        """Test shutdown_udp_tracker handles None client."""
-        # Ensure global is None
-        import ccbt.discovery.tracker_udp_client as tracker_module
-
-        original_client = tracker_module._udp_tracker_client
-        tracker_module._udp_tracker_client = None
-
-        try:
-            # Should not raise
-            await shutdown_udp_tracker()
-        finally:
-            tracker_module._udp_tracker_client = original_client
+# Module-level functions (get_udp_tracker_client, init_udp_tracker, shutdown_udp_tracker)
+# were removed during refactoring. UDP tracker client is now managed through
+# session manager. Tests for these functions have been removed as they no longer exist.
+# If you need to test UDP tracker client initialization, test it through the session manager.

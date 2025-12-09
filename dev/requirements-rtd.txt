@@ -14,6 +14,38 @@ mkdocs-git-revision-date-localized-plugin>=1.4.7
 mkdocstrings[python]>=0.26.1
 mkdocs-codeinclude-plugin>=0.2.1
 mkdocs-coverage>=1.1.0
+mkdocs-blog-plugin>=1.0.0
+mkdocs-static-i18n>=1.0.0
+
+# Markdown extensions
+pymdown-extensions>=10.15
+
+# Additional dependencies that might be needed for documentation generation
+# These are runtime dependencies that mkdocstrings may need to import modules
+# The project installation will handle most of these, but we list critical ones
+# to ensure they're available even if project install fails
+pydantic>=2.0.0
+pyyaml>=6.0.3
+
+
+
+
+# Read the Docs will use this if .readthedocs.yaml specifies it
+#
+# Note: The project itself is installed separately via pip install -e .
+# which will install all runtime dependencies needed for mkdocstrings
+
+# Core MkDocs and theme
+mkdocs>=1.6.1
+mkdocs-material>=9.6.22
+
+# MkDocs plugins
+mkdocs-git-revision-date-localized-plugin>=1.4.7
+mkdocstrings[python]>=0.26.1
+mkdocs-codeinclude-plugin>=0.2.1
+mkdocs-coverage>=1.1.0
+mkdocs-blog-plugin>=1.0.0
+mkdocs-static-i18n>=1.0.0
 
 # Markdown extensions
 pymdown-extensions>=10.15

@@ -12,7 +12,8 @@ Provides comprehensive progress tracking including:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Mapping
+import contextlib
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping
 
 from rich.progress import (
     BarColumn,
@@ -22,6 +23,8 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+
+from ccbt.i18n import _
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from rich.console import Console
@@ -43,7 +46,7 @@ class ProgressManager:
         self.active_progress: dict[str, Progress] = {}
         self.progress_tasks: dict[str, Any] = {}
 
-    def create_progress(self, description: str | None = None) -> Progress:
+    def create_progress(self, _description: str | None = None) -> Progress:
         """Create a new progress bar with i18n support.
 
         Args:
@@ -384,3 +387,143 @@ class ProgressManager:
             TimeElapsedColumn(),
             console=self.console,
         )
+
+    def create_operation_progress(
+        self, _description: str | None = None, show_speed: bool = False
+    ) -> Progress:
+        """Create a generic operation progress bar.
+
+        Args:
+            description: Optional progress description (will be translated)
+            show_speed: Whether to show speed information
+
+        Returns:
+            Progress instance
+
+        """
+        columns = [
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        ]
+
+        if show_speed:
+            columns.append(TextColumn("[progress.speed]{task.fields[speed]}"))
+
+        columns.extend([TimeElapsedColumn(), TimeRemainingColumn()])
+
+        return Progress(*columns, console=self.console)
+
+    def create_multi_task_progress(
+        self, _description: str | None = None
+    ) -> Progress:
+        """Create a progress bar for multiple parallel tasks.
+
+        Args:
+            description: Optional progress description (will be translated)
+
+        Returns:
+            Progress instance
+
+        """
+        return Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("[progress.completed]{task.completed}/{task.total}"),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=self.console,
+        )
+
+    def create_indeterminate_progress(
+        self, _description: str | None = None
+    ) -> Progress:
+        """Create an indeterminate progress bar (no known total).
+
+        Args:
+            description: Optional progress description (will be translated)
+
+        Returns:
+            Progress instance
+
+        """
+        return Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            console=self.console,
+        )
+
+    @contextlib.contextmanager
+    def with_progress(
+        self,
+        description: str,
+        total: int | None = None,
+        progress_type: str = "operation",
+    ) -> Iterator[tuple[Progress, int]]:
+        """Context manager for automatic progress tracking.
+
+        Args:
+            description: Progress description (will be translated)
+            total: Total number of items (None for indeterminate)
+            progress_type: Type of progress ("operation", "download", "upload", etc.)
+
+        Yields:
+            Tuple of (Progress instance, task_id)
+
+        """
+        # Translate description
+        translated_desc = _(description)
+
+        # Create appropriate progress bar
+        if progress_type == "download":
+            progress = self.create_download_progress({})
+        elif progress_type == "upload":
+            progress = self.create_upload_progress({})
+        elif progress_type == "indeterminate" or total is None:
+            progress = self.create_indeterminate_progress(translated_desc)
+        else:
+            progress = self.create_operation_progress(translated_desc)
+
+        with progress:
+            # Initialize task with appropriate fields based on progress type
+            if progress_type == "download":
+                task_id = progress.add_task(
+                    translated_desc, total=total, downloaded="0 B", speed="0 B/s"
+                )
+            elif progress_type == "upload":
+                task_id = progress.add_task(
+                    translated_desc, total=total, uploaded="0 B", speed="0 B/s"
+                )
+            else:
+                task_id = progress.add_task(translated_desc, total=total)
+            try:
+                yield progress, task_id
+            finally:
+                # Progress is automatically cleaned up by context manager
+                pass
+
+    def create_progress_callback(
+        self, progress: Progress, task_id: int
+    ) -> Callable[[float, dict[str, Any] | None], None]:
+        """Create a progress callback for async operations.
+
+        Args:
+            progress: Progress instance
+            task_id: Task ID
+
+        Returns:
+            Callback function that can be called with (completed, fields_dict)
+
+        """
+        def callback(completed: float, fields: dict[str, Any] | None = None) -> None:
+            """Update progress with completed amount and optional fields."""
+            progress.update(task_id, completed=completed)
+            if fields:
+                progress.update(task_id, **fields)
+
+        return callback

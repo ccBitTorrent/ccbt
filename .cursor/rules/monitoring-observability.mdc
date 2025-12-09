@@ -13,6 +13,18 @@ Located in [ccbt/monitoring/](mdc:ccbt/monitoring/) directory:
 - **System Metrics**: CPU, memory, disk, network I/O tracking
 - **Performance Metrics**: Download/upload speeds, piece completion, peer connections
 - **Real-time Collection**: Automatic metrics collection with configurable intervals
+- **Connection Success Rate Tracking**: Tracks connection attempts and successes per peer and globally via `record_connection_attempt()` and `record_connection_success()`. Calculate success rate via `get_connection_success_rate(peer_key)`.
+- **Enhanced Peer Metrics**: Per-peer metrics include:
+  - Piece-level performance: `piece_download_speeds`, `piece_download_times`, `pieces_per_second`
+  - Efficiency metrics: `bytes_per_connection`, `efficiency_score`, `bandwidth_utilization`
+  - Connection quality: `connection_quality_score`, `error_rate`, `success_rate`, `average_block_latency`
+  - Historical performance: `peak_download_rate`, `peak_upload_rate`, `performance_trend`
+- **Enhanced Torrent Metrics**: Per-torrent metrics include:
+  - Swarm health: `piece_availability_distribution`, `average_piece_availability`, `rarest_piece_availability`, `swarm_health_score`
+  - Peer performance: `peer_performance_distribution`, `peer_download_speeds`, `average_peer_download_speed`, `median_peer_download_speed`
+  - Completion metrics: `piece_completion_rate`, `estimated_time_remaining`, `pieces_per_second_history`
+  - Swarm efficiency: `swarm_efficiency`, `peer_contribution_balance`
+- **Global Metrics Aggregation**: `get_system_wide_efficiency()` calculates overall system efficiency, bandwidth utilization, connection efficiency, and resource utilization. `get_global_peer_metrics()` aggregates peer metrics across all torrents.
 
 ### Alert Management
 - **Alert Rules**: Rule-based alert system with conditions
@@ -87,6 +99,17 @@ profiler.start()
 async def download_piece(piece_index: int):
     # ... implementation ...
 ```
+
+## IPC Integration
+
+**Metrics Endpoints**: IPC server exposes metrics via REST API:
+- `GET /api/v1/metrics/peers` - Global peer metrics across all torrents
+- `GET /api/v1/metrics/peers/{peer_key}` - Detailed metrics for specific peer
+- `GET /api/v1/metrics/torrents/{info_hash}/detailed` - Detailed torrent metrics
+- `GET /api/v1/metrics/global/detailed` - Detailed global metrics including connection success rate
+- `GET /api/v1/peers/list` - Global list of all peers with comprehensive metrics
+
+**Metrics Exposure**: All enhanced metrics (peer performance, efficiency, connection quality, swarm health) are exposed via IPC endpoints for client monitoring and analysis.
 
 ## Event Integration
 All monitoring components emit events for integration:

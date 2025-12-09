@@ -112,6 +112,30 @@ class SessionAdapter(ABC):
         """
 
     @abstractmethod
+    async def cancel_torrent(self, info_hash: str) -> bool:
+        """Cancel torrent (pause but keep in session).
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            True if cancelled, False otherwise
+
+        """
+
+    @abstractmethod
+    async def force_start_torrent(self, info_hash: str) -> bool:
+        """Force start torrent (bypass queue limits).
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            True if force started, False otherwise
+
+        """
+
+    @abstractmethod
     async def get_torrent_files(self, info_hash: str) -> FileListResponse:
         """Get file list for a torrent.
 
@@ -397,6 +421,90 @@ class SessionAdapter(ABC):
         """
 
     @abstractmethod
+    async def add_tracker(self, info_hash: str, tracker_url: str) -> dict[str, Any]:
+        """Add a tracker URL to a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            tracker_url: Tracker URL to add
+
+        Returns:
+            Dict with success status
+
+        """
+
+    @abstractmethod
+    async def remove_tracker(self, info_hash: str, tracker_url: str) -> dict[str, Any]:
+        """Remove a tracker URL from a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            tracker_url: Tracker URL to remove
+
+        Returns:
+            Dict with success status
+
+        """
+
+    @abstractmethod
+    async def add_xet_folder(
+        self,
+        folder_path: str,
+        tonic_file: str | None = None,
+        tonic_link: str | None = None,
+        sync_mode: str | None = None,
+        source_peers: list[str] | None = None,
+        check_interval: float | None = None,
+    ) -> str:
+        """Add XET folder for synchronization.
+
+        Args:
+            folder_path: Path to folder (or output directory if syncing from tonic)
+            tonic_file: Path to .tonic file (optional)
+            tonic_link: tonic?: link (optional)
+            sync_mode: Synchronization mode (optional)
+            source_peers: Designated source peer IDs (optional)
+            check_interval: Check interval in seconds (optional)
+
+        Returns:
+            Folder identifier (folder_path or info_hash)
+
+        """
+
+    @abstractmethod
+    async def remove_xet_folder(self, folder_key: str) -> bool:
+        """Remove XET folder from synchronization.
+
+        Args:
+            folder_key: Folder identifier (folder_path or info_hash)
+
+        Returns:
+            True if removed, False if not found
+
+        """
+
+    @abstractmethod
+    async def list_xet_folders(self) -> list[dict[str, Any]]:
+        """List all registered XET folders.
+
+        Returns:
+            List of folder information dictionaries
+
+        """
+
+    @abstractmethod
+    async def get_xet_folder_status(self, folder_key: str) -> dict[str, Any] | None:
+        """Get XET folder status.
+
+        Args:
+            folder_key: Folder identifier (folder_path or info_hash)
+
+        Returns:
+            Folder status dictionary or None if not found
+
+        """
+
+    @abstractmethod
     async def set_rate_limits(
         self,
         info_hash: str,
@@ -449,11 +557,118 @@ class SessionAdapter(ABC):
         """
 
     @abstractmethod
+    async def refresh_pex(self, info_hash: str) -> dict[str, Any]:
+        """Refresh PEX (Peer Exchange) for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            Dictionary with refresh result
+
+        """
+
+    @abstractmethod
+    async def rehash_torrent(self, info_hash: str) -> dict[str, Any]:
+        """Rehash all pieces for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            Dictionary with rehash result
+
+        """
+
+    @abstractmethod
     async def get_global_stats(self) -> dict[str, Any]:
         """Get global statistics across all torrents.
 
         Returns:
             Dictionary with aggregated stats (num_torrents, num_active, etc.)
+
+        """
+
+    @abstractmethod
+    async def global_pause_all(self) -> dict[str, Any]:
+        """Pause all torrents.
+
+        Returns:
+            Dict with success_count, failure_count, and results
+
+        """
+
+    @abstractmethod
+    async def global_resume_all(self) -> dict[str, Any]:
+        """Resume all paused torrents.
+
+        Returns:
+            Dict with success_count, failure_count, and results
+
+        """
+
+    @abstractmethod
+    async def global_force_start_all(self) -> dict[str, Any]:
+        """Force start all torrents (bypass queue limits).
+
+        Returns:
+            Dict with success_count, failure_count, and results
+
+        """
+
+    @abstractmethod
+    async def global_set_rate_limits(self, download_kib: int, upload_kib: int) -> bool:
+        """Set global rate limits for all torrents.
+
+        Args:
+            download_kib: Global download limit (KiB/s, 0 = unlimited)
+            upload_kib: Global upload limit (KiB/s, 0 = unlimited)
+
+        Returns:
+            True if limits set successfully
+
+        """
+
+    @abstractmethod
+    async def set_per_peer_rate_limit(
+        self, info_hash: str, peer_key: str, upload_limit_kib: int
+    ) -> bool:
+        """Set per-peer upload rate limit for a specific peer.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            peer_key: Peer identifier (format: "ip:port")
+            upload_limit_kib: Upload rate limit in KiB/s (0 = unlimited)
+
+        Returns:
+            True if peer found and limit set, False otherwise
+
+        """
+
+    @abstractmethod
+    async def get_per_peer_rate_limit(
+        self, info_hash: str, peer_key: str
+    ) -> int | None:
+        """Get per-peer upload rate limit for a specific peer.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            peer_key: Peer identifier (format: "ip:port")
+
+        Returns:
+            Upload rate limit in KiB/s (0 = unlimited), or None if peer not found
+
+        """
+
+    @abstractmethod
+    async def set_all_peers_rate_limit(self, upload_limit_kib: int) -> int:
+        """Set per-peer upload rate limit for all active peers.
+
+        Args:
+            upload_limit_kib: Upload rate limit in KiB/s (0 = unlimited)
+
+        Returns:
+            Number of peers updated
 
         """
 
@@ -512,7 +727,9 @@ class LocalSessionAdapter(SessionAdapter):
     ) -> str:
         """Add torrent or magnet."""
         if path_or_magnet.startswith("magnet:"):
-            return await self.session_manager.add_magnet(path_or_magnet, resume=resume)
+            return await self.session_manager.add_magnet(
+                path_or_magnet, output_dir=output_dir, resume=resume
+            )
         return await self.session_manager.add_torrent(
             path_or_magnet,
             output_dir=output_dir,
@@ -544,6 +761,7 @@ class LocalSessionAdapter(SessionAdapter):
                     downloaded=status.get("downloaded", 0),
                     uploaded=status.get("uploaded", 0),
                     is_private=status.get("is_private", False),  # BEP 27: Include private flag
+                    output_dir=status.get("output_dir"),  # Output directory where files are saved
                 ),
             )
         return torrents
@@ -569,6 +787,7 @@ class LocalSessionAdapter(SessionAdapter):
             downloaded=status.get("downloaded", 0),
             uploaded=status.get("uploaded", 0),
             is_private=status.get("is_private", False),  # BEP 27: Include private flag
+            output_dir=status.get("output_dir"),  # Output directory where files are saved
         )
 
     async def pause_torrent(self, info_hash: str) -> bool:
@@ -578,6 +797,14 @@ class LocalSessionAdapter(SessionAdapter):
     async def resume_torrent(self, info_hash: str) -> bool:
         """Resume torrent."""
         return await self.session_manager.resume_torrent(info_hash)
+
+    async def cancel_torrent(self, info_hash: str) -> bool:
+        """Cancel torrent."""
+        return await self.session_manager.cancel_torrent(info_hash)
+
+    async def force_start_torrent(self, info_hash: str) -> bool:
+        """Force start torrent."""
+        return await self.session_manager.force_start_torrent(info_hash)
 
     async def get_torrent_files(self, info_hash: str) -> FileListResponse:
         """Get file list for a torrent."""
@@ -594,10 +821,14 @@ class LocalSessionAdapter(SessionAdapter):
         if not torrent_session:
             raise ValueError(f"Torrent not found: {info_hash}")
 
-        if not torrent_session.file_selection_manager:
-            raise ValueError(f"File selection not available for torrent: {info_hash}")
+        if not torrent_session.ensure_file_selection_manager():
+            raise ValueError(
+                f"File selection not available for torrent: {info_hash} (metadata pending)"
+            )
 
         manager = torrent_session.file_selection_manager
+        if manager is None:
+            raise ValueError(f"File selection not available for torrent: {info_hash}")
         files = []
         for file_index, file_info in enumerate(manager.torrent_info.files):
             if file_info.is_padding:
@@ -629,12 +860,19 @@ class LocalSessionAdapter(SessionAdapter):
         async with self.session_manager.lock:
             torrent_session = self.session_manager.torrents.get(info_hash_bytes)
 
-        if not torrent_session or not torrent_session.file_selection_manager:
+        if not torrent_session:
+            raise ValueError(f"Torrent not found or file selection not available: {info_hash}")
+
+        if not torrent_session.ensure_file_selection_manager():
             raise ValueError(
                 f"Torrent not found or file selection not available: {info_hash}"
             )
 
         manager = torrent_session.file_selection_manager
+        if manager is None:
+            raise ValueError(
+                f"Torrent not found or file selection not available: {info_hash}"
+            )
         for file_index in file_indices:
             manager.select_file(file_index)
 
@@ -652,12 +890,21 @@ class LocalSessionAdapter(SessionAdapter):
         async with self.session_manager.lock:
             torrent_session = self.session_manager.torrents.get(info_hash_bytes)
 
-        if not torrent_session or not torrent_session.file_selection_manager:
+        if not torrent_session:
+            raise ValueError(
+                f"Torrent not found or file selection not available: {info_hash}"
+            )
+
+        if not torrent_session.ensure_file_selection_manager():
             raise ValueError(
                 f"Torrent not found or file selection not available: {info_hash}"
             )
 
         manager = torrent_session.file_selection_manager
+        if manager is None:
+            raise ValueError(
+                f"Torrent not found or file selection not available: {info_hash}"
+            )
         for file_index in file_indices:
             manager.deselect_file(file_index)
 
@@ -836,8 +1083,15 @@ class LocalSessionAdapter(SessionAdapter):
             verified_files: list[str] = []
             failed_files: list[str] = []
 
+            # Get piece manager for piece-based verification
+            piece_manager = torrent_session.piece_manager if hasattr(torrent_session, 'piece_manager') else None
+            
             # Verify each file
             for idx, file_entry in enumerate(files_to_verify):
+                file_path = file_entry["path"]
+                file_sha1 = file_entry.get("sha1")
+                file_length = file_entry.get("length", 0)
+                
                 # Check for cancellation
                 if progress_callback:
                     should_continue = progress_callback(
@@ -855,9 +1109,6 @@ class LocalSessionAdapter(SessionAdapter):
                             "failed_count": len(failed_files),
                         }
 
-                file_path = file_entry["path"]
-                file_sha1 = file_entry.get("sha1")
-
                 # Check if file exists
                 if not file_path.exists():
                     failed_files.append(str(file_path))
@@ -865,35 +1116,124 @@ class LocalSessionAdapter(SessionAdapter):
 
                 # Verify file
                 try:
+                    verified = False
+                    
+                    # For v2 torrents with file_sha1, verify directly
                     if file_sha1 and len(file_sha1) == 20:
                         # Use SHA-1 verification if available
-                        if verify_file_sha1(file_path, file_sha1):
-                            verified_files.append(str(file_path))
+                        verified = verify_file_sha1(file_path, file_sha1)
+                    # For v1 torrents or files without file_sha1, verify using piece manager
+                    elif piece_manager and hasattr(piece_manager, 'pieces'):
+                        # Get file selection manager to map file to pieces
+                        file_selection_manager = torrent_session.file_selection_manager
+                        if file_selection_manager and hasattr(file_selection_manager, 'mapper'):
+                            mapper = file_selection_manager.mapper
+                            # Find file index
+                            file_index = None
+                            for f_idx, f_info in enumerate(mapper.files):
+                                if f_info.name == file_path.name or str(file_path).endswith(f_info.name):
+                                    file_index = f_idx
+                                    break
+                            
+                            if file_index is not None and file_index in mapper.file_to_pieces:
+                                # Get pieces for this file
+                                piece_indices = mapper.file_to_pieces[file_index]
+                                
+                                # Get file assembler for reading piece data from disk
+                                file_assembler = None
+                                if hasattr(torrent_session, 'download_manager') and torrent_session.download_manager:
+                                    file_assembler = getattr(torrent_session.download_manager, 'file_assembler', None)
+                                
+                                # Verify all pieces for this file
+                                all_pieces_verified = True
+                                for piece_idx in piece_indices:
+                                    if piece_idx < len(piece_manager.pieces):
+                                        piece = piece_manager.pieces[piece_idx]
+                                        # Check if piece is already verified
+                                        if piece.hash_verified and piece.state.name == "VERIFIED":
+                                            continue  # Already verified, skip
+                                        
+                                        # Try to verify piece by reading from disk
+                                        from ccbt.piece.hash_v2 import HashAlgorithm, verify_piece
+                                        from ccbt.models import PieceState as PieceStateModel
+                                        
+                                        # Get expected hash from piece manager
+                                        if piece_idx < len(piece_manager.piece_hashes):
+                                            expected_hash = piece_manager.piece_hashes[piece_idx]
+                                            
+                                            # Read piece data from disk using file_assembler
+                                            piece_data = None
+                                            if file_assembler:
+                                                try:
+                                                    # Read the complete piece (begin=0, length=piece_length)
+                                                    piece_data = await file_assembler.read_block(
+                                                        piece_idx, 0, piece_manager.piece_length
+                                                    )
+                                                except Exception as e:
+                                                    self.logger.debug(
+                                                        "Failed to read piece %d from disk: %s",
+                                                        piece_idx,
+                                                        e,
+                                                    )
+                                            
+                                            # If file_assembler read failed, try reading from piece if complete
+                                            if not piece_data and piece.is_complete():
+                                                try:
+                                                    piece_data = piece.get_data()
+                                                except Exception:
+                                                    piece_data = None
+                                            
+                                            # Verify piece hash if we have data
+                                            if piece_data:
+                                                # Detect algorithm from hash length
+                                                if len(expected_hash) == 32:
+                                                    algorithm = HashAlgorithm.SHA256
+                                                elif len(expected_hash) == 20:
+                                                    algorithm = HashAlgorithm.SHA1
+                                                else:
+                                                    all_pieces_verified = False
+                                                    break
+                                                
+                                                # Verify piece hash
+                                                if verify_piece(piece_data, expected_hash, algorithm=algorithm):
+                                                    # Mark piece as verified
+                                                    piece.hash_verified = True
+                                                    if piece.state.name != "VERIFIED":
+                                                        piece.state = PieceStateModel.VERIFIED
+                                                else:
+                                                    all_pieces_verified = False
+                                                    break
+                                            else:
+                                                # Cannot read piece data, mark as unverified
+                                                all_pieces_verified = False
+                                                break
+                                        else:
+                                            # No hash available for this piece
+                                            all_pieces_verified = False
+                                            break
+                                
+                                verified = all_pieces_verified
+                            else:
+                                # Fallback: check file size matches
+                                expected_length = file_entry.get("length", 0)
+                                verified = file_path.stat().st_size == expected_length if file_path.exists() else False
                         else:
-                            failed_files.append(str(file_path))
-                    # For files without SHA-1, verify using piece manager
-                    elif torrent_session.piece_manager:
-                        # Get piece indices for this file
-                        # This is simplified - full implementation would map file to pieces
-                        # For now, we'll mark as verified if file exists and has correct size
-                        expected_length = file_entry.get("length", 0)
-                        if file_path.stat().st_size == expected_length:
-                            verified_files.append(str(file_path))
-                        else:
-                            failed_files.append(str(file_path))
+                            # Fallback: check file size matches
+                            expected_length = file_entry.get("length", 0)
+                            verified = file_path.stat().st_size == expected_length if file_path.exists() else False
                     else:
-                        # No piece manager, just check file size
+                        # Fallback: check file size matches
                         expected_length = file_entry.get("length", 0)
-                        if file_path.stat().st_size == expected_length:
-                            verified_files.append(str(file_path))
-                        else:
-                            failed_files.append(str(file_path))
+                        verified = file_path.stat().st_size == expected_length if file_path.exists() else False
+                    
+                    if verified:
+                        verified_files.append(str(file_path))
+                    else:
+                        failed_files.append(str(file_path))
                 except Exception as e:
-                    self.logger.warning(
-                        "Failed to verify file %s: %s",
-                        file_path,
-                        e,
-                    )
+                    # Log error and mark as failed
+                    self.logger.exception("Error verifying file %s: %s", file_path, e)
+                    failed_files.append(str(file_path))
                     failed_files.append(str(file_path))
 
             return {
@@ -1277,6 +1617,52 @@ class LocalSessionAdapter(SessionAdapter):
         """Get list of peers for a torrent."""
         return await self.session_manager.get_peers_for_torrent(info_hash)
 
+    async def add_tracker(self, info_hash: str, tracker_url: str) -> dict[str, Any]:
+        """Add a tracker URL to a torrent."""
+        success = await self.session_manager.add_tracker(info_hash, tracker_url)
+        return {"success": success}
+
+    async def remove_tracker(self, info_hash: str, tracker_url: str) -> dict[str, Any]:
+        """Remove a tracker URL from a torrent."""
+        success = await self.session_manager.remove_tracker(info_hash, tracker_url)
+        return {"success": success}
+
+    async def add_xet_folder(
+        self,
+        folder_path: str,
+        tonic_file: str | None = None,
+        tonic_link: str | None = None,
+        sync_mode: str | None = None,
+        source_peers: list[str] | None = None,
+        check_interval: float | None = None,
+    ) -> str:
+        """Add XET folder for synchronization."""
+        return await self.session_manager.add_xet_folder(
+            folder_path=folder_path,
+            tonic_file=tonic_file,
+            tonic_link=tonic_link,
+            sync_mode=sync_mode,
+            source_peers=source_peers,
+            check_interval=check_interval,
+        )
+
+    async def remove_xet_folder(self, folder_key: str) -> bool:
+        """Remove XET folder from synchronization."""
+        return await self.session_manager.remove_xet_folder(folder_key)
+
+    async def list_xet_folders(self) -> list[dict[str, Any]]:
+        """List all registered XET folders."""
+        return await self.session_manager.list_xet_folders()
+
+    async def get_xet_folder_status(self, folder_key: str) -> dict[str, Any] | None:
+        """Get XET folder status."""
+        folder = await self.session_manager.get_xet_folder(folder_key)
+        if not folder:
+            return None
+
+        status = folder.get_status()
+        return status.model_dump()
+
     async def set_rate_limits(
         self,
         info_hash: str,
@@ -1291,6 +1677,16 @@ class LocalSessionAdapter(SessionAdapter):
     async def force_announce(self, info_hash: str) -> bool:
         """Force a tracker announce for a torrent."""
         return await self.session_manager.force_announce(info_hash)
+
+    async def refresh_pex(self, info_hash: str) -> dict[str, Any]:
+        """Refresh PEX (Peer Exchange) for a torrent."""
+        success = await self.session_manager.refresh_pex(info_hash)
+        return {"success": success, "info_hash": info_hash}
+
+    async def rehash_torrent(self, info_hash: str) -> dict[str, Any]:
+        """Rehash all pieces for a torrent."""
+        success = await self.session_manager.rehash_torrent(info_hash)
+        return {"success": success, "info_hash": info_hash}
 
     async def export_session_state(self, path: str) -> None:
         """Export session state to a file."""
@@ -1307,6 +1703,40 @@ class LocalSessionAdapter(SessionAdapter):
     async def get_global_stats(self) -> dict[str, Any]:
         """Get global statistics across all torrents."""
         return await self.session_manager.get_global_stats()
+
+    async def global_pause_all(self) -> dict[str, Any]:
+        """Pause all torrents."""
+        return await self.session_manager.global_pause_all()
+
+    async def global_resume_all(self) -> dict[str, Any]:
+        """Resume all paused torrents."""
+        return await self.session_manager.global_resume_all()
+
+    async def global_force_start_all(self) -> dict[str, Any]:
+        """Force start all torrents."""
+        return await self.session_manager.global_force_start_all()
+
+    async def global_set_rate_limits(self, download_kib: int, upload_kib: int) -> bool:
+        """Set global rate limits."""
+        return await self.session_manager.global_set_rate_limits(download_kib, upload_kib)
+
+    async def set_per_peer_rate_limit(
+        self, info_hash: str, peer_key: str, upload_limit_kib: int
+    ) -> bool:
+        """Set per-peer upload rate limit."""
+        return await self.session_manager.set_per_peer_rate_limit(
+            info_hash, peer_key, upload_limit_kib
+        )
+
+    async def get_per_peer_rate_limit(
+        self, info_hash: str, peer_key: str
+    ) -> int | None:
+        """Get per-peer upload rate limit."""
+        return await self.session_manager.get_per_peer_rate_limit(info_hash, peer_key)
+
+    async def set_all_peers_rate_limit(self, upload_limit_kib: int) -> int:
+        """Set per-peer upload rate limit for all peers."""
+        return await self.session_manager.set_all_peers_rate_limit(upload_limit_kib)
 
     async def resume_from_checkpoint(
         self,
@@ -1402,6 +1832,53 @@ class DaemonSessionAdapter(SessionAdapter):
             **stats_response.stats,
         }
 
+    async def add_tracker(self, info_hash: str, tracker_url: str) -> dict[str, Any]:
+        """Add a tracker URL to a torrent."""
+        return await self.ipc_client.add_tracker(info_hash, tracker_url)
+
+    async def remove_tracker(self, info_hash: str, tracker_url: str) -> dict[str, Any]:
+        """Remove a tracker URL from a torrent."""
+        return await self.ipc_client.remove_tracker(info_hash, tracker_url)
+
+    async def global_pause_all(self) -> dict[str, Any]:
+        """Pause all torrents."""
+        return await self.ipc_client.global_pause_all()
+
+    async def global_resume_all(self) -> dict[str, Any]:
+        """Resume all paused torrents."""
+        return await self.ipc_client.global_resume_all()
+
+    async def global_force_start_all(self) -> dict[str, Any]:
+        """Force start all torrents."""
+        return await self.ipc_client.global_force_start_all()
+
+    async def global_set_rate_limits(self, download_kib: int, upload_kib: int) -> bool:
+        """Set global rate limits for all torrents."""
+        return await self.ipc_client.global_set_rate_limits(download_kib, upload_kib)
+
+    async def set_per_peer_rate_limit(
+        self,
+        info_hash: str,
+        peer_key: str,
+        upload_limit_kib: int,
+    ) -> bool:
+        """Set upload rate limit for a specific peer."""
+        return await self.ipc_client.set_per_peer_rate_limit(
+            info_hash, peer_key, upload_limit_kib
+        )
+
+    async def get_per_peer_rate_limit(
+        self,
+        info_hash: str,
+        peer_key: str,
+    ) -> int:
+        """Get upload rate limit for a specific peer."""
+        return await self.ipc_client.get_per_peer_rate_limit(info_hash, peer_key)
+
+    async def set_all_peers_rate_limit(self, upload_limit_kib: int) -> int:
+        """Set upload rate limit for all peers across all torrents."""
+        return await self.ipc_client.set_all_peers_rate_limit(upload_limit_kib)
+
     async def add_torrent(
         self,
         path_or_magnet: str,
@@ -1462,6 +1939,44 @@ class DaemonSessionAdapter(SessionAdapter):
     async def resume_torrent(self, info_hash: str) -> bool:
         """Resume torrent."""
         return await self.ipc_client.resume_torrent(info_hash)
+
+    async def cancel_torrent(self, info_hash: str) -> bool:
+        """Cancel torrent."""
+        return await self.ipc_client.cancel_torrent(info_hash)
+
+    async def force_start_torrent(self, info_hash: str) -> bool:
+        """Force start torrent."""
+        return await self.ipc_client.force_start_torrent(info_hash)
+
+    async def batch_pause_torrents(
+        self, info_hashes: list[str]
+    ) -> dict[str, Any]:
+        """Pause multiple torrents in a single request."""
+        return await self.ipc_client.batch_pause_torrents(info_hashes)
+
+    async def batch_resume_torrents(
+        self, info_hashes: list[str]
+    ) -> dict[str, Any]:
+        """Resume multiple torrents in a single request."""
+        return await self.ipc_client.batch_resume_torrents(info_hashes)
+
+    async def batch_restart_torrents(
+        self, info_hashes: list[str]
+    ) -> dict[str, Any]:
+        """Restart multiple torrents in a single request."""
+        return await self.ipc_client.batch_restart_torrents(info_hashes)
+
+    async def batch_remove_torrents(
+        self, info_hashes: list[str], remove_data: bool = False
+    ) -> dict[str, Any]:
+        """Remove multiple torrents in a single request."""
+        return await self.ipc_client.batch_remove_torrents(
+            info_hashes, remove_data=remove_data
+        )
+
+    async def get_services_status(self) -> dict[str, Any]:
+        """Get status of all services."""
+        return await self.ipc_client.get_services_status()
 
     async def get_torrent_files(self, info_hash: str) -> FileListResponse:
         """Get file list for a torrent."""
@@ -1689,6 +2204,159 @@ class DaemonSessionAdapter(SessionAdapter):
             )
             raise RuntimeError(f"Error communicating with daemon: {e}") from e
 
+    async def refresh_pex(self, info_hash: str) -> dict[str, Any]:
+        """Refresh PEX (Peer Exchange) for a torrent via daemon IPC."""
+        if hasattr(self.ipc_client, "refresh_pex"):
+            try:
+                result = await self.ipc_client.refresh_pex(info_hash)
+                if isinstance(result, dict):
+                    success = bool(
+                        result.get("success")
+                        or result.get("refreshed")
+                        or result.get("status") in {"ok", "refreshed"}
+                    )
+                    result.setdefault("success", success)
+                    return result
+                return {"success": bool(result), "result": result}
+            except Exception as exc:  # pragma: no cover - best-effort logging
+                self.logger.error(
+                    "Daemon error while refreshing PEX for %s: %s", info_hash, exc
+                )
+                return {"success": False, "error": str(exc)}
+
+        self.logger.warning(
+            "Daemon IPC client does not implement refresh_pex; returning not supported."
+        )
+        return {
+            "success": False,
+            "error": "refresh_pex not supported by daemon session",
+        }
+
+    async def rehash_torrent(self, info_hash: str) -> dict[str, Any]:
+        """Rehash all pieces for a torrent via daemon IPC."""
+        if hasattr(self.ipc_client, "rehash_torrent"):
+            try:
+                result = await self.ipc_client.rehash_torrent(info_hash)
+                if isinstance(result, dict):
+                    success = bool(
+                        result.get("success")
+                        or result.get("status") in {"started", "rehashing", "ok"}
+                    )
+                    result.setdefault("success", success)
+                    return result
+                return {"success": bool(result), "result": result}
+            except Exception as exc:  # pragma: no cover - best-effort logging
+                self.logger.error(
+                    "Daemon error while rehashing torrent %s: %s", info_hash, exc
+                )
+                return {"success": False, "error": str(exc)}
+
+        self.logger.warning(
+            "Daemon IPC client does not implement rehash_torrent; returning not supported."
+        )
+        return {
+            "success": False,
+            "error": "rehash_torrent not supported by daemon session",
+        }
+
+    async def add_xet_folder(
+        self,
+        folder_path: str,
+        tonic_file: str | None = None,
+        tonic_link: str | None = None,
+        sync_mode: str | None = None,
+        source_peers: list[str] | None = None,
+        check_interval: float | None = None,
+    ) -> str:
+        """Add XET folder for synchronization."""
+        try:
+            session = await self.ipc_client._ensure_session()
+            from ccbt.daemon.ipc_protocol import API_BASE_PATH
+
+            url = f"{self.ipc_client.base_url}{API_BASE_PATH}/xet/folders/add"
+
+            payload = {
+                "folder_path": folder_path,
+            }
+            if tonic_file:
+                payload["tonic_file"] = tonic_file
+            if tonic_link:
+                payload["tonic_link"] = tonic_link
+            if sync_mode:
+                payload["sync_mode"] = sync_mode
+            if source_peers:
+                payload["source_peers"] = source_peers
+            if check_interval:
+                payload["check_interval"] = check_interval
+
+            async with session.post(
+                url, json=payload, headers=self.ipc_client._get_headers("POST", url)
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                return data.get("folder_key", folder_path)
+        except Exception as e:
+            self.logger.exception("Error adding XET folder")
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def remove_xet_folder(self, folder_key: str) -> bool:
+        """Remove XET folder from synchronization."""
+        try:
+            session = await self.ipc_client._ensure_session()
+            from ccbt.daemon.ipc_protocol import API_BASE_PATH
+
+            url = f"{self.ipc_client.base_url}{API_BASE_PATH}/xet/folders/{folder_key}"
+
+            async with session.delete(
+                url, headers=self.ipc_client._get_headers("DELETE", url)
+            ) as resp:
+                if resp.status == 404:
+                    return False
+                resp.raise_for_status()
+                data = await resp.json()
+                return data.get("status") == "removed"
+        except Exception as e:
+            self.logger.exception("Error removing XET folder")
+            return False
+
+    async def list_xet_folders(self) -> list[dict[str, Any]]:
+        """List all registered XET folders."""
+        try:
+            session = await self.ipc_client._ensure_session()
+            from ccbt.daemon.ipc_protocol import API_BASE_PATH
+
+            url = f"{self.ipc_client.base_url}{API_BASE_PATH}/xet/folders"
+
+            async with session.get(
+                url, headers=self.ipc_client._get_headers("GET", url)
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                return data.get("folders", [])
+        except Exception as e:
+            self.logger.exception("Error listing XET folders")
+            return []
+
+    async def get_xet_folder_status(self, folder_key: str) -> dict[str, Any] | None:
+        """Get XET folder status."""
+        try:
+            session = await self.ipc_client._ensure_session()
+            from ccbt.daemon.ipc_protocol import API_BASE_PATH
+
+            url = f"{self.ipc_client.base_url}{API_BASE_PATH}/xet/folders/{folder_key}"
+
+            async with session.get(
+                url, headers=self.ipc_client._get_headers("GET", url)
+            ) as resp:
+                if resp.status == 404:
+                    return None
+                resp.raise_for_status()
+                data = await resp.json()
+                return data
+        except Exception as e:
+            self.logger.exception("Error getting XET folder status")
+            return None
+
     async def force_announce(self, info_hash: str) -> bool:
         """Force a tracker announce for a torrent.
 
@@ -1707,6 +2375,966 @@ class DaemonSessionAdapter(SessionAdapter):
             # IPC client returns dict, check if operation was successful
             return result.get("status") == "announced" or result.get("announced", False)
         except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to force announce for torrent %s: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                info_hash,
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Torrent not found - return False as per interface
+                return False
+            # Other HTTP errors - raise exception
+            self.logger.error(
+                "Daemon returned error %d when forcing announce for torrent %s: %s",
+                e.status,
+                info_hash,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when forcing announce: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error forcing announce for torrent %s: %s",
+                info_hash,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def export_session_state(self, path: str) -> None:
+        """Export session state to a file."""
+        try:
+            # IPC client returns dict with export info, but adapter interface expects None
+            await self.ipc_client.export_session_state(path)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error("Error exporting session state to %s: %s", path, e)
+            raise
+
+    async def import_session_state(self, path: str) -> dict[str, Any]:
+        """Import session state from a file."""
+        try:
+            result = await self.ipc_client.import_session_state(path)
+            # IPC client returns dict with imported state
+            return result.get("state", result)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error("Error importing session state from %s: %s", path, e)
+            raise
+
+    async def resume_from_checkpoint(
+        self,
+        info_hash: bytes,
+        checkpoint: Any,
+        torrent_path: str | None = None,
+    ) -> str:
+        """Resume download from checkpoint.
+
+        Args:
+            info_hash: Torrent info hash (bytes) - Note: This method uses bytes instead of hex string
+                for compatibility with checkpoint data structures. Internally converts to hex string
+                for IPC communication.
+            checkpoint: Checkpoint data
+            torrent_path: Optional explicit torrent file path
+
+        Returns:
+            Info hash hex string of resumed torrent
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            # Convert bytes to hex string for IPC client (IPC protocol uses hex strings)
+            info_hash_hex = info_hash.hex()
+            result = await self.ipc_client.resume_from_checkpoint(
+                info_hash_hex,
+                checkpoint,
+                torrent_path=torrent_path,
+            )
+            # IPC client returns dict with info_hash
+            return result.get("info_hash", info_hash_hex)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(
+                "Error resuming from checkpoint for torrent %s: %s", info_hash.hex(), e
+            )
+            raise
+
+    async def get_global_stats(self) -> dict[str, Any]:
+        """Get global statistics across all torrents.
+
+        Returns:
+            Dictionary with aggregated stats (num_torrents, num_active, etc.)
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            stats_response = await self.ipc_client.get_global_stats()
+            return self._convert_global_stats_response(stats_response)
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to get global stats: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            self.logger.error(
+                "Daemon returned error %d when getting global stats: %s",
+                e.status,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when getting global stats: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error getting global stats: %s",
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def get_scrape_result(self, info_hash: str) -> Any | None:
+        """Get cached scrape result for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            ScrapeResult if cached, None if not found
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            result = await self.ipc_client.get_scrape_result(info_hash)
+            return result
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to get scrape result for torrent %s: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                info_hash,
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Scrape result not found - return None as per interface
+                return None
+            # Other HTTP errors - raise exception
+            self.logger.error(
+                "Daemon returned error %d when getting scrape result for torrent %s: %s",
+                e.status,
+                info_hash,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when getting scrape result: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error getting scrape result for torrent %s: %s",
+                info_hash,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to force announce for torrent %s: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                info_hash,
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Torrent not found - return False as per interface
+                return False
+            # Other HTTP errors - raise exception
+            self.logger.error(
+                "Daemon returned error %d when forcing announce for torrent %s: %s",
+                e.status,
+                info_hash,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when forcing announce: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error forcing announce for torrent %s: %s",
+                info_hash,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def export_session_state(self, path: str) -> None:
+        """Export session state to a file."""
+        try:
+            # IPC client returns dict with export info, but adapter interface expects None
+            await self.ipc_client.export_session_state(path)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error("Error exporting session state to %s: %s", path, e)
+            raise
+
+    async def import_session_state(self, path: str) -> dict[str, Any]:
+        """Import session state from a file."""
+        try:
+            result = await self.ipc_client.import_session_state(path)
+            # IPC client returns dict with imported state
+            return result.get("state", result)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error("Error importing session state from %s: %s", path, e)
+            raise
+
+    async def resume_from_checkpoint(
+        self,
+        info_hash: bytes,
+        checkpoint: Any,
+        torrent_path: str | None = None,
+    ) -> str:
+        """Resume download from checkpoint.
+
+        Args:
+            info_hash: Torrent info hash (bytes) - Note: This method uses bytes instead of hex string
+                for compatibility with checkpoint data structures. Internally converts to hex string
+                for IPC communication.
+            checkpoint: Checkpoint data
+            torrent_path: Optional explicit torrent file path
+
+        Returns:
+            Info hash hex string of resumed torrent
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            # Convert bytes to hex string for IPC client (IPC protocol uses hex strings)
+            info_hash_hex = info_hash.hex()
+            result = await self.ipc_client.resume_from_checkpoint(
+                info_hash_hex,
+                checkpoint,
+                torrent_path=torrent_path,
+            )
+            # IPC client returns dict with info_hash
+            return result.get("info_hash", info_hash_hex)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(
+                "Error resuming from checkpoint for torrent %s: %s", info_hash.hex(), e
+            )
+            raise
+
+    async def get_global_stats(self) -> dict[str, Any]:
+        """Get global statistics across all torrents.
+
+        Returns:
+            Dictionary with aggregated stats (num_torrents, num_active, etc.)
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            stats_response = await self.ipc_client.get_global_stats()
+            return self._convert_global_stats_response(stats_response)
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to get global stats: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            self.logger.error(
+                "Daemon returned error %d when getting global stats: %s",
+                e.status,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when getting global stats: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error getting global stats: %s",
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def get_scrape_result(self, info_hash: str) -> Any | None:
+        """Get cached scrape result for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            ScrapeResult if cached, None if not found
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            result = await self.ipc_client.get_scrape_result(info_hash)
+            return result
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to get scrape result for torrent %s: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                info_hash,
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Scrape result not found - return None as per interface
+                return None
+            # Other HTTP errors - raise exception
+            self.logger.error(
+                "Daemon returned error %d when getting scrape result for torrent %s: %s",
+                e.status,
+                info_hash,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when getting scrape result: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error getting scrape result for torrent %s: %s",
+                info_hash,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to force announce for torrent %s: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                info_hash,
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Torrent not found - return False as per interface
+                return False
+            # Other HTTP errors - raise exception
+            self.logger.error(
+                "Daemon returned error %d when forcing announce for torrent %s: %s",
+                e.status,
+                info_hash,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when forcing announce: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error forcing announce for torrent %s: %s",
+                info_hash,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def export_session_state(self, path: str) -> None:
+        """Export session state to a file."""
+        try:
+            # IPC client returns dict with export info, but adapter interface expects None
+            await self.ipc_client.export_session_state(path)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error("Error exporting session state to %s: %s", path, e)
+            raise
+
+    async def import_session_state(self, path: str) -> dict[str, Any]:
+        """Import session state from a file."""
+        try:
+            result = await self.ipc_client.import_session_state(path)
+            # IPC client returns dict with imported state
+            return result.get("state", result)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error("Error importing session state from %s: %s", path, e)
+            raise
+
+    async def resume_from_checkpoint(
+        self,
+        info_hash: bytes,
+        checkpoint: Any,
+        torrent_path: str | None = None,
+    ) -> str:
+        """Resume download from checkpoint.
+
+        Args:
+            info_hash: Torrent info hash (bytes) - Note: This method uses bytes instead of hex string
+                for compatibility with checkpoint data structures. Internally converts to hex string
+                for IPC communication.
+            checkpoint: Checkpoint data
+            torrent_path: Optional explicit torrent file path
+
+        Returns:
+            Info hash hex string of resumed torrent
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            # Convert bytes to hex string for IPC client (IPC protocol uses hex strings)
+            info_hash_hex = info_hash.hex()
+            result = await self.ipc_client.resume_from_checkpoint(
+                info_hash_hex,
+                checkpoint,
+                torrent_path=torrent_path,
+            )
+            # IPC client returns dict with info_hash
+            return result.get("info_hash", info_hash_hex)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(
+                "Error resuming from checkpoint for torrent %s: %s", info_hash.hex(), e
+            )
+            raise
+
+    async def get_global_stats(self) -> dict[str, Any]:
+        """Get global statistics across all torrents.
+
+        Returns:
+            Dictionary with aggregated stats (num_torrents, num_active, etc.)
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            stats_response = await self.ipc_client.get_global_stats()
+            return self._convert_global_stats_response(stats_response)
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to get global stats: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            self.logger.error(
+                "Daemon returned error %d when getting global stats: %s",
+                e.status,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when getting global stats: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error getting global stats: %s",
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def get_scrape_result(self, info_hash: str) -> Any | None:
+        """Get cached scrape result for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            ScrapeResult if cached, None if not found
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            result = await self.ipc_client.get_scrape_result(info_hash)
+            return result
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to get scrape result for torrent %s: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                info_hash,
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Scrape result not found - return None as per interface
+                return None
+            # Other HTTP errors - raise exception
+            self.logger.error(
+                "Daemon returned error %d when getting scrape result for torrent %s: %s",
+                e.status,
+                info_hash,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when getting scrape result: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error getting scrape result for torrent %s: %s",
+                info_hash,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to force announce for torrent %s: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                info_hash,
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Torrent not found - return False as per interface
+                return False
+            # Other HTTP errors - raise exception
+            self.logger.error(
+                "Daemon returned error %d when forcing announce for torrent %s: %s",
+                e.status,
+                info_hash,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when forcing announce: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error forcing announce for torrent %s: %s",
+                info_hash,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def export_session_state(self, path: str) -> None:
+        """Export session state to a file."""
+        try:
+            # IPC client returns dict with export info, but adapter interface expects None
+            await self.ipc_client.export_session_state(path)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error("Error exporting session state to %s: %s", path, e)
+            raise
+
+    async def import_session_state(self, path: str) -> dict[str, Any]:
+        """Import session state from a file."""
+        try:
+            result = await self.ipc_client.import_session_state(path)
+            # IPC client returns dict with imported state
+            return result.get("state", result)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error("Error importing session state from %s: %s", path, e)
+            raise
+
+    async def resume_from_checkpoint(
+        self,
+        info_hash: bytes,
+        checkpoint: Any,
+        torrent_path: str | None = None,
+    ) -> str:
+        """Resume download from checkpoint.
+
+        Args:
+            info_hash: Torrent info hash (bytes) - Note: This method uses bytes instead of hex string
+                for compatibility with checkpoint data structures. Internally converts to hex string
+                for IPC communication.
+            checkpoint: Checkpoint data
+            torrent_path: Optional explicit torrent file path
+
+        Returns:
+            Info hash hex string of resumed torrent
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            # Convert bytes to hex string for IPC client (IPC protocol uses hex strings)
+            info_hash_hex = info_hash.hex()
+            result = await self.ipc_client.resume_from_checkpoint(
+                info_hash_hex,
+                checkpoint,
+                torrent_path=torrent_path,
+            )
+            # IPC client returns dict with info_hash
+            return result.get("info_hash", info_hash_hex)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(
+                "Error resuming from checkpoint for torrent %s: %s", info_hash.hex(), e
+            )
+            raise
+
+    async def get_global_stats(self) -> dict[str, Any]:
+        """Get global statistics across all torrents.
+
+        Returns:
+            Dictionary with aggregated stats (num_torrents, num_active, etc.)
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            stats_response = await self.ipc_client.get_global_stats()
+            return self._convert_global_stats_response(stats_response)
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to get global stats: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            self.logger.error(
+                "Daemon returned error %d when getting global stats: %s",
+                e.status,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when getting global stats: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error getting global stats: %s",
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def get_scrape_result(self, info_hash: str) -> Any | None:
+        """Get cached scrape result for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            ScrapeResult if cached, None if not found
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            result = await self.ipc_client.get_scrape_result(info_hash)
+            return result
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to get scrape result for torrent %s: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                info_hash,
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Scrape result not found - return None as per interface
+                return None
+            # Other HTTP errors - raise exception
+            self.logger.error(
+                "Daemon returned error %d when getting scrape result for torrent %s: %s",
+                e.status,
+                info_hash,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when getting scrape result: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error getting scrape result for torrent %s: %s",
+                info_hash,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to force announce for torrent %s: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                info_hash,
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Torrent not found - return False as per interface
+                return False
+            # Other HTTP errors - raise exception
+            self.logger.error(
+                "Daemon returned error %d when forcing announce for torrent %s: %s",
+                e.status,
+                info_hash,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when forcing announce: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error forcing announce for torrent %s: %s",
+                info_hash,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def export_session_state(self, path: str) -> None:
+        """Export session state to a file."""
+        try:
+            # IPC client returns dict with export info, but adapter interface expects None
+            await self.ipc_client.export_session_state(path)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error("Error exporting session state to %s: %s", path, e)
+            raise
+
+    async def import_session_state(self, path: str) -> dict[str, Any]:
+        """Import session state from a file."""
+        try:
+            result = await self.ipc_client.import_session_state(path)
+            # IPC client returns dict with imported state
+            return result.get("state", result)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error("Error importing session state from %s: %s", path, e)
+            raise
+
+    async def resume_from_checkpoint(
+        self,
+        info_hash: bytes,
+        checkpoint: Any,
+        torrent_path: str | None = None,
+    ) -> str:
+        """Resume download from checkpoint.
+
+        Args:
+            info_hash: Torrent info hash (bytes) - Note: This method uses bytes instead of hex string
+                for compatibility with checkpoint data structures. Internally converts to hex string
+                for IPC communication.
+            checkpoint: Checkpoint data
+            torrent_path: Optional explicit torrent file path
+
+        Returns:
+            Info hash hex string of resumed torrent
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            # Convert bytes to hex string for IPC client (IPC protocol uses hex strings)
+            info_hash_hex = info_hash.hex()
+            result = await self.ipc_client.resume_from_checkpoint(
+                info_hash_hex,
+                checkpoint,
+                torrent_path=torrent_path,
+            )
+            # IPC client returns dict with info_hash
+            return result.get("info_hash", info_hash_hex)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(
+                "Error resuming from checkpoint for torrent %s: %s", info_hash.hex(), e
+            )
+            raise
+
+    async def get_global_stats(self) -> dict[str, Any]:
+        """Get global statistics across all torrents.
+
+        Returns:
+            Dictionary with aggregated stats (num_torrents, num_active, etc.)
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            stats_response = await self.ipc_client.get_global_stats()
+            return self._convert_global_stats_response(stats_response)
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to get global stats: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            self.logger.error(
+                "Daemon returned error %d when getting global stats: %s",
+                e.status,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when getting global stats: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error getting global stats: %s",
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
+    async def get_scrape_result(self, info_hash: str) -> Any | None:
+        """Get cached scrape result for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            ScrapeResult if cached, None if not found
+
+        Raises:
+            RuntimeError: If daemon connection fails or IPC communication error occurs
+
+        """
+        try:
+            result = await self.ipc_client.get_scrape_result(info_hash)
+            return result
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.error(
+                "Cannot connect to daemon IPC server to get scrape result for torrent %s: %s. "
+                "Is the daemon running? Try 'btbt daemon start'",
+                info_hash,
+                e,
+            )
+            raise RuntimeError(
+                f"Cannot connect to daemon IPC server: {e}. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            ) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Scrape result not found - return None as per interface
+                return None
+            # Other HTTP errors - raise exception
+            self.logger.error(
+                "Daemon returned error %d when getting scrape result for torrent %s: %s",
+                e.status,
+                info_hash,
+                e.message,
+            )
+            raise RuntimeError(
+                f"Daemon error when getting scrape result: HTTP {e.status}: {e.message}"
+            ) from e
+        except Exception as e:
+            # Other errors - raise exception
+            self.logger.error(
+                "Error getting scrape result for torrent %s: %s",
+                info_hash,
+                e,
+                exc_info=True,
+            )
+            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+
             # Connection refused - daemon not running or IPC server not accessible
             self.logger.error(
                 "Cannot connect to daemon IPC server to force announce for torrent %s: %s. "

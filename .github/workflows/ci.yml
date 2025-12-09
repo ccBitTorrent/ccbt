@@ -38,6 +38,14 @@ jobs:
 
     - name: Lint with pre-commit
       run: pre-commit run --all-files
+    
+    - name: Validate changelog
+      run: |
+        python dev/scripts/validate_changelog.py || {
+          echo "⚠️  Changelog validation failed. This is a warning for CI."
+          echo "Please ensure dev/CHANGELOG.md is updated with your changes."
+          exit 0  # Don't fail CI, just warn
+        }
 
     - name: Test with pytest
       run: |
@@ -93,6 +101,42 @@ jobs:
         python benchmarks/bench_throughput.py
         python benchmarks/bench_disk.py
         python benchmarks/bench_hash_verification.py
+
+  docs:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' || 
+      contains(github.event.pull_request.changed_files, 'docs/') ||
+      contains(github.event.pull_request.changed_files, 'dev/mkdocs.yml') ||
+      contains(github.event.pull_request.changed_files, 'ccbt/i18n/')
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install mkdocs mkdocs-material mkdocs-i18n mkdocstrings[python]
+
+    - name: Build documentation
+      run: |
+        uv run mkdocs build --strict -f dev/mkdocs.yml
+
+    - name: Validate translations
+      run: |
+        uv run python -m ccbt.i18n.scripts.validate_po
+
+    - name: Upload docs artifacts
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: docs-build-failure
+        path: site/
 
   build:
     runs-on: ${{ matrix.os }}

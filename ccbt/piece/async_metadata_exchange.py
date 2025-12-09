@@ -205,6 +205,22 @@ class AsyncMetadataExchange:
             min(len(peers), max_peers),
         )
 
+        # Emit METADATA_FETCH_STARTED event
+        try:
+            from ccbt.utils.events import Event, EventType, emit_event
+
+            await emit_event(
+                Event(
+                    event_type=EventType.METADATA_FETCH_STARTED.value,
+                    data={
+                        "info_hash": self.info_hash.hex(),
+                        "peer_count": min(len(peers), max_peers),
+                    },
+                )
+            )
+        except Exception as e:
+            self.logger.debug("Failed to emit METADATA_FETCH_STARTED event: %s", e)
+
         # If no peers, return None immediately
         if not peers or max_peers <= 0:
             self.logger.warning("No peers available for metadata fetch")
@@ -222,6 +238,21 @@ class AsyncMetadataExchange:
             await asyncio.wait_for(self._wait_for_completion(), timeout=timeout)
         except asyncio.TimeoutError:
             self.logger.warning("Metadata fetch timed out")
+            # Emit METADATA_FETCH_FAILED event
+            try:
+                from ccbt.utils.events import Event, EventType, emit_event
+
+                await emit_event(
+                    Event(
+                        event_type=EventType.METADATA_FETCH_FAILED.value,
+                        data={
+                            "info_hash": self.info_hash.hex(),
+                            "reason": "timeout",
+                        },
+                    )
+                )
+            except Exception as e:
+                self.logger.debug("Failed to emit METADATA_FETCH_FAILED event: %s", e)
             return None
 
         # Cancel remaining tasks
@@ -244,7 +275,7 @@ class AsyncMetadataExchange:
 
                 encoder = BencodeEncoder()
                 info_dict = self.metadata_dict[b"info"]
-                info_hash_calculated = hashlib.sha1(encoder.encode(info_dict)).digest()
+                info_hash_calculated = hashlib.sha1(encoder.encode(info_dict)).digest()  # nosec B324 - SHA-1 required by BitTorrent protocol (BEP 3), not for security
 
                 # If we have expected info_hash, validate it matches
                 if hasattr(self, "info_hash") and self.info_hash:
@@ -262,8 +293,39 @@ class AsyncMetadataExchange:
                     "Metadata validated successfully (info_hash: %s)",
                     info_hash_calculated.hex()[:16] + "...",
                 )
-            except Exception as e:
-                self.logger.error("Metadata validation failed: %s", e, exc_info=True)
+                # Emit METADATA_FETCH_COMPLETED event
+                try:
+                    from ccbt.utils.events import Event, EventType, emit_event
+
+                    metadata_size = len(encoded_metadata) if hasattr(self, "metadata_data") and self.metadata_data else 0
+                    await emit_event(
+                        Event(
+                            event_type=EventType.METADATA_FETCH_COMPLETED.value,
+                            data={
+                                "info_hash": self.info_hash.hex(),
+                                "metadata_size": metadata_size,
+                            },
+                        )
+                    )
+                except Exception as e:
+                    self.logger.debug("Failed to emit METADATA_FETCH_COMPLETED event: %s", e)
+            except Exception:
+                self.logger.exception("Metadata validation failed")
+                # Emit METADATA_FETCH_FAILED event for validation failure
+                try:
+                    from ccbt.utils.events import Event, EventType, emit_event
+
+                    await emit_event(
+                        Event(
+                            event_type=EventType.METADATA_FETCH_FAILED.value,
+                            data={
+                                "info_hash": self.info_hash.hex(),
+                                "reason": "validation_failed",
+                            },
+                        )
+                    )
+                except Exception as e:
+                    self.logger.debug("Failed to emit METADATA_FETCH_FAILED event: %s", e)
                 return None
 
         return self.metadata_dict  # pragma: no cover - Return path after timeout, difficult to test without actual metadata fetch
@@ -733,11 +795,35 @@ class AsyncMetadataExchange:
         received_count = sum(
             1 for p in self.metadata_pieces.values() if p.data is not None
         )
+        total_pieces = len(self.metadata_pieces) if self.metadata_pieces else session.num_pieces
+        progress = received_count / total_pieces if total_pieces > 0 else 0.0
+        
         self.logger.debug(
-            "METADATA_EXCHANGE: Progress: %d/%d pieces received",
+            "METADATA_EXCHANGE: Progress: %d/%d pieces received (%.1f%%)",
             received_count,
-            len(self.metadata_pieces),
+            total_pieces,
+            progress * 100,
         )
+        
+        # Emit progress event (every 10% or on significant milestones)
+        try:
+            from ccbt.utils.events import Event, EventType, emit_event
+            
+            # Emit progress every 10% or on every 5th piece, whichever comes first
+            if received_count % max(1, total_pieces // 10) == 0 or received_count % 5 == 0:
+                await emit_event(
+                    Event(
+                        event_type=EventType.METADATA_FETCH_PROGRESS.value,
+                        data={
+                            "info_hash": self.info_hash.hex(),
+                            "progress": progress,
+                            "pieces_received": received_count,
+                            "pieces_total": total_pieces,
+                        },
+                    )
+                )
+        except Exception as e:
+            self.logger.debug("Failed to emit METADATA_FETCH_PROGRESS event: %s", e)
 
         # Check if we have all pieces
         if self._is_metadata_complete():

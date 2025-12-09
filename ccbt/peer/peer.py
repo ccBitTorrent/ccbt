@@ -1589,15 +1589,27 @@ class MessageBuffer:
         }
 
 
-# Global socket optimizer instance
-_socket_optimizer = SocketOptimizer()
+# Global socket optimizer instance (lazy initialization)
+_socket_optimizer: SocketOptimizer | None = None
+
+
+def _get_socket_optimizer() -> SocketOptimizer:
+    """Get the global socket optimizer instance (lazy initialization).
+    
+    Returns:
+        SocketOptimizer: The global socket optimizer instance
+    """
+    global _socket_optimizer
+    if _socket_optimizer is None:
+        _socket_optimizer = SocketOptimizer()
+    return _socket_optimizer
 
 
 def optimize_socket(sock: socket.socket) -> None:
     """Optimize a socket for high-performance BitTorrent."""
-    _socket_optimizer.optimize_socket(sock)
+    _get_socket_optimizer().optimize_socket(sock)
 
 
 def get_optimal_buffer_sizes(connection_count: int) -> tuple[int, int]:
     """Get optimal socket buffer sizes for the given connection count."""
-    return _socket_optimizer.get_optimal_buffer_sizes(connection_count)
+    return _get_socket_optimizer().get_optimal_buffer_sizes(connection_count)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 
 from ccbt.config.config import get_config, init_config
 from ccbt.session.download_manager import (
@@ -50,10 +51,8 @@ async def run_daemon(args) -> None:
 
         # Show status if requested
         if getattr(args, "status", False):
-            try:
+            with contextlib.suppress(Exception):
                 await session.get_status()
-            except Exception:
-                pass
 
         # Legacy behavior: return immediately (tests expect quick exit)
     finally:
@@ -107,16 +106,67 @@ async def main() -> int:
     if args.streaming:
         config_manager.config.strategy.streaming_mode = True
 
+    # Track active session managers and download managers for cleanup
+    active_sessions = []
+    active_download_managers = []
+
     try:
         if args.daemon:
+            session = AsyncSessionManager()
+            active_sessions.append(session)
+            await session.start()
             await run_daemon(args)
             return 0
         if args.torrent:
-            if args.magnet or str(args.torrent).startswith("magnet:"):
-                await download_magnet(args.torrent, args.output_dir)
-            else:
-                await download_torrent(args.torrent, args.output_dir)
-            return 0
+            # For single downloads, we need to ensure proper cleanup
+            try:
+                if args.magnet or str(args.torrent).startswith("magnet:"):
+                    dm = await download_magnet(args.torrent, args.output_dir)
+                    if dm:
+                        active_download_managers.append(dm)
+                else:
+                    dm = await download_torrent(args.torrent, args.output_dir)
+                    if dm:
+                        active_download_managers.append(dm)
+                return 0
+            except KeyboardInterrupt:
+                # Ensure all background tasks are properly cancelled and awaited
+                logger = logging.getLogger(__name__)
+                logger.info("Received KeyboardInterrupt, shutting down gracefully...")
+
+                # Stop download managers first
+                for dm in active_download_managers:
+                    try:
+                        await dm.stop()
+                        logger.info("Download manager stopped successfully")
+                    except Exception as e:
+                        logger.warning(f"Error stopping download manager: {e}")
+
+                # Give tasks a moment to start their cancellation handlers
+                await asyncio.sleep(0.1)
+
+                # Cancel all remaining tasks in the event loop
+                current_task = asyncio.current_task()
+                all_tasks = [t for t in asyncio.all_tasks() if t != current_task and not t.done()]
+
+                if all_tasks:
+                    logger.info(f"Cancelling {len(all_tasks)} remaining background tasks...")
+                    for task in all_tasks:
+                        task.cancel()
+
+                    # Wait for all tasks to complete their cancellation
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.gather(*all_tasks, return_exceptions=True),
+                            timeout=5.0
+                        )
+                        logger.info("All background tasks cancelled successfully")
+                    except asyncio.TimeoutError:
+                        logger.warning("Some background tasks did not cancel within timeout")
+                    except Exception as e:
+                        logger.warning(f"Error during task cancellation: {e}")
+
+                return 0
         # No action provided
         return 1
     except KeyboardInterrupt:
@@ -124,14 +174,26 @@ async def main() -> int:
     except Exception:
         return 1
     finally:
+        # Clean up active sessions
+        for session in active_sessions:
+            try:
+                await session.stop()
+            except Exception as e:
+                logging.getLogger(__name__).debug(f"Error stopping session: {e}")
+
+        # Clean up active download managers
+        for dm in active_download_managers:
+            try:
+                await dm.stop()
+            except Exception as e:
+                logging.getLogger(__name__).debug(f"Error stopping download manager: {e}")
+
         # Stop hot-reload if enabled in init_config
         if hasattr(config_manager.config, "_config_file") and getattr(
             config_manager.config, "_config_file", None
         ):
-            try:
+            with contextlib.suppress(Exception):
                 config_manager.stop_hot_reload()
-            except Exception:
-                pass
 
 
 def sync_main() -> int:

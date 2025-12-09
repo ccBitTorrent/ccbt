@@ -18,7 +18,15 @@ class IncomingPeerHandler:
         peer_ip: str,
         peer_port: int,
     ) -> None:
-        if not self.s.peer_manager:
+        # CRITICAL FIX: Access peer_manager via download_manager (it's stored there)
+        # Fallback to direct peer_manager attribute if it exists (set by some setup code)
+        peer_manager = getattr(self.s, "download_manager", None)
+        if peer_manager:
+            peer_manager = getattr(peer_manager, "peer_manager", None)
+        if not peer_manager:
+            peer_manager = getattr(self.s, "peer_manager", None)
+
+        if not peer_manager:
             self.s.logger.info(
                 "Peer manager not ready yet, queueing incoming peer %s:%d for later processing",
                 peer_ip,
@@ -49,8 +57,8 @@ class IncomingPeerHandler:
             return
 
         # Check connection limits
-        if hasattr(self.s.peer_manager, "connections"):
-            current_connections = len(self.s.peer_manager.connections)
+        if hasattr(peer_manager, "connections"):
+            current_connections = len(peer_manager.connections)
             max_peers = self.s.config.network.max_peers_per_torrent
             if current_connections >= max_peers:
                 self.s.logger.debug(
@@ -65,9 +73,9 @@ class IncomingPeerHandler:
                 return
 
         # Route to peer manager's accept_incoming method
-        if hasattr(self.s.peer_manager, "accept_incoming"):
+        if hasattr(peer_manager, "accept_incoming"):
             try:
-                await self.s.peer_manager.accept_incoming(
+                await peer_manager.accept_incoming(
                     reader, writer, handshake, peer_ip, peer_port
                 )
             except Exception:
@@ -77,6 +85,10 @@ class IncomingPeerHandler:
                 try:
                     writer.close()
                     await writer.wait_closed()
+                except (ConnectionResetError, OSError):
+                    # CRITICAL FIX: Handle Windows ConnectionResetError (WinError 10054) gracefully
+                    # Remote host closed connection - this is normal
+                    pass
                 except Exception:
                     pass
         else:
@@ -108,11 +120,19 @@ class IncomingPeerHandler:
                 max_wait = 30.0
                 wait_interval = 0.5
                 waited = 0.0
+                # CRITICAL FIX: Check peer_manager via download_manager
+                peer_manager = None
                 while (
-                    not self.s.peer_manager
-                    and waited < max_wait
+                    waited < max_wait
                     and not self.s._stopped
                 ):
+                    # Try to get peer_manager from download_manager
+                    if hasattr(self.s, "download_manager") and self.s.download_manager:
+                        peer_manager = getattr(self.s.download_manager, "peer_manager", None)
+                    if not peer_manager:
+                        peer_manager = getattr(self.s, "peer_manager", None)
+                    if peer_manager:
+                        break
                     await asyncio.sleep(wait_interval)
                     waited += wait_interval
 
@@ -124,7 +144,7 @@ class IncomingPeerHandler:
                         pass
                     continue
 
-                if not self.s.peer_manager:
+                if not peer_manager:
                     self.s.logger.warning(
                         "Peer manager not ready after %d seconds, closing queued peer %s:%d",
                         max_wait,
@@ -138,9 +158,9 @@ class IncomingPeerHandler:
                         pass
                     continue
 
-                if hasattr(self.s.peer_manager, "accept_incoming"):
+                if hasattr(peer_manager, "accept_incoming"):
                     try:
-                        await self.s.peer_manager.accept_incoming(
+                        await peer_manager.accept_incoming(
                             reader, writer, handshake, peer_ip, peer_port
                         )
                     except Exception:

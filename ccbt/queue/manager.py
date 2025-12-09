@@ -369,6 +369,115 @@ class TorrentQueueManager:
 
         return True
 
+    async def force_start_torrent(self, info_hash: bytes) -> bool:
+        """Force start torrent (bypass queue limits).
+
+        Forces the torrent to start immediately regardless of queue limits.
+        Sets priority to MAXIMUM and starts the session.
+
+        Args:
+            info_hash: Torrent info hash
+
+        Returns:
+            True if force started, False if not found
+        """
+        async with self._lock:
+            # Ensure torrent is in queue (add if not)
+            if info_hash not in self.queue:
+                # Add to queue with MAXIMUM priority
+                entry = QueueEntry(
+                    info_hash=info_hash,
+                    priority=TorrentPriority.MAXIMUM,
+                    queue_position=0,  # Will be reordered
+                    added_time=time.time(),
+                    status="queued",
+                )
+                self.queue[info_hash] = entry
+                self.logger.info(
+                    "Added torrent %s to queue for force start",
+                    info_hash.hex()[:8],
+                )
+
+            entry = self.queue[info_hash]
+
+            # Set priority to MAXIMUM
+            entry.priority = TorrentPriority.MAXIMUM
+            entry.status = "active"
+
+            # Get torrent session
+            session = self.session_manager.torrents.get(info_hash)
+            if not session:
+                self.logger.warning(
+                    "Torrent session not found for force start: %s",
+                    info_hash.hex()[:8],
+                )
+                return False
+
+            # Check status to determine if downloading or seeding
+            try:
+                status = await session.get_status()
+                torrent_status = status.get("status", "stopped")
+                progress = status.get("progress", 0.0)
+                is_seeding = progress >= 1.0 or torrent_status == "seeding"
+            except Exception:
+                # Default to downloading if status check fails
+                is_seeding = False
+
+            # Add to active sets (bypassing limits)
+            if is_seeding:
+                self._active_seeding.add(info_hash)
+            else:
+                self._active_downloading.add(info_hash)
+
+            # Update session info
+            if hasattr(session, "info"):
+                session.info.priority = TorrentPriority.MAXIMUM.value
+                entry = self.queue.get(info_hash)
+                if entry:
+                    session.info.queue_position = entry.queue_position
+
+            # Reorder queue to put MAXIMUM priority at top
+            await self._reorder_queue()
+
+            # Update statistics
+            await self._update_statistics()
+
+        # Start or resume session
+        try:
+            status = await session.get_status()
+            torrent_status = status.get("status", "stopped")
+
+            if torrent_status == "paused":
+                # Resume with timeout
+                await asyncio.wait_for(session.resume(), timeout=30.0)
+            elif torrent_status in ("stopped", "cancelled"):
+                # Start with timeout
+                await asyncio.wait_for(session.start(resume=True), timeout=30.0)
+            # If already active, nothing to do
+
+            self.logger.info(
+                "Force started torrent %s (bypassed queue limits)",
+                info_hash.hex()[:8],
+            )
+            return True
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                "Timeout force starting torrent %s - it may still be initializing",
+                info_hash.hex()[:8],
+            )
+            # Don't fail - the torrent might still start in background
+            return True
+        except Exception as e:
+            self.logger.exception("Error force starting torrent %s", info_hash.hex()[:8])
+            # Remove from active sets on error
+            async with self._lock:
+                self._active_downloading.discard(info_hash)
+                self._active_seeding.discard(info_hash)
+                entry = self.queue.get(info_hash)
+                if entry:
+                    entry.status = "queued"
+            return False
+
     async def get_queue_status(self) -> dict[str, Any]:
         """Get current queue status.
 

@@ -12,12 +12,16 @@ Provides centralized security management including:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import aiofiles
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -99,6 +103,23 @@ class PeerReputation:
 
 
 @dataclass
+class BlacklistEntry:
+    """Blacklist entry with metadata."""
+
+    ip: str
+    reason: str
+    added_at: float
+    expires_at: float | None = None  # None = permanent
+    source: str = "manual"  # "manual", "auto", "reputation", "violation"
+
+    def is_expired(self) -> bool:
+        """Check if entry has expired."""
+        if self.expires_at is None:
+            return False
+        return time.time() > self.expires_at
+
+
+@dataclass
 class SecurityEvent:
     """Security event information."""
 
@@ -117,10 +138,14 @@ class SecurityManager:
     def __init__(self):
         """Initialize security manager."""
         self.peer_reputations: dict[str, PeerReputation] = {}
-        self.ip_blacklist: set[str] = set()
+        self.blacklist_entries: dict[str, BlacklistEntry] = {}
         self.ip_whitelist: set[str] = set()
         self.ip_filter: IPFilter | None = None
         self.security_events: deque = deque(maxlen=10000)
+        self.blacklist_file: Path | None = None
+        self.blacklist_updater: Any | None = None
+        self._cleanup_task: asyncio.Task | None = None
+        self._default_expiration_hours: float | None = None
 
         # Rate limiting
         self.connection_rates: dict[str, deque] = defaultdict(lambda: deque())
@@ -153,16 +178,22 @@ class SecurityManager:
         peer_id = peer_info.peer_id.hex() if peer_info.peer_id else ""
         ip = peer_info.ip
 
-        # Check IP blacklist
-        if ip in self.ip_blacklist:
-            await self._log_security_event(
-                ThreatType.MALICIOUS_PEER,
-                peer_id,
-                ip,
-                SecurityLevel.HIGH,
-                f"Connection blocked: IP {ip} is blacklisted",
-            )
-            return False, "IP is blacklisted"
+        # Check IP blacklist (including expiration check)
+        entry = self.blacklist_entries.get(ip)
+        if entry:
+            if entry.is_expired():
+                # Remove expired entry
+                self.blacklist_entries.pop(ip, None)
+                self.stats["blacklisted_peers"] = len(self.blacklist_entries)
+            else:
+                await self._log_security_event(
+                    ThreatType.MALICIOUS_PEER,
+                    peer_id,
+                    ip,
+                    SecurityLevel.HIGH,
+                    f"Connection blocked: IP {ip} is blacklisted",
+                )
+                return False, "IP is blacklisted"
 
         # Check IP filter if enabled
         if self.ip_filter and self.ip_filter.enabled and self.ip_filter.is_blocked(ip):
@@ -222,11 +253,22 @@ class SecurityManager:
         self._update_message_rate(ip)
         self._update_bytes_rate(ip, bytes_sent + bytes_received)
 
+        # Record metric for local blacklist source
+        await self._record_activity_for_local_blacklist(peer_id, ip, success)
+
         # Check for auto-blacklisting
         if reputation.reputation_score < self.auto_blacklist_threshold:
             reputation.is_blacklisted = True
-            self.ip_blacklist.add(ip)
-            self.stats["blacklisted_peers"] += 1
+            # Use add_to_blacklist with reputation source and optional expiration
+            expires_in = None
+            if self._default_expiration_hours:
+                expires_in = self._default_expiration_hours * 3600.0
+            self.add_to_blacklist(
+                ip,
+                f"Auto-blacklisted due to low reputation: {reputation.reputation_score:.2f}",
+                expires_in=expires_in,
+                source="reputation",
+            )
 
             await self._log_security_event(
                 ThreatType.MALICIOUS_PEER,
@@ -247,6 +289,9 @@ class SecurityManager:
         """Report a security violation."""
         reputation = self._get_peer_reputation(peer_id, ip)
         reputation.add_violation(violation)
+
+        # Record violation for local blacklist source
+        await self._record_violation_for_local_blacklist(peer_id, ip, violation)
 
         # Determine severity
         severity = SecurityLevel.MEDIUM
@@ -269,13 +314,42 @@ class SecurityManager:
         # Auto-blacklist for critical violations
         if violation in [ThreatType.DDOS_ATTACK, ThreatType.MALICIOUS_PEER]:
             reputation.is_blacklisted = True
-            self.ip_blacklist.add(ip)
-            self.stats["blacklisted_peers"] += 1
+            # Use add_to_blacklist with violation source and optional expiration
+            expires_in = None
+            if self._default_expiration_hours:
+                expires_in = self._default_expiration_hours * 3600.0
+            self.add_to_blacklist(ip, description, expires_in=expires_in, source="violation")
 
-    def add_to_blacklist(self, ip: str, reason: str = "") -> None:
-        """Add IP to blacklist."""
-        self.ip_blacklist.add(ip)
-        self.stats["blacklisted_peers"] += 1
+    def add_to_blacklist(
+        self,
+        ip: str,
+        reason: str = "",
+        expires_in: float | None = None,
+        source: str = "manual",
+    ) -> None:
+        """Add IP to blacklist.
+
+        Args:
+            ip: IP address to blacklist
+            reason: Reason for blacklisting
+            expires_in: Seconds until expiration (None = permanent)
+            source: Source of blacklist entry ("manual", "auto", "reputation", "violation")
+
+        """
+        expires_at = None
+        if expires_in:
+            expires_at = time.time() + expires_in
+
+        entry = BlacklistEntry(
+            ip=ip,
+            reason=reason,
+            added_at=time.time(),
+            expires_at=expires_at,
+            source=source,
+        )
+
+        self.blacklist_entries[ip] = entry
+        self.stats["blacklisted_peers"] = len(self.blacklist_entries)
 
         # Also add to IP filter if enabled
         if self.ip_filter and self.ip_filter.enabled:
@@ -304,9 +378,18 @@ class SecurityManager:
             # No event loop running, skip event emission
             pass
 
+        # Auto-save blacklist (fire-and-forget)
+        try:
+            loop = asyncio.get_running_loop()
+            _ = loop.create_task(self.save_blacklist())  # noqa: RUF006
+        except RuntimeError:
+            # No event loop running, skip auto-save
+            pass
+
     def remove_from_blacklist(self, ip: str) -> None:
         """Remove IP from blacklist."""
-        self.ip_blacklist.discard(ip)
+        self.blacklist_entries.pop(ip, None)
+        self.stats["blacklisted_peers"] = len(self.blacklist_entries)
 
         # Emit blacklist removal event
         try:
@@ -324,6 +407,14 @@ class SecurityManager:
             )
         except RuntimeError:  # Tested in test_security_manager_additional_coverage.py::TestSecurityManagerAdditionalCoverage::test_remove_from_blacklist_no_event_loop
             # No event loop running, skip event emission
+            pass
+
+        # Auto-save blacklist (fire-and-forget)
+        try:
+            loop = asyncio.get_running_loop()
+            _ = loop.create_task(self.save_blacklist())  # noqa: RUF006
+        except RuntimeError:
+            # No event loop running, skip auto-save
             pass
 
     def add_to_whitelist(self, ip: str, reason: str = "") -> None:
@@ -372,13 +463,161 @@ class SecurityManager:
             # No event loop running, skip event emission
             pass
 
+    @property
+    def ip_blacklist(self) -> set[str]:
+        """Get blacklisted IPs as a set (backward compatibility).
+
+        Returns:
+            Set of blacklisted IP addresses (excluding expired entries)
+        """
+        current_time = time.time()
+        return {
+            ip
+            for ip, entry in self.blacklist_entries.items()
+            if entry.expires_at is None or entry.expires_at > current_time
+        }
+
+    async def save_blacklist(self, blacklist_file: Path | None = None) -> None:
+        """Save blacklist to persistent storage.
+
+        Args:
+            blacklist_file: Path to blacklist file (uses default if None)
+
+        """
+        if blacklist_file is None:
+            from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+
+            home_dir = _get_daemon_home_dir()
+            blacklist_file = home_dir / ".ccbt" / "security" / "blacklist.json"
+            self.blacklist_file = blacklist_file
+        else:
+            self.blacklist_file = blacklist_file
+
+        blacklist_file = Path(blacklist_file).expanduser()
+        blacklist_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Filter out expired entries before saving
+        current_time = time.time()
+        active_entries = {
+            ip: entry
+            for ip, entry in self.blacklist_entries.items()
+            if entry.expires_at is None or entry.expires_at > current_time
+        }
+
+        data = {
+            "version": 1,
+            "entries": [
+                {
+                    "ip": entry.ip,
+                    "reason": entry.reason,
+                    "added_at": entry.added_at,
+                    "expires_at": entry.expires_at,
+                    "source": entry.source,
+                }
+                for entry in active_entries.values()
+            ],
+            "metadata": {
+                "last_updated": time.time(),
+                "count": len(active_entries),
+            },
+        }
+
+        try:
+            # Atomic write: write to temp file, then rename
+            temp_file = blacklist_file.with_suffix(".tmp")
+            async with aiofiles.open(temp_file, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(data, indent=2))
+            temp_file.replace(blacklist_file)
+            logger.info(
+                "Saved blacklist with %d IPs to %s", len(active_entries), blacklist_file
+            )
+        except Exception as e:
+            logger.warning("Failed to save blacklist to %s: %s", blacklist_file, e)
+            # Clean up temp file if it exists
+            temp_file = blacklist_file.with_suffix(".tmp")
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except Exception:
+                    pass
+
+    async def load_blacklist(self, blacklist_file: Path | None = None) -> None:
+        """Load blacklist from persistent storage.
+
+        Args:
+            blacklist_file: Path to blacklist file (uses default if None)
+
+        """
+        if blacklist_file is None:
+            from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+
+            home_dir = _get_daemon_home_dir()
+            blacklist_file = home_dir / ".ccbt" / "security" / "blacklist.json"
+            self.blacklist_file = blacklist_file
+        else:
+            self.blacklist_file = blacklist_file
+
+        blacklist_file = Path(blacklist_file).expanduser()
+
+        if not blacklist_file.exists():
+            logger.debug("Blacklist file not found, starting with empty blacklist")
+            return
+
+        try:
+            import ipaddress
+
+            async with aiofiles.open(blacklist_file, "r", encoding="utf-8") as f:
+                content = await f.read()
+                data = json.loads(content)
+
+            # Handle version 1 format
+            if "version" in data and data["version"] == 1:
+                entries_data = data.get("entries", [])
+            else:
+                # Legacy format: just list of IPs
+                entries_data = [{"ip": ip} for ip in data.get("ips", [])]
+
+            loaded_count = 0
+            for entry_data in entries_data:
+                ip = entry_data.get("ip", "")
+                if not ip:
+                    continue
+
+                # Validate IP address
+                try:
+                    ipaddress.ip_address(ip)
+                except ValueError:
+                    logger.warning("Invalid IP address in blacklist: %s", ip)
+                    continue
+
+                # Create BlacklistEntry
+                entry = BlacklistEntry(
+                    ip=ip,
+                    reason=entry_data.get("reason", ""),
+                    added_at=entry_data.get("added_at", time.time()),
+                    expires_at=entry_data.get("expires_at"),
+                    source=entry_data.get("source", "persisted"),
+                )
+
+                # Only add if not expired
+                if not entry.is_expired():
+                    self.blacklist_entries[ip] = entry
+                    loaded_count += 1
+
+            self.stats["blacklisted_peers"] = len(self.blacklist_entries)
+            logger.info("Loaded %d IPs from blacklist file", loaded_count)
+        except json.JSONDecodeError as e:
+            logger.warning("Failed to parse blacklist file %s: %s", blacklist_file, e)
+        except Exception as e:
+            logger.warning("Failed to load blacklist from %s: %s", blacklist_file, e)
+
     def get_peer_reputation(self, peer_id: str, _ip: str) -> PeerReputation | None:
         """Get peer reputation."""
         return self.peer_reputations.get(peer_id)
 
     def get_blacklisted_ips(self) -> set[str]:
         """Get blacklisted IPs."""
-        return self.ip_blacklist.copy()
+        return self.ip_blacklist.copy()  # Uses computed property
 
     def get_whitelisted_ips(self) -> set[str]:
         """Get whitelisted IPs."""
@@ -538,6 +777,31 @@ class SecurityManager:
             if not bytes_rate:  # pragma: no cover - Empty bytes rate cleanup, tested via non-empty rates
                 del self.bytes_rates[ip]
 
+    async def cleanup_expired_entries(self) -> int:
+        """Remove expired blacklist entries.
+
+        Returns:
+            Number of expired entries removed
+
+        """
+        expired = [
+            ip for ip, entry in self.blacklist_entries.items() if entry.is_expired()
+        ]
+
+        for ip in expired:
+            self.blacklist_entries.pop(ip, None)
+
+        if expired:
+            self.stats["blacklisted_peers"] = len(self.blacklist_entries)
+            logger.info("Cleaned up %d expired blacklist entries", len(expired))
+            # Save after cleanup
+            try:
+                await self.save_blacklist()
+            except Exception as e:
+                logger.warning("Failed to save blacklist after cleanup: %s", e)
+
+        return len(expired)
+
     async def load_ip_filter(self, config: Any) -> None:
         """Load and initialize IP filter from configuration.
 
@@ -597,3 +861,124 @@ class SecurityManager:
             )
 
         logger.info("IP filter loaded: %d rules", len(self.ip_filter.rules))
+
+        # Load and initialize blacklist
+        await self._initialize_blacklist(config)
+
+    async def _initialize_blacklist(self, config: Any) -> None:
+        """Initialize blacklist from configuration.
+
+        Args:
+            config: Configuration object with blacklist settings
+
+        """
+        # Get blacklist config
+        blacklist_config = getattr(getattr(config, "security", None), "blacklist", None)
+        if not blacklist_config:
+            logger.debug("Blacklist config not found, skipping initialization")
+            return
+
+        # Store default expiration for auto-blacklisting
+        self._default_expiration_hours = getattr(
+            blacklist_config, "default_expiration_hours", None
+        )
+
+        # Load blacklist from file if persistence enabled
+        if getattr(blacklist_config, "enable_persistence", True):
+            blacklist_file = getattr(blacklist_config, "blacklist_file", None)
+            if blacklist_file:
+                blacklist_file = Path(blacklist_file).expanduser()
+            await self.load_blacklist(blacklist_file)
+
+        # Initialize auto-update if enabled OR if local source is enabled
+        local_source_config = getattr(blacklist_config, "local_source", None)
+        local_source_enabled = (
+            local_source_config and getattr(local_source_config, "enabled", False)
+        )
+        if getattr(blacklist_config, "auto_update_enabled", False) or local_source_enabled:
+            await self.initialize_blacklist_updater(blacklist_config)
+
+    async def initialize_blacklist_updater(self, blacklist_config: Any) -> None:
+        """Initialize blacklist updater from configuration.
+
+        Args:
+            blacklist_config: BlacklistConfig instance
+
+        """
+        from ccbt.security.blacklist_updater import BlacklistUpdater
+
+        update_interval = getattr(blacklist_config, "auto_update_interval", 3600.0)
+        sources = getattr(blacklist_config, "auto_update_sources", [])
+        local_source_config = getattr(blacklist_config, "local_source", None)
+
+        # Initialize even if no external sources (for local source support)
+        if not sources and not (local_source_config and getattr(local_source_config, "enabled", False)):
+            logger.debug("No blacklist update sources configured")
+            return
+
+        self.blacklist_updater = BlacklistUpdater(
+            self,
+            update_interval=update_interval,
+            sources=sources,
+            local_source_config=local_source_config,
+        )
+
+        await self.blacklist_updater.start_auto_update()
+
+        # Start periodic cleanup task
+        async def cleanup_loop():
+            while True:
+                try:
+                    await asyncio.sleep(3600)  # Check every hour
+                    await self.cleanup_expired_entries()
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    logger.exception("Error in blacklist cleanup task")
+                    await asyncio.sleep(60)  # Retry after 1 minute
+
+        self._cleanup_task = asyncio.create_task(cleanup_loop())
+        logger.info("Started blacklist cleanup task")
+
+    async def _record_violation_for_local_blacklist(
+        self, peer_id: str, ip: str, violation: ThreatType
+    ) -> None:
+        """Record violation for local blacklist source.
+
+        Args:
+            peer_id: Peer identifier
+            ip: IP address
+            violation: Violation type
+
+        """
+        if self.blacklist_updater:
+            local_source = getattr(self.blacklist_updater, "_local_source", None)
+            if local_source:
+                await local_source.record_metric(
+                    ip,
+                    "violation",
+                    1.0,
+                    metadata={"violation_type": violation.value, "peer_id": peer_id},
+                )
+
+    async def _record_activity_for_local_blacklist(
+        self, peer_id: str, ip: str, success: bool
+    ) -> None:
+        """Record peer activity for local blacklist source.
+
+        Args:
+            peer_id: Peer identifier
+            ip: IP address
+            success: Whether connection was successful
+
+        """
+        if self.blacklist_updater:
+            local_source = getattr(self.blacklist_updater, "_local_source", None)
+            if local_source:
+                metric_type = "connection_success" if success else "connection_attempt"
+                await local_source.record_metric(
+                    ip,
+                    metric_type,
+                    1.0,
+                    metadata={"peer_id": peer_id, "success": success},
+                )

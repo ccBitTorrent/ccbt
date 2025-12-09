@@ -12,19 +12,25 @@ import contextlib
 import json
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 import aiohttp
 
+from ccbt.i18n import _
 from ccbt.daemon.ipc_protocol import (
     API_BASE_PATH,
     API_KEY_HEADER,
     PUBLIC_KEY_HEADER,
     SIGNATURE_HEADER,
     TIMESTAMP_HEADER,
+    AggressiveDiscoveryStatusResponse,
     BlacklistAddRequest,
     BlacklistResponse,
+    DetailedGlobalMetricsResponse,
+    DetailedPeerMetricsResponse,
+    DetailedTorrentMetricsResponse,
+    DiskIOMetricsResponse,
+    DHTQueryMetricsResponse,
     EventType,
     ExportStateRequest,
     ExternalIPResponse,
@@ -37,20 +43,30 @@ from ccbt.daemon.ipc_protocol import (
     IPFilterStatsResponse,
     NATMapRequest,
     NATStatusResponse,
+    GlobalPeerMetricsResponse,
+    NetworkTimingMetricsResponse,
+    PeerQualityMetricsResponse,
     PeerListResponse,
+    PeerPerformanceMetrics,
+    PerTorrentPerformanceResponse,
+    PieceAvailabilityResponse,
     ProtocolInfo,
     QueueAddRequest,
     QueueListResponse,
     QueueMoveRequest,
+    RateSamplesResponse,
     RateLimitRequest,
     ResumeCheckpointRequest,
     ScrapeListResponse,
     ScrapeRequest,
     ScrapeResult,
     StatusResponse,
+    SwarmHealthMatrixResponse,
     TorrentAddRequest,
     TorrentListResponse,
     TorrentStatusResponse,
+    TrackerInfo,
+    TrackerListResponse,
     WebSocketEvent,
     WebSocketMessage,
     WebSocketSubscribeRequest,
@@ -86,6 +102,7 @@ class IPCClient:
         self.timeout = aiohttp.ClientTimeout(total=timeout)
 
         self._session: aiohttp.ClientSession | None = None
+        self._session_loop: asyncio.AbstractEventLoop | None = None  # Track loop session was created with
         self._websocket: aiohttp.ClientWebSocketResponse | None = None
         self._websocket_task: asyncio.Task | None = None
 
@@ -107,10 +124,13 @@ class IPCClient:
                 return f"http://127.0.0.1:{ipc_port}"
         except Exception as e:
             # Log but don't fail - fall back to defaults
-            logger.debug("Could not read daemon config from ConfigManager: %s", e)
+            logger.debug(_("Could not read daemon config from ConfigManager: %s"), e)
 
         # Fallback: Try to read from legacy config file (for backwards compatibility)
-        config_file = Path.home() / ".ccbt" / "daemon" / "config.json"
+        # CRITICAL FIX: Use consistent path resolution helper to match daemon
+        from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+        home_dir = _get_daemon_home_dir()
+        config_file = home_dir / ".ccbt" / "daemon" / "config.json"
         if config_file.exists():
             try:
                 with open(config_file, encoding="utf-8") as f:
@@ -125,9 +145,104 @@ class IPCClient:
         return "http://127.0.0.1:8080"
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
-        """Ensure HTTP session is created."""
-        if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(timeout=self.timeout)
+        """Ensure HTTP session is created.
+        
+        CRITICAL: Verifies event loop is running and recreates session if needed.
+        This prevents "Event loop is closed" errors when the session tries to
+        schedule timeout callbacks on a closed loop.
+        
+        The session is recreated if:
+        - It doesn't exist
+        - It's closed
+        - The current event loop is closed (session's loop may be different/closed)
+        """
+        # CRITICAL FIX: Verify we're in an async context with a running event loop
+        try:
+            current_loop = asyncio.get_running_loop()
+            if current_loop.is_closed():
+                # Current loop is closed - cannot create or use session
+                if self._session and not self._session.closed:
+                    try:
+                        await self._session.close()
+                    except Exception:
+                        pass  # Ignore errors when closing
+                self._session = None
+                raise RuntimeError(
+                    "Event loop is closed. Cannot create aiohttp.ClientSession. "
+                    "This usually indicates the event loop was closed while the IPC client "
+                    "was still in use."
+                )
+        except RuntimeError as e:
+            # get_running_loop() raises RuntimeError if not in async context
+            if "no running event loop" in str(e).lower():
+                raise RuntimeError(
+                    "Not in async context. IPCClient methods must be called from an async function."
+                ) from e
+            raise
+        
+        # CRITICAL FIX: Recreate session if it's bound to a different or closed loop
+        # aiohttp.ClientSession binds to the event loop when created. If the session was
+        # created in a different loop (e.g., a previous asyncio.run() call), it cannot be
+        # used in the current loop even if the old loop is closed.
+        should_recreate = (
+            self._session is None
+            or self._session.closed
+            or self._session_loop is None
+            or self._session_loop is not current_loop
+            or self._session_loop.is_closed()
+        )
+        
+        if should_recreate:
+            # Close existing session if it exists
+            if self._session and not self._session.closed:
+                try:
+                    await self._session.close()
+                    # CRITICAL FIX: On Windows, wait longer for session cleanup to prevent socket buffer exhaustion
+                    import sys
+                    if sys.platform == "win32":
+                        await asyncio.sleep(0.2)  # Wait for Windows socket cleanup
+                        # Also close connector if available
+                        if hasattr(self._session, "connector"):
+                            connector = self._session.connector
+                            if connector and not connector.closed:
+                                try:
+                                    await connector.close()
+                                    await asyncio.sleep(0.1)
+                                except Exception:
+                                    pass
+                except Exception as e:
+                    # CRITICAL FIX: Handle WinError 10055 gracefully
+                    import sys
+                    error_code = getattr(e, "winerror", None) or getattr(e, "errno", None)
+                    if sys.platform == "win32" and error_code == 10055:
+                        logger.debug("WinError 10055 during session close (socket buffer exhaustion), continuing...")
+                    else:
+                        logger.debug("Error closing session: %s", e)
+            
+            # CRITICAL FIX: Create session in the current running loop context
+            # aiohttp.ClientSession will automatically use the current running loop
+            # In aiohttp 3.x+, we don't pass loop parameter (it's deprecated)
+            # CRITICAL FIX: Add connection limits to prevent Windows socket buffer exhaustion (WinError 10055)
+            # Windows has limited socket buffer space, so we need to limit concurrent connections
+            import sys
+            connector = aiohttp.TCPConnector(
+                limit=10,  # Maximum number of connections in the pool
+                limit_per_host=5,  # Maximum connections per host
+                ttl_dns_cache=300,  # DNS cache TTL
+                force_close=True,  # Force close connections after use (helps with Windows)
+            )
+            if sys.platform == "win32":
+                # On Windows, be more aggressive with connection limits to prevent buffer exhaustion
+                connector = aiohttp.TCPConnector(
+                    limit=5,  # Lower limit on Windows
+                    limit_per_host=3,  # Lower per-host limit on Windows
+                    ttl_dns_cache=300,
+                    force_close=True,
+                    enable_cleanup_closed=True,  # Enable cleanup of closed connections
+                )
+            self._session = aiohttp.ClientSession(timeout=self.timeout, connector=connector)
+            self._session_loop = current_loop  # Track the loop this session is bound to
+        
         return self._session
 
     def _get_headers(
@@ -163,7 +278,7 @@ class IPCClient:
                 headers[PUBLIC_KEY_HEADER] = public_key_hex
                 headers[TIMESTAMP_HEADER] = timestamp
             except Exception as e:
-                logger.debug("Failed to sign request with Ed25519: %s", e)
+                logger.debug(_("Failed to sign request with Ed25519: %s"), e)
                 # Fall through to API key
 
         # Fall back to API key if signing failed or key_manager not available
@@ -171,6 +286,23 @@ class IPCClient:
             headers[API_KEY_HEADER] = self.api_key
 
         return headers
+
+    async def _get_json(
+        self,
+        endpoint: str,
+        *,
+        params: dict[str, Any] | None = None,
+        requires_auth: bool = True,
+    ) -> Any:
+        """Helper to issue authenticated GET requests and return JSON payload."""
+        session = await self._ensure_session()
+        path = endpoint if endpoint.startswith(API_BASE_PATH) else f"{API_BASE_PATH}{endpoint}"
+        url = f"{self.base_url}{path}"
+        headers = self._get_headers("GET", path) if requires_auth else None
+
+        async with session.get(url, params=params, headers=headers) as resp:
+            resp.raise_for_status()
+            return await resp.json()
 
     async def close(self) -> None:
         """Close client connections.
@@ -183,7 +315,7 @@ class IPCClient:
             try:
                 await self._close_websocket()
             except Exception as e:
-                logger.debug("Error closing WebSocket: %s", e)
+                logger.debug(_("Error closing WebSocket: %s"), e)
 
         # Close HTTP session
         if self._session:
@@ -195,13 +327,35 @@ class IPCClient:
                     # Increased wait time on Windows for proper cleanup
                     import sys
 
-                    wait_time = 0.2 if sys.platform == "win32" else 0.1
+                    wait_time = 0.5 if sys.platform == "win32" else 0.1  # Increased wait time on Windows
                     await asyncio.sleep(wait_time)
+                    
+                    # CRITICAL FIX: On Windows, also close the connector to ensure all sockets are released
+                    if sys.platform == "win32" and hasattr(self._session, "connector"):
+                        connector = self._session.connector
+                        if connector and not connector.closed:
+                            try:
+                                await connector.close()
+                                await asyncio.sleep(0.1)  # Additional wait for connector cleanup
+                            except Exception:
+                                pass  # Ignore errors during connector cleanup
             except Exception as e:
-                logger.debug("Error closing HTTP session: %s", e)
+                logger.debug(_("Error closing HTTP session: %s"), e)
             finally:
+                # CRITICAL FIX: On Windows, ensure connector is also closed to release all sockets
+                import sys
+                if sys.platform == "win32" and self._session and hasattr(self._session, "connector"):
+                    connector = self._session.connector
+                    if connector and not connector.closed:
+                        try:
+                            await connector.close()
+                            await asyncio.sleep(0.1)  # Wait for connector cleanup
+                        except Exception:
+                            pass  # Ignore errors during connector cleanup
+                
                 # Ensure session is marked as closed even if close() failed
                 self._session = None
+                self._session_loop = None
 
     # HTTP REST Methods
 
@@ -260,22 +414,15 @@ class IPCClient:
                 return data["info_hash"]
         except aiohttp.ClientConnectorError as e:
             # Connection refused - daemon not running or IPC server not accessible
-            logger.error(
-                "Cannot connect to daemon at %s to add torrent: %s",
-                self.base_url,
-                e,
-            )
-            raise RuntimeError(
+            logger.exception("Cannot connect to daemon at %s to add torrent", self.base_url)
+            error_msg = (
                 f"Cannot connect to daemon at {self.base_url}. "
                 "Is the daemon running? Try 'btbt daemon start'"
-            ) from e
+            )
+            raise RuntimeError(error_msg) from e
         except aiohttp.ClientResponseError as e:
             # HTTP error response from daemon
-            logger.error(
-                "Daemon returned error %d when adding torrent: %s",
-                e.status,
-                e.message,
-            )
+            logger.exception("Daemon returned error %d when adding torrent", e.status)
             # Try to get error details from response body if available
             error_msg = e.message
             try:
@@ -285,15 +432,29 @@ class IPCClient:
                     error_msg = f"HTTP {e.status}: {e.message}"
             except Exception:
                 pass
-            raise RuntimeError(f"Daemon error when adding torrent: {error_msg}") from e
+            daemon_error_msg = f"Daemon error when adding torrent: {error_msg}"
+            raise RuntimeError(daemon_error_msg) from e
+        except RuntimeError as e:
+            # CRITICAL FIX: Catch "Event loop is closed" errors specifically
+            if "event loop is closed" in str(e).lower():
+                logger.exception(
+                    "Event loop is closed when adding torrent to daemon at %s. "
+                    "This usually indicates the event loop was closed while the IPC client was in use.",
+                    self.base_url
+                )
+                error_msg = (
+                    f"Event loop is closed. This usually happens when the event loop "
+                    f"was closed while communicating with the daemon. "
+                    f"Try recreating the IPC client or ensure you're in an async context."
+                )
+                raise RuntimeError(error_msg) from e
+            # Re-raise other RuntimeErrors
+            raise
         except aiohttp.ClientError as e:
             # Other client errors
-            logger.error(
-                "Client error when adding torrent to daemon at %s: %s",
-                self.base_url,
-                e,
-            )
-            raise RuntimeError(f"Error communicating with daemon: {e}") from e
+            logger.exception("Client error when adding torrent to daemon at %s", self.base_url)
+            error_msg = f"Error communicating with daemon: {e}"
+            raise RuntimeError(error_msg) from e
 
     async def remove_torrent(self, info_hash: str) -> bool:
         """Remove torrent.
@@ -388,6 +549,297 @@ class IPCClient:
             resp.raise_for_status()
             return True
 
+    async def restart_torrent(self, info_hash: str) -> bool:
+        """Restart torrent (pause + resume).
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            True if restarted, False otherwise
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/restart"
+
+        async with session.post(url, headers=self._get_headers()) as resp:
+            if resp.status == 404:
+                return False
+            resp.raise_for_status()
+            data = await resp.json()
+            return data.get("status") == "restarted"
+
+    async def cancel_torrent(self, info_hash: str) -> bool:
+        """Cancel torrent (pause but keep in session).
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            True if cancelled, False otherwise
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/cancel"
+
+        async with session.post(url, headers=self._get_headers()) as resp:
+            if resp.status == 404:
+                return False
+            resp.raise_for_status()
+            data = await resp.json()
+            return data.get("status") == "cancelled"
+
+    async def force_start_torrent(self, info_hash: str) -> bool:
+        """Force start torrent (bypass queue limits).
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            True if force started, False otherwise
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/force-start"
+
+        async with session.post(url, headers=self._get_headers()) as resp:
+            if resp.status == 404:
+                return False
+            resp.raise_for_status()
+            data = await resp.json()
+            return data.get("status") == "force_started"
+
+    async def refresh_pex(self, info_hash: str) -> dict[str, Any]:
+        """Refresh Peer Exchange (PEX) for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            Dictionary with refresh status:
+            - success: bool indicating if refresh was successful
+            - status: str status message ("refreshed" on success)
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/pex/refresh"
+
+        async with session.post(url, headers=self._get_headers()) as resp:
+            if resp.status == 404:
+                return {"success": False, "error": "Torrent not found or PEX not available"}
+            resp.raise_for_status()
+            data = await resp.json()
+            # Ensure success field is set
+            if "success" not in data:
+                data["success"] = data.get("status") == "refreshed"
+            return data
+
+    async def set_dht_aggressive_mode(self, info_hash: str, enabled: bool = True) -> dict[str, Any]:
+        """Set DHT aggressive discovery mode for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            enabled: Whether to enable aggressive mode (default: True)
+
+        Returns:
+            Dictionary with update status:
+            - success: bool indicating if update was successful
+            - status: str status message ("updated" on success)
+            - enabled: bool indicating the new state
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/dht/aggressive"
+
+        async with session.post(
+            url,
+            json={"enabled": enabled},
+            headers=self._get_headers(),
+        ) as resp:
+            if resp.status == 404:
+                return {"success": False, "error": "Torrent not found or DHT not available"}
+            resp.raise_for_status()
+            data = await resp.json()
+            # Ensure success field is set
+            if "success" not in data:
+                data["success"] = data.get("status") == "updated"
+            return data
+
+    async def get_metadata_status(self, info_hash: str) -> dict[str, Any]:
+        """Get metadata fetch status for magnet link.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            Dictionary with metadata status information
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/metadata/status"
+
+        async with session.get(url, headers=self._get_headers()) as resp:
+            if resp.status == 404:
+                return {"available": False, "error": "Torrent not found"}
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def wait_for_metadata(
+        self,
+        info_hash: str,
+        timeout: float = 120.0,
+    ) -> bool:
+        """Wait for metadata to be ready (for magnet links).
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            True if metadata is ready, False if timeout
+
+        """
+        # Subscribe to METADATA_READY events
+        if not await self.connect_websocket():
+            return False
+
+        await self.subscribe_events([EventType.METADATA_READY], info_hash=info_hash)
+
+        end_time = asyncio.get_event_loop().time() + timeout
+        try:
+            while asyncio.get_event_loop().time() < end_time:
+                event = await self.receive_event(timeout=min(1.0, end_time - asyncio.get_event_loop().time()))
+                if event and event.type == EventType.METADATA_READY:
+                    event_data = event.data or {}
+                    if event_data.get("info_hash") == info_hash:
+                        return True
+        except Exception as e:
+            logger.debug(_("Error waiting for metadata: %s"), e)
+            return False
+
+        return False
+
+    async def restart_service(self, service_name: str) -> bool:
+        """Restart a service component.
+
+        Args:
+            service_name: Name of service to restart (e.g., "dht", "nat", "tcp_server")
+
+        Returns:
+            True if restarted, False otherwise
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/services/{service_name}/restart"
+
+        async with session.post(url, headers=self._get_headers()) as resp:
+            if resp.status == 404:
+                return False
+            resp.raise_for_status()
+            data = await resp.json()
+            return data.get("status") == "restarted"
+
+    async def get_services_status(self) -> dict[str, Any]:
+        """Get status of all services.
+
+        Returns:
+            Dictionary with service status information
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/services/status"
+
+        async with session.get(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def batch_pause_torrents(
+        self, info_hashes: list[str]
+    ) -> dict[str, Any]:
+        """Pause multiple torrents in a single request.
+
+        Args:
+            info_hashes: List of torrent info hashes (hex strings)
+
+        Returns:
+            Dictionary with results for each torrent
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/batch/pause"
+
+        async with session.post(
+            url, json={"info_hashes": info_hashes}, headers=self._get_headers()
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def batch_resume_torrents(
+        self, info_hashes: list[str]
+    ) -> dict[str, Any]:
+        """Resume multiple torrents in a single request.
+
+        Args:
+            info_hashes: List of torrent info hashes (hex strings)
+
+        Returns:
+            Dictionary with results for each torrent
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/batch/resume"
+
+        async with session.post(
+            url, json={"info_hashes": info_hashes}, headers=self._get_headers()
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def batch_restart_torrents(
+        self, info_hashes: list[str]
+    ) -> dict[str, Any]:
+        """Restart multiple torrents in a single request.
+
+        Args:
+            info_hashes: List of torrent info hashes (hex strings)
+
+        Returns:
+            Dictionary with results for each torrent
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/batch/restart"
+
+        async with session.post(
+            url, json={"info_hashes": info_hashes}, headers=self._get_headers()
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def batch_remove_torrents(
+        self, info_hashes: list[str], remove_data: bool = False
+    ) -> dict[str, Any]:
+        """Remove multiple torrents in a single request.
+
+        Args:
+            info_hashes: List of torrent info hashes (hex strings)
+            remove_data: Whether to remove downloaded data (default: False)
+
+        Returns:
+            Dictionary with results for each torrent
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/batch/remove"
+
+        async with session.post(
+            url,
+            json={"info_hashes": info_hashes, "remove_data": remove_data},
+            headers=self._get_headers(),
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
     async def get_config(self) -> dict[str, Any]:
         """Get current config.
 
@@ -438,7 +890,7 @@ class IPCClient:
                 resp.raise_for_status()
                 return True
         except Exception as e:
-            logger.debug("Error sending shutdown request: %s", e)
+            logger.debug(_("Error sending shutdown request: %s"), e)
             return False
 
     # File Selection Methods
@@ -878,6 +1330,100 @@ class IPCClient:
             data = await resp.json()
             return ProtocolInfo(**data)
 
+    # XET Folder Methods
+
+    async def add_xet_folder(
+        self,
+        folder_path: str,
+        tonic_file: str | None = None,
+        tonic_link: str | None = None,
+        sync_mode: str | None = None,
+        source_peers: list[str] | None = None,
+        check_interval: float | None = None,
+    ) -> dict[str, Any]:
+        """Add XET folder for synchronization.
+
+        Args:
+            folder_path: Path to folder (or output directory if syncing from tonic)
+            tonic_file: Path to .tonic file (optional)
+            tonic_link: tonic?: link (optional)
+            sync_mode: Synchronization mode (optional)
+            source_peers: Designated source peer IDs (optional)
+            check_interval: Check interval in seconds (optional)
+
+        Returns:
+            Response dict with status and folder_key
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/xet/folders/add"
+
+        payload: dict[str, Any] = {"folder_path": folder_path}
+        if tonic_file:
+            payload["tonic_file"] = tonic_file
+        if tonic_link:
+            payload["tonic_link"] = tonic_link
+        if sync_mode:
+            payload["sync_mode"] = sync_mode
+        if source_peers:
+            payload["source_peers"] = source_peers
+        if check_interval is not None:
+            payload["check_interval"] = check_interval
+
+        async with session.post(
+            url, json=payload, headers=self._get_headers()
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def remove_xet_folder(self, folder_key: str) -> dict[str, Any]:
+        """Remove XET folder from synchronization.
+
+        Args:
+            folder_key: Folder identifier (folder_path or info_hash)
+
+        Returns:
+            Response dict with status
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/xet/folders/{folder_key}"
+
+        async with session.delete(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def list_xet_folders(self) -> dict[str, Any]:
+        """List all registered XET folders.
+
+        Returns:
+            Response dict with folders list
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/xet/folders"
+
+        async with session.get(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def get_xet_folder_status(self, folder_key: str) -> dict[str, Any]:
+        """Get XET folder status.
+
+        Args:
+            folder_key: Folder identifier (folder_path or info_hash)
+
+        Returns:
+            Folder status dict
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/xet/folders/{folder_key}"
+
+        async with session.get(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
     # Security Methods
 
     async def get_blacklist(self) -> BlacklistResponse:
@@ -1079,6 +1625,84 @@ class IPCClient:
             data = await resp.json()
             return PeerListResponse(**data)
 
+    async def get_torrent_trackers(self, info_hash: str) -> TrackerListResponse:
+        """Get list of trackers for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            Tracker list response
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/trackers"
+
+        async with session.get(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            return TrackerListResponse(**data)
+
+    async def add_tracker(self, info_hash: str, tracker_url: str) -> dict[str, Any]:
+        """Add a tracker URL to a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            tracker_url: Tracker URL to add
+
+        Returns:
+            Dict with success status
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/trackers/add"
+
+        async with session.post(
+            url, headers=self._get_headers(), json={"url": tracker_url}
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def remove_tracker(self, info_hash: str, tracker_url: str) -> dict[str, Any]:
+        """Remove a tracker URL from a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            tracker_url: Tracker URL to remove (URL-encoded)
+
+        Returns:
+            Dict with success status
+
+        """
+        from urllib.parse import quote
+
+        session = await self._ensure_session()
+        # URL-encode the tracker URL for the path
+        encoded_url = quote(tracker_url, safe="")
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/trackers/{encoded_url}"
+
+        async with session.delete(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def get_torrent_piece_availability(self, info_hash: str) -> PieceAvailabilityResponse:
+        """Get piece availability for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            Piece availability response with availability array
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/piece-availability"
+
+        async with session.get(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            return PieceAvailabilityResponse(**data)
+
     async def set_rate_limits(
         self,
         info_hash: str,
@@ -1219,6 +1843,412 @@ class IPCClient:
             data = await resp.json()
             return GlobalStatsResponse(**data)
 
+    async def global_pause_all(self) -> dict[str, Any]:
+        """Pause all torrents.
+
+        Returns:
+            Dict with success_count, failure_count, and results
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/global/pause-all"
+
+        async with session.post(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def global_resume_all(self) -> dict[str, Any]:
+        """Resume all paused torrents.
+
+        Returns:
+            Dict with success_count, failure_count, and results
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/global/resume-all"
+
+        async with session.post(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def global_force_start_all(self) -> dict[str, Any]:
+        """Force start all torrents (bypass queue limits).
+
+        Returns:
+            Dict with success_count, failure_count, and results
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/global/force-start-all"
+
+        async with session.post(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def global_set_rate_limits(self, download_kib: int, upload_kib: int) -> bool:
+        """Set global rate limits for all torrents.
+
+        Args:
+            download_kib: Global download limit (KiB/s, 0 = unlimited)
+            upload_kib: Global upload limit (KiB/s, 0 = unlimited)
+
+        Returns:
+            True if limits set successfully
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/global/rate-limits"
+
+        async with session.post(
+            url,
+            headers=self._get_headers(),
+            json={"download_kib": download_kib, "upload_kib": upload_kib},
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            return data.get("success", False)
+
+    async def set_per_peer_rate_limit(
+        self, info_hash: str, peer_key: str, upload_limit_kib: int
+    ) -> bool:
+        """Set per-peer upload rate limit for a specific peer.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            peer_key: Peer identifier (format: "ip:port")
+            upload_limit_kib: Upload rate limit (KiB/s, 0 = unlimited)
+
+        Returns:
+            True if peer found and limit set, False otherwise
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/peers/{peer_key}/rate-limit"
+
+        # URL-encode the peer_key as it contains colons
+        from urllib.parse import quote_plus
+
+        encoded_peer_key = quote_plus(peer_key)
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/peers/{encoded_peer_key}/rate-limit"
+
+        async with session.post(
+            url,
+            headers=self._get_headers(),
+            json={"upload_limit_kib": upload_limit_kib},
+        ) as resp:
+            if resp.status == 404:
+                return False
+            resp.raise_for_status()
+            data = await resp.json()
+            return data.get("success", False)
+
+    async def get_per_peer_rate_limit(
+        self, info_hash: str, peer_key: str
+    ) -> int | None:
+        """Get per-peer upload rate limit for a specific peer.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            peer_key: Peer identifier (format: "ip:port")
+
+        Returns:
+            Upload rate limit in KiB/s (0 = unlimited), or None if peer not found
+
+        """
+        session = await self._ensure_session()
+        from urllib.parse import quote_plus
+
+        encoded_peer_key = quote_plus(peer_key)
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/peers/{encoded_peer_key}/rate-limit"
+
+        async with session.get(url, headers=self._get_headers()) as resp:
+            if resp.status == 404:
+                return None
+            resp.raise_for_status()
+            data = await resp.json()
+            return data.get("upload_limit_kib")
+
+    async def set_all_peers_rate_limit(self, upload_limit_kib: int) -> int:
+        """Set per-peer upload rate limit for all active peers.
+
+        Args:
+            upload_limit_kib: Upload rate limit (KiB/s, 0 = unlimited)
+
+        Returns:
+            Number of peers updated
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/peers/rate-limit"
+
+        async with session.post(
+            url,
+            headers=self._get_headers(),
+            json={"upload_limit_kib": upload_limit_kib},
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            return data.get("updated_count", 0)
+
+    async def get_metrics(self) -> str:
+        """Get Prometheus metrics from daemon.
+
+        Returns:
+            Prometheus format metrics as string
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/metrics"
+
+        async with session.get(url) as resp:  # Metrics endpoint doesn't require auth
+            resp.raise_for_status()
+            return await resp.text()
+
+    async def get_rate_samples(self, seconds: int | None = None) -> RateSamplesResponse:
+        """Get recent upload/download rate samples for graphing.
+
+        Args:
+            seconds: Optional lookback window in seconds (defaults to server default)
+
+        Returns:
+            RateSamplesResponse containing samples and metadata
+
+        """
+        params = {"seconds": str(seconds)} if seconds is not None else None
+        data = await self._get_json("/metrics/rates", params=params)
+        return RateSamplesResponse(**data)
+
+    async def get_disk_io_metrics(self) -> DiskIOMetricsResponse:
+        """Get disk I/O metrics from daemon.
+
+        Returns:
+            DiskIOMetricsResponse containing disk I/O metrics
+        """
+        data = await self._get_json("/metrics/disk-io")
+        return DiskIOMetricsResponse(**data)
+
+    async def get_network_timing_metrics(self) -> NetworkTimingMetricsResponse:
+        """Get network timing metrics from daemon.
+
+        Returns:
+            NetworkTimingMetricsResponse containing network timing metrics
+        """
+        data = await self._get_json("/metrics/network-timing")
+        return NetworkTimingMetricsResponse(**data)
+
+    async def get_per_torrent_performance(self, info_hash: str) -> PerTorrentPerformanceResponse:
+        """Get per-torrent performance metrics from daemon.
+
+        Args:
+            info_hash: Torrent info hash in hex format
+
+        Returns:
+            PerTorrentPerformanceResponse containing per-torrent performance metrics
+        """
+        data = await self._get_json(f"/metrics/torrents/{info_hash}/performance")
+        return PerTorrentPerformanceResponse(**data)
+
+    async def get_peer_metrics(self) -> GlobalPeerMetricsResponse:
+        """Get global peer metrics across all torrents.
+
+        Returns:
+            GlobalPeerMetricsResponse containing peer metrics
+        """
+        data = await self._get_json("/metrics/peers")
+        return GlobalPeerMetricsResponse(**data)
+
+    async def get_torrent_dht_metrics(
+        self,
+        info_hash: str,
+    ) -> DHTQueryMetricsResponse | None:
+        """Get DHT query effectiveness metrics for a torrent."""
+        try:
+            data = await self._get_json(f"/metrics/torrents/{info_hash}/dht")
+        except aiohttp.ClientResponseError as exc:
+            if exc.status == 404:
+                return None
+            raise
+        return DHTQueryMetricsResponse(**data)
+
+    async def get_torrent_peer_quality(
+        self,
+        info_hash: str,
+    ) -> PeerQualityMetricsResponse | None:
+        """Get peer quality metrics for a torrent."""
+        try:
+            data = await self._get_json(f"/metrics/torrents/{info_hash}/peer-quality")
+        except aiohttp.ClientResponseError as exc:
+            if exc.status == 404:
+                return None
+            raise
+        return PeerQualityMetricsResponse(**data)
+
+    async def get_torrent_piece_selection_metrics(
+        self,
+        info_hash: str,
+    ) -> dict[str, Any]:
+        """Get piece selection metrics for a torrent."""
+        try:
+            return await self._get_json(
+                f"/metrics/torrents/{info_hash}/piece-selection",
+            )
+        except aiohttp.ClientResponseError as exc:
+            if exc.status == 404:
+                return {}
+            raise
+
+    async def get_detailed_torrent_metrics(
+        self,
+        info_hash: str,
+    ) -> DetailedTorrentMetricsResponse:
+        """Get detailed metrics for a specific torrent.
+        
+        Args:
+            info_hash: Torrent info hash (hex string)
+            
+        Returns:
+            DetailedTorrentMetricsResponse with comprehensive torrent metrics
+            
+        Raises:
+            aiohttp.ClientResponseError: If request fails or torrent not found
+        """
+        data = await self._get_json(f"/metrics/torrents/{info_hash}/detailed")
+        return DetailedTorrentMetricsResponse(**data)
+
+    async def get_detailed_global_metrics(
+        self,
+    ) -> DetailedGlobalMetricsResponse:
+        """Get detailed global metrics across all torrents.
+        
+        Returns:
+            DetailedGlobalMetricsResponse with comprehensive global metrics
+            
+        Raises:
+            aiohttp.ClientResponseError: If request fails
+        """
+        data = await self._get_json("/metrics/global/detailed")
+        return DetailedGlobalMetricsResponse(**data)
+
+    async def get_detailed_peer_metrics(
+        self,
+        peer_key: str,
+    ) -> DetailedPeerMetricsResponse:
+        """Get detailed metrics for a specific peer.
+        
+        Args:
+            peer_key: Peer identifier (hex string)
+            
+        Returns:
+            DetailedPeerMetricsResponse with comprehensive peer metrics
+            
+        Raises:
+            aiohttp.ClientResponseError: If request fails or peer not found
+        """
+        data = await self._get_json(f"/metrics/peers/{peer_key}")
+        return DetailedPeerMetricsResponse(**data)
+
+    async def get_aggressive_discovery_status(
+        self,
+        info_hash: str,
+    ) -> AggressiveDiscoveryStatusResponse:
+        """Get aggressive discovery status for a torrent.
+        
+        Args:
+            info_hash: Torrent info hash (hex string)
+            
+        Returns:
+            AggressiveDiscoveryStatusResponse with aggressive discovery status
+            
+        Raises:
+            aiohttp.ClientResponseError: If request fails or torrent not found
+        """
+        data = await self._get_json(
+            f"/metrics/torrents/{info_hash}/aggressive-discovery",
+        )
+        return AggressiveDiscoveryStatusResponse(**data)
+
+    async def get_swarm_health_matrix(
+        self,
+        limit: int = 6,
+        seconds: int | None = None,
+    ) -> SwarmHealthMatrixResponse:
+        """Get swarm health matrix combining performance, peer, and piece metrics.
+        
+        Aggregates data from multiple endpoints to provide a comprehensive
+        view of swarm health across all torrents with historical samples.
+        
+        Args:
+            limit: Maximum number of torrents to include (default: 6)
+            seconds: Optional lookback window in seconds for historical samples
+            
+        Returns:
+            SwarmHealthMatrixResponse containing samples and metadata
+        """
+        params: dict[str, Any] = {"limit": str(limit)}
+        if seconds is not None:
+            params["seconds"] = str(seconds)
+        
+        try:
+            data = await self._get_json("/metrics/swarm-health", params=params)
+            return SwarmHealthMatrixResponse(**data)
+        except aiohttp.ClientResponseError as exc:
+            # If endpoint doesn't exist yet, construct response from individual endpoints
+            if exc.status == 404:
+                # Fallback: construct from individual endpoints
+                torrents = await self.list_torrents()
+                if not torrents:
+                    return SwarmHealthMatrixResponse(samples=[], sample_count=0)
+                
+                # Get top torrents by download rate
+                top_torrents = sorted(
+                    torrents,
+                    key=lambda t: float(t.download_rate if hasattr(t, 'download_rate') else t.get('download_rate', 0.0)),
+                    reverse=True,
+                )[:limit]
+                
+                samples = []
+                import time
+                current_time = time.time()
+                
+                for torrent in top_torrents:
+                    info_hash = torrent.info_hash if hasattr(torrent, 'info_hash') else torrent.get('info_hash')
+                    if not info_hash:
+                        continue
+                    
+                    try:
+                        perf = await self.get_per_torrent_performance(info_hash)
+                        samples.append({
+                            "info_hash": info_hash,
+                            "name": torrent.name if hasattr(torrent, 'name') else torrent.get('name', info_hash[:16]),
+                            "timestamp": current_time,
+                            "swarm_availability": float(perf.swarm_availability),
+                            "download_rate": float(perf.download_rate),
+                            "upload_rate": float(perf.upload_rate),
+                            "connected_peers": int(perf.connected_peers),
+                            "active_peers": int(perf.active_peers),
+                            "progress": float(perf.progress),
+                        })
+                    except Exception:
+                        continue
+                
+                # Calculate rarity percentiles
+                availabilities = [s["swarm_availability"] for s in samples]
+                availabilities.sort()
+                n = len(availabilities)
+                percentiles = {}
+                if n > 0:
+                    percentiles["p25"] = availabilities[n // 4] if n >= 4 else availabilities[0]
+                    percentiles["p50"] = availabilities[n // 2] if n >= 2 else availabilities[0]
+                    percentiles["p75"] = availabilities[3 * n // 4] if n >= 4 else availabilities[-1]
+                    percentiles["p90"] = availabilities[9 * n // 10] if n >= 10 else availabilities[-1]
+                
+                return SwarmHealthMatrixResponse(
+                    samples=samples,
+                    sample_count=len(samples),
+                    rarity_percentiles=percentiles,
+                )
+            raise
+
     # WebSocket Methods
 
     async def connect_websocket(self) -> bool:
@@ -1230,7 +2260,7 @@ class IPCClient:
         """
         if not self.api_key and not self.key_manager:
             logger.error(
-                "API key or Ed25519 key manager required for WebSocket connection"
+                _("API key or Ed25519 key manager required for WebSocket connection")
             )
             return False
 
@@ -1253,7 +2283,7 @@ class IPCClient:
 
                     ws_url = f"{ws_url}{ws_path}?signature={signature.hex()}&public_key={public_key_hex}&timestamp={timestamp}"
                 except Exception as e:
-                    logger.debug("Failed to sign WebSocket request: %s", e)
+                    logger.debug(_("Failed to sign WebSocket request: %s"), e)
                     # Fall through to API key
                     if self.api_key:
                         ws_url = f"{ws_url}{ws_path}?api_key={self.api_key}"
@@ -1266,34 +2296,47 @@ class IPCClient:
             self._websocket_task = asyncio.create_task(self._websocket_receive_loop())
 
             return True
-        except Exception as e:
-            logger.exception("Error connecting WebSocket: %s", e)
+        except Exception:
+            logger.exception("Error connecting WebSocket")
             return False
 
-    async def subscribe_events(self, event_types: list[EventType]) -> bool:
-        """Subscribe to event types.
+    async def subscribe_events(
+        self,
+        event_types: list[EventType] | None = None,
+        info_hash: str | None = None,
+        priority_filter: str | None = None,
+        rate_limit: float | None = None,
+    ) -> bool:
+        """Subscribe to event types with optional filtering.
 
         Args:
-            event_types: List of event types to subscribe to
+            event_types: List of event types to subscribe to (None = all events)
+            info_hash: Filter events to specific torrent (optional)
+            priority_filter: Filter by priority: 'critical', 'high', 'normal', 'low' (optional)
+            rate_limit: Maximum events per second (throttling, optional)
 
         Returns:
             True if subscribed, False otherwise
 
         """
-        if not self._websocket or self._websocket.closed:
-            if not await self.connect_websocket():
-                return False
+        if (not self._websocket or self._websocket.closed) and not await self.connect_websocket():
+            return False
 
         try:
-            req = WebSocketSubscribeRequest(event_types=event_types)
+            req = WebSocketSubscribeRequest(
+                event_types=event_types or [],
+                info_hash=info_hash,
+                priority_filter=priority_filter,
+                rate_limit=rate_limit,
+            )
             message = WebSocketMessage(action="subscribe", data=req.model_dump())
 
             if self._websocket and not self._websocket.closed:
                 await self._websocket.send_json(message.model_dump())
                 return True
             return False
-        except Exception as e:
-            logger.exception("Error subscribing to events: %s", e)
+        except Exception:
+            logger.exception("Error subscribing to events")
             return False
 
     async def receive_event(self, timeout: float = 1.0) -> WebSocketEvent | None:
@@ -1324,8 +2367,53 @@ class IPCClient:
         except asyncio.TimeoutError:
             return None
         except Exception as e:
-            logger.debug("Error receiving WebSocket event: %s", e)
+            logger.debug(_("Error receiving WebSocket event: %s"), e)
             return None
+
+    async def receive_events_batch(
+        self,
+        timeout: float = 1.0,
+        max_events: int = 10,
+    ) -> list[WebSocketEvent]:
+        """Receive multiple events in one call.
+
+        Args:
+            timeout: Timeout in seconds
+            max_events: Maximum number of events to collect
+
+        Returns:
+            List of WebSocket events (may be empty if timeout)
+
+        """
+        events: list[WebSocketEvent] = []
+        if not self._websocket or self._websocket.closed:
+            return events
+
+        end_time = asyncio.get_event_loop().time() + timeout
+        try:
+            while len(events) < max_events:
+                remaining_time = end_time - asyncio.get_event_loop().time()
+                if remaining_time <= 0:
+                    break
+
+                msg = await asyncio.wait_for(
+                    self._websocket.receive(),
+                    timeout=min(remaining_time, 0.1),
+                )
+
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    data = json.loads(msg.data)
+                    if "type" in data and "timestamp" in data:
+                        events.append(WebSocketEvent(**data))
+                elif msg.type == aiohttp.WSMsgType.ERROR:
+                    logger.warning(_("WebSocket error in batch receive: %s"), self._websocket.exception())
+                    break
+        except asyncio.TimeoutError:
+            pass
+        except Exception as e:
+            logger.debug(_("Error receiving WebSocket events batch: %s"), e)
+
+        return events
 
     async def _websocket_receive_loop(self) -> None:
         """Background task to receive WebSocket messages."""
@@ -1338,10 +2426,10 @@ class IPCClient:
                     # Messages are handled by receive_event
                     pass
                 elif msg.type == aiohttp.WSMsgType.ERROR:
-                    logger.warning("WebSocket error: %s", self._websocket.exception())
+                    logger.warning(_("WebSocket error: %s"), self._websocket.exception())
                     break
         except Exception as e:
-            logger.debug("WebSocket receive loop error: %s", e)
+            logger.debug(_("WebSocket receive loop error: %s"), e)
         finally:
             await self._close_websocket()
 
@@ -1392,16 +2480,16 @@ class IPCClient:
                     # Skip the socket test and proceed to HTTP check
                     if sys.platform == "win32" and result == 10035:
                         logger.debug(
-                            "Socket test returned 10035 (WSAEWOULDBLOCK) on Windows for %s:%d. "
-                            "This may be a false positive - proceeding with HTTP check.",
+                            _("Socket test returned 10035 (WSAEWOULDBLOCK) on Windows for %s:%d. "
+                            "This may be a false positive - proceeding with HTTP check."),
                             host,
                             port,
                         )
                         # Don't return False - continue to HTTP check
                     else:
                         logger.debug(
-                            "Socket connection test to %s:%d failed (result=%d). "
-                            "Port may not be open or firewall blocking. Proceeding with HTTP check anyway.",
+                            _("Socket connection test to %s:%d failed (result=%d). "
+                            "Port may not be open or firewall blocking. Proceeding with HTTP check anyway."),
                             host,
                             port,
                             result,
@@ -1419,7 +2507,7 @@ class IPCClient:
                 # Don't return False - continue to HTTP check
                 # HTTP check is more reliable than socket test
         except Exception as test_error:
-            logger.debug("Error in socket pre-check: %s", test_error)
+            logger.debug(_("Error in socket pre-check: %s"), test_error)
             # Continue with HTTP check anyway
 
         try:
@@ -1430,22 +2518,43 @@ class IPCClient:
             return status is not None and hasattr(status, "status")
         except asyncio.TimeoutError:
             logger.debug(
-                "Timeout checking daemon status at %s (daemon may be starting up or overloaded)",
+                _("Timeout checking daemon status at %s (daemon may be starting up or overloaded)"),
                 self.base_url,
             )
             return False
         except aiohttp.ClientConnectorError as e:
             # Connection refused or similar - daemon is not running or not accessible
-            logger.debug(
-                "Cannot connect to daemon at %s: %s (daemon may not be running or IPC server not started)",
+            # Log at INFO level when daemon config file doesn't exist (helps diagnose port issues)
+            log_level = logger.info if "Cannot connect" in str(e) else logger.debug
+            log_level(
+                _("Cannot connect to daemon at %s: %s (daemon may not be running or IPC server not started)"),
                 self.base_url,
                 e,
             )
             return False
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response (401, 403, 404, 500, etc.)
+            # 401/403 usually means API key mismatch
+            if e.status in (401, 403):
+                logger.warning(
+                    _("Authentication failed when checking daemon status at %s (status %d). "
+                      "This usually indicates an API key mismatch. "
+                      "Check that the API key in config matches the daemon's API key."),
+                    self.base_url,
+                    e.status,
+                )
+            else:
+                logger.debug(
+                    _("HTTP error checking daemon status at %s: %s (status %d)"),
+                    self.base_url,
+                    e.message,
+                    e.status,
+                )
+            return False
         except aiohttp.ClientError as e:
             # Other client errors (HTTP errors, etc.)
             logger.debug(
-                "Client error checking daemon status at %s: %s (daemon may be starting up)",
+                _("Client error checking daemon status at %s: %s (daemon may be starting up)"),
                 self.base_url,
                 e,
             )
@@ -1453,7 +2562,7 @@ class IPCClient:
         except Exception as e:
             # Unexpected errors
             logger.debug(
-                "Unexpected error checking daemon status at %s: %s",
+                _("Unexpected error checking daemon status at %s: %s"),
                 self.base_url,
                 e,
                 exc_info=e,
@@ -1468,7 +2577,11 @@ class IPCClient:
             PID or None if not found or invalid
 
         """
-        pid_file = Path.home() / ".ccbt" / "daemon" / "daemon.pid"
+        # CRITICAL FIX: Use consistent path resolution helper to match daemon
+        from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+        home_dir = _get_daemon_home_dir()
+        pid_file = home_dir / ".ccbt" / "daemon" / "daemon.pid"
+        logger.debug(_("IPCClient.get_daemon_pid: Checking pid_file=%s (home_dir=%s, exists=%s)"), pid_file, home_dir, pid_file.exists())
         if not pid_file.exists():
             return None
 
@@ -1487,12 +2600,12 @@ class IPCClient:
                         # File might be locked or being written - retry
                         time.sleep(0.1)
                         continue
-                    logger.debug("Error reading PID file after retries: %s", e)
+                    logger.debug(_("Error reading PID file after retries: %s"), e)
                     return None
 
             if not pid_text:
                 # Empty file - remove it
-                logger.debug("PID file is empty, removing")
+                logger.debug(_("PID file is empty, removing"))
                 with contextlib.suppress(OSError):
                     pid_file.unlink()
                 return None
@@ -1501,7 +2614,7 @@ class IPCClient:
             pid_text = pid_text.strip()
             if not pid_text or not pid_text.isdigit():
                 logger.warning(
-                    "PID file contains invalid data: %r, removing", pid_text[:50]
+                    _("PID file contains invalid data: %r, removing"), pid_text[:50]
                 )
                 with contextlib.suppress(OSError):
                     pid_file.unlink()
@@ -1511,7 +2624,7 @@ class IPCClient:
 
             # Validate PID is reasonable
             if pid <= 0 or pid > 2147483647:
-                logger.warning("PID file contains invalid PID: %d, removing", pid)
+                logger.warning(_("PID file contains invalid PID: %d, removing"), pid)
                 with contextlib.suppress(OSError):
                     pid_file.unlink()
                 return None
@@ -1531,7 +2644,7 @@ class IPCClient:
                 pid_file.unlink()
                 return None
         except (ValueError, OSError) as e:
-            logger.debug("Error reading PID file: %s", e)
+            logger.debug(_("Error reading PID file: %s"), e)
             return None
 
     @staticmethod
@@ -1557,10 +2670,13 @@ class IPCClient:
                 return f"http://127.0.0.1:{ipc_port}"
         except Exception as e:
             # Log but don't fail - fall back to defaults
-            logger.debug("Could not read daemon config from ConfigManager: %s", e)
+            logger.debug(_("Could not read daemon config from ConfigManager: %s"), e)
 
         # Fallback: Try to read from legacy config file (for backwards compatibility)
-        config_file = Path.home() / ".ccbt" / "daemon" / "config.json"
+        # CRITICAL FIX: Use consistent path resolution helper to match daemon
+        from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+        home_dir = _get_daemon_home_dir()
+        config_file = home_dir / ".ccbt" / "daemon" / "config.json"
         if config_file.exists():
             try:
                 with open(config_file, encoding="utf-8") as f:

@@ -1,0 +1,113 @@
+name: Publish Dev Branch to PyPI (Nightly)
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'pyproject.toml'
+      - 'ccbt/**'
+      - 'ccbt/__init__.py'
+  workflow_dispatch:
+
+jobs:
+  publish-nightly:
+    name: publish-dev-to-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Extract version from pyproject.toml
+        id: get_version
+        run: |
+          VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Dev branch version: $VERSION"
+      
+      - name: Validate version for dev branch
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          
+          # Dev branch: allow 0.0.1 or any valid semver
+          if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -eq 0 ] && [ "$PATCH" -eq 0 ]; then
+            echo "❌ Dev branch version must be > 0.0.0, got $VERSION"
+            exit 1
+          fi
+          echo "✅ Version validation passed: $VERSION"
+      
+      - name: Install project dependencies
+        run: |
+          uv sync --dev
+      
+      - name: Build package with uv
+        run: |
+          uv build
+      
+      - name: Verify package files
+        run: |
+          echo "📦 Built package files:"
+          ls -lh dist/
+          echo ""
+          echo "📋 Package contents:"
+          uv run twine check dist/* || echo "⚠️  twine not available, skipping check"
+      
+      - name: Publish to PyPI (Nightly)
+        env:
+          UV_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$UV_PYPI_TOKEN" ]; then
+            echo "❌ Error: PYPI_API_TOKEN secret is not set"
+            echo "Please add your PyPI API token as a GitHub secret named 'PYPI_API_TOKEN'"
+            exit 1
+          fi
+          
+          VERSION="${{ steps.get_version.outputs.version }}"
+          echo "🚀 Publishing dev branch version $VERSION to PyPI as nightly build..."
+          uv publish
+          
+          echo "✅ Successfully published to PyPI!"
+          echo "📦 Package: https://pypi.org/project/ccbt/"
+          echo "📌 Version: $VERSION (nightly/dev build)"
+      
+      - name: Publish summary
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          echo "## ✅ Dev Branch PyPI Publication Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $VERSION (nightly/dev build)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package Links:**" >> $GITHUB_STEP_SUMMARY
+          echo "- PyPI: https://pypi.org/project/ccbt/" >> $GITHUB_STEP_SUMMARY
+          echo "- Installation: \`uv pip install ccbt==$VERSION\`" >> $GITHUB_STEP_SUMMARY
+
+
+
+
+
+
+
+
+
+
+
+
+
+

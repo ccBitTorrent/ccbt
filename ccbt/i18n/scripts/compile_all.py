@@ -36,12 +36,15 @@ def compile_po_to_mo(po_path: Path, mo_path: Path) -> bool:
         import gettext
 
         # Read .po file and create .mo file
-        with open(po_path, "rb") as f:
-            po_data = f.read()
+        # Note: This is a placeholder - proper .mo compilation requires msgfmt or polib
+        # The file is read but not processed in this simplified implementation
+        with open(po_path, "rb") as _:
+            pass
 
         # Parse .po file manually and create .mo
         # This is a simplified version - for full support, use polib or msgfmt
-        translation = gettext.translation(
+        # Translation object is created but not used in this simplified implementation
+        _ = gettext.translation(
             "ccbt",
             localedir=str(po_path.parent.parent.parent),
             languages=[po_path.parent.parent.name],
@@ -81,10 +84,10 @@ def compile_all() -> None:
 
         print(f"Compiling {lang_dir.name}...")
         if compile_po_to_mo(po_file, mo_file):
-            print(f"  ✓ Compiled {mo_file.name}")
+            print(f"  [OK] Compiled {mo_file.name}")
             compiled += 1
         else:
-            print(f"  ✗ Failed to compile {po_file.name}")
+            print(f"  [ERROR] Failed to compile {po_file.name}")
             failed += 1
 
     print(f"\nCompiled: {compiled}, Failed: {failed}")

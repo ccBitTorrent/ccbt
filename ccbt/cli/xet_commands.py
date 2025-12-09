@@ -1,3 +1,4 @@
+
 """Xet protocol CLI commands (enable, disable, status, stats, cache-info)."""
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ccbt.config.config import ConfigManager
+from ccbt.i18n import _
 from ccbt.protocols.base import ProtocolType
 from ccbt.protocols.xet import XetProtocol
 from ccbt.session.session import AsyncSessionManager
@@ -116,11 +118,6 @@ def xet_enable(_ctx, config_file: str | None) -> None:
             cm = _get_config_from_context(_ctx) if _ctx else init_config()
         except Exception:
             cm = init_config()
-    else:
-        try:
-            cm = _get_config_from_context(_ctx) if _ctx else init_config()
-        except Exception:
-            cm = init_config()
     cm.config.disk.xet_enabled = True
 
     # Save to config file
@@ -134,8 +131,8 @@ def xet_enable(_ctx, config_file: str | None) -> None:
             config_dict.update(existing)
         cm.config_file.write_text(toml.dumps(config_dict), encoding="utf-8")
 
-    console.print("[green]✓[/green] Xet protocol enabled")
-    console.print(f"  Configuration saved to: {cm.config_file or 'default location'}")
+    console.print(_("[green]✓[/green] Xet protocol enabled"))
+    console.print(_("  Configuration saved to: {location}").format(location=cm.config_file or 'default location'))
 
 
 @xet.command("disable")
@@ -168,8 +165,8 @@ def xet_disable(_ctx, config_file: str | None) -> None:
             config_dict.update(existing)
         cm.config_file.write_text(toml.dumps(config_dict), encoding="utf-8")
 
-    console.print("[yellow]✓[/yellow] Xet protocol disabled")
-    console.print(f"  Configuration saved to: {cm.config_file or 'default location'}")
+    console.print(_("[yellow]✓[/yellow] Xet protocol disabled"))
+    console.print(_("  Configuration saved to: {location}").format(location=cm.config_file or 'default location'))
 
 
 @xet.command("status")
@@ -191,21 +188,21 @@ def xet_status(_ctx, config_file: str | None) -> None:
             cm = init_config()
     config = cm.config
 
-    console.print("[bold]Xet Protocol Status[/bold]\n")
+    console.print(_("[bold]Xet Protocol Status[/bold]\n"))
 
     # Configuration status
     xet_config = config.disk
-    console.print("[bold]Configuration:[/bold]")
-    console.print(f"  Enabled: {xet_config.xet_enabled}")
-    console.print(f"  Deduplication: {xet_config.xet_deduplication_enabled}")
-    console.print(f"  P2P CAS: {xet_config.xet_use_p2p_cas}")
-    console.print(f"  Compression: {xet_config.xet_compression_enabled}")
+    console.print(_("[bold]Configuration:[/bold]"))
+    console.print(_("  Enabled: {enabled}").format(enabled=xet_config.xet_enabled))
+    console.print(_("  Deduplication: {enabled}").format(enabled=xet_config.xet_deduplication_enabled))
+    console.print(_("  P2P CAS: {enabled}").format(enabled=xet_config.xet_use_p2p_cas))
+    console.print(_("  Compression: {enabled}").format(enabled=xet_config.xet_compression_enabled))
     console.print(
-        f"  Chunk size range: {xet_config.xet_chunk_min_size}-{xet_config.xet_chunk_max_size} bytes"
+        _("  Chunk size range: {min}-{max} bytes").format(min=xet_config.xet_chunk_min_size, max=xet_config.xet_chunk_max_size)
     )
-    console.print(f"  Target chunk size: {xet_config.xet_chunk_target_size} bytes")
-    console.print(f"  Cache DB: {xet_config.xet_cache_db_path}")
-    console.print(f"  Chunk store: {xet_config.xet_chunk_store_path}")
+    console.print(_("  Target chunk size: {size} bytes").format(size=xet_config.xet_chunk_target_size))
+    console.print(_("  Cache DB: {path}").format(path=xet_config.xet_cache_db_path))
+    console.print(_("  Chunk store: {path}").format(path=xet_config.xet_chunk_store_path))
 
     # Runtime status (if session is available)
     async def _show_runtime_status() -> None:
@@ -213,19 +210,19 @@ def xet_status(_ctx, config_file: str | None) -> None:
         try:
             protocol = await _get_xet_protocol()
             if protocol:
-                console.print("\n[bold]Runtime Status:[/bold]")
-                console.print(f"  Protocol state: {protocol.state}")
+                console.print(_("\n[bold]Runtime Status:[/bold]"))
+                console.print(_("  Protocol state: {state}").format(state=protocol.state))
                 if protocol.cas_client:
-                    console.print("  P2P CAS client: Active")
+                    console.print(_("  P2P CAS client: Active"))
                 else:
-                    console.print("  P2P CAS client: Not initialized")
+                    console.print(_("  P2P CAS client: Not initialized"))
             else:
-                console.print("\n[yellow]Runtime Status:[/yellow]")
-                console.print("  Protocol not active (session may not be running)")
+                console.print(_("\n[yellow]Runtime Status:[/yellow]"))
+                console.print(_("  Protocol not active (session may not be running)"))
         except Exception as e:
-            logger.debug("Failed to get runtime status: %s", e)
-            console.print("\n[yellow]Runtime Status:[/yellow]")
-            console.print("  Unable to connect to active session")
+            logger.debug(_("Failed to get runtime status: %s"), e)
+            console.print(_("\n[yellow]Runtime Status:[/yellow]"))
+            console.print(_("  Unable to connect to active session"))
 
     asyncio.run(_show_runtime_status())
 
@@ -251,7 +248,7 @@ def xet_stats(_ctx, config_file: str | None, json_output: bool) -> None:
     config = cm.config
 
     if not config.disk.xet_enabled:
-        console.print("[yellow]Xet protocol is disabled[/yellow]")
+        console.print(_("[yellow]Xet protocol is disabled[/yellow]"))
         return
 
     async def _show_stats() -> None:
@@ -267,7 +264,7 @@ def xet_stats(_ctx, config_file: str | None, json_output: bool) -> None:
                 if json_output:
                     click.echo(json.dumps(stats, indent=2))
                 else:
-                    console.print("[bold]Xet Deduplication Cache Statistics[/bold]\n")
+                    console.print(_("[bold]Xet Deduplication Cache Statistics[/bold]\n"))
 
                     table = Table(show_header=True, header_style="bold")
                     table.add_column("Metric", style="cyan")
@@ -287,8 +284,8 @@ def xet_stats(_ctx, config_file: str | None, json_output: bool) -> None:
                     console.print(table)
 
         except Exception as e:
-            console.print(f"[red]Error retrieving stats: {e}[/red]")
-            logger.exception("Failed to get Xet stats")
+            console.print(_("[red]Error retrieving stats: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to get Xet stats"))
 
     asyncio.run(_show_stats())
 
@@ -317,7 +314,7 @@ def xet_cache_info(
     config = cm.config
 
     if not config.disk.xet_enabled:
-        console.print("[yellow]Xet protocol is disabled[/yellow]")
+        console.print(_("[yellow]Xet protocol is disabled[/yellow]"))
         return
 
     async def _show_cache_info() -> None:
@@ -360,11 +357,11 @@ def xet_cache_info(
                         )
                     )
                 else:
-                    console.print("[bold]Xet Cache Information[/bold]\n")
-                    console.print(f"Total chunks: {stats.get('total_chunks', 0)}")
-                    console.print(f"Cache size: {stats.get('cache_size', 0)} bytes")
+                    console.print(_("[bold]Xet Cache Information[/bold]\n"))
+                    console.print(_("Total chunks: {count}").format(count=stats.get('total_chunks', 0)))
+                    console.print(_("Cache size: {size} bytes").format(size=stats.get('cache_size', 0)))
                     console.print(
-                        f"\n[bold]Sample chunks (last {limit} accessed):[/bold]\n"
+                        _("\n[bold]Sample chunks (last {limit} accessed):[/bold]\n").format(limit=limit)
                     )
 
                     import sqlite3
@@ -402,11 +399,11 @@ def xet_cache_info(
                             )
                         console.print(table)
                     else:
-                        console.print("[yellow]No chunks in cache[/yellow]")
+                        console.print(_("[yellow]No chunks in cache[/yellow]"))
 
         except Exception as e:
-            console.print(f"[red]Error retrieving cache info: {e}[/red]")
-            logger.exception("Failed to get Xet cache info")
+            console.print(_("[red]Error retrieving cache info: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to get Xet cache info"))
 
     asyncio.run(_show_cache_info())
 
@@ -441,7 +438,7 @@ def xet_cleanup(
     config = cm.config
 
     if not config.disk.xet_enabled:
-        console.print("[yellow]Xet protocol is disabled[/yellow]")
+        console.print(_("[yellow]Xet protocol is disabled[/yellow]"))
         return
 
     async def _cleanup() -> None:
@@ -453,12 +450,12 @@ def xet_cleanup(
             async with XetDeduplication(dedup_path) as dedup:
                 if dry_run:
                     console.print(
-                        f"[yellow]Dry run: Would clean chunks older than {max_age_days} days[/yellow]"
+                        _("[yellow]Dry run: Would clean chunks older than {days} days[/yellow]").format(days=max_age_days)
                     )
                     # Get stats before cleanup
                     stats_before = dedup.get_cache_stats()
                     console.print(
-                        f"Current chunks: {stats_before.get('total_chunks', 0)}"
+                        _("Current chunks: {count}").format(count=stats_before.get('total_chunks', 0))
                     )
                 else:
                     max_age_seconds = max_age_days * 24 * 60 * 60
@@ -468,14 +465,14 @@ def xet_cleanup(
                         max_age_seconds=max_age_seconds
                     )
 
-                    console.print(f"[green]✓[/green] Cleaned {cleaned} unused chunks")
+                    console.print(_("[green]✓[/green] Cleaned {cleaned} unused chunks").format(cleaned=cleaned))
                     stats_after = dedup.get_cache_stats()
                     console.print(
-                        f"Remaining chunks: {stats_after.get('total_chunks', 0)}"
+                        _("Remaining chunks: {count}").format(count=stats_after.get('total_chunks', 0))
                     )
 
         except Exception as e:
-            console.print(f"[red]Error during cleanup: {e}[/red]")
-            logger.exception("Failed to cleanup Xet cache")
+            console.print(_("[red]Error during cleanup: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to cleanup Xet cache"))
 
     asyncio.run(_cleanup())

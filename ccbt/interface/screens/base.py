@@ -66,6 +66,10 @@ class ConfigScreen(Screen):  # type: ignore[misc]
         self.session = session
         self.config_manager = session.config if hasattr(session, "config") else None
         self._has_unsaved_changes = False
+        # Provide per-screen logger for subclasses (many expect self.logger)
+        self.logger = logging.getLogger(
+            f"{__name__}.{self.__class__.__qualname__}"
+        )
 
     async def action_back(self) -> None:  # pragma: no cover
         """Navigate back to previous screen."""
@@ -158,6 +162,111 @@ class ConfirmationDialog(ModalScreen):  # type: ignore[misc]
         """Cancel action."""
         self.result = False
         self.dismiss(False)  # type: ignore[attr-defined]
+
+
+class InputDialog(ModalScreen):  # type: ignore[misc]
+    """Modal dialog for text input prompts."""
+
+    DEFAULT_CSS = """
+    InputDialog {
+        align: center middle;
+    }
+    #dialog {
+        width: 70;
+        height: auto;
+        border: thick $primary;
+        background: $surface;
+    }
+    #message {
+        height: auto;
+        margin: 1;
+    }
+    #input_container {
+        height: 3;
+        margin: 1;
+    }
+    #buttons {
+        height: 3;
+        align: center middle;
+    }
+    """
+
+    def __init__(self, title: str, message: str, placeholder: str = "", *args: Any, **kwargs: Any):
+        """Initialize input dialog.
+
+        Args:
+            title: Dialog title
+            message: Message to display
+            placeholder: Placeholder text for input
+        """
+        super().__init__(*args, **kwargs)
+        self.title = title
+        self.message = message
+        self.placeholder = placeholder
+        self.result: str | None = None
+
+    def compose(self) -> ComposeResult:  # pragma: no cover
+        """Compose the input dialog."""
+        from textual.widgets import Input
+
+        yield Container(
+            Static(f"[bold]{self.title}[/bold]\n{self.message}", id="message"),
+            Container(
+                Input(placeholder=self.placeholder, id="input"),
+                id="input_container",
+            ),
+            Horizontal(
+                Button("OK", id="ok", variant="primary"),
+                Button("Cancel", id="cancel", variant="default"),
+                id="buttons",
+            ),
+            id="dialog",
+        )
+
+    def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        """Focus input on mount."""
+        try:
+            input_widget = self.query_one("#input", Input)  # type: ignore[attr-defined]
+            input_widget.focus()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    def on_input_submitted(self, event: Any) -> None:  # pragma: no cover
+        """Handle input submission."""
+        self.result = event.value
+        self.dismiss(self.result)  # type: ignore[attr-defined]
+
+    def on_button_pressed(self, event: Any) -> None:  # pragma: no cover
+        """Handle button presses."""
+        if event.button.id == "ok":
+            try:
+                input_widget = self.query_one("#input", Input)  # type: ignore[attr-defined]
+                self.result = input_widget.value  # type: ignore[attr-defined]
+            except Exception:
+                self.result = ""
+            self.dismiss(self.result)  # type: ignore[attr-defined]
+        elif event.button.id == "cancel":
+            self.result = None
+            self.dismiss(None)  # type: ignore[attr-defined]
+
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        ("enter", "ok", "OK"),
+        ("escape", "cancel", "Cancel"),
+    ]
+
+    async def action_ok(self) -> None:  # pragma: no cover
+        """Confirm input."""
+        try:
+            input_widget = self.query_one("#input", Input)  # type: ignore[attr-defined]
+            self.result = input_widget.value  # type: ignore[attr-defined]
+        except Exception:
+            self.result = ""
+        self.dismiss(self.result)  # type: ignore[attr-defined]
+
+    async def action_cancel(self) -> None:  # pragma: no cover
+        """Cancel input."""
+        self.result = None
+        self.dismiss(None)  # type: ignore[attr-defined]
 
 
 class GlobalConfigScreen(ConfigScreen):  # type: ignore[misc]

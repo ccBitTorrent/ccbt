@@ -5,7 +5,10 @@ Handles NAT traversal commands.
 
 from __future__ import annotations
 
+from typing import Any
+
 from ccbt.executor.base import CommandExecutor, CommandResult
+from ccbt.executor.session_adapter import LocalSessionAdapter
 
 
 class NATExecutor(CommandExecutor):

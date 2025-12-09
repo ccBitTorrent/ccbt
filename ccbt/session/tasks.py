@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any, Awaitable
 
 
@@ -26,13 +27,11 @@ class TaskSupervisor:
     async def wait_all_cancelled(self, timeout: float = 5.0) -> None:
         if not self._tasks:
             return
-        try:
+        with contextlib.suppress(asyncio.TimeoutError):
+            # Best-effort cancellation; remaining tasks may be daemon-like
             await asyncio.wait_for(
                 asyncio.gather(*self._tasks, return_exceptions=True), timeout
             )
-        except asyncio.TimeoutError:
-            # Best-effort cancellation; remaining tasks may be daemon-like
-            pass
 
     @property
     def tasks(self) -> set[asyncio.Task[Any]]:

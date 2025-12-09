@@ -9,7 +9,7 @@ for TLS/HTTPS support.
 from __future__ import annotations
 
 import ipaddress
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -121,7 +121,7 @@ class TLSCertificateManager:
             )
 
             # Certificate validity period
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             valid_from = now
             valid_to = now + timedelta(days=validity_days)
 

@@ -188,7 +188,9 @@ class TestTrackerClient:
         mock_urlopen.assert_called_once()
         call_args = mock_urlopen.call_args[0][0]
         assert call_args.full_url == "http://tracker.example.com/announce"
-        assert call_args.headers["User-agent"] == "ccBitTorrent/0.1.0"
+        from ccbt.utils.version import get_user_agent
+
+        assert call_args.headers["User-agent"] == get_user_agent()
 
         # Verify response data
         assert isinstance(response_data, bytes)

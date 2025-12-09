@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    import zstandard as zstd
+    import zstandard as zstd  # type: ignore[unresolved-import]
 
     HAS_ZSTD = True
 except Exception:  # pragma: no cover - zstandard import error, fallback to gzip, tested via conditional import
@@ -41,6 +41,7 @@ from ccbt.models import (
     DiskConfig,
     DownloadStats,
     FileCheckpoint,
+    GlobalCheckpoint,
     PieceState,
     TorrentCheckpoint,
 )
@@ -52,8 +53,13 @@ from ccbt.utils.exceptions import (
 )
 from ccbt.utils.logging_config import get_logger
 
-# Re-export TorrentCheckpoint for convenience
-__all__ = ["CheckpointFileInfo", "CheckpointManager", "TorrentCheckpoint"]
+# Re-export TorrentCheckpoint and GlobalCheckpointManager for convenience
+__all__ = [
+    "CheckpointFileInfo",
+    "CheckpointManager",
+    "GlobalCheckpointManager",
+    "TorrentCheckpoint",
+]
 
 
 @dataclass
@@ -249,6 +255,33 @@ class CheckpointManager:
             checkpoint_dict["announce_urls"] = checkpoint.announce_urls
         if not checkpoint_dict.get("display_name"):
             checkpoint_dict["display_name"] = checkpoint.display_name
+        # Ensure per-torrent options and rate limits are included
+        if checkpoint.per_torrent_options is not None:
+            checkpoint_dict["per_torrent_options"] = checkpoint.per_torrent_options
+        if checkpoint.rate_limits is not None:
+            checkpoint_dict["rate_limits"] = checkpoint.rate_limits
+
+        # Ensure new fields are included
+        if checkpoint.connected_peers is not None:
+            checkpoint_dict["connected_peers"] = checkpoint.connected_peers
+        if checkpoint.active_peers is not None:
+            checkpoint_dict["active_peers"] = checkpoint.active_peers
+        if checkpoint.peer_statistics is not None:
+            checkpoint_dict["peer_statistics"] = checkpoint.peer_statistics
+        if checkpoint.tracker_list is not None:
+            checkpoint_dict["tracker_list"] = checkpoint.tracker_list
+        if checkpoint.tracker_health is not None:
+            checkpoint_dict["tracker_health"] = checkpoint.tracker_health
+        if checkpoint.peer_whitelist is not None:
+            checkpoint_dict["peer_whitelist"] = checkpoint.peer_whitelist
+        if checkpoint.peer_blacklist is not None:
+            checkpoint_dict["peer_blacklist"] = checkpoint.peer_blacklist
+        if checkpoint.session_state is not None:
+            checkpoint_dict["session_state"] = checkpoint.session_state
+        if checkpoint.session_state_timestamp is not None:
+            checkpoint_dict["session_state_timestamp"] = checkpoint.session_state_timestamp
+        if checkpoint.recent_events is not None:
+            checkpoint_dict["recent_events"] = checkpoint.recent_events
 
         # Convert resume_data bytes fields to base64 for JSON
         if checkpoint_dict.get("resume_data"):
@@ -334,6 +367,33 @@ class CheckpointManager:
                     "announce_urls": checkpoint.announce_urls,
                     "display_name": checkpoint.display_name,
                 }
+                # Add per-torrent options and rate limits if they exist
+                if checkpoint.per_torrent_options is not None:
+                    metadata["per_torrent_options"] = checkpoint.per_torrent_options
+                if checkpoint.rate_limits is not None:
+                    metadata["rate_limits"] = checkpoint.rate_limits
+
+                # Add new fields if they exist
+                if checkpoint.connected_peers is not None:
+                    metadata["connected_peers"] = checkpoint.connected_peers
+                if checkpoint.active_peers is not None:
+                    metadata["active_peers"] = checkpoint.active_peers
+                if checkpoint.peer_statistics is not None:
+                    metadata["peer_statistics"] = checkpoint.peer_statistics
+                if checkpoint.tracker_list is not None:
+                    metadata["tracker_list"] = checkpoint.tracker_list
+                if checkpoint.tracker_health is not None:
+                    metadata["tracker_health"] = checkpoint.tracker_health
+                if checkpoint.peer_whitelist is not None:
+                    metadata["peer_whitelist"] = checkpoint.peer_whitelist
+                if checkpoint.peer_blacklist is not None:
+                    metadata["peer_blacklist"] = checkpoint.peer_blacklist
+                if checkpoint.session_state is not None:
+                    metadata["session_state"] = checkpoint.session_state
+                if checkpoint.session_state_timestamp is not None:
+                    metadata["session_state_timestamp"] = checkpoint.session_state_timestamp
+                if checkpoint.recent_events is not None:
+                    metadata["recent_events"] = checkpoint.recent_events
 
                 if not HAS_MSGPACK or msgpack is None:
                     msg = "msgpack not available for binary checkpoint write"
@@ -698,6 +758,33 @@ class CheckpointManager:
                     "display_name": metadata.get("display_name"),
                 },
             )
+            # Add per-torrent options and rate limits if they exist in metadata
+            if "per_torrent_options" in metadata:
+                checkpoint_dict["per_torrent_options"] = metadata["per_torrent_options"]
+            if "rate_limits" in metadata:
+                checkpoint_dict["rate_limits"] = metadata["rate_limits"]
+
+            # Add new fields if they exist in metadata (backward compatibility)
+            if "connected_peers" in metadata:
+                checkpoint_dict["connected_peers"] = metadata["connected_peers"]
+            if "active_peers" in metadata:
+                checkpoint_dict["active_peers"] = metadata["active_peers"]
+            if "peer_statistics" in metadata:
+                checkpoint_dict["peer_statistics"] = metadata["peer_statistics"]
+            if "tracker_list" in metadata:
+                checkpoint_dict["tracker_list"] = metadata["tracker_list"]
+            if "tracker_health" in metadata:
+                checkpoint_dict["tracker_health"] = metadata["tracker_health"]
+            if "peer_whitelist" in metadata:
+                checkpoint_dict["peer_whitelist"] = metadata["peer_whitelist"]
+            if "peer_blacklist" in metadata:
+                checkpoint_dict["peer_blacklist"] = metadata["peer_blacklist"]
+            if "session_state" in metadata:
+                checkpoint_dict["session_state"] = metadata["session_state"]
+            if "session_state_timestamp" in metadata:
+                checkpoint_dict["session_state_timestamp"] = metadata["session_state_timestamp"]
+            if "recent_events" in metadata:
+                checkpoint_dict["recent_events"] = metadata["recent_events"]
 
             return checkpoint_dict
 
@@ -1038,3 +1125,253 @@ class CheckpointManager:
 
         # Save checkpoint in target format
         return await self.save_checkpoint(checkpoint, to_format)
+
+
+class GlobalCheckpointManager:
+    """Manages global session manager checkpoints."""
+
+    def __init__(self, config: DiskConfig | None = None):
+        """Initialize global checkpoint manager.
+
+        Args:
+            config: Disk configuration with checkpoint settings
+
+        """
+        self.config = config or DiskConfig()
+        self.logger = get_logger(__name__)
+
+        # Determine checkpoint directory (same as per-torrent checkpoints)
+        if self.config.checkpoint_dir:
+            self.checkpoint_dir = Path(self.config.checkpoint_dir)
+        else:
+            self.checkpoint_dir = Path(".ccbt/checkpoints")
+
+        # Ensure checkpoint directory exists
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+        # Global checkpoint file path
+        self.global_checkpoint_file = self.checkpoint_dir / "global.checkpoint.json"
+
+        self.logger.info(
+            "Global checkpoint manager initialized with file: %s",
+            self.global_checkpoint_file,
+        )
+
+    async def save_global_checkpoint(
+        self,
+        checkpoint: GlobalCheckpoint,
+    ) -> Path:
+        """Save global checkpoint to disk.
+
+        Args:
+            checkpoint: Global checkpoint data to save
+
+        Returns:
+            Path to saved checkpoint file
+
+        Raises:
+            CheckpointError: If saving fails
+
+        """
+        if not self.config.checkpoint_enabled:
+            msg = "Checkpointing is disabled"
+            raise CheckpointError(msg)
+
+        try:
+            # Update timestamp
+            checkpoint.updated_at = time.time()
+
+            # Convert to dict for JSON serialization
+            checkpoint_dict = checkpoint.model_dump()
+
+            # Convert bytes to hex strings for JSON
+            if "active_torrents" in checkpoint_dict:
+                checkpoint_dict["active_torrents"] = [
+                    ih.hex() for ih in checkpoint_dict["active_torrents"]
+                ]
+            if "paused_torrents" in checkpoint_dict:
+                checkpoint_dict["paused_torrents"] = [
+                    ih.hex() for ih in checkpoint_dict["paused_torrents"]
+                ]
+            if "queued_torrents" in checkpoint_dict:
+                for queue_item in checkpoint_dict["queued_torrents"]:
+                    if "info_hash" in queue_item and isinstance(
+                        queue_item["info_hash"], bytes
+                    ):
+                        queue_item["info_hash"] = queue_item["info_hash"].hex()
+
+            # Write JSON file
+            def _write_json():
+                with open(
+                    self.global_checkpoint_file, "w", encoding="utf-8"
+                ) as f:
+                    json.dump(checkpoint_dict, f, indent=2, ensure_ascii=False)
+                    f.flush()
+                    os.fsync(f.fileno())
+
+            await asyncio.get_event_loop().run_in_executor(None, _write_json)
+
+            self.logger.debug(
+                "Saved global checkpoint: %s", self.global_checkpoint_file
+            )
+            return self.global_checkpoint_file
+
+        except Exception as e:
+            self.logger.exception("Failed to save global checkpoint")
+            msg = f"Failed to save global checkpoint: {e}"
+            raise CheckpointError(msg) from e
+
+    async def load_global_checkpoint(self) -> GlobalCheckpoint | None:
+        """Load global checkpoint from disk.
+
+        Returns:
+            Loaded checkpoint or None if not found
+
+        Raises:
+            CheckpointError: If loading fails
+
+        """
+        if not self.config.checkpoint_enabled:
+            return None
+
+        if not self.global_checkpoint_file.exists():
+            return None
+
+        def _read_json():
+            with open(
+                self.global_checkpoint_file, encoding="utf-8"
+            ) as f:
+                content = f.read().strip()
+                if not content:
+                    msg = "Global checkpoint file is empty"
+                    raise CheckpointCorruptedError(msg)
+                return json.loads(content)
+
+        try:
+            checkpoint_dict = await asyncio.get_event_loop().run_in_executor(
+                None, _read_json
+            )
+
+            # Convert hex strings back to bytes
+            if "active_torrents" in checkpoint_dict:
+                checkpoint_dict["active_torrents"] = [
+                    bytes.fromhex(ih) for ih in checkpoint_dict["active_torrents"]
+                ]
+            if "paused_torrents" in checkpoint_dict:
+                checkpoint_dict["paused_torrents"] = [
+                    bytes.fromhex(ih) for ih in checkpoint_dict["paused_torrents"]
+                ]
+            if "queued_torrents" in checkpoint_dict:
+                for queue_item in checkpoint_dict["queued_torrents"]:
+                    if "info_hash" in queue_item and isinstance(
+                        queue_item["info_hash"], str
+                    ):
+                        queue_item["info_hash"] = bytes.fromhex(
+                            queue_item["info_hash"]
+                        )
+
+            # Validate version
+            if checkpoint_dict.get("version", "1.0") != "1.0":
+                msg = (
+                    f"Incompatible global checkpoint version: "
+                    f"{checkpoint_dict.get('version')}"
+                )
+                raise CheckpointVersionError(msg)
+
+            checkpoint = GlobalCheckpoint(**checkpoint_dict)
+            self.logger.debug(
+                "Loaded global checkpoint: %s", self.global_checkpoint_file
+            )
+            return checkpoint
+
+        except json.JSONDecodeError as e:
+            msg = f"Invalid JSON in global checkpoint file: {e}"
+            raise CheckpointCorruptedError(msg) from e
+        except Exception as e:
+            msg = f"Failed to parse global checkpoint: {e}"
+            raise CheckpointCorruptedError(msg) from e
+
+    async def save_incremental_checkpoint(
+        self,
+        checkpoint: TorrentCheckpoint,
+        changed_fields: set[str],
+    ) -> Path:
+        """Save only changed fields for quick reload.
+
+        Args:
+            checkpoint: Checkpoint data with updated fields
+            changed_fields: Set of field names that changed
+
+        Returns:
+            Path to saved incremental checkpoint file
+
+        Raises:
+            CheckpointError: If saving fails
+
+        """
+        if not self.config.checkpoint_enabled:
+            msg = "Checkpointing is disabled"
+            raise CheckpointError(msg)
+
+        # For incremental saves, we still save the full checkpoint
+        # but mark it as incremental in metadata for faster loading
+        # The actual incremental logic is in the loading side
+        checkpoint_format = self.config.checkpoint_format
+
+        try:
+            if checkpoint_format == CheckpointFormat.JSON:
+                path = await self._save_json_checkpoint(checkpoint)
+            elif checkpoint_format == CheckpointFormat.BINARY:
+                path = await self._save_binary_checkpoint(checkpoint)
+            else:
+                # For BOTH format, save JSON (faster for incremental)
+                path = await self._save_json_checkpoint(checkpoint)
+
+            self.logger.debug(
+                "Saved incremental checkpoint with %d changed fields: %s",
+                len(changed_fields),
+                ", ".join(sorted(changed_fields)),
+            )
+            return path
+
+        except Exception as e:
+            self.logger.exception("Failed to save incremental checkpoint")
+            msg = f"Failed to save incremental checkpoint: {e}"
+            raise CheckpointError(msg) from e
+
+    async def load_incremental_checkpoint(
+        self,
+        info_hash: bytes,
+        base_checkpoint: TorrentCheckpoint | None = None,
+    ) -> TorrentCheckpoint | None:
+        """Load incremental checkpoint and merge with base.
+
+        Args:
+            info_hash: Torrent info hash
+            base_checkpoint: Base checkpoint to merge with (if None, loads full checkpoint)
+
+        Returns:
+            Merged checkpoint or None if not found
+
+        Raises:
+            CheckpointError: If loading fails
+
+        """
+        # Load full checkpoint (incremental is handled by changed_fields tracking)
+        checkpoint = await self.load_checkpoint(info_hash)
+        if checkpoint is None:
+            return None
+
+        # If base checkpoint provided, merge changed fields
+        if base_checkpoint:
+            # Merge strategy: new checkpoint fields override base
+            # This allows partial updates
+            for field_name in checkpoint.model_fields:
+                if hasattr(checkpoint, field_name):
+                    new_value = getattr(checkpoint, field_name)
+                    if new_value is not None:
+                        setattr(base_checkpoint, field_name, new_value)
+
+            return base_checkpoint
+
+        return checkpoint

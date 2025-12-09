@@ -12,6 +12,8 @@ import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
+from ccbt.i18n import _
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,8 +81,8 @@ logger = logging.getLogger(__name__)
 @click.option(
     "--verbose",
     "-v",
-    is_flag=True,
-    help="Enable verbose output",
+    count=True,
+    help="Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)",
 )
 @click.pass_context
 def create_torrent(
@@ -96,7 +98,7 @@ def create_torrent(
     created_by: str,
     piece_length: int | None,
     private: bool,
-    verbose: bool,  # noqa: ARG001
+    verbose: int,
 ) -> None:
     """Create a torrent file from a directory or file.
 
@@ -117,13 +119,16 @@ def create_torrent(
 
     # Determine output format
     if format_v2 and format_hybrid:
-        console.print("[red]Error: Cannot specify both --v2 and --hybrid[/red]")
+        logger.error(_("Cannot specify both --v2 and --hybrid"))
+        console.print(_("[red]Error: Cannot specify both --v2 and --hybrid[/red]"))
         raise click.Abort
     if format_v2 and format_v1:
-        console.print("[red]Error: Cannot specify both --v2 and --v1[/red]")
+        logger.error(_("Cannot specify both --v2 and --v1"))
+        console.print(_("[red]Error: Cannot specify both --v2 and --v1[/red]"))
         raise click.Abort
     if format_hybrid and format_v1:
-        console.print("[red]Error: Cannot specify both --hybrid and --v1[/red]")
+        logger.error(_("Cannot specify both --hybrid and --v1"))
+        console.print(_("[red]Error: Cannot specify both --hybrid and --v1[/red]"))
         raise click.Abort
 
     # Default to v1 if no format specified
@@ -145,12 +150,13 @@ def create_torrent(
 
     # Validate source path
     if not source.exists():  # pragma: no cover - Defensive check: Click validates paths, but this guards against race conditions
-        console.print(f"[red]Error: Source path does not exist: {source}[/red]")
+        logger.error(_("Source path does not exist: %s"), source)
+        console.print(_("[red]Error: Source path does not exist: {path}[/red]").format(path=source))
         raise click.Abort
 
     if source.is_dir() and not any(source.iterdir()):
         console.print(
-            "[red]Error: Source directory is empty[/red]",
+            _("[red]Error: Source directory is empty[/red]"),
         )
         raise click.Abort
 
@@ -158,22 +164,22 @@ def create_torrent(
     if piece_length is not None:
         if piece_length < 16384:  # 16 KiB minimum
             console.print(
-                "[red]Error: Piece length must be at least 16 KiB (16384 bytes)[/red]",
+                _("[red]Error: Piece length must be at least 16 KiB (16384 bytes)[/red]"),
             )
             raise click.Abort
         if piece_length & (piece_length - 1) != 0:
             console.print(
-                "[red]Error: Piece length must be a power of 2[/red]",
+                _("[red]Error: Piece length must be a power of 2[/red]"),
             )
             raise click.Abort
 
-    console.print(f"[cyan]Creating {torrent_format.upper()} torrent...[/cyan]")
-    console.print(f"[dim]Source: {source}[/dim]")
-    console.print(f"[dim]Output: {output}[/dim]")
+    console.print(_("[cyan]Creating {format} torrent...[/cyan]").format(format=torrent_format.upper()))
+    console.print(_("[dim]Source: {path}[/dim]").format(path=source))
+    console.print(_("[dim]Output: {path}[/dim]").format(path=output))
     if tracker:
-        console.print(f"[dim]Trackers: {len(tracker)}[/dim]")
+        console.print(_("[dim]Trackers: {count}[/dim]").format(count=len(tracker)))
     if web_seed:  # pragma: no cover - Web seeds info display, tested via torrent creation without web seeds
-        console.print(f"[dim]Web seeds: {len(web_seed)}[/dim]")
+        console.print(_("[dim]Web seeds: {count}[/dim]").format(count=len(web_seed)))
 
     try:
         with Progress(
@@ -182,7 +188,7 @@ def create_torrent(
             console=console,
         ) as progress:
             task = progress.add_task(
-                f"Generating {torrent_format.upper()} torrent...",
+                _("Generating {format} torrent...").format(format=torrent_format.upper()),
                 total=None,
             )
 
@@ -192,7 +198,7 @@ def create_torrent(
                 from ccbt.core.torrent_v2 import TorrentV2Parser
 
                 progress.update(
-                    task, description="Parsing files and building file tree..."
+                    task, description=_("Parsing files and building file tree...")
                 )
                 parser = TorrentV2Parser()
                 torrent_bytes = parser.generate_v2_torrent(
@@ -209,7 +215,7 @@ def create_torrent(
                 from ccbt.core.torrent_v2 import TorrentV2Parser
 
                 progress.update(
-                    task, description="Parsing files and building hybrid metadata..."
+                    task, description=_("Parsing files and building hybrid metadata...")
                 )
                 parser = TorrentV2Parser()
                 torrent_bytes = parser.generate_hybrid_torrent(
@@ -224,26 +230,26 @@ def create_torrent(
                 )
             else:  # v1
                 progress.update(
-                    task, description="V1 torrent generation not yet implemented"
+                    task, description=_("V1 torrent generation not yet implemented")
                 )
                 console.print(
-                    "[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]",
+                    _("[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]"),
                 )
                 console.print(
-                    "[yellow]Please use --v2 or --hybrid flags for now.[/yellow]",
+                    _("[yellow]Please use --v2 or --hybrid flags for now.[/yellow]"),
                 )
                 raise click.Abort
 
             if torrent_bytes:
                 # Save torrent file
-                progress.update(task, description=f"Saving torrent to {output}...")
+                progress.update(task, description=_("Saving torrent to {path}...").format(path=output))
                 output.parent.mkdir(parents=True, exist_ok=True)
                 with open(output, "wb") as f:
                     f.write(torrent_bytes)
 
-                progress.update(task, description=f"Torrent saved to {output}")
+                progress.update(task, description=_("Torrent saved to {path}").format(path=output))
                 console.print(
-                    f"[green]✓ Torrent created successfully: {output}[/green]"
+                    _("[green]✓ Torrent created successfully: {path}[/green]").format(path=output)
                 )
 
                 # Parse torrent to show info hashes
@@ -267,14 +273,20 @@ def create_torrent(
 
                     if info_hash_v2:
                         console.print(
-                            f"[dim]Info hash v2 (SHA-256): {info_hash_v2.hex()[:32]}...[/dim]",
+                            _("[dim]Info hash v2 (SHA-256): {hash}...[/dim]").format(hash=info_hash_v2.hex()[:32]),
                         )
                     if torrent_format == "hybrid" and info_hash_v1:
                         console.print(
-                            f"[dim]Info hash v1 (SHA-1): {info_hash_v1.hex()[:32]}...[/dim]",
+                            _("[dim]Info hash v1 (SHA-1): {hash}...[/dim]").format(hash=info_hash_v1.hex()[:32]),
                         )
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        logger.exception("Error creating torrent")
-        console.print(f"[red]Error: {e}[/red]")
+        logger.exception(_("Error creating torrent"))
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        raise click.Abort from e
+
+
+    except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
+        logger.exception(_("Error creating torrent"))
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.Abort from e

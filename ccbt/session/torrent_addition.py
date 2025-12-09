@@ -432,11 +432,34 @@ class TorrentAdditionHandler:
                             "Emergency: Triggering tracker announce for %s",
                             session.info.name,
                         )
-                        # CRITICAL FIX: Use configured listen_port instead of default 6881
+                        # CRITICAL FIX: Use listen_port_tcp (or listen_port as fallback) and get external port from NAT
+                        listen_port = (
+                            session.config.network.listen_port_tcp
+                            or session.config.network.listen_port
+                        )
+                        announce_port = listen_port
+
+                        # Try to get external port from NAT manager if available
+                        if (
+                            session.session_manager
+                            and hasattr(session.session_manager, "nat_manager")
+                            and session.session_manager.nat_manager
+                        ):
+                            try:
+                                external_port = (
+                                    await session.session_manager.nat_manager.get_external_port(
+                                        listen_port, "tcp"
+                                    )
+                                )
+                                if external_port is not None:
+                                    announce_port = external_port
+                            except Exception:
+                                pass  # Best-effort, use internal port
+
                         response = await asyncio.wait_for(
                             session.tracker.announce(
                                 td,
-                                port=session.config.network.listen_port,
+                                port=announce_port,
                             ),
                             timeout=10.0,
                         )

@@ -8,6 +8,11 @@ repo_name: ccbt
 
 theme:
   name: material
+  logo: assets/logo.png
+  favicon: assets/favicon.ico
+  repo_url: https://github.com/ccBittorrent/ccbt
+  repo_name: ccbt
+  edit_uri: edit/main/docs/
   palette:
     # Palette toggle for automatic mode
     - media: "(prefers-color-scheme)"
@@ -40,13 +45,37 @@ theme:
     - navigation.expand
     - navigation.path
     - navigation.indexes
+    - navigation.top
+    - navigation.tracking
     - search.highlight
     - search.share
+    - search.suggest
     - content.code.copy
     - content.code.annotate
+    - content.code.select
+    - content.tabs.link
+    - content.tooltips
 
 plugins:
   - search
+  - static-i18n:
+      default_language: en
+      languages:
+        en: English
+        es: Español
+        fr: Français
+        ja: 日本語
+        ko: 한국어
+        hi: हिन्दी
+        ur: اردو
+        fa: فارسی
+        th: ไทย
+        zh: 中文
+        arc: ܐܪܡܝܐ
+        eu: Euskara
+        ha: Hausa
+        sw: Kiswahili
+        yo: Yorùbá
   - mkdocstrings:
       handlers:
         python:
@@ -76,6 +105,13 @@ plugins:
               source_link_template: "https://github.com/ccBittorrent/ccbt/blob/main/{path}#L{start_line}-L{end_line}"
   - git-revision-date-localized
   - codeinclude
+  - blog:
+      blog_dir: blog
+      blog_title: Blog
+      blog_description: Latest news and updates about ccBitTorrent
+      post_date_format: YYYY-MM-DD
+      post_url_format: '{slug}'
+      post_excerpt_separator: <!-- more -->
   - coverage:
       page_path: reports/coverage
       html_report_dir: site/reports/htmlcov
@@ -136,42 +172,58 @@ markdown_extensions:
       toc_depth: 3
 
 nav:
-  - Home: index.md
-  - Getting Started: getting-started.md
+  - Home: en/index.md
+  - Getting Started: en/getting-started.md
   - User Guide:
-      - Bitonic: bitonic.md
-      - btbt CLI: btbt-cli.md
-      - Configuration: configuration.md
-      - Performance Tuning: performance.md
-      - Examples: examples.md
-  - BEP XET: bep_xet.md
+      - Bitonic: en/bitonic.md
+      - btbt CLI: en/btbt-cli.md
+      - Configuration: en/configuration.md
+      - Performance Tuning: en/performance.md
+      - Examples: en/examples.md
+  - BEP XET: en/bep_xet.md
   - Dev:
-      - API Reference: API.md
-      - Architecture: architecture.md
-      - Contributing: contributing.md
-      - CI/CD: CI_CD.md
-      - Release Checklist: RELEASE_CHECKLIST.md
-      - Unimplemented Methods: unimplemented-methods.md
+      - API Reference: en/API.md
+      - Architecture: en/architecture.md
+      - Contributing: en/contributing.md
+      - CI/CD: en/CI_CD.md
+      - Release Checklist: en/RELEASE_CHECKLIST.md
+      - Unimplemented Methods: en/unimplemented-methods.md
       - Appendices:
-          - BEP 52: bep52.md
-          - Encryption Benchmarks: performance/encryption_benchmark_report.md
+          - BEP 52: en/bep52.md
+          - Encryption Benchmarks: en/performance/encryption_benchmark_report.md
       - Reports:
-          - Coverage: reports/coverage.md
-          - Bandit: reports/bandit/index.md
-          - Benchmarks: reports/benchmarks/index.md
-  - License: license.md
-  - Funding: funding.md
+          - Coverage: en/reports/coverage.md
+          - Bandit: en/reports/bandit/index.md
+          - Benchmarks: en/reports/benchmarks/index.md
+  - License: en/license.md
+  - Blog: blog/index.md
+  - Funding: en/funding.md
 
 extra:
+  version: 1.0.0
+  generator: false
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/ccBittorrent/ccbt
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/ccbittorrent
     - icon: fontawesome/brands/x-twitter
-      link: https://xcom/josephpollack
+      link: https://x.com/josephpollack
     - icon: fontawesome/brands/discord
       link: https://discord.gg/ccbittorrent
+  author: ccBitTorrent Contributors
+  keywords:
+    - BitTorrent
+    - P2P
+    - Python
+    - XET
+    - IPFS
+    - TUI
+    - Textual
+    - CLI
+    - peer-to-peer
+    - file sharing
+    - torrent client
 
 copyright: Copyright © 2024 ccBitTorrent Contributors
 

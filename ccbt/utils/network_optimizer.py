@@ -13,7 +13,8 @@ import contextlib
 import socket
 import threading
 import time
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -61,6 +62,10 @@ class ConnectionStats:
     bytes_received: int = 0
     connection_time: float = 0.0
     last_activity: float = 0.0
+    # RTT and bandwidth measurements
+    rtt_ms: float = 0.0  
+    bandwidth_bps: float = 0.0 
+    rtt_measurer: Any = None  
 
 
 class SocketOptimizer:
@@ -114,27 +119,58 @@ class SocketOptimizer:
         self.logger = get_logger(__name__)
 
     def _calculate_optimal_buffer_size(
-        self, bandwidth_bps: float, rtt_ms: float
+        self,
+        bandwidth_bps: float | None = None,
+        rtt_ms: float | None = None,
+        connection_stats: ConnectionStats | None = None,
     ) -> int:
         """Calculate optimal buffer size using BDP (Bandwidth-Delay Product).
 
         Args:
-            bandwidth_bps: Bandwidth in bits per second
-            rtt_ms: Round-trip time in milliseconds
+            bandwidth_bps: Bandwidth in bits per second (optional, uses connection_stats if not provided)
+            rtt_ms: Round-trip time in milliseconds (optional, uses connection_stats if not provided)
+            connection_stats: Connection statistics with RTT/bandwidth measurements
 
         Returns:
             Optimal buffer size in bytes
 
         """
+        # Use measured values from connection_stats if available
+        if connection_stats:
+            if connection_stats.rtt_ms > 0:
+                rtt_ms = connection_stats.rtt_ms
+            if connection_stats.bandwidth_bps > 0:
+                bandwidth_bps = connection_stats.bandwidth_bps
+
+        # Fallback to config values if measurements unavailable
+        if bandwidth_bps is None or bandwidth_bps <= 0:
+            from ccbt.config.config import get_config
+
+            cfg = get_config()
+            # Estimate bandwidth from config (default to 100 Mbps if not set)
+            bandwidth_bps = getattr(cfg.network, "estimated_bandwidth_bps", 100_000_000)
+
+        if rtt_ms is None or rtt_ms <= 0:
+            # Default to 50ms if not measured
+            rtt_ms = 50.0
+
         # BDP = bandwidth * RTT
         # Optimal buffer = BDP * 2 (for TCP window scaling)
         bdp_bits = bandwidth_bps * rtt_ms / 1000
         bdp_bytes = bdp_bits / 8
         optimal_size = int(bdp_bytes * 2)
 
-        # Clamp to system maximum
-        max_size = self._get_max_buffer_size()
-        return min(optimal_size, max_size)
+        # Clamp to min/max from config
+        from ccbt.config.config import get_config
+
+        cfg = get_config()
+        min_buffer = getattr(cfg.network, "socket_min_buffer_kib", 64) * 1024
+        max_buffer = min(
+            getattr(cfg.network, "socket_max_buffer_kib", 65536) * 1024,
+            self._get_max_buffer_size(),
+        )
+
+        return max(min_buffer, min(optimal_size, max_buffer))
 
     def _get_max_buffer_size(self) -> int:
         """Get platform-specific maximum buffer size.
@@ -192,12 +228,18 @@ class SocketOptimizer:
         except (AttributeError, OSError):
             return False
 
-    def optimize_socket(self, sock: socket.socket, socket_type: SocketType) -> None:
+    def optimize_socket(
+        self,
+        sock: socket.socket,
+        socket_type: SocketType,
+        connection_stats: ConnectionStats | None = None,
+    ) -> None:
         """Optimize socket settings for the given type.
 
         Args:
             sock: Socket to optimize
             socket_type: Type of socket for optimization
+            connection_stats: Optional connection statistics with RTT/bandwidth measurements
 
         """
         config = self.configs.get(socket_type)
@@ -217,11 +259,12 @@ class SocketOptimizer:
 
             # Calculate buffer sizes
             if use_adaptive:
-                # For now, use configured values but could measure RTT/bandwidth
-                max_buffer = getattr(cfg.network, "socket_max_buffer_kib", 65536) * 1024
-                # Use max_buffer for now (could be optimized with actual measurements)
-                rcvbuf = min(max_buffer, self._get_max_buffer_size())
-                sndbuf = min(max_buffer, self._get_max_buffer_size())
+                # Use measured BDP if available, otherwise use config defaults
+                optimal_buffer = self._calculate_optimal_buffer_size(
+                    connection_stats=connection_stats
+                )
+                rcvbuf = optimal_buffer
+                sndbuf = optimal_buffer
             else:
                 rcvbuf = config.so_rcvbuf
                 sndbuf = config.so_sndbuf
@@ -349,6 +392,13 @@ class ConnectionPool:
         self.logger = get_logger(__name__)
         self._shutdown_event = threading.Event()
 
+        # Bandwidth measurement tracking
+        # Track bytes sent/received over time windows for bandwidth calculation
+        self._bandwidth_windows: dict[socket.socket, deque[tuple[float, int, int]]] = (
+            {}
+        )  # sock -> deque of (timestamp, bytes_sent, bytes_received)
+        self._bandwidth_window_size: float = 5.0  # 5 second window for bandwidth calculation
+
         # Start cleanup task
         self._cleanup_task = threading.Thread(
             target=self._cleanup_connections,
@@ -466,6 +516,8 @@ class ConnectionPool:
             del self.connection_times[sock]
         if sock in self.last_activity:
             del self.last_activity[sock]
+        if sock in self._bandwidth_windows:
+            del self._bandwidth_windows[sock]
 
     def _cleanup_connections(self) -> None:
         """Clean up idle and expired connections."""
@@ -515,9 +567,119 @@ class ConnectionPool:
                     "it will continue as daemon thread"
                 )
 
+    def update_bytes_transferred(
+        self, sock: socket.socket, bytes_sent: int, bytes_received: int
+    ) -> None:
+        """Update bytes transferred for bandwidth calculation.
+
+        Args:
+            sock: Socket connection
+            bytes_sent: Bytes sent since last update
+            bytes_received: Bytes received since last update
+        """
+        with self.lock:
+            current_time = time.time()
+            self.stats.bytes_sent += bytes_sent
+            self.stats.bytes_received += bytes_received
+
+            # Track bandwidth over time window
+            if sock not in self._bandwidth_windows:
+                self._bandwidth_windows[sock] = deque(maxlen=100)
+
+            window = self._bandwidth_windows[sock]
+            window.append((current_time, bytes_sent, bytes_received))
+
+            # Calculate bandwidth from recent window
+            if len(window) >= 2:
+                # Calculate bandwidth over the window
+                oldest_time, _, _ = window[0]
+                time_span = current_time - oldest_time
+
+                if time_span > 0:
+                    total_sent = sum(b[1] for b in window)
+                    total_received = sum(b[2] for b in window)
+                    total_bytes = total_sent + total_received
+
+                    # Bandwidth in bits per second
+                    bandwidth_bps = (total_bytes * 8) / time_span
+                    self.stats.bandwidth_bps = bandwidth_bps
+
+    def update_rtt(self, sock: socket.socket, rtt_ms: float) -> None:
+        """Update RTT measurement for a connection.
+
+        Args:
+            sock: Socket connection
+            rtt_ms: RTT measurement in milliseconds
+        """
+        with self.lock:
+            # Initialize RTT measurer if needed
+            if self.stats.rtt_measurer is None:
+                from ccbt.utils.rtt_measurement import RTTMeasurer
+
+                self.stats.rtt_measurer = RTTMeasurer()
+
+            # Update RTT estimate (use EWMA from measurer)
+            # For now, use simple average of recent measurements
+            if self.stats.rtt_ms == 0.0:
+                self.stats.rtt_ms = rtt_ms
+            else:
+                # Simple EWMA: new_rtt = alpha * new_sample + (1 - alpha) * old_rtt
+                alpha = 0.125  # RFC 6298 default
+                self.stats.rtt_ms = alpha * rtt_ms + (1 - alpha) * self.stats.rtt_ms
+
+    def get_connection_stats(self, sock: socket.socket) -> ConnectionStats | None:
+        """Get statistics for a specific connection.
+
+        Args:
+            sock: Socket connection
+
+        Returns:
+            ConnectionStats for the connection, or None if not found
+        """
+        with self.lock:
+            if sock not in self.connection_times:
+                return None
+
+            # Create connection-specific stats
+            stats = ConnectionStats(
+                total_connections=1,
+                active_connections=1 if sock in self.last_activity else 0,
+                bytes_sent=self.stats.bytes_sent,  # Aggregate for now
+                bytes_received=self.stats.bytes_received,  # Aggregate for now
+                connection_time=self.connection_times.get(sock, 0.0),
+                last_activity=self.last_activity.get(sock, 0.0),
+                rtt_ms=self.stats.rtt_ms,
+                bandwidth_bps=self.stats.bandwidth_bps,
+                rtt_measurer=self.stats.rtt_measurer,
+            )
+
+            return stats
+
     def get_stats(self) -> ConnectionStats:
         """Get connection pool statistics."""
         with self.lock:
+            # Calculate aggregate bandwidth if we have measurements
+            if self._bandwidth_windows:
+                current_time = time.time()
+                total_bandwidth_bps = 0.0
+                active_windows = 0
+
+                for window in self._bandwidth_windows.values():
+                    if len(window) >= 2:
+                        oldest_time, _, _ = window[0]
+                        time_span = current_time - oldest_time
+
+                        if time_span > 0:
+                            total_sent = sum(b[1] for b in window)
+                            total_received = sum(b[2] for b in window)
+                            total_bytes = total_sent + total_received
+                            bandwidth_bps = (total_bytes * 8) / time_span
+                            total_bandwidth_bps += bandwidth_bps
+                            active_windows += 1
+
+                if active_windows > 0:
+                    self.stats.bandwidth_bps = total_bandwidth_bps / active_windows
+
             return ConnectionStats(
                 total_connections=self.stats.total_connections,
                 active_connections=self.stats.active_connections,
@@ -526,6 +688,9 @@ class ConnectionPool:
                 bytes_received=self.stats.bytes_received,
                 connection_time=self.stats.connection_time,
                 last_activity=self.stats.last_activity,
+                rtt_ms=self.stats.rtt_ms,
+                bandwidth_bps=self.stats.bandwidth_bps,
+                rtt_measurer=self.stats.rtt_measurer,
             )
 
 

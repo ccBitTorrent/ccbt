@@ -56,7 +56,7 @@ def workflow_extract() -> bool:
     )
 
     try:
-        result = subprocess.run(
+        subprocess.run(
             [
                 sys.executable,
                 str(extract_script),

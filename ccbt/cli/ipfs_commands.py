@@ -1,3 +1,4 @@
+
 """IPFS protocol CLI commands (add, get, pin, unpin, stats, peers)."""
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from ccbt.i18n import _
 from ccbt.protocols.base import ProtocolType
 
 # IPFS support is optional - handle ImportError gracefully
@@ -114,7 +116,7 @@ def ipfs_add(path: Path, pin: bool, json_output: bool) -> None:
             return
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -127,14 +129,14 @@ def ipfs_add(path: Path, pin: bool, json_output: bool) -> None:
                 if json_output:
                     console.print(json.dumps({"cid": cid, "pinned": pin}))
                 else:
-                    console.print(f"[green]Added to IPFS:[/green] {cid}")
+                    console.print(_("[green]Added to IPFS:[/green] {cid}").format(cid=cid))
                     if pin:
-                        console.print("[green]Content pinned[/green]")
+                        console.print(_("[green]Content pinned[/green]"))
             else:
-                console.print("[red]Directories not yet supported[/red]")
+                console.print(_("[red]Directories not yet supported[/red]"))
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error adding content: {e}[/red]")
-            logger.exception("Failed to add content")
+            console.print(_("[red]Error adding content: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to add content"))
 
     asyncio.run(_add())
 
@@ -152,13 +154,13 @@ def ipfs_get(cid: str, output: Path | None, json_output: bool) -> None:
     async def _get() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
             content = await ipfs.get_content(cid)
             if not content:
-                console.print(f"[red]Content not found: {cid}[/red]")
+                console.print(_("[red]Content not found: {cid}[/red]").format(cid=cid))
                 return
 
             if output:
@@ -166,14 +168,14 @@ def ipfs_get(cid: str, output: Path | None, json_output: bool) -> None:
                 if json_output:
                     console.print(json.dumps({"cid": cid, "saved_to": str(output)}))
                 else:
-                    console.print(f"[green]Content saved to:[/green] {output}")
+                    console.print(_("[green]Content saved to:[/green] {output}").format(output=output))
             elif json_output:
                 console.print(json.dumps({"cid": cid, "size": len(content)}))
             else:
                 console.print(content.decode("utf-8", errors="replace"))
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error getting content: {e}[/red]")
-            logger.exception("Failed to get content")
+            console.print(_("[red]Error getting content: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to get content"))
 
     asyncio.run(_get())
 
@@ -188,7 +190,7 @@ def ipfs_pin(cid: str, json_output: bool) -> None:
     async def _pin() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -196,10 +198,10 @@ def ipfs_pin(cid: str, json_output: bool) -> None:
             if json_output:
                 console.print(json.dumps({"cid": cid, "pinned": True}))
             else:
-                console.print(f"[green]Pinned:[/green] {cid}")
+                console.print(_("[green]Pinned:[/green] {cid}").format(cid=cid))
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error pinning content: {e}[/red]")
-            logger.exception("Failed to pin content")
+            console.print(_("[red]Error pinning content: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to pin content"))
 
     asyncio.run(_pin())
 
@@ -214,7 +216,7 @@ def ipfs_unpin(cid: str, json_output: bool) -> None:
     async def _unpin() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -222,10 +224,10 @@ def ipfs_unpin(cid: str, json_output: bool) -> None:
             if json_output:
                 console.print(json.dumps({"cid": cid, "pinned": False}))
             else:
-                console.print(f"[green]Unpinned:[/green] {cid}")
+                console.print(_("[green]Unpinned:[/green] {cid}").format(cid=cid))
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error unpinning content: {e}[/red]")
-            logger.exception("Failed to unpin content")
+            console.print(_("[red]Error unpinning content: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to unpin content"))
 
     asyncio.run(_unpin())
 
@@ -241,7 +243,7 @@ def ipfs_stats(cid: str | None, all_stats: bool, json_output: bool) -> None:
     async def _stats() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -273,12 +275,12 @@ def ipfs_stats(cid: str | None, all_stats: bool, json_output: bool) -> None:
                         table.add_row(key, str(value))
                     console.print(table)
                 else:
-                    console.print(f"[red]No stats found for CID: {cid}[/red]")
+                    console.print(_("[red]No stats found for CID: {cid}[/red]").format(cid=cid))
             else:
-                console.print("[red]Specify CID or use --all[/red]")
+                console.print(_("[red]Specify CID or use --all[/red]"))
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error getting stats: {e}[/red]")
-            logger.exception("Failed to get stats")
+            console.print(_("[red]Error getting stats: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to get stats"))
 
     asyncio.run(_stats())
 
@@ -292,7 +294,7 @@ def ipfs_peers(json_output: bool) -> None:
     async def _peers() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -321,8 +323,8 @@ def ipfs_peers(json_output: bool) -> None:
                     )
                 console.print(table)
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error getting peers: {e}[/red]")
-            logger.exception("Failed to get peers")
+            console.print(_("[red]Error getting peers: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to get peers"))
 
     asyncio.run(_peers())
 
@@ -336,7 +338,7 @@ def ipfs_content(json_output: bool) -> None:
     async def _content() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -365,8 +367,8 @@ def ipfs_content(json_output: bool) -> None:
                     )
                 console.print(table)
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error getting content: {e}[/red]")
-            logger.exception("Failed to get content")
+            console.print(_("[red]Error getting content: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to get content"))
 
     asyncio.run(_content())
 

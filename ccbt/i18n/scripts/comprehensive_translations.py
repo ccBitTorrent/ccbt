@@ -1223,7 +1223,7 @@ msgstr ""
 
 
 if __name__ == "__main__":
-    base_dir = Path(__file__).parent / "locales"
+    base_dir = Path(__file__).parent.parent / "locales"
     english_po_path = base_dir / "en" / "LC_MESSAGES" / "ccbt.po"
 
     entries = read_po_entries(english_po_path)

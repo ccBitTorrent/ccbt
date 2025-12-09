@@ -85,7 +85,6 @@ async def init_metrics() -> MetricsCollector | None:
 
     """
     import asyncio
-    import logging
 
     from ccbt.utils.logging_config import get_logger
 
@@ -191,8 +190,6 @@ async def shutdown_metrics() -> None:
         ```
 
     """
-    import logging
-
     from ccbt.utils.logging_config import get_logger
 
     logger = get_logger(__name__)

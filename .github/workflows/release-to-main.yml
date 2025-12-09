@@ -1,0 +1,142 @@
+name: Release to Main
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Source branch to release from (default: dev)'
+        required: false
+        default: 'dev'
+        type: string
+
+jobs:
+  release-to-main:
+    name: release-to-main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_branch || 'dev' }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Extract current version from pyproject.toml
+        id: current_version
+        run: |
+          VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+      
+      - name: Calculate new version
+        id: new_version
+        run: |
+          CURRENT="${{ steps.current_version.outputs.version }}"
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          
+          # Calculate new version: {major}.{minor+1}.0 (reset patch to 0)
+          NEW_MINOR=$((MINOR + 1))
+          NEW_VERSION="$MAJOR.$NEW_MINOR.0"
+          
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION (from $CURRENT)"
+      
+      - name: Validate new version
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          MAJOR=$(echo "$NEW_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$NEW_VERSION" | cut -d. -f2)
+          
+          # Main branch: version must be >= 0.1.0
+          if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -lt 1 ]; then
+            echo "❌ Main branch requires version >= 0.1.0, calculated $NEW_VERSION"
+            exit 1
+          fi
+          echo "✅ New version validation passed: $NEW_VERSION"
+      
+      - name: Checkout main branch
+        run: |
+          git fetch origin main
+          git checkout main
+          git pull origin main
+      
+      - name: Update version in pyproject.toml
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+          echo "Updated pyproject.toml to version $NEW_VERSION"
+      
+      - name: Update version in ccbt/__init__.py
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" ccbt/__init__.py
+          echo "Updated __init__.py to version $NEW_VERSION"
+      
+      - name: Verify version consistency
+        run: |
+          PYPROJECT_VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          INIT_VERSION=$(grep -E '__version__' ccbt/__init__.py | sed "s/.*['\"]\(.*\)['\"].*/\1/")
+          
+          if [ "$PYPROJECT_VERSION" != "$INIT_VERSION" ]; then
+            echo "❌ Version mismatch after update!"
+            echo "   pyproject.toml: $PYPROJECT_VERSION"
+            echo "   __init__.py: $INIT_VERSION"
+            exit 1
+          fi
+          echo "✅ Version consistency verified: $PYPROJECT_VERSION"
+      
+      - name: Commit version bump
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          git add pyproject.toml ccbt/__init__.py
+          git commit -m "chore: bump version to $NEW_VERSION for main release"
+      
+      - name: Create and push git tag
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          git tag -a "v$NEW_VERSION" -m "Release v$NEW_VERSION"
+          git push origin main
+          git push origin "v$NEW_VERSION"
+          echo "✅ Pushed version $NEW_VERSION to main and created tag v$NEW_VERSION"
+      
+      - name: Release summary
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
+          echo "## ✅ Release to Main Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Source Version:** $CURRENT_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**New Version:** $NEW_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Actions Taken:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Updated pyproject.toml to $NEW_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- Updated ccbt/__init__.py to $NEW_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- Committed changes to main branch" >> $GITHUB_STEP_SUMMARY
+          echo "- Created and pushed tag v$NEW_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "- The tag push will trigger the release workflow" >> $GITHUB_STEP_SUMMARY
+          echo "- PyPI publication will happen automatically" >> $GITHUB_STEP_SUMMARY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
