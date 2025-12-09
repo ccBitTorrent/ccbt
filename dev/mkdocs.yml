@@ -59,6 +59,8 @@ theme:
 plugins:
   - search
   - i18n:
+      docs_structure: folder
+      fallback_to_default: true
       languages:
         - locale: en
           name: English
@@ -120,7 +122,7 @@ plugins:
   - git-revision-date-localized
   - codeinclude
   - blog:
-      blog_dir: blog
+      blog_dir: en/blog
       post_date_format: YYYY-MM-DD
       post_url_format: '{slug}'
       post_excerpt_separator: <!-- more -->
@@ -208,7 +210,7 @@ nav:
           - Bandit: en/reports/bandit/index.md
           - Benchmarks: en/reports/benchmarks/index.md
   - License: en/license.md
-  - Blog: blog/index.md
+  - Blog: en/blog/index.md
   - Funding: en/funding.md
 
 extra:
