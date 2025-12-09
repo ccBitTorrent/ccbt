@@ -78,6 +78,8 @@ dev = [
     "mkdocstrings[python]>=0.26.1",
     "pymdown-extensions>=10.15",
     "mkdocs-codeinclude-plugin>=0.2.1",
+    "mkdocs-static-i18n>=1.0.0",
+    "mkdocs-blog-plugin>=0.25.0",
     "ty>=0.0.1a24",
     "textual-dev>=1.6.1",
 ]
@@ -308,6 +310,8 @@ dev = [
     "ty>=0.0.1a24",
     "mkdocs-coverage>=1.1.0",
     "mkdocs-codeinclude-plugin>=0.2.1",
+    "mkdocs-static-i18n>=1.0.0",
+    "mkdocs-blog-plugin>=0.25.0",
     "types-pyyaml>=6.0.12.20241230",
 ]
 

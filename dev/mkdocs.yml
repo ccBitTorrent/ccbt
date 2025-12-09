@@ -58,24 +58,38 @@ theme:
 
 plugins:
   - search
-  - static-i18n:
-      default_language: en
+  - i18n:
       languages:
-        en: English
-        es: Español
-        fr: Français
-        ja: 日本語
-        ko: 한국어
-        hi: हिन्दी
-        ur: اردو
-        fa: فارسی
-        th: ไทย
-        zh: 中文
-        arc: ܐܪܡܝܐ
-        eu: Euskara
-        ha: Hausa
-        sw: Kiswahili
-        yo: Yorùbá
+        - locale: en
+          name: English
+          default: true
+          build: true
+        - locale: es
+          name: Español
+        - locale: fr
+          name: Français
+        - locale: ja
+          name: 日本語
+        - locale: ko
+          name: 한국어
+        - locale: hi
+          name: हिन्दी
+        - locale: ur
+          name: اردو
+        - locale: fa
+          name: فارسی
+        - locale: th
+          name: ไทย
+        - locale: zh
+          name: 中文
+        - locale: eu
+          name: Euskara
+        - locale: ha
+          name: Hausa
+        - locale: sw
+          name: Kiswahili
+        - locale: yo
+          name: Yorùbá
   - mkdocstrings:
       handlers:
         python:
@@ -107,8 +121,6 @@ plugins:
   - codeinclude
   - blog:
       blog_dir: blog
-      blog_title: Blog
-      blog_description: Latest news and updates about ccBitTorrent
       post_date_format: YYYY-MM-DD
       post_url_format: '{slug}'
       post_excerpt_separator: <!-- more -->

@@ -14,7 +14,7 @@ mkdocs-git-revision-date-localized-plugin>=1.4.7
 mkdocstrings[python]>=0.26.1
 mkdocs-codeinclude-plugin>=0.2.1
 mkdocs-coverage>=1.1.0
-mkdocs-blog-plugin>=1.0.0
+mkdocs-blog-plugin>=0.25.0
 mkdocs-static-i18n>=1.0.0
 
 # Markdown extensions
@@ -44,7 +44,7 @@ mkdocs-git-revision-date-localized-plugin>=1.4.7
 mkdocstrings[python]>=0.26.1
 mkdocs-codeinclude-plugin>=0.2.1
 mkdocs-coverage>=1.1.0
-mkdocs-blog-plugin>=1.0.0
+mkdocs-blog-plugin>=0.25.0
 mkdocs-static-i18n>=1.0.0
 
 # Markdown extensions
