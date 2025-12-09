@@ -1,0 +1,572 @@
+{
+  "entries": [
+    {
+      "timestamp": "2025-12-09T13:52:13.560824+00:00",
+      "git": {
+        "commit_hash": "862dc936e28b5c54448b586719c41c05e5a3a37f",
+        "commit_hash_short": "862dc93",
+        "branch": "dev",
+        "author": "Joseph Pollack",
+        "is_dirty": false
+      },
+      "platform": {
+        "system": "Windows",
+        "release": "11",
+        "python": "3.13.3"
+      },
+      "config": "performance",
+      "results": [
+        {
+          "cipher": "RC4",
+          "operation": "encrypt",
+          "data_size_bytes": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.035020899998926325,
+          "throughput_bytes_per_s": 2923968.2590435822
+        },
+        {
+          "cipher": "RC4",
+          "operation": "decrypt",
+          "data_size_bytes": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.08394870000120136,
+          "throughput_bytes_per_s": 1219792.5637744789
+        },
+        {
+          "cipher": "AES-128",
+          "operation": "encrypt",
+          "data_size_bytes": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.00018220000129076652,
+          "throughput_bytes_per_s": 562019754.5255967
+        },
+        {
+          "cipher": "AES-128",
+          "operation": "decrypt",
+          "data_size_bytes": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.00035339999885763973,
+          "throughput_bytes_per_s": 289756650.62537205
+        },
+        {
+          "cipher": "AES-256",
+          "operation": "encrypt",
+          "data_size_bytes": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.00019609999799286015,
+          "throughput_bytes_per_s": 522182565.2630976
+        },
+        {
+          "cipher": "AES-256",
+          "operation": "decrypt",
+          "data_size_bytes": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.00039569999717059545,
+          "throughput_bytes_per_s": 258781907.33434093
+        },
+        {
+          "cipher": "RC4",
+          "operation": "encrypt",
+          "data_size_bytes": 65536,
+          "iterations": 100,
+          "elapsed_s": 2.4566952000022866,
+          "throughput_bytes_per_s": 2667648.7990833786
+        },
+        {
+          "cipher": "RC4",
+          "operation": "decrypt",
+          "data_size_bytes": 65536,
+          "iterations": 100,
+          "elapsed_s": 5.109665300002234,
+          "throughput_bytes_per_s": 1282588.900685361
+        },
+        {
+          "cipher": "AES-128",
+          "operation": "encrypt",
+          "data_size_bytes": 65536,
+          "iterations": 100,
+          "elapsed_s": 0.007448699998349184,
+          "throughput_bytes_per_s": 879831380.1673366
+        },
+        {
+          "cipher": "AES-128",
+          "operation": "decrypt",
+          "data_size_bytes": 65536,
+          "iterations": 100,
+          "elapsed_s": 0.014352899997902568,
+          "throughput_bytes_per_s": 456604588.6864464
+        },
+        {
+          "cipher": "AES-256",
+          "operation": "encrypt",
+          "data_size_bytes": 65536,
+          "iterations": 100,
+          "elapsed_s": 0.00923770000008517,
+          "throughput_bytes_per_s": 709440661.6300137
+        },
+        {
+          "cipher": "AES-256",
+          "operation": "decrypt",
+          "data_size_bytes": 65536,
+          "iterations": 100,
+          "elapsed_s": 0.018289499999809777,
+          "throughput_bytes_per_s": 358325815.3622659
+        },
+        {
+          "cipher": "RC4",
+          "operation": "encrypt",
+          "data_size_bytes": 1048576,
+          "iterations": 100,
+          "elapsed_s": 38.34660669999721,
+          "throughput_bytes_per_s": 2734468.8102482776
+        },
+        {
+          "cipher": "RC4",
+          "operation": "decrypt",
+          "data_size_bytes": 1048576,
+          "iterations": 100,
+          "elapsed_s": 84.72597980000137,
+          "throughput_bytes_per_s": 1237608.5853184587
+        },
+        {
+          "cipher": "AES-128",
+          "operation": "encrypt",
+          "data_size_bytes": 1048576,
+          "iterations": 100,
+          "elapsed_s": 0.23909009999988484,
+          "throughput_bytes_per_s": 438569392.8776244
+        },
+        {
+          "cipher": "AES-128",
+          "operation": "decrypt",
+          "data_size_bytes": 1048576,
+          "iterations": 100,
+          "elapsed_s": 0.4531788999993296,
+          "throughput_bytes_per_s": 231382352.53264245
+        },
+        {
+          "cipher": "AES-256",
+          "operation": "encrypt",
+          "data_size_bytes": 1048576,
+          "iterations": 100,
+          "elapsed_s": 0.2462569999988773,
+          "throughput_bytes_per_s": 425805560.85909456
+        },
+        {
+          "cipher": "AES-256",
+          "operation": "decrypt",
+          "data_size_bytes": 1048576,
+          "iterations": 100,
+          "elapsed_s": 0.4706774999976915,
+          "throughput_bytes_per_s": 222780141.3930224
+        },
+        {
+          "operation": "keypair_generation",
+          "key_size": 768,
+          "iterations": 100,
+          "elapsed_s": 0.024108700003125705,
+          "avg_latency_ms": 0.2326360002916772
+        },
+        {
+          "operation": "keypair_generation",
+          "key_size": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.02647840000281576,
+          "avg_latency_ms": 0.2628589998857933
+        },
+        {
+          "operation": "shared_secret",
+          "key_size": 768,
+          "iterations": 100,
+          "elapsed_s": 0.026374100001703482,
+          "avg_latency_ms": 0.26327800002036383
+        },
+        {
+          "operation": "shared_secret",
+          "key_size": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.02570209999976214,
+          "avg_latency_ms": 0.25580299989087507
+        },
+        {
+          "operation": "key_derivation",
+          "key_size": 0,
+          "iterations": 100,
+          "elapsed_s": 0.004451500000868691,
+          "avg_latency_ms": 0.04377700006443774
+        },
+        {
+          "role": "initiator",
+          "dh_key_size": 768,
+          "iterations": 20,
+          "elapsed_s": 0.9356023000109417,
+          "avg_latency_ms": 46.780115000547084,
+          "success_rate": 100.0
+        },
+        {
+          "role": "initiator",
+          "dh_key_size": 1024,
+          "iterations": 20,
+          "elapsed_s": 1.3241487000050256,
+          "avg_latency_ms": 66.20743500025128,
+          "success_rate": 100.0
+        },
+        {
+          "operation": "read",
+          "stream_type": "plain",
+          "data_size_bytes": 1024,
+          "buffer_size": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.002405799979896983,
+          "throughput_bytes_per_s": 42563804.49566086,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "read",
+          "stream_type": "encrypted",
+          "data_size_bytes": 1024,
+          "buffer_size": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.05676259998290334,
+          "throughput_bytes_per_s": 1804004.7501496137,
+          "overhead_ms": 0.5364859997644089
+        },
+        {
+          "operation": "write",
+          "stream_type": "plain",
+          "data_size_bytes": 1024,
+          "buffer_size": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.029596999982459238,
+          "throughput_bytes_per_s": 3459810.117940592,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "write",
+          "stream_type": "encrypted",
+          "data_size_bytes": 1024,
+          "buffer_size": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.06164100000751205,
+          "throughput_bytes_per_s": 1661231.9720238275,
+          "overhead_ms": 0.33482899994851323
+        },
+        {
+          "operation": "read",
+          "stream_type": "plain",
+          "data_size_bytes": 1024,
+          "buffer_size": 16384,
+          "iterations": 100,
+          "elapsed_s": 0.002420699987851549,
+          "throughput_bytes_per_s": 42301813.73730802,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "read",
+          "stream_type": "encrypted",
+          "data_size_bytes": 1024,
+          "buffer_size": 16384,
+          "iterations": 100,
+          "elapsed_s": 0.04569039998023072,
+          "throughput_bytes_per_s": 2241171.012823401,
+          "overhead_ms": 0.4321579998213565
+        },
+        {
+          "operation": "write",
+          "stream_type": "plain",
+          "data_size_bytes": 1024,
+          "buffer_size": 16384,
+          "iterations": 100,
+          "elapsed_s": 0.027906800016353372,
+          "throughput_bytes_per_s": 3669356.5704413853,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "write",
+          "stream_type": "encrypted",
+          "data_size_bytes": 1024,
+          "buffer_size": 16384,
+          "iterations": 100,
+          "elapsed_s": 0.06655109998246189,
+          "throughput_bytes_per_s": 1538667.2801348935,
+          "overhead_ms": 0.40838399985659635
+        },
+        {
+          "operation": "read",
+          "stream_type": "plain",
+          "data_size_bytes": 1024,
+          "buffer_size": 65536,
+          "iterations": 100,
+          "elapsed_s": 0.0023756999944453128,
+          "throughput_bytes_per_s": 43103085.507187,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "read",
+          "stream_type": "encrypted",
+          "data_size_bytes": 1024,
+          "buffer_size": 65536,
+          "iterations": 100,
+          "elapsed_s": 0.04349820001152693,
+          "throughput_bytes_per_s": 2354120.3997605466,
+          "overhead_ms": 0.4102550001698546
+        },
+        {
+          "operation": "write",
+          "stream_type": "plain",
+          "data_size_bytes": 1024,
+          "buffer_size": 65536,
+          "iterations": 100,
+          "elapsed_s": 0.028013700011797482,
+          "throughput_bytes_per_s": 3655354.3429420614,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "write",
+          "stream_type": "encrypted",
+          "data_size_bytes": 1024,
+          "buffer_size": 65536,
+          "iterations": 100,
+          "elapsed_s": 0.06404350000957493,
+          "throughput_bytes_per_s": 1598913.2384190515,
+          "overhead_ms": 0.36522200018225703
+        },
+        {
+          "operation": "read",
+          "stream_type": "plain",
+          "data_size_bytes": 65536,
+          "buffer_size": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.09465430001728237,
+          "throughput_bytes_per_s": 69237213.7219695,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "read",
+          "stream_type": "encrypted",
+          "data_size_bytes": 65536,
+          "buffer_size": 1024,
+          "iterations": 100,
+          "elapsed_s": 2.826911599968298,
+          "throughput_bytes_per_s": 2318289.684075545,
+          "overhead_ms": 27.010294999636244
+        },
+        {
+          "operation": "write",
+          "stream_type": "plain",
+          "data_size_bytes": 65536,
+          "buffer_size": 1024,
+          "iterations": 100,
+          "elapsed_s": 0.203683199993975,
+          "throughput_bytes_per_s": 32175456.78874771,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "write",
+          "stream_type": "encrypted",
+          "data_size_bytes": 65536,
+          "buffer_size": 1024,
+          "iterations": 100,
+          "elapsed_s": 2.794964400014578,
+          "throughput_bytes_per_s": 2344788.3629450942,
+          "overhead_ms": 25.987471000080404
+        },
+        {
+          "operation": "read",
+          "stream_type": "plain",
+          "data_size_bytes": 65536,
+          "buffer_size": 16384,
+          "iterations": 100,
+          "elapsed_s": 0.00868250001076376,
+          "throughput_bytes_per_s": 754805642.6001097,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "read",
+          "stream_type": "encrypted",
+          "data_size_bytes": 65536,
+          "buffer_size": 16384,
+          "iterations": 100,
+          "elapsed_s": 2.7098723000126483,
+          "throughput_bytes_per_s": 2418416.543085595,
+          "overhead_ms": 26.998900000107824
+        },
+        {
+          "operation": "write",
+          "stream_type": "plain",
+          "data_size_bytes": 65536,
+          "buffer_size": 16384,
+          "iterations": 100,
+          "elapsed_s": 0.03562729998884606,
+          "throughput_bytes_per_s": 183948825.81761047,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "write",
+          "stream_type": "encrypted",
+          "data_size_bytes": 65536,
+          "buffer_size": 16384,
+          "iterations": 100,
+          "elapsed_s": 2.321184499989613,
+          "throughput_bytes_per_s": 2823386.077250355,
+          "overhead_ms": 22.826975999996648
+        },
+        {
+          "operation": "read",
+          "stream_type": "plain",
+          "data_size_bytes": 65536,
+          "buffer_size": 65536,
+          "iterations": 100,
+          "elapsed_s": 0.0026733000049716793,
+          "throughput_bytes_per_s": 2451501884.491796,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "read",
+          "stream_type": "encrypted",
+          "data_size_bytes": 65536,
+          "buffer_size": 65536,
+          "iterations": 100,
+          "elapsed_s": 2.315181699999812,
+          "throughput_bytes_per_s": 2830706.548864192,
+          "overhead_ms": 23.125596000099904
+        },
+        {
+          "operation": "write",
+          "stream_type": "plain",
+          "data_size_bytes": 65536,
+          "buffer_size": 65536,
+          "iterations": 100,
+          "elapsed_s": 0.02752360000522458,
+          "throughput_bytes_per_s": 238108386.93906263,
+          "overhead_ms": 0.0
+        },
+        {
+          "operation": "write",
+          "stream_type": "encrypted",
+          "data_size_bytes": 65536,
+          "buffer_size": 65536,
+          "iterations": 100,
+          "elapsed_s": 2.295241599982546,
+          "throughput_bytes_per_s": 2855298.5446280846,
+          "overhead_ms": 22.645764999870153
+        },
+        {
+          "connection_type": "plain",
+          "dh_key_size": 0,
+          "iterations": 10,
+          "elapsed_s": 0.005885299990040949,
+          "avg_latency_ms": 0.5885299990040949,
+          "overhead_ms": 0.0,
+          "overhead_percent": 0.0
+        },
+        {
+          "connection_type": "encrypted",
+          "dh_key_size": 768,
+          "iterations": 10,
+          "elapsed_s": 0.41103300000031595,
+          "avg_latency_ms": 41.103300000031595,
+          "overhead_ms": 40.5147700010275,
+          "overhead_percent": 6884.061996769277
+        },
+        {
+          "connection_type": "encrypted",
+          "dh_key_size": 1024,
+          "iterations": 10,
+          "elapsed_s": 0.615147699998488,
+          "avg_latency_ms": 61.514769999848795,
+          "overhead_ms": 60.9262400008447,
+          "overhead_percent": 10352.274328231957
+        },
+        {
+          "transfer_type": "plain",
+          "piece_size_bytes": 262144,
+          "iterations": 20,
+          "elapsed_s": 0.005750799991801614,
+          "throughput_bytes_per_s": 911678376.4822792,
+          "overhead_percent": 0.0
+        },
+        {
+          "transfer_type": "encrypted",
+          "piece_size_bytes": 262144,
+          "iterations": 20,
+          "elapsed_s": 3.5739360000006855,
+          "throughput_bytes_per_s": 1466976.4651630567,
+          "overhead_percent": 99.83909057152113
+        },
+        {
+          "transfer_type": "plain",
+          "piece_size_bytes": 524288,
+          "iterations": 20,
+          "elapsed_s": 0.014379799999005627,
+          "throughput_bytes_per_s": 729200684.3436694,
+          "overhead_percent": 0.0
+        },
+        {
+          "transfer_type": "encrypted",
+          "piece_size_bytes": 524288,
+          "iterations": 20,
+          "elapsed_s": 7.303951000008965,
+          "throughput_bytes_per_s": 1435628.4701235166,
+          "overhead_percent": 99.80312299467798
+        },
+        {
+          "transfer_type": "plain",
+          "piece_size_bytes": 1048576,
+          "iterations": 20,
+          "elapsed_s": 0.01115389999904437,
+          "throughput_bytes_per_s": 1880196164.7313292,
+          "overhead_percent": 0.0
+        },
+        {
+          "transfer_type": "encrypted",
+          "piece_size_bytes": 1048576,
+          "iterations": 20,
+          "elapsed_s": 14.624033600004623,
+          "throughput_bytes_per_s": 1434044.8451919155,
+          "overhead_percent": 99.92372897721569
+        },
+        {
+          "operation": "cipher",
+          "cipher_type": "RC4",
+          "dh_key_size": 0,
+          "memory_bytes": 131072,
+          "instances": 100,
+          "avg_bytes_per_instance": 1310
+        },
+        {
+          "operation": "cipher",
+          "cipher_type": "AES-128",
+          "dh_key_size": 0,
+          "memory_bytes": 0,
+          "instances": 100,
+          "avg_bytes_per_instance": 0
+        },
+        {
+          "operation": "cipher",
+          "cipher_type": "AES-256",
+          "dh_key_size": 0,
+          "memory_bytes": 0,
+          "instances": 100,
+          "avg_bytes_per_instance": 0
+        },
+        {
+          "operation": "handshake",
+          "cipher_type": "RC4",
+          "dh_key_size": 768,
+          "memory_bytes": 16384,
+          "instances": 10,
+          "avg_bytes_per_instance": 1638
+        },
+        {
+          "operation": "handshake",
+          "cipher_type": "RC4",
+          "dh_key_size": 1024,
+          "memory_bytes": 0,
+          "instances": 10,
+          "avg_bytes_per_instance": 0
+        }
+      ]
+    }
+  ]
+}
