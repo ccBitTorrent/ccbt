@@ -126,9 +126,11 @@ plugins:
       post_date_format: YYYY-MM-DD
       post_url_format: '{slug}'
       post_excerpt_separator: <!-- more -->
-  - coverage:
-      page_path: reports/coverage
-      html_report_dir: site/reports/htmlcov
+  # Coverage plugin disabled temporarily due to compatibility issue with i18n plugin
+  # The coverage report is still generated and available at site/reports/htmlcov
+  # - coverage:
+  #     page_path: en/reports/coverage
+  #     html_report_dir: site/reports/htmlcov
 
 # Suppress warnings for code file links (these are intentional references to source code)
 # Warnings about links to Python files and TOML configs are expected
