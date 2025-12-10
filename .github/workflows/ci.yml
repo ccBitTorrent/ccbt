@@ -127,7 +127,7 @@ jobs:
 
     - name: Build documentation
       run: |
-        uv run python -c "import sys; import os; script_path = os.path.abspath(os.path.join('dev', 'scripts')); sys.path.insert(0, script_path); import mkdocs_i18n_fix" && uv run mkdocs build --strict -f dev/mkdocs.yml
+        uv run python -c "import sys; import importlib.util; spec = importlib.util.spec_from_file_location('mkdocs_i18n_fix', 'dev/scripts/mkdocs_i18n_fix.py'); module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)" && uv run mkdocs build --strict -f dev/mkdocs.yml
 
     - name: Validate translations
       run: |
