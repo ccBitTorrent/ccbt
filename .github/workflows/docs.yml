@@ -24,6 +24,8 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: Install UV
         uses: astral-sh/setup-uv@v4
@@ -52,7 +54,51 @@ jobs:
       
       - name: Build documentation
         run: |
-          uv run mkdocs build --strict -f dev/mkdocs.yml
+          uv run python << 'PYTHON_EOF'
+          # Apply patch BEFORE importing mkdocs
+          import mkdocs_static_i18n
+          from mkdocs_static_i18n.plugin import I18n
+          import mkdocs_static_i18n.reconfigure
+          
+          # Store original functions
+          original_is_relative_to = mkdocs_static_i18n.is_relative_to
+          original_reconfigure_files = I18n.reconfigure_files
+          
+          # Create patched functions
+          def patched_is_relative_to(src_path, dest_path):
+              if src_path is None:
+                  return False
+              try:
+                  return original_is_relative_to(src_path, dest_path)
+              except (TypeError, AttributeError):
+                  return False
+          
+          def patched_reconfigure_files(self, files, mkdocs_config):
+              valid_files = [f for f in files if hasattr(f, 'abs_src_path') and f.abs_src_path is not None]
+              invalid_files = [f for f in files if not hasattr(f, 'abs_src_path') or f.abs_src_path is None]
+              if valid_files:
+                  result = original_reconfigure_files(self, valid_files, mkdocs_config)
+                  # Add invalid files back using append (I18nFiles is not a list)
+                  if invalid_files:
+                      for invalid_file in invalid_files:
+                          result.append(invalid_file)
+                  return result
+              # If no valid files, return original files object (shouldn't happen but safe fallback)
+              return files
+          
+          # Apply patches - patch the source module first
+          mkdocs_static_i18n.is_relative_to = patched_is_relative_to
+          # Patch the local reference in reconfigure module (it imports from __init__)
+          mkdocs_static_i18n.reconfigure.is_relative_to = patched_is_relative_to
+          # Patch the reconfigure_files method on the I18n class
+          I18n.reconfigure_files = patched_reconfigure_files
+          
+          # Now import and run mkdocs in the same process
+          import sys
+          from mkdocs.__main__ import cli
+          sys.argv = ['mkdocs', 'build', '--strict', '-f', 'dev/mkdocs.yml']
+          cli()
+          PYTHON_EOF
       
       - name: Upload documentation artifact
         uses: actions/upload-artifact@v4

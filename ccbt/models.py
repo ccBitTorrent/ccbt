@@ -30,6 +30,9 @@ class PieceSelectionStrategy(str, Enum):
     ROUND_ROBIN = "round_robin"
     RAREST_FIRST = "rarest_first"
     SEQUENTIAL = "sequential"
+    BANDWIDTH_WEIGHTED_RAREST = "bandwidth_weighted_rarest"
+    PROGRESSIVE_RAREST = "progressive_rarest"
+    ADAPTIVE_HYBRID = "adaptive_hybrid"
 
 
 class PreallocationStrategy(str, Enum):
@@ -93,6 +96,16 @@ class BandwidthAllocationMode(str, Enum):
     MANUAL = "manual"  # User-specified per torrent
 
 
+class OptimizationProfile(str, Enum):
+    """Optimization profiles for download performance."""
+
+    BALANCED = "balanced"  # Balanced performance and resource usage
+    SPEED = "speed"  # Maximum download speed
+    EFFICIENCY = "efficiency"  # Maximum bandwidth efficiency
+    LOW_RESOURCE = "low_resource"  # Minimal resource usage
+    CUSTOM = "custom"  # Custom configuration
+
+
 class MessageType(int, Enum):
     """BitTorrent message types."""
 
@@ -116,6 +129,14 @@ class PeerInfo(BaseModel):
     peer_source: str | None = Field(
         default="tracker",
         description="Source of peer discovery (tracker/dht/pex/lsd/manual)",
+    )
+    ssl_capable: bool | None = Field(
+        None,
+        description="Whether peer supports SSL/TLS (None = unknown, discovered during extension handshake)",
+    )
+    ssl_enabled: bool = Field(
+        False,
+        description="Whether connection to this peer is using SSL/TLS encryption",
     )
 
     @field_validator("ip")
@@ -305,6 +326,100 @@ class XetTorrentMetadata(BaseModel):
     xorb_hashes: list[bytes] = Field(
         default_factory=list,
         description="All xorb hashes used in the torrent",
+    )
+
+
+class TonicFileInfo(BaseModel):
+    """Information about a .tonic file."""
+
+    folder_name: str = Field(..., description="Name of the folder")
+    info_hash: bytes = Field(
+        ..., min_length=32, max_length=32, description="32-byte SHA-256 info hash"
+    )
+    total_length: int = Field(..., ge=0, description="Total folder size in bytes")
+    sync_mode: str = Field(
+        default="best_effort",
+        description="Synchronization mode (designated/best_effort/broadcast/consensus)",
+    )
+    git_refs: list[str] = Field(
+        default_factory=list, description="Git commit hashes for version tracking"
+    )
+    source_peers: list[str] | None = Field(
+        None, description="Designated source peer IDs (for designated mode)"
+    )
+    allowlist_hash: bytes | None = Field(
+        None,
+        min_length=32,
+        max_length=32,
+        description="32-byte hash of encrypted allowlist",
+    )
+    created_at: float = Field(
+        default_factory=time.time, description="Creation timestamp"
+    )
+    version: int = Field(default=1, description="Tonic file format version")
+    announce: str | None = Field(None, description="Primary tracker announce URL")
+    announce_list: list[list[str]] | None = Field(
+        None, description="List of tracker tiers"
+    )
+    comment: str | None = Field(None, description="Optional comment")
+    xet_metadata: XetTorrentMetadata = Field(
+        ..., description="XET metadata with chunk hashes and file info"
+    )
+
+
+class TonicLinkInfo(BaseModel):
+    """Information extracted from a tonic?: link."""
+
+    info_hash: bytes = Field(
+        ..., min_length=32, max_length=32, description="32-byte SHA-256 info hash"
+    )
+    display_name: str | None = Field(None, description="Display name")
+    trackers: list[str] | None = Field(None, description="List of tracker URLs")
+    git_refs: list[str] | None = Field(
+        None, description="List of git commit hashes/refs"
+    )
+    sync_mode: str | None = Field(
+        None,
+        description="Synchronization mode (designated/best_effort/broadcast/consensus)",
+    )
+    source_peers: list[str] | None = Field(
+        None, description="List of source peer IDs"
+    )
+    allowlist_hash: bytes | None = Field(
+        None,
+        min_length=32,
+        max_length=32,
+        description="32-byte allowlist hash",
+    )
+
+
+class XetSyncStatus(BaseModel):
+    """Status of XET folder synchronization."""
+
+    folder_path: str = Field(..., description="Path to synced folder")
+    sync_mode: str = Field(..., description="Current synchronization mode")
+    is_syncing: bool = Field(default=False, description="Whether sync is in progress")
+    last_sync_time: float | None = Field(
+        None, description="Timestamp of last successful sync"
+    )
+    current_git_ref: str | None = Field(
+        None, description="Current git commit hash"
+    )
+    pending_changes: int = Field(
+        default=0, description="Number of pending file changes"
+    )
+    connected_peers: int = Field(
+        default=0, description="Number of connected peers"
+    )
+    synced_peers: int = Field(
+        default=0, description="Number of peers with latest version"
+    )
+    sync_progress: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Sync progress (0.0 to 1.0)"
+    )
+    error: str | None = Field(None, description="Error message if sync failed")
+    last_check_time: float | None = Field(
+        None, description="Timestamp of last folder check"
     )
 
 
@@ -570,6 +685,22 @@ class NetworkConfig(BaseModel):
         le=65535,
         description="UDP port for tracker client communication",
     )
+    xet_port: int | None = Field(
+        default=None,
+        ge=1024,
+        le=65535,
+        description="XET protocol port (uses listen_port_udp if not set)",
+    )
+    xet_multicast_address: str = Field(
+        default="239.255.255.250",
+        description="XET multicast address for local network discovery",
+    )
+    xet_multicast_port: int = Field(
+        default=6882,
+        ge=1024,
+        le=65535,
+        description="XET multicast port",
+    )
     listen_interface: str | None = Field(
         default="0.0.0.0",  # nosec B104 - Default bind address for network services
         description="Listen interface",
@@ -646,6 +777,162 @@ class NetworkConfig(BaseModel):
         le=60.0,
         description="DHT request timeout in seconds",
     )
+    
+    # Adaptive handshake timeout settings
+    handshake_adaptive_timeout_enabled: bool = Field(
+        default=True,
+        description="Enable adaptive handshake timeouts based on peer health",
+    )
+    handshake_timeout_desperation_min: float = Field(
+        default=30.0,
+        ge=10.0,
+        le=120.0,
+        description="Minimum handshake timeout in seconds for desperation mode (< 5 peers)",
+    )
+    handshake_timeout_desperation_max: float = Field(
+        default=60.0,
+        ge=30.0,
+        le=180.0,
+        description="Maximum handshake timeout in seconds for desperation mode (< 5 peers)",
+    )
+    handshake_timeout_normal_min: float = Field(
+        default=15.0,
+        ge=5.0,
+        le=60.0,
+        description="Minimum handshake timeout in seconds for normal mode (5-20 peers)",
+    )
+    handshake_timeout_normal_max: float = Field(
+        default=30.0,
+        ge=10.0,
+        le=120.0,
+        description="Maximum handshake timeout in seconds for normal mode (5-20 peers)",
+    )
+    handshake_timeout_healthy_min: float = Field(
+        default=20.0,
+        ge=10.0,
+        le=120.0,
+        description="Minimum handshake timeout in seconds for healthy mode (20+ peers)",
+    )
+    handshake_timeout_healthy_max: float = Field(
+        default=40.0,
+        ge=20.0,
+        le=180.0,
+        description="Maximum handshake timeout in seconds for healthy mode (20+ peers)",
+    )
+
+    # Connection health and validation settings (BitTorrent spec compliant)
+    metadata_exchange_timeout: float = Field(
+        default=60.0,
+        ge=10.0,
+        le=300.0,
+        description="Metadata exchange timeout in seconds (BEP 9 compliant)",
+    )
+    metadata_piece_timeout: float = Field(
+        default=15.0,
+        ge=5.0,
+        le=60.0,
+        description="Timeout per metadata piece request in seconds",
+    )
+    connection_health_check_interval: float = Field(
+        default=30.0,
+        ge=10.0,
+        le=120.0,
+        description="Interval between connection health checks in seconds",
+    )
+    connection_validation_enabled: bool = Field(
+        default=True,
+        description="Enable connection state validation (BitTorrent spec compliant)",
+    )
+    connection_retry_max_attempts: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum connection retry attempts before giving up",
+    )
+    connection_retry_backoff_base: float = Field(
+        default=2.0,
+        ge=1.0,
+        le=10.0,
+        description="Exponential backoff base for connection retries",
+    )
+    connection_retry_backoff_max: float = Field(
+        default=60.0,
+        ge=10.0,
+        le=300.0,
+        description="Maximum backoff delay in seconds between connection retries",
+    )
+    peer_validation_enabled: bool = Field(
+        default=True,
+        description="Enable peer validation before accepting connections",
+    )
+    peer_validation_timeout: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=30.0,
+        description="Timeout for peer validation in seconds",
+    )
+    connection_state_validation_enabled: bool = Field(
+        default=True,
+        description="Enable connection state validation to prevent stale connections",
+    )
+    connection_state_timeout: float = Field(
+        default=120.0,
+        ge=30.0,
+        le=600.0,
+        description="Timeout for connection state validation in seconds",
+    )
+    send_bitfield_after_metadata: bool = Field(
+        default=True,
+        description="Send bitfield to peers after metadata exchange completes (BEP 3 compliant)",
+    )
+    send_interested_after_metadata: bool = Field(
+        default=True,
+        description="Send INTERESTED message after metadata exchange completes (BEP 3 compliant)",
+    )
+    graceful_disconnect_enabled: bool = Field(
+        default=True,
+        description="Enable graceful disconnection with proper protocol messages",
+    )
+    connection_cleanup_delay: float = Field(
+        default=2.0,
+        ge=0.0,
+        le=10.0,
+        description="Delay before cleaning up disconnected connections in seconds",
+    )
+    max_concurrent_connection_attempts: int = Field(
+        default=20,
+        ge=5,
+        le=100,
+        description="Maximum concurrent connection attempts to prevent OS socket exhaustion (BitTorrent spec compliant)",
+    )
+    connection_failure_threshold: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Number of consecutive failures before applying backoff to a peer",
+    )
+    connection_failure_backoff_base: float = Field(
+        default=2.0,
+        ge=1.0,
+        le=10.0,
+        description="Exponential backoff base multiplier for connection failures",
+    )
+    connection_failure_backoff_max: float = Field(
+        default=300.0,
+        ge=60.0,
+        le=3600.0,
+        description="Maximum backoff delay in seconds for failed connection attempts",
+    )
+    enable_fail_fast_dht: bool = Field(
+        default=True,
+        description="Enable fail-fast DHT trigger when active_peers == 0 for >30s (allows DHT even if <50 peers)",
+    )
+    fail_fast_dht_timeout: float = Field(
+        default=30.0,
+        ge=10.0,
+        le=120.0,
+        description="Timeout in seconds before triggering fail-fast DHT when active_peers == 0",
+    )
 
     # Rate limiting
     global_down_kib: int = Field(
@@ -689,6 +976,52 @@ class NetworkConfig(BaseModel):
         ge=1.0,
         le=600.0,
         description="Unchoke interval in seconds",
+    )
+    
+    # IMPROVEMENT: Choking optimization weights
+    choking_upload_rate_weight: float = Field(
+        default=0.6,
+        ge=0.0,
+        le=1.0,
+        description="Weight for upload rate in choking/unchoking decisions (0.0-1.0)",
+    )
+    choking_download_rate_weight: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description="Weight for download rate in choking/unchoking decisions (0.0-1.0)",
+    )
+    choking_performance_score_weight: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Weight for performance score in choking/unchoking decisions (0.0-1.0)",
+    )
+    
+    # IMPROVEMENT: Peer quality ranking weights
+    peer_quality_performance_weight: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description="Weight for historical performance in peer quality ranking (0.0-1.0)",
+    )
+    peer_quality_success_rate_weight: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Weight for connection success rate in peer quality ranking (0.0-1.0)",
+    )
+    peer_quality_source_weight: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Weight for source quality in peer quality ranking (0.0-1.0)",
+    )
+    peer_quality_proximity_weight: float = Field(
+        default=0.05,  # RELAXED: Reduced from 0.2 to 0.05 to allow distant peers
+        ge=0.0,
+        le=1.0,
+        description="Weight for geographic proximity in peer quality ranking (0.0-1.0). Lower values allow connecting to distant/slower peers.",
     )
 
     # Tracker settings
@@ -772,6 +1105,88 @@ class NetworkConfig(BaseModel):
         le=600.0,
         description="Interval for connection health checks (seconds)",
     )
+    
+    # Adaptive connection limit settings
+    connection_pool_adaptive_limit_enabled: bool = Field(
+        default=True,
+        description="Enable adaptive connection limit calculation based on system resources and peer performance",
+    )
+    connection_pool_adaptive_limit_min: int = Field(
+        default=50,
+        ge=10,
+        le=500,
+        description="Minimum adaptive connection limit",
+    )
+    connection_pool_adaptive_limit_max: int = Field(
+        default=1000,
+        ge=100,
+        le=10000,
+        description="Maximum adaptive connection limit",
+    )
+    connection_pool_cpu_threshold: float = Field(
+        default=0.8,
+        ge=0.5,
+        le=0.95,
+        description="CPU usage threshold (0.0-1.0) above which connection limit is reduced",
+    )
+    connection_pool_memory_threshold: float = Field(
+        default=0.8,
+        ge=0.5,
+        le=0.95,
+        description="Memory usage threshold (0.0-1.0) above which connection limit is reduced",
+    )
+    
+    # Performance-based recycling settings
+    connection_pool_performance_recycling_enabled: bool = Field(
+        default=True,
+        description="Enable performance-based connection recycling (recycle low-performing connections)",
+    )
+    connection_pool_performance_threshold: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Performance score threshold (0.0-1.0) below which connections are recycled",
+    )
+    
+    # Connection quality scoring settings
+    connection_pool_quality_threshold: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Minimum connection quality score (0.0-1.0) for connection reuse. Connections below this are recycled.",
+    )
+    connection_pool_grace_period: float = Field(
+        default=60.0,
+        ge=0.0,
+        le=600.0,
+        description="Grace period in seconds for new connections before quality checks (allows time for bandwidth establishment)",
+    )
+    
+    # Connection bandwidth thresholds
+    connection_pool_min_download_bandwidth: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Minimum download bandwidth in bytes/second for connections to be considered healthy (0 = disabled)",
+    )
+    connection_pool_min_upload_bandwidth: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Minimum upload bandwidth in bytes/second for connections to be considered healthy (0 = disabled)",
+    )
+    
+    # Connection health degradation/recovery thresholds
+    connection_pool_health_degradation_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Health score threshold (0.0-1.0) below which connection health level is degraded",
+    )
+    connection_pool_health_recovery_threshold: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Health score threshold (0.0-1.0) above which degraded connection health can recover",
+    )
 
     # Timeout and retry settings
     timeout_adaptive: bool = Field(
@@ -801,10 +1216,10 @@ class NetworkConfig(BaseModel):
         description="Use exponential backoff for retries",
     )
     retry_base_delay: float = Field(
-        default=1.0,
-        ge=0.1,
-        le=10.0,
-        description="Base delay for retry backoff in seconds",
+        default=10.0,  # Standard initial retry delay (prevents overwhelming peers)
+        ge=1.0,
+        le=60.0,
+        description="Base delay for retry backoff in seconds (standard: 10s)",
     )
     retry_max_delay: float = Field(
         default=300.0,
@@ -863,10 +1278,10 @@ class NetworkConfig(BaseModel):
         description="Minimum pipeline depth",
     )
     pipeline_max_depth: int = Field(
-        default=64,
+        default=128,
         ge=4,
-        le=128,
-        description="Maximum pipeline depth",
+        le=256,
+        description="Maximum pipeline depth (increased for better throughput)",
     )
     pipeline_enable_prioritization: bool = Field(
         default=True,
@@ -923,6 +1338,14 @@ class NATConfig(BaseModel):
         default=True,
         description="Map DHT UDP port",
     )
+    map_xet_port: bool = Field(
+        default=True,
+        description="Map XET protocol UDP port",
+    )
+    map_xet_multicast_port: bool = Field(
+        default=False,
+        description="Map XET multicast UDP port (usually not needed for multicast)",
+    )
 
 
 class AttributeConfig(BaseModel):
@@ -954,7 +1377,7 @@ class AttributeConfig(BaseModel):
     )
 
 
-class DiskConfig(BaseModel):
+class DiskConfig(BaseModel):  # noqa: PLR0913
     """Disk I/O configuration."""
 
     preallocate: PreallocationStrategy = Field(
@@ -1194,6 +1617,30 @@ class DiskConfig(BaseModel):
         default=None,
         description="Path to Xet chunk storage directory (defaults to download_dir/.xet_chunks)",
     )
+    enable_file_deduplication: bool = Field(
+        default=True,
+        description="Enable file-level deduplication for XET",
+    )
+    enable_data_aggregation: bool = Field(
+        default=True,
+        description="Enable data aggregation for batch chunk operations",
+    )
+    enable_defrag_prevention: bool = Field(
+        default=True,
+        description="Enable defragmentation prevention for chunk storage",
+    )
+    xet_batch_size: int = Field(
+        default=100,
+        ge=1,
+        le=1000,
+        description="Batch size for XET data aggregation operations",
+    )
+    defrag_check_interval: float = Field(
+        default=3600.0,
+        ge=60.0,
+        le=86400.0,
+        description="Interval in seconds for defragmentation checks",
+    )
     xet_use_p2p_cas: bool = Field(
         default=True,
         description="Use peer-to-peer Content Addressable Storage (DHT-based)",
@@ -1354,6 +1801,68 @@ class StrategyConfig(BaseModel):
         le=1.0,
         description="Fallback to rarest-first if availability < threshold",
     )
+    
+    # Advanced piece selection strategies
+    bandwidth_weighted_rarest_weight: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Weight for bandwidth in bandwidth-weighted rarest-first (0.0=rarity only, 1.0=bandwidth only)",
+    )
+    progressive_rarest_transition_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Progress threshold for transitioning from sequential to rarest-first in progressive mode",
+    )
+    adaptive_hybrid_phase_detection_window: int = Field(
+        default=10,
+        ge=5,
+        le=50,
+        description="Number of pieces to analyze for phase detection in adaptive hybrid mode",
+    )
+
+
+class OptimizationConfig(BaseModel):
+    """Optimization profile configuration."""
+
+    profile: OptimizationProfile = Field(
+        default=OptimizationProfile.BALANCED,
+        description="Optimization profile to use",
+    )
+    
+    # Profile-specific overrides (applied when profile is not CUSTOM)
+    # These allow fine-tuning of profile behavior
+    speed_aggressive_peer_recycling: bool = Field(
+        default=True,
+        description="Aggressively recycle low-performing peers in speed profile",
+    )
+    efficiency_connection_limit_multiplier: float = Field(
+        default=0.8,
+        ge=0.5,
+        le=1.5,
+        description="Connection limit multiplier for efficiency profile (reduces connections for efficiency)",
+    )
+    low_resource_max_connections: int = Field(
+        default=20,
+        ge=5,
+        le=100,
+        description="Maximum connections for low_resource profile",
+    )
+    
+    # Adaptive settings
+    enable_adaptive_intervals: bool = Field(
+        default=True,
+        description="Enable adaptive discovery intervals based on swarm health",
+    )
+    enable_performance_based_recycling: bool = Field(
+        default=True,
+        description="Enable performance-based peer connection recycling",
+    )
+    enable_bandwidth_aware_scheduling: bool = Field(
+        default=True,
+        description="Enable bandwidth-aware piece request scheduling",
+    )
 
 
 class DiscoveryConfig(BaseModel):
@@ -1378,6 +1887,82 @@ class DiscoveryConfig(BaseModel):
         ],
         description="DHT bootstrap nodes",
     )
+    
+    # DHT adaptive interval settings
+    dht_adaptive_interval_enabled: bool = Field(
+        default=True,
+        description="Enable adaptive DHT lookup intervals based on swarm health",
+    )
+    dht_base_refresh_interval: float = Field(
+        default=600.0,
+        ge=60.0,
+        le=3600.0,
+        description="Base DHT refresh interval in seconds (used when adaptive is disabled or as base for adaptive calculation)",
+    )
+    dht_adaptive_interval_min: float = Field(
+        default=60.0,
+        ge=30.0,
+        le=300.0,
+        description="Minimum adaptive DHT refresh interval in seconds",
+    )
+    dht_adaptive_interval_max: float = Field(
+        default=1920.0,  # 32 minutes (standard exponential backoff maximum)
+        ge=300.0,
+        le=3600.0,
+        description="Maximum adaptive DHT refresh interval in seconds (32 minutes for standard exponential backoff)",
+    )
+    dht_quality_tracking_enabled: bool = Field(
+        default=True,
+        description="Enable DHT node quality tracking (response times, success rates)",
+    )
+    dht_quality_response_time_window: int = Field(
+        default=10,
+        ge=5,
+        le=50,
+        description="Number of recent response times to track per node for quality calculation",
+    )
+    
+    # DHT adaptive timeout settings
+    dht_adaptive_timeout_enabled: bool = Field(
+        default=True,
+        description="Enable adaptive DHT query timeouts based on peer health",
+    )
+    dht_timeout_desperation_min: float = Field(
+        default=30.0,
+        ge=10.0,
+        le=120.0,
+        description="Minimum DHT query timeout in seconds for desperation mode (< 5 peers)",
+    )
+    dht_timeout_desperation_max: float = Field(
+        default=60.0,
+        ge=30.0,
+        le=180.0,
+        description="Maximum DHT query timeout in seconds for desperation mode (< 5 peers)",
+    )
+    dht_timeout_normal_min: float = Field(
+        default=5.0,
+        ge=2.0,
+        le=30.0,
+        description="Minimum DHT query timeout in seconds for normal mode (5-20 peers)",
+    )
+    dht_timeout_normal_max: float = Field(
+        default=15.0,
+        ge=5.0,
+        le=60.0,
+        description="Maximum DHT query timeout in seconds for normal mode (5-20 peers)",
+    )
+    dht_timeout_healthy_min: float = Field(
+        default=10.0,
+        ge=5.0,
+        le=60.0,
+        description="Minimum DHT query timeout in seconds for healthy mode (20+ peers)",
+    )
+    dht_timeout_healthy_max: float = Field(
+        default=30.0,
+        ge=10.0,
+        le=120.0,
+        description="Maximum DHT query timeout in seconds for healthy mode (20+ peers)",
+    )
 
     # Tracker intervals
     tracker_announce_interval: float = Field(
@@ -1392,17 +1977,175 @@ class DiscoveryConfig(BaseModel):
         le=86400.0,
         description="Tracker scrape interval in seconds",
     )
+    
+    # Tracker adaptive interval settings
+    tracker_adaptive_interval_enabled: bool = Field(
+        default=True,
+        description="Enable adaptive tracker announce intervals based on performance and peer count",
+    )
+    tracker_adaptive_interval_min: float = Field(
+        default=20.0,
+        ge=10.0,
+        le=300.0,
+        description="Minimum adaptive tracker announce interval in seconds",
+    )
+    tracker_adaptive_interval_max: float = Field(
+        default=3600.0,
+        ge=300.0,
+        le=86400.0,
+        description="Maximum adaptive tracker announce interval in seconds",
+    )
+    tracker_base_announce_interval: float = Field(
+        default=1800.0,
+        ge=60.0,
+        le=86400.0,
+        description="Base tracker announce interval in seconds (used when adaptive is disabled or as base for adaptive calculation)",
+    )
+    tracker_peer_count_weight: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Weight for peer count in tracker performance ranking (0.0-1.0)",
+    )
+    tracker_performance_weight: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description="Weight for performance metrics in tracker performance ranking (0.0-1.0)",
+    )
     tracker_auto_scrape: bool = Field(
         default=True,
         description="Automatically scrape trackers when adding torrents",
     )
+    
+    # Default trackers for magnet links without tr= parameters
+    default_trackers: list[str] = Field(
+        default_factory=lambda: [
+            "https://tracker.opentrackr.org:443/announce",
+            "https://tracker.torrent.eu.org:443/announce",
+            "https://tracker.openbittorrent.com:443/announce",
+            "http://tracker.opentrackr.org:1337/announce",
+            "http://tracker.openbittorrent.com:80/announce",
+            "udp://tracker.opentrackr.org:1337/announce",
+            "udp://tracker.openbittorrent.com:80/announce",
+        ],
+        description="Default trackers to use for magnet links without tr= parameters",
+    )
 
     # PEX
     pex_interval: float = Field(
-        default=30.0,
-        ge=5.0,
+        default=60.0,
+        ge=30.0,  # BEP 11 compliant: minimum 30s (max 1 message per minute)
         le=3600.0,
-        description="Peer Exchange announce interval in seconds",
+        description="Peer Exchange announce interval in seconds (BEP 11: max 1 per minute = 60s)",
+    )
+
+    # XET chunk discovery settings
+    xet_chunk_query_batch_size: int = Field(
+        default=50,
+        ge=1,
+        le=200,
+        description="Batch size for parallel chunk queries",
+    )
+    xet_chunk_query_max_concurrent: int = Field(
+        default=50,
+        ge=1,
+        le=200,
+        description="Maximum concurrent chunk queries",
+    )
+    # Aggressive initial discovery settings for faster peer discovery on popular torrents
+    aggressive_initial_discovery: bool = Field(
+        default=True,
+        description="Enable aggressive initial discovery mode (shorter intervals for first few announces/queries)",
+    )
+    aggressive_initial_tracker_interval: float = Field(
+        default=30.0,
+        ge=10.0,
+        le=300.0,
+        description="Initial tracker announce interval in seconds when aggressive mode is enabled (for first 5 minutes)",
+    )
+    aggressive_initial_dht_interval: float = Field(
+        default=30.0,
+        ge=30.0,  # Minimum 30s to prevent peer blacklisting
+        le=60.0,
+        description="Initial DHT query interval in seconds when aggressive mode is enabled (for first 5 minutes, minimum 30s)",
+    )
+    
+    # IMPROVEMENT: Aggressive discovery for popular torrents
+    aggressive_discovery_popular_threshold: int = Field(
+        default=20,
+        ge=5,
+        le=100,
+        description="Minimum peer count to enable aggressive discovery mode",
+    )
+    aggressive_discovery_active_threshold_kib: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=100.0,
+        description="Minimum download rate (KB/s) to enable aggressive discovery mode",
+    )
+    aggressive_discovery_interval_popular: float = Field(
+        default=60.0,
+        ge=30.0,  # Minimum 30s to prevent peer blacklisting
+        le=300.0,
+        description="DHT query interval in seconds for popular torrents (20+ peers, minimum 30s)",
+    )
+    aggressive_discovery_interval_active: float = Field(
+        default=30.0,
+        ge=30.0,  # Minimum 30s to prevent peer blacklisting
+        le=300.0,
+        description="DHT query interval in seconds for actively downloading torrents (>1KB/s, minimum 30s)",
+    )
+    aggressive_discovery_max_peers_per_query: int = Field(
+        default=100,
+        ge=50,
+        le=500,
+        description="Maximum peers to query per DHT query in aggressive mode",
+    )
+    
+    # DHT query parameters (Kademlia algorithm)
+    dht_normal_alpha: int = Field(
+        default=5,
+        ge=3,
+        le=20,
+        description="Number of parallel queries for normal DHT lookups (BEP 5 alpha parameter)",
+    )
+    dht_normal_k: int = Field(
+        default=16,
+        ge=8,
+        le=64,
+        description="Bucket size for normal DHT lookups (BEP 5 k parameter)",
+    )
+    dht_normal_max_depth: int = Field(
+        default=12,
+        ge=3,
+        le=30,
+        description="Maximum depth for normal DHT iterative lookups",
+    )
+    dht_aggressive_alpha: int = Field(
+        default=8,
+        ge=5,
+        le=30,
+        description="Number of parallel queries for aggressive DHT lookups (BEP 5 alpha parameter)",
+    )
+    dht_aggressive_k: int = Field(
+        default=32,
+        ge=16,
+        le=128,
+        description="Bucket size for aggressive DHT lookups (BEP 5 k parameter)",
+    )
+    dht_aggressive_max_depth: int = Field(
+        default=15,
+        ge=5,
+        le=50,
+        description="Maximum depth for aggressive DHT iterative lookups",
+    )
+    
+    discovery_cache_ttl: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=3600.0,
+        description="Discovery result cache TTL in seconds",
     )
 
     # Private torrent settings (BEP 27)
@@ -1516,6 +2259,63 @@ class ObservabilityConfig(BaseModel):
         description="Path to alert rules JSON file",
     )
 
+    # Event bus configuration
+    event_bus_max_queue_size: int = Field(
+        default=10000,
+        ge=100,
+        le=1000000,
+        description="Maximum size of event queue",
+    )
+    event_bus_batch_size: int = Field(
+        default=50,
+        ge=1,
+        le=1000,
+        description="Maximum number of events to process per batch",
+    )
+    event_bus_batch_timeout: float = Field(
+        default=0.05,
+        ge=0.001,
+        le=1.0,
+        description="Timeout in seconds to wait when collecting a batch",
+    )
+    event_bus_emit_timeout: float = Field(
+        default=0.01,
+        ge=0.001,
+        le=1.0,
+        description="Timeout in seconds when trying to emit to a full queue",
+    )
+    event_bus_queue_full_threshold: float = Field(
+        default=0.9,
+        ge=0.1,
+        le=1.0,
+        description="Queue fullness threshold (0.0-1.0) for dropping low-priority events",
+    )
+    # Throttle intervals for high-frequency events (seconds)
+    event_bus_throttle_dht_node_found: float = Field(
+        default=0.1,
+        ge=0.001,
+        le=10.0,
+        description="Throttle interval for dht_node_found events (max events per second = 1/interval)",
+    )
+    event_bus_throttle_dht_node_added: float = Field(
+        default=0.1,
+        ge=0.001,
+        le=10.0,
+        description="Throttle interval for dht_node_added events (max events per second = 1/interval)",
+    )
+    event_bus_throttle_monitoring_heartbeat: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=60.0,
+        description="Throttle interval for monitoring_heartbeat events (max events per second = 1/interval)",
+    )
+    event_bus_throttle_global_metrics_update: float = Field(
+        default=0.5,
+        ge=0.1,
+        le=10.0,
+        description="Throttle interval for global_metrics_update events (max events per second = 1/interval)",
+    )
+
 
 class UIConfig(BaseModel):
     """UI and internationalization configuration."""
@@ -1556,6 +2356,49 @@ class DashboardConfig(BaseModel):
     enable_grafana_export: bool = Field(
         default=False,
         description="Enable Grafana dashboard JSON export endpoints",
+    )
+    # Terminal dashboard specific settings
+    terminal_refresh_interval: float = Field(
+        default=1.0,
+        ge=0.5,
+        le=10.0,
+        description="Terminal dashboard UI refresh interval in seconds (WebSocket provides real-time updates, polling is backup)",
+    )
+    terminal_daemon_startup_timeout: float = Field(
+        default=90.0,
+        ge=10.0,
+        le=300.0,
+        description="Timeout in seconds for daemon startup checks (includes NAT discovery, DHT bootstrap, IPC server startup)",
+    )
+    terminal_daemon_initial_wait: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=30.0,
+        description="Initial wait time in seconds for IPC server to be ready",
+    )
+    terminal_daemon_retry_delay: float = Field(
+        default=0.5,
+        ge=0.1,
+        le=5.0,
+        description="Delay in seconds between daemon readiness retry attempts",
+    )
+    terminal_daemon_check_interval: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="Interval in seconds for checking daemon readiness during startup",
+    )
+    terminal_connection_timeout: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=60.0,
+        description="Timeout in seconds for connecting to daemon after verification",
+    )
+    terminal_connection_check_interval: float = Field(
+        default=0.5,
+        ge=0.1,
+        le=5.0,
+        description="Interval in seconds for checking daemon connection status",
     )
 
 
@@ -1702,6 +2545,13 @@ class QueueConfig(BaseModel):
 
 class SecurityConfig(BaseModel):
     """Security related configuration."""
+    
+    peer_quality_threshold: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Minimum reputation score (0.0-1.0) for peers to be accepted during discovery. Peers below this threshold are filtered out.",
+    )
 
     enable_encryption: bool = Field(
         default=False,
@@ -1745,6 +2595,10 @@ class SecurityConfig(BaseModel):
         default_factory=lambda: IPFilterConfig(),  # type: ignore[name-defined]
         description="IP filter configuration",
     )
+    blacklist: BlacklistConfig = Field(
+        default_factory=lambda: BlacklistConfig(),  # type: ignore[name-defined]
+        description="Blacklist configuration",
+    )
     ssl: SSLConfig = Field(
         default_factory=lambda: SSLConfig(),  # type: ignore[name-defined]
         description="SSL/TLS configuration",
@@ -1782,9 +2636,9 @@ class ProxyConfig(BaseModel):
     )
     proxy_port: int | None = Field(
         default=None,
-        ge=1,
+        ge=0,
         le=65535,
-        description="Proxy server port",
+        description="Proxy server port (0 when disabled, 1-65535 when enabled)",
     )
     proxy_username: str | None = Field(
         default=None,
@@ -1828,8 +2682,8 @@ class ProxyConfig(BaseModel):
             if not self.proxy_host:
                 msg = "proxy_host is required when enable_proxy is True"
                 raise ValueError(msg)
-            if not self.proxy_port:
-                msg = "proxy_port is required when enable_proxy is True"
+            if not self.proxy_port or self.proxy_port < 1:
+                msg = "proxy_port must be >= 1 when enable_proxy is True"
                 raise ValueError(msg)
         return self
 
@@ -1878,6 +2732,137 @@ class IPFilterConfig(BaseModel):
             msg = f"filter_mode must be one of {allowed_modes}, got {v}"
             raise ValueError(msg)
         return v_lower
+
+
+class LocalBlacklistSourceConfig(BaseModel):
+    """Configuration for local metric-based blacklist source."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable local metric-based blacklisting",
+    )
+    evaluation_interval: float = Field(
+        default=300.0,
+        ge=60.0,
+        le=3600.0,
+        description="Evaluation interval in seconds (1m-1h)",
+    )
+    metric_window: float = Field(
+        default=3600.0,
+        ge=300.0,
+        le=86400.0,
+        description="Metric aggregation window in seconds (5m-24h)",
+    )
+    thresholds: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "failed_handshakes": 5,  # Blacklist after 5 failed handshakes
+            "handshake_failure_rate": 0.8,  # 80% failure rate
+            "spam_score": 10.0,  # Spam score threshold
+            "violation_count": 3,  # 3 protocol violations
+            "reputation_threshold": 0.2,  # Reputation below 0.2
+            "connection_attempt_rate": 20,  # 20 attempts per minute
+        },
+        description="Thresholds for automatic blacklisting",
+    )
+    expiration_hours: float | None = Field(
+        default=24.0,
+        description="Expiration time for auto-blacklisted IPs (hours, None = permanent)",
+    )
+    min_observations: int = Field(
+        default=3,
+        ge=1,
+        description="Minimum observations before blacklisting",
+    )
+
+
+class BlacklistConfig(BaseModel):
+    """Blacklist configuration."""
+
+    enable_persistence: bool = Field(
+        default=True,
+        description="Persist blacklist to disk",
+    )
+    blacklist_file: str = Field(
+        default="~/.ccbt/security/blacklist.json",
+        description="Path to blacklist file",
+    )
+    auto_update_enabled: bool = Field(
+        default=False,
+        description="Enable automatic blacklist updates",
+    )
+    auto_update_interval: float = Field(
+        default=3600.0,
+        ge=300.0,
+        le=86400.0,
+        description="Auto-update interval in seconds (5m-24h)",
+    )
+    auto_update_sources: list[str] = Field(
+        default_factory=list,
+        description="URLs for automatic blacklist updates",
+    )
+    default_expiration_hours: float | None = Field(
+        default=None,
+        description="Default expiration time for auto-blacklisted IPs in hours (None = permanent)",
+    )
+    local_source: LocalBlacklistSourceConfig = Field(
+        default_factory=LocalBlacklistSourceConfig,
+        description="Local metric-based blacklist source configuration",
+    )
+
+
+class MetricsPluginConfig(BaseModel):
+    """Configuration for the metrics plugin."""
+
+    enable_metrics_plugin: bool = Field(
+        default=True,
+        description="Enable the metrics plugin for event-driven metrics collection",
+    )
+    max_metrics: int = Field(
+        default=10000,
+        ge=100,
+        le=1000000,
+        description="Maximum number of metrics to keep in memory",
+    )
+    enable_event_metrics: bool = Field(
+        default=True,
+        description="Enable event-driven metrics collection",
+    )
+    metrics_retention_seconds: int = Field(
+        default=3600,
+        ge=0,
+        description="Metrics retention period in seconds (0 = unlimited)",
+    )
+    enable_aggregation: bool = Field(
+        default=True,
+        description="Enable metric aggregation",
+    )
+    aggregation_window: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=3600.0,
+        description="Aggregation window in seconds",
+    )
+
+
+class PluginsConfig(BaseModel):
+    """Configuration for the plugin system."""
+
+    enable_plugins: bool = Field(
+        default=True,
+        description="Enable/disable plugin system",
+    )
+    auto_load_plugins: bool = Field(
+        default=True,
+        description="Automatically load plugins from configured directories",
+    )
+    plugin_directories: list[str] = Field(
+        default_factory=list,
+        description="Directories to search for plugins",
+    )
+    metrics: MetricsPluginConfig = Field(
+        default_factory=MetricsPluginConfig,
+        description="Metrics plugin configuration",
+    )
 
 
 class SSLConfig(BaseModel):
@@ -2105,6 +3090,68 @@ class TorrentCheckpoint(BaseModel):
         description="File selection state: {file_index: {selected: bool, priority: str, bytes_downloaded: int}}",
     )
 
+    # Per-torrent configuration options
+    per_torrent_options: dict[str, Any] | None = Field(
+        None,
+        description="Per-torrent configuration options (piece_selection, streaming_mode, max_peers_per_torrent, etc.)",
+    )
+
+    # Per-torrent rate limits
+    rate_limits: dict[str, int] | None = Field(
+        None,
+        description="Per-torrent rate limits: {down_kib: int, up_kib: int}",
+    )
+
+    # Peer lists and state
+    connected_peers: list[dict[str, Any]] | None = Field(
+        None,
+        description="List of connected peers: [{ip, port, peer_id, peer_source, stats}]",
+    )
+    active_peers: list[dict[str, Any]] | None = Field(
+        None,
+        description="List of active peers (subset of connected): [{ip, port, ...}]",
+    )
+    peer_statistics: dict[str, dict[str, Any]] | None = Field(
+        None,
+        description="Peer statistics by peer_key: {peer_key: {bytes_downloaded, bytes_uploaded, ...}}",
+    )
+
+    # Tracker lists and state
+    tracker_list: list[dict[str, Any]] | None = Field(
+        None,
+        description="List of trackers: [{url, last_announce, last_success, is_healthy, failure_count}]",
+    )
+    tracker_health: dict[str, dict[str, Any]] | None = Field(
+        None,
+        description="Tracker health metrics: {url: {last_announce, last_success, failure_count, ...}}",
+    )
+
+    # Security state
+    peer_whitelist: list[str] | None = Field(
+        None,
+        description="Per-torrent peer whitelist (IP addresses)",
+    )
+    peer_blacklist: list[str] | None = Field(
+        None,
+        description="Per-torrent peer blacklist (IP addresses)",
+    )
+
+    # Session state
+    session_state: str | None = Field(
+        None,
+        description="Session state: 'active', 'paused', 'stopped', 'queued', 'seeding'",
+    )
+    session_state_timestamp: float | None = Field(
+        None,
+        description="Timestamp when session state changed",
+    )
+
+    # Event history
+    recent_events: list[dict[str, Any]] | None = Field(
+        None,
+        description="Recent events for debugging: [{event_type, timestamp, data}]",
+    )
+
     model_config = {"arbitrary_types_allowed": True}
 
     @model_validator(mode="after")
@@ -2118,7 +3165,177 @@ class TorrentCheckpoint(BaseModel):
             self.piece_states = {}
         if self.download_stats is None:
             self.download_stats = DownloadStats()
+        # Backward compatibility: ensure new fields default to None if not present
+        # (Pydantic handles this automatically, but explicit for clarity)
         return self
+
+
+class GlobalCheckpoint(BaseModel):
+    """Global session manager checkpoint."""
+
+    version: str = Field(default="1.0", description="Checkpoint format version")
+    created_at: float = Field(
+        default_factory=time.time, description="Checkpoint creation timestamp"
+    )
+    updated_at: float = Field(
+        default_factory=time.time, description="Last update timestamp"
+    )
+
+    # Global state
+    active_torrents: list[bytes] = Field(
+        default_factory=list,
+        description="List of active torrent info hashes",
+    )
+    paused_torrents: list[bytes] = Field(
+        default_factory=list,
+        description="List of paused torrent info hashes",
+    )
+    queued_torrents: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Queue state: [{info_hash, position, priority, status}]",
+    )
+
+    # Global limits
+    global_rate_limits: dict[str, int] | None = Field(
+        None,
+        description="Global rate limits: {down_kib: int, up_kib: int}",
+    )
+
+    # Global security state
+    global_peer_whitelist: list[str] = Field(
+        default_factory=list,
+        description="Global peer whitelist",
+    )
+    global_peer_blacklist: list[str] = Field(
+        default_factory=list,
+        description="Global peer blacklist",
+    )
+
+    # DHT state
+    dht_nodes: list[dict[str, Any]] | None = Field(
+        None,
+        description="Known DHT nodes: [{ip, port, node_id, last_seen}]",
+    )
+
+    # Global statistics
+    global_stats: dict[str, Any] | None = Field(
+        None,
+        description="Global statistics snapshot",
+    )
+
+    model_config = {"arbitrary_types_allowed": True}
+
+
+class PerTorrentOptions(BaseModel):
+    """Per-torrent configuration options for validation."""
+
+    piece_selection: str | None = Field(
+        None,
+        description="Piece selection strategy: round_robin, rarest_first, sequential",
+    )
+    streaming_mode: bool | None = Field(
+        None, description="Enable streaming mode for sequential download"
+    )
+    sequential_window_size: int | None = Field(
+        None,
+        ge=1,
+        description="Number of pieces ahead to download in sequential mode",
+    )
+    max_peers_per_torrent: int | None = Field(
+        None,
+        ge=0,
+        description="Maximum peers for this torrent (0 = unlimited)",
+    )
+    enable_tcp: bool | None = Field(None, description="Enable TCP transport")
+    enable_utp: bool | None = Field(None, description="Enable uTP transport")
+    enable_encryption: bool | None = Field(
+        None, description="Enable protocol encryption (BEP 3)"
+    )
+    auto_scrape: bool | None = Field(
+        None, description="Automatically scrape tracker on torrent add"
+    )
+    enable_nat_mapping: bool | None = Field(
+        None, description="Enable NAT port mapping for this torrent"
+    )
+    enable_xet: bool | None = Field(
+        None, description="Enable XET folder synchronization for this torrent"
+    )
+    xet_sync_mode: str | None = Field(
+        None,
+        description="XET sync mode for this torrent (designated/best_effort/broadcast/consensus)",
+    )
+    xet_allowlist_path: str | None = Field(
+        None, description="Path to XET allowlist file for this torrent"
+    )
+
+    @field_validator("piece_selection")
+    @classmethod
+    def validate_piece_selection(cls, v: str | None) -> str | None:
+        """Validate piece_selection is a valid strategy."""
+        if v is None:
+            return v
+        valid_strategies = {"round_robin", "rarest_first", "sequential"}
+        if v not in valid_strategies:
+            msg = f"Invalid piece_selection: {v}. Must be one of {valid_strategies}"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("xet_sync_mode")
+    @classmethod
+    def validate_xet_sync_mode(cls, v: str | None) -> str | None:
+        """Validate xet_sync_mode is a valid mode."""
+        if v is None:
+            return v
+        valid_modes = {"designated", "best_effort", "broadcast", "consensus"}
+        if v not in valid_modes:
+            msg = f"Invalid xet_sync_mode: {v}. Must be one of {valid_modes}"
+            raise ValueError(msg)
+        return v
+
+
+class PerTorrentDefaultsConfig(BaseModel):
+    """Default per-torrent configuration options applied to new torrents."""
+
+    piece_selection: str | None = Field(
+        None,
+        description="Default piece selection strategy: round_robin, rarest_first, sequential",
+    )
+    streaming_mode: bool | None = Field(
+        None, description="Default streaming mode for sequential download"
+    )
+    sequential_window_size: int | None = Field(
+        None,
+        ge=1,
+        description="Default number of pieces ahead to download in sequential mode",
+    )
+    max_peers_per_torrent: int | None = Field(
+        None,
+        ge=0,
+        description="Default maximum peers for torrents (0 = unlimited)",
+    )
+    enable_tcp: bool | None = Field(None, description="Default TCP transport enabled")
+    enable_utp: bool | None = Field(None, description="Default uTP transport enabled")
+    enable_encryption: bool | None = Field(
+        None, description="Default protocol encryption enabled (BEP 3)"
+    )
+    auto_scrape: bool | None = Field(
+        None, description="Default auto-scrape tracker on torrent add"
+    )
+    enable_nat_mapping: bool | None = Field(
+        None, description="Default NAT port mapping enabled"
+    )
+
+    @field_validator("piece_selection")
+    @classmethod
+    def validate_piece_selection(cls, v: str | None) -> str | None:
+        """Validate piece_selection is a valid strategy."""
+        if v is None:
+            return v
+        valid_strategies = {"round_robin", "rarest_first", "sequential"}
+        if v not in valid_strategies:
+            msg = f"Invalid piece_selection: {v}. Must be one of {valid_strategies}"
+            raise ValueError(msg)
+        return v
 
 
 class ScrapeResult(BaseModel):
@@ -2160,7 +3377,7 @@ class ScrapeResult(BaseModel):
 class DaemonConfig(BaseModel):
     """Daemon configuration."""
 
-    api_key: str = Field(..., description="API key for authentication")
+    api_key: str | None = Field(default=None, description="API key for authentication (auto-generated if not set)")
     ed25519_public_key: str | None = Field(
         None,
         description="Ed25519 public key for cryptographic authentication (hex format)",
@@ -2180,9 +3397,9 @@ class DaemonConfig(BaseModel):
     ipc_port: int = Field(64124, ge=1, le=65535, description="IPC server port")
     websocket_enabled: bool = Field(True, description="Enable WebSocket support")
     websocket_heartbeat_interval: float = Field(
-        30.0,
+        15.0,
         ge=1.0,
-        description="WebSocket heartbeat interval in seconds",
+        description="WebSocket heartbeat interval in seconds (reduced for faster connection detection)",
     )
     auto_save_interval: float = Field(
         60.0,
@@ -2238,6 +3455,125 @@ class IPFSConfig(BaseModel):
     )
 
     model_config = {"arbitrary_types_allowed": True}
+
+
+class XetSyncConfig(BaseModel):
+    """XET folder synchronization configuration."""
+
+    enable_xet: bool = Field(
+        default=False,
+        description="Enable XET folder synchronization globally",
+    )
+    check_interval: float = Field(
+        default=5.0,
+        ge=0.5,
+        le=3600.0,
+        description="Interval between folder checks in seconds",
+    )
+    default_sync_mode: str = Field(
+        default="best_effort",
+        description="Default synchronization mode (designated/best_effort/broadcast/consensus)",
+    )
+    enable_git_versioning: bool = Field(
+        default=True,
+        description="Enable git integration for version tracking",
+    )
+    enable_lpd: bool = Field(
+        default=True,
+        description="Enable Local Peer Discovery (BEP 14)",
+    )
+    enable_gossip: bool = Field(
+        default=True,
+        description="Enable gossip protocol for update propagation",
+    )
+    gossip_fanout: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Gossip fanout (number of peers to gossip to)",
+    )
+    gossip_interval: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=60.0,
+        description="Gossip interval in seconds",
+    )
+    flooding_ttl: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Controlled flooding TTL (max hops)",
+    )
+    flooding_priority_threshold: int = Field(
+        default=100,
+        ge=0,
+        le=1000,
+        description="Priority threshold for using flooding (0-1000)",
+    )
+    consensus_algorithm: str = Field(
+        default="simple",
+        description="Consensus algorithm (simple/raft)",
+    )
+    raft_election_timeout: float = Field(
+        default=1.0,
+        ge=0.1,
+        le=10.0,
+        description="Raft election timeout in seconds",
+    )
+    raft_heartbeat_interval: float = Field(
+        default=0.1,
+        ge=0.01,
+        le=1.0,
+        description="Raft heartbeat interval in seconds",
+    )
+    enable_byzantine_fault_tolerance: bool = Field(
+        default=False,
+        description="Enable Byzantine fault tolerance",
+    )
+    byzantine_fault_threshold: float = Field(
+        default=0.33,
+        ge=0.0,
+        le=0.5,
+        description="Byzantine fault threshold (max fraction of faulty nodes)",
+    )
+    weighted_voting: bool = Field(
+        default=False,
+        description="Use weighted voting for consensus",
+    )
+    auto_elect_source: bool = Field(
+        default=False,
+        description="Automatically elect source peer",
+    )
+    source_election_interval: float = Field(
+        default=300.0,
+        ge=60.0,
+        le=3600.0,
+        description="Source peer election interval in seconds",
+    )
+    conflict_resolution_strategy: str = Field(
+        default="last_write_wins",
+        description="Conflict resolution strategy (last_write_wins/version_vector/three_way_merge/timestamp)",
+    )
+    git_auto_commit: bool = Field(
+        default=False,
+        description="Automatically commit changes on folder updates",
+    )
+    consensus_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Majority threshold for consensus mode (0.0 to 1.0)",
+    )
+    max_update_queue_size: int = Field(
+        default=100,
+        ge=1,
+        le=10000,
+        description="Maximum number of queued updates",
+    )
+    allowlist_encryption_key: str | None = Field(
+        None,
+        description="Path to allowlist encryption key file",
+    )
 
 
 class Config(BaseModel):
@@ -2307,6 +3643,22 @@ class Config(BaseModel):
         None,
         description="Daemon configuration",
     )
+    per_torrent_defaults: PerTorrentDefaultsConfig = Field(
+        default_factory=PerTorrentDefaultsConfig,
+        description="Default per-torrent configuration options applied to new torrents",
+    )
+    xet_sync: XetSyncConfig = Field(
+        default_factory=XetSyncConfig,
+        description="XET folder synchronization configuration",
+    )
+    plugins: PluginsConfig = Field(
+        default_factory=PluginsConfig,
+        description="Plugin system configuration",
+    )
+    optimization: OptimizationConfig = Field(
+        default_factory=OptimizationConfig,
+        description="Optimization profile configuration",
+    )
 
     @model_validator(mode="after")
     def validate_config(self):
@@ -2331,7 +3683,7 @@ class Config(BaseModel):
         # TCP and UDP can share the same port number (different protocols)
         tcp_ports: dict[str, int] = {}
         udp_ports: dict[str, int] = {}
-        
+
         if network.listen_port_tcp:
             tcp_ports["TCP listen port"] = network.listen_port_tcp
         if network.listen_port_udp:
@@ -2349,7 +3701,7 @@ class Config(BaseModel):
 
         # Check for port conflicts within each protocol
         conflicts: list[str] = []
-        
+
         # Check TCP port conflicts
         seen_tcp_ports: dict[int, list[str]] = {}
         for name, port in tcp_ports.items():
@@ -2357,13 +3709,13 @@ class Config(BaseModel):
                 seen_tcp_ports[port].append(name)
             else:
                 seen_tcp_ports[port] = [name]
-        
+
         for port, names in seen_tcp_ports.items():
             if len(names) > 1:
                 conflicts.append(
                     f"TCP port {port} is used by: {', '.join(names)}"
                 )
-        
+
         # Check UDP port conflicts
         seen_udp_ports: dict[int, list[str]] = {}
         for name, port in udp_ports.items():
@@ -2371,7 +3723,7 @@ class Config(BaseModel):
                 seen_udp_ports[port].append(name)
             else:
                 seen_udp_ports[port] = [name]
-        
+
         for port, names in seen_udp_ports.items():
             if len(names) > 1:
                 conflicts.append(

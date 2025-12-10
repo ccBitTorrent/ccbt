@@ -37,6 +37,37 @@ class ConfigTemplates:
                     "handshake_timeout": 10,
                     "keep_alive_interval": 30,
                     "peer_timeout": 60,
+                    "dht_timeout": 4.0,
+                    # Adaptive handshake timeout settings
+                    "handshake_adaptive_timeout_enabled": True,
+                    "handshake_timeout_desperation_min": 10.0,
+                    "handshake_timeout_desperation_max": 20.0,  # CRITICAL: Reduced from 60.0 to 20.0 for better connection health
+                    "handshake_timeout_normal_min": 15.0,
+                    "handshake_timeout_normal_max": 30.0,
+                    "handshake_timeout_healthy_min": 20.0,
+                    "handshake_timeout_healthy_max": 40.0,
+                    # Connection health and validation settings (BitTorrent spec compliant)
+                    "metadata_exchange_timeout": 60.0,
+                    "metadata_piece_timeout": 15.0,
+                    "connection_health_check_interval": 30.0,
+                    "connection_validation_enabled": True,
+                    "connection_retry_max_attempts": 3,
+                    "connection_retry_backoff_base": 2.0,
+                    "connection_retry_backoff_max": 60.0,
+                    "peer_validation_enabled": True,
+                    "peer_validation_timeout": 5.0,
+                    "connection_state_validation_enabled": True,
+                    "connection_state_timeout": 120.0,
+                    "send_bitfield_after_metadata": True,
+                    "send_interested_after_metadata": True,
+                    "graceful_disconnect_enabled": True,
+                    "connection_cleanup_delay": 2.0,
+                    "max_concurrent_connection_attempts": 20,  # Windows-safe limit to prevent socket exhaustion
+                    "connection_failure_threshold": 3,
+                    "connection_failure_backoff_base": 2.0,
+                    "connection_failure_backoff_max": 300.0,
+                    "enable_fail_fast_dht": True,
+                    "fail_fast_dht_timeout": 30.0,
                     "max_upload_slots": 8,
                     "unchoke_interval": 10,
                     "optimistic_unchoke_interval": 30,
@@ -123,6 +154,14 @@ class ConfigTemplates:
                     # BEP 51: DHT Infohash Indexing
                     "dht_enable_indexing": True,
                     "dht_index_samples_per_key": 8,
+                    # Adaptive DHT timeout settings
+                    "dht_adaptive_timeout_enabled": True,
+                    "dht_timeout_desperation_min": 30.0,
+                    "dht_timeout_desperation_max": 60.0,
+                    "dht_timeout_normal_min": 5.0,
+                    "dht_timeout_normal_max": 15.0,
+                    "dht_timeout_healthy_min": 10.0,
+                    "dht_timeout_healthy_max": 30.0,
                 },
                 "limits": {
                     "global_down_kib": 0,  # Unlimited
@@ -244,6 +283,15 @@ class ConfigTemplates:
                     "handshake_timeout": 15,
                     "keep_alive_interval": 60,
                     "peer_timeout": 120,
+                    "dht_timeout": 4.0,
+                    # Adaptive handshake timeout settings
+                    "handshake_adaptive_timeout_enabled": True,
+                    "handshake_timeout_desperation_min": 30.0,
+                    "handshake_timeout_desperation_max": 60.0,
+                    "handshake_timeout_normal_min": 15.0,
+                    "handshake_timeout_normal_max": 30.0,
+                    "handshake_timeout_healthy_min": 20.0,
+                    "handshake_timeout_healthy_max": 40.0,
                     "max_upload_slots": 2,
                     "unchoke_interval": 30,
                     "optimistic_unchoke_interval": 60,
@@ -443,6 +491,15 @@ class ConfigTemplates:
                     "handshake_timeout": 10,
                     "keep_alive_interval": 30,
                     "peer_timeout": 60,
+                    "dht_timeout": 4.0,
+                    # Adaptive handshake timeout settings
+                    "handshake_adaptive_timeout_enabled": True,
+                    "handshake_timeout_desperation_min": 30.0,
+                    "handshake_timeout_desperation_max": 60.0,
+                    "handshake_timeout_normal_min": 15.0,
+                    "handshake_timeout_normal_max": 30.0,
+                    "handshake_timeout_healthy_min": 20.0,
+                    "handshake_timeout_healthy_max": 40.0,
                     "max_upload_slots": 4,
                     "unchoke_interval": 15,
                     "optimistic_unchoke_interval": 30,
@@ -526,6 +583,14 @@ class ConfigTemplates:
                     # BEP 51: DHT Infohash Indexing
                     "dht_enable_indexing": True,
                     "dht_index_samples_per_key": 8,
+                    # Adaptive DHT timeout settings
+                    "dht_adaptive_timeout_enabled": True,
+                    "dht_timeout_desperation_min": 30.0,
+                    "dht_timeout_desperation_max": 60.0,
+                    "dht_timeout_normal_min": 5.0,
+                    "dht_timeout_normal_max": 15.0,
+                    "dht_timeout_healthy_min": 10.0,
+                    "dht_timeout_healthy_max": 30.0,
                 },
                 "limits": {
                     "global_down_kib": 0,  # Unlimited
@@ -635,6 +700,15 @@ class ConfigTemplates:
                     "handshake_timeout": 10,
                     "keep_alive_interval": 30,
                     "peer_timeout": 60,
+                    "dht_timeout": 4.0,
+                    # Adaptive handshake timeout settings
+                    "handshake_adaptive_timeout_enabled": True,
+                    "handshake_timeout_desperation_min": 30.0,
+                    "handshake_timeout_desperation_max": 60.0,
+                    "handshake_timeout_normal_min": 15.0,
+                    "handshake_timeout_normal_max": 30.0,
+                    "handshake_timeout_healthy_min": 20.0,
+                    "handshake_timeout_healthy_max": 40.0,
                     "max_upload_slots": 12,  # More upload slots
                     "unchoke_interval": 10,
                     "optimistic_unchoke_interval": 30,
@@ -721,6 +795,14 @@ class ConfigTemplates:
                     # BEP 51: DHT Infohash Indexing
                     "dht_enable_indexing": True,
                     "dht_index_samples_per_key": 8,
+                    # Adaptive DHT timeout settings
+                    "dht_adaptive_timeout_enabled": True,
+                    "dht_timeout_desperation_min": 30.0,
+                    "dht_timeout_desperation_max": 60.0,
+                    "dht_timeout_normal_min": 5.0,
+                    "dht_timeout_normal_max": 15.0,
+                    "dht_timeout_healthy_min": 10.0,
+                    "dht_timeout_healthy_max": 30.0,
                 },
                 "limits": {
                     "global_down_kib": 0,  # Unlimited

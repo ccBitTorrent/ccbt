@@ -301,7 +301,7 @@ def set_value(
                 auto_restart=auto_restart,
             )
     except Exception as e:
-        logger.debug("Error checking if restart is needed: %s", e)
+        logger.debug(_("Error checking if restart is needed: %s"), e)
         # Don't fail the command if restart check fails
 
 
@@ -361,7 +361,7 @@ def reset_config(
                     del ref[parts[-1]]
                     changed = True
             except Exception as e:
-                logger.debug("Failed to parse config value: %s", e)
+                logger.debug(_("Failed to parse config value: %s"), e)
         elif section and section in file_data:
             del file_data[section]
             changed = True
@@ -393,7 +393,7 @@ def reset_config(
                 auto_restart=auto_restart,
             )
     except Exception as e:
-        logger.debug("Error checking if restart is needed: %s", e)
+        logger.debug(_("Error checking if restart is needed: %s"), e)
         # Don't fail the command if restart check fails
 
 
@@ -402,7 +402,7 @@ def reset_config(
 def validate_config_cmd(config_file: str | None):
     """Validate configuration file and print result."""
     try:
-        _ = ConfigManager(config_file)
+        ConfigManager(config_file)
         click.echo(_("VALID"))
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
         raise click.ClickException(str(e)) from e

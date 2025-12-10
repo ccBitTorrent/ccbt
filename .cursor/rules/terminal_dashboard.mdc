@@ -181,8 +181,57 @@ class Overview(Static):  # type: ignore[misc]
 
 - Use `update()` method to change widget content
 - Use Rich library for formatting (Table, Panel, etc.)
+- Use Rich `Text` for colored segments and complex formatting
 - Keep widgets focused on single responsibility
 - Export widgets through `widgets/__init__.py`
+- **Always wrap user-facing strings** with `_()` for i18n
+
+### Health Bar Widgets
+
+For health monitoring widgets (e.g., piece availability), use colored segments:
+
+```python
+from textual.widgets import Static
+from rich.text import Text
+from ccbt.i18n import _
+
+class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
+    """Widget to display piece availability as a colored health bar."""
+    
+    DEFAULT_CSS = """
+    PieceAvailabilityHealthBar {
+        height: 1;
+        width: 1fr;
+    }
+    """
+    
+    def update_availability(self, availability: list[int], max_peers: int | None = None) -> None:
+        """Update health bar with piece availability data."""
+        # Build colored bar with thin segments
+        bar_text = Text()
+        for peer_count in availability:
+            color = self._get_color_for_availability(peer_count)
+            bar_text.append("▌", style=color)  # Thin bar character
+        
+        # Add summary label
+        label = Text()
+        label.append(f" {_('Health')}: ", style="cyan")
+        label.append(f"{availability_pct:.1f}%", style="green")
+        
+        full_text = Text()
+        full_text.append(bar_text)
+        full_text.append(" ")
+        full_text.append(label)
+        self.update(full_text)
+```
+
+### Color Coding Patterns
+
+- **Green**: High availability/health (≥70% or high value)
+- **Yellow**: Medium availability/health (40-70%)
+- **Orange**: Low availability/health (20-40%)
+- **Red**: Very low availability/health (<20% or critical)
+- **Gray**: Not available or no data
 
 ## Configuration Screens
 
@@ -203,25 +252,63 @@ class SSLConfigScreen(ConfigScreen):  # type: ignore[misc]
         # ccbt/interface/screens/config/widgets.py
 ```
 
-## Command Execution
+## Data Access Pattern
 
-Use `CommandExecutor` from [ccbt/interface/commands/executor.py](mdc:ccbt/interface/commands/executor.py) to execute CLI commands:
+**CRITICAL**: The interface must use `DataProvider` for all read operations and `CommandExecutor` for all write operations. Never access session internals directly.
+
+### DataProvider Pattern
+
+Use `DataProvider` from [ccbt/interface/data_provider.py](mdc:ccbt/interface/data_provider.py) to access torrent data:
+
+```python
+from ccbt.interface.data_provider import DataProvider
+
+class MyScreen(Screen):
+    def __init__(self, data_provider: DataProvider, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._data_provider = data_provider
+    
+    async def refresh_data(self):
+        """Refresh data using DataProvider."""
+        # Read operations use DataProvider
+        stats = await self._data_provider.get_global_stats()
+        torrents = await self._data_provider.list_torrents()
+        status = await self._data_provider.get_torrent_status(info_hash)
+        peers = await self._data_provider.get_torrent_peers(info_hash)
+        files = await self._data_provider.get_torrent_files(info_hash)
+        trackers = await self._data_provider.get_torrent_trackers(info_hash)
+        availability = await self._data_provider.get_torrent_piece_availability(info_hash)
+        metrics = await self._data_provider.get_metrics()
+```
+
+### CommandExecutor Pattern
+
+Use `CommandExecutor` from [ccbt/interface/commands/executor.py](mdc:ccbt/interface/commands/executor.py) for all write operations:
 
 ```python
 from ccbt.interface.commands.executor import CommandExecutor
 
 class MyScreen(Screen):
-    def __init__(self, session, *args, **kwargs):
+    def __init__(self, data_provider: DataProvider, command_executor: CommandExecutor, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.session = session
-        self._command_executor = CommandExecutor(session)
+        self._data_provider = data_provider
+        self._command_executor = command_executor
     
-    async def action_some_command(self):
-        """Execute a CLI command."""
+    async def action_pause_torrent(self):
+        """Pause torrent using executor."""
         result = await self._command_executor.execute_command(
-            "download", ["--torrent", "path/to/file.torrent"]
+            "torrent.pause", info_hash=info_hash
         )
+        if result and hasattr(result, "success") and result.success:
+            self.app.notify("Torrent paused", severity="success")
 ```
+
+### Daemon Access Rules
+
+- **Read operations**: Always use `DataProvider` methods (never direct IPC client calls)
+- **Write operations**: Always use `CommandExecutor.execute_command()` (never direct session calls)
+- **Never access**: `self.session` internals directly when using daemon
+- **Exception**: Local sessions can access `self.session` directly, but prefer DataProvider/Executor for consistency
 
 ## Module Exports
 
@@ -310,9 +397,65 @@ content.update(Panel(table, title="System Resources"))
 - Test fallback behavior when Textual is unavailable
 
 
+## i18n Integration
+
+### String Wrapping
+
+All user-facing strings must be wrapped with `_()`:
+
+```python
+from ccbt.i18n import _
+
+# In bindings
+BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+    ("p", "pause", _("Pause")),
+    ("r", "resume", _("Resume")),
+]
+
+# In notifications
+self.app.notify(_("Torrent paused"), severity="success")
+
+# In table headers
+table.add_column(_("Name"), style="cyan")
+
+# In widget labels
+label.append(f" {_('Health')}: ", style="cyan")
+```
+
+### Language Selector
+
+Use `LanguageSelectorWidget` from [ccbt/interface/widgets/language_selector.py](mdc:ccbt/interface/widgets/language_selector.py) to allow users to change interface language:
+
+```python
+from ccbt.interface.widgets.language_selector import LanguageSelectorWidget
+
+def compose(self) -> ComposeResult:
+    with Vertical():
+        yield LanguageSelectorWidget(data_provider, command_executor)
+```
+
+## Tabbed Interface Structure
+
+The interface uses a tabbed structure with nested tabs:
+
+### Main Tabs
+
+1. **Torrents Tab**: Lists all torrents with nested sub-tabs (global, downloading, seeding, completed, active, inactive)
+2. **Per-Torrent Tab**: Detailed view for selected torrent with sub-tabs (files, info, peers, trackers, graphs, config)
+3. **Graphs Tab**: Global statistics and graphs (always visible in top half)
+4. **Preferences Tab**: Configuration with nested sub-tabs
+
+### Container vs Screen
+
+- **Container widgets**: Used for tab content (e.g., `TorrentsTabContent`, `PerTorrentTabContent`)
+- **Screen classes**: Used for full-screen overlays (e.g., `AddTorrentScreen`, `ConfigScreen`)
+- **Never embed Screen in Container**: Use wrapper widgets (`MonitoringScreenWrapper`, `ConfigScreenWrapper`) to extract data from screens
+
 ## References
 
 - Main dashboard: [ccbt/interface/terminal_dashboard.py](mdc:ccbt/interface/terminal_dashboard.py)
+- Data provider: [ccbt/interface/data_provider.py](mdc:ccbt/interface/data_provider.py)
+- Command executor: [ccbt/interface/commands/executor.py](mdc:ccbt/interface/commands/executor.py)
 - Base screens: [ccbt/interface/screens/base.py](mdc:ccbt/interface/screens/base.py)
 - Widgets: [ccbt/interface/widgets/](mdc:ccbt/interface/widgets/)
 - Textual docs: https://textual.textualize.io/

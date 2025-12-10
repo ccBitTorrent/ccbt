@@ -245,13 +245,76 @@ def build_minimal_torrent_data(
     info_hash: bytes,
     name: str | None,
     trackers: list[str],
+    web_seeds: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create a minimal `torrent_data` placeholder using known info.
 
     This structure is suitable for tracker/DHT peer discovery and metadata
     fetching, but lacks `info` details and piece layout until metadata is fetched.
+    
+    CRITICAL FIX: If no trackers are provided, add default public trackers to enable
+    peer discovery. This is essential for magnet links that only have web seeds (ws=)
+    but no trackers (tr=).
+    
+    CRITICAL FIX: Store web seeds (ws= parameters) from magnet links so they can be
+    used by the WebSeedExtension for downloading pieces via HTTP range requests.
     """
-    return {
+    # CRITICAL FIX: Add default trackers if none provided
+    # This enables peer discovery for magnet links without tr= parameters
+    # Use trackers from configuration instead of hardcoded defaults
+    if not trackers:
+        import logging
+        from ccbt.config.config import get_config
+        
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "Magnet link has no trackers (tr= parameters), adding default public trackers from configuration for peer discovery"
+        )
+        # Get default trackers from configuration
+        try:
+            config = get_config()
+            if hasattr(config, 'discovery') and hasattr(config.discovery, 'default_trackers'):
+                trackers = config.discovery.default_trackers.copy() if config.discovery.default_trackers else []
+                if trackers:
+                    logger.info(
+                        "Using %d default tracker(s) from configuration",
+                        len(trackers),
+                    )
+                else:
+                    logger.warning(
+                        "No default trackers configured, magnet link will rely on DHT only"
+                    )
+            else:
+                # Fallback to hardcoded defaults if config not available
+                logger.warning(
+                    "Config not available, using hardcoded default trackers"
+                )
+                trackers = [
+                    "https://tracker.opentrackr.org:443/announce",
+                    "https://tracker.torrent.eu.org:443/announce",
+                    "https://tracker.openbittorrent.com:443/announce",
+                    "http://tracker.opentrackr.org:1337/announce",
+                    "http://tracker.openbittorrent.com:80/announce",
+                    "udp://tracker.opentrackr.org:1337/announce",
+                    "udp://tracker.openbittorrent.com:80/announce",
+                ]
+        except Exception as e:
+            # Fallback to hardcoded defaults on any error
+            logger.warning(
+                "Failed to get default trackers from config: %s, using hardcoded defaults",
+                e,
+            )
+            trackers = [
+                "https://tracker.opentrackr.org:443/announce",
+                "https://tracker.torrent.eu.org:443/announce",
+                "https://tracker.openbittorrent.com:443/announce",
+                "http://tracker.opentrackr.org:1337/announce",
+                "http://tracker.openbittorrent.com:80/announce",
+                "udp://tracker.opentrackr.org:1337/announce",
+                "udp://tracker.openbittorrent.com:80/announce",
+            ]
+    
+    result = {
         "announce": trackers[0] if trackers else "",
         "announce_list": trackers,
         "info_hash": info_hash,
@@ -261,6 +324,19 @@ def build_minimal_torrent_data(
         "name": name or "",
         "is_magnet": True,  # CRITICAL: Mark as magnet link for DHT setup to prioritize DHT queries
     }
+    
+    # CRITICAL FIX: Store web seeds from magnet link (ws= parameters)
+    # These will be used by WebSeedExtension to download pieces via HTTP range requests
+    if web_seeds:
+        result["web_seeds"] = web_seeds
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "Magnet link contains %d web seed(s) (ws= parameters), will be used for HTTP downloads",
+            len(web_seeds),
+        )
+    
+    return result
 
 
 def validate_and_normalize_indices(
@@ -328,8 +404,63 @@ def build_torrent_data_from_metadata(  # pragma: no cover - BEP 9 (not BEP 53), 
     """Convert decoded info dictionary to the client `torrent_data` shape."""
     # Extract piece hashes
     piece_length = int(info_dict.get(b"piece length", 0))
-    pieces_blob = info_dict.get(b"pieces", b"")
+    
+    # CRITICAL FIX: Handle both bytes and string keys for 'pieces' field
+    # Some decoders may return string keys instead of bytes
+    pieces_blob = b""
+    if b"pieces" in info_dict:
+        pieces_blob = info_dict[b"pieces"]
+    elif "pieces" in info_dict:
+        pieces_value = info_dict["pieces"]
+        if isinstance(pieces_value, bytes):
+            pieces_blob = pieces_value
+        elif isinstance(pieces_value, str):
+            # Try to decode if it's a hex string (unlikely but possible)
+            try:
+                pieces_blob = bytes.fromhex(pieces_value)
+            except ValueError:
+                # If not hex, try encoding as UTF-8 (shouldn't happen but defensive)
+                pieces_blob = pieces_value.encode("utf-8")
+        else:
+            pieces_blob = bytes(pieces_value) if pieces_value else b""
+    
+    # Validate pieces_blob length is multiple of 20 (SHA-1 hash size)
+    if len(pieces_blob) % 20 != 0:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "Pieces blob length (%d) is not a multiple of 20. "
+            "This may indicate corrupted metadata. Expected %d hashes, got %d bytes.",
+            len(pieces_blob),
+            len(pieces_blob) // 20,
+            len(pieces_blob),
+        )
+    
     piece_hashes = [pieces_blob[i : i + 20] for i in range(0, len(pieces_blob), 20)]
+    
+    # CRITICAL FIX: Log piece hash extraction for debugging
+    import logging
+    logger = logging.getLogger(__name__)
+    if piece_hashes:
+        # Calculate expected piece count from file info (will be available after file_info is created)
+        # For now, log what we have
+        logger.info(
+            "Extracted %d piece hashes from metadata (pieces_blob_len=%d, piece_length=%d). "
+            "First hash (piece 0): %s, Last hash (piece %d): %s",
+            len(piece_hashes),
+            len(pieces_blob),
+            piece_length,
+            piece_hashes[0].hex() if piece_hashes[0] else "None",
+            len(piece_hashes) - 1,
+            piece_hashes[-1].hex() if piece_hashes else "None",
+        )
+    else:
+        logger.error(
+            "CRITICAL: No piece hashes extracted from metadata! pieces_blob_len=%d, piece_length=%d. "
+            "This will cause all hash verifications to fail.",
+            len(pieces_blob),
+            piece_length,
+        )
 
     if b"files" in info_dict:
         # multi-file
@@ -368,17 +499,58 @@ def build_torrent_data_from_metadata(  # pragma: no cover - BEP 9 (not BEP 53), 
         # This check exists for type checker satisfaction but is unreachable in practice.
         msg = f"Expected dict for file_info, got {type(file_info)}"
         raise TypeError(msg)
-    pieces_info = {
-        "piece_length": piece_length,
-        "num_pieces": len(piece_hashes),
-        "piece_hashes": piece_hashes,
-        "total_length": file_info["total_length"]
+    total_length = (
+        file_info["total_length"]
         if file_info["type"] == "single"
         else sum(
             f.get("length", 0)
             for f in file_info.get("files", [])  # type: ignore[not-iterable]
             if isinstance(f, dict)
-        ),
+        )
+    )
+    
+    # CRITICAL FIX: Validate piece count matches expected count based on total_length
+    # Expected piece count = ceil(total_length / piece_length)
+    import math
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    if piece_length > 0 and total_length > 0:
+        expected_num_pieces = math.ceil(total_length / piece_length)
+        actual_num_pieces = len(piece_hashes)
+        
+        if expected_num_pieces != actual_num_pieces:
+            logger.warning(
+                "PIECE_COUNT_MISMATCH: Expected %d pieces (total_length=%d, piece_length=%d), "
+                "but extracted %d piece hashes from metadata. "
+                "This may indicate corrupted metadata or incorrect piece hash extraction. "
+                "Hash verification may fail for some pieces.",
+                expected_num_pieces,
+                total_length,
+                piece_length,
+                actual_num_pieces,
+            )
+        else:
+            logger.info(
+                "PIECE_COUNT_VALIDATION: Piece count matches expected (num_pieces=%d, total_length=%d, piece_length=%d)",
+                actual_num_pieces,
+                total_length,
+                piece_length,
+            )
+    elif piece_length == 0:
+        logger.error(
+            "CRITICAL: piece_length is 0 in metadata! Cannot validate piece count."
+        )
+    elif total_length == 0:
+        logger.warning(
+            "WARNING: total_length is 0 in metadata. Cannot validate piece count."
+        )
+    
+    pieces_info = {
+        "piece_length": piece_length,
+        "num_pieces": len(piece_hashes),
+        "piece_hashes": piece_hashes,
+        "total_length": total_length,
     }
 
     # Extract private flag from info dictionary (BEP 27)

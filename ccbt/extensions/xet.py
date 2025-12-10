@@ -27,6 +27,19 @@ class XetMessageType(IntEnum):
     CHUNK_RESPONSE = 0x02  # Response with chunk data
     CHUNK_NOT_FOUND = 0x03  # Chunk not available
     CHUNK_ERROR = 0x04  # Error retrieving chunk
+    # Folder sync messages
+    FOLDER_VERSION_REQUEST = 0x10  # Request folder version (git ref)
+    FOLDER_VERSION_RESPONSE = 0x11  # Response with folder version
+    FOLDER_UPDATE_NOTIFY = 0x12  # Notify peer of folder update
+    FOLDER_SYNC_MODE_REQUEST = 0x13  # Request sync mode
+    FOLDER_SYNC_MODE_RESPONSE = 0x14  # Response with sync mode
+    # Metadata exchange messages
+    FOLDER_METADATA_REQUEST = 0x20  # Request folder metadata (.tonic file)
+    FOLDER_METADATA_RESPONSE = 0x21  # Response with folder metadata piece
+    FOLDER_METADATA_NOT_FOUND = 0x22  # Metadata not available
+    # Bloom filter messages
+    BLOOM_FILTER_REQUEST = 0x30  # Request peer's bloom filter
+    BLOOM_FILTER_RESPONSE = 0x31  # Response with bloom filter data
 
 
 @dataclass
@@ -41,13 +54,21 @@ class XetChunkRequest:
 class XetExtension:
     """Xet Protocol Extension implementation."""
 
-    def __init__(self):
-        """Initialize Xet Extension."""
+    def __init__(
+        self,
+        folder_sync_handshake: Any | None = None,  # XetHandshakeExtension
+    ):
+        """Initialize Xet Extension.
+
+        Args:
+            folder_sync_handshake: Optional XetHandshakeExtension for folder sync
+        """
         self.pending_requests: dict[
             tuple[str, int], XetChunkRequest
         ] = {}  # (peer_id, request_id) -> request
         self.request_counter = 0
         self.chunk_provider: Callable[[bytes], bytes | None] | None = None
+        self.folder_sync_handshake = folder_sync_handshake
 
     def set_chunk_provider(self, provider: Callable[[bytes], bytes | None]) -> None:
         """Set function to provide chunks by hash.
@@ -66,28 +87,83 @@ class XetExtension:
             Dictionary containing Xet extension capabilities
 
         """
-        return {
+        handshake = {
             "xet": {
                 "version": "1.0",
                 "supports_chunk_requests": True,
                 "supports_p2p_cas": True,
+                "supports_folder_sync": True,  # New: folder sync support
             }
         }
 
-    def decode_handshake(self, data: dict[str, Any]) -> bool:
+        # Merge with folder sync handshake if available
+        if hasattr(self, "folder_sync_handshake"):
+            folder_handshake = self.folder_sync_handshake.encode_handshake()
+            handshake.update(folder_handshake)
+
+        return handshake
+
+    def decode_handshake(self, peer_id: str, data: dict[str, Any]) -> bool:
         """Decode Xet extension handshake data.
 
         Args:
+            peer_id: Peer identifier
             data: Extension handshake data dictionary
 
         Returns:
-            True if peer supports Xet extension
+            True if peer supports Xet extension and passes allowlist verification
 
         """
         xet_data = data.get("xet", {})
-        if isinstance(xet_data, dict):
-            return xet_data.get("supports_chunk_requests", False)
-        return False
+        if not isinstance(xet_data, dict):
+            return False
+
+        if not xet_data.get("supports_chunk_requests", False):
+            return False
+
+        # Verify folder sync handshake if available
+        if self.folder_sync_handshake:
+            try:
+                # Decode folder sync handshake
+                handshake_info = self.folder_sync_handshake.decode_handshake(
+                    peer_id, data
+                )
+
+                if handshake_info:
+                    # Verify allowlist hash
+                    peer_allowlist_hash = handshake_info.get("allowlist_hash")
+                    if not self.folder_sync_handshake.verify_peer_allowlist(
+                        peer_id, peer_allowlist_hash
+                    ):
+                        logger.warning(
+                            "Peer %s failed allowlist verification, rejecting",
+                            peer_id,
+                        )
+                        return False
+
+                    # Verify peer identity if public key provided
+                    public_key = handshake_info.get("ed25519_public_key")
+                    if public_key and self.folder_sync_handshake.key_manager:
+                        # Note: Full signature verification would happen during
+                        # actual message exchange, not just handshake
+                        logger.debug(
+                            "Peer %s provided Ed25519 public key for verification",
+                            peer_id,
+                        )
+
+                    logger.debug(
+                        "Peer %s passed allowlist verification", peer_id
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Error verifying peer %s handshake: %s", peer_id, e
+                )
+                # If folder sync is required, reject on error
+                # Otherwise, allow basic Xet extension
+                if self.folder_sync_handshake and self.folder_sync_handshake.allowlist_hash:
+                    return False
+
+        return True
 
     def encode_chunk_request(self, chunk_hash: bytes) -> bytes:
         """Encode chunk request message.
@@ -330,6 +406,231 @@ class XetExtension:
         return {
             "supports_chunk_requests": True,
             "supports_p2p_cas": True,
+            "supports_folder_sync": True,
             "version": "1.0",
             "pending_requests": len(self.pending_requests),
         }
+
+    def encode_version_request(self) -> bytes:
+        """Encode folder version request message.
+
+        Returns:
+            Encoded version request message
+
+        """
+        # Pack: <message_type>
+        return struct.pack("!B", XetMessageType.FOLDER_VERSION_REQUEST)
+
+    def encode_version_response(self, git_ref: str | None) -> bytes:
+        """Encode folder version response message.
+
+        Args:
+            git_ref: Git commit hash/ref or None
+
+        Returns:
+            Encoded version response message
+
+        """
+        # Pack: <message_type><has_ref><ref_length><ref_data>
+        if git_ref:
+            ref_bytes = git_ref.encode("utf-8")
+            return struct.pack("!BB", XetMessageType.FOLDER_VERSION_RESPONSE, 1) + struct.pack("!I", len(ref_bytes)) + ref_bytes
+        return struct.pack("!BB", XetMessageType.FOLDER_VERSION_RESPONSE, 0)
+
+    def decode_version_response(self, data: bytes) -> str | None:
+        """Decode folder version response message.
+
+        Args:
+            data: Encoded response message
+
+        Returns:
+            Git commit hash/ref or None
+
+        """
+        if len(data) < 2:
+            msg = "Invalid version response message"
+            raise ValueError(msg)
+
+        message_type, has_ref = struct.unpack("!BB", data[:2])
+        if message_type != XetMessageType.FOLDER_VERSION_RESPONSE:
+            msg = "Invalid message type for version response"
+            raise ValueError(msg)
+
+        if has_ref == 0:
+            return None
+
+        if len(data) < 6:
+            msg = "Incomplete version response message"
+            raise ValueError(msg)
+
+        ref_length = struct.unpack("!I", data[2:6])[0]
+        if len(data) < 6 + ref_length:
+            msg = "Incomplete version response data"
+            raise ValueError(msg)
+
+        ref_bytes = data[6 : 6 + ref_length]
+        return ref_bytes.decode("utf-8")
+
+    def encode_update_notify(
+        self, file_path: str, chunk_hash: bytes, git_ref: str | None = None
+    ) -> bytes:
+        """Encode folder update notification message.
+
+        Args:
+            file_path: Path to updated file
+            chunk_hash: Hash of updated chunk
+            git_ref: Optional git commit hash/ref
+
+        Returns:
+            Encoded update notification message
+
+        """
+        # Pack: <message_type><file_path_length><file_path><chunk_hash><has_ref><ref_length><ref_data>
+        file_path_bytes = file_path.encode("utf-8")
+        parts = [
+            struct.pack("!B", XetMessageType.FOLDER_UPDATE_NOTIFY),
+            struct.pack("!I", len(file_path_bytes)),
+            file_path_bytes,
+            chunk_hash,
+        ]
+
+        if git_ref:
+            ref_bytes = git_ref.encode("utf-8")
+            parts.append(struct.pack("!BI", 1, len(ref_bytes)))
+            parts.append(ref_bytes)
+        else:
+            parts.append(struct.pack("!B", 0))
+
+        return b"".join(parts)
+
+    def decode_update_notify(self, data: bytes) -> tuple[str, bytes, str | None]:
+        """Decode folder update notification message.
+
+        Args:
+            data: Encoded notification message
+
+        Returns:
+            Tuple of (file_path, chunk_hash, git_ref)
+
+        """
+        if len(data) < 1:
+            msg = "Invalid update notify message"
+            raise ValueError(msg)
+
+        message_type = data[0]
+        if message_type != XetMessageType.FOLDER_UPDATE_NOTIFY:
+            msg = "Invalid message type for update notify"
+            raise ValueError(msg)
+
+        if len(data) < 5:
+            msg = "Incomplete update notify message"
+            raise ValueError(msg)
+
+        file_path_length = struct.unpack("!I", data[1:5])[0]
+        if len(data) < 5 + file_path_length:
+            msg = "Incomplete file path in update notify"
+            raise ValueError(msg)
+
+        file_path = data[5 : 5 + file_path_length].decode("utf-8")
+        offset = 5 + file_path_length
+
+        if len(data) < offset + 32:
+            msg = "Incomplete chunk hash in update notify"
+            raise ValueError(msg)
+
+        chunk_hash = data[offset : offset + 32]
+        offset += 32
+
+        git_ref: str | None = None
+        if len(data) > offset:
+            has_ref = data[offset]
+            offset += 1
+            if has_ref == 1:
+                if len(data) < offset + 4:
+                    msg = "Incomplete git ref in update notify"
+                    raise ValueError(msg)
+                ref_length = struct.unpack("!I", data[offset : offset + 4])[0]
+                offset += 4
+                if len(data) >= offset + ref_length:
+                    git_ref = data[offset : offset + ref_length].decode("utf-8")
+
+        return file_path, chunk_hash, git_ref
+
+    def encode_bloom_request(self) -> bytes:
+        """Encode bloom filter request message.
+
+        Returns:
+            Encoded bloom filter request message
+
+        """
+        # Pack: <message_type>
+        return struct.pack("!B", XetMessageType.BLOOM_FILTER_REQUEST)
+
+    def decode_bloom_request(self, data: bytes) -> bool:
+        """Decode bloom filter request message.
+
+        Args:
+            data: Encoded request message
+
+        Returns:
+            True if message is valid bloom filter request
+
+        Raises:
+            ValueError: If message is invalid
+
+        """
+        if len(data) < 1:
+            msg = "Invalid bloom filter request message"
+            raise ValueError(msg)
+
+        message_type = data[0]
+        if message_type != XetMessageType.BLOOM_FILTER_REQUEST:
+            msg = "Invalid message type for bloom filter request"
+            raise ValueError(msg)
+
+        return True
+
+    def encode_bloom_response(self, bloom_data: bytes) -> bytes:
+        """Encode bloom filter response message.
+
+        Args:
+            bloom_data: Serialized bloom filter data
+
+        Returns:
+            Encoded bloom filter response message
+
+        """
+        # Pack: <message_type><bloom_size><bloom_data>
+        return (
+            struct.pack("!BI", XetMessageType.BLOOM_FILTER_RESPONSE, len(bloom_data))
+            + bloom_data
+        )
+
+    def decode_bloom_response(self, data: bytes) -> bytes:
+        """Decode bloom filter response message.
+
+        Args:
+            data: Encoded response message
+
+        Returns:
+            Bloom filter data bytes
+
+        Raises:
+            ValueError: If message is invalid
+
+        """
+        if len(data) < 5:
+            msg = "Invalid bloom filter response message"
+            raise ValueError(msg)
+
+        message_type, bloom_size = struct.unpack("!BI", data[:5])
+        if message_type != XetMessageType.BLOOM_FILTER_RESPONSE:
+            msg = "Invalid message type for bloom filter response"
+            raise ValueError(msg)
+
+        if len(data) < 5 + bloom_size:
+            msg = "Incomplete bloom filter data in response"
+            raise ValueError(msg)
+
+        bloom_data = data[5 : 5 + bloom_size]
+        return bloom_data

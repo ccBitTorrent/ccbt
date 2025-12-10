@@ -32,6 +32,8 @@ class SessionExecutor(CommandExecutor):
         """
         if command == "session.get_global_stats":
             return await self._get_global_stats()
+        if command == "session.restart_service":
+            return await self._restart_service(**kwargs)
         return CommandResult(
             success=False,
             error=f"Unknown session command: {command}",
@@ -42,5 +44,20 @@ class SessionExecutor(CommandExecutor):
         try:
             stats = await self.adapter.get_global_stats()
             return CommandResult(success=True, data={"stats": stats})
+        except Exception as e:
+            return CommandResult(success=False, error=str(e))
+
+    async def _restart_service(self, service_name: str) -> CommandResult:
+        """Restart a service component."""
+        try:
+            # Check if adapter has restart_service method
+            if hasattr(self.adapter, "restart_service"):
+                success = await self.adapter.restart_service(service_name)
+                return CommandResult(success=success, data={"restarted": success})
+            
+            return CommandResult(
+                success=False,
+                error="Service restart not supported by adapter",
+            )
         except Exception as e:
             return CommandResult(success=False, error=str(e))

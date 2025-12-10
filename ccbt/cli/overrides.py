@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -206,15 +207,11 @@ def _apply_strategy_overrides(cfg: Config, options: dict[str, Any]) -> None:
             options["sequential_priority_files"]
         )
     if options.get("first_piece_priority"):
-        try:
+        with contextlib.suppress(Exception):
             cfg.strategy.first_piece_priority = True  # type: ignore[attr-defined]
-        except Exception:
-            pass
     if options.get("last_piece_priority"):
-        try:
+        with contextlib.suppress(Exception):
             cfg.strategy.last_piece_priority = True  # type: ignore[attr-defined]
-        except Exception:
-            pass
     if options.get("optimistic_unchoke_interval") is not None:
         cfg.network.optimistic_unchoke_interval = float(
             options["optimistic_unchoke_interval"]
@@ -245,15 +242,11 @@ def _apply_disk_overrides(cfg: Config, options: dict[str, Any]) -> None:
     if options.get("no_sparse_files"):
         cfg.disk.sparse_files = False
     if options.get("enable_io_uring"):
-        try:
+        with contextlib.suppress(Exception):
             cfg.disk.enable_io_uring = True  # type: ignore[attr-defined]
-        except Exception:
-            pass
     if options.get("disable_io_uring"):
-        try:
+        with contextlib.suppress(Exception):
             cfg.disk.enable_io_uring = False  # type: ignore[attr-defined]
-        except Exception:
-            pass
     if options.get("preserve_attributes"):
         cfg.disk.attributes.preserve_attributes = True
     if options.get("no_preserve_attributes"):
@@ -269,6 +262,7 @@ def _apply_disk_overrides(cfg: Config, options: dict[str, Any]) -> None:
 
 
 def _apply_xet_overrides(cfg: Config, options: dict[str, Any]) -> None:
+    # Disk XET settings
     if options.get("enable_xet"):
         cfg.disk.xet_enabled = True
     if options.get("disable_xet"):
@@ -285,6 +279,70 @@ def _apply_xet_overrides(cfg: Config, options: dict[str, Any]) -> None:
         cfg.disk.xet_chunk_max_size = int(options["xet_chunk_max_size"])
     if options.get("xet_chunk_target_size") is not None:
         cfg.disk.xet_chunk_target_size = int(options["xet_chunk_target_size"])
+
+    # XET Sync settings
+    if options.get("xet_sync_enable_xet") is not None:
+        cfg.xet_sync.enable_xet = bool(options["xet_sync_enable_xet"])
+    if options.get("xet_sync_check_interval") is not None:
+        cfg.xet_sync.check_interval = float(options["xet_sync_check_interval"])
+    if options.get("xet_sync_default_sync_mode") is not None:
+        cfg.xet_sync.default_sync_mode = str(options["xet_sync_default_sync_mode"])
+    if options.get("xet_sync_enable_git_versioning") is not None:
+        cfg.xet_sync.enable_git_versioning = bool(options["xet_sync_enable_git_versioning"])
+    if options.get("xet_sync_enable_lpd") is not None:
+        cfg.xet_sync.enable_lpd = bool(options["xet_sync_enable_lpd"])
+    if options.get("xet_sync_enable_gossip") is not None:
+        cfg.xet_sync.enable_gossip = bool(options["xet_sync_enable_gossip"])
+    if options.get("xet_sync_gossip_fanout") is not None:
+        cfg.xet_sync.gossip_fanout = int(options["xet_sync_gossip_fanout"])
+    if options.get("xet_sync_gossip_interval") is not None:
+        cfg.xet_sync.gossip_interval = float(options["xet_sync_gossip_interval"])
+    if options.get("xet_sync_flooding_ttl") is not None:
+        cfg.xet_sync.flooding_ttl = int(options["xet_sync_flooding_ttl"])
+    if options.get("xet_sync_flooding_priority_threshold") is not None:
+        cfg.xet_sync.flooding_priority_threshold = int(options["xet_sync_flooding_priority_threshold"])
+    if options.get("xet_sync_consensus_algorithm") is not None:
+        cfg.xet_sync.consensus_algorithm = str(options["xet_sync_consensus_algorithm"])
+    if options.get("xet_sync_raft_election_timeout") is not None:
+        cfg.xet_sync.raft_election_timeout = float(options["xet_sync_raft_election_timeout"])
+    if options.get("xet_sync_raft_heartbeat_interval") is not None:
+        cfg.xet_sync.raft_heartbeat_interval = float(options["xet_sync_raft_heartbeat_interval"])
+    if options.get("xet_sync_enable_byzantine_fault_tolerance") is not None:
+        cfg.xet_sync.enable_byzantine_fault_tolerance = bool(options["xet_sync_enable_byzantine_fault_tolerance"])
+    if options.get("xet_sync_byzantine_fault_threshold") is not None:
+        cfg.xet_sync.byzantine_fault_threshold = float(options["xet_sync_byzantine_fault_threshold"])
+    if options.get("xet_sync_weighted_voting") is not None:
+        cfg.xet_sync.weighted_voting = bool(options["xet_sync_weighted_voting"])
+    if options.get("xet_sync_auto_elect_source") is not None:
+        cfg.xet_sync.auto_elect_source = bool(options["xet_sync_auto_elect_source"])
+    if options.get("xet_sync_source_election_interval") is not None:
+        cfg.xet_sync.source_election_interval = float(options["xet_sync_source_election_interval"])
+    if options.get("xet_sync_conflict_resolution_strategy") is not None:
+        cfg.xet_sync.conflict_resolution_strategy = str(options["xet_sync_conflict_resolution_strategy"])
+    if options.get("xet_sync_git_auto_commit") is not None:
+        cfg.xet_sync.git_auto_commit = bool(options["xet_sync_git_auto_commit"])
+    if options.get("xet_sync_consensus_threshold") is not None:
+        cfg.xet_sync.consensus_threshold = float(options["xet_sync_consensus_threshold"])
+    if options.get("xet_sync_max_update_queue_size") is not None:
+        cfg.xet_sync.max_update_queue_size = int(options["xet_sync_max_update_queue_size"])
+    if options.get("xet_sync_allowlist_encryption_key") is not None:
+        cfg.xet_sync.allowlist_encryption_key = str(options["xet_sync_allowlist_encryption_key"]) if options["xet_sync_allowlist_encryption_key"] else None
+
+    # Network XET settings
+    if options.get("xet_port") is not None:
+        cfg.network.xet_port = int(options["xet_port"]) if options["xet_port"] else None
+    if options.get("xet_multicast_address") is not None:
+        cfg.network.xet_multicast_address = str(options["xet_multicast_address"])
+    if options.get("xet_multicast_port") is not None:
+        cfg.network.xet_multicast_port = int(options["xet_multicast_port"])
+
+    # Discovery XET settings
+    if options.get("xet_chunk_query_batch_size") is not None:
+        cfg.discovery.xet_chunk_query_batch_size = int(options["xet_chunk_query_batch_size"])
+    if options.get("xet_chunk_query_max_concurrent") is not None:
+        cfg.discovery.xet_chunk_query_max_concurrent = int(options["xet_chunk_query_max_concurrent"])
+    if options.get("discovery_cache_ttl") is not None:
+        cfg.discovery.discovery_cache_ttl = float(options["discovery_cache_ttl"])
 
 
 def _apply_observability_overrides(cfg: Config, options: dict[str, Any]) -> None:

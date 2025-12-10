@@ -1028,7 +1028,7 @@ def create_po_file(
     lang_name: str,
     lang_team: str,
     plural_forms: str,
-    entries: list[tuple[str, str, str, str]],
+    entries: list[tuple[str, str, str]],
     translate_func: Callable[[str], str],
     output_path: Path,
 ) -> None:
@@ -1053,7 +1053,14 @@ msgstr ""
 
     output_lines = [header]
 
-    for msgid, english_msgstr, raw_msgid, raw_msgstr in entries:
+    for entry in entries:
+        if len(entry) == 4:
+            msgid, english_msgstr, raw_msgid, raw_msgstr = entry
+        else:
+            # Handle 3-tuple from parse_po_file: (msgid, msgstr, raw_line)
+            msgid, english_msgstr, raw_line = entry
+            raw_msgid = raw_line
+            _ = raw_line.replace("msgid", "msgstr") if "msgid" in raw_line else raw_line  # Reserved for future use
         if not msgid:  # Skip header
             continue
 
@@ -1085,7 +1092,7 @@ msgstr ""
 
 
 if __name__ == "__main__":
-    base_dir = Path(__file__).parent / "locales"
+    base_dir = Path(__file__).parent.parent / "locales"
     english_po_path = base_dir / "en" / "LC_MESSAGES" / "ccbt.po"
 
     entries = parse_po_file(english_po_path)

@@ -1,387 +1,608 @@
 # ccBitTorrent Configuration File
-# This file can be used alongside or instead of environment variables
-# Environment variables take precedence over this file
-# See env.example for all available options and their descriptions
+# This file is aligned with .env copy and provides comprehensive configuration options
+# Configuration precedence: defaults → config file → environment → CLI → per-torrent
 
 # =============================================================================
 # NETWORK CONFIGURATION
 # =============================================================================
-
 [network]
 # Connection limits
-max_global_peers = 200                    # Maximum global peers (1-10000)
-max_peers_per_torrent = 50               # Maximum peers per torrent (1-1000)
-max_connections_per_peer = 1              # Max parallel connections per peer (1-8)
+max_global_peers = 600                    # Maximum global peers (1-10000)
+max_peers_per_torrent = 200               # Maximum peers per torrent (1-1000)
+max_connections_per_peer = 4              # Max parallel connections per peer (1-8)
 
 # Request pipeline settings
-pipeline_depth = 16                       # Request pipeline depth (1-128)
-block_size_kib = 16                       # Block size in KiB (1-64)
-min_block_size_kib = 4                    # Minimum block size in KiB (1-64)
-max_block_size_kib = 64                   # Maximum block size in KiB (1-1024)
+pipeline_depth = 120                      # Request pipeline depth (1-128)
+block_size_kib = 64                      # Block size in KiB (1-64)
+min_block_size_kib = 4                   # Minimum block size in KiB (1-64)
+max_block_size_kib = 128                  # Maximum block size in KiB (1-1024)
 
 # Socket tuning
-socket_rcvbuf_kib = 256                   # Socket receive buffer size in KiB (1-65536)
-socket_sndbuf_kib = 256                   # Socket send buffer size in KiB (1-65536)
-tcp_nodelay = true                        # Enable TCP_NODELAY (true/false)
+socket_rcvbuf_kib = 512                  # Socket receive buffer size in KiB (1-65536)
+socket_sndbuf_kib = 256                  # Socket send buffer size in KiB (1-65536)
+tcp_nodelay = true                       # Enable TCP_NODELAY (true/false)
 
 # Timeouts (seconds)
 connection_timeout = 30.0                 # Connection timeout (1.0-300.0)
-handshake_timeout = 10.0                  # Handshake timeout (1.0-60.0)
-keep_alive_interval = 120.0                # Keep alive interval (30.0-600.0)
-peer_timeout = 60.0                       # Peer inactivity timeout (5.0-600.0)
-dht_timeout = 2.0                         # DHT request timeout (1.0-60.0)
+handshake_timeout = 10.0                 # Handshake timeout (1.0-60.0)
+keep_alive_interval = 120.0              # Keep alive interval (30.0-600.0)
+peer_timeout = 60.0                      # Peer inactivity timeout (5.0-600.0)
+dht_timeout = 4.0                       # DHT request timeout (1.0-60.0)
 
 # Listen settings
-listen_port = 64122                       # Listen port (1024-65535) - deprecated: use listen_port_tcp and listen_port_udp
-listen_port_tcp = 64122                   # TCP listen port for incoming peer connections (1024-65535)
-listen_port_udp = 64122                   # UDP listen port for incoming peer connections (1024-65535)
-tracker_udp_port = 64123                  # UDP port for tracker client communication (1024-65535)
-listen_interface = "0.0.0.0"               # Listen interface
-enable_ipv6 = true                         # Enable IPv6 support (true/false)
+listen_port = 6881                       # Listen port (1024-65535) - deprecated, use listen_port_tcp/udp
+listen_port_tcp = 64122                  # TCP listen port for incoming peer connections
+listen_port_udp = 64122                   # UDP listen port for incoming peer connections
+tracker_udp_port = 64123                 # UDP port for tracker client communication
+xet_port = 64126                          # XET protocol port (uses listen_port_udp if not set) (1024-65535)
+xet_multicast_address = "239.255.255.250" # XET multicast address for local network discovery
+xet_multicast_port = 64127                # XET multicast port (1024-65535)
+listen_interface = "0.0.0.0"             # Listen interface
+enable_ipv6 = true                       # Enable IPv6 support
 
 # Transport protocols
-enable_tcp = true                         # Enable TCP transport (true/false)
-enable_utp = false                        # Enable uTP transport (true/false)
-enable_encryption = false                 # Enable protocol encryption (true/false)
-
-# Rate limiting (KiB/s, 0 = unlimited)
-global_down_kib = 0                       # Global download limit (0+)
-global_up_kib = 0                         # Global upload limit (0+)
-per_peer_down_kib = 0                     # Per-peer download limit (0+)
-per_peer_up_kib = 0                       # Per-peer upload limit (0+)
+enable_tcp = true                        # Enable TCP transport
+enable_utp = true                       # Enable uTP transport
+enable_encryption = true                 # Enable protocol encryption
 
 # Choking strategy
-max_upload_slots = 4                      # Maximum upload slots (1-20)
-optimistic_unchoke_interval = 30.0         # Optimistic unchoke interval (1.0-600.0)
-unchoke_interval = 10.0                   # Unchoke interval (1.0-600.0)
+max_upload_slots = 4                     # Maximum upload slots (1-20)
+optimistic_unchoke_interval = 30.0       # Optimistic unchoke interval (1.0-600.0)
+unchoke_interval = 10.0                  # Unchoke interval (1.0-600.0)
+
+# IMPROVEMENT: Choking optimization weights
+choking_upload_rate_weight = 0.6         # Weight for upload rate in choking/unchoking decisions (0.0-1.0)
+choking_download_rate_weight = 0.4       # Weight for download rate in choking/unchoking decisions (0.0-1.0)
+choking_performance_score_weight = 0.2   # Weight for performance score in choking/unchoking decisions (0.0-1.0)
+
+# IMPROVEMENT: Peer quality ranking weights
+peer_quality_performance_weight = 0.4    # Weight for historical performance in peer quality ranking (0.0-1.0)
+peer_quality_success_rate_weight = 0.2   # Weight for connection success rate in peer quality ranking (0.0-1.0)
+peer_quality_source_weight = 0.2       # Weight for source quality in peer quality ranking (0.0-1.0)
+peer_quality_proximity_weight = 0.2       # Weight for geographic proximity in peer quality ranking (0.0-1.0)
+
+# Rate limiting (KiB/s, 0 = unlimited)
+global_down_kib = 0                      # Global download limit (0+)
+global_up_kib = 0                        # Global upload limit (0+)
+per_peer_down_kib = 0                    # Per-peer download limit (0+)
+per_peer_up_kib = 0                      # Per-peer upload limit (0+)
 
 # Tracker settings
-tracker_timeout = 30.0                    # Tracker request timeout (5.0-120.0)
-tracker_connect_timeout = 10.0             # Tracker connection timeout (1.0-60.0)
-tracker_connection_limit = 50              # Maximum tracker connections (1-200)
-tracker_connections_per_host = 10         # Max connections per tracker host (1-50)
-dns_cache_ttl = 300                        # DNS cache TTL in seconds (60-3600)
+tracker_timeout = 30.0                   # Tracker request timeout (5.0-120.0)
+tracker_connect_timeout = 10.0           # Tracker connection timeout (1.0-60.0)
+tracker_connection_limit = 50            # Maximum tracker connections (1-200)
+tracker_connections_per_host = 10       # Max connections per tracker host (1-50)
+dns_cache_ttl = 300                     # DNS cache TTL in seconds (60-3600)
+tracker_keepalive_timeout = 300.0        # Tracker HTTP keepalive timeout in seconds
+tracker_enable_dns_cache = true          # Enable DNS caching for tracker requests
+tracker_dns_cache_ttl = 300             # Tracker DNS cache TTL in seconds
 
-# BitTorrent Protocol v2 (BEP 52) settings
-[network.protocol_v2]
-enable_protocol_v2 = true                 # Enable BitTorrent Protocol v2 support (BEP 52) (true/false)
-prefer_protocol_v2 = false                # Prefer v2 protocol when both v1 and v2 are available (true/false)
-support_hybrid = true                     # Support hybrid torrents (both v1 and v2 metadata) (true/false)
-v2_handshake_timeout = 30.0               # v2 handshake timeout in seconds (5.0-300.0)
+# Connection pool settings
+connection_pool_max_connections = 400    # Maximum connections in connection pool
+connection_pool_max_idle_time = 300.0    # Maximum idle time before connection is closed (seconds)
+connection_pool_warmup_enabled = true    # Enable connection warmup to pre-establish connections
+connection_pool_warmup_count = 10       # Number of connections to warmup on torrent start
+connection_pool_health_check_interval = 60.0  # Interval for connection health checks (seconds)
+connection_pool_adaptive_limit_enabled = true  # Enable adaptive connection limit calculation based on system resources and peer performance
+connection_pool_adaptive_limit_min = 50  # Minimum adaptive connection limit (10-500)
+connection_pool_adaptive_limit_max = 1000  # Maximum adaptive connection limit (100-10000)
+connection_pool_cpu_threshold = 0.8  # CPU usage threshold (0.5-0.95) above which connection limit is reduced
+connection_pool_memory_threshold = 0.8  # Memory usage threshold (0.5-0.95) above which connection limit is reduced
+connection_pool_performance_recycling_enabled = true  # Enable performance-based connection recycling (recycle low-performing connections)
+connection_pool_performance_threshold = 0.3  # Performance score threshold (0.0-1.0) below which connections are recycled
+connection_pool_quality_threshold = 0.3  # Minimum connection quality score (0.0-1.0) for connection reuse. Connections below this are recycled.
+connection_pool_grace_period = 60.0  # Grace period in seconds for new connections before quality checks (allows time for bandwidth establishment) (0.0-600.0)
+connection_pool_min_download_bandwidth = 0.0  # Minimum download bandwidth in bytes/second for connections to be considered healthy (0 = disabled)
+connection_pool_min_upload_bandwidth = 0.0  # Minimum upload bandwidth in bytes/second for connections to be considered healthy (0 = disabled)
+connection_pool_health_degradation_threshold = 0.5  # Health score threshold (0.0-1.0) below which connection health level is degraded
+connection_pool_health_recovery_threshold = 0.7  # Health score threshold (0.0-1.0) above which degraded connection health can recover
+
+# Timeout and retry settings
+timeout_adaptive = true                  # Enable adaptive timeout calculation based on RTT
+timeout_min_seconds = 5.0                # Minimum timeout in seconds
+timeout_max_seconds = 300.0              # Maximum timeout in seconds
+timeout_rtt_multiplier = 3.0             # RTT multiplier for timeout calculation
+retry_exponential_backoff = true         # Use exponential backoff for retries
+retry_base_delay = 1.0                   # Base delay for retry backoff in seconds
+retry_max_delay = 300.0                  # Maximum delay for retry backoff in seconds
+circuit_breaker_enabled = true           # Enable circuit breaker for peer connections
+circuit_breaker_failure_threshold = 5    # Number of failures before opening circuit breaker
+circuit_breaker_recovery_timeout = 60.0  # Recovery timeout for circuit breaker in seconds
+
+# Socket buffer optimization
+socket_adaptive_buffers = true           # Enable adaptive socket buffer sizing based on BDP
+socket_min_buffer_kib = 64               # Minimum socket buffer size in KiB
+socket_max_buffer_kib = 65536           # Maximum socket buffer size in KiB
+socket_enable_window_scaling = true      # Enable TCP window scaling for high-speed connections
+
+# Pipeline optimization
+pipeline_adaptive_depth = true           # Enable adaptive pipeline depth based on connection latency
+pipeline_min_depth = 4                   # Minimum pipeline depth
+pipeline_max_depth = 64                  # Maximum pipeline depth
+pipeline_enable_prioritization = true    # Enable request prioritization (rarest pieces first)
+pipeline_enable_coalescing = true        # Enable request coalescing (combine adjacent requests)
+pipeline_coalesce_threshold_kib = 4      # Maximum gap in KiB for coalescing adjacent requests
+
+# Connection health and failure management (BitTorrent spec compliant)
+max_concurrent_connection_attempts = 20  # Maximum concurrent connection attempts to prevent OS socket exhaustion (5-100)
+connection_failure_threshold = 3  # Number of consecutive failures before applying backoff to a peer (1-10)
+connection_failure_backoff_base = 2.0  # Exponential backoff base multiplier for connection failures (1.0-10.0)
+connection_failure_backoff_max = 300.0  # Maximum backoff delay in seconds for failed connection attempts (60.0-3600.0)
+enable_fail_fast_dht = true  # Enable fail-fast DHT trigger when active_peers == 0 for >30s (allows DHT even if <50 peers)
+fail_fast_dht_timeout = 30.0  # Timeout in seconds before triggering fail-fast DHT when active_peers == 0 (10.0-120.0)
 
 # uTP (uTorrent Transport Protocol) Configuration (BEP 29)
 [network.utp]
-prefer_over_tcp = false                    # Prefer uTP over TCP when both are supported (true/false)
-connection_timeout = 45.0                  # uTP connection timeout in seconds (5.0-300.0)
-max_window_size = 65535                    # Maximum uTP receive window size in bytes (8192-65535)
-mtu = 1500                                 # uTP MTU size (maximum UDP packet size) (576-65507)
-initial_rate = 2000                        # Initial send rate in bytes/second (1024-100000)
-min_rate = 1024                           # Minimum send rate in bytes/second (256-10000)
-max_rate = 2000000                         # Maximum send rate in bytes/second (10000-10000000)
-ack_interval = 0.2                         # ACK packet send interval in seconds (0.01-1.0)
-retransmit_timeout_factor = 5.0           # RTT multiplier for retransmit timeout (2.0-10.0)
-max_retransmits = 15                       # Maximum retransmission attempts before connection failure (3-50)
+prefer_over_tcp = false                   # Prefer uTP over TCP when both are supported
+connection_timeout = 30.0                # uTP connection timeout in seconds (5.0-300.0)
+max_window_size = 65535                  # Maximum uTP receive window size in bytes (8192-65535)
+mtu = 1200                               # uTP MTU size (maximum UDP packet size) (576-65507)
+initial_rate = 1500                      # Initial send rate in bytes/second (1024-100000)
+min_rate = 512                           # Minimum send rate in bytes/second (256-10000)
+max_rate = 1000000                       # Maximum send rate in bytes/second (10000-10000000)
+ack_interval = 0.1                       # ACK packet send interval in seconds (0.01-1.0)
+retransmit_timeout_factor = 4.0          # RTT multiplier for retransmit timeout (2.0-10.0)
+max_retransmits = 10                     # Maximum retransmission attempts before connection failure (3-50)
+
+# BitTorrent Protocol v2 (BEP 52) settings
+[network.protocol_v2]
+enable_protocol_v2 = true                 # Enable BitTorrent Protocol v2 support (BEP 52)
+prefer_protocol_v2 = false                # Prefer v2 protocol when both v1 and v2 are available
+support_hybrid = true                    # Support hybrid torrents (both v1 and v2 metadata)
+v2_handshake_timeout = 30.0              # v2 handshake timeout in seconds (5.0-300.0)
+
+# =============================================================================
+# Plugin Configuration
+# =============================================================================
+[plugins]
+# Enable/disable plugin system
+enable_plugins = true
+# Plugin auto-loading from configured directories
+auto_load_plugins = true
+plugin_directories = []
+
+[plugins.metrics]
+# Metrics plugin configuration
+enable_metrics_plugin = true
+# Maximum number of metrics to keep in memory (default: 10000)
+max_metrics = 10000
+# Enable event-driven metrics collection
+enable_event_metrics = true
+# Metrics retention period in seconds (0 = unlimited)
+metrics_retention_seconds = 3600
+# Enable metric aggregation
+enable_aggregation = true
+# Aggregation window in seconds
+aggregation_window = 60.0
 
 # =============================================================================
 # DISK CONFIGURATION
 # =============================================================================
-
 [disk]
 # Preallocation strategy: none, sparse, full, fallocate
-preallocate = "full"                      # Preallocation strategy
-sparse_files = false                      # Use sparse files if supported (true/false)
+preallocate = "full"                     # Preallocation strategy
+sparse_files = false                     # Use sparse files if supported (true/false)
 
 # Write optimization
-write_batch_kib = 64                      # Write batch size in KiB (1-1024)
-write_buffer_kib = 1024                   # Write buffer size in KiB (0-65536)
-use_mmap = true                           # Use memory mapping (true/false)
-mmap_cache_mb = 128                       # Memory-mapped cache size in MB (16-2048)
-mmap_cache_cleanup_interval = 30.0         # MMap cache cleanup interval (1.0-300.0)
+write_batch_kib = 64                     # Write batch size in KiB (1-1024)
+write_buffer_kib = 1024                  # Write buffer size in KiB (0-65536)
+use_mmap = true                          # Use memory mapping
+mmap_cache_mb = 128                      # Memory-mapped cache size in MB (16-2048)
+mmap_cache_cleanup_interval = 30.0      # MMap cache cleanup interval (1.0-300.0)
 
 # Hash verification
-hash_workers = 4                          # Number of hash verification workers (1-32)
-hash_chunk_size = 65536                   # Chunk size for hash verification (1024-1048576)
-hash_batch_size = 4                       # Number of pieces to verify in parallel batches (1-64)
-hash_queue_size = 100                     # Hash verification queue size (10-500)
+hash_workers = 4                         # Number of hash verification workers (1-32)
+hash_chunk_size = 65536                  # Chunk size for hash verification (1024-1048576)
+hash_batch_size = 4                      # Number of pieces to verify in parallel batches (1-64)
+hash_queue_size = 100                    # Hash verification queue size (10-500)
 
 # I/O threading
-disk_workers = 2                          # Number of disk I/O workers (1-16)
-disk_queue_size = 200                     # Disk I/O queue size (10-1000)
-cache_size_mb = 256                       # Cache size in MB (16-4096)
+disk_workers = 2                         # Number of disk I/O workers (1-16)
+disk_queue_size = 200                    # Disk I/O queue size (10-1000)
+cache_size_mb = 256                      # Cache size in MB (16-4096)
 
 # Advanced settings
-direct_io = false                         # Use direct I/O (true/false)
-sync_writes = false                       # Synchronize writes (true/false)
-read_ahead_kib = 64                       # Read ahead size in KiB (0-1024)
-enable_io_uring = false                   # Enable io_uring on Linux if available (true/false)
-# download_path = ""                     # Default download path (uncomment and set if needed)
+direct_io = false                        # Use direct I/O
+sync_writes = false                      # Synchronize writes
+read_ahead_kib = 128                      # Read ahead size in KiB (0-1024)
+enable_io_uring = false                  # Enable io_uring on Linux if available
+download_path = ""                       # Default download path (empty = use default)
+download_dir = "C:\\Users\\MeMyself\\Downloads" # Download directory
 
 # Checkpoint settings
-checkpoint_enabled = true                 # Enable download checkpointing (true/false)
-checkpoint_format = "both"                # Checkpoint file format (json/binary/both)
-# checkpoint_dir = ""                    # Checkpoint directory (defaults to download_dir/.ccbt/checkpoints) (uncomment and set if needed)
-checkpoint_interval = 30.0                 # Checkpoint save interval in seconds (1.0-3600.0)
-checkpoint_on_piece = true                # Save checkpoint after each verified piece (true/false)
-auto_resume = true                        # Automatically resume from checkpoint on startup (true/false)
-checkpoint_compression = true             # Compress binary checkpoint files (true/false)
-auto_delete_checkpoint_on_complete = true # Auto-delete checkpoint when download completes (true/false)
-checkpoint_retention_days = 30            # Days to retain checkpoints before cleanup (1-365)
+checkpoint_enabled = true                 # Enable download checkpointing
+checkpoint_format = "both"               # Checkpoint file format (json/binary/both)
+checkpoint_dir = ""                      # Checkpoint directory (defaults to download_dir/.ccbt/checkpoints)
+checkpoint_interval = 30.0               # Checkpoint save interval in seconds (1.0-3600.0)
+checkpoint_on_piece = true               # Save checkpoint after each verified piece
+auto_resume = true                       # Automatically resume from checkpoint on startup
+checkpoint_compression = true             # Compress binary checkpoint files
+auto_delete_checkpoint_on_complete = true # Auto-delete checkpoint when download completes
+checkpoint_retention_days = 30           # Days to retain checkpoints before cleanup (1-365)
 
 # Fast Resume settings
-fast_resume_enabled = true                # Enable fast resume support (true/false)
-resume_save_interval = 30.0               # Interval to save resume data in seconds (1.0-3600.0)
-resume_verify_on_load = true              # Verify resume data integrity on load (true/false)
-resume_verify_pieces = 10                 # Number of pieces to verify on resume (0-100, 0 = disable)
-resume_data_format_version = 1            # Resume data format version (1-100)
+fast_resume_enabled = true               # Enable fast resume support
+resume_save_interval = 30.0              # Interval to save resume data in seconds (1.0-3600.0)
+resume_verify_on_load = true             # Verify resume data integrity on load
+resume_verify_pieces = 10                # Number of pieces to verify on resume (0-100, 0 = disable)
+resume_data_format_version = 1           # Resume data format version (1-100)
 
 # BEP 47: File Attributes Configuration
 [disk.attributes]
-preserve_attributes = true                # Preserve file attributes (executable, hidden, symlinks) (true/false)
-skip_padding_files = true                 # Skip downloading padding files (BEP 47) (true/false)
-verify_file_sha1 = false                  # Verify file SHA-1 hashes when provided (BEP 47) (true/false)
-apply_symlinks = true                     # Create symlinks for files with attr='l' (true/false)
-apply_executable_bit = true               # Set executable bit for files with attr='x' (true/false)
-apply_hidden_attr = true                  # Apply hidden attribute for files with attr='h' (Windows) (true/false)
+preserve_attributes = true                # Preserve file attributes (executable, hidden, symlinks)
+skip_padding_files = true                # Skip downloading padding files (BEP 47)
+verify_file_sha1 = true                 # Verify file SHA-1 hashes when provided (BEP 47)
+apply_symlinks = true                    # Create symlinks for files with attr='l'
+apply_executable_bit = true              # Set executable bit for files with attr='x'
+apply_hidden_attr = true                 # Apply hidden attribute for files with attr='h' (Windows)
 
 # Xet Protocol Configuration
-xet_enabled = false                        # Enable Xet protocol for content-defined chunking and deduplication (true/false)
-xet_chunk_min_size = 8192                  # Minimum Xet chunk size in bytes (4096-65536)
-xet_chunk_max_size = 131072                # Maximum Xet chunk size in bytes (32768-524288)
-xet_chunk_target_size = 16384              # Target Xet chunk size in bytes (8192-65536)
-xet_deduplication_enabled = true            # Enable chunk-level deduplication (true/false)
-# xet_cache_db_path = ""                  # Path to Xet deduplication cache database (defaults to download_dir/.xet_cache/chunks.db) (uncomment and set if needed)
-# xet_chunk_store_path = ""                # Path to Xet chunk storage directory (defaults to download_dir/.xet_chunks) (uncomment and set if needed)
-xet_use_p2p_cas = true                     # Use peer-to-peer Content Addressable Storage (DHT-based) (true/false)
-xet_compression_enabled = false             # Enable LZ4 compression for stored chunks (true/false)
+[disk.xet]
+xet_enabled = true                      # Enable Xet protocol for content-defined chunking and deduplication
+xet_chunk_min_size = 8192                # Minimum Xet chunk size in bytes
+xet_chunk_max_size = 131072              # Maximum Xet chunk size in bytes
+xet_chunk_target_size = 16384            # Target Xet chunk size in bytes
+xet_deduplication_enabled = true         # Enable chunk-level deduplication
+xet_cache_db_path = ""                   # Path to Xet deduplication cache database
+xet_chunk_store_path = ""                # Path to Xet chunk storage directory
+xet_use_p2p_cas = true                   # Use peer-to-peer Content Addressable Storage (DHT-based)
+xet_compression_enabled = false          # Enable LZ4 compression for stored chunks
+
+# XET Folder Synchronization Configuration
+[xet_sync]
+enable_xet = true                       # Enable XET folder synchronization globally
+check_interval = 5.0                    # Interval between folder checks in seconds (0.5-3600.0)
+default_sync_mode = "best_effort"        # Default synchronization mode (designated/best_effort/broadcast/consensus)
+enable_git_versioning = true            # Enable git integration for version tracking
+enable_lpd = true                        # Enable Local Peer Discovery (BEP 14)
+enable_gossip = true                     # Enable gossip protocol for update propagation
+gossip_fanout = 3                        # Gossip fanout (number of peers to gossip to) (1-10)
+gossip_interval = 5.0                    # Gossip interval in seconds (1.0-60.0)
+flooding_ttl = 10                        # Controlled flooding TTL (max hops) (1-100)
+flooding_priority_threshold = 100        # Priority threshold for using flooding (0-1000)
+consensus_algorithm = "simple"           # Consensus algorithm (simple/raft)
+raft_election_timeout = 1.0              # Raft election timeout in seconds (0.1-10.0)
+raft_heartbeat_interval = 0.1            # Raft heartbeat interval in seconds (0.01-1.0)
+enable_byzantine_fault_tolerance = false # Enable Byzantine fault tolerance
+byzantine_fault_threshold = 0.33         # Byzantine fault threshold (max fraction of faulty nodes) (0.0-0.5)
+weighted_voting = false                  # Use weighted voting for consensus
+auto_elect_source = false                # Automatically elect source peer
+source_election_interval = 300.0        # Source peer election interval in seconds (60.0-3600.0)
+conflict_resolution_strategy = "last_write_wins"  # Conflict resolution strategy (last_write_wins/version_vector/three_way_merge/timestamp)
+git_auto_commit = true                  # Automatically commit changes on folder updates
+consensus_threshold = 0.5                # Majority threshold for consensus mode (0.0 to 1.0)
+max_update_queue_size = 100              # Maximum number of queued updates (1-10000)
+allowlist_encryption_key = ""            # Path to allowlist encryption key file
 
 # =============================================================================
 # STRATEGY CONFIGURATION
 # =============================================================================
-
 [strategy]
 # Piece selection strategy: round_robin, rarest_first, sequential
-piece_selection = "rarest_first"          # Piece selection strategy
-endgame_duplicates = 2                     # Endgame duplicate requests (1-10)
-endgame_threshold = 0.95                   # Endgame mode threshold (0.1-1.0)
-streaming_mode = false                     # Enable streaming mode (true/false)
+piece_selection = "sequential"          # Piece selection strategy
+endgame_duplicates = 2                   # Endgame duplicate requests (1-10)
+endgame_threshold = 0.95                 # Endgame mode threshold (0.1-1.0)
+streaming_mode = true                    # Enable streaming mode
 
 # Advanced strategy settings
-rarest_first_threshold = 0.1               # Rarest first threshold (0.0-1.0)
-sequential_window = 10                     # Sequential window size (1-100)
-sequential_priority_files = []             # File paths to prioritize in sequential mode (comma-separated, optional)
-sequential_fallback_threshold = 0.1       # Fallback to rarest-first if availability < threshold (0.0-1.0)
-pipeline_capacity = 4                     # Request pipeline capacity (1-32)
+rarest_first_threshold = 0.1             # Rarest first threshold (0.0-1.0)
+sequential_window = 50                    # Sequential window size (1-100)
+sequential_priority_files = []           # File paths to prioritize in sequential mode (comma-separated, optional)
+sequential_fallback_threshold = 0.1      # Fallback to rarest-first if availability < threshold (0.0-1.0)
+pipeline_capacity = 16                    # Request pipeline capacity (1-32)
 
-# Piece priorities
-first_piece_priority = true               # Prioritize first piece (true/false)
-last_piece_priority = false               # Prioritize last piece (true/false)
+# Piece priorities (Note: These are valid config options but not in env_mappings)
+first_piece_priority = true              # Prioritize first piece (true/false)
+last_piece_priority = false              # Prioritize last piece (true/false)
+
+# Advanced piece selection strategies
+bandwidth_weighted_rarest_weight = 0.7  # Weight for bandwidth in bandwidth-weighted rarest-first (0.0=rarity only, 1.0=bandwidth only)
+progressive_rarest_transition_threshold = 0.5  # Progress threshold for transitioning from sequential to rarest-first in progressive mode (0.0-1.0)
+adaptive_hybrid_phase_detection_window = 10  # Number of pieces to analyze for phase detection in adaptive hybrid mode (5-50)
 
 # =============================================================================
 # DISCOVERY CONFIGURATION
 # =============================================================================
-
 [discovery]
 # DHT settings
-enable_dht = true                         # Enable DHT (true/false)
-dht_port = 64120                          # DHT port (1024-65535)
+enable_dht = true                        # Enable DHT
+dht_port = 64124                          # DHT port (1024-65535)
 dht_bootstrap_nodes = [
     "router.bittorrent.com:6881",
     "dht.transmissionbt.com:6881",
     "router.utorrent.com:6881",
-    "dht.libtorrent.org:25401"
+    "dht.libtorrent.org:25401",
+    "dht.aelitis.com:6881",
+    "router.silotis.us:6881",
+    "router.bitcomet.com:6881",
 ]
 
 # BEP 32: IPv6 Extension for DHT
-dht_enable_ipv6 = true                    # Enable IPv6 DHT support (BEP 32) (true/false)
-dht_prefer_ipv6 = true                    # Prefer IPv6 addresses over IPv4 when available (true/false)
-dht_ipv6_bootstrap_nodes = []             # IPv6 DHT bootstrap nodes (comma-separated, format: [hostname:port or [IPv6]:port])
+dht_enable_ipv6 = true                   # Enable IPv6 DHT support (BEP 32)
+dht_prefer_ipv6 = true                   # Prefer IPv6 addresses over IPv4 when available
+dht_ipv6_bootstrap_nodes = []           # IPv6 DHT bootstrap nodes (format: [hostname:port or [IPv6]:port])
 
 # BEP 43: Read-only DHT Nodes
-dht_readonly_mode = false                 # Enable read-only DHT mode (BEP 43) (true/false)
+dht_readonly_mode = false                # Enable read-only DHT mode (BEP 43)
 
 # BEP 45: Multiple-Address Operation for DHT
-dht_enable_multiaddress = true           # Enable multi-address support (BEP 45) (true/false)
-dht_max_addresses_per_node = 4            # Maximum addresses to track per node (BEP 45) (1-16)
+dht_enable_multiaddress = true           # Enable multi-address support (BEP 45)
+dht_max_addresses_per_node = 4           # Maximum addresses to track per node (BEP 45) (1-16)
 
 # BEP 44: Storing Arbitrary Data in the DHT
-dht_enable_storage = false                # Enable DHT storage (BEP 44) (true/false)
-dht_storage_ttl = 3600                    # Storage TTL in seconds (BEP 44) (60-86400)
-dht_max_storage_size = 1000               # Maximum storage value size in bytes (BEP 44) (100-10000)
+dht_enable_storage = false               # Enable DHT storage (BEP 44)
+dht_storage_ttl = 3600                   # Storage TTL in seconds (BEP 44) (60-86400)
+dht_max_storage_size = 1000              # Maximum storage value size in bytes (BEP 44) (100-10000)
 
 # BEP 51: DHT Infohash Indexing
-dht_enable_indexing = true               # Enable infohash indexing (BEP 51) (true/false)
-dht_index_samples_per_key = 8             # Maximum samples per index key (BEP 51) (1-100)
+dht_enable_indexing = true               # Enable infohash indexing (BEP 51)
+dht_index_samples_per_key = 8            # Maximum samples per index key (BEP 51) (1-100)
+
+# XET chunk discovery settings
+xet_chunk_query_batch_size = 50          # Batch size for parallel chunk queries (1-200)
+xet_chunk_query_max_concurrent = 50      # Maximum concurrent chunk queries (1-200)
+discovery_cache_ttl = 60.0               # Discovery result cache TTL in seconds (1.0-3600.0)
 
 # PEX settings
-enable_pex = true                         # Enable Peer Exchange (true/false)
-pex_interval = 30.0                       # Peer Exchange announce interval in seconds (5.0-3600.0)
+enable_pex = true                        # Enable Peer Exchange
+pex_interval = 30.0                      # Peer Exchange announce interval in seconds (5.0-3600.0)
 
 # Tracker settings
-enable_http_trackers = true               # Enable HTTP trackers (true/false)
-enable_udp_trackers = true                # Enable UDP trackers (true/false)
-tracker_announce_interval = 1800.0        # Tracker announce interval in seconds (60.0-86400.0)
-tracker_scrape_interval = 3600.0          # Tracker scrape interval in seconds (60.0-86400.0)
-tracker_auto_scrape = false               # Automatically scrape trackers when adding torrents (true/false)
+enable_http_trackers = true               # Enable HTTP trackers
+enable_udp_trackers = true               # Enable UDP trackers
+tracker_announce_interval = 1800.0       # Tracker announce interval in seconds (60.0-86400.0)
+tracker_scrape_interval = 3600.0         # Tracker scrape interval in seconds (60.0-86400.0)
+tracker_auto_scrape = true              # Automatically scrape trackers when adding torrents
+
+# Default trackers for magnet links without tr= parameters
+default_trackers = [
+    "https://tracker.opentrackr.org:443/announce",
+    "https://tracker.torrent.eu.org:443/announce",
+    "https://tracker.openbittorrent.com:443/announce",
+    "http://tracker.opentrackr.org:1337/announce",
+    "http://tracker.openbittorrent.com:80/announce",
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://tracker.openbittorrent.com:80/announce",
+]
+
+# Adaptive handshake timeout settings
+handshake_adaptive_timeout_enabled = true
+handshake_timeout_desperation_min = 30.0
+handshake_timeout_desperation_max = 60.0
+handshake_timeout_normal_min = 15.0
+handshake_timeout_normal_max = 30.0
+handshake_timeout_healthy_min = 20.0
+handshake_timeout_healthy_max = 40.0
 
 # Private torrent settings (BEP 27)
-strict_private_mode = true                # Enforce strict BEP 27 rules for private torrents (true/false)
+# Aggressive initial discovery settings for faster peer discovery on popular torrents
+aggressive_initial_discovery = true        # Enable aggressive initial discovery mode (shorter intervals for first few announces/queries)
+aggressive_initial_tracker_interval = 30.0 # Initial tracker announce interval in seconds when aggressive mode is enabled (for first 5 minutes) (10.0-300.0)
+aggressive_initial_dht_interval = 10.0     # Initial DHT query interval in seconds when aggressive mode is enabled (for first 5 minutes) (5.0-60.0)
+
+# IMPROVEMENT: Aggressive discovery for popular torrents
+aggressive_discovery_popular_threshold = 20  # Minimum peer count to enable aggressive discovery mode (5-100)
+aggressive_discovery_active_threshold_kib = 1.0  # Minimum download rate (KB/s) to enable aggressive discovery mode (0.1-100.0)
+aggressive_discovery_interval_popular = 10.0  # DHT query interval in seconds for popular torrents (20+ peers) (5.0-60.0)
+aggressive_discovery_interval_active = 5.0  # DHT query interval in seconds for actively downloading torrents (>1KB/s) (2.0-30.0)
+aggressive_discovery_max_peers_per_query = 100  # Maximum peers to query per DHT query in aggressive mode (50-500)
+
+# DHT query parameters (Kademlia algorithm)
+dht_normal_alpha = 5                      # Number of parallel queries for normal DHT lookups (BEP 5 alpha parameter) (3-20)
+dht_normal_k = 16                        # Bucket size for normal DHT lookups (BEP 5 k parameter) (8-64)
+dht_normal_max_depth = 12                # Maximum depth for normal DHT iterative lookups (3-30)
+dht_aggressive_alpha = 8                  # Number of parallel queries for aggressive DHT lookups (BEP 5 alpha parameter) (5-30)
+dht_aggressive_k = 32                     # Bucket size for aggressive DHT lookups (BEP 5 k parameter) (16-128)
+dht_aggressive_max_depth = 15             # Maximum depth for aggressive DHT iterative lookups (5-50)
+
+# Adaptive DHT timeout settings
+dht_adaptive_timeout_enabled = true
+dht_timeout_desperation_min = 30.0
+dht_timeout_desperation_max = 60.0
+dht_timeout_normal_min = 5.0
+dht_timeout_normal_max = 15.0
+dht_timeout_healthy_min = 10.0
+dht_timeout_healthy_max = 30.0
+
+strict_private_mode = true               # Enforce strict BEP 27 rules for private torrents
 
 # =============================================================================
 # OBSERVABILITY CONFIGURATION
 # =============================================================================
-
 [observability]
 # Logging
-log_level = "INFO"                        # Log level (DEBUG/INFO/WARNING/ERROR/CRITICAL)
-# log_file = ""                          # Log file path (uncomment and set if needed, empty = stdout)
+log_level = "INFO"                       # Log level (DEBUG/INFO/WARNING/ERROR/CRITICAL)
+log_file = ""                            # Log file path (empty = stdout)
 log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # Log format string
-structured_logging = true                 # Use structured logging (true/false)
-log_correlation_id = true                 # Include correlation IDs (true/false)
+structured_logging = true                # Use structured logging
+log_correlation_id = true                 # Include correlation IDs
 
 # Metrics
-enable_metrics = true                     # Enable metrics collection (true/false)
-metrics_port = 64125                      # Metrics port (1024-65535)
-metrics_interval = 5.0                    # Metrics collection interval in seconds (0.5-3600.0)
+enable_metrics = true                    # Enable metrics collection
+metrics_port = 9090                      # Metrics port (1024-65535)
+metrics_interval = 5.0                   # Metrics collection interval in seconds (0.5-3600.0)
 
 # Tracing
-enable_peer_tracing = false               # Enable peer tracing (true/false)
-# trace_file = ""                        # Path to write traces (uncomment and set if needed, empty = disabled)
+enable_peer_tracing = false              # Enable peer tracing
+trace_file = ""                          # Path to write traces (empty = disabled)
 alerts_rules_path = ".ccbt/alerts.json"  # Path to alert rules JSON file
+
+# Event bus configuration
+event_bus_max_queue_size = 10000         # Maximum size of event queue (100-1000000)
+event_bus_batch_size = 50                # Maximum number of events to process per batch (1-1000)
+event_bus_batch_timeout = 0.05           # Timeout in seconds to wait when collecting a batch (0.001-1.0)
+event_bus_emit_timeout = 0.01            # Timeout in seconds when trying to emit to a full queue (0.001-1.0)
+event_bus_queue_full_threshold = 0.9     # Queue fullness threshold (0.0-1.0) for dropping low-priority events (0.1-1.0)
+event_bus_throttle_dht_node_found = 0.1  # Throttle interval for dht_node_found events in seconds (max 10/sec) (0.001-10.0)
+event_bus_throttle_dht_node_added = 0.1  # Throttle interval for dht_node_added events in seconds (max 10/sec) (0.001-10.0)
+event_bus_throttle_monitoring_heartbeat = 1.0  # Throttle interval for monitoring_heartbeat events in seconds (max 1/sec) (0.1-60.0)
+event_bus_throttle_global_metrics_update = 0.5  # Throttle interval for global_metrics_update events in seconds (max 2/sec) (0.1-10.0)
 
 # =============================================================================
 # LIMITS CONFIGURATION
 # =============================================================================
-
 [limits]
 # Global rate limits (KiB/s, 0 = unlimited)
-global_down_kib = 0                       # Global download limit (0+)
-global_up_kib = 0                         # Global upload limit (0+)
+global_down_kib = 0                      # Global download limit (0+)
+global_up_kib = 0                        # Global upload limit (0+)
 
 # Per-torrent rate limits (KiB/s, 0 = unlimited)
-per_torrent_down_kib = 0                  # Per-torrent download limit (0+)
-per_torrent_up_kib = 0                    # Per-torrent upload limit (0+)
+per_torrent_down_kib = 0                 # Per-torrent download limit (0+)
+per_torrent_up_kib = 0                   # Per-torrent upload limit (0+)
 
 # Per-peer rate limits (KiB/s, 0 = unlimited)
-per_peer_up_kib = 0                       # Per-peer upload limit (0+)
+per_peer_up_kib = 0                      # Per-peer upload limit (0+)
 
-# Scheduler settings
-scheduler_slice_ms = 100                  # Scheduler time slice in ms (1-1000)
+# Scheduler
+scheduler_slice_ms = 100                 # Scheduler time slice in ms (1-1000)
 
 # =============================================================================
 # SECURITY CONFIGURATION
 # =============================================================================
-
 [security]
-enable_encryption = false                 # Enable protocol encryption (true/false)
+enable_encryption = true                # Enable protocol encryption
 encryption_mode = "preferred"            # Encryption mode: disabled/preferred/required
-encryption_dh_key_size = 768              # DH key size in bits: 768 or 1024
-encryption_prefer_rc4 = true              # Prefer RC4 cipher for compatibility (true/false)
+encryption_dh_key_size = 768             # DH key size in bits: 768 or 1024
+encryption_prefer_rc4 = true             # Prefer RC4 cipher for compatibility
 encryption_allowed_ciphers = ["rc4", "aes"]  # Allowed ciphers (comma-separated: rc4,aes,chacha20)
-encryption_allow_plain_fallback = true    # Allow fallback to plain connection (true/false)
-validate_peers = true                     # Validate peers before exchanging data (true/false)
-rate_limit_enabled = true                 # Enable security rate limiter (true/false)
-max_connections_per_peer = 1               # Maximum parallel connections per peer (1-8)
+encryption_allow_plain_fallback = true   # Allow fallback to plain connection
+validate_peers = true                    # Validate peers before exchanging data
+rate_limit_enabled = true                # Enable security rate limiter
+max_connections_per_peer = 1             # Maximum parallel connections per peer (1-8)
+peer_quality_threshold = 0.3             # Minimum reputation score (0.0-1.0) for peers to be accepted during discovery. Peers below this threshold are filtered out.
 
 # IP Filter settings
 [security.ip_filter]
-enable_ip_filter = false                  # Enable IP filtering (true/false)
-filter_mode = "block"                     # Filter mode: block or allow
-filter_files = []                         # Comma-separated filter file paths
-filter_urls = []                          # Comma-separated filter list URLs
-filter_update_interval = 86400.0          # Update interval in seconds (3600.0-604800.0)
-filter_cache_dir = "~/.ccbt/filters"      # Filter cache directory
-filter_log_blocked = true                 # Log blocked connections (true/false)
+enable_ip_filter = false                 # Enable IP filtering
+filter_mode = "block"                    # Filter mode: block or allow
+filter_files = []                        # Comma-separated filter file paths
+filter_urls = []                         # Comma-separated filter list URLs
+filter_update_interval = 86400.0        # Update interval in seconds (3600.0-604800.0)
+filter_cache_dir = "~/.ccbt/filters"     # Filter cache directory
+filter_log_blocked = true                # Log blocked connections
+
+# Blacklist settings
+[security.blacklist]
+enable_persistence = true                 # Persist blacklist to disk
+blacklist_file = "~/.ccbt/security/blacklist.json"  # Path to blacklist file
+auto_update_enabled = true              # Enable automatic blacklist updates from external sources
+auto_update_interval = 3600.0            # Auto-update interval in seconds (5m-24h)
+auto_update_sources = []                 # URLs for automatic blacklist updates (comma-separated)
+default_expiration_hours = 24          # Default expiration time for auto-blacklisted IPs in hours (None = permanent)
+
+# Local metric-based blacklist source
+[security.blacklist.local_source]
+enabled = true                           # Enable local metric-based blacklisting
+evaluation_interval = 300.0              # Evaluation interval in seconds (1m-1h)
+metric_window = 3600.0                   # Metric aggregation window in seconds (5m-24h)
+expiration_hours = 24.0                  # Expiration time for auto-blacklisted IPs (hours, None = permanent)
+min_observations = 3                     # Minimum observations before blacklisting
+
+# Local blacklist thresholds
+[security.blacklist.local_source.thresholds]
+failed_handshakes = 5                    # Blacklist after N failed handshakes
+handshake_failure_rate = 0.8             # Blacklist if failure rate >= 80%
+spam_score = 10.0                        # Spam score threshold
+violation_count = 3                      # Blacklist after N protocol violations
+reputation_threshold = 0.2               # Blacklist if reputation < 0.2
+connection_attempt_rate = 20             # Blacklist if >= N connection attempts per minute
 
 # SSL/TLS settings
 [security.ssl]
-enable_ssl_trackers = true                # Enable SSL for tracker connections (true/false)
-enable_ssl_peers = false                  # Enable SSL for peer connections (true/false)
-ssl_verify_certificates = true            # Verify SSL certificates (true/false)
-# ssl_ca_certificates = ""               # Path to CA certificates file or directory (uncomment and set if needed)
-# ssl_client_certificate = ""            # Path to client certificate file (PEM format) (uncomment and set if needed)
-# ssl_client_key = ""                     # Path to client private key file (PEM format) (uncomment and set if needed)
-ssl_protocol_version = "TLSv1.2"         # TLS protocol version (TLSv1.2, TLSv1.3, PROTOCOL_TLS)
-ssl_allow_insecure_peers = true           # Allow insecure peers for opportunistic encryption (true/false)
+enable_ssl_trackers = true               # Enable SSL for tracker connections
+enable_ssl_peers = false                 # Enable SSL for peer connections
+ssl_verify_certificates = true           # Verify SSL certificates
+ssl_ca_certificates = ""                 # Path to CA certificates file or directory
+ssl_client_certificate = ""              # Path to client certificate file (PEM format)
+ssl_client_key = ""                      # Path to client private key file (PEM format)
+ssl_protocol_version = "TLSv1.2"        # TLS protocol version (TLSv1.2, TLSv1.3, PROTOCOL_TLS)
+ssl_allow_insecure_peers = true          # Allow insecure peers for opportunistic encryption
 
 # =============================================================================
 # PROXY CONFIGURATION
 # =============================================================================
-
 [proxy]
-enable_proxy = false                      # Enable proxy support (true/false)
-proxy_type = "http"                       # Proxy type: http/socks4/socks5
-# proxy_host = ""                         # Proxy server hostname or IP (uncomment and set if using proxy)
-# proxy_port = 8080                       # Proxy server port (1-65535) (uncomment and set if using proxy)
-# proxy_username = ""                    # Proxy username for authentication (uncomment and set if using proxy)
-# proxy_password = ""                     # Proxy password (encrypted in storage) (uncomment and set if using proxy)
-proxy_for_trackers = true                 # Use proxy for tracker requests (true/false)
-proxy_for_peers = false                   # Use proxy for peer connections (true/false)
-proxy_for_webseeds = true                 # Use proxy for WebSeed requests (true/false)
-proxy_bypass_list = []                    # Comma-separated list of hosts/IPs to bypass proxy
+enable_proxy = false                     # Enable proxy support
+proxy_type = "http"                      # Proxy type: http/socks4/socks5
+proxy_host = ""                          # Proxy server hostname or IP
+proxy_port = 0                           # Proxy server port (1-65535)
+proxy_username = ""                      # Proxy username for authentication
+proxy_password = ""                      # Proxy password (encrypted in storage)
+proxy_for_trackers = true                # Use proxy for tracker requests
+proxy_for_peers = false                  # Use proxy for peer connections
+proxy_for_webseeds = false                # Use proxy for WebSeed requests
+proxy_bypass_list = []                   # Comma-separated list of hosts/IPs to bypass proxy
 
 # =============================================================================
 # MACHINE LEARNING CONFIGURATION
 # =============================================================================
-
 [ml]
-peer_selection_enabled = false            # Enable ML-based peer selection (true/false)
-piece_prediction_enabled = false          # Enable ML piece prediction (true/false)
+peer_selection_enabled = false           # Enable ML-based peer selection
+piece_prediction_enabled = false         # Enable ML piece prediction
 
 # =============================================================================
 # DASHBOARD CONFIGURATION
 # =============================================================================
-
 [dashboard]
-enable_dashboard = true                   # Enable built-in dashboard/web UI (true/false)
-host = "127.0.0.1"                        # Dashboard bind host
-port = 64125                               # Dashboard HTTP port (1024-65535) - typically same as metrics_port
-refresh_interval = 1.0                    # UI refresh interval in seconds (0.1-10.0)
+enable_dashboard = true                  # Enable built-in dashboard/web UI
+host = "127.0.0.1"                       # Dashboard bind host
+port = 9090                              # Dashboard HTTP port (1024-65535)
+refresh_interval = 1.0                  # UI refresh interval in seconds (0.1-10.0)
 default_view = "overview"                 # Default dashboard view (overview|performance|network|security|alerts)
-enable_grafana_export = false             # Enable Grafana dashboard JSON export endpoints (true/false)
+enable_grafana_export = false            # Enable Grafana dashboard JSON export endpoints (true/false)
+
+# Terminal dashboard specific settings
+terminal_refresh_interval = 2.0          # Terminal dashboard UI refresh interval in seconds (0.5-10.0) - longer than web since WebSocket provides real-time updates
+terminal_daemon_startup_timeout = 90.0   # Timeout in seconds for daemon startup checks (10.0-300.0) - includes NAT discovery, DHT bootstrap, IPC server startup
+terminal_daemon_initial_wait = 5.0       # Initial wait time in seconds for IPC server to be ready (1.0-30.0)
+terminal_daemon_retry_delay = 0.5        # Delay in seconds between daemon readiness retry attempts (0.1-5.0)
+terminal_daemon_check_interval = 1.0     # Interval in seconds for checking daemon readiness during startup (0.1-10.0)
+terminal_connection_timeout = 10.0       # Timeout in seconds for connecting to daemon after verification (1.0-60.0)
+terminal_connection_check_interval = 0.5 # Interval in seconds for checking daemon connection status (0.1-5.0)
 
 # =============================================================================
 # QUEUE CONFIGURATION
 # =============================================================================
-
 [queue]
-max_active_torrents = 5                   # Maximum number of active torrents (1-1000)
-max_active_downloading = 3                 # Maximum active downloading torrents (0 = unlimited)
-max_active_seeding = 2                     # Maximum active seeding torrents (0 = unlimited)
-default_priority = "normal"                 # Default priority for new torrents
-bandwidth_allocation_mode = "proportional" # Bandwidth allocation strategy
-auto_manage_queue = true                  # Automatically start/stop torrents based on queue limits (true/false)
-save_queue_state = true                    # Save queue state to checkpoint (true/false)
-queue_state_save_interval = 30.0           # Interval to save queue state in seconds (5.0-3600.0)
+max_active_torrents = 5                  # Maximum number of active torrents
+max_active_downloading = 3                # Maximum active downloading torrents (0 = unlimited)
+max_active_seeding = 2                   # Maximum active seeding torrents (0 = unlimited)
+default_priority = "normal"              # Default priority for new torrents
+bandwidth_allocation_mode = "proportional"  # Bandwidth allocation strategy
+auto_manage_queue = true                 # Automatically start/stop torrents based on queue limits
+
+# =============================================================================
+# UI/INTERNATIONALIZATION CONFIGURATION
+# =============================================================================
+[ui]
+locale = "en"                            # Language/locale code (e.g., 'en', 'es', 'fr')
+
+# =============================================================================
+# NAT CONFIGURATION
+# =============================================================================
+[nat]
+enable_nat_pmp = true                     # Enable NAT-PMP protocol
+enable_upnp = true                        # Enable UPnP IGD protocol
+nat_discovery_interval = 300.0          # NAT device discovery interval in seconds (0.0-3600.0)
+port_mapping_lease_time = 3600           # Port mapping lease time in seconds (60-86400)
+auto_map_ports = true                     # Automatically map ports on startup
+map_tcp_port = true                       # Map TCP listen port
+map_udp_port = true                       # Map UDP listen port
+map_dht_port = true                       # Map DHT UDP port
+map_xet_port = true                       # Map XET protocol UDP port
+map_xet_multicast_port = false           # Map XET multicast UDP port (usually not needed for multicast)
 
 # =============================================================================
 # DAEMON CONFIGURATION
 # =============================================================================
-
 [daemon]
-# api_key = ""                            # API key for authentication (auto-generated if not set)
-ipc_port = 64124                          # IPC server port (1-65535)
-ipc_host = "0.0.0.0"                    # IPC server host (127.0.0.1 for local-only access, 0.0.0.0 for all interfaces)
-websocket_enabled = true                  # Enable WebSocket support (true/false)
-websocket_heartbeat_interval = 30.0        # WebSocket heartbeat interval in seconds (1.0-300.0)
-auto_save_interval = 60.0                  # Auto-save state interval in seconds (1.0-3600.0)
-# state_dir = ""                          # State directory path (default: ~/.ccbt/daemon) (uncomment and set if needed)
-tls_enabled = false                       # Enable TLS/HTTPS for IPC server (true/false)
-# tls_certificate_path = ""               # Path to TLS certificate file for HTTPS support (uncomment and set if needed)
-# ed25519_public_key = ""                 # Ed25519 public key for cryptographic authentication (hex format) (uncomment and set if needed)
-# ed25519_key_path = ""                   # Path to Ed25519 key storage directory (default: ~/.ccbt/keys) (uncomment and set if needed)
+ipc_host = "127.0.0.1"                   # IPC server host (127.0.0.1 for local-only access, 0.0.0.0 for all interfaces)
+ipc_port = 64130                          # IPC server port (1-65535)
 
 # =============================================================================
 # WEBTORRENT CONFIGURATION
 # =============================================================================
-
 [webtorrent]
-enable_webtorrent = false                 # Enable WebTorrent protocol support (true/false)
-webtorrent_port = 64126                   # WebSocket signaling server port (1024-65535)
-webtorrent_host = "localhost"             # WebSocket signaling server host
-# webtorrent_signaling_url = ""           # WebTorrent signaling server URL (optional, uses built-in server if None) (uncomment and set if needed)
-webtorrent_stun_servers = [               # STUN server URLs for ICE
-    "stun:stun.l.google.com:19302"
-]
-webtorrent_turn_servers = []              # TURN server URLs for ICE
-webtorrent_max_connections = 100          # Maximum WebRTC connections (1-1000)
-webtorrent_connection_timeout = 30.0      # WebRTC connection timeout in seconds (5.0-120.0)
+enable_webtorrent = true                # Enable WebTorrent protocol support
+webtorrent_port = 64126                  # WebSocket signaling server port (1024-65535)
+webtorrent_host = "127.0.0.1"            # WebSocket signaling server host

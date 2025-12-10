@@ -1,40 +1,512 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ccBitTorrent 0.1.0\n"
-"Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-11-10 21:20\n"
-"PO-Revision-Date: 2025-11-10 21:20\n"
-"Last-Translator: ccBitTorrent Team\n"
-"Language-Team: Chinese Team\n"
-"Language: zh\n"
-"MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=UTF-8\n"
-"Content-Transfer-Encoding: 8bit\n"
+"Project-Id-Version: ccBitTorrent 0.1.0\n""Language: zh
+"Content-Type: text/plain; charset=UTF-8
 
 
-msgid "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
-msgstr "\\nAvailable Commands:\\n  help          - Show this help message\\n  status        - Show current status\\n  peers         - Show connected peers\\n  files         - Show file information\\n  pause         - Pause download\\n  resume        - Resume download\\n  stop          - Stop download\\n  quit          - Quit application\\n  clear         - Clear screen\\n        "
+msgid ""
+"\n"
+"  [cyan]Matching Rules:[/cyan] None\n"
+msgstr ""
+"\n"
+"  [cyan]匹配规则:[/cyan] 无\n"
 
-msgid "\\n[bold cyan]File Selection[/bold cyan]"
-msgstr "\\n[bold cyan]File Selection[/bold cyan]"
+msgid ""
+"\n"
+"  [cyan]Matching Rules:[/cyan] {count}\n"
+msgstr ""
+"\n"
+"  [cyan]匹配规则:[/cyan] {count}\n"
 
-msgid "\\n[bold]File selection[/bold]"
-msgstr "\\n[bold]File selection[/bold]"
+msgid ""
+"\n"
+"Available Commands:\n"
+"  help          - Show this help message\n"
+"  status        - Show current status\n"
+"  peers         - Show connected peers\n"
+"  files         - Show file information\n"
+"  pause         - Pause download\n"
+"  resume        - Resume download\n"
+"  stop          - Stop download\n"
+"  quit          - Quit application\n"
+"  clear         - Clear screen\n"
+"        \n"
+msgstr ""
+"\n"
+"可用命令:\n"
+"  help          - 显示此帮助消息\n"
+"  status        - 显示当前状态\n"
+"  peers         - 显示已连接的对等节点\n"
+"  files         - 显示文件信息\n"
+"  pause         - 暂停下载\n"
+"  resume        - 恢复下载\n"
+"  stop          - 停止下载\n"
+"  quit          - 退出应用程序\n"
+"  clear         - 清屏\n"
+"        \n"
 
-msgid "\\n[yellow]Commands:[/yellow]"
-msgstr "\\n[yellow]Commands:[/yellow]"
+msgid ""
+"\n"
+"[bold cyan]Cache Statistics:[/bold cyan]\n"
+msgstr ""
+"\n"
+"[bold cyan]缓存统计:[/bold cyan]\n"
 
-msgid "\\n[yellow]File selection cancelled, using defaults[/yellow]"
-msgstr "\\n[yellow]File selection cancelled, using defaults[/yellow]"
+msgid ""
+"\n"
+"[bold cyan]File Selection[/bold cyan]\n"
+msgstr ""
+"\n"
+"[bold cyan]文件选择[/bold cyan]\n"
 
-msgid "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
-msgstr "\\n[yellow]Tracker Scrape Statistics:[/yellow]"
+msgid ""
+"\n"
+"[bold]Active Port Mappings:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]活动端口映射:[/bold]\n"
 
-msgid "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
-msgstr "\\n[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]"
+msgid ""
+"\n"
+"[bold]File selection[/bold]\n"
+msgstr ""
+"\n"
+"[bold]文件选择[/bold]\n"
 
-msgid "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
-msgstr "\\n[yellow]Warning: No peers connected after 30 seconds[/yellow]"
+msgid ""
+"\n"
+"[bold]IP Filter Statistics[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]IP 过滤器统计[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]IP Filter Test[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]IP 过滤器测试[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]Runtime Status:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]运行时状态:[/bold]\n"
+
+msgid ""
+"\n"
+"[bold]Sample chunks (last {limit} accessed):[/bold]\n"
+"\n"
+msgstr ""
+"\n"
+"[bold]示例块 (最后访问的 {limit} 个):[/bold]\n"
+"\n"
+
+msgid ""
+"\n"
+"[bold]Statistics:[/bold]\n"
+msgstr ""
+"\n"
+"[bold]统计:[/bold]\n"
+
+msgid ""
+"\n"
+"[bold]Total: {count} rules[/bold]\n"
+msgstr ""
+"\n"
+"[bold]总计: {count} 条规则[/bold]\n"
+
+msgid ""
+"\n"
+"[cyan]Connection Diagnostics[/cyan]\n"
+"\n"
+msgstr ""
+"\n"
+"[cyan]连接诊断[/cyan]\n"
+"\n"
+
+msgid ""
+"\n"
+"[cyan]Proxy Statistics:[/cyan]\n"
+msgstr ""
+"\n"
+"[cyan]代理统计:[/cyan]\n"
+
+msgid ""
+"\n"
+"[cyan]Status:[/cyan] {status}\n"
+msgstr ""
+"\n"
+"[cyan]状态:[/cyan] {status}\n"
+
+msgid ""
+"\n"
+"[green]Diagnostic complete![/green]\n"
+msgstr ""
+"\n"
+"[green]诊断完成![/green]\n"
+
+msgid ""
+"\n"
+"[green]✓ Discovery successful![/green]\n"
+msgstr ""
+"\n"
+"[green]✓ 发现成功![/green]\n"
+
+msgid ""
+"\n"
+"[green]✓[/green] No connection issues detected\n"
+msgstr ""
+"\n"
+"[green]✓[/green] 未检测到连接问题\n"
+
+msgid ""
+"\n"
+"[yellow]2. DHT Status[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]2. DHT 状态[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]3. Tracker Configuration[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]3. Tracker 配置[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]4. NAT Configuration[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]4. NAT 配置[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]5. Listen Port[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]5. 监听端口[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]6. Session Initialization Test[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]6. 会话初始化测试[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Commands:[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]命令:[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Connection Issues[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]连接问题[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Download interrupted by user[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]下载被用户中断[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]File selection cancelled, using defaults[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]文件选择已取消，使用默认值[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Runtime Status:[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]运行时状态:[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Session Summary[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]会话摘要[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Shutting down daemon...[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]正在关闭守护进程...[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]TCP Server Status[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]TCP 服务器状态[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]用法: files select <索引>, files deselect <索引>, files priority <索引> <优先级>[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]Warning: No peers connected after 30 seconds[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]警告: 30 秒后没有对等节点连接[/yellow]\n"
+
+msgid ""
+"\n"
+"[yellow]✗ No NAT devices discovered[/yellow]\n"
+msgstr ""
+"\n"
+"[yellow]✗ 未发现 NAT 设备[/yellow]\n"
+
+msgid "    - {network} ({mode}, priority: {priority})"
+msgstr "    - {network} ({mode}, 优先级: {priority})"
+
+msgid "  - {hash}... ({format})"
+msgstr "  - {hash}... ({format})"
+
+msgid "  Active Downloading: {count}"
+msgstr "  活动下载: {count}"
+
+msgid "  Active Mappings: {mappings}"
+msgstr "  活动映射: {mappings}"
+
+msgid "  Active Seeding: {count}"
+msgstr "  活动做种: {count}"
+
+msgid "  Add the peer first using 'tonic allowlist add'"
+msgstr "  请先使用 'tonic allowlist add' 添加对等节点"
+
+msgid "  Auth failures: {count}"
+msgstr "  认证失败: {count}"
+
+msgid "  Auto Map Ports: {status}"
+msgstr "  自动映射端口: {status}"
+
+msgid "  Bypass list: {value}"
+msgstr "  绕过列表: {value}"
+
+msgid "  Cache DB: {path}"
+msgstr "  缓存数据库: {path}"
+
+msgid "  Certificate: {path}"
+msgstr "  证书: {path}"
+
+msgid "  Chunk size range: {min}-{max} bytes"
+msgstr "  块大小范围: {min}-{max} 字节"
+
+msgid "  Chunk store: {path}"
+msgstr "  块存储: {path}"
+
+msgid "  Compression: {enabled}"
+msgstr "  压缩: {enabled}"
+
+msgid "  Configuration saved to: {location}"
+msgstr "  配置已保存到: {location}"
+
+msgid "  Current mode: {mode}"
+msgstr "  当前模式: {mode}"
+
+msgid "  DHT Enabled: {status}"
+msgstr "  DHT 已启用: {status}"
+
+msgid "  DHT Port: {port}"
+msgstr "  DHT 端口: {port}"
+
+msgid "  DHT Routing Table: {size} nodes"
+msgstr "  DHT 路由表: {size} 个节点"
+
+msgid "  Deduplication: {enabled}"
+msgstr "  去重: {enabled}"
+
+msgid "  Enabled: {enabled}"
+msgstr "  已启用: {enabled}"
+
+msgid "  External IP: {ip}"
+msgstr "  外部 IP: {ip}"
+
+msgid "  External: {port}"
+msgstr "  外部: {port}"
+
+msgid "  Failed: {count}"
+msgstr "  失败: {count}"
+
+msgid "  For peers: {value}"
+msgstr "  对于对等节点: {value}"
+
+msgid "  For trackers: {value}"
+msgstr "  对于 tracker: {value}"
+
+msgid "  For webseeds: {value}"
+msgstr "  对于 webseed: {value}"
+
+msgid "  HTTP Trackers: {status}"
+msgstr "  HTTP Tracker: {status}"
+
+msgid "  Host: {host}:{port}"
+msgstr "  主机: {host}:{port}"
+
+msgid "  Internal: {port}"
+msgstr "  内部: {port}"
+
+msgid "  Key: {path}"
+msgstr "  密钥: {path}"
+
+msgid "  Make sure NAT traversal is enabled and a device is discovered"
+msgstr "  确保已启用 NAT 遍历并发现设备"
+
+msgid "  Make sure NAT-PMP or UPnP is enabled on your router"
+msgstr "  确保您的路由器上已启用 NAT-PMP 或 UPnP"
+
+msgid "  Mode: {mode}"
+msgstr "  模式: {mode}"
+
+msgid "  NAT-PMP: {status}"
+msgstr "  NAT-PMP: {status}"
+
+msgid "  Output directory: {dir}"
+msgstr "  输出目录: {dir}"
+
+msgid "  P2P CAS client: Active"
+msgstr "  P2P CAS 客户端: 活动"
+
+msgid "  P2P CAS client: Not initialized"
+msgstr "  P2P CAS 客户端: 未初始化"
+
+msgid "  P2P CAS: {enabled}"
+msgstr "  P2P CAS: {enabled}"
+
+msgid "  Paused: {count}"
+msgstr "  已暂停: {count}"
+
+msgid "  Protocol not active (session may not be running)"
+msgstr "  协议未激活（会话可能未运行）"
+
+msgid "  Protocol state: {state}"
+msgstr "  协议状态: {state}"
+
+msgid "  Protocol: {method}"
+msgstr "  协议: {method}"
+
+msgid "  Protocol: {protocol}"
+msgstr "  协议: {protocol}"
+
+msgid "  Queued: {count}"
+msgstr "  排队中: {count}"
+
+msgid "  Running: {status}"
+msgstr "  运行中: {status}"
+
+msgid "  Serving: {status}"
+msgstr "  服务中: {status}"
+
+msgid "  Sessions with Peers: {count}"
+msgstr "  有对等节点的会话: {count}"
+
+msgid "  Source peers: {peers}"
+msgstr "  源对等节点: {peers}"
+
+msgid "  Successful: {count}"
+msgstr "  成功: {count}"
+
+msgid "  Sync mode: {mode}"
+msgstr "  同步模式: {mode}"
+
+msgid "  TCP Enabled: {status}"
+msgstr "  TCP 已启用: {status}"
+
+msgid "  TCP Port: {port}"
+msgstr "  TCP 端口: {port}"
+
+msgid "  Target chunk size: {size} bytes"
+msgstr "  目标块大小: {size} 字节"
+
+msgid "  This would fetch the .tonic file and start syncing"
+msgstr "  这将获取 .tonic 文件并开始同步"
+
+msgid "  Total Connections: {count}"
+msgstr "  总连接数: {count}"
+
+msgid "  Total Sessions: {count}"
+msgstr "  总会话数: {count}"
+
+msgid "  Total connections: {count}"
+msgstr "  总连接数: {count}"
+
+msgid "  Total: {count}"
+msgstr "  总计: {count}"
+
+msgid "  Type: {type}"
+msgstr "  类型: {type}"
+
+msgid "  UDP Trackers: {status}"
+msgstr "  UDP Tracker: {status}"
+
+msgid "  UPnP: {status}"
+msgstr "  UPnP: {status}"
+
+msgid "  Unable to connect to active session"
+msgstr "  无法连接到活动会话"
+
+msgid "  Use 'ccbt tonic status' to check sync status"
+msgstr "  使用 'ccbt tonic status' 检查同步状态"
+
+msgid "  Username: {username}"
+msgstr "  用户名: {username}"
+
+msgid "  [cyan]Allowed:[/cyan] {allows}"
+msgstr "  [cyan]允许:[/cyan] {allows}"
+
+msgid "  [cyan]Blocked:[/cyan] {blocks}"
+msgstr "  [cyan]已阻止:[/cyan] {blocks}"
+
+msgid "  [cyan]Enabled:[/cyan] {enabled}"
+msgstr "  [cyan]已启用:[/cyan] {enabled}"
+
+msgid "  [cyan]IP Address:[/cyan] {ip}"
+msgstr "  [cyan]IP 地址:[/cyan] {ip}"
+
+msgid "  [cyan]IPv4 Ranges:[/cyan] {ipv4_ranges}"
+msgstr "  [cyan]IPv4 范围:[/cyan] {ipv4_ranges}"
+
+msgid "  [cyan]IPv6 Ranges:[/cyan] {ipv6_ranges}"
+msgstr "  [cyan]IPv6 范围:[/cyan] {ipv6_ranges}"
+
+msgid "  [cyan]Last Update:[/cyan] Never"
+msgstr "  [cyan]最后更新:[/cyan] 从未"
+
+msgid "  [cyan]Last Update:[/cyan] {timestamp}"
+msgstr "  [cyan]最后更新:[/cyan] {timestamp}"
+
+msgid "  [cyan]Mode:[/cyan] {mode}"
+msgstr "  [cyan]模式:[/cyan] {mode}"
+
+msgid "  [cyan]Status:[/cyan] {status}"
+msgstr "  [cyan]状态:[/cyan] {status}"
+
+msgid "  [cyan]Total Checks:[/cyan] {matches}"
+msgstr "  [cyan]总检查数:[/cyan] {matches}"
+
+msgid "  [cyan]Total Rules:[/cyan] {total_rules}"
+msgstr "  [cyan]总规则数:[/cyan] {total_rules}"
 
 msgid "  [cyan]deselect <index>[/cyan] - Deselect a file"
 msgstr "  [cyan]deselect <索引>[/cyan] - 取消选择文件"
@@ -45,8 +517,10 @@ msgstr "  [cyan]deselect-all[/cyan] - 取消选择所有文件"
 msgid "  [cyan]done[/cyan] - Finish selection and start download"
 msgstr "  [cyan]done[/cyan] - 完成选择并开始下载"
 
-msgid "  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)"
-msgstr "  [cyan]priority <索引> <优先级>[/cyan] - 设置优先级（do_not_download/low/normal/high/maximum）"
+msgid ""
+"  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)\n"
+msgstr ""
+"  [cyan]priority <索引> <优先级>[/cyan] - 设置优先级 (do_not_download/low/normal/high/maximum)\n"
 
 msgid "  [cyan]select <index>[/cyan] - Select a file"
 msgstr "  [cyan]select <索引>[/cyan] - 选择文件"
@@ -54,11 +528,53 @@ msgstr "  [cyan]select <索引>[/cyan] - 选择文件"
 msgid "  [cyan]select-all[/cyan] - Select all files"
 msgstr "  [cyan]select-all[/cyan] - 选择所有文件"
 
+msgid "  [green]✓[/green] Can bind to port {port}"
+msgstr "  [green]✓[/green] 可以绑定到端口 {port}"
+
+msgid "  [green]✓[/green] Session initialized successfully"
+msgstr "  [green]✓[/green] 会话初始化成功"
+
+msgid "  [green]✓[/green] TCP server initialized"
+msgstr "  [green]✓[/green] TCP 服务器已初始化"
+
+msgid "  [green]✓[/green] {url}: {loaded} rules"
+msgstr "  [green]✓[/green] {url}: {loaded} 条规则"
+
+msgid "  [red]✗[/red] Cannot bind to port: {e}"
+msgstr "  [red]✗[/red] 无法绑定到端口: {e}"
+
+msgid "  [red]✗[/red] NAT manager not initialized"
+msgstr "  [red]✗[/red] NAT 管理器未初始化"
+
+msgid "  [red]✗[/red] Session initialization failed: {e}"
+msgstr "  [red]✗[/red] 会话初始化失败: {e}"
+
+msgid "  [red]✗[/red] TCP server not initialized"
+msgstr "  [red]✗[/red] TCP 服务器未初始化"
+
+msgid "  [red]✗[/red] {url}: failed"
+msgstr "  [red]✗[/red] {url}: 失败"
+
+msgid "  [yellow]⚠[/yellow] DHT client not initialized"
+msgstr "  [yellow]⚠[/yellow] DHT 客户端未初始化"
+
+msgid "  [yellow]⚠[/yellow] TCP server not initialized"
+msgstr "  [yellow]⚠[/yellow] TCP 服务器未初始化"
+
+msgid "  uTP Enabled: {status}"
+msgstr "  uTP 已启用: {status}"
+
+msgid "  {msg}"
+msgstr "  {msg}"
+
+msgid "  {warning}"
+msgstr "  {warning}"
+
 msgid "  • Check if torrent has active seeders"
-msgstr "  • 检查种子是否有活跃的做种者"
+msgstr "  • 检查 torrent 是否有活动的做种者"
 
 msgid "  • Ensure DHT is enabled: --enable-dht"
-msgstr "  • 确保 DHT 已启用：--enable-dht"
+msgstr "  • 确保 DHT 已启用: --enable-dht"
 
 msgid "  • Run 'btbt diagnose-connections' to check connection status"
 msgstr "  • 运行 'btbt diagnose-connections' 检查连接状态"
@@ -66,23 +582,55 @@ msgstr "  • 运行 'btbt diagnose-connections' 检查连接状态"
 msgid "  • Verify NAT/firewall settings"
 msgstr "  • 验证 NAT/防火墙设置"
 
-msgid " | Files: {selected}/{total} selected"
-msgstr " | 文件：已选择 {selected}/{total}"
+msgid "  ⚠ {warning}"
+msgstr "  ⚠ {warning}"
 
-msgid " | Private: {count}"
-msgstr " | 私有：{count}"
+msgid "(no options set)"
+msgstr "(未设置选项)"
+
+msgid "- [yellow]{issue}[/yellow]"
+msgstr "- [yellow]{issue}[/yellow]"
+
+msgid "- {id}: {severity} rule={rule} value={value}"
+msgstr "- {id}: {severity} 规则={rule} 值={value}"
+
+msgid "- {name}: metric={metric}, cond={condition}, severity={severity}"
+msgstr "- {name}: 指标={metric}, 条件={condition}, 严重性={severity}"
+
+msgid "ACK Interval"
+msgstr "ACK 间隔"
+
+msgid "ACK packet send interval"
+msgstr "ACK 数据包发送间隔"
+
+msgid "API key or Ed25519 key manager required for WebSocket connection"
+msgstr "WebSocket 连接需要 API 密钥或 Ed25519 密钥管理器"
 
 msgid "Active"
-msgstr "活跃"
+msgstr "活动"
 
 msgid "Active Alerts"
-msgstr "活跃警报"
+msgstr "活动警报"
 
-msgid "Active: {count}"
-msgstr "活跃：{count}"
+msgid "Add Tracker"
+msgstr "添加 Tracker"
+
+msgid ""
+"Add tracker functionality not yet implemented. Use CLI command: torrent.add_tracker\n"
+msgstr ""
+"添加 tracker 功能尚未实现。使用 CLI 命令: torrent.add_tracker\n"
+
+msgid "Advanced"
+msgstr "高级"
 
 msgid "Advanced Add"
 msgstr "高级添加"
+
+msgid "Advanced configuration (experimental features)"
+msgstr "高级配置（实验性功能）"
+
+msgid "Advanced configuration - Data provider/Executor not available"
+msgstr "高级配置 - 数据提供者/执行器不可用"
 
 msgid "Alert Rules"
 msgstr "警报规则"
@@ -90,26 +638,119 @@ msgstr "警报规则"
 msgid "Alerts"
 msgstr "警报"
 
+msgid "All {total} file(s) verified successfully"
+msgstr "所有 {total} 个文件验证成功"
+
+msgid "Announce sent"
+msgstr "公告已发送"
+
 msgid "Announce: Failed"
-msgstr "宣告：失败"
+msgstr "公告: 失败"
 
 msgid "Announce: {status}"
-msgstr "宣告：{status}"
+msgstr "公告: {status}"
 
 msgid "Are you sure you want to quit?"
 msgstr "您确定要退出吗？"
 
+msgid "Auto-tuned configuration saved to {path}"
+msgstr "自动调整的配置已保存到 {path}"
+
+msgid "Auto-tuning warnings:"
+msgstr "自动调整警告:"
+
 msgid "Automatically restart daemon if needed (without prompt)"
-msgstr "需要时自动重启守护进程（无提示）"
+msgstr "如果需要，自动重启守护进程（无需提示）"
+
+msgid "Available keys: {keys}"
+msgstr "可用密钥: {keys}"
+
+msgid "Available locales: {locales}"
+msgstr "可用语言环境: {locales}"
+
+msgid "Backup complete"
+msgstr "备份完成"
+
+msgid "Backup created: {path}"
+msgstr "备份已创建: {path}"
+
+msgid "Backup failed"
+msgstr "备份失败"
+
+msgid "Ban Peer"
+msgstr "封禁对等节点"
+
+msgid "Bandwidth"
+msgstr "带宽"
+
+msgid "Bandwidth configuration - Data provider/Executor not available"
+msgstr "带宽配置 - 数据提供者/执行器不可用"
 
 msgid "Browse"
 msgstr "浏览"
 
+msgid ""
+"CRITICAL: PID file exists (initial=%s, current=%s, path=%s) but code reached local session creation! This will cause port conflicts. Aborting.\n"
+msgstr ""
+"严重: PID 文件存在 (initial=%s, current=%s, path=%s) 但代码到达本地会话创建！这将导致端口冲突。中止。\n"
+
+msgid "Cache entries: {count}"
+msgstr "缓存条目: {count}"
+
+msgid "Cache hit rate: {rate:.2f}%"
+msgstr "缓存命中率: {rate:.2f}%"
+
+msgid "Cache size: {size} bytes"
+msgstr "缓存大小: {size} 字节"
+
+msgid "Cached Scrape Results"
+msgstr "缓存的抓取结果"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Cannot auto-resume checkpoint"
+msgstr "无法自动恢复检查点"
+
+msgid ""
+"Cannot connect to daemon at %s: %s (daemon may not be running or IPC server not started)\n"
+msgstr ""
+"无法连接到守护进程 %s: %s（守护进程可能未运行或 IPC 服务器未启动）\n"
+
+msgid "Cannot specify both --hybrid and --v1"
+msgstr "不能同时指定 --hybrid 和 --v1"
+
+msgid "Cannot specify both --v2 and --hybrid"
+msgstr "不能同时指定 --v2 和 --hybrid"
+
+msgid "Cannot specify both --v2 and --v1"
+msgstr "不能同时指定 --v2 和 --v1"
+
 msgid "Capability"
 msgstr "功能"
 
+msgid "Choked"
+msgstr "阻塞"
+
+msgid "Cleaning up old checkpoints..."
+msgstr "正在清理旧检查点..."
+
+msgid "Cleanup complete"
+msgstr "清理完成"
+
+msgid "Click on 'Global' tab to configure this section"
+msgstr "点击 'Global' 标签页配置此部分"
+
+msgid "Client"
+msgstr "客户端"
+
+msgid ""
+"Client error checking daemon status at %s: %s (daemon may be starting up)\n"
+msgstr ""
+"检查守护进程状态时客户端错误 %s: %s（守护进程可能正在启动）\n"
+
 msgid "Commands: "
-msgstr "命令："
+msgstr "命令: "
 
 msgid "Completed"
 msgstr "已完成"
@@ -117,47 +758,210 @@ msgstr "已完成"
 msgid "Completed (Scrape)"
 msgstr "已完成（抓取）"
 
-msgid "Component"
-msgstr "组件"
+msgid "Compressing backup..."
+msgstr "正在压缩备份..."
 
 msgid "Condition"
 msgstr "条件"
 
+msgid "Config"
+msgstr "配置"
+
 msgid "Config Backups"
 msgstr "配置备份"
+
+msgid "Configuration differences:"
+msgstr "配置差异:"
+
+msgid "Configuration exported to {path}"
+msgstr "配置已导出到 {path}"
 
 msgid "Configuration file path"
 msgstr "配置文件路径"
 
+msgid "Configuration imported to {path}"
+msgstr "配置已导入到 {path}"
+
+msgid "Configuration restored from {path}"
+msgstr "配置已从 {path} 恢复"
+
+msgid "Configuration section"
+msgstr "配置部分"
+
+msgid ""
+"Configuration: {type}\n"
+"\n"
+"This configuration section is not yet fully implemented.\n"
+msgstr ""
+"配置: {type}\n"
+"\n"
+"此配置部分尚未完全实现。\n"
+
 msgid "Confirm"
 msgstr "确认"
 
-msgid "Connected"
-msgstr "已连接"
-
 msgid "Connected Peers"
-msgstr "已连接节点"
+msgstr "已连接的对等节点"
 
-msgid "Count: {count}{file_info}{private_info}"
-msgstr "计数：{count}{file_info}{private_info}"
+msgid "Connecting to daemon at %s (PID file exists)"
+msgstr "正在连接到守护进程 %s（PID 文件存在）"
+
+msgid "Connection Timeout"
+msgstr "连接超时"
+
+msgid "Connection timeout in seconds"
+msgstr "连接超时（秒）"
+
+msgid "Copy Info Hash"
+msgstr "复制信息哈希"
+
+msgid ""
+"Could not connect to daemon (no PID file): %s - will create local session\n"
+msgstr ""
+"无法连接到守护进程（无 PID 文件）: %s - 将创建本地会话\n"
+
+msgid "Could not find file index"
+msgstr "找不到文件索引"
+
+msgid "Could not get torrent output directory"
+msgstr "无法获取 torrent 输出目录"
+
+msgid "Could not read daemon config file: %s"
+msgstr "无法读取守护进程配置文件: %s"
+
+msgid "Could not read daemon config from ConfigManager: %s"
+msgstr "无法从 ConfigManager 读取守护进程配置: %s"
+
+msgid "Could not save daemon config to config file: %s"
+msgstr "无法将守护进程配置保存到配置文件: %s"
+
+msgid "Could not send shutdown request, using signal..."
+msgstr "无法发送关闭请求，使用信号..."
 
 msgid "Create backup before migration"
 msgstr "迁移前创建备份"
 
-msgid "DHT"
-msgstr "DHT"
+msgid "Creating backup..."
+msgstr "正在创建备份..."
+
+msgid "Current chunks: {count}"
+msgstr "当前块: {count}"
+
+msgid "Current locale: {locale}"
+msgstr "当前语言环境: {locale}"
+
+msgid ""
+"Daemon PID file exists but API key not found in config. Cannot route to daemon. Please check daemon configuration.\n"
+msgstr ""
+"守护进程 PID 文件存在但配置中未找到 API 密钥。无法路由到守护进程。请检查守护进程配置。\n"
+
+msgid "Daemon config file exists but ipc_port not found, trying main config"
+msgstr "守护进程配置文件存在但未找到 ipc_port，尝试主配置"
+
+msgid ""
+"Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...\n"
+msgstr ""
+"守护进程连接错误（尝试 %d/%d，已用 %.1fs）: %s，%.1fs 后重试...\n"
+
+msgid ""
+"Daemon connection timeout (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+"守护进程连接超时（尝试 %d/%d，已用 %.1fs），%.1fs 后重试...\n"
+
+msgid "Daemon is accessible and ready (attempt %d/%d, took %.1fs)"
+msgstr "守护进程可访问且就绪（尝试 %d/%d，耗时 %.1fs）"
+
+msgid ""
+"Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+"守护进程标记为运行中但不可访问（尝试 %d/%d，已用 %.1fs），%.1fs 后重试...\n"
+
+msgid ""
+"Daemon is marked as running but not accessible after %d attempts (elapsed %.1fs)\n"
+msgstr ""
+"守护进程标记为运行中但在 %d 次尝试后仍不可访问（已用 %.1fs）\n"
+
+msgid "Daemon is not running"
+msgstr "守护进程未运行"
+
+msgid "Daemon is not running, nothing to restart"
+msgstr "守护进程未运行，无需重启"
+
+msgid "Daemon is not running, restart not needed"
+msgstr "守护进程未运行，不需要重启"
+
+msgid ""
+"Daemon is not running. File management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"守护进程未运行。文件管理命令需要守护进程运行。\n"
+"使用以下命令启动守护进程: 'btbt daemon start'\n"
+
+msgid ""
+"Daemon is not running. NAT management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"守护进程未运行。NAT 管理命令需要守护进程运行。\n"
+"使用以下命令启动守护进程: 'btbt daemon start'\n"
+
+msgid ""
+"Daemon is not running. Queue management commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"守护进程未运行。队列管理命令需要守护进程运行。\n"
+"使用以下命令启动守护进程: 'btbt daemon start'\n"
+
+msgid ""
+"Daemon is not running. Scrape commands require the daemon to be running.\n"
+"Start the daemon with: 'btbt daemon start'\n"
+msgstr ""
+"守护进程未运行。抓取命令需要守护进程运行。\n"
+"使用以下命令启动守护进程: 'btbt daemon start'\n"
+
+msgid "Daemon restarted successfully (PID: %d)"
+msgstr "守护进程重启成功（PID: %d）"
+
+msgid "Daemon stopped"
+msgstr "守护进程已停止"
+
+msgid "Daemon stopped gracefully"
+msgstr "守护进程已正常停止"
 
 msgid "Description"
 msgstr "描述"
 
-msgid "Details"
-msgstr "详情"
+msgid "Description: {desc}"
+msgstr "描述: {desc}"
 
-msgid "Disabled"
-msgstr "已禁用"
+msgid "Deselect All"
+msgstr "全部取消选择"
+
+msgid "Deselected {count} file(s)"
+msgstr "已取消选择 {count} 个文件"
+
+msgid "Details"
+msgstr "详细信息"
+
+msgid "Diff written to {path}"
+msgstr "差异已写入 {path}"
+
+msgid "Direct session access not available in daemon mode"
+msgstr "守护进程模式下无法直接访问会话"
+
+msgid "Disk I/O configuration (preallocation, hashing, checkpoints)"
+msgstr "磁盘 I/O 配置（预分配、哈希、检查点）"
+
+msgid "Do Not Download"
+msgstr "不下载"
 
 msgid "Download"
 msgstr "下载"
+
+msgid "Download Limit"
+msgstr "下载限制"
+
+msgid "Download Rate"
+msgstr "下载速率"
 
 msgid "Download Speed"
 msgstr "下载速度"
@@ -174,50 +978,465 @@ msgstr "下载已停止"
 msgid "Downloaded"
 msgstr "已下载"
 
+msgid "Downloaders"
+msgstr "下载者"
+
+msgid "Downloading"
+msgstr "下载中"
+
 msgid "Downloading {name}"
 msgstr "正在下载 {name}"
 
 msgid "ETA"
-msgstr "预计时间"
+msgstr "预计剩余时间"
 
-msgid "Enable debug mode"
-msgstr "启用调试模式"
-
-msgid "Enable verbose output"
-msgstr "启用详细输出"
+msgid "Enable debug mode (deprecated, use -vv)"
+msgstr "启用调试模式（已弃用，使用 -vv）"
 
 msgid "Enabled"
 msgstr "已启用"
 
-msgid "Error reading scrape cache"
-msgstr "读取抓取缓存错误"
+msgid "Encrypting backup..."
+msgstr "正在加密备份..."
+
+msgid "Error"
+msgstr "错误"
+
+msgid "Error adding tracker: {error}"
+msgstr "添加 tracker 时出错: {error}"
+
+msgid "Error banning peer: {error}"
+msgstr "封禁对等节点时出错: {error}"
+
+msgid ""
+"Error checking daemon accessibility (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...\n"
+msgstr ""
+"检查守护进程可访问性时出错（尝试 %d/%d，已用时间 %.1fs）: %s，将在 %.1fs 后重试...\n"
+
+msgid ""
+"Error checking daemon accessibility after %d attempts (elapsed %.1fs): %s\n"
+msgstr ""
+"在 %d 次尝试后检查守护进程可访问性时出错（已用时间 %.1fs）: %s\n"
+
+msgid "Error checking daemon stage: %s"
+msgstr "检查守护进程阶段时出错: %s"
+
+msgid ""
+"Error checking if daemon is running (Windows-specific issue?): %s - PID file exists, will attempt IPC connection\n"
+msgstr ""
+"检查守护进程是否运行时出错（Windows 特定问题？）: %s - PID 文件存在，将尝试 IPC 连接\n"
+
+msgid "Error checking if restart is needed: %s"
+msgstr "检查是否需要重启时出错: %s"
+
+msgid "Error closing HTTP session: %s"
+msgstr "关闭 HTTP 会话时出错: %s"
+
+msgid "Error closing IPC client: %s"
+msgstr "关闭 IPC 客户端时出错: %s"
+
+msgid "Error closing WebSocket: %s"
+msgstr "关闭 WebSocket 时出错: %s"
+
+msgid "Error comparing configs: {e}"
+msgstr "比较配置时出错: {e}"
+
+msgid "Error creating backup: {e}"
+msgstr "创建备份时出错: {e}"
+
+msgid "Error creating torrent"
+msgstr "创建 torrent 时出错"
+
+msgid "Error deselecting files: {error}"
+msgstr "取消选择文件时出错: {error}"
+
+msgid "Error exporting configuration: {e}"
+msgstr "导出配置时出错: {e}"
+
+msgid "Error forcing announce: {error}"
+msgstr "强制公告时出错: {error}"
+
+msgid "Error generating schema: {e}"
+msgstr "生成架构时出错: {e}"
+
+msgid "Error getting daemon status: %s"
+msgstr "获取守护进程状态时出错: %s"
+
+msgid "Error importing configuration: {e}"
+msgstr "导入配置时出错: {e}"
+
+msgid "Error in socket pre-check: %s"
+msgstr "socket 预检查时出错: %s"
+
+msgid "Error listing backups: {e}"
+msgstr "列出备份时出错: {e}"
+
+msgid "Error listing profiles: {e}"
+msgstr "列出配置文件时出错: {e}"
+
+msgid "Error listing templates: {e}"
+msgstr "列出模板时出错: {e}"
+
+msgid "Error loading torrent configuration: {error}"
+msgstr "加载 torrent 配置时出错: {error}"
+
+msgid "Error opening folder: {error}"
+msgstr "打开文件夹时出错: {error}"
+
+msgid "Error processing file %s: %s"
+msgstr "处理文件 %s 时出错: %s"
+
+msgid "Error reading PID file after retries: %s"
+msgstr "重试后读取 PID 文件时出错: %s"
+
+msgid "Error reading PID file: %s"
+msgstr "读取 PID 文件时出错: %s"
+
+msgid "Error receiving WebSocket event: %s"
+msgstr "接收 WebSocket 事件时出错: %s"
+
+msgid "Error removing tracker: {error}"
+msgstr "移除 tracker 时出错: {error}"
+
+msgid "Error restarting daemon: %s"
+msgstr "重启守护进程时出错: %s"
+
+msgid "Error restoring backup: {e}"
+msgstr "恢复备份时出错: {e}"
+
+msgid "Error routing to daemon (PID file exists): %s"
+msgstr "路由到守护进程时出错（PID 文件存在）: %s"
+
+msgid "Error routing to daemon (no PID file): %s - will create local session"
+msgstr "路由到守护进程时出错（无 PID 文件）: %s - 将创建本地会话"
+
+msgid "Error selecting files: {error}"
+msgstr "选择文件时出错: {error}"
+
+msgid "Error sending shutdown request: %s"
+msgstr "发送关闭请求时出错: %s"
+
+msgid "Error setting file priority: {error}"
+msgstr "设置文件优先级时出错: {error}"
+
+msgid "Error starting daemon: %s"
+msgstr "启动守护进程时出错: %s"
+
+msgid "Error stopping daemon: %s"
+msgstr "停止守护进程时出错: %s"
+
+msgid "Error verifying files: {error}"
+msgstr "验证文件时出错: {error}"
+
+msgid "Error waiting for daemon with progress: %s"
+msgstr "等待守护进程时出错（带进度）: %s"
+
+msgid "Error waiting for daemon: %s"
+msgstr "等待守护进程时出错: %s"
+
+msgid "Error with auto-tuning: {e}"
+msgstr "自动调整时出错: {e}"
+
+msgid "Error with profile: {e}"
+msgstr "配置文件出错: {e}"
+
+msgid "Error with template: {e}"
+msgstr "模板出错: {e}"
+
+msgid "Error: {error}"
+msgstr "错误: {error}"
+
+msgid "Eviction rate: {rate:.2f} /sec"
+msgstr "驱逐率: {rate:.2f} /秒"
+
+msgid "Exceeded maximum wait time (%.1fs) for daemon readiness"
+msgstr "超过守护进程就绪的最大等待时间（%.1fs）"
+
+msgid "Expected type: {type_name}"
+msgstr "预期类型: {type_name}"
 
 msgid "Explore"
 msgstr "浏览"
 
+msgid "Export complete"
+msgstr "导出完成"
+
+msgid "Exporting checkpoint..."
+msgstr "正在导出检查点..."
+
 msgid "Failed"
 msgstr "失败"
 
+msgid "Failed to add content"
+msgstr "添加内容失败"
+
+msgid "Failed to add magnet link"
+msgstr "添加 magnet 链接失败"
+
+msgid "Failed to add peer to allowlist"
+msgstr "将对等节点添加到允许列表失败"
+
+msgid "Failed to add torrent"
+msgstr "添加 torrent 失败"
+
+msgid "Failed to add torrent to daemon"
+msgstr "向守护进程添加 torrent 失败"
+
+msgid "Failed to announce: {error}"
+msgstr "公告失败: {error}"
+
+msgid "Failed to ban peer: {error}"
+msgstr "封禁对等节点失败: {error}"
+
+msgid "Failed to calculate progress: %s"
+msgstr "计算进度失败: %s"
+
+msgid "Failed to cleanup Xet cache"
+msgstr "清理 Xet 缓存失败"
+
+msgid "Failed to clear queue"
+msgstr "清空队列失败"
+
+msgid "Failed to collect custom metrics: %s"
+msgstr "收集自定义指标失败: %s"
+
+msgid "Failed to collect performance metrics: %s"
+msgstr "收集性能指标失败: %s"
+
+msgid "Failed to collect system metrics: %s"
+msgstr "收集系统指标失败: %s"
+
+msgid "Failed to copy info hash: {error}"
+msgstr "复制信息哈希失败: {error}"
+
+msgid "Failed to deselect all files"
+msgstr "取消选择所有文件失败"
+
+msgid "Failed to deselect files"
+msgstr "取消选择文件失败"
+
+msgid "Failed to deselect files: {error}"
+msgstr "取消选择文件失败: {error}"
+
+msgid "Failed to disable io_uring: %s"
+msgstr "禁用 io_uring 失败: %s"
+
+msgid "Failed to discover NAT"
+msgstr "发现 NAT 失败"
+
+msgid "Failed to enable io_uring: %s"
+msgstr "启用 io_uring 失败: %s"
+
+msgid "Failed to generate .tonic file"
+msgstr "生成 .tonic 文件失败"
+
+msgid "Failed to generate tonic link"
+msgstr "生成 tonic 链接失败"
+
+msgid "Failed to get NAT status"
+msgstr "获取 NAT 状态失败"
+
+msgid "Failed to get Xet cache info"
+msgstr "获取 Xet 缓存信息失败"
+
+msgid "Failed to get Xet stats"
+msgstr "获取 Xet 统计信息失败"
+
+msgid "Failed to get content"
+msgstr "获取内容失败"
+
+msgid "Failed to get metrics interval from config: %s"
+msgstr "从配置获取指标间隔失败: %s"
+
+msgid "Failed to get peers"
+msgstr "获取对等节点失败"
+
+msgid "Failed to get queue"
+msgstr "获取队列失败"
+
+msgid "Failed to get runtime status: %s"
+msgstr "获取运行时状态失败: %s"
+
+msgid "Failed to get stats"
+msgstr "获取统计信息失败"
+
+msgid "Failed to get sync mode"
+msgstr "获取同步模式失败"
+
+msgid "Failed to get sync status"
+msgstr "获取同步状态失败"
+
+msgid "Failed to list aliases"
+msgstr "列出别名失败"
+
+msgid "Failed to list allowlist"
+msgstr "列出允许列表失败"
+
+msgid "Failed to list files"
+msgstr "列出文件失败"
+
+msgid "Failed to list scrape results"
+msgstr "列出抓取结果失败"
+
+msgid "Failed to load filter file: {file_path}"
+msgstr "加载过滤器文件失败: {file_path}"
+
+msgid "Failed to map port"
+msgstr "映射端口失败"
+
+msgid "Failed to move in queue"
+msgstr "在队列中移动失败"
+
+msgid "Failed to parse config value: %s"
+msgstr "解析配置值失败: %s"
+
+msgid "Failed to pause torrent"
+msgstr "暂停 torrent 失败"
+
+msgid "Failed to pin content"
+msgstr "固定内容失败"
+
+msgid "Failed to refresh mappings"
+msgstr "刷新映射失败"
+
 msgid "Failed to register torrent in session"
-msgstr "在会话中注册种子失败"
+msgstr "在会话中注册 torrent 失败"
+
+msgid "Failed to remove alias"
+msgstr "删除别名失败"
+
+msgid "Failed to remove from queue"
+msgstr "从队列移除失败"
+
+msgid "Failed to remove peer from allowlist"
+msgstr "从允许列表移除对等节点失败"
+
+msgid "Failed to remove tracker: {error}"
+msgstr "移除 tracker 失败: {error}"
+
+msgid "Failed to resume torrent"
+msgstr "恢复 torrent 失败"
+
+msgid "Failed to save configuration to file: %s"
+msgstr "保存配置到文件失败: %s"
+
+msgid "Failed to scrape torrent"
+msgstr "抓取 torrent 失败"
+
+msgid "Failed to select all files"
+msgstr "选择所有文件失败"
+
+msgid "Failed to select files"
+msgstr "选择文件失败"
+
+msgid "Failed to select files: {error}"
+msgstr "选择文件失败: {error}"
+
+msgid "Failed to set alias"
+msgstr "设置别名失败"
+
+msgid "Failed to set file priority"
+msgstr "设置文件优先级失败"
+
+msgid "Failed to set first piece priority: %s"
+msgstr "设置第一个片段优先级失败: %s"
+
+msgid "Failed to set last piece priority: %s"
+msgstr "设置最后一个片段优先级失败: %s"
+
+msgid "Failed to set priority"
+msgstr "设置优先级失败"
+
+msgid "Failed to set priority: {error}"
+msgstr "设置优先级失败: {error}"
+
+msgid "Failed to set sync mode"
+msgstr "设置同步模式失败"
+
+msgid "Failed to sign WebSocket request: %s"
+msgstr "签名 WebSocket 请求失败: %s"
+
+msgid "Failed to sign request with Ed25519: %s"
+msgstr "使用 Ed25519 签名请求失败: %s"
+
+msgid "Failed to start sync"
+msgstr "启动同步失败"
+
+msgid "Failed to stop daemon"
+msgstr "停止守护进程失败"
+
+msgid "Failed to unmap port"
+msgstr "取消映射端口失败"
+
+msgid "Failed to unpin content"
+msgstr "取消固定内容失败"
 
 msgid "File"
-msgstr "File"
+msgstr "文件"
 
 msgid "File Name"
 msgstr "文件名"
 
 msgid "File selection not available for this torrent"
-msgstr "此种子不支持文件选择"
+msgstr "此 torrent 不支持文件选择"
 
 msgid "Files"
 msgstr "文件"
 
+msgid "Filter update failed"
+msgstr "过滤器更新失败"
+
+msgid "Folder not found: {folder}"
+msgstr "未找到文件夹: {folder}"
+
+msgid "Force Announce"
+msgstr "强制公告"
+
+msgid "Found {count} potential issues"
+msgstr "发现 {count} 个潜在问题"
+
+msgid ""
+"Full configuration editing is available in the Global Config screen. Press 'g' to open it.\n"
+msgstr ""
+"完整配置编辑在全局配置屏幕中可用。按 'g' 打开它。\n"
+
+msgid ""
+"Full configuration editing requires navigating to the Global Config screen\n"
+msgstr ""
+"完整配置编辑需要导航到全局配置屏幕\n"
+
+msgid "General"
+msgstr "常规"
+
+msgid "General configuration - Data provider/Executor not available"
+msgstr "常规配置 - 数据提供者/执行器不可用"
+
+msgid "Generated new API key for daemon"
+msgstr "已为守护进程生成新的 API 密钥"
+
+msgid "Generating {format} torrent..."
+msgstr "正在生成 {format} torrent..."
+
+msgid "Global"
+msgstr "全局"
+
 msgid "Global Config"
 msgstr "全局配置"
 
+msgid "Global Configuration"
+msgstr "全局配置"
+
+msgid "Graceful shutdown timeout, forcing stop"
+msgstr "正常关闭超时，强制停止"
+
+msgid "Graphs"
+msgstr "图表"
+
 msgid "Help"
 msgstr "帮助"
+
+msgid "High"
+msgstr "高"
 
 msgid "History"
 msgstr "历史"
@@ -228,44 +1447,183 @@ msgstr "ID"
 msgid "IP"
 msgstr "IP"
 
-msgid "IP Filter"
-msgstr "IP 过滤器"
+msgid "IP Address"
+msgstr "IP 地址"
+
+msgid "IP filter not available"
+msgstr "IP 过滤器不可用"
+
+msgid ""
+"IPCClient.get_daemon_pid: Checking pid_file=%s (home_dir=%s, exists=%s)\n"
+msgstr ""
+"IPCClient.get_daemon_pid: 正在检查 pid_file=%s (home_dir=%s, exists=%s)\n"
 
 msgid "IPFS"
 msgstr "IPFS"
 
+msgid "Idle"
+msgstr "空闲"
+
+msgid "Inactive"
+msgstr "非活动"
+
+msgid "Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)"
+msgstr "增加详细程度（-v: 详细，-vv: 调试，-vvv: 跟踪）"
+
+msgid "Info"
+msgstr "信息"
+
 msgid "Info Hash"
 msgstr "信息哈希"
+
+msgid "Info hash copied to clipboard"
+msgstr "信息哈希已复制到剪贴板"
+
+msgid "Info hash: {hash}"
+msgstr "信息哈希: {hash}"
+
+msgid "Initial Rate"
+msgstr "初始速率"
+
+msgid "Initial send rate"
+msgstr "初始发送速率"
 
 msgid "Interactive backup"
 msgstr "交互式备份"
 
+msgid "Invalid IP address: {error}"
+msgstr "无效的 IP 地址: {error}"
+
+msgid "Invalid IP range: {ip_range}"
+msgstr "无效的 IP 范围: {ip_range}"
+
+msgid "Invalid configuration: {e}"
+msgstr "无效的配置: {e}"
+
+msgid "Invalid info hash format"
+msgstr ""
+
+msgid "Invalid info hash format: %s"
+msgstr "无效的信息哈希格式: %s"
+
+msgid "Invalid info hash length in magnet link"
+msgstr "magnet 链接中的信息哈希长度无效"
+
+msgid ""
+"Invalid locale '{current_locale}' specified. Falling back to 'en'. Available locales: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu\n"
+msgstr ""
+"指定的语言环境 '{current_locale}' 无效。回退到 'en'。可用语言环境: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu\n"
+
+msgid "Invalid magnet link - missing 'xt=urn:btih:' parameter"
+msgstr "无效的 magnet 链接 - 缺少 'xt=urn:btih:' 参数"
+
+msgid "Invalid magnet link format"
+msgstr "无效的 magnet 链接格式"
+
+msgid "Invalid magnet link format - must start with 'magnet:?'"
+msgstr "无效的 magnet 链接格式 - 必须以 'magnet:?' 开头"
+
+msgid "Invalid peer selection"
+msgstr "无效的对等节点选择"
+
+msgid "Invalid profile '{name}': {errors}"
+msgstr "无效的配置文件 '{name}': {errors}"
+
+msgid "Invalid template '{name}': {errors}"
+msgstr "无效的模板 '{name}': {errors}"
+
 msgid "Invalid torrent file format"
-msgstr "无效的种子文件格式"
+msgstr "无效的 torrent 文件格式"
 
 msgid "Key"
-msgstr "键"
+msgstr "密钥"
 
 msgid "Key not found: {key}"
-msgstr "未找到键：{key}"
+msgstr "未找到密钥: {key}"
 
 msgid "Last Scrape"
 msgstr "最后抓取"
 
-msgid "Leechers"
-msgstr "下载者"
+msgid "Last Update"
+msgstr "最后更新"
 
 msgid "Leechers (Scrape)"
 msgstr "下载者（抓取）"
 
+msgid "Loading configuration..."
+msgstr "正在加载配置..."
+
+msgid "Loading torrent configuration..."
+msgstr "正在加载 torrent 配置..."
+
+msgid "Low"
+msgstr "低"
+
 msgid "MIGRATED"
 msgstr "已迁移"
+
+msgid "MTU"
+msgstr "MTU"
+
+msgid "Magnet command: PID file check - exists=%s, path=%s"
+msgstr "Magnet 命令: PID 文件检查 - 存在=%s, 路径=%s"
+
+msgid "Magnet link must contain 'xt=urn:btih:' parameter"
+msgstr "Magnet 链接必须包含 'xt=urn:btih:' 参数"
+
+msgid "Magnet link must start with 'magnet:?'"
+msgstr "Magnet 链接必须以 'magnet:?' 开头"
+
+msgid "Max Rate"
+msgstr "最大速率"
+
+msgid "Max Retransmits"
+msgstr "最大重传次数"
+
+msgid "Max Window Size"
+msgstr "最大窗口大小"
+
+msgid "Maximum"
+msgstr "最大"
+
+msgid "Maximum UDP packet size"
+msgstr "最大 UDP 数据包大小"
+
+msgid "Maximum receive window size"
+msgstr "最大接收窗口大小"
+
+msgid "Maximum retransmission attempts"
+msgstr "最大重传尝试次数"
+
+msgid "Maximum send rate"
+msgstr "最大发送速率"
 
 msgid "Menu"
 msgstr "菜单"
 
 msgid "Metric"
 msgstr "指标"
+
+msgid "Migrating checkpoint format from {from_fmt} to {to_fmt}..."
+msgstr "正在将检查点格式从 {from_fmt} 迁移到 {to_fmt}..."
+
+msgid "Migration complete"
+msgstr "迁移完成"
+
+msgid "Min Rate"
+msgstr "最小速率"
+
+msgid "Minimum send rate"
+msgstr "最小发送速率"
+
+msgid "Model '{model}' not found in Config"
+msgstr "在配置中未找到模型 '{model}'"
+
+msgid "Modified"
+msgstr "已修改"
+
+msgid "N/A"
+msgstr "不适用"
 
 msgid "NAT Management"
 msgstr "NAT 管理"
@@ -276,11 +1634,23 @@ msgstr "名称"
 msgid "Network"
 msgstr "网络"
 
+msgid "Network configuration (connections, timeouts, rate limits)"
+msgstr "网络配置（连接、超时、速率限制）"
+
+msgid "Network configuration - Data provider/Executor not available"
+msgstr "网络配置 - 数据提供者/执行器不可用"
+
+msgid "Never"
+msgstr "从不"
+
 msgid "No"
 msgstr "否"
 
+msgid "No PID file found, checking for daemon via _get_executor()"
+msgstr "未找到 PID 文件，通过 _get_executor() 检查守护进程"
+
 msgid "No active alerts"
-msgstr "无活跃警报"
+msgstr "无活动警报"
 
 msgid "No alert rules"
 msgstr "无警报规则"
@@ -291,17 +1661,49 @@ msgstr "未配置警报规则"
 msgid "No backups found"
 msgstr "未找到备份"
 
-msgid "No cached results"
-msgstr "无缓存结果"
-
 msgid "No checkpoints"
 msgstr "无检查点"
 
 msgid "No config file to backup"
 msgstr "无配置文件可备份"
 
+msgid "No configuration file to backup"
+msgstr "无配置文件可备份"
+
+msgid "No daemon PID file found - daemon is not running"
+msgstr "未找到守护进程 PID 文件 - 守护进程未运行"
+
+msgid "No daemon config or API key found - will create local session"
+msgstr "未找到守护进程配置或 API 密钥 - 将创建本地会话"
+
+msgid ""
+"No daemon detected (PID file doesn't exist), creating local session. PID file path: %s\n"
+msgstr ""
+"未检测到守护进程（PID 文件不存在），创建本地会话。PID 文件路径: %s\n"
+
+msgid "No file selected"
+msgstr "未选择文件"
+
+msgid "No files to deselect"
+msgstr "无文件可取消选择"
+
+msgid "No files to select"
+msgstr "无文件可选择"
+
+msgid "No locales directory found"
+msgstr "未找到语言环境目录"
+
+msgid "No magnet URI provided"
+msgstr "未提供 magnet URI"
+
+msgid "No magnet URI provided for add_magnet operation."
+msgstr "未为 add_magnet 操作提供 magnet URI。"
+
+msgid "No peer selected"
+msgstr "未选择对等节点"
+
 msgid "No peers connected"
-msgstr "无节点连接"
+msgstr "无对等节点连接"
 
 msgid "No profiles available"
 msgstr "无可用配置文件"
@@ -310,34 +1712,107 @@ msgid "No templates available"
 msgstr "无可用模板"
 
 msgid "No torrent active"
-msgstr "无活跃种子"
+msgstr "无活动 torrent"
 
-msgid "Nodes: {count}"
-msgstr "节点：{count}"
+msgid "No torrent path or magnet provided"
+msgstr "未提供 torrent 路径或 magnet"
 
-msgid "Not available"
-msgstr "不可用"
+msgid "No tracker selected"
+msgstr "未选择 tracker"
 
-msgid "Not configured"
-msgstr "未配置"
+msgid "No trackers found"
+msgstr "未找到 tracker"
+
+msgid "Normal"
+msgstr "正常"
 
 msgid "Not supported"
 msgstr "不支持"
 
+msgid "Note"
+msgstr "注意"
+
 msgid "OK"
 msgstr "确定"
+
+msgid "Open Folder"
+msgstr "打开文件夹"
+
+msgid "Opened folder: {path}"
+msgstr "已打开文件夹: {path}"
 
 msgid "Operation not supported"
 msgstr "不支持的操作"
 
+msgid "Option"
+msgstr "选项"
+
+msgid "Output directory not available"
+msgstr "输出目录不可用"
+
+msgid "PEX: Failed"
+msgstr "PEX: 失败"
+
 msgid "PEX: {status}"
-msgstr "PEX：{status}"
+msgstr "PEX: {status}"
+
+msgid "PID file contains invalid PID: %d, removing"
+msgstr "PID 文件包含无效的 PID: %d，正在删除"
+
+msgid "PID file contains invalid data: %r, removing"
+msgstr "PID 文件包含无效数据: %r，正在删除"
+
+msgid "PID file is empty, removing"
+msgstr "PID 文件为空，正在删除"
+
+msgid "Parsing files and building file tree..."
+msgstr "正在解析文件并构建文件树..."
+
+msgid "Parsing files and building hybrid metadata..."
+msgstr "正在解析文件并构建混合元数据..."
+
+msgid "Path"
+msgstr "路径"
 
 msgid "Pause"
 msgstr "暂停"
 
+msgid "Pause failed: {error}"
+msgstr "暂停失败: {error}"
+
+msgid "Peer banning not yet implemented. Selected peer: {ip}:{port}"
+msgstr "对等节点封禁尚未实现。选中的对等节点: {ip}:{port}"
+
+msgid "Peer {ip}:{port} banned"
+msgstr "对等节点 {ip}:{port} 已封禁"
+
 msgid "Peers"
-msgstr "节点"
+msgstr "对等节点"
+
+msgid "Per-Torrent"
+msgstr "每个 Torrent"
+
+msgid "Per-Torrent Config: {hash}..."
+msgstr "每个 Torrent 配置: {hash}..."
+
+msgid "Per-Torrent Configuration"
+msgstr "每个 Torrent 配置"
+
+msgid "Per-Torrent Configuration: {name}"
+msgstr "每个 Torrent 配置: {name}"
+
+msgid "Per-Torrent tab - Data provider or executor not available"
+msgstr "每个 Torrent 标签页 - 数据提供者或执行器不可用"
+
+msgid ""
+"Per-torrent configuration - Data provider/Executor or torrent not available\n"
+msgstr ""
+"每个 torrent 配置 - 数据提供者/执行器或 torrent 不可用\n"
+
+msgid ""
+"Per-torrent rate limits and priority can be configured via the CLI or executor commands.\n"
+msgstr ""
+"每个 torrent 的速率限制和优先级可以通过 CLI 或执行器命令进行配置。\n"
 
 msgid "Performance"
 msgstr "性能"
@@ -345,17 +1820,47 @@ msgstr "性能"
 msgid "Pieces"
 msgstr "片段"
 
+msgid "Please select a torrent first"
+msgstr "请先选择一个 torrent"
+
 msgid "Port"
 msgstr "端口"
 
-msgid "Port: {port}"
-msgstr "端口：{port}"
+msgid "Prefer over TCP"
+msgstr "优先于 TCP"
+
+msgid "Prefer uTP when both TCP and uTP are available"
+msgstr "当 TCP 和 uTP 都可用时，优先使用 uTP"
+
+msgid "Preferences"
+msgstr "首选项"
+
+msgid "Preferences tab - Executor not available"
+msgstr "首选项标签页 - 执行器不可用"
+
+msgid "Press Ctrl+C to stop the daemon"
+msgstr "按 Ctrl+C 停止守护进程"
+
+msgid "Press Enter to configure this section"
+msgstr "按 Enter 配置此部分"
 
 msgid "Priority"
 msgstr "优先级"
 
 msgid "Private"
 msgstr "私有"
+
+msgid "Profile '{name}' not found"
+msgstr "未找到配置文件 '{name}'"
+
+msgid "Profile applied to {path}"
+msgstr "配置文件已应用到 {path}"
+
+msgid "Profile config written to {path}"
+msgstr "配置文件已写入 {path}"
+
+msgid "Profile: {name}"
+msgstr "配置文件: {name}"
 
 msgid "Profiles"
 msgstr "配置文件"
@@ -369,6 +1874,15 @@ msgstr "属性"
 msgid "Proxy Config"
 msgstr "代理配置"
 
+msgid "Public key must be 32 bytes (64 hex characters)"
+msgstr "公钥必须是 32 字节（64 个十六进制字符）"
+
+msgid "PyYAML is required for YAML export"
+msgstr "YAML 导出需要 PyYAML"
+
+msgid "PyYAML is required for YAML import"
+msgstr "YAML 导入需要 PyYAML"
+
 msgid "PyYAML is required for YAML output"
 msgstr "YAML 输出需要 PyYAML"
 
@@ -378,26 +1892,80 @@ msgstr "快速添加"
 msgid "Quit"
 msgstr "退出"
 
+msgid "RTT multiplier for retransmit timeout"
+msgstr "重传超时的 RTT 倍数"
+
+msgid "Rate limit configuration (global and per-torrent)"
+msgstr "速率限制配置（全局和每个 torrent）"
+
 msgid "Rate limits disabled"
 msgstr "速率限制已禁用"
 
 msgid "Rate limits set to 1024 KiB/s"
 msgstr "速率限制设置为 1024 KiB/s"
 
+msgid "Read IPC port %d from daemon config file (authoritative source)"
+msgstr "从守护进程配置文件读取 IPC 端口 %d（权威来源）"
+
+msgid "Rehash: Failed"
+msgstr "重新哈希: 失败"
+
 msgid "Rehash: {status}"
-msgstr "重新哈希：{status}"
+msgstr "重新哈希: {status}"
+
+msgid "Remaining chunks: {count}"
+msgstr "剩余块: {count}"
+
+msgid "Remove"
+msgstr "移除"
+
+msgid "Remove Tracker"
+msgstr "移除 Tracker"
+
+msgid "Remove failed: {error}"
+msgstr "移除失败: {error}"
+
+msgid "Remove tracker not yet implemented. Selected tracker: {url}"
+msgstr "移除 tracker 尚未实现。选中的 tracker: {url}"
+
+msgid "Reset specific key only (otherwise resets all options)"
+msgstr "仅重置特定键（否则重置所有选项）"
+
+msgid "Restart daemon now?"
+msgstr "现在重启守护进程？"
+
+msgid "Restore complete"
+msgstr "恢复完成"
+
+msgid "Restore failed"
+msgstr "恢复失败"
+
+msgid "Restoring checkpoint..."
+msgstr "正在恢复检查点..."
 
 msgid "Resume"
 msgstr "恢复"
 
+msgid "Resume failed: {error}"
+msgstr "恢复失败: {error}"
+
+msgid "Resume from checkpoint?"
+msgstr "从检查点恢复？"
+
+msgid "Resuming {name}"
+msgstr "正在恢复 {name}"
+
+msgid "Retransmit Timeout Factor"
+msgstr "重传超时因子"
+
 msgid "Rule"
 msgstr "规则"
 
-msgid "Rule not found: {name}"
-msgstr "未找到规则：{name}"
+msgid "Rule not found: {ip_range}"
+msgstr "未找到规则: {ip_range}"
 
-msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
-msgstr "规则：{rules}，IPv4：{ipv4}，IPv6：{ipv6}，阻止：{blocks}"
+msgid "Rule not found: {name}"
+msgstr "未找到规则: {name}"
 
 msgid "Running"
 msgstr "运行中"
@@ -405,23 +1973,89 @@ msgstr "运行中"
 msgid "SSL Config"
 msgstr "SSL 配置"
 
+msgid "Save checkpoint after reset"
+msgstr "重置后保存检查点"
+
+msgid "Save checkpoint immediately after setting option"
+msgstr "设置选项后立即保存检查点"
+
+msgid "Saving torrent to {path}..."
+msgstr "正在将 torrent 保存到 {path}..."
+
+msgid "Scanning folder and calculating chunks..."
+msgstr "正在扫描文件夹并计算块..."
+
+msgid "Schema written to {path}"
+msgstr "架构已写入 {path}"
+
 msgid "Scrape Results"
 msgstr "抓取结果"
 
+msgid "Scrape: Failed"
+msgstr "抓取: 失败"
+
 msgid "Scrape: {status}"
-msgstr "抓取：{status}"
+msgstr "抓取: {status}"
+
+msgid "Search torrents..."
+msgstr "搜索 torrent..."
+
+msgid "Section"
+msgstr "部分"
 
 msgid "Section not found: {section}"
-msgstr "未找到节：{section}"
+msgstr "未找到部分: {section}"
+
+msgid "Section: {section}"
+msgstr "部分: {section}"
+
+msgid "Security"
+msgstr "安全"
 
 msgid "Security Scan"
 msgstr "安全扫描"
 
-msgid "Seeders"
-msgstr "做种者"
+msgid "Security configuration - Data provider/Executor not available"
+msgstr "安全配置 - 数据提供者/执行器不可用"
+
+msgid "Security settings (encryption, IP filtering, SSL)"
+msgstr "安全设置（加密、IP 过滤、SSL）"
 
 msgid "Seeders (Scrape)"
 msgstr "做种者（抓取）"
+
+msgid "Seeding"
+msgstr "做种中"
+
+msgid "Seeds"
+msgstr "做种者"
+
+msgid "Select All"
+msgstr "全选"
+
+msgid "Select File Priority"
+msgstr "选择文件优先级"
+
+msgid "Select Priority"
+msgstr "选择优先级"
+
+msgid "Select a section to configure"
+msgstr "选择要配置的部分"
+
+msgid "Select a section to configure. Press Enter to edit, Escape to go back."
+msgstr "选择要配置的部分。按 Enter 编辑，按 Escape 返回。"
+
+msgid "Select a sub-tab to view configuration options"
+msgstr "选择子标签页查看配置选项"
+
+msgid "Select a sub-tab to view torrents"
+msgstr "选择子标签页查看 torrent"
+
+msgid "Select a tab to view content"
+msgstr "选择标签页查看内容"
+
+msgid "Select a torrent and sub-tab to view details"
+msgstr "选择 torrent 和子标签页查看详细信息"
 
 msgid "Select files to download"
 msgstr "选择要下载的文件"
@@ -429,8 +2063,14 @@ msgstr "选择要下载的文件"
 msgid "Selected"
 msgstr "已选择"
 
-msgid "Session"
-msgstr "会话"
+msgid "Selected {count} file(s)"
+msgstr "已选择 {count} 个文件"
+
+msgid "Set Priority"
+msgstr "设置优先级"
+
+msgid "Set priority to {priority} for file"
+msgstr "将文件优先级设置为 {priority}"
 
 msgid "Set value in global config file"
 msgstr "在全局配置文件中设置值"
@@ -442,10 +2082,10 @@ msgid "Severity"
 msgstr "严重性"
 
 msgid "Show specific key path (e.g. network.listen_port)"
-msgstr "显示特定键路径（例如 network.listen_port）"
+msgstr "显示特定密钥路径（例如 network.listen_port）"
 
 msgid "Show specific section key path (e.g. network)"
-msgstr "显示特定节键路径（例如 network）"
+msgstr "显示特定部分密钥路径（例如 network）"
 
 msgid "Size"
 msgstr "大小"
@@ -457,16 +2097,50 @@ msgid "Skip daemon restart even if needed"
 msgstr "即使需要也跳过守护进程重启"
 
 msgid "Snapshot failed: {error}"
-msgstr "快照失败：{error}"
+msgstr "快照失败: {error}"
 
 msgid "Snapshot saved to {path}"
 msgstr "快照已保存到 {path}"
+
+msgid ""
+"Socket connection test to %s:%d failed (result=%d). Port may not be open or firewall blocking. Proceeding with HTTP check anyway.\n"
+msgstr ""
+"到 %s:%d 的套接字连接测试失败（结果=%d）。端口可能未打开或防火墙阻止。无论如何继续 HTTP 检查。\n"
+
+msgid ""
+"Socket test returned 10035 (WSAEWOULDBLOCK) on Windows for %s:%d. This may be a false positive - proceeding with HTTP check.\n"
+msgstr ""
+"Windows 上 %s:%d 的套接字测试返回 10035 (WSAEWOULDBLOCK)。这可能是误报 - 继续 HTTP 检查。\n"
+
+msgid "Source path does not exist: %s"
+msgstr "源路径不存在: %s"
+
+msgid "Starting daemon..."
+msgstr "正在启动守护进程..."
+
+msgid "Starting file verification..."
+msgstr "正在开始文件验证..."
 
 msgid "Status"
 msgstr "状态"
 
 msgid "Status: "
-msgstr "状态："
+msgstr "状态: "
+
+msgid "Stopping daemon for restart..."
+msgstr "正在停止守护进程以重启..."
+
+msgid "Stopping daemon..."
+msgstr "正在停止守护进程..."
+
+msgid "Stopping daemon... ({elapsed:.1f}s)"
+msgstr "正在停止守护进程...（{elapsed:.1f}秒）"
+
+msgid "Storage"
+msgstr "存储"
+
+msgid "Storage configuration - Data provider/Executor not available"
+msgstr "存储配置 - 数据提供者/执行器不可用"
 
 msgid "Supported"
 msgstr "支持"
@@ -480,155 +2154,478 @@ msgstr "系统功能摘要"
 msgid "System Resources"
 msgstr "系统资源"
 
+msgid "System recommendations:"
+msgstr "系统建议:"
+
+msgid "Template '{name}' not found"
+msgstr "未找到模板 '{name}'"
+
+msgid "Template applied to {path}"
+msgstr "模板已应用到 {path}"
+
+msgid "Template config written to {path}"
+msgstr "模板配置已写入 {path}"
+
+msgid "Template: {name}"
+msgstr "模板: {name}"
+
 msgid "Templates"
 msgstr "模板"
+
+msgid "Templates: {templates}"
+msgstr "模板: {templates}"
+
+msgid "This will modify your configuration file. Continue?"
+msgstr "这将修改您的配置文件。继续吗？"
+
+msgid ""
+"Timeout checking daemon accessibility (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...\n"
+msgstr ""
+"检查守护进程可访问性超时（尝试 %d/%d，已用 %.1fs），%.1fs 后重试...\n"
+
+msgid ""
+"Timeout checking daemon accessibility after %d attempts (elapsed %.1fs)\n"
+msgstr ""
+"在 %d 次尝试后检查守护进程可访问性超时（已用 %.1fs）\n"
+
+msgid ""
+"Timeout checking daemon status at %s (daemon may be starting up or overloaded)\n"
+msgstr ""
+"检查守护进程状态超时 %s（守护进程可能正在启动或过载）\n"
 
 msgid "Timestamp"
 msgstr "时间戳"
 
+msgid "Top profile entries:"
+msgstr "顶部配置文件条目:"
+
 msgid "Torrent Config"
-msgstr "种子配置"
+msgstr "Torrent 配置"
 
 msgid "Torrent Status"
-msgstr "种子状态"
+msgstr "Torrent 状态"
 
 msgid "Torrent file not found"
-msgstr "未找到种子文件"
+msgstr "未找到 torrent 文件"
 
 msgid "Torrent not found"
-msgstr "未找到种子"
+msgstr "未找到 torrent"
+
+msgid "Torrent paused"
+msgstr ""
+
+msgid "Torrent removed"
+msgstr ""
+
+msgid "Torrent resumed"
+msgstr ""
+
+msgid "Torrent saved to {path}"
+msgstr ""
+
+msgid "Torrent {hash}... not found"
+msgstr ""
 
 msgid "Torrents"
-msgstr "种子"
+msgstr ""
+
+msgid "Torrents tab - Data provider or executor not available"
+msgstr ""
 
 msgid "Torrents: {count}"
-msgstr "种子：{count}"
+msgstr ""
 
-msgid "Tracker Scrape"
-msgstr "Tracker 抓取"
+msgid "Total chunks: {count}"
+msgstr ""
+
+msgid "Tracker removed: {url}"
+msgstr ""
+
+msgid "Trackers"
+msgstr ""
 
 msgid "Type"
-msgstr "类型"
+msgstr ""
+
+msgid "URL"
+msgstr ""
+
+msgid "Unexpected error checking daemon status at %s: %s"
+msgstr ""
 
 msgid "Unknown"
-msgstr "未知"
+msgstr ""
+
+msgid "Unknown error"
+msgstr ""
+
+msgid "Unknown operation: %s"
+msgstr ""
 
 msgid "Unknown subcommand"
-msgstr "未知子命令"
+msgstr ""
 
 msgid "Unknown subcommand: {sub}"
-msgstr "未知子命令：{sub}"
+msgstr ""
+
+msgid "Unlimited"
+msgstr ""
+
+msgid "Updated config file with daemon configuration"
+msgstr ""
 
 msgid "Upload"
-msgstr "上传"
+msgstr ""
+
+msgid "Upload Limit"
+msgstr ""
+
+msgid "Upload Rate"
+msgstr ""
 
 msgid "Upload Speed"
-msgstr "上传速度"
+msgstr ""
+
+msgid "Uploading"
+msgstr ""
 
 msgid "Uptime: {uptime:.1f}s"
-msgstr "运行时间：{uptime:.1f} 秒"
+msgstr ""
 
 msgid "Usage: alerts list|list-active|add|remove|clear|load|save|test ..."
-msgstr "用法：alerts list|list-active|add|remove|clear|load|save|test ..."
+msgstr ""
 
 msgid "Usage: backup <info_hash> <dest>"
-msgstr "用法：backup <信息哈希> <目标>"
+msgstr ""
 
 msgid "Usage: checkpoint list"
-msgstr "用法：checkpoint list"
+msgstr ""
 
 msgid "Usage: config [show|get|set|reload] ..."
-msgstr "用法：config [show|get|set|reload] ..."
+msgstr ""
 
 msgid "Usage: config get <key.path>"
-msgstr "用法：config get <键.路径>"
+msgstr ""
 
 msgid "Usage: config set <key.path> <value>"
-msgstr "用法：config set <键.路径> <值>"
+msgstr ""
 
 msgid "Usage: config_backup list|create [desc]|restore <file>"
-msgstr "用法：config_backup list|create [描述]|restore <文件>"
+msgstr ""
 
 msgid "Usage: config_diff <file1> <file2>"
-msgstr "用法：config_diff <文件1> <文件2>"
+msgstr ""
 
 msgid "Usage: config_export <toml|json|yaml> <output>"
-msgstr "用法：config_export <toml|json|yaml> <输出>"
+msgstr ""
 
 msgid "Usage: config_import <toml|json|yaml> <input>"
-msgstr "用法：config_import <toml|json|yaml> <输入>"
+msgstr ""
+
+msgid "Usage: disk [show|stats|config <key> <value>|monitor]"
+msgstr ""
 
 msgid "Usage: export <path>"
-msgstr "用法：export <路径>"
+msgstr ""
 
 msgid "Usage: import <path>"
-msgstr "用法：import <路径>"
+msgstr ""
 
 msgid "Usage: limits [show|set] <info_hash> [down up]"
-msgstr "用法：limits [show|set] <信息哈希> [下载 上传]"
+msgstr ""
 
 msgid "Usage: limits set <info_hash> <down_kib> <up_kib>"
-msgstr "用法：limits set <信息哈希> <下载_kib> <上传_kib>"
+msgstr ""
 
-msgid "Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]"
-msgstr "用法：metrics show [system|performance|all] | metrics export [json|prometheus] [输出]"
+msgid ""
+"Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]\n"
+msgstr ""
+
+msgid "Usage: network [show|stats|config <key> <value>|optimize|monitor]"
+msgstr ""
 
 msgid "Usage: profile list | profile apply <name>"
-msgstr "用法：profile list | profile apply <名称>"
+msgstr ""
 
 msgid "Usage: restore <backup_file>"
-msgstr "用法：restore <备份文件>"
+msgstr ""
 
 msgid "Usage: template list | template apply <name> [merge]"
-msgstr "用法：template list | template apply <名称> [merge]"
+msgstr ""
 
 msgid "Use --confirm to proceed with reset"
-msgstr "使用 --confirm 继续重置"
+msgstr ""
+
+msgid "Use --confirm to proceed with restore"
+msgstr ""
+
+msgid "Use --force to force kill"
+msgstr ""
+
+msgid "Using IPC port %d from main config"
+msgstr ""
+
+msgid "Using daemon executor for magnet command"
+msgstr ""
+
+msgid "Using default IPC port 8080 (daemon config file may not exist)"
+msgstr ""
+
+msgid "V1 torrent generation not yet implemented"
+msgstr ""
 
 msgid "VALID"
-msgstr "有效"
+msgstr ""
 
 msgid "Value"
-msgstr "值"
+msgstr ""
+
+msgid ""
+"Verification complete: {verified} verified, {failed} failed out of {total}\n"
+msgstr ""
+
+msgid "Verification failed: {error}"
+msgstr ""
+
+msgid "Verify Files"
+msgstr ""
+
+msgid "Warnings:"
+msgstr ""
+
+msgid "WebSocket error: %s"
+msgstr ""
+
+msgid "WebSocket receive loop error: %s"
+msgstr ""
 
 msgid "Welcome"
-msgstr "欢迎"
+msgstr ""
+
+msgid ""
+"Windows-specific error checking daemon (os.kill() issue): %s - no PID file found, will create local session\n"
+msgstr ""
+
+msgid "Writing export file..."
+msgstr ""
+
+msgid "XET Folders"
+msgstr ""
 
 msgid "Xet"
-msgstr "Xet"
+msgstr ""
 
 msgid "Yes"
-msgstr "是"
+msgstr ""
 
 msgid "Yes (BEP 27)"
-msgstr "是（BEP 27）"
+msgstr ""
+
+msgid "[blue]Progress: {verified}/{total} pieces verified[/blue]"
+msgstr ""
+
+msgid "[blue]Running: {command}[/blue]"
+msgstr ""
+
+msgid ""
+"[bold]Aliases ({count}):[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Allowlist ({count} peers):[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Configuration:[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]Discovering NAT devices...[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Mapping {protocol} port {port}...[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]NAT Traversal Status[/bold]\n"
+"\n"
+msgstr ""
+
+msgid "[bold]Removing {protocol} port mapping for port {port}...[/bold]"
+msgstr ""
+
+msgid ""
+"[bold]Sync Mode for: {path}[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Sync Status for: {path}[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Cache Information[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Deduplication Cache Statistics[/bold]\n"
+"\n"
+msgstr ""
+
+msgid ""
+"[bold]Xet Protocol Status[/bold]\n"
+"\n"
+msgstr ""
 
 msgid "[cyan]Adding magnet link and fetching metadata...[/cyan]"
-msgstr "[cyan]正在添加磁力链接并获取元数据...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Checking for existing daemon instance...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Creating {format} torrent...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Download:[/cyan] {rate:.2f} KiB/s"
+msgstr ""
 
 msgid "[cyan]Downloading: {progress:.1f}% ({peers} peers)[/cyan]"
-msgstr "[cyan]正在下载：{progress:.1f}%（{peers} 个节点）[/cyan]"
+msgstr ""
 
-msgid "[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]"
-msgstr "[cyan]正在下载：{progress:.1f}%（{rate:.2f} MB/s，{peers} 个节点）[/cyan]"
+msgid ""
+"[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]\n"
+msgstr ""
+
+msgid "[cyan]Initializing configuration...[/cyan]"
+msgstr ""
 
 msgid "[cyan]Initializing session components...[/cyan]"
-msgstr "[cyan]正在初始化会话组件...[/cyan]"
+msgstr ""
+
+msgid "[cyan]Loading filter from: {file_path}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Parsed tonic link: {name}[/cyan]"
+msgstr ""
+
+msgid "[cyan]Restarting daemon...[/cyan]"
+msgstr "[cyan]正在重启守护进程...[/cyan]"
+
+msgid ""
+"[cyan]Running diagnostic checks...[/cyan]\n"
+"\n"
+msgstr ""
+"[cyan]正在运行诊断检查...[/cyan]\n"
+"\n"
+
+msgid "[cyan]Starting daemon in background...[/cyan]"
+msgstr "[cyan]正在后台启动守护进程...[/cyan]"
+
+msgid "[cyan]Starting daemon in foreground mode...[/cyan]"
+msgstr "[cyan]正在前台模式启动守护进程...[/cyan]"
+
+msgid "[cyan]Starting sync for: {name}[/cyan]"
+msgstr "[cyan]正在为 {name} 启动同步...[/cyan]"
+
+msgid "[cyan]Testing proxy connection to {host}:{port}...[/cyan]"
+msgstr "[cyan]正在测试到 {host}:{port} 的代理连接...[/cyan]"
+
+msgid "[cyan]Torrents:[/cyan] {num_torrents}"
+msgstr "[cyan]Torrent:[/cyan] {num_torrents}"
 
 msgid "[cyan]Troubleshooting:[/cyan]"
-msgstr "[cyan]故障排除：[/cyan]"
+msgstr "[cyan]故障排除:[/cyan]"
 
-msgid "[cyan]Waiting for session components to be ready (max 60s)...[/cyan]"
-msgstr "[cyan]等待会话组件就绪（最多 60 秒）...[/cyan]"
+msgid "[cyan]Updating filter lists from {count} URL(s)...[/cyan]"
+msgstr "[cyan]正在从 {count} 个 URL 更新过滤器列表...[/cyan]"
 
-msgid "[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]"
-msgstr "[dim]考虑使用守护进程命令或先停止守护进程：'btbt daemon exit'[/dim]"
+msgid "[cyan]Upload:[/cyan] {rate:.2f} KiB/s"
+msgstr "[cyan]上传:[/cyan] {rate:.2f} KiB/s"
+
+msgid "[cyan]Uptime:[/cyan] {uptime:.1f}s"
+msgstr "[cyan]运行时间:[/cyan] {uptime:.1f}秒"
+
+msgid "[cyan]Using custom IPC port: {port}[/cyan]"
+msgstr "[cyan]使用自定义 IPC 端口: {port}[/cyan]"
+
+msgid "[cyan]Waiting for daemon to be ready...[/cyan]"
+msgstr "[cyan]正在等待守护进程就绪...[/cyan]"
+
+msgid "[dim]  uv run btbt daemon start --foreground[/dim]"
+msgstr "[dim]  uv run btbt daemon start --foreground[/dim]"
+
+msgid ""
+"[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]\n"
+msgstr ""
+"[dim]考虑使用守护进程命令或先停止守护进程: 'btbt daemon exit'[/dim]\n"
+
+msgid ""
+"[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]\n"
+msgstr ""
+"[dim]守护进程可能仍在启动中。使用 'btbt daemon status' 检查。[/dim]\n"
+
+msgid "[dim]Info hash v1 (SHA-1): {hash}...[/dim]"
+msgstr "[dim]信息哈希 v1 (SHA-1): {hash}...[/dim]"
+
+msgid "[dim]Info hash v2 (SHA-256): {hash}...[/dim]"
+msgstr "[dim]信息哈希 v2 (SHA-256): {hash}...[/dim]"
+
+msgid "[dim]No active port mappings[/dim]"
+msgstr "[dim]无活动端口映射[/dim]"
+
+msgid "[dim]Output: {path}[/dim]"
+msgstr "[dim]输出: {path}[/dim]"
+
+msgid "[dim]Please restart manually: 'btbt daemon restart'[/dim]"
+msgstr "[dim]请手动重启: 'btbt daemon restart'[/dim]"
+
+msgid "[dim]Please restart the daemon manually: 'btbt daemon restart'[/dim]"
+msgstr "[dim]请手动重启守护进程: 'btbt daemon restart'[/dim]"
+
+msgid "[dim]Protocol: {method}[/dim]"
+msgstr "[dim]协议: {method}[/dim]"
+
+msgid "[dim]Source: {path}[/dim]"
+msgstr "[dim]源: {path}[/dim]"
+
+msgid "[dim]Trackers: {count}[/dim]"
+msgstr "[dim]Tracker: {count}[/dim]"
+
+msgid ""
+"[dim]Try running with --foreground flag to see detailed error output:[/dim]\n"
+msgstr ""
+"[dim]尝试使用 --foreground 标志运行以查看详细错误输出:[/dim]\n"
+
+msgid "[dim]Use 'btbt daemon status' to check daemon status[/dim]"
+msgstr "[dim]使用 'btbt daemon status' 检查守护进程状态[/dim]"
+
+msgid "[dim]Use -v flag for more details or check daemon logs[/dim]"
+msgstr "[dim]使用 -v 标志获取更多详细信息或检查守护进程日志[/dim]"
+
+msgid "[dim]Web seeds: {count}[/dim]"
+msgstr "[dim]Web seed: {count}[/dim]"
+
+msgid "[green]ALLOWED[/green]"
+msgstr "[green]允许[/green]"
+
+msgid "[green]Active Protocol:[/green] {method}"
+msgstr "[green]活动协议:[/green] {method}"
+
+msgid "[green]Added alert rule {name}[/green]"
+msgstr "[green]已添加警报规则 {name}[/green]"
+
+msgid "[green]Added to IPFS:[/green] {cid}"
+msgstr "[green]已添加到 IPFS:[/green] {cid}"
 
 msgid "[green]All files selected[/green]"
 msgstr "[green]已选择所有文件[/green]"
 
 msgid "[green]Applied auto-tuned configuration[/green]"
-msgstr "[green]已应用自动调整配置[/green]"
+msgstr "[green]已应用自动调整的配置[/green]"
 
 msgid "[green]Applied profile {name}[/green]"
 msgstr "[green]已应用配置文件 {name}[/green]"
@@ -636,14 +2633,48 @@ msgstr "[green]已应用配置文件 {name}[/green]"
 msgid "[green]Applied template {name}[/green]"
 msgstr "[green]已应用模板 {name}[/green]"
 
+msgid "[green]Applying {preset} optimizations...[/green]"
+msgstr "[green]正在应用 {preset} 优化...[/green]"
+
 msgid "[green]Backup created: {path}[/green]"
-msgstr "[green]已创建备份：{path}[/green]"
+msgstr "[green]备份已创建: {path}[/green]"
+
+msgid "[green]Benchmark results:[/green] {results}"
+msgstr "[green]基准测试结果:[/green] {results}"
+
+msgid ""
+"[green]CA certificates path set to {path}. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]CA 证书路径已设置为 {path}。配置已保存到 {config_file}[/green]\n"
+
+msgid "[green]Checkpoint for {hash} is valid[/green]"
+msgstr "[green]{hash} 的检查点有效[/green]"
+
+msgid "[green]Checkpoint for {info_hash} is valid[/green]"
+msgstr "[green]{info_hash} 的检查点有效[/green]"
+
+msgid "[green]Checkpoint saved[/green]"
+msgstr "[green]检查点已保存[/green]"
+
+msgid "[green]Checkpoint valid[/green]"
+msgstr "[green]检查点有效[/green]"
 
 msgid "[green]Cleaned up {count} old checkpoints[/green]"
 msgstr "[green]已清理 {count} 个旧检查点[/green]"
 
 msgid "[green]Cleared active alerts[/green]"
-msgstr "[green]已清除活跃警报[/green]"
+msgstr "[green]已清除活动警报[/green]"
+
+msgid "[green]Cleared all active alerts[/green]"
+msgstr "[green]已清除所有活动警报[/green]"
+
+msgid "[green]Cleared queue[/green]"
+msgstr "[green]已清空队列[/green]"
+
+msgid ""
+"[green]Client certificate set. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]客户端证书已设置。配置已保存到 {config_file}[/green]\n"
 
 msgid "[green]Configuration reloaded[/green]"
 msgstr "[green]配置已重新加载[/green]"
@@ -651,17 +2682,47 @@ msgstr "[green]配置已重新加载[/green]"
 msgid "[green]Configuration restored[/green]"
 msgstr "[green]配置已恢复[/green]"
 
+msgid "[green]Connected to daemon[/green]"
+msgstr "[green]已连接到守护进程[/green]"
+
 msgid "[green]Connected to {count} peer(s)[/green]"
-msgstr "[green]已连接到 {count} 个节点[/green]"
+msgstr "[green]已连接到 {count} 个对等节点[/green]"
+
+msgid "[green]Content pinned[/green]"
+msgstr "[green]内容已固定[/green]"
+
+msgid "[green]Content saved to:[/green] {output}"
+msgstr "[green]内容已保存到:[/green] {output}"
+
+msgid "[green]Daemon is running[/green] (PID: {pid})"
+msgstr "[green]守护进程正在运行[/green]（PID: {pid}）"
+
+msgid "[green]Daemon restarted successfully[/green]"
+msgstr "[green]守护进程重启成功[/green]"
 
 msgid "[green]Daemon status: {status}[/green]"
-msgstr "[green]守护进程状态：{status}[/green]"
+msgstr "[green]守护进程状态: {status}[/green]"
+
+msgid "[green]Daemon stopped gracefully[/green]"
+msgstr "[green]守护进程已正常停止[/green]"
+
+msgid "[green]Deleted checkpoint for {hash}[/green]"
+msgstr "[green]已删除 {hash} 的检查点[/green]"
+
+msgid "[green]Deleted checkpoint for {info_hash}[/green]"
+msgstr "[green]已删除 {info_hash} 的检查点[/green]"
+
+msgid "[green]Deselected all files[/green]"
+msgstr "[green]已取消选择所有文件[/green]"
+
+msgid "[green]Deselected {count} file(s)[/green]"
+msgstr "[green]已取消选择 {count} 个文件[/green]"
 
 msgid "[green]Download completed, stopping session...[/green]"
 msgstr "[green]下载完成，正在停止会话...[/green]"
 
 msgid "[green]Download completed: {name}[/green]"
-msgstr "[green]下载完成：{name}[/green]"
+msgstr "[green]下载完成: {name}[/green]"
 
 msgid "[green]Exported checkpoint to {path}[/green]"
 msgstr "[green]已导出检查点到 {path}[/green]"
@@ -669,20 +2730,38 @@ msgstr "[green]已导出检查点到 {path}[/green]"
 msgid "[green]Exported configuration to {out}[/green]"
 msgstr "[green]已导出配置到 {out}[/green]"
 
+msgid "[green]External IP:[/green] {ip}"
+msgstr "[green]外部 IP:[/green] {ip}"
+
+msgid "[green]Found checkpoint for: {torrent_name}[/green]"
+msgstr "[green]找到检查点: {torrent_name}[/green]"
+
 msgid "[green]Imported configuration[/green]"
 msgstr "[green]已导入配置[/green]"
+
+msgid "[green]Loaded alert rules from {path}[/green]"
+msgstr "[green]已从 {path} 加载警报规则[/green]"
+
+msgid "[green]Loaded {count} alert rules from {path}[/green]"
+msgstr "[green]已从 {path} 加载 {count} 条警报规则[/green]"
 
 msgid "[green]Loaded {count} rules[/green]"
 msgstr "[green]已加载 {count} 条规则[/green]"
 
+msgid "[green]Locale set to: {locale_code}[/green]"
+msgstr "[green]语言环境已设置为: {locale_code}[/green]"
+
 msgid "[green]Magnet added successfully: {hash}...[/green]"
-msgstr "[green]磁力链接添加成功：{hash}...[/green]"
+msgstr "[green]Magnet 添加成功: {hash}...[/green]"
 
 msgid "[green]Magnet added to daemon: {hash}[/green]"
-msgstr "[green]磁力链接已添加到守护进程：{hash}[/green]"
+msgstr "[green]Magnet 已添加到守护进程: {hash}[/green]"
+
+msgid "[green]Magnet link added to daemon: {info_hash}[/green]"
+msgstr "[green]Magnet 链接已添加到守护进程: {info_hash}[/green]"
 
 msgid "[green]Metadata fetched successfully![/green]"
-msgstr "[green]元数据获取成功！[/green]"
+msgstr "[green]元数据获取成功![/green]"
 
 msgid "[green]Migrated checkpoint to {path}[/green]"
 msgstr "[green]已迁移检查点到 {path}[/green]"
@@ -690,8 +2769,73 @@ msgstr "[green]已迁移检查点到 {path}[/green]"
 msgid "[green]Monitoring started[/green]"
 msgstr "[green]监控已启动[/green]"
 
+msgid "[green]Moved to position {position}[/green]"
+msgstr "[green]已移动到位置 {position}[/green]"
+
+msgid "[green]Network configuration looks optimal![/green]"
+msgstr "[green]网络配置看起来最优![/green]"
+
+msgid "[green]No checkpoints older than {days} days found[/green]"
+msgstr "[green]未找到超过 {days} 天的检查点[/green]"
+
+msgid ""
+"[green]Optimizations applied successfully![/green]\n"
+"[yellow]Note: Some changes may require restart to take effect.[/yellow]\n"
+msgstr ""
+"[green]优化应用成功![/green]\n"
+"[yellow]注意: 某些更改可能需要重启才能生效。[/yellow]\n"
+
+msgid "[green]Optimizations saved to {path}[/green]"
+msgstr "[green]优化已保存到 {path}[/green]"
+
+msgid "[green]Paused torrent[/green]"
+msgstr "[green]已暂停 torrent[/green]"
+
+msgid "[green]Peer validation hooks are enabled by configuration[/green]"
+msgstr "[green]对等节点验证钩子已通过配置启用[/green]"
+
+msgid "[green]Performing basic configuration scan...[/green]"
+msgstr "[green]正在执行基本配置扫描...[/green]"
+
+msgid "[green]Pinned:[/green] {cid}"
+msgstr "[green]已固定:[/green] {cid}"
+
+msgid "[green]Proxy configuration saved to {config_file}[/green]"
+msgstr "[green]代理配置已保存到 {config_file}[/green]"
+
+msgid "[green]Proxy configuration updated successfully[/green]"
+msgstr "[green]代理配置更新成功[/green]"
+
+msgid "[green]Proxy has been disabled[/green]"
+msgstr "[green]代理已禁用[/green]"
+
+msgid "[green]Removed alert rule {name}[/green]"
+msgstr "[green]已移除警报规则 {name}[/green]"
+
+msgid "[green]Removed torrent from queue[/green]"
+msgstr "[green]已从队列移除 torrent[/green]"
+
+msgid "[green]Reset all options for torrent {hash}[/green]"
+msgstr "[green]已重置 torrent {hash} 的所有选项[/green]"
+
+msgid "[green]Reset {key} for torrent {hash}[/green]"
+msgstr "[green]已重置 torrent {hash} 的 {key}[/green]"
+
+msgid ""
+"[green]Restored checkpoint for: {name}[/green]\n"
+"Info hash: {hash}\n"
+msgstr ""
+"[green]已恢复检查点: {name}[/green]\n"
+"信息哈希: {hash}\n"
+
+msgid "[green]Resumed torrent[/green]"
+msgstr "[green]已恢复 torrent[/green]"
+
 msgid "[green]Resuming download from checkpoint...[/green]"
 msgstr "[green]正在从检查点恢复下载...[/green]"
+
+msgid "[green]Resuming from checkpoint[/green]"
+msgstr "[green]正在从检查点恢复[/green]"
 
 msgid "[green]Rule added[/green]"
 msgstr "[green]规则已添加[/green]"
@@ -700,10 +2844,41 @@ msgid "[green]Rule evaluated[/green]"
 msgstr "[green]规则已评估[/green]"
 
 msgid "[green]Rule removed[/green]"
-msgstr "[green]规则已删除[/green]"
+msgstr "[green]规则已移除[/green]"
+
+msgid ""
+"[green]SSL certificate verification enabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]SSL 证书验证已启用。配置已保存到 {config_file}[/green]\n"
+
+msgid ""
+"[green]SSL for peers disabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]对等节点 SSL 已禁用。配置已保存到 {config_file}[/green]\n"
+
+msgid ""
+"[green]SSL for peers enabled (experimental). Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]对等节点 SSL 已启用（实验性）。配置已保存到 {config_file}[/green]\n"
+
+msgid ""
+"[green]SSL for trackers disabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]Tracker SSL 已禁用。配置已保存到 {config_file}[/green]\n"
+
+msgid ""
+"[green]SSL for trackers enabled. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]Tracker SSL 已启用。配置已保存到 {config_file}[/green]\n"
+
+msgid "[green]Saved alert rules to {path}[/green]"
+msgstr "[green]已保存警报规则到 {path}[/green]"
 
 msgid "[green]Saved rules[/green]"
 msgstr "[green]规则已保存[/green]"
+
+msgid "[green]Selected all files[/green]"
+msgstr "[green]已选择所有文件[/green]"
 
 msgid "[green]Selected file {idx}[/green]"
 msgstr "[green]已选择文件 {idx}[/green]"
@@ -711,128 +2886,1023 @@ msgstr "[green]已选择文件 {idx}[/green]"
 msgid "[green]Selected {count} file(s) for download[/green]"
 msgstr "[green]已选择 {count} 个文件用于下载[/green]"
 
+msgid "[green]Selected {count} file(s)[/green]"
+msgstr "[green]已选择 {count} 个文件[/green]"
+
+msgid "[green]Set file {index} priority to {priority}[/green]"
+msgstr "[green]已将文件 {index} 的优先级设置为 {priority}[/green]"
+
 msgid "[green]Set priority for file {idx} to {priority}[/green]"
 msgstr "[green]已将文件 {idx} 的优先级设置为 {priority}[/green]"
+
+msgid "[green]Set priority to {priority}[/green]"
+msgstr "[green]已将优先级设置为 {priority}[/green]"
+
+msgid "[green]Set {key} = {value} for torrent {hash}[/green]"
+msgstr "[green]已将 torrent {hash} 的 {key} 设置为 {value}[/green]"
 
 msgid "[green]Starting web interface on http://{host}:{port}[/green]"
 msgstr "[green]正在 http://{host}:{port} 启动 Web 界面[/green]"
 
+msgid "[green]Successfully resumed download: {hash}[/green]"
+msgstr "[green]成功恢复下载: {hash}[/green]"
+
+msgid "[green]Successfully resumed download: {resumed_info_hash}[/green]"
+msgstr "[green]成功恢复下载: {resumed_info_hash}[/green]"
+
+msgid ""
+"[green]TLS protocol version set to {version}. Configuration saved to {config_file}[/green]\n"
+msgstr ""
+"[green]TLS 协议版本已设置为 {version}。配置已保存到 {config_file}[/green]\n"
+
+msgid "[green]Tested rule {name} with value {value}[/green]"
+msgstr ""
+
 msgid "[green]Torrent added to daemon: {hash}[/green]"
-msgstr "[green]种子已添加到守护进程：{hash}[/green]"
+msgstr ""
+
+msgid "[green]Torrent added to daemon: {info_hash}[/green]"
+msgstr ""
+
+msgid "[green]Unpinned:[/green] {cid}"
+msgstr ""
 
 msgid "[green]Updated runtime configuration[/green]"
-msgstr "[green]已更新运行时配置[/green]"
+msgstr ""
+
+msgid "[green]Updated {key} to {value}[/green]"
+msgstr ""
 
 msgid "[green]Wrote metrics to {out}[/green]"
-msgstr "[green]已将指标写入 {out}[/green]"
+msgstr ""
+
+msgid "[green]Wrote metrics to {path}[/green]"
+msgstr ""
+
+msgid "[green]✓ Port mapping removed[/green]"
+msgstr ""
+
+msgid "[green]✓ Port mapping successful![/green]"
+msgstr ""
+
+msgid "[green]✓ Port mappings refreshed[/green]"
+msgstr ""
+
+msgid "[green]✓ Proxy connection test successful[/green]"
+msgstr ""
+
+msgid "[green]✓ Torrent created successfully: {path}[/green]"
+msgstr ""
+
+msgid "[green]✓[/green] Added filter rule: {ip_range} ({mode})"
+msgstr ""
+
+msgid "[green]✓[/green] Added peer {peer_id} to allowlist"
+msgstr ""
+
+msgid ""
+"[green]✓[/green] Added peer {peer_id} to allowlist with alias '{alias}'\n"
+msgstr ""
+
+msgid "[green]✓[/green] Cleaned {cleaned} unused chunks"
+msgstr ""
+
+msgid "[green]✓[/green] Configuration saved to {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Daemon process started (PID {pid})"
+msgstr ""
+
+msgid ""
+"[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)\n"
+msgstr ""
+
+msgid "[green]✓[/green] Folder sync started"
+msgstr ""
+
+msgid "[green]✓[/green] Generated .tonic file: {file}"
+msgstr ""
+
+msgid "[green]✓[/green] Generated new API key for daemon"
+msgstr ""
+
+msgid "[green]✓[/green] Generated tonic?: link:"
+msgstr ""
+
+msgid "[green]✓[/green] Loaded {loaded} rules from {file_path}"
+msgstr ""
+
+msgid "[green]✓[/green] Loaded {total_loaded} total rules"
+msgstr ""
+
+msgid "[green]✓[/green] Removed alias for peer {peer_id}"
+msgstr ""
+
+msgid "[green]✓[/green] Removed filter rule: {ip_range}"
+msgstr ""
+
+msgid "[green]✓[/green] Removed peer {peer_id} from allowlist"
+msgstr ""
+
+msgid "[green]✓[/green] Set alias '{alias}' for peer {peer_id}"
+msgstr ""
+
+msgid "[green]✓[/green] Set {key} = {value}"
+msgstr ""
+
+msgid "[green]✓[/green] Successfully updated {count} filter list(s)"
+msgstr ""
+
+msgid "[green]✓[/green] Sync mode updated"
+msgstr "[green]✓[/green] 同步模式已更新"
+
+msgid "[green]✓[/green] Tonic link:"
+msgstr "[green]✓[/green] Tonic 链接:"
+
+msgid "[green]✓[/green] Updated config file: {file}"
+msgstr "[green]✓[/green] 已更新配置文件: {file}"
+
+msgid "[green]✓[/green] Xet protocol enabled"
+msgstr "[green]✓[/green] Xet 协议已启用"
+
+msgid "[green]✓[/green] uTP configuration reset to defaults"
+msgstr "[green]✓[/green] uTP 配置已重置为默认值"
+
+msgid "[green]✓[/green] uTP transport enabled"
+msgstr "[green]✓[/green] uTP 传输已启用"
+
+msgid "[red]--name is required to remove a rule[/red]"
+msgstr "[red]移除规则需要 --name[/red]"
+
+msgid "[red]--name is required to test a rule[/red]"
+msgstr "[red]测试规则需要 --name[/red]"
+
+msgid "[red]--name, --metric and --condition are required to add a rule[/red]"
+msgstr "[red]添加规则需要 --name、--metric 和 --condition[/red]"
+
+msgid "[red]--value is required with --test[/red]"
+msgstr "[red]使用 --test 时需要 --value[/red]"
+
+msgid "[red]BLOCKED[/red]"
+msgstr "[red]已阻止[/red]"
 
 msgid "[red]Backup failed: {msgs}[/red]"
-msgstr "[red]备份失败：{msgs}[/red]"
+msgstr "[red]备份失败: {msgs}[/red]"
+
+msgid "[red]Certificate file does not exist: {path}[/red]"
+msgstr "[red]证书文件不存在: {path}[/red]"
+
+msgid "[red]Certificate path must be a file: {path}[/red]"
+msgstr "[red]证书路径必须是文件: {path}[/red]"
+
+msgid "[red]Configuration key not found: {key}[/red]"
+msgstr "[red]未找到配置密钥: {key}[/red]"
+
+msgid "[red]Content not found: {cid}[/red]"
+msgstr "[red]未找到内容: {cid}[/red]"
+
+msgid "[red]Daemon is not running[/red]"
+msgstr "[red]守护进程未运行[/red]"
+
+msgid "[red]Daemon process crashed[/red]"
+msgstr "[red]守护进程崩溃[/red]"
+
+msgid "[red]Dashboard error: {e}[/red]"
+msgstr "[red]仪表板错误: {e}[/red]"
+
+msgid "[red]Directories not yet supported[/red]"
+msgstr "[red]尚不支持目录[/red]"
+
+msgid "[red]Error adding content: {e}[/red]"
+msgstr "[red]添加内容时出错: {e}[/red]"
+
+msgid "[red]Error adding peer to allowlist: {e}[/red]"
+msgstr "[red]将对等节点添加到允许列表时出错: {e}[/red]"
+
+msgid "[red]Error disabling SSL for peers: {e}[/red]"
+msgstr "[red]禁用对等节点 SSL 时出错: {e}[/red]"
+
+msgid "[red]Error disabling SSL for trackers: {e}[/red]"
+msgstr "[red]禁用 Tracker SSL 时出错: {e}[/red]"
+
+msgid "[red]Error disabling certificate verification: {e}[/red]"
+msgstr "[red]禁用证书验证时出错: {e}[/red]"
+
+msgid "[red]Error during cleanup: {e}[/red]"
+msgstr "[red]清理时出错: {e}[/red]"
+
+msgid "[red]Error enabling SSL for peers: {e}[/red]"
+msgstr "[red]启用对等节点 SSL 时出错: {e}[/red]"
+
+msgid "[red]Error enabling SSL for trackers: {e}[/red]"
+msgstr "[red]启用 Tracker SSL 时出错: {e}[/red]"
+
+msgid "[red]Error enabling certificate verification: {e}[/red]"
+msgstr "[red]启用证书验证时出错: {e}[/red]"
+
+msgid "[red]Error ensuring daemon is running: {e}[/red]"
+msgstr "[red]确保守护进程运行时出错: {e}[/red]"
+
+msgid "[red]Error generating .tonic file: {e}[/red]"
+msgstr "[red]生成 .tonic 文件时出错: {e}[/red]"
+
+msgid "[red]Error generating tonic link: {e}[/red]"
+msgstr "[red]生成 tonic 链接时出错: {e}[/red]"
+
+msgid "[red]Error getting SSL status: {e}[/red]"
+msgstr "[red]获取 SSL 状态时出错: {e}[/red]"
+
+msgid "[red]Error getting content: {e}[/red]"
+msgstr "[red]获取内容时出错: {e}[/red]"
+
+msgid "[red]Error getting peers: {e}[/red]"
+msgstr "[red]获取对等节点时出错: {e}[/red]"
+
+msgid "[red]Error getting stats: {e}[/red]"
+msgstr "[red]获取统计信息时出错: {e}[/red]"
+
+msgid "[red]Error getting status: {e}[/red]"
+msgstr "[red]获取状态时出错: {e}[/red]"
+
+msgid "[red]Error getting sync mode: {e}[/red]"
+msgstr "[red]获取同步模式时出错: {e}[/red]"
+
+msgid "[red]Error listing aliases: {e}[/red]"
+msgstr "[red]列出别名时出错: {e}[/red]"
+
+msgid "[red]Error listing allowlist: {e}[/red]"
+msgstr "[red]列出允许列表时出错: {e}[/red]"
+
+msgid "[red]Error pinning content: {e}[/red]"
+msgstr "[red]固定内容时出错: {e}[/red]"
+
+msgid "[red]Error removing alias: {e}[/red]"
+msgstr "[red]移除别名时出错: {e}[/red]"
+
+msgid "[red]Error removing peer from allowlist: {e}[/red]"
+msgstr "[red]从允许列表移除对等节点时出错: {e}[/red]"
+
+msgid "[red]Error restarting daemon: {e}[/red]"
+msgstr "[red]重启守护进程时出错: {e}[/red]"
+
+msgid "[red]Error retrieving cache info: {e}[/red]"
+msgstr "[red]检索缓存信息时出错: {e}[/red]"
+
+msgid "[red]Error retrieving disk statistics: {error}[/red]"
+msgstr "[red]检索磁盘统计信息时出错: {error}[/red]"
+
+msgid "[red]Error retrieving network statistics: {error}[/red]"
+msgstr "[red]检索网络统计信息时出错: {error}[/red]"
+
+msgid "[red]Error retrieving stats: {e}[/red]"
+msgstr "[red]检索统计信息时出错: {e}[/red]"
+
+msgid "[red]Error setting CA certificates path: {e}[/red]"
+msgstr "[red]设置 CA 证书路径时出错: {e}[/red]"
+
+msgid "[red]Error setting alias: {e}[/red]"
+msgstr "[red]设置别名时出错: {e}[/red]"
+
+msgid "[red]Error setting client certificate: {e}[/red]"
+msgstr "[red]设置客户端证书时出错: {e}[/red]"
+
+msgid "[red]Error setting protocol version: {e}[/red]"
+msgstr "[red]设置协议版本时出错: {e}[/red]"
+
+msgid "[red]Error setting sync mode: {e}[/red]"
+msgstr "[red]设置同步模式时出错: {e}[/red]"
+
+msgid "[red]Error starting sync: {e}[/red]"
+msgstr "[red]启动同步时出错: {e}[/red]"
+
+msgid "[red]Error unpinning content: {e}[/red]"
+msgstr "[red]取消固定内容时出错: {e}[/red]"
+
+msgid "[red]Error updating configuration: {error}[/red]"
+msgstr "[red]更新配置时出错: {error}[/red]"
+
+msgid "[red]Error: Cannot specify both --hybrid and --v1[/red]"
+msgstr "[red]错误: 不能同时指定 --hybrid 和 --v1[/red]"
+
+msgid "[red]Error: Cannot specify both --v2 and --hybrid[/red]"
+msgstr "[red]错误: 不能同时指定 --v2 和 --hybrid[/red]"
+
+msgid "[red]Error: Cannot specify both --v2 and --v1[/red]"
+msgstr "[red]错误: 不能同时指定 --v2 和 --v1[/red]"
+
+msgid "[red]Error: Could not load torrent file {torrent_file}[/red]"
+msgstr "[red]错误: 无法加载 torrent 文件 {torrent_file}[/red]"
 
 msgid "[red]Error: Could not parse magnet link[/red]"
-msgstr "[red]错误：无法解析磁力链接[/red]"
+msgstr "[red]错误: 无法解析 magnet 链接[/red]"
+
+msgid "[red]Error: Info hash must be 40 hex characters[/red]"
+msgstr "[red]错误: 信息哈希必须是 40 个十六进制字符[/red]"
+
+msgid "[red]Error: Piece length must be a power of 2[/red]"
+msgstr "[red]错误: 片段长度必须是 2 的幂[/red]"
+
+msgid "[red]Error: Piece length must be at least 16 KiB (16384 bytes)[/red]"
+msgstr "[red]错误: 片段长度必须至少为 16 KiB (16384 字节)[/red]"
+
+msgid "[red]Error: Source directory is empty[/red]"
+msgstr "[red]错误: 源目录为空[/red]"
+
+msgid "[red]Error: Source path does not exist: {path}[/red]"
+msgstr "[red]错误: 源路径不存在: {path}[/red]"
 
 msgid "[red]Error: {error}[/red]"
-msgstr "[red]错误：{error}[/red]"
+msgstr "[red]错误: {error}[/red]"
+
+msgid "[red]Error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Error:[/red] Invalid value for {key}: {value}"
+msgstr ""
+
+msgid "[red]Error:[/red] Unknown configuration key: {key}"
+msgstr ""
+
+msgid "[red]Export not available in daemon mode[/red]"
+msgstr ""
 
 msgid "[red]Failed to add magnet link: {error}[/red]"
-msgstr "[red]添加磁力链接失败：{error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to clear active alerts: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to create session[/red]"
+msgstr ""
+
+msgid "[red]Failed to disable proxy: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to get proxy status: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to load alert rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to load rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to pause: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to reset options: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to restart daemon[/red]"
+msgstr ""
+
+msgid "[red]Failed to resume: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to run tests: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to save rules: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set alias for peer {peer_id}[/red]"
+msgstr ""
 
 msgid "[red]Failed to set config: {error}[/red]"
-msgstr "[red]设置配置失败：{error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set option: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to set proxy configuration: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n"
+"[yellow]Please check:[/yellow]\n"
+"  1. Daemon logs for startup errors\n"
+"  2. Port conflicts (check if port is already in use)\n"
+"  3. Permissions (ensure you have permission to start daemon)\n"
+"\n"
+"[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
+"[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]\n"
+msgstr ""
+
+msgid "[red]Failed to stop: {error}[/red]"
+msgstr ""
+
+msgid "[red]Failed to test proxy: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed to test rule: {e}[/red]"
+msgstr ""
+
+msgid "[red]Failed: {error}[/red]"
+msgstr ""
 
 msgid "[red]File not found: {error}[/red]"
-msgstr "[red]文件未找到：{error}[/red]"
+msgstr ""
+
+msgid "[red]File not found: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]IP filter not initialized. Please enable it in configuration.[/red]\n"
+msgstr ""
+
+msgid "[red]IP filter not initialized.[/red]"
+msgstr ""
+
+msgid "[red]IPFS protocol not available[/red]"
+msgstr ""
+
+msgid "[red]Import not available in daemon mode[/red]"
+msgstr ""
+
+msgid "[red]Invalid IP address: {ip}[/red]"
+msgstr ""
 
 msgid "[red]Invalid arguments[/red]"
-msgstr "[red]无效参数[/red]"
+msgstr ""
 
 msgid "[red]Invalid file index: {idx}[/red]"
-msgstr "[red]无效的文件索引：{idx}[/red]"
+msgstr ""
 
 msgid "[red]Invalid file index[/red]"
-msgstr "[red]无效的文件索引[/red]"
+msgstr ""
 
 msgid "[red]Invalid info hash format: {hash}[/red]"
-msgstr "[red]无效的信息哈希格式：{hash}[/red]"
+msgstr ""
 
-msgid "[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]"
-msgstr "[red]无效的优先级。使用：do_not_download/low/normal/high/maximum[/red]"
+msgid "[red]Invalid info hash format[/red]"
+msgstr ""
 
-msgid "[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]"
-msgstr "[red]无效的优先级：{priority}。使用：do_not_download/low/normal/high/maximum[/red]"
+msgid "[red]Invalid magnet link: {e}[/red]"
+msgstr ""
+
+msgid ""
+"[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]\n"
+msgstr ""
+
+msgid ""
+"[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]\n"
+msgstr ""
+
+msgid "[red]Invalid public key: {e}[/red]"
+msgstr ""
 
 msgid "[red]Invalid torrent file: {error}[/red]"
-msgstr "[red]无效的种子文件：{error}[/red]"
+msgstr ""
+
+msgid "[red]Invalid value for {key}: {error}[/red]"
+msgstr ""
+
+msgid "[red]Key file does not exist: {path}[/red]"
+msgstr ""
 
 msgid "[red]Key not found: {key}[/red]"
-msgstr "[red]未找到键：{key}[/red]"
+msgstr ""
+
+msgid "[red]Key path must be a file: {path}[/red]"
+msgstr ""
+
+msgid "[red]Metrics error: {e}[/red]"
+msgstr ""
 
 msgid "[red]No checkpoint found for {hash}[/red]"
-msgstr "[red]未找到 {hash} 的检查点[/red]"
+msgstr ""
+
+msgid "[red]No stats found for CID: {cid}[/red]"
+msgstr ""
+
+msgid "[red]Path does not exist: {path}[/red]"
+msgstr ""
+
+msgid "[red]Path must be a file or directory: {path}[/red]"
+msgstr ""
+
+msgid "[red]Peer {peer_id} not found in allowlist[/red]"
+msgstr ""
+
+msgid "[red]Proxy error: {e}[/red]"
+msgstr ""
+
+msgid "[red]Proxy host and port must be configured[/red]"
+msgstr ""
 
 msgid "[red]PyYAML not installed[/red]"
-msgstr "[red]未安装 PyYAML[/red]"
+msgstr ""
 
 msgid "[red]Reload failed: {error}[/red]"
-msgstr "[red]重新加载失败：{error}[/red]"
+msgstr ""
 
 msgid "[red]Restore failed: {msgs}[/red]"
-msgstr "[red]恢复失败：{msgs}[/red]"
+msgstr ""
+
+msgid "[red]Rule not found: {name}[/red]"
+msgstr ""
+
+msgid "[red]Specify CID or use --all[/red]"
+msgstr ""
+
+msgid "[red]Tonic file not found: {path}[/red]"
+msgstr ""
+
+msgid "[red]Torrent not found or option not set[/red]"
+msgstr ""
+
+msgid "[red]Torrent not found: {hash}[/red]"
+msgstr ""
+
+msgid "[red]Unexpected error during resume: {e}[/red]"
+msgstr ""
+
+msgid "[red]Unknown configuration key: {key}[/red]"
+msgstr ""
+
+msgid "[red]Validation error: {e}[/red]"
+msgstr ""
 
 msgid "[red]{error}[/red]"
-msgstr "[red]{error}[/red]"
+msgstr ""
+
+msgid "[red]✗ Failed to remove port mapping[/red]"
+msgstr ""
+
+msgid "[red]✗ Port mapping failed[/red]"
+msgstr ""
+
+msgid "[red]✗ Proxy connection test failed[/red]"
+msgstr ""
+
+msgid "[red]✗[/red] Daemon is already running with PID {pid}"
+msgstr ""
+
+msgid ""
+"[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)\n"
+msgstr ""
+
+msgid ""
+"[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting\n"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to add filter rule: {ip_range}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to load rules from {file_path}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to start daemon: {e}"
+msgstr ""
+
+msgid "[red]✗[/red] Failed to update filter lists"
+msgstr ""
+
+msgid "[yellow]1. Network Connectivity[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]API key not found in config, cannot get detailed status[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Active Protocol:[/yellow] None (not discovered)"
+msgstr ""
 
 msgid "[yellow]All files deselected[/yellow]"
-msgstr "[yellow]已取消选择所有文件[/yellow]"
+msgstr ""
+
+msgid "[yellow]Allowlist is empty[/yellow]"
+msgstr ""
+
+msgid "[yellow]Automatic repair not implemented[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]CA certificates path set to {path} (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]CA certificates path set to {path} (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Checkpoint for {hash} is missing or invalid[/yellow]"
+msgstr ""
+
+msgid "[yellow]Checkpoint missing/invalid[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Client certificate set (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Client certificate set (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid "[yellow]Configuration changes require daemon restart.[/yellow]"
+msgstr ""
+
+msgid "[yellow]Could not get detailed status via IPC[/yellow]"
+msgstr ""
+
+msgid "[yellow]Could not save to config file: {error}[/yellow]"
+msgstr ""
 
 msgid "[yellow]Debug mode not yet implemented[/yellow]"
-msgstr "[yellow]调试模式尚未实现[/yellow]"
+msgstr ""
 
 msgid "[yellow]Deselected file {idx}[/yellow]"
 msgstr "[yellow]已取消选择文件 {idx}[/yellow]"
 
+msgid "[yellow]Disk I/O manager not running. Statistics unavailable.[/yellow]"
+msgstr "[yellow]磁盘 I/O 管理器未运行。统计信息不可用。[/yellow]"
+
 msgid "[yellow]Download interrupted by user[/yellow]"
 msgstr "[yellow]下载被用户中断[/yellow]"
 
+msgid "[yellow]Dry run: Would clean chunks older than {days} days[/yellow]"
+msgstr "[yellow]试运行: 将清理超过 {days} 天的块[/yellow]"
+
+msgid "[yellow]External IP not available[/yellow]"
+msgstr "[yellow]外部 IP 不可用[/yellow]"
+
+msgid "[yellow]External IP:[/yellow] Not available"
+msgstr "[yellow]外部 IP:[/yellow] 不可用"
+
+msgid "[yellow]Failed to generate tonic link[/yellow]"
+msgstr "[yellow]生成 tonic 链接失败[/yellow]"
+
+msgid "[yellow]Failed to move torrent[/yellow]"
+msgstr "[yellow]移动 torrent 失败[/yellow]"
+
 msgid "[yellow]Fetching metadata from peers...[/yellow]"
-msgstr "[yellow]正在从节点获取元数据...[/yellow]"
+msgstr "[yellow]正在从对等节点获取元数据...[/yellow]"
+
+msgid "[yellow]Found checkpoint for: {name}[/yellow]"
+msgstr "[yellow]找到检查点: {name}[/yellow]"
+
+msgid "[yellow]Found checkpoint for: {torrent_name}[/yellow]"
+msgstr "[yellow]找到检查点: {torrent_name}[/yellow]"
+
+msgid ""
+"[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]\n"
+msgstr ""
+"[yellow]CLI 中未实现完整重新哈希；使用 resume 触发片段验证[/yellow]\n"
+
+msgid "[yellow]IP filter not initialized or disabled.[/yellow]"
+msgstr "[yellow]IP 过滤器未初始化或已禁用。[/yellow]"
 
 msgid "[yellow]Invalid priority spec '{spec}': {error}[/yellow]"
-msgstr "[yellow]无效的优先级规范 '{spec}'：{error}[/yellow]"
+msgstr "[yellow]无效的优先级规范 '{spec}': {error}[/yellow]"
 
-msgid "[yellow]Keeping session alive[/yellow]"
-msgstr "[yellow]保持会话活动[/yellow]"
+msgid "[yellow]NAT Status[/yellow]"
+msgstr "[yellow]NAT 状态[/yellow]"
+
+msgid "[yellow]No active alerts[/yellow]"
+msgstr "[yellow]无活动警报[/yellow]"
+
+msgid "[yellow]No alert rules defined[/yellow]"
+msgstr "[yellow]未定义警报规则[/yellow]"
+
+msgid "[yellow]No alias found for peer {peer_id}[/yellow]"
+msgstr "[yellow]未找到对等节点 {peer_id} 的别名[/yellow]"
+
+msgid "[yellow]No aliases found in allowlist[/yellow]"
+msgstr "[yellow]允许列表中未找到别名[/yellow]"
+
+msgid "[yellow]No cached scrape results[/yellow]"
+msgstr "[yellow]无缓存的抓取结果[/yellow]"
+
+msgid "[yellow]No checkpoint found for {hash}[/yellow]"
+msgstr "[yellow]未找到 {hash} 的检查点[/yellow]"
+
+msgid "[yellow]No checkpoint found for {info_hash}[/yellow]"
+msgstr "[yellow]未找到 {info_hash} 的检查点[/yellow]"
 
 msgid "[yellow]No checkpoints found[/yellow]"
 msgstr "[yellow]未找到检查点[/yellow]"
 
+msgid "[yellow]No chunks in cache[/yellow]"
+msgstr "[yellow]缓存中无块[/yellow]"
+
+msgid "[yellow]No config file found - configuration not persisted[/yellow]"
+msgstr "[yellow]未找到配置文件 - 配置未持久化[/yellow]"
+
+msgid "[yellow]No filter URLs configured.[/yellow]"
+msgstr "[yellow]未配置过滤器 URL。[/yellow]"
+
+msgid "[yellow]No filter rules configured.[/yellow]"
+msgstr "[yellow]未配置过滤器规则。[/yellow]"
+
+msgid ""
+"[yellow]No optimizations were applied (already optimal or unsupported)[/yellow]\n"
+msgstr ""
+"[yellow]未应用优化（已最优或不支持）[/yellow]\n"
+
+msgid "[yellow]No performance action specified[/yellow]"
+msgstr "[yellow]未指定性能操作[/yellow]"
+
+msgid "[yellow]No recover action specified[/yellow]"
+msgstr "[yellow]未指定恢复操作[/yellow]"
+
+msgid "[yellow]No security action specified[/yellow]"
+msgstr "[yellow]未指定安全操作[/yellow]"
+
+msgid "[yellow]Non-interactive mode, starting fresh download[/yellow]"
+msgstr "[yellow]非交互模式，开始全新下载[/yellow]"
+
+msgid ""
+"[yellow]Note: This change is temporary and will be lost on restart. Use config file for persistent changes.[/yellow]\n"
+msgstr ""
+"[yellow]注意: 此更改是临时的，重启后将丢失。使用配置文件进行持久更改。[/yellow]\n"
+
+msgid "[yellow]Note: Update config file to persist locale setting[/yellow]"
+msgstr "[yellow]注意: 更新配置文件以持久化语言环境设置[/yellow]"
+
+msgid "[yellow]Note:[/yellow] Configuration change is runtime-only"
+msgstr "[yellow]注意:[/yellow] 配置更改仅在运行时有效"
+
+msgid "[yellow]Optimization cancelled[/yellow]"
+msgstr "[yellow]优化已取消[/yellow]"
+
+msgid "[yellow]Peer {peer_id} not found in allowlist[/yellow]"
+msgstr "[yellow]允许列表中未找到对等节点 {peer_id}[/yellow]"
+
+msgid ""
+"[yellow]Please provide the original torrent file or magnet link[/yellow]\n"
+msgstr ""
+"[yellow]请提供原始 torrent 文件或 magnet 链接[/yellow]\n"
+
+msgid "[yellow]Please use --v2 or --hybrid flags for now.[/yellow]"
+msgstr "[yellow]请暂时使用 --v2 或 --hybrid 标志。[/yellow]"
+
+msgid "[yellow]Proxy configuration not found[/yellow]"
+msgstr "[yellow]未找到代理配置[/yellow]"
+
+msgid ""
+"[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]\n"
+msgstr ""
+"[yellow]代理配置已更新（测试模式下跳过写入）[/yellow]\n"
+
+msgid "[yellow]Proxy has been disabled (skipped write in test mode)[/yellow]"
+msgstr "[yellow]代理已禁用（测试模式下跳过写入）[/yellow]"
+
+msgid "[yellow]Proxy is not enabled[/yellow]"
+msgstr "[yellow]代理未启用[/yellow]"
+
+msgid "[yellow]Real-time monitoring not yet implemented[/yellow]"
+msgstr "[yellow]实时监控尚未实现[/yellow]"
+
+msgid "[yellow]Refresh completed with warnings[/yellow]"
+msgstr "[yellow]刷新完成，但有警告[/yellow]"
+
+msgid "[yellow]Rich not available, starting fresh download[/yellow]"
+msgstr "[yellow]Rich 不可用，开始全新下载[/yellow]"
+
+msgid "[yellow]Rule not found: {ip_range}[/yellow]"
+msgstr "[yellow]未找到规则: {ip_range}[/yellow]"
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended). Configuration saved to {config_file}[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended, configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification disabled (not recommended, skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification enabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers disabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]SSL for peers disabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers enabled (experimental, configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for peers enabled (experimental, skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers disabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers disabled (skipped write in test mode)[/yellow]\n"
+msgstr ""
+
+msgid ""
+"[yellow]SSL for trackers enabled (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]SSL for trackers enabled (skipped write in test mode)[/yellow]"
+msgstr ""
+
+msgid ""
+"[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]\n"
+msgstr ""
+
+msgid "[yellow]Starting fresh download[/yellow]"
+msgstr "[yellow]开始全新下载[/yellow]"
+
+msgid ""
+"[yellow]TLS protocol version set to {version} (configuration not persisted - no config file)[/yellow]\n"
+msgstr ""
+"[yellow]TLS 协议版本已设置为 {version}（配置未持久化 - 无配置文件）[/yellow]\n"
+
+msgid ""
+"[yellow]TLS protocol version set to {version} (skipped write in test mode)[/yellow]\n"
+msgstr ""
+"[yellow]TLS 协议版本已设置为 {version}（测试模式下跳过写入）[/yellow]\n"
+
+msgid "[yellow]The daemon process crashed during initialization.[/yellow]"
+msgstr "[yellow]守护进程在初始化期间崩溃。[/yellow]"
+
+msgid ""
+"[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]\n"
+msgstr ""
+"[yellow]守护进程意外退出。检查守护进程日志以获取错误详细信息。[/yellow]\n"
+
+msgid ""
+"[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]\n"
+msgstr ""
+"[yellow]这通常表示配置错误、缺少依赖项或初始化失败。[/yellow]\n"
+
+msgid ""
+"[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]\n"
+msgstr ""
+"[yellow]等待守护进程超时（最后状态: {last_status}）[/yellow]\n"
+
+msgid ""
+"[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]\n"
+msgstr ""
+"[yellow]通过 download/magnet 上的 --enable-encryption/--disable-encryption 切换加密[/yellow]\n"
+
+msgid "[yellow]Tonic link sync not yet fully implemented[/yellow]"
+msgstr "[yellow]Tonic 链接同步尚未完全实现[/yellow]"
+
+msgid "[yellow]Torrent not found in queue[/yellow]"
+msgstr "[yellow]队列中未找到 torrent[/yellow]"
+
+msgid "[yellow]Torrent not found[/yellow]"
+msgstr "[yellow]未找到 torrent[/yellow]"
+
 msgid "[yellow]Torrent session ended[/yellow]"
-msgstr "[yellow]种子会话已结束[/yellow]"
+msgstr "[yellow]Torrent 会话已结束[/yellow]"
 
 msgid "[yellow]Unknown command: {cmd}[/yellow]"
-msgstr "[yellow]未知命令：{cmd}[/yellow]"
+msgstr "[yellow]未知命令: {cmd}[/yellow]"
 
-msgid "[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]"
-msgstr "[yellow]警告：守护进程正在运行。启动本地会话可能导致端口冲突。[/yellow]"
+msgid ""
+"[yellow]Use --list/--list-active, --add, --remove, --clear-active, --test, --load or --save[/yellow]\n"
+msgstr ""
+"[yellow]使用 --list/--list-active、--add、--remove、--clear-active、--test、--load 或 --save[/yellow]\n"
+
+msgid ""
+"[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]\n"
+msgstr ""
+"[yellow]使用 -v 标志获取更多详细信息，或尝试 --foreground 查看错误输出[/yellow]\n"
+
+msgid ""
+"[yellow]Using local session (--no-daemon specified). Session state will not persist.[/yellow]\n"
+msgstr ""
+"[yellow]使用本地会话（指定了 --no-daemon）。会话状态不会持久化。[/yellow]\n"
+
+msgid ""
+"[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]\n"
+msgstr ""
+"[yellow]警告: 配置更改需要守护进程重启，但重启被跳过。[/yellow]\n"
+
+msgid ""
+"[yellow]Warning: Daemon is running. Diagnostics will test local session which may cause port conflicts.[/yellow]\n"
+"[dim]Consider stopping the daemon first: 'btbt daemon exit'[/dim]\n"
+"\n"
+msgstr ""
+"[yellow]警告: 守护进程正在运行。诊断将测试本地会话，这可能导致端口冲突。[/yellow]\n"
+"[dim]考虑先停止守护进程: 'btbt daemon exit'[/dim]\n"
+"\n"
+
+msgid ""
+"[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]\n"
+msgstr ""
+"[yellow]警告: 守护进程正在运行。启动本地会话可能导致端口冲突。[/yellow]\n"
 
 msgid "[yellow]Warning: Error stopping session: {error}[/yellow]"
-msgstr "[yellow]警告：停止会话时出错：{error}[/yellow]"
+msgstr "[yellow]警告: 停止会话时出错: {error}[/yellow]"
+
+msgid "[yellow]Warning: Error stopping session: {e}[/yellow]"
+msgstr "[yellow]警告: 停止会话时出错: {e}[/yellow]"
+
+msgid "[yellow]Warning: Failed to select files: {error}[/yellow]"
+msgstr "[yellow]警告: 选择文件失败: {error}[/yellow]"
+
+msgid "[yellow]Warning: Failed to set queue priority: {error}[/yellow]"
+msgstr "[yellow]警告: 设置队列优先级失败: {error}[/yellow]"
+
+msgid ""
+"[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]\n"
+msgstr ""
+"[yellow]警告: V1 torrent 生成尚未实现。[/yellow]\n"
+
+msgid ""
+"[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]\n"
+msgstr ""
+"[yellow]将删除超过 {days} 天的 {count} 个检查点:[/yellow]\n"
+
+msgid "[yellow]Xet protocol is disabled[/yellow]"
+msgstr "[yellow]Xet 协议已禁用[/yellow]"
+
+msgid "[yellow]{key} is not set[/yellow]"
+msgstr "[yellow]{key} 未设置[/yellow]"
 
 msgid "[yellow]{warning}[/yellow]"
 msgstr "[yellow]{warning}[/yellow]"
 
+msgid "[yellow]⚠[/yellow] Could not save daemon config to config file: {e}"
+msgstr "[yellow]⚠[/yellow] 无法将守护进程配置保存到配置文件: {e}"
+
+msgid ""
+"[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet\n"
+msgstr ""
+"[yellow]⚠[/yellow] 守护进程已启动（PID {pid}），但可能尚未完全就绪\n"
+
+msgid ""
+"[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})\n"
+msgstr ""
+"[yellow]⚠[/yellow] 守护进程启动超时，{timeout:.1f}秒后（最后状态: {last_status}）\n"
+
+msgid "[yellow]⚠[/yellow] {errors} errors encountered"
+msgstr "[yellow]⚠[/yellow] 遇到 {errors} 个错误"
+
+msgid "[yellow]✓[/yellow] Xet protocol disabled"
+msgstr "[yellow]✓[/yellow] Xet 协议已禁用"
+
+msgid "[yellow]✓[/yellow] uTP transport disabled"
+msgstr "[yellow]✓[/yellow] uTP 传输已禁用"
+
+msgid "_get_daemon_ipc_port: Checking config_file=%s (home_dir=%s)"
+msgstr "_get_daemon_ipc_port: 正在检查 config_file=%s (home_dir=%s)"
+
+msgid "_get_executor() returned: executor=%s, is_daemon=%s"
+msgstr "_get_executor() 返回: executor=%s, is_daemon=%s"
+
 msgid "ccBitTorrent Interactive CLI"
 msgstr "ccBitTorrent 交互式 CLI"
 
-msgid "ccBitTorrent Status"
-msgstr "ccBitTorrent 状态"
+msgid "enable_dht={value}"
+msgstr "enable_dht={value}"
 
-msgid "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
-msgstr "help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema"
+msgid "enable_pex={value}"
+msgstr "enable_pex={value}"
+
+msgid "failed"
+msgstr "失败"
+
+msgid ""
+"help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema\n"
+msgstr ""
+"help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema\n"
+
+msgid "succeeded"
+msgstr "成功"
 
 msgid "uTP Config"
 msgstr "uTP 配置"
+
+msgid "uTP Configuration"
+msgstr "uTP 配置"
+
+msgid "uTP configuration reset to defaults via CLI"
+msgstr "uTP 配置已通过 CLI 重置为默认值"
+
+msgid "uTP configuration updated: %s = %s"
+msgstr "uTP 配置已更新: %s = %s"
+
+msgid "uTP transport disabled via CLI"
+msgstr "uTP 传输已通过 CLI 禁用"
+
+msgid "uTP transport enabled"
+msgstr "uTP 传输已启用"
+
+msgid "uTP transport enabled via CLI"
+msgstr "uTP 传输已通过 CLI 启用"
 
 msgid "{count} features"
 msgstr "{count} 个功能"
@@ -841,4 +3911,44 @@ msgid "{count} items"
 msgstr "{count} 个项目"
 
 msgid "{elapsed:.0f}s ago"
-msgstr "{elapsed:.0f} 秒前"
+msgstr "{elapsed:.0f}秒前"
+
+msgid "{key} = {value}"
+msgstr "{key} = {value}"
+
+msgid "{key}: {value}"
+msgstr "{key}: {value}"
+
+msgid ""
+"{msg}\n"
+"\n"
+"PID file path: {path}\n"
+msgstr ""
+"{msg}\n"
+"\n"
+"PID 文件路径: {path}\n"
+
+msgid "{sub_tab} configuration - Coming soon"
+msgstr "{sub_tab} 配置 - 即将推出"
+
+msgid "{sub_tab} content for torrent {hash}... - Coming soon"
+msgstr "{sub_tab} torrent {hash}... 的内容 - 即将推出"
+
+msgid "{type} Configuration"
+msgstr "{type} 配置"
+
+msgid "↑ Speed"
+msgstr "↑ 速度"
+
+msgid "↓ Speed"
+msgstr "↓ 速度"
+
+msgid "✓ Configuration is valid"
+msgstr "✓ 配置有效"
+
+msgid "✓ No system compatibility warnings"
+msgstr "✓ 无系统兼容性警告"
+
+msgid "✗ Configuration validation failed: {e}"
+msgstr "✗ 配置验证失败: {e}"
+

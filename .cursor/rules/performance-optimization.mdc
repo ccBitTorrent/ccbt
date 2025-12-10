@@ -34,6 +34,23 @@ Located in [ccbt/network_optimizer.py](mdc:ccbt/network_optimizer.py):
 - **Buffer Sizing**: Optimize socket buffer sizes based on BDP
 - **Connection Pooling**: Reuse connections for efficiency
 
+### Adaptive Connection Limits
+Located in [ccbt/peer/connection_pool.py](mdc:ccbt/peer/connection_pool.py):
+- **Adaptive Limit Calculation**: `_calculate_adaptive_limit()` dynamically adjusts max connections based on:
+  - CPU usage (reduce if > threshold, default 80%)
+  - Memory usage (reduce if > threshold, default 80%)
+  - Peer performance (increase if peers performing well)
+  - Formula: `base_limit * cpu_factor * memory_factor * performance_factor`
+  - Bounded by `connection_pool_adaptive_limit_min` and `connection_pool_adaptive_limit_max`
+- **Performance-Based Recycling**: Low-performing connections are recycled when:
+  - Performance score < threshold (default 0.3)
+  - Consecutive failures > max (default 5)
+  - Idle time > max_idle_time (default 300s) AND new peer available
+  - Bandwidth below minimum thresholds
+- **Bandwidth Measurement**: Tracks download/upload bandwidth per connection with periodic updates (default 5s interval)
+- **Progressive Health Degradation**: Connection health levels (HEALTHY, DEGRADED, UNHEALTHY) based on idle time, usage, errors, and bandwidth
+- **Connection Quality Scoring**: `_calculate_connection_quality()` scores connections (0.0-1.0) based on bandwidth, latency, and error rate. Used to prefer high-quality connections in `acquire()`.
+
 ```python
 class NetworkOptimizer:
     def optimize_socket(self, sock: socket.socket) -> None:
@@ -96,11 +113,45 @@ class HashVerifier:
 - **Weak References**: Use weak references where appropriate
 - **Memory Profiling**: Profile memory usage for optimization
 
+## Adaptive Algorithms
+
+### Adaptive Intervals
+- **DHT Adaptive Intervals**: Located in [ccbt/discovery/dht.py](mdc:ccbt/discovery/dht.py). `_calculate_adaptive_interval()` adjusts DHT refresh intervals based on:
+  - Base interval from config
+  - Node quality and reachability
+  - Network conditions
+  - Bounded by `dht_adaptive_interval_min` and `dht_adaptive_interval_max`
+- **Tracker Adaptive Intervals**: Located in [ccbt/discovery/tracker.py](mdc:ccbt/discovery/tracker.py). `_calculate_adaptive_interval()` adjusts announce intervals based on:
+  - Tracker performance (response time, success rate)
+  - Peer count from tracker
+  - Swarm health
+  - Bounded by `tracker_adaptive_interval_min` and `tracker_adaptive_interval_max`
+- **Tracker Performance Ranking**: `rank_trackers()` sorts trackers by performance score considering:
+  - Response time (lower = better)
+  - Success rate (higher = better)
+  - Peer quality (average peer download rate)
+  - Recent failures
+
+### Bandwidth-Aware Optimizations
+- **Request Prioritization**: Located in [ccbt/peer/async_peer_connection.py](mdc:ccbt/peer/async_peer_connection.py). `_calculate_request_priority()` incorporates peer download rate into priority calculation. `RequestInfo.bandwidth_estimate` stores estimated bandwidth for load balancing.
+- **Request Load Balancing**: `_balance_requests_across_peers()` distributes requests proportionally based on peer bandwidth:
+  - Calculates total available bandwidth
+  - Distributes requests proportionally to each peer's share
+  - Considers peer pipeline capacity
+  - Handles edge cases gracefully
+- **Bandwidth-Weighted Piece Selection**: Located in [ccbt/piece/async_piece_manager.py](mdc:ccbt/piece/async_piece_manager.py). Piece selection strategies consider peer download speeds when scoring pieces.
+
+### Performance-Based Peer Management
+- **Peer Ranking**: `_rank_peers_for_connection()` ranks peers before connection based on historical performance, reputation, connection success rate, and source quality.
+- **Peer Performance Evaluation**: `_evaluate_peer_performance()` calculates performance scores (0.0-1.0) from download rate, upload rate, latency, error rate, and connection stability.
+- **Peer Recycling**: Low-performing peers are automatically recycled when better peers are available, improving overall swarm efficiency.
+
 ## Performance Targets
 - **50% improvement** in download speed
 - **30% reduction** in memory usage
 - **40% improvement** in disk I/O throughput
 - **Sub-100ms** peer connection establishment
+- **Adaptive algorithms** dynamically optimize based on real-time conditions
 
 ## Benchmarking
 - **Performance Tests**: Regular performance regression testing

@@ -275,11 +275,49 @@ class AsyncFileAssembler:
             # Legacy dict format
             self.name = torrent_data.get("name", "unknown")
             self.info_hash = torrent_data.get("info_hash", b"")
-            self.files = torrent_data.get("files", [])
             self.total_length = torrent_data.get("total_length", 0)
             self.piece_length = torrent_data.get("piece_length", 0)
             self.pieces = torrent_data.get("pieces", [])
             self.num_pieces = torrent_data.get("num_pieces", 0)
+            
+            # CRITICAL FIX: Extract files from file_info dict format
+            # Files can be in torrent_data["files"] or torrent_data["file_info"]["files"]
+            files = torrent_data.get("files", [])
+            if not files:
+                file_info_dict = torrent_data.get("file_info", {})
+                if isinstance(file_info_dict, dict):
+                    if "files" in file_info_dict:
+                        # Multi-file torrent: files are in file_info["files"]
+                        files = file_info_dict["files"]
+                    elif "type" in file_info_dict and file_info_dict["type"] == "single":
+                        # Single-file torrent: create a single file entry
+                        files = [{
+                            "name": file_info_dict.get("name", self.name),
+                            "length": file_info_dict.get("length", file_info_dict.get("total_length", 0)),
+                            "path": None,
+                            "full_path": file_info_dict.get("name", self.name),
+                        }]
+            
+            # Convert dict files to FileInfo objects if needed
+            from ccbt.models import FileInfo
+            file_info_list = []
+            for f in files:
+                if isinstance(f, dict):
+                    file_info_list.append(
+                        FileInfo(
+                            name=f.get("name", f.get("full_path", "")),
+                            length=f.get("length", 0),
+                            path=f.get("path"),
+                            full_path=f.get("full_path", f.get("name", "")),
+                            attributes=f.get("attributes"),
+                            symlink_path=f.get("symlink_path"),
+                            file_sha1=f.get("sha1"),
+                        )
+                    )
+                elif hasattr(f, "name"):  # Already a FileInfo
+                    file_info_list.append(f)
+            
+            self.files = file_info_list
 
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
@@ -413,6 +451,110 @@ class AsyncFileAssembler:
 
         return segments
 
+    def update_from_metadata(self, torrent_data: dict[str, Any] | TorrentInfo) -> None:
+        """Update file assembler with newly fetched metadata.
+        
+        This method is called when metadata is fetched for a magnet link.
+        It rebuilds the file segments mapping based on the new metadata.
+        
+        Args:
+            torrent_data: Updated torrent data with complete metadata
+        """
+        # Update torrent_data reference
+        self.torrent_data = torrent_data
+        
+        # Update file information
+        if isinstance(torrent_data, TorrentInfo):
+            self.name = torrent_data.name
+            self.info_hash = torrent_data.info_hash
+            self.files = torrent_data.files
+            self.total_length = torrent_data.total_length
+            self.piece_length = torrent_data.piece_length
+            self.pieces = torrent_data.pieces
+            self.num_pieces = torrent_data.num_pieces
+        else:
+            # Legacy dict format
+            self.name = torrent_data.get("name", self.name)
+            self.info_hash = torrent_data.get("info_hash", self.info_hash)
+            
+            # CRITICAL FIX: Extract pieces_info first, as it may contain total_length, piece_length, and num_pieces
+            pieces_info = torrent_data.get("pieces_info", {})
+            if not isinstance(pieces_info, dict):
+                pieces_info = {}
+            
+            # Extract total_length and piece_length (check both direct and pieces_info)
+            self.total_length = torrent_data.get("total_length", pieces_info.get("total_length", self.total_length))
+            self.piece_length = torrent_data.get("piece_length", pieces_info.get("piece_length", self.piece_length))
+            self.pieces = torrent_data.get("pieces", self.pieces)
+            
+            # CRITICAL FIX: Extract num_pieces from pieces_info if not directly available
+            # num_pieces can be in torrent_data["num_pieces"] or torrent_data["pieces_info"]["num_pieces"]
+            self.num_pieces = torrent_data.get("num_pieces", self.num_pieces)
+            if self.num_pieces == 0 or self.num_pieces is None:
+                self.num_pieces = pieces_info.get("num_pieces", self.num_pieces)
+            
+            # CRITICAL FIX: Calculate num_pieces from total_length and piece_length if still not available
+            if (self.num_pieces == 0 or self.num_pieces is None) and self.total_length > 0 and self.piece_length > 0:
+                import math
+                self.num_pieces = math.ceil(self.total_length / self.piece_length)
+                self.logger.info(
+                    "Calculated num_pieces=%d from total_length=%d and piece_length=%d",
+                    self.num_pieces,
+                    self.total_length,
+                    self.piece_length,
+                )
+            
+            # CRITICAL FIX: Extract files from file_info dict format
+            # Files can be in torrent_data["files"] or torrent_data["file_info"]["files"]
+            files = torrent_data.get("files", [])
+            if not files:
+                file_info_dict = torrent_data.get("file_info", {})
+                if isinstance(file_info_dict, dict):
+                    if "files" in file_info_dict:
+                        # Multi-file torrent: files are in file_info["files"]
+                        files = file_info_dict["files"]
+                    elif "type" in file_info_dict and file_info_dict["type"] == "single":
+                        # Single-file torrent: create a single file entry
+                        files = [{
+                            "name": file_info_dict.get("name", self.name),
+                            "length": file_info_dict.get("length", file_info_dict.get("total_length", 0)),
+                            "path": None,
+                            "full_path": file_info_dict.get("name", self.name),
+                        }]
+            
+            # Convert dict files to FileInfo objects if needed
+            from ccbt.models import FileInfo
+            file_info_list = []
+            for f in files:
+                if isinstance(f, dict):
+                    file_info_list.append(
+                        FileInfo(
+                            name=f.get("name", f.get("full_path", "")),
+                            length=f.get("length", 0),
+                            path=f.get("path"),
+                            full_path=f.get("full_path", f.get("name", "")),
+                            attributes=f.get("attributes"),
+                            symlink_path=f.get("symlink_path"),
+                            file_sha1=f.get("sha1"),
+                        )
+                    )
+                elif hasattr(f, "name"):  # Already a FileInfo
+                    file_info_list.append(f)
+            
+            self.files = file_info_list
+        
+        # Rebuild file segments with new metadata
+        self.logger.info(
+            "Rebuilding file segments from metadata (files: %d, num_pieces: %d)",
+            len(self.files),
+            self.num_pieces,
+        )
+        self.file_segments = self._build_file_segments()
+        self.logger.info(
+            "Rebuilt %d file segments from metadata",
+            len(self.file_segments),
+        )
+
     async def write_piece_to_file(
         self,
         piece_index: int,
@@ -450,7 +592,16 @@ class AsyncFileAssembler:
         ]
 
         if not piece_segments:
-            msg = f"No file segments found for piece {piece_index}"
+            # CRITICAL FIX: Log detailed error information
+            self.logger.error(
+                "No file segments found for piece %d (num_pieces=%d, file_segments=%d, files=%d). "
+                "This may indicate metadata is incomplete or file_segments weren't built correctly.",
+                piece_index,
+                self.num_pieces,
+                len(self.file_segments),
+                len(self.files) if self.files else 0,
+            )
+            msg = f"No file segments found for piece {piece_index} (file_segments={len(self.file_segments)}, files={len(self.files) if self.files else 0})"
             raise FileAssemblerError(msg)
 
         # Determine if Xet chunking should be used
@@ -496,11 +647,29 @@ class AsyncFileAssembler:
             os.makedirs(os.path.dirname(segment.file_path), exist_ok=True)
 
             # Extract the relevant portion of piece data for this segment
-            # For single-file torrents, the entire piece data goes to the segment
+            # Calculate segment length (bytes to write to file)
+            segment_length = segment.end_offset - segment.start_offset
+            
+            # Extract the slice from piece_data using piece_offset
+            # piece_offset tells us where in the piece this segment starts
+            segment_start = segment.piece_offset
+            segment_end = segment_start + segment_length
+            
+            # Validate bounds to prevent out-of-range slicing
+            piece_data_len = len(piece_data)
+            if segment_start < 0 or segment_end > piece_data_len:
+                msg = (
+                    f"Segment bounds out of range for piece data: "
+                    f"segment_start={segment_start}, segment_end={segment_end}, "
+                    f"piece_data_len={piece_data_len}, piece_index={segment.piece_index}"
+                )
+                raise FileAssemblerError(msg)
+            
+            # Extract the correct portion of piece data
             if isinstance(piece_data, memoryview):
-                segment_data = bytes(piece_data)
+                segment_data = bytes(piece_data[segment_start:segment_end])
             else:
-                segment_data = piece_data
+                segment_data = piece_data[segment_start:segment_end]
 
             # Use DiskIOManager for async writing
             from pathlib import Path
@@ -562,39 +731,117 @@ class AsyncFileAssembler:
             # Hash and store each chunk
             chunk_hashes = []
             segment_offset = 0
+            
+            # Track chunks per file for metadata storage
+            file_chunks: dict[str, list[tuple[bytes, int]]] = {}  # file_path -> [(chunk_hash, offset)]
+            
+            # Try to use data aggregator for batch operations if available
+            aggregator = getattr(self.disk_io, "_xet_data_aggregator", None)
+            use_batch = aggregator is not None and len(chunks) > 10
 
-            for chunk in chunks:
-                # Compute chunk hash
-                chunk_hash = XetHasher.compute_chunk_hash(chunk)
-                chunk_hashes.append(chunk_hash)
+            if use_batch:
+                # Batch mode: collect all chunks first, then store in batch
+                batch_chunks: list[tuple[bytes, bytes]] = []  # (chunk_hash, chunk_data)
+                batch_file_offsets: list[int] = []
+                batch_file_paths: list[str] = []
+                
+                for chunk in chunks:
+                    # Compute chunk hash
+                    chunk_hash = XetHasher.compute_chunk_hash(chunk)
+                    chunk_hashes.append(chunk_hash)
 
-                # Find which segment(s) this chunk overlaps with
-                chunk_start = segment_offset
-                chunk_end = segment_offset + len(chunk)
+                    # Find which segment(s) this chunk overlaps with
+                    chunk_start = segment_offset
+                    chunk_end = segment_offset + len(chunk)
 
-                # Store chunk via disk I/O (handles deduplication)
-                # We need to store it with reference to the first file segment it overlaps
-                for segment in piece_segments:
-                    segment_start = segment.start_offset
-                    segment_end = segment.end_offset
+                    for segment in piece_segments:
+                        segment_start = segment.start_offset
+                        segment_end = segment.end_offset
 
-                    # Check if chunk overlaps with this segment
-                    if chunk_start < segment_end and chunk_end > segment_start:
-                        # Calculate file offset for this chunk
-                        file_offset = segment.start_offset + max(
-                            0, chunk_start - segment.start_offset
-                        )
+                        # Check if chunk overlaps with this segment
+                        if chunk_start < segment_end and chunk_end > segment_start:
+                            # Calculate file offset for this chunk
+                            file_offset = segment.start_offset + max(
+                                0, chunk_start - segment.start_offset
+                            )
 
-                        # Store chunk with deduplication
-                        await self.disk_io.write_xet_chunk(
-                            chunk_hash=chunk_hash,
-                            chunk_data=chunk,
-                            file_path=Path(segment.file_path),
-                            offset=file_offset,
-                        )
-                        break  # Store once per chunk
+                            # Add to batch
+                            batch_chunks.append((chunk_hash, chunk))
+                            batch_file_offsets.append(file_offset)
+                            batch_file_paths.append(str(segment.file_path))
+                            
+                            # Track chunk for this file
+                            file_path_str = str(segment.file_path)
+                            if file_path_str not in file_chunks:
+                                file_chunks[file_path_str] = []
+                            file_chunks[file_path_str].append((chunk_hash, file_offset))
+                            
+                            break  # Store once per chunk
 
-                segment_offset += len(chunk)
+                    segment_offset += len(chunk)
+                
+                # Store chunks in batches per file
+                file_batches: dict[str, list[tuple[bytes, bytes, int]]] = {}  # file_path -> [(chunk_hash, chunk_data, offset)]
+                for i, (chunk_hash, chunk_data) in enumerate(batch_chunks):
+                    file_path_str = batch_file_paths[i]
+                    offset = batch_file_offsets[i]
+                    if file_path_str not in file_batches:
+                        file_batches[file_path_str] = []
+                    file_batches[file_path_str].append((chunk_hash, chunk_data, offset))
+                
+                # Store batches per file
+                for file_path_str, file_batch in file_batches.items():
+                    file_chunk_hashes = [h for h, _, _ in file_batch]
+                    file_chunk_data = [d for _, d, _ in file_batch]
+                    file_offsets = [o for _, _, o in file_batch]
+                    
+                    # Use aggregator for batch storage
+                    await aggregator.batch_store_chunks(
+                        list(zip(file_chunk_hashes, file_chunk_data)),
+                        file_path=file_path_str,
+                        file_offsets=file_offsets,
+                    )
+            else:
+                # Individual mode: store chunks one by one
+                for chunk in chunks:
+                    # Compute chunk hash
+                    chunk_hash = XetHasher.compute_chunk_hash(chunk)
+                    chunk_hashes.append(chunk_hash)
+
+                    # Find which segment(s) this chunk overlaps with
+                    chunk_start = segment_offset
+                    chunk_end = segment_offset + len(chunk)
+
+                    # Store chunk via disk I/O (handles deduplication)
+                    # We need to store it with reference to the first file segment it overlaps
+                    for segment in piece_segments:
+                        segment_start = segment.start_offset
+                        segment_end = segment.end_offset
+
+                        # Check if chunk overlaps with this segment
+                        if chunk_start < segment_end and chunk_end > segment_start:
+                            # Calculate file offset for this chunk
+                            file_offset = segment.start_offset + max(
+                                0, chunk_start - segment.start_offset
+                            )
+
+                            # Store chunk with deduplication
+                            await self.disk_io.write_xet_chunk(
+                                chunk_hash=chunk_hash,
+                                chunk_data=chunk,
+                                file_path=Path(segment.file_path),
+                                offset=file_offset,
+                            )
+                            
+                            # Track chunk for this file
+                            file_path_str = str(segment.file_path)
+                            if file_path_str not in file_chunks:
+                                file_chunks[file_path_str] = []
+                            file_chunks[file_path_str].append((chunk_hash, file_offset))
+                            
+                            break  # Store once per chunk
+
+                    segment_offset += len(chunk)
 
             # Build Merkle tree for piece
             merkle_hash = XetHasher.build_merkle_tree(chunks)
@@ -603,6 +850,82 @@ class AsyncFileAssembler:
             await self._update_piece_xet_metadata(
                 piece_index, chunk_hashes, merkle_hash
             )
+            
+            # Store file metadata for each file that has chunks
+            dedup = self.disk_io._get_xet_deduplication()
+            file_dedup = getattr(self.disk_io, "_xet_file_deduplication", None)
+            
+            if dedup:
+                from ccbt.models import XetFileMetadata
+                
+                for file_path_str, file_chunk_list in file_chunks.items():
+                    try:
+                        # Sort chunks by offset to ensure correct order
+                        file_chunk_list.sort(key=lambda x: x[1])
+                        chunk_hashes_ordered = [chunk_hash for chunk_hash, _ in file_chunk_list]
+                        
+                        # Compute file hash (Merkle root of chunk hashes)
+                        if chunk_hashes_ordered:
+                            # Build Merkle tree from chunk hashes
+                            file_hash = XetHasher.build_merkle_tree_from_hashes(
+                                chunk_hashes_ordered
+                            )
+                        else:
+                            # Empty file - use zero hash
+                            file_hash = bytes(32)
+                        
+                        # Calculate total size from chunks
+                        # Get chunk sizes from deduplication manager
+                        total_size = 0
+                        for chunk_hash, offset in file_chunk_list:
+                            chunk_info = dedup.get_chunk_info(chunk_hash)
+                            if chunk_info:
+                                total_size += chunk_info["size"]
+                            else:
+                                # Fallback: estimate from chunk hash (not ideal)
+                                # This should rarely happen if chunks were stored correctly
+                                self.logger.warning(
+                                    "Chunk info not found for hash %s, cannot determine size",
+                                    chunk_hash.hex()[:16],
+                                )
+                        
+                        # Create file metadata
+                        file_metadata = XetFileMetadata(
+                            file_path=file_path_str,
+                            file_hash=file_hash,
+                            chunk_hashes=chunk_hashes_ordered,
+                            xorb_refs=[],  # TODO: Add xorb support
+                            total_size=total_size,
+                        )
+                        
+                        # Store metadata persistently
+                        await dedup.store_file_metadata(file_metadata)
+                        
+                        # Perform file-level deduplication if enabled
+                        if file_dedup:
+                            try:
+                                dedup_stats = await file_dedup.deduplicate_file(
+                                    Path(file_path_str)
+                                )
+                                if dedup_stats.get("duplicate_found"):
+                                    self.logger.info(
+                                        "File-level deduplication: %s matches %s (saved %d bytes)",
+                                        file_path_str,
+                                        dedup_stats.get("duplicate_path"),
+                                        dedup_stats.get("storage_saved", 0),
+                                    )
+                            except Exception as e:
+                                self.logger.debug(
+                                    "File-level deduplication check failed: %s", e
+                                )
+                        
+                    except Exception as e:
+                        self.logger.warning(
+                            "Failed to store file metadata for %s: %s",
+                            file_path_str,
+                            e,
+                            exc_info=True,
+                        )
 
             self.logger.debug(
                 "Stored %d Xet chunks for piece %d (Merkle: %s)",
@@ -948,6 +1271,143 @@ class AsyncFileAssembler:
             )  # pragma: no cover - Processed files tracking, tested via integration tests
 
         self.logger.info("Finalized %d files with attributes", len(processed_files))
+        
+        # CRITICAL FIX: Verify all expected files exist and are accessible
+        # This ensures files are properly built and can be accessed
+        expected_files = []
+        for file_info in self.files:
+            if file_info.is_padding:
+                continue
+            if isinstance(self.torrent_data, TorrentInfo):
+                file_path = os.path.join(
+                    self.output_dir,
+                    file_info.full_path or file_info.name,
+                )
+            elif file_info.path:
+                file_path = os.path.join(self.output_dir, *file_info.path)
+            else:
+                file_path = os.path.join(self.output_dir, file_info.name)
+            expected_files.append(file_path)
+        
+        # Verify files exist
+        missing_files = []
+        for file_path in expected_files:
+            if not os.path.exists(file_path):
+                missing_files.append(file_path)
+            else:
+                # Verify file is readable
+                try:
+                    with open(file_path, "rb"):
+                        pass  # File is accessible
+                except Exception as e:
+                    self.logger.warning(
+                        "File exists but is not accessible: %s (%s)",
+                        file_path,
+                        e,
+                    )
+        
+        if missing_files:
+            self.logger.error(
+                "Some files are missing after finalization: %s",
+                missing_files,
+            )
+        else:
+            self.logger.info(
+                "All %d expected files exist and are accessible after finalization",
+                len(expected_files),
+            )
+        
+        # CRITICAL FIX: Flush all pending disk I/O operations
+        # This ensures all writes are actually written to disk before returning
+        if self._disk_io_started and hasattr(self.disk_io, "flush"):
+            try:
+                await self.disk_io.flush()
+                self.logger.info("Flushed all pending disk I/O operations")
+            except Exception as e:
+                self.logger.warning("Failed to flush disk I/O: %s", e)
+        
+        # CRITICAL FIX: Sync filesystem to ensure files are visible
+        # On some systems, files may be buffered and not visible until synced
+        try:
+            import platform
+            if platform.system() != "Windows":
+                # On Unix-like systems, sync() ensures all buffered writes are written
+                os.sync()
+                self.logger.debug("Synced filesystem to ensure files are visible")
+        except Exception as e:
+            self.logger.debug("Failed to sync filesystem: %s (this is usually OK)", e)
+        else:
+            self.logger.info(
+                "All %d expected files are present and accessible",
+                len(expected_files),
+            )
+        
+        # CRITICAL FIX: Wait for all pending writes to complete, then sync files to disk
+        # This ensures all buffered writes are flushed to disk so files are fully written
+        # and can be opened correctly immediately after download completes
+        if self.disk_io:
+            try:
+                # Wait for all pending writes to complete
+                # Check if there's a method to wait for queue to empty
+                max_wait = 10.0  # Maximum 10 seconds to wait for writes
+                wait_interval = 0.1  # Check every 100ms
+                elapsed = 0.0
+                
+                while elapsed < max_wait:
+                    queue_size = 0
+                    pending_writes = 0
+                    
+                    # Check priority queue
+                    if hasattr(self.disk_io, "_write_queue_heap"):
+                        async with self.disk_io._write_queue_lock:
+                            queue_size = len(self.disk_io._write_queue_heap)
+                    
+                    # Check regular queue
+                    if hasattr(self.disk_io, "write_queue") and self.disk_io.write_queue:
+                        queue_size = self.disk_io.write_queue.qsize() if hasattr(self.disk_io.write_queue, "qsize") else 0
+                    
+                    # Check pending writes in write_requests
+                    if hasattr(self.disk_io, "write_requests"):
+                        with self.disk_io.write_lock:
+                            pending_writes = sum(len(reqs) for reqs in self.disk_io.write_requests.values())
+                    
+                    total_pending = queue_size + pending_writes
+                    
+                    if total_pending == 0:
+                        self.logger.debug("All pending writes completed (queue empty, no pending writes)")
+                        break
+                    
+                    if elapsed % 1.0 < wait_interval:  # Log every second
+                        self.logger.debug(
+                            "Waiting for pending writes to complete: %d in queue, %d pending (elapsed: %.1fs)",
+                            queue_size,
+                            pending_writes,
+                            elapsed,
+                        )
+                    
+                    await asyncio.sleep(wait_interval)
+                    elapsed += wait_interval
+                
+                if elapsed >= max_wait:
+                    self.logger.warning(
+                        "Timeout waiting for pending writes (waited %.1fs). Proceeding with sync anyway.",
+                        elapsed,
+                    )
+                
+                # CRITICAL FIX: Flush all pending writes before syncing
+                if hasattr(self.disk_io, "_flush_all_writes"):
+                    self.logger.info("Flushing all pending writes before sync")
+                    await self.disk_io._flush_all_writes()
+                
+                # Sync all files to disk
+                self.logger.info("Syncing all files to disk after finalization")
+                await self.disk_io.sync_all_written_files()
+                self.logger.info("All files synced to disk successfully - files should now be visible")
+            except Exception as sync_error:
+                self.logger.warning(
+                    "Failed to sync files to disk after finalization: %s (non-fatal)",
+                    sync_error,
+                )
 
     async def restore_attributes_from_checkpoint(
         self, checkpoint: TorrentCheckpoint

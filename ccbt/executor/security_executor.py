@@ -46,6 +46,8 @@ class SecurityExecutor(CommandExecutor):
             return await self._load_ip_filter()
         if command == "security.get_ip_filter_stats":
             return await self._get_ip_filter_stats()
+        if command == "security.ban_peer":
+            return await self._ban_peer(**kwargs)
         return CommandResult(
             success=False,
             error=f"Unknown security command: {command}",
@@ -251,6 +253,63 @@ class SecurityExecutor(CommandExecutor):
                     "enabled": security_manager.ip_filter.enabled,
                     "stats": stats,
                 },
+            )
+        except Exception as e:
+            return CommandResult(success=False, error=str(e))
+
+    async def _ban_peer(self, ip: str, reason: str = "") -> CommandResult:
+        """Ban a peer by IP address.
+        
+        Args:
+            ip: IP address to ban
+            reason: Reason for banning (optional)
+            
+        Returns:
+            CommandResult with execution result
+        """
+        try:
+            from ccbt.executor.session_adapter import LocalSessionAdapter
+
+            if not isinstance(self.adapter, LocalSessionAdapter):
+                return CommandResult(
+                    success=False,
+                    error="Security commands only available in local mode",
+                )
+
+            session = self.adapter.session_manager
+            security_manager = getattr(session, "security_manager", None)
+            if not security_manager:
+                return CommandResult(
+                    success=False,
+                    error="Security manager not available",
+                )
+
+            # Add to blacklist with reason
+            ban_reason = reason or f"Manually banned peer: {ip}"
+            security_manager.add_to_blacklist(ip, ban_reason, source="manual")
+            
+            # Also disconnect the peer if connected
+            # Get all torrent sessions and disconnect peers with this IP
+            if hasattr(session, "torrent_sessions"):
+                for torrent_session in session.torrent_sessions.values():
+                    if hasattr(torrent_session, "download_manager"):
+                        download_manager = torrent_session.download_manager
+                        if hasattr(download_manager, "peer_manager"):
+                            peer_manager = download_manager.peer_manager
+                            if hasattr(peer_manager, "disconnect_peer_by_ip"):
+                                await peer_manager.disconnect_peer_by_ip(ip)
+                            elif hasattr(peer_manager, "peers"):
+                                # Fallback: iterate through peers and disconnect matching IPs
+                                for peer in list(peer_manager.peers.values()):
+                                    if hasattr(peer, "ip") and peer.ip == ip:
+                                        if hasattr(peer, "disconnect"):
+                                            await peer.disconnect()
+                                        elif hasattr(peer, "close"):
+                                            await peer.close()
+            
+            return CommandResult(
+                success=True,
+                data={"banned": True, "ip": ip, "reason": ban_reason},
             )
         except Exception as e:
             return CommandResult(success=False, error=str(e))

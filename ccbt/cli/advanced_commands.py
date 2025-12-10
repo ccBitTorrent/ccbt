@@ -12,14 +12,155 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 import click
 from rich.console import Console
+from rich.prompt import Confirm
 from rich.table import Table
 
-from ccbt.config.config import get_config
+from ccbt.config.config import ConfigManager, get_config
+from ccbt.config.config_capabilities import SystemCapabilities
+from ccbt.i18n import _
+from ccbt.models import PreallocationStrategy
 from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.storage.disk_io import DiskIOManager
+
+
+class OptimizationPreset:
+    """Optimization preset configurations."""
+
+    PERFORMANCE = "performance"
+    BALANCED = "balanced"
+    POWER_SAVE = "power_save"
+
+
+def _apply_optimizations(
+    preset: str = OptimizationPreset.BALANCED,
+    save_to_file: bool = False,
+    config_file: str | None = None,
+) -> dict[str, Any]:
+    """Apply performance optimizations based on system capabilities.
+
+    Args:
+        preset: Optimization preset (performance, balanced, power_save)
+        save_to_file: Whether to save optimizations to config file
+        config_file: Optional path to config file (defaults to ccbt.toml)
+
+    Returns:
+        Dictionary of applied optimizations
+    """
+    console = Console()
+    cfg = get_config()
+    capabilities = SystemCapabilities()
+
+    # Detect system characteristics
+    cpu_count = capabilities.detect_cpu_count()
+    memory = capabilities.detect_memory()
+    storage_type = capabilities.detect_storage_type(
+        cfg.disk.download_path or "."
+    )
+    io_uring_available = capabilities.detect_io_uring()
+
+    optimizations: dict[str, Any] = {}
+
+    # Apply preset-based optimizations
+    if preset == OptimizationPreset.PERFORMANCE:
+        # Maximum performance settings
+        optimizations["disk"] = {
+            "disk_workers": min(max(4, cpu_count // 2), 16),
+            "write_buffer_kib": 2048 if storage_type == "nvme" else 1024,
+            "write_batch_kib": 128 if storage_type == "nvme" else 64,
+            "use_mmap": True,
+            "mmap_cache_mb": min(512, int(memory.get("available_gb", 4) * 128)),
+            "enable_io_uring": io_uring_available,
+            "direct_io": storage_type == "nvme" and sys.platform.startswith("linux"),
+            "disk_workers_adaptive": True,
+            "mmap_cache_adaptive": True,
+        }
+        optimizations["network"] = {
+            "pipeline_depth": 32,
+            "socket_rcvbuf_kib": 512,
+            "socket_sndbuf_kib": 512,
+            "socket_adaptive_buffers": True,
+            "pipeline_adaptive_depth": True,
+            "timeout_adaptive": True,
+        }
+    elif preset == OptimizationPreset.POWER_SAVE:
+        # Power-efficient settings
+        optimizations["disk"] = {
+            "disk_workers": 1,
+            "write_buffer_kib": 256,
+            "write_batch_kib": 32,
+            "use_mmap": False,
+            "mmap_cache_mb": 64,
+            "enable_io_uring": False,
+            "direct_io": False,
+            "disk_workers_adaptive": False,
+            "mmap_cache_adaptive": False,
+        }
+        optimizations["network"] = {
+            "pipeline_depth": 8,
+            "socket_rcvbuf_kib": 64,
+            "socket_sndbuf_kib": 64,
+            "socket_adaptive_buffers": False,
+            "pipeline_adaptive_depth": False,
+            "timeout_adaptive": False,
+        }
+    else:  # BALANCED
+        # Balanced settings based on detected hardware
+        optimizations["disk"] = {
+            "disk_workers": min(max(2, cpu_count // 4), 8),
+            "write_buffer_kib": 1024 if storage_type in ("nvme", "ssd") else 512,
+            "write_batch_kib": 64 if storage_type in ("nvme", "ssd") else 32,
+            "use_mmap": True,
+            "mmap_cache_mb": min(256, int(memory.get("available_gb", 4) * 64)),
+            "enable_io_uring": io_uring_available,
+            "direct_io": False,  # Only enable for NVMe in performance mode
+            "disk_workers_adaptive": True,
+            "mmap_cache_adaptive": True,
+        }
+        optimizations["network"] = {
+            "pipeline_depth": 16,
+            "socket_rcvbuf_kib": 256,
+            "socket_sndbuf_kib": 256,
+            "socket_adaptive_buffers": True,
+            "pipeline_adaptive_depth": True,
+            "timeout_adaptive": True,
+        }
+
+    # Apply optimizations to config
+    applied: dict[str, Any] = {}
+    for section, settings in optimizations.items():
+        section_config = getattr(cfg, section, None)
+        if section_config:
+            for key, value in settings.items():
+                if hasattr(section_config, key):
+                    old_value = getattr(section_config, key)
+                    setattr(section_config, key, value)
+                    applied[f"{section}.{key}"] = {"old": old_value, "new": value}
+
+    # Save to file if requested
+    if save_to_file:
+        try:
+            from ccbt.config.config import ConfigManager
+
+            config_path = Path(config_file or "ccbt.toml")
+            config_manager = ConfigManager(str(config_path) if config_path.exists() else None)
+            config_manager.save_config()
+            console.print(
+                _("[green]Optimizations saved to {path}[/green]").format(
+                    path=config_path
+                )
+            )
+        except Exception as e:
+            console.print(
+                _("[yellow]Could not save to config file: {error}[/yellow]").format(
+                    error=e
+                )
+            )
+
+    return applied
 
 
 async def _quick_disk_benchmark() -> dict:
@@ -78,9 +219,40 @@ async def _quick_disk_benchmark() -> dict:
 @click.command("performance")
 @click.option("--analyze", is_flag=True, help="Analyze current performance")
 @click.option("--optimize", is_flag=True, help="Apply performance optimizations")
+@click.option(
+    "--preset",
+    type=click.Choice(
+        [
+            OptimizationPreset.PERFORMANCE,
+            OptimizationPreset.BALANCED,
+            OptimizationPreset.POWER_SAVE,
+        ]
+    ),
+    default=OptimizationPreset.BALANCED,
+    help="Optimization preset to apply",
+)
+@click.option(
+    "--save",
+    is_flag=True,
+    help="Save optimizations to config file (requires --optimize)",
+)
+@click.option(
+    "--config-file",
+    type=click.Path(),
+    default=None,
+    help="Config file path (defaults to ccbt.toml)",
+)
 @click.option("--benchmark", is_flag=True, help="Run performance benchmarks")
 @click.option("--profile", is_flag=True, help="Enable performance profiling")
-def performance(analyze: bool, optimize: bool, benchmark: bool, profile: bool) -> None:
+def performance(
+    analyze: bool,
+    optimize: bool,
+    preset: str,
+    save: bool,
+    config_file: str | None,
+    benchmark: bool,
+    profile: bool,
+) -> None:
     """Performance tuning and optimization."""
     console = Console()
     cfg = get_config()
@@ -99,14 +271,53 @@ def performance(analyze: bool, optimize: bool, benchmark: bool, profile: bool) -
         t.add_row("io_uring", str(cfg.disk.enable_io_uring))
         console.print(t)
     if optimize:
-        # Print suggested flags only; applying requires restart and user confirmation
-        console.print("[green]Suggested optimizations:[/green]")
-        console.print("- Increase --write-buffer-kib for larger sequential writes")
-        console.print("- Enable --use-mmap for large sequential reads")
-        console.print("- Increase --disk-workers for high-core systems")
+        # Apply optimizations based on preset
         console.print(
-            "- Consider --direct-io on Linux/NVMe for large sequential writes",
+            _("[green]Applying {preset} optimizations...[/green]").format(
+                preset=preset
+            )
         )
+
+        if save:
+            # Ask for confirmation before saving
+            if not Confirm.ask(
+                _(
+                    "This will modify your configuration file. Continue?"
+                ),
+                default=True,
+            ):
+                console.print(_("[yellow]Optimization cancelled[/yellow]"))
+                return
+
+        applied = _apply_optimizations(
+            preset=preset, save_to_file=save, config_file=config_file
+        )
+
+        if applied:
+            # Display applied optimizations
+            opt_table = Table(title="Applied Optimizations")
+            opt_table.add_column("Setting", style="cyan")
+            opt_table.add_column("Old Value", style="yellow")
+            opt_table.add_column("New Value", style="green")
+
+            for key, values in applied.items():
+                opt_table.add_row(
+                    key,
+                    str(values["old"]),
+                    str(values["new"]),
+                )
+
+            console.print(opt_table)
+            console.print(
+                _(
+                    "[green]Optimizations applied successfully![/green]\n"
+                    "[yellow]Note: Some changes may require restart to take effect.[/yellow]"
+                )
+            )
+        else:
+            console.print(
+                _("[yellow]No optimizations were applied (already optimal or unsupported)[/yellow]")
+            )
     if benchmark or profile:
         if profile:
             import cProfile
@@ -138,9 +349,9 @@ def performance(analyze: bool, optimize: bool, benchmark: bool, profile: bool) -
                     "read_time_s": 0,
                 }
             prof.disable()
-            console.print(f"[green]Benchmark results:[/green] {json.dumps(results)}")
+            console.print(_("[green]Benchmark results:[/green] {results}").format(results=json.dumps(results)))
             ps = pstats.Stats(prof).strip_dirs().sort_stats("tottime")
-            console.print("Top profile entries:")
+            console.print(_("Top profile entries:"))
             # Print top 10 lines
             ps.print_stats(10)
         else:
@@ -167,21 +378,21 @@ def performance(analyze: bool, optimize: bool, benchmark: bool, profile: bool) -
                     "write_time_s": 0,
                     "read_time_s": 0,
                 }
-            console.print(f"[green]Benchmark results:[/green] {json.dumps(results)}")
+            console.print(_("[green]Benchmark results:[/green] {results}").format(results=json.dumps(results)))
 
             # Display cache statistics if available
             cache_stats = results.get("cache_stats", {})
             if isinstance(cache_stats, dict) and cache_stats:
-                console.print("\n[bold cyan]Cache Statistics:[/bold cyan]")
-                console.print(f"Cache entries: {cache_stats.get('entries', 0)}")
+                console.print(_("\n[bold cyan]Cache Statistics:[/bold cyan]"))
+                console.print(_("Cache entries: {count}").format(count=cache_stats.get("entries", 0)))
                 hit_rate = cache_stats.get("hit_rate_percent")
                 if hit_rate is not None:
-                    console.print(f"Cache hit rate: {hit_rate:.2f}%")
+                    console.print(_("Cache hit rate: {rate:.2f}%").format(rate=hit_rate))
                 eviction_rate = cache_stats.get("eviction_rate_per_sec")
                 if eviction_rate is not None:
-                    console.print(f"Eviction rate: {eviction_rate:.2f} /sec")
+                    console.print(_("Eviction rate: {rate:.2f} /sec").format(rate=eviction_rate))
     if not any([analyze, optimize, benchmark, profile]):
-        console.print("[yellow]No performance action specified[/yellow]")
+        console.print(_("[yellow]No performance action specified[/yellow]"))
 
 
 @click.command("security")
@@ -194,7 +405,7 @@ def security(scan: bool, validate: bool, encrypt: bool, rate_limit: bool) -> Non
     console = Console()
     cfg = get_config()
     if scan:
-        console.print("[green]Performing basic configuration scan...[/green]")
+        console.print(_("[green]Performing basic configuration scan...[/green]"))
         issues = []
         if not cfg.security.validate_peers:
             issues.append("Peer validation disabled")
@@ -204,23 +415,23 @@ def security(scan: bool, validate: bool, encrypt: bool, rate_limit: bool) -> Non
             cfg.network.global_down_kib == 0 and cfg.network.global_up_kib == 0
         ):
             issues.append("No rate limits configured")
-        console.print(f"Found {len(issues)} potential issues")
+        console.print(_("Found {count} potential issues").format(count=len(issues)))
         for i in issues:
-            console.print(f"- [yellow]{i}[/yellow]")
+            console.print(_("- [yellow]{issue}[/yellow]").format(issue=i))
     if validate:
         console.print(
-            "[green]Peer validation hooks are enabled by configuration[/green]",
+            _("[green]Peer validation hooks are enabled by configuration[/green]"),
         )
     if encrypt:
         console.print(
-            "[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]",
+            _("[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]"),
         )
     if rate_limit:
         console.print(
-            "[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]",
+            _("[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]"),
         )
     if not any([scan, validate, encrypt, rate_limit]):
-        console.print("[yellow]No security action specified[/yellow]")
+        console.print(_("[yellow]No security action specified[/yellow]"))
 
 
 @click.command("recover")
@@ -242,24 +453,24 @@ def recover(
     try:
         ih_bytes = bytes.fromhex(info_hash)
     except ValueError:
-        console.print(f"[red]Invalid info hash format: {info_hash}[/red]")
+        console.print(_("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash))
         return
     cm = CheckpointManager(cfg.disk)
     if verify:
         valid = asyncio.run(cm.verify_checkpoint(ih_bytes))
         console.print(
-            "[green]Checkpoint valid[/green]"
+            _("[green]Checkpoint valid[/green]")
             if valid
-            else "[yellow]Checkpoint missing/invalid[/yellow]",
+            else _("[yellow]Checkpoint missing/invalid[/yellow]"),
         )
     if rehash:
         console.print(
-            "[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]",
+            _("[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]"),
         )
     if repair:
-        console.print("[yellow]Automatic repair not implemented[/yellow]")
+        console.print(_("[yellow]Automatic repair not implemented[/yellow]"))
     if not any([verify, rehash, repair]):
-        console.print("[yellow]No recover action specified[/yellow]")
+        console.print(_("[yellow]No recover action specified[/yellow]"))
 
 
 @click.command("disk-detect")
@@ -475,8 +686,9 @@ def test(
     if coverage:
         args += ["--cov=ccbt", "--cov-report", "term-missing"]
     args += selected
-    console.print(f"[blue]Running: {' '.join(args)}[/blue]")
+    console.print(_("[blue]Running: {command}[/blue]").format(command=" ".join(args)))
     try:
         subprocess.run(args, check=False)  # nosec S603 - CLI command execution, args are validated
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Failed to run tests: {e}[/red]")
+        console.print(_("[red]Failed to run tests: {e}[/red]").format(e=e))
+

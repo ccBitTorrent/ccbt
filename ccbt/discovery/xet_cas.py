@@ -49,6 +49,8 @@ class P2PCASClient:
         dht_client: Any | None = None,  # type: ignore[assignment]
         tracker_client: Any | None = None,  # type: ignore[assignment]
         key_manager: Any = None,  # Ed25519KeyManager
+        bloom_filter: Any | None = None,  # XetChunkBloomFilter
+        catalog: Any | None = None,  # XetChunkCatalog
     ):
         """Initialize P2P CAS with DHT and tracker clients.
 
@@ -56,12 +58,19 @@ class P2PCASClient:
             dht_client: DHT client instance (will be obtained from session if None)
             tracker_client: Optional tracker client instance
             key_manager: Optional Ed25519KeyManager for signing chunks
+            bloom_filter: Optional bloom filter for chunk availability
+            catalog: Optional chunk catalog for bulk queries
 
         """
         self.dht = dht_client
         self.tracker = tracker_client
         self.key_manager = key_manager
+        self.bloom_filter = bloom_filter
+        self.catalog = catalog
         self.local_chunks: dict[bytes, str] = {}  # hash -> local path
+        # Discovery result cache: chunk_hash -> (peers, timestamp)
+        self._discovery_cache: dict[bytes, tuple[list[PeerInfo], float]] = {}
+        self._cache_ttl = 60.0  # Default 60 seconds, configurable
         self.logger = logging.getLogger(__name__)
 
     async def announce_chunk(self, chunk_hash: bytes) -> None:
@@ -125,11 +134,34 @@ class P2PCASClient:
                     "Announced chunk %s to DHT",
                     chunk_hash.hex()[:16],
                 )
-            except Exception as e:  # pragma: no cover - DHT announcement exception handling, defensive error path
-                self.logger.warning(
-                    "Failed to announce chunk to DHT: %s",
-                    e,
-                )  # pragma: no cover - Same context
+            except Exception as e:
+                self.logger.warning("Failed to announce chunk to DHT: %s", e)
+
+        # Update bloom filter if available
+        if self.bloom_filter:
+            try:
+                self.bloom_filter.add_chunk(chunk_hash)
+                self.logger.debug(
+                    "Added chunk %s to bloom filter",
+                    chunk_hash.hex()[:16],
+                )
+            except Exception as e:
+                self.logger.warning("Failed to update bloom filter: %s", e)
+
+        # Update catalog if available
+        if self.catalog:
+            try:
+                # Get our peer info if available
+                peer_info = None
+                if hasattr(self, "peer_info"):
+                    peer_info = (self.peer_info.ip, self.peer_info.port)  # type: ignore[attr-defined]
+                await self.catalog.add_chunk(chunk_hash, peer_info)
+                self.logger.debug(
+                    "Added chunk %s to catalog",
+                    chunk_hash.hex()[:16],
+                )
+            except Exception as e:
+                self.logger.warning("Failed to update catalog: %s", e)
 
         # Also announce to tracker if configured
         if self.tracker:
@@ -150,7 +182,8 @@ class P2PCASClient:
         """Find peers that have a specific chunk.
 
         Queries DHT and tracker (if configured) to find peers that can
-        provide the requested chunk.
+        provide the requested chunk. Uses bloom filter for pre-filtering
+        if available.
 
         Args:
             chunk_hash: 32-byte chunk hash
@@ -163,7 +196,50 @@ class P2PCASClient:
             msg = f"Chunk hash must be 32 bytes, got {len(chunk_hash)}"
             raise ValueError(msg)
 
+        # Check cache first
+        current_time = time.time()
+        if chunk_hash in self._discovery_cache:
+            cached_peers, cached_time = self._discovery_cache[chunk_hash]
+            if current_time - cached_time < self._cache_ttl:
+                self.logger.debug(
+                    "Using cached discovery result for chunk %s",
+                    chunk_hash.hex()[:16],
+                )
+                return cached_peers.copy()
+            else:
+                # Cache expired, remove it
+                del self._discovery_cache[chunk_hash]
+
+        # Pre-filter using bloom filter if available
+        # Note: Bloom filter can have false positives, so we still query
+        # but we can skip peers that definitely don't have the chunk
+        if self.bloom_filter:
+            if not self.bloom_filter.has_chunk(chunk_hash):
+                self.logger.debug(
+                    "Chunk %s not in bloom filter, skipping discovery",
+                    chunk_hash.hex()[:16],
+                )
+                return []  # Definitely not available (no false negatives)
+
+        # Check catalog first for fast lookup
         peers = []
+        if self.catalog:
+            try:
+                catalog_results = await self.catalog.get_peers_by_chunks([chunk_hash])
+                if chunk_hash in catalog_results:
+                    catalog_peers = catalog_results[chunk_hash]
+                    # Convert to PeerInfo objects
+                    from ccbt.models import PeerInfo
+
+                    for ip, port in catalog_peers:
+                        peers.append(PeerInfo(ip=ip, port=port))
+                    self.logger.debug(
+                        "Found %d peers for chunk %s in catalog",
+                        len(peers),
+                        chunk_hash.hex()[:16],
+                    )
+            except Exception as e:
+                self.logger.warning("Error querying catalog: %s", e)
 
         # Query DHT for chunk
         if self.dht:
@@ -236,7 +312,109 @@ class P2PCASClient:
                 )
 
         # Remove duplicates
-        return self._deduplicate_peers(peers)
+        deduplicated_peers = self._deduplicate_peers(peers)
+
+        # Cache result
+        self._discovery_cache[chunk_hash] = (deduplicated_peers, time.time())
+
+        return deduplicated_peers
+
+    async def find_chunks_peers_batch(
+        self, chunk_hashes: list[bytes]
+    ) -> dict[bytes, list[PeerInfo]]:
+        """Find peers for multiple chunks in parallel.
+
+        Queries DHT and tracker (if configured) for multiple chunks concurrently.
+
+        Args:
+            chunk_hashes: List of 32-byte chunk hashes
+
+        Returns:
+            Dictionary mapping chunk_hash -> list of peers
+
+        """
+        # Validate all chunk hashes
+        for chunk_hash in chunk_hashes:
+            if len(chunk_hash) != 32:
+                msg = f"Chunk hash must be 32 bytes, got {len(chunk_hash)}"
+                raise ValueError(msg)
+
+        # Pre-filter using bloom filter if available
+        filtered_hashes = chunk_hashes
+        if self.bloom_filter:
+            filtered_hashes = [
+                h for h in chunk_hashes if self.bloom_filter.has_chunk(h)
+            ]
+            if not filtered_hashes:
+                self.logger.debug(
+                    "All %d chunks filtered out by bloom filter",
+                    len(chunk_hashes),
+                )
+                return {h: [] for h in chunk_hashes}
+
+        # Use semaphore to limit concurrent queries
+        from asyncio import Semaphore
+
+        semaphore = Semaphore(50)  # Max 50 concurrent queries
+        results: dict[bytes, list[PeerInfo]] = {}
+
+        async def query_chunk(chunk_hash: bytes) -> tuple[bytes, list[PeerInfo]]:
+            async with semaphore:
+                peers = await self.find_chunk_peers(chunk_hash)
+                return (chunk_hash, peers)
+
+        # Query all chunks in parallel
+        tasks = [query_chunk(chunk_hash) for chunk_hash in filtered_hashes]
+        query_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results
+        for result in query_results:
+            if isinstance(result, tuple) and len(result) == 2:
+                chunk_hash, chunk_peers = result
+                results[chunk_hash] = chunk_peers
+            elif isinstance(result, Exception):
+                self.logger.warning("Error in batch chunk query: %s", result)
+
+        # Add empty results for filtered-out chunks
+        for chunk_hash in chunk_hashes:
+            if chunk_hash not in results:
+                results[chunk_hash] = []
+
+        self.logger.debug(
+            "Batch query for %d chunks: found peers for %d chunks",
+            len(chunk_hashes),
+            sum(1 for peers in results.values() if peers),
+        )
+
+        return results
+
+    def register_pex_manager(self, pex_manager: Any) -> None:
+        """Register PEX manager for chunk exchange.
+
+        Args:
+            pex_manager: AsyncPexManager instance
+
+        """
+        self.pex_manager = pex_manager
+
+        # Register callback for PEX chunks
+        async def on_pex_chunks(chunk_hashes: list[bytes]) -> None:
+            """Handle chunks received via PEX."""
+            for chunk_hash in chunk_hashes:
+                if len(chunk_hash) == 32:
+                    # Update catalog if available
+                    if self.catalog:
+                        try:
+                            # Get peer info from PEX if available
+                            # This is a simplified version - in practice, we'd track
+                            # which peer sent which chunks
+                            await self.catalog.add_chunk(chunk_hash, None)
+                        except Exception as e:
+                            self.logger.warning("Error updating catalog from PEX: %s", e)
+
+        # Add callback to PEX manager
+        if hasattr(pex_manager, "chunk_callbacks"):
+            pex_manager.chunk_callbacks.append(on_pex_chunks)
 
     async def download_chunk(
         self,

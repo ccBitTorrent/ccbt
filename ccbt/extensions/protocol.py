@@ -8,7 +8,6 @@ Provides support for:
 
 from __future__ import annotations
 
-import json
 import struct
 import time
 from dataclasses import dataclass
@@ -92,7 +91,15 @@ class ExtensionProtocol:
         return self.extensions.copy()
 
     def encode_handshake(self) -> bytes:
-        """Encode extension handshake."""
+        """Encode extension handshake (BEP 10).
+        
+        BEP 10 extension handshakes are bencoded dictionaries.
+        This method encodes the extension information as a bencoded dictionary.
+        
+        Returns:
+            Encoded extension handshake message in format: <length><message_id><bencoded_data>
+
+        """
         # Create extension dictionary
         extensions = {}
         for name, info in self.extensions.items():
@@ -101,17 +108,35 @@ class ExtensionProtocol:
                 "message_id": info.message_id,
             }
 
-        # Convert to JSON
-        extensions_json = json.dumps(extensions).encode("utf-8")
+        # BEP 10: Extension handshake is bencoded, not JSON
+        from ccbt.core.bencode import BencodeEncoder
 
-        # Pack message: <length><message_id><extensions_json>
+        encoder = BencodeEncoder()
+        bencoded_data = encoder.encode(extensions)
+
+        # Pack message: <length><message_id><bencoded_data>
         return (
-            struct.pack("!IB", len(extensions_json) + 1, ExtensionMessageType.EXTENDED)
-            + extensions_json
+            struct.pack("!IB", len(bencoded_data) + 1, ExtensionMessageType.EXTENDED)
+            + bencoded_data
         )
 
     def decode_handshake(self, data: bytes) -> dict[str, Any]:
-        """Decode extension handshake."""
+        """Decode extension handshake (BEP 10).
+        
+        BEP 10 extension handshakes are ALWAYS bencoded dictionaries, not JSON.
+        This method decodes the bencoded handshake data.
+        
+        Args:
+            data: Extension handshake message in format: <length><message_id><bencoded_data>
+            
+        Returns:
+            Decoded handshake dictionary with extension information
+            
+        Raises:
+            ValueError: If data is invalid or incomplete
+            BencodeDecodeError: If bencode decoding fails
+
+        """
         if len(data) < 5:  # pragma: no cover - Short data error, tested via full data
             msg = "Invalid extension handshake"
             raise ValueError(msg)
@@ -130,8 +155,48 @@ class ExtensionProtocol:
             msg = "Incomplete extension handshake"
             raise ValueError(msg)
 
-        extensions_json = data[5 : 5 + length - 1].decode("utf-8")
-        return json.loads(extensions_json)
+        # BEP 10: Extension handshake is bencoded, not JSON
+        bencoded_data = data[5 : 5 + length - 1]
+
+        # Decode bencoded data
+        from ccbt.core.bencode import BencodeDecoder
+
+        decoder = BencodeDecoder(bencoded_data)
+        handshake_data = decoder.decode()
+
+        # Convert bytes keys to strings for compatibility
+        if isinstance(handshake_data, dict):
+            converted_data = {}
+            for key, value in handshake_data.items():
+                if isinstance(key, bytes):
+                    try:
+                        key_str = key.decode("utf-8")
+                    except UnicodeDecodeError:
+                        # Fallback for non-UTF-8 keys (shouldn't happen per spec)
+                        key_str = key.decode("utf-8", errors="replace")
+                else:
+                    key_str = str(key)
+
+                # Recursively convert nested dicts
+                if isinstance(value, dict):
+                    converted_value = {}
+                    for k, v in value.items():
+                        if isinstance(k, bytes):
+                            try:
+                                k_str = k.decode("utf-8")
+                            except UnicodeDecodeError:
+                                k_str = k.decode("utf-8", errors="replace")
+                        else:
+                            k_str = str(k)
+                        converted_value[k_str] = v
+                    converted_data[key_str] = converted_value
+                else:
+                    converted_data[key_str] = value
+            return converted_data
+
+        # BEP 10 requires extension handshake to be a dictionary
+        msg = f"Extension handshake must be a dictionary, got {type(handshake_data).__name__}"
+        raise ValueError(msg)
 
     def encode_extension_message(self, message_id: int, payload: bytes) -> bytes:
         """Encode extension message."""
@@ -162,6 +227,21 @@ class ExtensionProtocol:
     ) -> None:
         """Handle extension handshake from peer."""
         self.peer_extensions[peer_id] = extensions
+        
+        # Extract SSL capability from extension handshake data
+        # Check if SSL extension is registered in message map (BEP 10 "m" field)
+        ssl_supported = False
+        if isinstance(extensions, dict):
+            m_dict = extensions.get("m") or extensions.get(b"m", {})
+            if isinstance(m_dict, dict):
+                # SSL extension may be registered with message ID
+                if "ssl" in m_dict or b"ssl" in m_dict:
+                    ssl_supported = True
+        
+        # Store SSL capability in peer_extensions
+        if not isinstance(self.peer_extensions[peer_id], dict):
+            self.peer_extensions[peer_id] = {"raw": self.peer_extensions[peer_id]}
+        self.peer_extensions[peer_id]["ssl"] = ssl_supported
 
         # Emit event for extension handshake
         await emit_event(
@@ -170,6 +250,7 @@ class ExtensionProtocol:
                 data={
                     "peer_id": peer_id,
                     "extensions": extensions,
+                    "ssl_capable": ssl_supported,
                     "timestamp": time.time(),
                 },
             ),

@@ -1089,6 +1089,57 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
                         # Advanced options update failed, but rate limits succeeded
                         logger.debug("Failed to save advanced options: %s", e)
 
+            # Save checkpoint if enabled
+            if torrent_session:
+                try:
+                    from ccbt.config.config import get_config
+
+                    config = get_config()
+                    if config.disk.checkpoint_enabled:
+                        # Try to save checkpoint via checkpoint controller if available
+                        if hasattr(torrent_session, "checkpoint_controller"):
+                            await torrent_session.checkpoint_controller.save_checkpoint_state(
+                                torrent_session
+                            )
+                            logger.debug("Checkpoint saved after config change")
+                        # Also try via session manager's checkpoint manager
+                        elif (
+                            self.session
+                            and hasattr(self.session, "checkpoint_manager")
+                            and self.session.checkpoint_manager
+                        ):
+                            # Get checkpoint state from piece manager if available
+                            if hasattr(torrent_session, "piece_manager"):
+                                checkpoint = await torrent_session.piece_manager.get_checkpoint_state(
+                                    torrent_session.info.name,
+                                    torrent_session.info.info_hash,
+                                    str(torrent_session.output_dir),
+                                )
+                                # Add per-torrent options and rate limits
+                                if torrent_session.options:
+                                    checkpoint.per_torrent_options = dict(
+                                        torrent_session.options
+                                    )
+                                if (
+                                    self.session
+                                    and hasattr(self.session, "_per_torrent_limits")
+                                    and info_hash_bytes in self.session._per_torrent_limits
+                                ):
+                                    limits = self.session._per_torrent_limits[
+                                        info_hash_bytes
+                                    ]
+                                    checkpoint.rate_limits = {
+                                        "down_kib": limits.get("down_kib", 0),
+                                        "up_kib": limits.get("up_kib", 0),
+                                    }
+                                await self.session.checkpoint_manager.save_checkpoint(
+                                    checkpoint
+                                )
+                                logger.debug("Checkpoint saved after config change")
+                except Exception as e:
+                    # Don't fail the save operation if checkpoint save fails
+                    logger.debug("Failed to save checkpoint after config change: %s", e)
+
             errors_widget.update(
                 Panel(
                     f"Configuration saved: Down={down_kib} KiB/s, Up={up_kib} KiB/s",

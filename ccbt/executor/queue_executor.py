@@ -5,6 +5,8 @@ Handles queue management commands.
 
 from __future__ import annotations
 
+from typing import Any
+
 from ccbt.executor.base import CommandExecutor, CommandResult
 
 

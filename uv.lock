@@ -1208,7 +1208,7 @@ wheels = [
 
 [[package]]
 name = "ccbt"
-version = "0.1.0"
+version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles", version = "24.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
@@ -1251,6 +1251,8 @@ dependencies = [
     { name = "textual", version = "6.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.8.1' and python_full_version < '3.9'" },
     { name = "textual", version = "6.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "toml" },
+    { name = "watchdog", version = "4.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "watchdog", version = "6.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
 ]
 
 [package.optional-dependencies]
@@ -1265,10 +1267,12 @@ dev = [
     { name = "hypothesis", version = "6.141.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
     { name = "hypothesis", version = "6.147.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "mkdocs" },
+    { name = "mkdocs-blog-plugin" },
     { name = "mkdocs-codeinclude-plugin" },
     { name = "mkdocs-git-revision-date-localized-plugin", version = "1.4.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "mkdocs-git-revision-date-localized-plugin", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "mkdocs-material" },
+    { name = "mkdocs-static-i18n" },
     { name = "mkdocstrings", version = "0.26.1", source = { registry = "https://pypi.org/simple" }, extra = ["python"], marker = "python_full_version < '3.9'" },
     { name = "mkdocstrings", version = "0.30.1", source = { registry = "https://pypi.org/simple" }, extra = ["python"], marker = "python_full_version >= '3.9'" },
     { name = "pre-commit", version = "3.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
@@ -1314,12 +1318,14 @@ dev = [
     { name = "hypothesis", version = "6.141.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
     { name = "hypothesis", version = "6.147.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "mkdocs" },
+    { name = "mkdocs-blog-plugin" },
     { name = "mkdocs-codeinclude-plugin" },
     { name = "mkdocs-coverage", version = "1.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "mkdocs-coverage", version = "2.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "mkdocs-git-revision-date-localized-plugin", version = "1.4.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "mkdocs-git-revision-date-localized-plugin", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "mkdocs-material" },
+    { name = "mkdocs-static-i18n" },
     { name = "mkdocstrings", version = "0.26.1", source = { registry = "https://pypi.org/simple" }, extra = ["python"], marker = "python_full_version < '3.9'" },
     { name = "mkdocstrings", version = "0.30.1", source = { registry = "https://pypi.org/simple" }, extra = ["python"], marker = "python_full_version >= '3.9'" },
     { name = "pre-commit", version = "3.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
@@ -1371,9 +1377,11 @@ requires-dist = [
     { name = "liburing", marker = "sys_platform == 'linux'", specifier = ">=0.0.1" },
     { name = "lz4", specifier = ">=4.3.3" },
     { name = "mkdocs", marker = "extra == 'dev'", specifier = ">=1.6.1" },
+    { name = "mkdocs-blog-plugin", marker = "extra == 'dev'", specifier = ">=0.25.0" },
     { name = "mkdocs-codeinclude-plugin", marker = "extra == 'dev'", specifier = ">=0.2.1" },
     { name = "mkdocs-git-revision-date-localized-plugin", marker = "extra == 'dev'", specifier = ">=1.4.7" },
     { name = "mkdocs-material", marker = "extra == 'dev'", specifier = ">=9.6.22" },
+    { name = "mkdocs-static-i18n", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'dev'", specifier = ">=0.26.1" },
     { name = "msgpack", specifier = ">=1.1.1" },
     { name = "multiaddr", specifier = ">=0.0.9" },
@@ -1400,8 +1408,9 @@ requires-dist = [
     { name = "textual-dev", marker = "extra == 'dev'", specifier = ">=1.6.1" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1a24" },
+    { name = "watchdog", specifier = ">=4.0.2" },
 ]
-provides-extras = ["dev", "metrics-endpoint", "webrtc", "nat", "proxy"]
+provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1411,10 +1420,12 @@ dev = [
     { name = "coverage", extras = ["toml"], specifier = ">=7.6.1" },
     { name = "hypothesis", specifier = ">=6.113.0" },
     { name = "mkdocs", specifier = ">=1.6.1" },
+    { name = "mkdocs-blog-plugin", specifier = ">=0.25.0" },
     { name = "mkdocs-codeinclude-plugin", specifier = ">=0.2.1" },
     { name = "mkdocs-coverage", specifier = ">=1.1.0" },
     { name = "mkdocs-git-revision-date-localized-plugin", specifier = ">=1.4.7" },
     { name = "mkdocs-material", specifier = ">=9.6.22" },
+    { name = "mkdocs-static-i18n", specifier = ">=1.0.0" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.26.1" },
     { name = "pre-commit", specifier = ">=3.5.0" },
     { name = "pylint", specifier = ">=3.0.0" },
@@ -2407,7 +2418,7 @@ version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions", version = "4.13.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
-    { name = "typing-extensions", version = "4.15.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9' and python_full_version < '3.13'" },
+    { name = "typing-extensions", version = "4.15.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9' and python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749, upload-time = "2025-05-10T17:42:51.123Z" }
 wheels = [
@@ -3771,6 +3782,12 @@ wheels = [
 ]
 
 [[package]]
+name = "mkdocs-blog-plugin"
+version = "0.25"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a4/de/cd98844ffa535f3d56d78437ecdf0c351d486f91933683f926dfac15b149/mkdocs-blog-plugin-0.25.tar.gz", hash = "sha256:36dcd804f6ab1314d19c32e46bf21076d5f4425e1bca22f2e735b9b4baaec836", size = 6117, upload-time = "2020-04-13T08:07:03.446Z" }
+
+[[package]]
 name = "mkdocs-codeinclude-plugin"
 version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3909,6 +3926,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/79/9b/9b4c96d6593b2a541e1cb8b34899a6d021d208bb357042823d4d2cabdbe7/mkdocs_material_extensions-1.3.1.tar.gz", hash = "sha256:10c9511cea88f568257f960358a467d12b970e1f7b2c0e5fb2bb48cab1928443", size = 11847, upload-time = "2023-11-22T19:09:45.208Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5b/54/662a4743aa81d9582ee9339d4ffa3c8fd40a4965e033d77b9da9774d3960/mkdocs_material_extensions-1.3.1-py3-none-any.whl", hash = "sha256:adff8b62700b25cb77b53358dad940f3ef973dd6db797907c49e3c2ef3ab4e31", size = 8728, upload-time = "2023-11-22T19:09:43.465Z" },
+]
+
+[[package]]
+name = "mkdocs-static-i18n"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mkdocs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/03/2b/59652a2550465fde25ae6a009cb6d74d0f7e724d272fc952685807b29ca1/mkdocs_static_i18n-1.3.0.tar.gz", hash = "sha256:65731e1e4ec6d719693e24fee9340f5516460b2b7244d2a89bed4ce3cfa6a173", size = 1370450, upload-time = "2025-01-24T09:03:24.389Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/f7/ef222a7a2f96ecf79c7c00bfc9dde3b22cd2cc1bd2b7472c7b204fc64225/mkdocs_static_i18n-1.3.0-py3-none-any.whl", hash = "sha256:7905d52fff71d2c108b6c344fd223e848ca7e39ddf319b70864dfa47dba85d6b", size = 21660, upload-time = "2025-01-24T09:03:22.461Z" },
 ]
 
 [[package]]
@@ -6545,6 +6574,8 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/42/cd/85b422d24ee2096eaf6faa360c95ef9bdb59097d19b9624cebce4dd9bc2a/ruamel.yaml.clib-0.2.14-cp39-cp39-musllinux_1_2_x86_64.whl", hash = "sha256:808c7190a0fe7ae7014c42f73897cf8e9ef14ff3aa533450e51b1e72ec5239ad", size = 725028, upload-time = "2025-09-22T19:51:19.782Z" },
     { url = "https://files.pythonhosted.org/packages/4d/ac/99e6e0ea2584f84f447069d0187fe411e9b5deb7e3ddecda25001cfc7a95/ruamel.yaml.clib-0.2.14-cp39-cp39-win32.whl", hash = "sha256:6d5472f63a31b042aadf5ed28dd3ef0523da49ac17f0463e10fda9c4a2773352", size = 100915, upload-time = "2025-09-22T19:51:21.764Z" },
     { url = "https://files.pythonhosted.org/packages/5d/8d/846e43369658958c99d959bb7774136fff9210f9017d91a4277818ceafbf/ruamel.yaml.clib-0.2.14-cp39-cp39-win_amd64.whl", hash = "sha256:8dd3c2cc49caa7a8d64b67146462aed6723a0495e44bf0aa0a2e94beaa8432f6", size = 118706, upload-time = "2025-09-22T19:51:20.878Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/cd/150fdb96b8fab27fe08d8a59fe67554568727981806e6bc2677a16081ec7/ruamel_yaml_clib-0.2.14-cp314-cp314-win32.whl", hash = "sha256:9b4104bf43ca0cd4e6f738cb86326a3b2f6eef00f417bd1e7efb7bdffe74c539", size = 102394, upload-time = "2025-11-14T21:57:36.703Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/e6/a3fa40084558c7e1dc9546385f22a93949c890a8b2e445b2ba43935f51da/ruamel_yaml_clib-0.2.14-cp314-cp314-win_amd64.whl", hash = "sha256:13997d7d354a9890ea1ec5937a219817464e5cc344805b37671562a401ca3008", size = 122673, upload-time = "2025-11-14T21:57:38.177Z" },
 ]
 
 [[package]]

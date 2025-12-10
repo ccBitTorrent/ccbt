@@ -707,3 +707,450 @@ class TestXetDeduplication:
         # Should complete without error
         assert isinstance(removed, bool)
 
+    def test_database_schema_file_chunks_table(self, dedup):
+        """Test that file_chunks table exists and has correct schema."""
+        conn = sqlite3.connect(dedup.cache_path)
+        cursor = conn.cursor()
+
+        # Check table exists
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='file_chunks'"
+        )
+        result = cursor.fetchone()
+        assert result is not None
+
+        # Check table structure
+        cursor.execute("PRAGMA table_info(file_chunks)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+
+        # Verify required columns exist
+        assert "file_path" in columns
+        assert "chunk_hash" in columns
+        assert "offset" in columns
+        assert "chunk_size" in columns
+        assert "created_at" in columns
+
+        # Check indexes exist
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_file_chunks%'"
+        )
+        indexes = [row[0] for row in cursor.fetchall()]
+        assert len(indexes) >= 3  # Should have at least 3 indexes
+
+        conn.close()
+
+    def test_database_schema_file_metadata_table(self, dedup):
+        """Test that file_metadata table exists and has correct schema."""
+        conn = sqlite3.connect(dedup.cache_path)
+        cursor = conn.cursor()
+
+        # Check table exists
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='file_metadata'"
+        )
+        result = cursor.fetchone()
+        assert result is not None
+
+        # Check table structure
+        cursor.execute("PRAGMA table_info(file_metadata)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+
+        # Verify required columns exist
+        assert "file_path" in columns
+        assert "file_hash" in columns
+        assert "total_size" in columns
+        assert "chunk_count" in columns
+        assert "created_at" in columns
+        assert "last_modified" in columns
+        assert "metadata_json" in columns
+
+        # Check index exists
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_file_metadata_file_hash'"
+        )
+        index_result = cursor.fetchone()
+        assert index_result is not None
+
+        conn.close()
+
+    def test_database_schema_version_table(self, dedup):
+        """Test that schema_version table exists for migration support."""
+        conn = sqlite3.connect(dedup.cache_path)
+        cursor = conn.cursor()
+
+        # Check table exists
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
+        )
+        result = cursor.fetchone()
+        assert result is not None
+
+        # Check current schema version
+        cursor.execute("SELECT MAX(version) FROM schema_version")
+        version = cursor.fetchone()[0]
+        assert version >= 2  # Should be at least version 2
+
+        conn.close()
+
+    def test_database_migration_from_v1_to_v2(self, temp_db_path):
+        """Test migration from schema version 1 to version 2."""
+        # Create a database with only chunks table (version 1)
+        conn = sqlite3.connect(temp_db_path)
+        cursor = conn.cursor()
+        
+        # Create schema_version table and set to version 1
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at REAL NOT NULL
+            )
+        """)
+        cursor.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (1, ?)",
+            (0.0,)
+        )
+        
+        # Create only chunks table (old schema)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chunks (
+                hash BLOB PRIMARY KEY,
+                size INTEGER NOT NULL,
+                storage_path TEXT NOT NULL,
+                ref_count INTEGER DEFAULT 1,
+                created_at REAL NOT NULL,
+                last_accessed REAL NOT NULL
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        # Initialize XetDeduplication - should migrate to version 2
+        dedup = XetDeduplication(cache_db_path=temp_db_path)
+
+        # Verify migration occurred
+        conn = sqlite3.connect(temp_db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT MAX(version) FROM schema_version")
+        version = cursor.fetchone()[0]
+        assert version == 2
+
+        # Verify new tables exist
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='file_chunks'"
+        )
+        assert cursor.fetchone() is not None
+
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='file_metadata'"
+        )
+        assert cursor.fetchone() is not None
+
+        conn.close()
+        dedup.close()
+
+    @pytest.mark.asyncio
+    async def test_add_file_chunk_reference(self, dedup):
+        """Test adding file-to-chunk reference."""
+        chunk_hash = b"R" * 32
+        chunk_data = b"File reference test"
+        file_path = "/test/file.txt"
+        offset = 0
+        chunk_size = len(chunk_data)
+
+        # Store chunk first
+        await dedup.store_chunk(chunk_hash, chunk_data)
+
+        # Add file reference
+        await dedup.add_file_chunk_reference(file_path, chunk_hash, offset, chunk_size)
+
+        # Verify reference exists
+        conn = sqlite3.connect(dedup.cache_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT 1 FROM file_chunks WHERE file_path = ? AND chunk_hash = ? AND offset = ?",
+            (file_path, chunk_hash, offset),
+        )
+        result = cursor.fetchone()
+        conn.close()
+
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_add_file_chunk_reference_duplicate(self, dedup):
+        """Test adding duplicate file-to-chunk reference."""
+        chunk_hash = b"S" * 32
+        chunk_data = b"Duplicate reference test"
+        file_path = "/test/file2.txt"
+        offset = 0
+        chunk_size = len(chunk_data)
+
+        # Store chunk
+        await dedup.store_chunk(chunk_hash, chunk_data)
+
+        # Add reference twice
+        await dedup.add_file_chunk_reference(file_path, chunk_hash, offset, chunk_size)
+        await dedup.add_file_chunk_reference(file_path, chunk_hash, offset, chunk_size)
+
+        # Should only have one reference (duplicate is ignored)
+        conn = sqlite3.connect(dedup.cache_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM file_chunks WHERE file_path = ? AND chunk_hash = ? AND offset = ?",
+            (file_path, chunk_hash, offset),
+        )
+        count = cursor.fetchone()[0]
+        conn.close()
+
+        assert count == 1
+
+    @pytest.mark.asyncio
+    async def test_remove_file_chunk_reference(self, dedup):
+        """Test removing file-to-chunk reference."""
+        chunk_hash = b"T" * 32
+        chunk_data = b"Remove reference test"
+        file_path = "/test/file3.txt"
+        offset = 0
+        chunk_size = len(chunk_data)
+
+        # Store chunk
+        await dedup.store_chunk(chunk_hash, chunk_data)
+
+        # Add reference
+        await dedup.add_file_chunk_reference(file_path, chunk_hash, offset, chunk_size)
+
+        # Remove reference
+        removed = await dedup.remove_file_chunk_reference(file_path, chunk_hash, offset)
+
+        # Should return True if chunk was deleted (ref_count reached 0)
+        assert isinstance(removed, bool)
+
+        # Verify reference is removed
+        conn = sqlite3.connect(dedup.cache_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT 1 FROM file_chunks WHERE file_path = ? AND chunk_hash = ? AND offset = ?",
+            (file_path, chunk_hash, offset),
+        )
+        result = cursor.fetchone()
+        conn.close()
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_file_chunks(self, dedup):
+        """Test getting ordered list of chunks for a file."""
+        file_path = "/test/file4.txt"
+        chunk_hashes = [bytes([i] * 32) for i in range(5)]
+        chunk_data = b"Chunk data"
+
+        # Store chunks and add references
+        for i, chunk_hash in enumerate(chunk_hashes):
+            await dedup.store_chunk(chunk_hash, chunk_data)
+            await dedup.add_file_chunk_reference(
+                file_path, chunk_hash, offset=i * 100, chunk_size=len(chunk_data)
+            )
+
+        # Get file chunks
+        chunks = await dedup.get_file_chunks(file_path)
+
+        assert len(chunks) == 5
+        # Verify chunks are ordered by offset
+        offsets = [offset for _, offset, _ in chunks]
+        assert offsets == sorted(offsets)
+
+    @pytest.mark.asyncio
+    async def test_get_file_chunks_empty(self, dedup):
+        """Test getting chunks for file with no references."""
+        file_path = "/test/nonexistent.txt"
+
+        chunks = await dedup.get_file_chunks(file_path)
+
+        assert chunks == []
+
+    @pytest.mark.asyncio
+    async def test_reconstruct_file_from_chunks(self, dedup, tmp_path):
+        """Test reconstructing file from chunks."""
+        file_path = "/test/reconstruct.txt"
+        chunk_data_list = [b"Chunk1", b"Chunk2", b"Chunk3"]
+        chunk_hashes = []
+
+        # Store chunks and add references
+        offset = 0
+        for chunk_data in chunk_data_list:
+            # Use simple hash for testing
+            import hashlib
+            chunk_hash = hashlib.sha256(chunk_data).digest()
+            chunk_hashes.append(chunk_hash)
+
+            await dedup.store_chunk(chunk_hash, chunk_data)
+            await dedup.add_file_chunk_reference(
+                file_path, chunk_hash, offset=offset, chunk_size=len(chunk_data)
+            )
+            offset += len(chunk_data)
+
+        # Reconstruct file
+        output_path = tmp_path / "reconstructed.txt"
+        result_path = await dedup.reconstruct_file_from_chunks(
+            file_path, output_path=output_path
+        )
+
+        assert result_path == output_path
+        assert output_path.exists()
+
+        # Verify file content
+        with open(output_path, "rb") as f:
+            reconstructed = f.read()
+
+        assert reconstructed == b"".join(chunk_data_list)
+
+    @pytest.mark.asyncio
+    async def test_reconstruct_file_from_chunks_missing_chunk(self, dedup, tmp_path):
+        """Test reconstructing file with missing chunk."""
+        file_path = "/test/missing_chunk.txt"
+        chunk_data = b"Test data"
+        chunk_hash = b"U" * 32
+
+        # Add reference without storing chunk
+        await dedup.add_file_chunk_reference(
+            file_path, chunk_hash, offset=0, chunk_size=len(chunk_data)
+        )
+
+        # Reconstruct should handle missing chunk gracefully
+        output_path = tmp_path / "reconstructed_missing.txt"
+        result_path = await dedup.reconstruct_file_from_chunks(
+            file_path, output_path=output_path
+        )
+
+        assert result_path == output_path
+        # File should be created with zeros for missing chunk
+        assert output_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_reconstruct_file_from_chunks_no_chunks(self, dedup, tmp_path):
+        """Test reconstructing file with no chunk references."""
+        file_path = "/test/no_chunks.txt"
+
+        # Should raise FileNotFoundError
+        with pytest.raises(FileNotFoundError):
+            await dedup.reconstruct_file_from_chunks(file_path)
+
+    @pytest.mark.asyncio
+    async def test_store_file_metadata(self, dedup):
+        """Test storing file metadata."""
+        from ccbt.models import XetFileMetadata
+
+        file_metadata = XetFileMetadata(
+            file_path="/test/metadata.txt",
+            file_hash=b"V" * 32,
+            chunk_hashes=[b"W" * 32, b"X" * 32],
+            xorb_refs=[],
+            total_size=100,
+        )
+
+        await dedup.store_file_metadata(file_metadata)
+
+        # Verify metadata stored
+        conn = sqlite3.connect(dedup.cache_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT metadata_json FROM file_metadata WHERE file_path = ?",
+            (file_metadata.file_path,),
+        )
+        result = cursor.fetchone()
+        conn.close()
+
+        assert result is not None
+        assert result[0] is not None
+
+    @pytest.mark.asyncio
+    async def test_get_file_metadata(self, dedup):
+        """Test retrieving file metadata."""
+        from ccbt.models import XetFileMetadata
+
+        file_metadata = XetFileMetadata(
+            file_path="/test/get_metadata.txt",
+            file_hash=b"Y" * 32,
+            chunk_hashes=[b"Z" * 32],
+            xorb_refs=[],
+            total_size=50,
+        )
+
+        # Store metadata
+        await dedup.store_file_metadata(file_metadata)
+
+        # Retrieve metadata
+        retrieved = await dedup.get_file_metadata(file_metadata.file_path)
+
+        assert retrieved is not None
+        assert retrieved.file_path == file_metadata.file_path
+        assert retrieved.file_hash == file_metadata.file_hash
+        assert len(retrieved.chunk_hashes) == len(file_metadata.chunk_hashes)
+        assert retrieved.total_size == file_metadata.total_size
+
+    @pytest.mark.asyncio
+    async def test_get_file_metadata_not_exists(self, dedup):
+        """Test retrieving metadata for non-existent file."""
+        file_path = "/test/nonexistent_metadata.txt"
+
+        metadata = await dedup.get_file_metadata(file_path)
+
+        assert metadata is None
+
+    @pytest.mark.asyncio
+    async def test_store_file_metadata_update_existing(self, dedup):
+        """Test updating existing file metadata."""
+        from ccbt.models import XetFileMetadata
+
+        file_path = "/test/update_metadata.txt"
+        metadata1 = XetFileMetadata(
+            file_path=file_path,
+            file_hash=b"A1" * 16,
+            chunk_hashes=[b"B1" * 16],
+            xorb_refs=[],
+            total_size=100,
+        )
+        metadata2 = XetFileMetadata(
+            file_path=file_path,
+            file_hash=b"A2" * 16,
+            chunk_hashes=[b"B2" * 16, b"B3" * 16],
+            xorb_refs=[],
+            total_size=200,
+        )
+
+        # Store first metadata
+        await dedup.store_file_metadata(metadata1)
+
+        # Update with second metadata
+        await dedup.store_file_metadata(metadata2)
+
+        # Retrieve and verify updated
+        retrieved = await dedup.get_file_metadata(file_path)
+
+        assert retrieved is not None
+        assert retrieved.file_hash == metadata2.file_hash
+        assert len(retrieved.chunk_hashes) == 2
+        assert retrieved.total_size == 200
+
+    @pytest.mark.asyncio
+    async def test_store_chunk_with_file_context(self, dedup):
+        """Test storing chunk with file context."""
+        chunk_hash = b"CONTEXT" * 4 + b"X" * 4  # 32 bytes
+        chunk_data = b"Chunk with file context"
+        file_path = "/test/context.txt"
+        file_offset = 100
+
+        # Store chunk with file context
+        await dedup.store_chunk(
+            chunk_hash, chunk_data, file_path=file_path, file_offset=file_offset
+        )
+
+        # Verify chunk stored
+        chunk_path = await dedup.check_chunk_exists(chunk_hash)
+        assert chunk_path is not None
+
+        # Verify file reference created
+        chunks = await dedup.get_file_chunks(file_path)
+        assert len(chunks) == 1
+        assert chunks[0][0] == chunk_hash
+        assert chunks[0][1] == file_offset
+

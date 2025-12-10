@@ -121,6 +121,10 @@ class MetricsCollector:
 
     def __init__(self):
         """Initialize metrics collector."""
+        # Connection tracking for success rate calculation
+        self._connection_attempts: dict[str, int] = {}  # peer_key -> attempt count
+        self._connection_successes: dict[str, int] = {}  # peer_key -> success count
+        self._connection_lock = asyncio.Lock()  # Thread-safe access
         self.metrics: dict[str, Metric] = {}
         self.alert_rules: dict[str, AlertRule] = {}
         self.collectors: dict[str, Callable] = {}
@@ -170,6 +174,19 @@ class MetricsCollector:
             "total_connection_attempts": 0,
             "active_peer_connections": 0,
             "queued_peers_count": 0,
+            # Network connection statistics (RTT, bandwidth, BDP)
+            "network_rtt_ms": 0.0,
+            "network_rtt_min_ms": 0.0,
+            "network_rtt_max_ms": 0.0,
+            "network_rtt_avg_ms": 0.0,
+            "network_bandwidth_bps": 0.0,
+            "network_bandwidth_mbps": 0.0,
+            "network_bytes_sent": 0,
+            "network_bytes_received": 0,
+            "network_total_connections": 0,
+            "network_active_connections": 0,
+            "network_failed_connections": 0,
+            "network_bdp_bytes": 0,
             # NAT mapping metrics
             "nat_active_protocol": "",
             "nat_external_ip": "",
@@ -470,6 +487,205 @@ class MetricsCollector:
         """Get performance metrics."""
         return self.performance_data.copy()  # pragma: no cover
 
+    def get_global_peer_metrics(self) -> dict[str, Any]:
+        """Get aggregated global peer performance metrics across all torrents.
+        
+        Returns:
+            Dictionary with global peer performance statistics including:
+            - total_peers: Total number of unique peers across all torrents
+            - average_download_rate: Average download rate across all peers
+            - average_upload_rate: Average upload rate across all peers
+            - total_bytes_downloaded: Total bytes downloaded from all peers
+            - total_bytes_uploaded: Total bytes uploaded to all peers
+            - peer_efficiency_distribution: Distribution of peer efficiency scores
+            - top_performers: List of top performing peer keys
+            - cross_torrent_sharing: Efficiency of peer sharing across torrents
+        """
+        if not self._session or not hasattr(self._session, "_sessions"):
+            return {
+                "total_peers": 0,
+                "average_download_rate": 0.0,
+                "average_upload_rate": 0.0,
+                "total_bytes_downloaded": 0,
+                "total_bytes_uploaded": 0,
+                "peer_efficiency_distribution": {},
+                "top_performers": [],
+                "cross_torrent_sharing": 0.0,
+            }
+        
+        # Aggregate peer metrics from all sessions
+        all_peer_metrics: dict[str, dict[str, Any]] = {}
+        total_bytes_downloaded = 0
+        total_bytes_uploaded = 0
+        total_download_rate = 0.0
+        total_upload_rate = 0.0
+        peer_count = 0
+        
+        # Collect metrics from all torrent sessions
+        for torrent_session in self._session._sessions.values():
+            # Get peer manager
+            peer_manager = getattr(
+                getattr(torrent_session, "download_manager", None),
+                "peer_manager",
+                None,
+            ) or getattr(torrent_session, "peer_manager", None)
+            
+            if peer_manager and hasattr(peer_manager, "connections"):
+                connections = peer_manager.connections
+                if hasattr(connections, "values"):
+                    for connection in connections.values():
+                        if hasattr(connection, "peer_info") and hasattr(connection, "stats"):
+                            peer_key = f"{connection.peer_info.ip}:{connection.peer_info.port}"
+                            
+                            # Aggregate stats
+                            stats = connection.stats
+                            if peer_key not in all_peer_metrics:
+                                all_peer_metrics[peer_key] = {
+                                    "download_rate": 0.0,
+                                    "upload_rate": 0.0,
+                                    "bytes_downloaded": 0,
+                                    "bytes_uploaded": 0,
+                                    "efficiency_score": 0.0,
+                                    "connection_duration": 0.0,
+                                    "torrent_count": 0,
+                                }
+                            
+                            all_peer_metrics[peer_key]["download_rate"] += getattr(stats, "download_rate", 0.0)
+                            all_peer_metrics[peer_key]["upload_rate"] += getattr(stats, "upload_rate", 0.0)
+                            all_peer_metrics[peer_key]["bytes_downloaded"] += getattr(stats, "bytes_downloaded", 0)
+                            all_peer_metrics[peer_key]["bytes_uploaded"] += getattr(stats, "bytes_uploaded", 0)
+                            all_peer_metrics[peer_key]["connection_duration"] = max(
+                                all_peer_metrics[peer_key]["connection_duration"],
+                                getattr(stats, "last_activity", 0.0) - getattr(connection, "connected_at", time.time())
+                            )
+                            all_peer_metrics[peer_key]["torrent_count"] += 1
+        
+        # Calculate aggregated statistics
+        if all_peer_metrics:
+            peer_count = len(all_peer_metrics)
+            for peer_data in all_peer_metrics.values():
+                total_download_rate += peer_data["download_rate"]
+                total_upload_rate += peer_data["upload_rate"]
+                total_bytes_downloaded += peer_data["bytes_downloaded"]
+                total_bytes_uploaded += peer_data["bytes_uploaded"]
+                
+                # Calculate efficiency score
+                if peer_data["connection_duration"] > 0:
+                    total_bytes = peer_data["bytes_downloaded"] + peer_data["bytes_uploaded"]
+                    peer_data["efficiency_score"] = min(1.0, (total_bytes / peer_data["connection_duration"]) / (10 * 1024 * 1024))  # Normalize to 10MB/s
+            
+            # Calculate averages
+            average_download_rate = total_download_rate / peer_count if peer_count > 0 else 0.0
+            average_upload_rate = total_upload_rate / peer_count if peer_count > 0 else 0.0
+            
+            # Efficiency distribution
+            efficiency_scores = [peer_data["efficiency_score"] for peer_data in all_peer_metrics.values()]
+            from collections import Counter
+            efficiency_tiers = {
+                "high": sum(1 for s in efficiency_scores if s >= 0.7),
+                "medium": sum(1 for s in efficiency_scores if 0.3 <= s < 0.7),
+                "low": sum(1 for s in efficiency_scores if s < 0.3),
+            }
+            
+            # Top performers (by efficiency score)
+            top_performers = sorted(
+                all_peer_metrics.items(),
+                key=lambda x: x[1]["efficiency_score"],
+                reverse=True
+            )[:10]
+            top_performer_keys = [peer_key for peer_key, _ in top_performers]
+            
+            # Cross-torrent sharing efficiency
+            # Measure how many peers are shared across multiple torrents
+            shared_peers = sum(1 for peer_data in all_peer_metrics.values() if peer_data["torrent_count"] > 1)
+            cross_torrent_sharing = shared_peers / peer_count if peer_count > 0 else 0.0
+            
+            return {
+                "total_peers": peer_count,
+                "average_download_rate": average_download_rate,
+                "average_upload_rate": average_upload_rate,
+                "total_bytes_downloaded": total_bytes_downloaded,
+                "total_bytes_uploaded": total_bytes_uploaded,
+                "peer_efficiency_distribution": efficiency_tiers,
+                "top_performers": top_performer_keys,
+                "cross_torrent_sharing": cross_torrent_sharing,
+                "shared_peers_count": shared_peers,
+            }
+        
+        return {
+            "total_peers": 0,
+            "average_download_rate": 0.0,
+            "average_upload_rate": 0.0,
+            "total_bytes_downloaded": 0,
+            "total_bytes_uploaded": 0,
+            "peer_efficiency_distribution": {},
+            "top_performers": [],
+            "cross_torrent_sharing": 0.0,
+            "shared_peers_count": 0,
+        }
+
+    def get_system_wide_efficiency(self) -> dict[str, Any]:
+        """Calculate system-wide efficiency metrics.
+        
+        Returns:
+            Dictionary with system-wide efficiency statistics including:
+            - overall_efficiency: Overall system efficiency (0.0-1.0)
+            - bandwidth_utilization: Percentage of available bandwidth used
+            - connection_efficiency: Efficiency of connection pool usage
+            - resource_utilization: CPU, memory, disk utilization
+        """
+        # Get system metrics
+        system = self.get_system_metrics()
+        performance = self.get_performance_metrics()
+        global_peers = self.get_global_peer_metrics()
+        
+        # Calculate overall efficiency
+        # Factor in: peer efficiency, bandwidth utilization, system resources
+        peer_efficiency = 0.0
+        if global_peers.get("total_peers", 0) > 0:
+            # Average efficiency of all peers
+            efficiency_dist = global_peers.get("peer_efficiency_distribution", {})
+            total_peers = global_peers.get("total_peers", 0)
+            if total_peers > 0:
+                high_weight = efficiency_dist.get("high", 0) / total_peers
+                medium_weight = efficiency_dist.get("medium", 0) / total_peers
+                low_weight = efficiency_dist.get("low", 0) / total_peers
+                peer_efficiency = high_weight * 1.0 + medium_weight * 0.5 + low_weight * 0.1
+        
+        # Bandwidth utilization (from performance data)
+        bandwidth_utilization = performance.get("network_bandwidth_mbps", 0.0) / 100.0 if performance.get("network_bandwidth_mbps", 0.0) > 0 else 0.0
+        bandwidth_utilization = min(1.0, bandwidth_utilization)  # Cap at 100%
+        
+        # Connection efficiency
+        active_connections = performance.get("active_peer_connections", 0)
+        total_connection_attempts = performance.get("total_connection_attempts", 1)
+        connection_efficiency = active_connections / total_connection_attempts if total_connection_attempts > 0 else 0.0
+        
+        # Resource utilization (average of CPU, memory, disk)
+        cpu_usage = system.get("cpu_usage", 0.0) / 100.0
+        memory_usage = system.get("memory_usage", 0.0) / 100.0
+        disk_usage = system.get("disk_usage", 0.0) / 100.0
+        resource_utilization = (cpu_usage + memory_usage + disk_usage) / 3.0
+        
+        # Overall efficiency (weighted combination)
+        overall_efficiency = (
+            peer_efficiency * 0.4 +
+            bandwidth_utilization * 0.3 +
+            connection_efficiency * 0.2 +
+            (1.0 - resource_utilization) * 0.1  # Lower resource usage = better
+        )
+        
+        return {
+            "overall_efficiency": min(1.0, max(0.0, overall_efficiency)),
+            "bandwidth_utilization": bandwidth_utilization,
+            "connection_efficiency": connection_efficiency,
+            "resource_utilization": resource_utilization,
+            "peer_efficiency": peer_efficiency,
+            "cpu_usage": cpu_usage,
+            "memory_usage": memory_usage,
+            "disk_usage": disk_usage,
+        }
+
     def get_metrics_statistics(self) -> dict[str, Any]:
         """Get metrics collection statistics."""
         return {  # pragma: no cover
@@ -507,8 +723,8 @@ class MetricsCollector:
         """Main metrics collection loop."""
         while self.running:  # pragma: no cover
             try:  # pragma: no cover
-                await self._collect_system_metrics()  # pragma: no cover
-                await self._collect_performance_metrics()  # pragma: no cover
+                await self._collect_system_metrics_impl()  # pragma: no cover
+                await self._collect_performance_metrics_impl()  # pragma: no cover
                 await self._collect_custom_metrics()  # pragma: no cover
 
                 # Clean up old metrics
@@ -530,8 +746,12 @@ class MetricsCollector:
                     ),
                 )
 
-    async def _collect_system_metrics(self) -> None:
-        """Collect system metrics."""
+    async def collect_system_metrics(self) -> None:
+        """Collect system metrics (public method)."""
+        await self._collect_system_metrics_impl()
+
+    async def _collect_system_metrics_impl(self) -> None:
+        """Collect system metrics (internal implementation)."""
         try:  # pragma: no cover
             # CPU usage - run in executor to avoid blocking event loop
             # Use interval=None for non-blocking call (returns since last call)
@@ -605,8 +825,55 @@ class MetricsCollector:
         """
         self._session = session
 
-    async def _collect_performance_metrics(self) -> None:
-        """Collect performance metrics."""
+    async def record_connection_attempt(self, peer_key: str) -> None:
+        """Record a connection attempt for a peer.
+        
+        Args:
+            peer_key: Unique identifier for the peer (e.g., "ip:port")
+        """
+        async with self._connection_lock:
+            self._connection_attempts[peer_key] = self._connection_attempts.get(peer_key, 0) + 1
+    
+    async def record_connection_success(self, peer_key: str) -> None:
+        """Record a successful connection for a peer.
+        
+        Args:
+            peer_key: Unique identifier for the peer (e.g., "ip:port")
+        """
+        async with self._connection_lock:
+            self._connection_successes[peer_key] = self._connection_successes.get(peer_key, 0) + 1
+    
+    async def get_connection_success_rate(self, peer_key: str | None = None) -> float:
+        """Get connection success rate for a peer or globally.
+        
+        Args:
+            peer_key: Optional peer key. If None, returns global success rate.
+            
+        Returns:
+            Success rate as a float between 0.0 and 1.0, or 0.0 if no attempts
+        """
+        async with self._connection_lock:
+            if peer_key is not None:
+                # Per-peer success rate
+                attempts = self._connection_attempts.get(peer_key, 0)
+                successes = self._connection_successes.get(peer_key, 0)
+                if attempts == 0:
+                    return 0.0
+                return successes / attempts
+            else:
+                # Global success rate
+                total_attempts = sum(self._connection_attempts.values())
+                total_successes = sum(self._connection_successes.values())
+                if total_attempts == 0:
+                    return 0.0
+                return total_successes / total_attempts
+
+    async def collect_performance_metrics(self) -> None:
+        """Collect performance metrics (public method)."""
+        await self._collect_performance_metrics_impl()
+
+    async def _collect_performance_metrics_impl(self) -> None:
+        """Collect performance metrics (internal implementation)."""
         # Collect DHT metrics if session and DHT client are available
         if (
             self._session
@@ -726,6 +993,66 @@ class MetricsCollector:
             # Disk I/O metrics not available, keep defaults
             pass
 
+        # Collect network connection statistics (RTT, bandwidth, BDP)
+        try:
+            from ccbt.utils.network_optimizer import get_network_optimizer
+
+            network_optimizer = get_network_optimizer()
+            connection_stats = network_optimizer.connection_pool.get_stats()
+
+            # RTT statistics
+            self.performance_data["network_rtt_ms"] = connection_stats.rtt_ms
+            self.performance_data["network_bytes_sent"] = connection_stats.bytes_sent
+            self.performance_data["network_bytes_received"] = (
+                connection_stats.bytes_received
+            )
+            self.performance_data["network_total_connections"] = (
+                connection_stats.total_connections
+            )
+            self.performance_data["network_active_connections"] = (
+                connection_stats.active_connections
+            )
+            self.performance_data["network_failed_connections"] = (
+                connection_stats.failed_connections
+            )
+
+            # Bandwidth statistics
+            bandwidth_bps = connection_stats.bandwidth_bps
+            self.performance_data["network_bandwidth_bps"] = bandwidth_bps
+            self.performance_data["network_bandwidth_mbps"] = bandwidth_bps / 1_000_000
+
+            # Get detailed RTT statistics from RTT measurer if available
+            if connection_stats.rtt_measurer:
+                rtt_stats = connection_stats.rtt_measurer.get_stats()
+                self.performance_data["network_rtt_min_ms"] = rtt_stats.get(
+                    "min_rtt_ms", 0.0
+                )
+                self.performance_data["network_rtt_max_ms"] = rtt_stats.get(
+                    "max_rtt_ms", 0.0
+                )
+                self.performance_data["network_rtt_avg_ms"] = rtt_stats.get(
+                    "avg_rtt_ms", 0.0
+                )
+
+            # Calculate BDP (Bandwidth-Delay Product) in bytes
+            if bandwidth_bps > 0 and connection_stats.rtt_ms > 0:
+                # BDP = bandwidth * RTT
+                bdp_bits = bandwidth_bps * connection_stats.rtt_ms / 1000
+                bdp_bytes = bdp_bits / 8
+                self.performance_data["network_bdp_bytes"] = int(bdp_bytes)
+            else:
+                self.performance_data["network_bdp_bytes"] = 0
+
+        except (
+            Exception
+        ) as e:  # pragma: no cover - Error handling for missing network optimizer
+            # Network optimizer metrics not available, keep defaults
+            # Log debug message but don't raise
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.debug("Network optimizer metrics not available: %s", e)
+
         # Collect tracker metrics if session and tracker service are available
         if (
             self._session
@@ -765,15 +1092,8 @@ class MetricsCollector:
             try:
                 total_connections = 0
                 total_queued_peers = 0
-                connection_stats_aggregated = {
-                    "successful": 0,
-                    "failed": 0,
-                    "timeout": 0,
-                    "connection_refused": 0,
-                    "winerror_121": 0,
-                    "other_errors": 0,
-                    "total_attempts": 0,
-                }
+                # Note: connection_stats_aggregated reserved for future implementation
+                # Will track detailed connection statistics per session
 
                 # Aggregate connection stats from all sessions
                 for torrent_session in self._session._sessions.values():

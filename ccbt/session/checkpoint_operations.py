@@ -262,3 +262,170 @@ class CheckpointOperations:
                 cleaned += 1
 
         return cleaned
+
+    async def refresh_checkpoint(
+        self,
+        info_hash: bytes,
+        reload_peers: bool = True,
+        reload_trackers: bool = True,
+    ) -> bool:
+        """Reload checkpoint and refresh session state without full restart.
+
+        Args:
+            info_hash: Torrent info hash
+            reload_peers: Whether to reconnect to peers from checkpoint
+            reload_trackers: Whether to refresh tracker state
+
+        Returns:
+            True if refresh successful, False otherwise
+
+        """
+        try:
+            # Load checkpoint
+            checkpoint_manager = CheckpointManager(self.config.disk)
+            checkpoint = await checkpoint_manager.load_checkpoint(info_hash)
+            if not checkpoint:
+                self.logger.warning(
+                    "No checkpoint found for %s", info_hash.hex()[:8]
+                )
+                return False
+
+            # Get session
+            session = self.manager.torrents.get(info_hash)
+            if not session:
+                self.logger.warning(
+                    "No active session found for %s", info_hash.hex()[:8]
+                )
+                return False
+
+            # Refresh session state from checkpoint
+            if hasattr(session, "checkpoint_controller") and session.checkpoint_controller:
+                # Use checkpoint controller to restore state
+                await session.checkpoint_controller.resume_from_checkpoint(
+                    checkpoint, session
+                )
+
+                # Optionally reconnect peers
+                if reload_peers and checkpoint.connected_peers:
+                    download_manager = getattr(session, "download_manager", None)
+                    if download_manager:
+                        peer_manager = getattr(download_manager, "peer_manager", None)
+                        if peer_manager and hasattr(peer_manager, "connect_to_peers"):
+                            peer_list = []
+                            for peer_data in checkpoint.connected_peers:
+                                peer_list.append(
+                                    {
+                                        "ip": peer_data.get("ip"),
+                                        "port": peer_data.get("port"),
+                                        "peer_source": peer_data.get(
+                                            "peer_source", "checkpoint"
+                                        ),
+                                    }
+                                )
+                            if peer_list:
+                                await peer_manager.connect_to_peers(peer_list)
+                                self.logger.info(
+                                    "Refreshed %d peers from checkpoint",
+                                    len(peer_list),
+                                )
+
+                # Optionally refresh trackers
+                if reload_trackers and checkpoint.tracker_health:
+                    # Tracker state is restored by checkpoint controller
+                    self.logger.info("Refreshed tracker state from checkpoint")
+
+                self.logger.info(
+                    "Successfully refreshed checkpoint for %s",
+                    checkpoint.torrent_name,
+                )
+                return True
+            else:
+                self.logger.warning(
+                    "Session has no checkpoint controller for refresh"
+                )
+                return False
+
+        except Exception:
+            self.logger.exception("Failed to refresh checkpoint")
+            return False
+
+    async def quick_reload(
+        self,
+        info_hash: bytes,
+    ) -> bool:
+        """Quick reload checkpoint using incremental checkpointing.
+
+        Args:
+            info_hash: Torrent info hash
+
+        Returns:
+            True if reload successful, False otherwise
+
+        """
+        try:
+            checkpoint_manager = CheckpointManager(self.config.disk)
+
+            # Load current checkpoint as base
+            base_checkpoint = await checkpoint_manager.load_checkpoint(info_hash)
+            if not base_checkpoint:
+                self.logger.warning(
+                    "No checkpoint found for quick reload: %s", info_hash.hex()[:8]
+                )
+                return False
+
+            # Load incremental checkpoint (if exists, otherwise use full)
+            checkpoint = await checkpoint_manager.load_incremental_checkpoint(
+                info_hash, base_checkpoint
+            )
+            if not checkpoint:
+                checkpoint = base_checkpoint
+
+            # Get session
+            session = self.manager.torrents.get(info_hash)
+            if not session:
+                self.logger.warning(
+                    "No active session found for quick reload: %s",
+                    info_hash.hex()[:8],
+                )
+                return False
+
+            # Quick reload: only restore critical state (peers, trackers)
+            if hasattr(session, "checkpoint_controller") and session.checkpoint_controller:
+                # Restore only peer and tracker lists (skip piece verification)
+                if checkpoint.connected_peers:
+                    download_manager = getattr(session, "download_manager", None)
+                    if download_manager:
+                        peer_manager = getattr(download_manager, "peer_manager", None)
+                        if peer_manager and hasattr(peer_manager, "connect_to_peers"):
+                            peer_list = []
+                            for peer_data in checkpoint.connected_peers:
+                                peer_list.append(
+                                    {
+                                        "ip": peer_data.get("ip"),
+                                        "port": peer_data.get("port"),
+                                        "peer_source": peer_data.get(
+                                            "peer_source", "checkpoint"
+                                        ),
+                                    }
+                                )
+                            if peer_list:
+                                await peer_manager.connect_to_peers(peer_list)
+
+                # Restore tracker state
+                await session.checkpoint_controller._restore_tracker_lists(
+                    checkpoint, session
+                )
+
+                self.logger.info(
+                    "Quick reload completed for %s", checkpoint.torrent_name
+                )
+                return True
+            else:
+                self.logger.warning(
+                    "Session has no checkpoint controller for quick reload"
+                )
+                return False
+
+        except Exception:
+            self.logger.exception("Failed to quick reload checkpoint")
+            return False

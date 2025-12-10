@@ -717,3 +717,240 @@ class TestXetIntegration:
         with pytest.raises(ValueError, match="must be 20 bytes"):
             await cas_client._establish_peer_connection(peer, torrent_data)
 
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_file_reconstruction_from_chunks(self, temp_dir):
+        """Test reconstructing a file from stored chunks."""
+        from ccbt.storage.xet_deduplication import XetDeduplication
+        from ccbt.storage.xet_hashing import XetHasher
+
+        db_path = temp_dir / "reconstruct.db"
+        dedup = XetDeduplication(cache_db_path=db_path)
+
+        # Create test file data
+        file_data = b"This is test file data for reconstruction. " * 100
+        file_path = "/test/reconstruct_file.txt"
+
+        # Chunk the file data
+        from ccbt.storage.xet_chunking import GearhashChunker
+        chunker = GearhashChunker()
+        chunks = chunker.chunk_buffer(file_data)
+
+        # Store chunks and add file references
+        offset = 0
+        for chunk in chunks:
+            chunk_hash = XetHasher.compute_chunk_hash(chunk)
+            await dedup.store_chunk(chunk_hash, chunk)
+            await dedup.add_file_chunk_reference(
+                file_path, chunk_hash, offset=offset, chunk_size=len(chunk)
+            )
+            offset += len(chunk)
+
+        # Reconstruct file
+        output_path = temp_dir / "reconstructed_file.txt"
+        result_path = await dedup.reconstruct_file_from_chunks(
+            file_path, output_path=output_path
+        )
+
+        # Verify file was reconstructed
+        assert result_path == output_path
+        assert output_path.exists()
+
+        # Verify file content matches original
+        with open(output_path, "rb") as f:
+            reconstructed = f.read()
+
+        assert reconstructed == file_data
+
+        dedup.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_read_file_by_chunks(self, temp_dir):
+        """Test reading file by reconstructing from chunks via DiskIOManager."""
+        from ccbt.config.config import Config
+        from ccbt.storage.disk_io import DiskIOManager
+        from ccbt.storage.xet_deduplication import XetDeduplication
+        from ccbt.storage.xet_hashing import XetHasher
+
+        # Create config with XET enabled
+        config = Config()
+        config.disk.xet_enabled = True
+        config.disk.download_dir = str(temp_dir)
+
+        # Create DiskIOManager
+        disk_io = DiskIOManager(config=config)
+
+        # Get deduplication manager
+        dedup = disk_io._get_xet_deduplication()
+        assert dedup is not None
+
+        # Create test file data
+        file_data = b"Test file data for reading by chunks. " * 50
+        file_path = temp_dir / "test_file.txt"
+
+        # Chunk the file data
+        from ccbt.storage.xet_chunking import GearhashChunker
+        chunker = GearhashChunker()
+        chunks = chunker.chunk_buffer(file_data)
+
+        # Store chunks and add file references
+        offset = 0
+        for chunk in chunks:
+            chunk_hash = XetHasher.compute_chunk_hash(chunk)
+            await dedup.store_chunk(chunk_hash, chunk)
+            await dedup.add_file_chunk_reference(
+                str(file_path), chunk_hash, offset=offset, chunk_size=len(chunk)
+            )
+            offset += len(chunk)
+
+        # Read file by chunks
+        read_data = await disk_io.read_file_by_chunks(file_path)
+
+        # Verify data matches
+        assert read_data is not None
+        assert read_data == file_data
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_file_reconstruction_with_missing_chunks(self, temp_dir):
+        """Test file reconstruction when some chunks are missing."""
+        from ccbt.storage.xet_deduplication import XetDeduplication
+        from ccbt.storage.xet_hashing import XetHasher
+
+        db_path = temp_dir / "missing_chunks.db"
+        dedup = XetDeduplication(cache_db_path=db_path)
+
+        file_path = "/test/missing_chunks.txt"
+        chunk_data_list = [b"Chunk1", b"Chunk2", b"Chunk3"]
+        chunk_hashes = []
+
+        # Store only first and third chunks (missing second)
+        offset = 0
+        for i, chunk_data in enumerate(chunk_data_list):
+            chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
+            chunk_hashes.append(chunk_hash)
+
+            # Only store chunks 0 and 2 (skip 1)
+            if i != 1:
+                await dedup.store_chunk(chunk_hash, chunk_data)
+
+            # Add reference for all chunks
+            await dedup.add_file_chunk_reference(
+                file_path, chunk_hash, offset=offset, chunk_size=len(chunk_data)
+            )
+            offset += len(chunk_data)
+
+        # Reconstruct file (should handle missing chunk gracefully)
+        output_path = temp_dir / "reconstructed_missing.txt"
+        result_path = await dedup.reconstruct_file_from_chunks(
+            file_path, output_path=output_path
+        )
+
+        assert result_path == output_path
+        assert output_path.exists()
+
+        # Verify file was created (with zeros for missing chunk)
+        with open(output_path, "rb") as f:
+            reconstructed = f.read()
+
+        # Should have correct size
+        expected_size = sum(len(c) for c in chunk_data_list)
+        assert len(reconstructed) == expected_size
+
+        # First chunk should match
+        assert reconstructed[:6] == b"Chunk1"
+        # Second chunk should be zeros (missing)
+        assert reconstructed[6:12] == b"\x00" * 6
+        # Third chunk should match
+        assert reconstructed[12:18] == b"Chunk3"
+
+        dedup.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_file_metadata_persistence_and_retrieval(self, temp_dir):
+        """Test storing and retrieving file metadata."""
+        from ccbt.models import XetFileMetadata
+        from ccbt.storage.xet_deduplication import XetDeduplication
+
+        db_path = temp_dir / "metadata.db"
+        dedup = XetDeduplication(cache_db_path=db_path)
+
+        # Create file metadata
+        file_metadata = XetFileMetadata(
+            file_path="/test/metadata_persistence.txt",
+            file_hash=b"META" * 8,
+            chunk_hashes=[b"CHUNK1" * 5 + b"XX", b"CHUNK2" * 5 + b"XX"],
+            xorb_refs=[],
+            total_size=200,
+        )
+
+        # Store metadata
+        await dedup.store_file_metadata(file_metadata)
+
+        # Retrieve metadata
+        retrieved = await dedup.get_file_metadata(file_metadata.file_path)
+
+        assert retrieved is not None
+        assert retrieved.file_path == file_metadata.file_path
+        assert retrieved.file_hash == file_metadata.file_hash
+        assert len(retrieved.chunk_hashes) == len(file_metadata.chunk_hashes)
+        assert retrieved.total_size == file_metadata.total_size
+
+        # Verify metadata persists across sessions
+        dedup.close()
+        dedup2 = XetDeduplication(cache_db_path=db_path)
+        retrieved2 = await dedup2.get_file_metadata(file_metadata.file_path)
+
+        assert retrieved2 is not None
+        assert retrieved2.file_path == file_metadata.file_path
+
+        dedup2.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_file_to_chunk_reference_tracking(self, temp_dir):
+        """Test tracking file-to-chunk references across multiple files."""
+        from ccbt.storage.xet_deduplication import XetDeduplication
+
+        db_path = temp_dir / "references.db"
+        dedup = XetDeduplication(cache_db_path=db_path)
+
+        # Create shared chunk
+        shared_chunk_hash = b"SHARED" * 5 + b"XX"
+        shared_chunk_data = b"Shared chunk data"
+        await dedup.store_chunk(shared_chunk_hash, shared_chunk_data)
+
+        # Add reference from file 1
+        file1_path = "/test/file1.txt"
+        await dedup.add_file_chunk_reference(
+            file1_path, shared_chunk_hash, offset=0, chunk_size=len(shared_chunk_data)
+        )
+
+        # Add reference from file 2 (same chunk, different offset)
+        file2_path = "/test/file2.txt"
+        await dedup.add_file_chunk_reference(
+            file2_path, shared_chunk_hash, offset=100, chunk_size=len(shared_chunk_data)
+        )
+
+        # Get chunks for file 1
+        file1_chunks = await dedup.get_file_chunks(file1_path)
+        assert len(file1_chunks) == 1
+        assert file1_chunks[0][0] == shared_chunk_hash
+        assert file1_chunks[0][1] == 0
+
+        # Get chunks for file 2
+        file2_chunks = await dedup.get_file_chunks(file2_path)
+        assert len(file2_chunks) == 1
+        assert file2_chunks[0][0] == shared_chunk_hash
+        assert file2_chunks[0][1] == 100
+
+        # Verify chunk reference count is 1 (chunk stored once, referenced twice)
+        chunk_info = dedup.get_chunk_info(shared_chunk_hash)
+        assert chunk_info is not None
+        # Reference count may be 1 or 2 depending on how store_chunk handles it
+        assert chunk_info["ref_count"] >= 1
+
+        dedup.close()
+

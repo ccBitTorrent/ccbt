@@ -2,15 +2,17 @@ name: Version Check
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - 'pyproject.toml'
       - 'ccbt/__init__.py'
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - 'pyproject.toml'
       - 'ccbt/__init__.py'
+  merge_group:
+    branches: [dev]
 
 jobs:
   check-version-consistency:
@@ -72,4 +74,71 @@ jobs:
             echo "✅ Version format is valid: $VERSION"
           fi
         continue-on-error: true
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install packaging
+      
+      - name: Validate branch-specific version rules
+        run: |
+          VERSION="${{ steps.pyproject_version.outputs.version }}"
+          BRANCH="${{ github.base_ref || github.ref_name }}"
+          
+          # Parse version
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          
+          echo "Branch: $BRANCH"
+          echo "Version: $VERSION (Major: $MAJOR, Minor: $MINOR)"
+          
+          if [ "$BRANCH" = "main" ]; then
+            # Main branch: version must be >= 0.1.0
+            if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -eq 0 ]; then
+              echo "❌ Main branch requires version >= 0.1.0, got $VERSION"
+              exit 1
+            fi
+            echo "✅ Main branch version check passed"
+          elif [ "$BRANCH" = "dev" ]; then
+            # Dev branch: allow 0.0.1 or any valid semver
+            if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -eq 0 ] && [ "$(echo "$VERSION" | cut -d. -f3)" -eq 0 ]; then
+              echo "❌ Dev branch version must be > 0.0.0, got $VERSION"
+              exit 1
+            fi
+            echo "✅ Dev branch version check passed"
+          fi
+      
+      - name: Check maintainer permissions for 0.1+ versions on main
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        run: |
+          VERSION="${{ steps.pyproject_version.outputs.version }}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          
+          # If version is >= 0.1.0, check if user is maintainer/owner
+          if [ "$MAJOR" -gt 0 ] || [ "$MINOR" -ge 1 ]; then
+            echo "Version $VERSION is >= 0.1.0, checking maintainer permissions..."
+            
+            # Get PR author
+            PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+            echo "PR author: $PR_AUTHOR"
+            
+            # Check if user has write access (maintainer/owner)
+            # This is a basic check - GitHub API would be more accurate
+            # For now, we'll just warn and let the merge protection handle it
+            echo "⚠️  Version >= 0.1.0 requires maintainer/owner permissions"
+            echo "   If you're not a maintainer, please use version 0.0.1 on dev branch"
+          fi
+      
+      - name: Run Python version validation script
+        run: |
+          python dev/scripts/validate_version.py
+      
+      - name: Validate changelog
+        run: |
+          python dev/scripts/validate_changelog.py || {
+            echo "⚠️  Changelog validation failed."
+            echo "Please ensure dev/CHANGELOG.md is updated with your changes."
+            exit 1
+          }
 

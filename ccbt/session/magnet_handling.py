@@ -56,20 +56,4 @@ class MagnetHandler:
             True if file selection manager is available, False otherwise
 
         """
-        # Check if we have file selection manager and files available
-        if not self.session.file_selection_manager:
-            # Try to recreate file_selection_manager if torrent_data was updated with metadata
-            torrent_info = get_torrent_info(
-                self.session.torrent_data, self.session.logger
-            )
-            if torrent_info and torrent_info.files:
-                from ccbt.piece.file_selection import FileSelectionManager
-
-                self.session.file_selection_manager = FileSelectionManager(torrent_info)
-                # Update piece manager with new file selection manager
-                if self.session.piece_manager:
-                    self.session.piece_manager.file_selection_manager = (
-                        self.session.file_selection_manager
-                    )
-
-        return self.session.file_selection_manager is not None
+        return self.session.ensure_file_selection_manager()

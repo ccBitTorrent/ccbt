@@ -1,0 +1,43 @@
+{
+  "entries": [
+    {
+      "timestamp": "2025-12-09T13:52:18.131622+00:00",
+      "git": {
+        "commit_hash": "862dc936e28b5c54448b586719c41c05e5a3a37f",
+        "commit_hash_short": "862dc93",
+        "branch": "dev",
+        "author": "Joseph Pollack",
+        "is_dirty": false
+      },
+      "platform": {
+        "system": "Windows",
+        "release": "11",
+        "python": "3.13.3"
+      },
+      "config": "performance",
+      "results": [
+        {
+          "size_bytes": 1048576,
+          "iterations": 64,
+          "elapsed_s": 9.670000144978985e-05,
+          "bytes_processed": 67108864,
+          "throughput_bytes_per_s": 693990310174.3525
+        },
+        {
+          "size_bytes": 4194304,
+          "iterations": 64,
+          "elapsed_s": 8.69999967108015e-05,
+          "bytes_processed": 268435456,
+          "throughput_bytes_per_s": 3085465128146.0605
+        },
+        {
+          "size_bytes": 16777216,
+          "iterations": 64,
+          "elapsed_s": 8.650000017951243e-05,
+          "bytes_processed": 1073741824,
+          "throughput_bytes_per_s": 12413200251695.68
+        }
+      ]
+    }
+  ]
+}

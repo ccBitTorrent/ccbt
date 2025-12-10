@@ -129,6 +129,66 @@ async def test_connect_to_peers_connection_failure(peer_manager, peer_info):
 
 
 @pytest.mark.asyncio
+async def test_connect_to_peers_enqueues_when_at_capacity(peer_manager, monkeypatch):
+    """Peers should be deferred when active connections already at capacity."""
+    peer_manager._running = True
+    peer_manager.max_peers_per_torrent = 3
+
+    # Pretend we already have the maximum number of active peers.
+    for idx in range(peer_manager.max_peers_per_torrent):
+        conn = MagicMock()
+        conn.is_active.return_value = True
+        peer_manager.connections[f"existing-{idx}"] = conn
+
+    peer_list = [
+        {"ip": f"192.0.2.{i}", "port": 6000 + i, "peer_source": "tracker"}
+        for i in range(6)
+    ]
+
+    connect_mock = AsyncMock()
+    monkeypatch.setattr(peer_manager, "_connect_to_peer", connect_mock)
+    monkeypatch.setattr(
+        peer_manager,
+        "_rank_peers_for_connection",
+        AsyncMock(side_effect=lambda peers: peers),
+    )
+    resume_mock = MagicMock()
+    monkeypatch.setattr(peer_manager, "_schedule_pending_resume", resume_mock)
+
+    await peer_manager.connect_to_peers(peer_list)
+
+    # All peers should be queued for later because we're at capacity.
+    assert len(peer_manager._pending_peer_queue) == len(peer_list)
+    assert connect_mock.await_count == 0
+    assert resume_mock.called
+    assert peer_manager._connection_batches_in_progress is False
+
+
+@pytest.mark.asyncio
+async def test_resume_pending_batches_processes_queue(peer_manager, monkeypatch):
+    """Resuming pending batches should drain the queue via connect_to_peers."""
+    peer_manager._running = True
+    peers = [
+        PeerInfo(ip="198.51.100.1", port=51413),
+        PeerInfo(ip="198.51.100.2", port=51414),
+    ]
+    peer_manager._pending_peer_queue = peers.copy()
+    peer_manager._pending_peer_keys = {str(p) for p in peers}
+
+    resume_connect_mock = AsyncMock()
+    monkeypatch.setattr(peer_manager, "connect_to_peers", resume_connect_mock)
+
+    await peer_manager._resume_pending_batches(reason="unit-test")
+
+    assert resume_connect_mock.await_count == 1
+    kwargs = resume_connect_mock.await_args.kwargs
+    assert kwargs.get("_from_pending_queue") is True
+    assert not peer_manager._pending_peer_queue
+    assert not peer_manager._pending_peer_keys
+    assert peer_manager._pending_resume_in_progress is False
+
+
+@pytest.mark.asyncio
 async def test_handle_bitfield_message(peer_manager, peer_info):
     """Test handling bitfield message."""
     # Create a connection

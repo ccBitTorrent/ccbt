@@ -24,6 +24,8 @@ class PEXMessageType(IntEnum):
 
     ADDED = 0
     DROPPED = 1
+    CHUNKS_ADDED = 2  # XET chunk availability
+    CHUNKS_DROPPED = 3  # XET chunk unavailability
 
 
 @dataclass(frozen=True)
@@ -149,6 +151,83 @@ class PeerExchange:
         # Pack message: <length><message_id><peers_data>
         return (
             struct.pack("!IB", len(peers_data) + 1, PEXMessageType.DROPPED) + peers_data
+        )
+
+    def encode_chunks_list(self, chunk_hashes: list[bytes]) -> bytes:
+        """Encode list of chunk hashes in compact format.
+
+        Args:
+            chunk_hashes: List of 32-byte chunk hashes
+
+        Returns:
+            Encoded chunk hashes as bytes
+
+        """
+        if not chunk_hashes:
+            return b""
+
+        chunks_data = b""
+        for chunk_hash in chunk_hashes:
+            if len(chunk_hash) != 32:
+                continue
+            chunks_data += chunk_hash
+
+        return chunks_data
+
+    def decode_chunks_list(self, data: bytes) -> list[bytes]:
+        """Decode list of chunk hashes from compact format.
+
+        Args:
+            data: Encoded chunk hashes data
+
+        Returns:
+            List of 32-byte chunk hashes
+
+        """
+        chunks = []
+        chunk_size = 32  # 32 bytes per chunk hash
+
+        for i in range(0, len(data), chunk_size):
+            if i + chunk_size <= len(data):
+                chunk_hash = data[i : i + chunk_size]
+                chunks.append(chunk_hash)
+
+        return chunks
+
+    def encode_added_chunks(self, chunk_hashes: list[bytes]) -> bytes:
+        """Encode added chunks message.
+
+        Args:
+            chunk_hashes: List of 32-byte chunk hashes
+
+        Returns:
+            Encoded message bytes
+
+        """
+        chunks_data = self.encode_chunks_list(chunk_hashes)
+
+        # Pack message: <length><message_id><chunks_data>
+        return (
+            struct.pack("!IB", len(chunks_data) + 1, PEXMessageType.CHUNKS_ADDED)
+            + chunks_data
+        )
+
+    def encode_dropped_chunks(self, chunk_hashes: list[bytes]) -> bytes:
+        """Encode dropped chunks message.
+
+        Args:
+            chunk_hashes: List of 32-byte chunk hashes
+
+        Returns:
+            Encoded message bytes
+
+        """
+        chunks_data = self.encode_chunks_list(chunk_hashes)
+
+        # Pack message: <length><message_id><chunks_data>
+        return (
+            struct.pack("!IB", len(chunks_data) + 1, PEXMessageType.CHUNKS_DROPPED)
+            + chunks_data
         )
 
     def decode_pex_message(

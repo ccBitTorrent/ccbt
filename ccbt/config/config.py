@@ -29,6 +29,8 @@ from ccbt.models import (
     DiskConfig,
     NetworkConfig,
     ObservabilityConfig,
+    OptimizationConfig,
+    OptimizationProfile,
     StrategyConfig,
 )
 from ccbt.utils.exceptions import ConfigurationError
@@ -58,6 +60,11 @@ class ConfigManager:
         self._encryption_key: bytes | None = None
         self.config_file = self._find_config_file(config_file)
         self.config = self._load_config()
+        
+        # Apply optimization profile if specified (after config is loaded)
+        if self.config.optimization.profile != OptimizationProfile.CUSTOM:
+            self.apply_profile()
+        
         self._setup_logging()
 
     def _find_config_file(
@@ -134,9 +141,29 @@ class ConfigManager:
         env_config = self._get_env_config()
         config_data = self._merge_config(config_data, env_config)
 
+        # CRITICAL FIX: Apply Windows-specific connection limits to prevent socket buffer exhaustion
+        # Windows has stricter limits on socket buffers (WinError 10055)
+        if IS_WINDOWS and "network" in config_data:
+            network_config = config_data.get("network", {})
+            # Reduce connection limits on Windows to prevent socket buffer exhaustion
+            if network_config.get("max_global_peers", 600) > 200:
+                network_config["max_global_peers"] = 200
+                logging.debug("Reduced max_global_peers to 200 for Windows compatibility")
+            if network_config.get("connection_pool_max_connections", 400) > 150:
+                network_config["connection_pool_max_connections"] = 150
+                logging.debug("Reduced connection_pool_max_connections to 150 for Windows compatibility")
+            if network_config.get("max_peers_per_torrent", 200) > 100:
+                network_config["max_peers_per_torrent"] = 100
+                logging.debug("Reduced max_peers_per_torrent to 100 for Windows compatibility")
+            config_data["network"] = network_config
+
         try:
             # Create Pydantic model with validation
-            return Config(**config_data)
+            config = Config(**config_data)
+            
+            # Apply optimization profile if specified (after config is created)
+            # We'll apply it in __init__ after self.config is set
+            return config
         except Exception as e:
             msg = f"Invalid configuration: {e}"
             raise ConfigurationError(msg) from e
@@ -154,10 +181,23 @@ class ConfigManager:
             "CCBT_LISTEN_PORT_TCP": "network.listen_port_tcp",
             "CCBT_LISTEN_PORT_UDP": "network.listen_port_udp",
             "CCBT_TRACKER_UDP_PORT": "network.tracker_udp_port",
+            "CCBT_XET_PORT": "network.xet_port",
+            "CCBT_XET_MULTICAST_ADDRESS": "network.xet_multicast_address",
+            "CCBT_XET_MULTICAST_PORT": "network.xet_multicast_port",
             "CCBT_PIPELINE_DEPTH": "network.pipeline_depth",
             "CCBT_BLOCK_SIZE_KIB": "network.block_size_kib",
             "CCBT_CONNECTION_TIMEOUT": "network.connection_timeout",
             "CCBT_HANDSHAKE_TIMEOUT": "network.handshake_timeout",
+            "CCBT_METADATA_EXCHANGE_TIMEOUT": "network.metadata_exchange_timeout",
+            "CCBT_METADATA_PIECE_TIMEOUT": "network.metadata_piece_timeout",
+            "CCBT_CONNECTION_HEALTH_CHECK_INTERVAL": "network.connection_health_check_interval",
+            "CCBT_CONNECTION_VALIDATION_ENABLED": "network.connection_validation_enabled",
+            "CCBT_PEER_VALIDATION_ENABLED": "network.peer_validation_enabled",
+            "CCBT_SEND_BITFIELD_AFTER_METADATA": "network.send_bitfield_after_metadata",
+            "CCBT_SEND_INTERESTED_AFTER_METADATA": "network.send_interested_after_metadata",
+            "CCBT_MAX_CONCURRENT_CONNECTION_ATTEMPTS": "network.max_concurrent_connection_attempts",
+            "CCBT_ENABLE_FAIL_FAST_DHT": "network.enable_fail_fast_dht",
+            "CCBT_FAIL_FAST_DHT_TIMEOUT": "network.fail_fast_dht_timeout",
             "CCBT_KEEP_ALIVE_INTERVAL": "network.keep_alive_interval",
             "CCBT_GLOBAL_DOWN_KIB": "network.global_down_kib",
             "CCBT_GLOBAL_UP_KIB": "network.global_up_kib",
@@ -172,6 +212,19 @@ class ConfigManager:
             "CCBT_CONNECTION_POOL_WARMUP_ENABLED": "network.connection_pool_warmup_enabled",
             "CCBT_CONNECTION_POOL_WARMUP_COUNT": "network.connection_pool_warmup_count",
             "CCBT_CONNECTION_POOL_HEALTH_CHECK_INTERVAL": "network.connection_pool_health_check_interval",
+            "CCBT_CONNECTION_POOL_ADAPTIVE_LIMIT_ENABLED": "network.connection_pool_adaptive_limit_enabled",
+            "CCBT_CONNECTION_POOL_ADAPTIVE_LIMIT_MIN": "network.connection_pool_adaptive_limit_min",
+            "CCBT_CONNECTION_POOL_ADAPTIVE_LIMIT_MAX": "network.connection_pool_adaptive_limit_max",
+            "CCBT_CONNECTION_POOL_CPU_THRESHOLD": "network.connection_pool_cpu_threshold",
+            "CCBT_CONNECTION_POOL_MEMORY_THRESHOLD": "network.connection_pool_memory_threshold",
+            "CCBT_CONNECTION_POOL_PERFORMANCE_RECYCLING_ENABLED": "network.connection_pool_performance_recycling_enabled",
+            "CCBT_CONNECTION_POOL_PERFORMANCE_THRESHOLD": "network.connection_pool_performance_threshold",
+            "CCBT_CONNECTION_POOL_QUALITY_THRESHOLD": "network.connection_pool_quality_threshold",
+            "CCBT_CONNECTION_POOL_GRACE_PERIOD": "network.connection_pool_grace_period",
+            "CCBT_CONNECTION_POOL_MIN_DOWNLOAD_BANDWIDTH": "network.connection_pool_min_download_bandwidth",
+            "CCBT_CONNECTION_POOL_MIN_UPLOAD_BANDWIDTH": "network.connection_pool_min_upload_bandwidth",
+            "CCBT_CONNECTION_POOL_HEALTH_DEGRADATION_THRESHOLD": "network.connection_pool_health_degradation_threshold",
+            "CCBT_CONNECTION_POOL_HEALTH_RECOVERY_THRESHOLD": "network.connection_pool_health_recovery_threshold",
             # Tracker HTTP session
             "CCBT_TRACKER_KEEPALIVE_TIMEOUT": "network.tracker_keepalive_timeout",
             "CCBT_TRACKER_ENABLE_DNS_CACHE": "network.tracker_enable_dns_cache",
@@ -215,6 +268,9 @@ class ConfigManager:
             "CCBT_ENDGAME_DUPLICATES": "strategy.endgame_duplicates",
             "CCBT_ENDGAME_THRESHOLD": "strategy.endgame_threshold",
             "CCBT_STREAMING_MODE": "strategy.streaming_mode",
+            "CCBT_BANDWIDTH_WEIGHTED_RAREST_WEIGHT": "strategy.bandwidth_weighted_rarest_weight",
+            "CCBT_PROGRESSIVE_RAREST_TRANSITION_THRESHOLD": "strategy.progressive_rarest_transition_threshold",
+            "CCBT_ADAPTIVE_HYBRID_PHASE_DETECTION_WINDOW": "strategy.adaptive_hybrid_phase_detection_window",
             # Disk
             "CCBT_PREALLOCATE": "disk.preallocate",
             "CCBT_USE_MMAP": "disk.use_mmap",
@@ -260,6 +316,13 @@ class ConfigManager:
             "CCBT_TRACKER_ANNOUNCE_INTERVAL": "discovery.tracker_announce_interval",
             "CCBT_TRACKER_SCRAPE_INTERVAL": "discovery.tracker_scrape_interval",
             "CCBT_TRACKER_AUTO_SCRAPE": "discovery.tracker_auto_scrape",
+            "CCBT_TRACKER_ADAPTIVE_INTERVAL_ENABLED": "discovery.tracker_adaptive_interval_enabled",
+            "CCBT_TRACKER_ADAPTIVE_INTERVAL_MIN": "discovery.tracker_adaptive_interval_min",
+            "CCBT_TRACKER_ADAPTIVE_INTERVAL_MAX": "discovery.tracker_adaptive_interval_max",
+            "CCBT_TRACKER_BASE_ANNOUNCE_INTERVAL": "discovery.tracker_base_announce_interval",
+            "CCBT_TRACKER_PEER_COUNT_WEIGHT": "discovery.tracker_peer_count_weight",
+            "CCBT_TRACKER_PERFORMANCE_WEIGHT": "discovery.tracker_performance_weight",
+            "CCBT_DEFAULT_TRACKERS": "discovery.default_trackers",
             "CCBT_PEX_INTERVAL": "discovery.pex_interval",
             "CCBT_STRICT_PRIVATE_MODE": "discovery.strict_private_mode",
             # BEP 32: IPv6 Extension for DHT
@@ -278,6 +341,33 @@ class ConfigManager:
             # BEP 51: DHT Infohash Indexing
             "CCBT_DHT_ENABLE_INDEXING": "discovery.dht_enable_indexing",
             "CCBT_DHT_INDEX_SAMPLES_PER_KEY": "discovery.dht_index_samples_per_key",
+            # DHT adaptive intervals and quality tracking
+            "CCBT_DHT_ADAPTIVE_INTERVAL_ENABLED": "discovery.dht_adaptive_interval_enabled",
+            "CCBT_AGGRESSIVE_INITIAL_DISCOVERY": "discovery.aggressive_initial_discovery",
+            "CCBT_AGGRESSIVE_INITIAL_TRACKER_INTERVAL": "discovery.aggressive_initial_tracker_interval",
+            "CCBT_AGGRESSIVE_INITIAL_DHT_INTERVAL": "discovery.aggressive_initial_dht_interval",
+            # IMPROVEMENT: Aggressive discovery for popular torrents
+            "CCBT_AGGRESSIVE_DISCOVERY_POPULAR_THRESHOLD": "discovery.aggressive_discovery_popular_threshold",
+            "CCBT_AGGRESSIVE_DISCOVERY_ACTIVE_THRESHOLD_KIB": "discovery.aggressive_discovery_active_threshold_kib",
+            "CCBT_AGGRESSIVE_DISCOVERY_INTERVAL_POPULAR": "discovery.aggressive_discovery_interval_popular",
+            "CCBT_AGGRESSIVE_DISCOVERY_INTERVAL_ACTIVE": "discovery.aggressive_discovery_interval_active",
+            "CCBT_AGGRESSIVE_DISCOVERY_MAX_PEERS_PER_QUERY": "discovery.aggressive_discovery_max_peers_per_query",
+            "CCBT_DHT_BASE_REFRESH_INTERVAL": "discovery.dht_base_refresh_interval",
+            "CCBT_DHT_ADAPTIVE_INTERVAL_MIN": "discovery.dht_adaptive_interval_min",
+            "CCBT_DHT_ADAPTIVE_INTERVAL_MAX": "discovery.dht_adaptive_interval_max",
+            "CCBT_DHT_QUALITY_TRACKING_ENABLED": "discovery.dht_quality_tracking_enabled",
+            "CCBT_DHT_QUALITY_RESPONSE_TIME_WINDOW": "discovery.dht_quality_response_time_window",
+            # DHT query parameters (Kademlia algorithm)
+            "CCBT_DHT_NORMAL_ALPHA": "discovery.dht_normal_alpha",
+            "CCBT_DHT_NORMAL_K": "discovery.dht_normal_k",
+            "CCBT_DHT_NORMAL_MAX_DEPTH": "discovery.dht_normal_max_depth",
+            "CCBT_DHT_AGGRESSIVE_ALPHA": "discovery.dht_aggressive_alpha",
+            "CCBT_DHT_AGGRESSIVE_K": "discovery.dht_aggressive_k",
+            "CCBT_DHT_AGGRESSIVE_MAX_DEPTH": "discovery.dht_aggressive_max_depth",
+            # XET chunk discovery
+            "CCBT_XET_CHUNK_QUERY_BATCH_SIZE": "discovery.xet_chunk_query_batch_size",
+            "CCBT_XET_CHUNK_QUERY_MAX_CONCURRENT": "discovery.xet_chunk_query_max_concurrent",
+            "CCBT_DISCOVERY_CACHE_TTL": "discovery.discovery_cache_ttl",
             # Security
             "CCBT_ENABLE_ENCRYPTION": "security.enable_encryption",
             "CCBT_ENCRYPTION_MODE": "security.encryption_mode",
@@ -288,6 +378,7 @@ class ConfigManager:
             "CCBT_VALIDATE_PEERS": "security.validate_peers",
             "CCBT_RATE_LIMIT_ENABLED": "security.rate_limit_enabled",
             "CCBT_MAX_CONNECTIONS_PER_PEER": "security.max_connections_per_peer",
+            "CCBT_PEER_QUALITY_THRESHOLD": "security.peer_quality_threshold",
             # IP Filter
             "CCBT_ENABLE_IP_FILTER": "security.ip_filter.enable_ip_filter",
             "CCBT_FILTER_MODE": "security.ip_filter.filter_mode",
@@ -296,23 +387,66 @@ class ConfigManager:
             "CCBT_FILTER_UPDATE_INTERVAL": "security.ip_filter.filter_update_interval",
             "CCBT_FILTER_CACHE_DIR": "security.ip_filter.filter_cache_dir",
             "CCBT_FILTER_LOG_BLOCKED": "security.ip_filter.filter_log_blocked",
+            # Blacklist
+            "CCBT_BLACKLIST_ENABLE_PERSISTENCE": "security.blacklist.enable_persistence",
+            "CCBT_BLACKLIST_FILE": "security.blacklist.blacklist_file",
+            "CCBT_BLACKLIST_AUTO_UPDATE_ENABLED": "security.blacklist.auto_update_enabled",
+            "CCBT_BLACKLIST_AUTO_UPDATE_INTERVAL": "security.blacklist.auto_update_interval",
+            "CCBT_BLACKLIST_AUTO_UPDATE_SOURCES": "security.blacklist.auto_update_sources",
+            "CCBT_BLACKLIST_DEFAULT_EXPIRATION_HOURS": "security.blacklist.default_expiration_hours",
+            # Local Blacklist Source
+            "CCBT_BLACKLIST_LOCAL_SOURCE_ENABLED": "security.blacklist.local_source.enabled",
+            "CCBT_BLACKLIST_LOCAL_SOURCE_EVALUATION_INTERVAL": "security.blacklist.local_source.evaluation_interval",
+            "CCBT_BLACKLIST_LOCAL_SOURCE_METRIC_WINDOW": "security.blacklist.local_source.metric_window",
+            "CCBT_BLACKLIST_LOCAL_SOURCE_EXPIRATION_HOURS": "security.blacklist.local_source.expiration_hours",
+            "CCBT_BLACKLIST_LOCAL_SOURCE_MIN_OBSERVATIONS": "security.blacklist.local_source.min_observations",
             # Observability
             "CCBT_LOG_LEVEL": "observability.log_level",
             "CCBT_LOG_FILE": "observability.log_file",
             "CCBT_ENABLE_METRICS": "observability.enable_metrics",
             "CCBT_METRICS_PORT": "observability.metrics_port",
+            "CCBT_ENABLE_PEER_TRACING": "observability.enable_peer_tracing",
+            # Event bus configuration
+            "CCBT_EVENT_BUS_MAX_QUEUE_SIZE": "observability.event_bus_max_queue_size",
+            "CCBT_EVENT_BUS_BATCH_SIZE": "observability.event_bus_batch_size",
+            "CCBT_EVENT_BUS_BATCH_TIMEOUT": "observability.event_bus_batch_timeout",
+            "CCBT_EVENT_BUS_EMIT_TIMEOUT": "observability.event_bus_emit_timeout",
+            "CCBT_EVENT_BUS_QUEUE_FULL_THRESHOLD": "observability.event_bus_queue_full_threshold",
+            "CCBT_EVENT_BUS_THROTTLE_DHT_NODE_FOUND": "observability.event_bus_throttle_dht_node_found",
+            "CCBT_EVENT_BUS_THROTTLE_DHT_NODE_ADDED": "observability.event_bus_throttle_dht_node_added",
+            "CCBT_EVENT_BUS_THROTTLE_MONITORING_HEARTBEAT": "observability.event_bus_throttle_monitoring_heartbeat",
+            "CCBT_EVENT_BUS_THROTTLE_GLOBAL_METRICS_UPDATE": "observability.event_bus_throttle_global_metrics_update",
             # Daemon
             "CCBT_DAEMON_IPC_PORT": "daemon.ipc_port",
             "CCBT_DAEMON_IPC_HOST": "daemon.ipc_host",
+            # NAT
+            "CCBT_NAT_ENABLE_NAT_PMP": "nat.enable_nat_pmp",
+            "CCBT_NAT_ENABLE_UPNP": "nat.enable_upnp",
+            "CCBT_NAT_DISCOVERY_INTERVAL": "nat.nat_discovery_interval",
+            "CCBT_NAT_PORT_MAPPING_LEASE_TIME": "nat.port_mapping_lease_time",
+            "CCBT_NAT_AUTO_MAP_PORTS": "nat.auto_map_ports",
+            "CCBT_NAT_MAP_TCP_PORT": "nat.map_tcp_port",
+            "CCBT_NAT_MAP_UDP_PORT": "nat.map_udp_port",
+            "CCBT_NAT_MAP_DHT_PORT": "nat.map_dht_port",
+            "CCBT_NAT_MAP_XET_PORT": "nat.map_xet_port",
+            "CCBT_NAT_MAP_XET_MULTICAST_PORT": "nat.map_xet_multicast_port",
             # WebTorrent
             "CCBT_WEBTORRENT_PORT": "webtorrent.webtorrent_port",
-            "CCBT_ENABLE_PEER_TRACING": "observability.enable_peer_tracing",
             # Dashboard
             "CCBT_DASHBOARD_ENABLE": "dashboard.enable_dashboard",
             "CCBT_DASHBOARD_HOST": "dashboard.host",
             "CCBT_DASHBOARD_PORT": "dashboard.port",
             "CCBT_DASHBOARD_REFRESH_INTERVAL": "dashboard.refresh_interval",
             "CCBT_DASHBOARD_DEFAULT_VIEW": "dashboard.default_view",
+            "CCBT_DASHBOARD_ENABLE_GRAFANA_EXPORT": "dashboard.enable_grafana_export",
+            # Terminal dashboard settings
+            "CCBT_DASHBOARD_TERMINAL_REFRESH_INTERVAL": "dashboard.terminal_refresh_interval",
+            "CCBT_DASHBOARD_TERMINAL_DAEMON_STARTUP_TIMEOUT": "dashboard.terminal_daemon_startup_timeout",
+            "CCBT_DASHBOARD_TERMINAL_DAEMON_INITIAL_WAIT": "dashboard.terminal_daemon_initial_wait",
+            "CCBT_DASHBOARD_TERMINAL_DAEMON_RETRY_DELAY": "dashboard.terminal_daemon_retry_delay",
+            "CCBT_DASHBOARD_TERMINAL_DAEMON_CHECK_INTERVAL": "dashboard.terminal_daemon_check_interval",
+            "CCBT_DASHBOARD_TERMINAL_CONNECTION_TIMEOUT": "dashboard.terminal_connection_timeout",
+            "CCBT_DASHBOARD_TERMINAL_CONNECTION_CHECK_INTERVAL": "dashboard.terminal_connection_check_interval",
             # Queue
             "CCBT_MAX_ACTIVE_TORRENTS": "queue.max_active_torrents",
             "CCBT_MAX_ACTIVE_DOWNLOADING": "queue.max_active_downloading",
@@ -347,6 +481,39 @@ class ConfigManager:
             "CCBT_PROTOCOL_V2_HANDSHAKE_TIMEOUT": "network.protocol_v2.v2_handshake_timeout",
             # UI/Internationalization
             "CCBT_LOCALE": "ui.locale",
+            "CCBT_UI_LOCALE": "ui.locale",  # UI-specific override
+            # XET Folder Synchronization
+            "CCBT_XET_SYNC_ENABLE_XET": "xet_sync.enable_xet",
+            "CCBT_XET_SYNC_CHECK_INTERVAL": "xet_sync.check_interval",
+            "CCBT_XET_SYNC_DEFAULT_SYNC_MODE": "xet_sync.default_sync_mode",
+            "CCBT_XET_SYNC_ENABLE_GIT_VERSIONING": "xet_sync.enable_git_versioning",
+            "CCBT_XET_SYNC_ENABLE_LPD": "xet_sync.enable_lpd",
+            "CCBT_XET_SYNC_ENABLE_GOSSIP": "xet_sync.enable_gossip",
+            "CCBT_XET_SYNC_GOSSIP_FANOUT": "xet_sync.gossip_fanout",
+            "CCBT_XET_SYNC_GOSSIP_INTERVAL": "xet_sync.gossip_interval",
+            "CCBT_XET_SYNC_FLOODING_TTL": "xet_sync.flooding_ttl",
+            "CCBT_XET_SYNC_FLOODING_PRIORITY_THRESHOLD": "xet_sync.flooding_priority_threshold",
+            "CCBT_XET_SYNC_CONSENSUS_ALGORITHM": "xet_sync.consensus_algorithm",
+            "CCBT_XET_SYNC_RAFT_ELECTION_TIMEOUT": "xet_sync.raft_election_timeout",
+            "CCBT_XET_SYNC_RAFT_HEARTBEAT_INTERVAL": "xet_sync.raft_heartbeat_interval",
+            "CCBT_XET_SYNC_ENABLE_BYZANTINE_FAULT_TOLERANCE": "xet_sync.enable_byzantine_fault_tolerance",
+            "CCBT_XET_SYNC_BYZANTINE_FAULT_THRESHOLD": "xet_sync.byzantine_fault_threshold",
+            "CCBT_XET_SYNC_WEIGHTED_VOTING": "xet_sync.weighted_voting",
+            "CCBT_XET_SYNC_AUTO_ELECT_SOURCE": "xet_sync.auto_elect_source",
+            "CCBT_XET_SYNC_SOURCE_ELECTION_INTERVAL": "xet_sync.source_election_interval",
+            "CCBT_XET_SYNC_CONFLICT_RESOLUTION_STRATEGY": "xet_sync.conflict_resolution_strategy",
+            "CCBT_XET_SYNC_GIT_AUTO_COMMIT": "xet_sync.git_auto_commit",
+            "CCBT_XET_SYNC_CONSENSUS_THRESHOLD": "xet_sync.consensus_threshold",
+            "CCBT_XET_SYNC_MAX_UPDATE_QUEUE_SIZE": "xet_sync.max_update_queue_size",
+            "CCBT_XET_SYNC_ALLOWLIST_ENCRYPTION_KEY": "xet_sync.allowlist_encryption_key",
+            # Optimization profile
+            "CCBT_OPTIMIZATION_PROFILE": "optimization.profile",
+            "CCBT_OPTIMIZATION_SPEED_AGGRESSIVE_PEER_RECYCLING": "optimization.speed_aggressive_peer_recycling",
+            "CCBT_OPTIMIZATION_EFFICIENCY_CONNECTION_LIMIT_MULTIPLIER": "optimization.efficiency_connection_limit_multiplier",
+            "CCBT_OPTIMIZATION_LOW_RESOURCE_MAX_CONNECTIONS": "optimization.low_resource_max_connections",
+            "CCBT_OPTIMIZATION_ENABLE_ADAPTIVE_INTERVALS": "optimization.enable_adaptive_intervals",
+            "CCBT_OPTIMIZATION_ENABLE_PERFORMANCE_BASED_RECYCLING": "optimization.enable_performance_based_recycling",
+            "CCBT_OPTIMIZATION_ENABLE_BANDWIDTH_AWARE_SCHEDULING": "optimization.enable_bandwidth_aware_scheduling",
         }
 
         def _parse_env_value(
@@ -358,8 +525,10 @@ class ConfigManager:
             if path in {
                 "security.ip_filter.filter_files",
                 "security.ip_filter.filter_urls",
+                "security.blacklist.auto_update_sources",
                 "discovery.dht_bootstrap_nodes",
                 "discovery.dht_ipv6_bootstrap_nodes",
+                "discovery.default_trackers",
                 "proxy.proxy_bypass_list",
             }:
                 return [item.strip() for item in raw.split(",") if item.strip()]
@@ -744,6 +913,142 @@ class ConfigManager:
         from ccbt.config.config_schema import ConfigValidator
 
         return ConfigValidator.validate_option(key_path, value)
+
+    def apply_profile(self, profile: OptimizationProfile | str | None = None) -> None:
+        """Apply optimization profile to configuration.
+        
+        Args:
+            profile: Profile to apply. If None, uses config.optimization.profile.
+                    Can be a string (will be converted to enum) or OptimizationProfile enum.
+        
+        """
+        if profile is None:
+            profile = self.config.optimization.profile
+        elif isinstance(profile, str):
+            try:
+                profile = OptimizationProfile(profile.lower())
+            except ValueError:
+                raise ConfigurationError(
+                    f"Invalid optimization profile: {profile}. "
+                    f"Must be one of: {[p.value for p in OptimizationProfile]}"
+                )
+        
+        # Profile definitions
+        profiles = {
+            OptimizationProfile.BALANCED: {
+                "strategy": {
+                    "piece_selection": "rarest_first",
+                    "pipeline_capacity": 4,
+                    "endgame_duplicates": 2,
+                },
+                "network": {
+                    "max_connections_per_torrent": 50,
+                    "max_global_peers": 200,
+                },
+                "discovery": {
+                    "tracker_announce_interval": 60.0,
+                },
+                "optimization": {
+                    "enable_adaptive_intervals": True,
+                    "enable_performance_based_recycling": True,
+                    "enable_bandwidth_aware_scheduling": True,
+                },
+            },
+            OptimizationProfile.SPEED: {
+                "strategy": {
+                    "piece_selection": "bandwidth_weighted_rarest",
+                    "pipeline_capacity": 8,
+                    "endgame_duplicates": 3,
+                },
+                "network": {
+                    "max_connections_per_torrent": 100,
+                    "max_global_peers": 500,
+                },
+                "discovery": {
+                    "tracker_announce_interval": 30.0,
+                },
+                "optimization": {
+                    "enable_adaptive_intervals": True,
+                    "enable_performance_based_recycling": True,
+                    "speed_aggressive_peer_recycling": True,
+                    "enable_bandwidth_aware_scheduling": True,
+                },
+            },
+            OptimizationProfile.EFFICIENCY: {
+                "strategy": {
+                    "piece_selection": "adaptive_hybrid",
+                    "pipeline_capacity": 6,
+                    "endgame_duplicates": 2,
+                },
+                "network": {
+                    "max_connections_per_torrent": 30,
+                    "max_global_peers": 150,
+                },
+                "discovery": {
+                    "tracker_announce_interval": 90.0,
+                },
+                "optimization": {
+                    "enable_adaptive_intervals": True,
+                    "enable_performance_based_recycling": True,
+                    "efficiency_connection_limit_multiplier": 0.8,
+                    "enable_bandwidth_aware_scheduling": True,
+                },
+            },
+            OptimizationProfile.LOW_RESOURCE: {
+                "strategy": {
+                    "piece_selection": "rarest_first",
+                    "pipeline_capacity": 2,
+                    "endgame_duplicates": 1,
+                },
+                "network": {
+                    "max_connections_per_torrent": 10,
+                    "max_global_peers": 50,
+                },
+                "discovery": {
+                    "tracker_announce_interval": 120.0,
+                },
+                "optimization": {
+                    "enable_adaptive_intervals": False,
+                    "enable_performance_based_recycling": False,
+                    "low_resource_max_connections": 20,
+                    "enable_bandwidth_aware_scheduling": False,
+                },
+            },
+            OptimizationProfile.CUSTOM: {
+                # CUSTOM profile doesn't override anything
+                # User has full control via config file
+            },
+        }
+        
+        if profile == OptimizationProfile.CUSTOM:
+            # Don't apply any overrides for CUSTOM profile
+            return
+        
+        profile_config = profiles.get(profile)
+        if not profile_config:
+            raise ConfigurationError(f"Profile {profile} not found in profile definitions")
+        
+        # Apply profile settings
+        for section, settings in profile_config.items():
+            if section == "strategy":
+                for key, value in settings.items():
+                    if hasattr(self.config.strategy, key):
+                        setattr(self.config.strategy, key, value)
+            elif section == "network":
+                for key, value in settings.items():
+                    if hasattr(self.config.network, key):
+                        setattr(self.config.network, key, value)
+            elif section == "discovery":
+                for key, value in settings.items():
+                    if hasattr(self.config.discovery, key):
+                        setattr(self.config.discovery, key, value)
+            elif section == "optimization":
+                for key, value in settings.items():
+                    if hasattr(self.config.optimization, key):
+                        setattr(self.config.optimization, key, value)
+        
+        # Update profile field
+        self.config.optimization.profile = profile
 
     def export_schema(self, format_type: str = "json") -> str:
         """Export configuration schema in specified format.
