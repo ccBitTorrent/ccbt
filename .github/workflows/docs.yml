@@ -54,7 +54,33 @@ jobs:
       
       - name: Build documentation
         run: |
-          uv run python -c "import sys; import importlib.util; spec = importlib.util.spec_from_file_location('mkdocs_i18n_fix', 'dev/scripts/mkdocs_i18n_fix.py'); module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)" && uv run mkdocs build --strict -f dev/mkdocs.yml
+          cat > /tmp/mkdocs_patch.py << 'PATCH_EOF'
+          import mkdocs_static_i18n
+          from mkdocs_static_i18n.plugin import I18n
+          original_is_relative_to = mkdocs_static_i18n.is_relative_to
+          original_reconfigure_files = I18n.reconfigure_files
+          def patched_is_relative_to(src_path, dest_path):
+              if src_path is None:
+                  return False
+              try:
+                  return original_is_relative_to(src_path, dest_path)
+              except (TypeError, AttributeError):
+                  return False
+          def patched_reconfigure_files(self, files, mkdocs_config):
+              valid_files = [f for f in files if hasattr(f, 'abs_src_path') and f.abs_src_path is not None]
+              invalid_files = [f for f in files if not hasattr(f, 'abs_src_path') or f.abs_src_path is None]
+              if valid_files:
+                  result = original_reconfigure_files(self, valid_files, mkdocs_config)
+                  if invalid_files:
+                      result.extend(invalid_files)
+                  return result
+              return files
+          mkdocs_static_i18n.is_relative_to = patched_is_relative_to
+          import mkdocs_static_i18n.reconfigure
+          mkdocs_static_i18n.reconfigure.is_relative_to = patched_is_relative_to
+          I18n.reconfigure_files = patched_reconfigure_files
+          PATCH_EOF
+          uv run python /tmp/mkdocs_patch.py && uv run mkdocs build --strict -f dev/mkdocs.yml
       
       - name: Upload documentation artifact
         uses: actions/upload-artifact@v4
