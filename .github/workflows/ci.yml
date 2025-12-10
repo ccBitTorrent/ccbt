@@ -151,9 +151,12 @@ jobs:
             invalid_files = [f for f in files if not hasattr(f, 'abs_src_path') or f.abs_src_path is None]
             if valid_files:
                 result = original_reconfigure_files(self, valid_files, mkdocs_config)
+                # Add invalid files back using append (I18nFiles is not a list)
                 if invalid_files:
-                    result.extend(invalid_files)
+                    for invalid_file in invalid_files:
+                        result.append(invalid_file)
                 return result
+            # If no valid files, return original files object (shouldn't happen but safe fallback)
             return files
         
         # Apply patches - patch the source module first
