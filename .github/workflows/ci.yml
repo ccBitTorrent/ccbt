@@ -127,7 +127,7 @@ jobs:
 
     - name: Build documentation
       run: |
-        uv run mkdocs build --strict -f dev/mkdocs.yml
+        uv run python -c "import sys; import os; sys.path.insert(0, os.path.join(os.getcwd(), 'dev', 'scripts')); import mkdocs_i18n_fix" && uv run mkdocs build --strict -f dev/mkdocs.yml
 
     - name: Validate translations
       run: |
