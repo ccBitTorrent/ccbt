@@ -571,6 +571,10 @@ class TestBackgroundTaskCleanup:
         from ccbt.session.session import AsyncSessionManager
 
         manager = AsyncSessionManager(str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
 
         # Create a scrape task
@@ -595,6 +599,10 @@ class TestBackgroundTaskCleanup:
         from ccbt.session.session import AsyncSessionManager
 
         manager = AsyncSessionManager(str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
 
         # Verify tasks exist

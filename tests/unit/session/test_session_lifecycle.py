@@ -20,6 +20,10 @@ class TestSessionManagerLifecycle:
     async def test_start_stop(self, tmp_path):
         """Test starting and stopping session manager."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         assert manager._cleanup_task is not None
         assert manager._metrics_task is not None
@@ -32,10 +36,13 @@ class TestSessionManagerLifecycle:
     async def test_start_with_dht_disabled(self, tmp_path):
         """Test starting session manager with DHT disabled."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
-        with patch.object(manager.config.discovery, "enable_dht", False):
-            await manager.start()
-            assert manager.dht_client is None
-            await manager.stop()
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
+        await manager.start()
+        assert manager.dht_client is None
+        await manager.stop()
 
     @pytest.mark.asyncio
     async def test_start_peer_service_error(self, tmp_path):
@@ -61,6 +68,10 @@ class TestSessionManagerLifecycle:
     async def test_stop_peer_service_error(self, tmp_path):
         """Test stopping session manager when peer service fails."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         if manager.peer_service:
@@ -293,6 +304,10 @@ class TestSessionManagerAddMagnet:
     async def test_add_magnet(self, tmp_path):
         """Test adding magnet link."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         info_hash = b"\x00" * 20
@@ -325,6 +340,10 @@ class TestSessionManagerAddMagnet:
     async def test_add_magnet_string_info_hash(self, tmp_path):
         """Test adding magnet with string info_hash."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         info_hash = b"\x00" * 20
@@ -445,6 +464,10 @@ class TestSessionManagerRemove:
     async def test_remove_torrent(self, tmp_path):
         """Test removing torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         torrent_data = {
@@ -466,6 +489,10 @@ class TestSessionManagerRemove:
     async def test_remove_nonexistent(self, tmp_path):
         """Test removing non-existent torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         result = await manager.remove("00" * 20)
@@ -477,6 +504,10 @@ class TestSessionManagerRemove:
     async def test_remove_invalid_hash(self, tmp_path):
         """Test removing with invalid hash."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         result = await manager.remove("invalid")
@@ -660,6 +691,10 @@ class TestSessionManagerRateLimits:
     async def test_set_rate_limits_nonexistent(self, tmp_path):
         """Test setting rate limits for non-existent torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         result = await manager.set_rate_limits("00" * 20, download_kib=100, upload_kib=50)
@@ -671,6 +706,10 @@ class TestSessionManagerRateLimits:
     async def test_set_rate_limits_invalid_hash(self, tmp_path):
         """Test setting rate limits with invalid hash."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         result = await manager.set_rate_limits("invalid", download_kib=100, upload_kib=50)
@@ -774,6 +813,10 @@ class TestSessionManagerStatus:
     async def test_get_global_stats(self, tmp_path):
         """Test getting global stats."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         stats = await manager.get_global_stats()
@@ -787,6 +830,10 @@ class TestSessionManagerStatus:
     async def test_get_global_stats_with_torrents(self, tmp_path):
         """Test getting global stats with active torrents."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         torrent_data = {
