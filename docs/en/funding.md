@@ -62,7 +62,7 @@ This category covers:
 
 ## How to Support
 
-1. Visit our [GitHub Sponsors page](https://github.com/sponsors/yourusername) (link to be updated)
+1. Visit our [GitHub Sponsors page](https://github.com/sponsors/ccBitTorrent) (link to be updated)
 2. Choose a monthly sponsorship tier
 3. Set up recurring support
 

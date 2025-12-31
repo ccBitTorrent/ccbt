@@ -9,10 +9,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ccbt.models import XetSyncStatus
 from ccbt.session.xet_sync_manager import XetSyncManager
+
+if TYPE_CHECKING:
+    from ccbt.models import XetSyncStatus
 from ccbt.storage.folder_watcher import FolderWatcher
 from ccbt.storage.git_versioning import GitVersioning
 
@@ -111,12 +113,10 @@ class XetFolder:
 
         try:
             # Process queued updates
-            processed = await self.sync_manager.process_updates(
-                self._handle_update
-            )
+            processed = await self.sync_manager.process_updates(self._handle_update)
             self.logger.info("Processed %d updates", processed)
             return True
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error during sync")
             return False
         finally:
@@ -182,10 +182,8 @@ class XetFolder:
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    # If loop is running, create task
-                    task = asyncio.create_task(
-                        self.git_versioning.get_current_commit()
-                    )
+                    # If loop is running, create task - fire-and-forget
+                    asyncio.create_task(self.git_versioning.get_current_commit())  # noqa: RUF006
                     # Don't await, just set None for now
                     status.current_git_ref = None
                 else:
@@ -212,7 +210,7 @@ class XetFolder:
 
         try:
             return await self.git_versioning.get_commit_refs(max_refs=max_refs)
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error getting versions")
             return []
 
@@ -226,10 +224,8 @@ class XetFolder:
         """
         self.logger.debug("Folder change detected: %s - %s", event_type, file_path)
 
-        # Queue update for synchronization
-        asyncio.create_task(
-            self._queue_folder_change(event_type, file_path)
-        )
+        # Queue update for synchronization - fire-and-forget
+        asyncio.create_task(self._queue_folder_change(event_type, file_path))  # noqa: RUF006
 
     async def _queue_folder_change(self, event_type: str, file_path: str) -> None:
         """Queue folder change for synchronization.
@@ -263,7 +259,7 @@ class XetFolder:
                     priority=1 if event_type == "created" else 0,
                 )
 
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error queueing folder change")
 
     async def _handle_update(self, entry: Any) -> None:  # UpdateEntry
@@ -295,7 +291,7 @@ class XetFolder:
                 )
                 if current_ref:
                     self.sync_manager.set_current_git_ref(current_ref)
-                    
+
                     # Auto-commit if enabled and there are changes
                     if self.git_versioning.auto_commit:
                         try:
@@ -319,4 +315,3 @@ class XetFolder:
 
         # For now, just log
         self.logger.info("Update processed: %s", entry.file_path)
-

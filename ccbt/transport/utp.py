@@ -1776,7 +1776,7 @@ class UTPConnection:
         # This is used by _selective_retransmit() if needed
 
     def _selective_retransmit(self, missing_seqs: list[int]) -> None:
-        """Selectively retransmit only missing packets.
+        """Retransmit only missing packets selectively.
 
         Args:
             missing_seqs: List of sequence numbers to retransmit

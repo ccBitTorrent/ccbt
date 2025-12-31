@@ -54,14 +54,17 @@ class TestRaftConsensus:
     @pytest.mark.asyncio
     async def test_raft_leader_election(self, raft_node):
         """Test Raft leader election."""
+        from ccbt.consensus.raft import RaftRole
+        
         # Start node
         await raft_node.start()
 
-        # Wait for election
-        await asyncio.sleep(3.0)
+        # Wait for election (timeout is 2.0 + random(0, 2.0) = 2.0-4.0 seconds)
+        # Wait 5 seconds to account for randomization
+        await asyncio.sleep(5.0)
 
         # Node should become leader (single node cluster)
-        assert raft_node.state == "leader"
+        assert raft_node.role == RaftRole.LEADER
 
         await raft_node.stop()
 
@@ -70,15 +73,16 @@ class TestRaftConsensus:
         """Test Raft log replication."""
         await raft_node.start()
 
-        # Wait for leader election
-        await asyncio.sleep(3.0)
+        # Wait for leader election (timeout is 2.0 + random(0, 2.0) = 2.0-4.0 seconds)
+        # Wait 5 seconds to account for randomization
+        await asyncio.sleep(5.0)
 
         # Append entry
         command = {"type": "update", "data": "test"}
         success = await raft_node.append_entry(command)
 
         assert success is True
-        assert len(raft_node.log) > 0
+        assert len(raft_node.state.log) > 0
 
         await raft_node.stop()
 
@@ -96,9 +100,9 @@ class TestRaftConsensus:
 
         # Save state
         state = RaftState(
-            current_term=raft_node.current_term,
-            voted_for=raft_node.voted_for,
-            log=raft_node.log,
+            current_term=raft_node.state.current_term,
+            voted_for=raft_node.state.voted_for,
+            log=raft_node.state.log,
         )
         state_path = temp_state_dir / "raft_state.json"
         state.save(state_path)

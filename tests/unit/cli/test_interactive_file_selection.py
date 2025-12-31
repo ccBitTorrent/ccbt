@@ -129,7 +129,8 @@ def interactive_cli_with_layout(interactive_cli):
 @pytest.fixture
 def interactive_cli(mock_session, mock_console):
     """Create an InteractiveCLI instance."""
-    return InteractiveCLI(mock_session, mock_console)
+    from tests.conftest import create_interactive_cli
+    return create_interactive_cli(mock_session, mock_console)
 
 
 class TestInteractiveFileSelection:
@@ -819,14 +820,16 @@ class TestStatusCommandFileSelection:
         torrent_session_with_files,
     ):
         """Test show_status includes file selection information."""
-        from ccbt.cli.main import show_status
+        from ccbt.cli.status import show_status
+        from ccbt.executor.session_adapter import LocalSessionAdapter
         from rich.console import Console
 
         info_hash_bytes = bytes.fromhex("abcd1234" * 5)
         mock_session.torrents = {info_hash_bytes: torrent_session_with_files}
         console = Console(record=True)
+        adapter = LocalSessionAdapter(mock_session)
 
-        await show_status(mock_session, console)
+        await show_status(adapter, console)
 
         # Check output contains file selection info
         output = console.export_text()
@@ -839,7 +842,8 @@ class TestStatusCommandFileSelection:
         mock_session,
     ):
         """Test show_status when no file selection managers exist."""
-        from ccbt.cli.main import show_status
+        from ccbt.cli.status import show_status
+        from ccbt.executor.session_adapter import LocalSessionAdapter
         from rich.console import Console
 
         # Create torrent session without file manager
@@ -848,8 +852,9 @@ class TestStatusCommandFileSelection:
         info_hash_bytes = bytes.fromhex("abcd1234" * 5)
         mock_session.torrents = {info_hash_bytes: torrent_session}
         console = Console(record=True)
+        adapter = LocalSessionAdapter(mock_session)
 
-        await show_status(mock_session, console)
+        await show_status(adapter, console)
 
         # Should still complete without error
         output = console.export_text()
@@ -858,13 +863,15 @@ class TestStatusCommandFileSelection:
     @pytest.mark.asyncio
     async def test_show_status_empty_torrents(self, mock_session):
         """Test show_status with empty torrents."""
-        from ccbt.cli.main import show_status
+        from ccbt.cli.status import show_status
+        from ccbt.executor.session_adapter import LocalSessionAdapter
         from rich.console import Console
 
         mock_session.torrents = {}
         console = Console(record=True)
+        adapter = LocalSessionAdapter(mock_session)
 
-        await show_status(mock_session, console)
+        await show_status(adapter, console)
 
         # Should complete without error
         output = console.export_text()

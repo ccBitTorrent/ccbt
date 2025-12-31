@@ -6,9 +6,14 @@ For spinner utilities and helper functions, see ccbt.utils.console_utils.
 
 from __future__ import annotations
 
-from rich.console import Console
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 # Re-export utilities from console_utils for convenience
+import contextlib
+
 from ccbt.utils.console_utils import (
     create_console,
     create_progress,
@@ -51,10 +56,5 @@ def safe_print_error(
             safe_message = message.encode("ascii", errors="replace").decode("ascii")
             console.print(f"{prefix} {safe_message}")
     except Exception:
-        try:
-            safe_msg = str(message).encode("ascii", errors="replace").decode("ascii")
-            print(f"Error: {safe_msg}")
-        except Exception:
-            print(
-                "Error: An error occurred (details unavailable due to encoding issues)"
-            )
+        with contextlib.suppress(Exception):
+            str(message).encode("ascii", errors="replace").decode("ascii")

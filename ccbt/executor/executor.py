@@ -5,7 +5,7 @@ Routes commands to appropriate domain executors.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ccbt.executor.base import CommandExecutor, CommandResult
 from ccbt.executor.config_executor import ConfigExecutor
@@ -15,9 +15,11 @@ from ccbt.executor.protocol_executor import ProtocolExecutor
 from ccbt.executor.queue_executor import QueueExecutor
 from ccbt.executor.scrape_executor import ScrapeExecutor
 from ccbt.executor.security_executor import SecurityExecutor
-from ccbt.executor.session_adapter import SessionAdapter
 from ccbt.executor.session_executor import SessionExecutor
 from ccbt.executor.torrent_executor import TorrentExecutor
+
+if TYPE_CHECKING:
+    from ccbt.executor.session_adapter import SessionAdapter
 from ccbt.executor.xet_executor import XetExecutor
 
 

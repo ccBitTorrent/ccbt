@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 Ko kuma shigar daga tushe:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-Matsakaicin shigarwa an bayyana su a [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81).
+Matsakaicin shigarwa an bayyana su a [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81).
 
 ## Matsakaicin Shigarwa na Farko
 
@@ -42,8 +42,8 @@ ccBitTorrent yana ba da matsakaicin shigarwa guda uku:
 
 **Bitonic** shine babban tsarin dashboard na terminal. Yana ba da ra'ayi mai rai, mai hulɗa na duk torrents, peers, da ma'auni na tsarin.
 
-- Matsakaicin shigarwa: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- An bayyana a: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- Matsakaicin shigarwa: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- An bayyana a: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - Kaddamar: `uv run bitonic` ko `uv run ccbt dashboard`
 
 Don amfani mai cikakke, duba [Jagorar Bitonic](bitonic.md).
@@ -52,8 +52,8 @@ Don amfani mai cikakke, duba [Jagorar Bitonic](bitonic.md).
 
 **btbt** shine ingantaccen tsarin layin umarni mai fasali masu yawa.
 
-- Matsakaicin shigarwa: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- An bayyana a: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- Matsakaicin shigarwa: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- An bayyana a: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - Kaddamar: `uv run btbt`
 
 Don duk umarnin da ake samu, duba [Nassoshi na btbt CLI](btbt-cli.md).
@@ -62,8 +62,8 @@ Don duk umarnin da ake samu, duba [Nassoshi na btbt CLI](btbt-cli.md).
 
 **ccbt** shine tsarin layin umarni na asali.
 
-- Matsakaicin shigarwa: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- An bayyana a: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- Matsakaicin shigarwa: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- An bayyana a: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - Kaddamar: `uv run ccbt`
 
 ## Fara Aiki da Sauri
@@ -104,9 +104,9 @@ Don duk zaɓuɓɓukan zazzagewa, duba [Nassoshi na btbt CLI](btbt-cli.md).
 ### Saita ccBitTorrent
 
 Ƙirƙiri fayil ɗin `ccbt.toml` a cikin babban fayil ɗin aikin ku. Duba misalin saitin:
-- Saitin tsoho: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- Masu canza yanayi: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- Tsarin saitin: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- Saitin tsoho: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- Masu canza yanayi: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- Tsarin saitin: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 Don cikakkun zaɓuɓɓukan saitin, duba [Jagorar Saitin](configuration.md).
 
@@ -132,7 +132,7 @@ Ana samar da waɗannan rahotanni kuma ana sabunta su ta atomatik a matsayin wani
 
 - Yi amfani da `uv run bitonic --help` ko `uv run btbt --help` don taimakon umarni
 - Bincika [Nassoshi na btbt CLI](btbt-cli.md) don cikakkun zaɓuɓɓuka
-- Ziyarci [ma'ajiyar mu ta GitHub](https://github.com/yourusername/ccbittorrent) don batutuwa da tattaunawa
+- Ziyarci [ma'ajiyar mu ta GitHub](https://github.com/ccBitTorrent/ccbittorrent) don batutuwa da tattaunawa
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 Ko kuma shigar daga tushe:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-Matsakaicin shigarwa an bayyana su a [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81).
+Matsakaicin shigarwa an bayyana su a [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81).
 
 ## Matsakaicin Shigarwa na Farko
 
@@ -181,8 +181,8 @@ ccBitTorrent yana ba da matsakaicin shigarwa guda uku:
 
 **Bitonic** shine babban tsarin dashboard na terminal. Yana ba da ra'ayi mai rai, mai hulɗa na duk torrents, peers, da ma'auni na tsarin.
 
-- Matsakaicin shigarwa: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- An bayyana a: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- Matsakaicin shigarwa: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- An bayyana a: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - Kaddamar: `uv run bitonic` ko `uv run ccbt dashboard`
 
 Don amfani mai cikakke, duba [Jagorar Bitonic](bitonic.md).
@@ -191,8 +191,8 @@ Don amfani mai cikakke, duba [Jagorar Bitonic](bitonic.md).
 
 **btbt** shine ingantaccen tsarin layin umarni mai fasali masu yawa.
 
-- Matsakaicin shigarwa: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- An bayyana a: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- Matsakaicin shigarwa: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- An bayyana a: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - Kaddamar: `uv run btbt`
 
 Don duk umarnin da ake samu, duba [Nassoshi na btbt CLI](btbt-cli.md).
@@ -201,8 +201,8 @@ Don duk umarnin da ake samu, duba [Nassoshi na btbt CLI](btbt-cli.md).
 
 **ccbt** shine tsarin layin umarni na asali.
 
-- Matsakaicin shigarwa: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- An bayyana a: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- Matsakaicin shigarwa: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- An bayyana a: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - Kaddamar: `uv run ccbt`
 
 ## Fara Aiki da Sauri
@@ -243,9 +243,9 @@ Don duk zaɓuɓɓukan zazzagewa, duba [Nassoshi na btbt CLI](btbt-cli.md).
 ### Saita ccBitTorrent
 
 Ƙirƙiri fayil ɗin `ccbt.toml` a cikin babban fayil ɗin aikin ku. Duba misalin saitin:
-- Saitin tsoho: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- Masu canza yanayi: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- Tsarin saitin: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- Saitin tsoho: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- Masu canza yanayi: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- Tsarin saitin: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 Don cikakkun zaɓuɓɓukan saitin, duba [Jagorar Saitin](configuration.md).
 
@@ -271,7 +271,7 @@ Ana samar da waɗannan rahotanni kuma ana sabunta su ta atomatik a matsayin wani
 
 - Yi amfani da `uv run bitonic --help` ko `uv run btbt --help` don taimakon umarni
 - Bincika [Nassoshi na btbt CLI](btbt-cli.md) don cikakkun zaɓuɓɓuka
-- Ziyarci [ma'ajiyar mu ta GitHub](https://github.com/yourusername/ccbittorrent) don batutuwa da tattaunawa
+- Ziyarci [ma'ajiyar mu ta GitHub](https://github.com/ccBitTorrent/ccbittorrent) don batutuwa da tattaunawa
 
 
 

@@ -1,14 +1,23 @@
+"""Resume functionality for the CLI.
+
+This module provides commands for resuming interrupted downloads
+and managing checkpoint data.
+"""
+
 from __future__ import annotations
 
 import asyncio
-from typing import Any
-
-from rich.console import Console
+from typing import TYPE_CHECKING, Any
 
 from ccbt.cli.interactive import InteractiveCLI
+
+if TYPE_CHECKING:
+    from rich.console import Console
 from ccbt.cli.progress import ProgressManager
 from ccbt.i18n import _
-from ccbt.session.session import AsyncSessionManager
+
+if TYPE_CHECKING:
+    from ccbt.session.session import AsyncSessionManager
 
 
 async def resume_download(
@@ -30,7 +39,7 @@ async def resume_download(
         if cleanup_task is None:
             await session.start()
         console.print(_("[green]Resuming download from checkpoint...[/green]"))
-        resumed_info_hash = await session.resume_from_checkpoint(
+        resumed_info_hash = await session.checkpoint_ops.resume_from_checkpoint(  # type: ignore[attr-defined]
             info_hash_bytes,
             checkpoint,
         )
@@ -46,7 +55,9 @@ async def resume_download(
             executor_manager = ExecutorManager.get_instance()
             executor = executor_manager.get_executor(session_manager=session)
             adapter = executor.adapter
-            interactive_cli = InteractiveCLI(executor, adapter, console, session=session)
+            interactive_cli = InteractiveCLI(
+                executor, adapter, console, session=session
+            )
             await interactive_cli.run()
         else:
             progress_manager = ProgressManager(console)
@@ -56,7 +67,14 @@ async def resume_download(
                     total=100,
                 )
                 while True:
-                    torrent_status = await session.get_torrent_status(resumed_info_hash)
+                    # Get torrent status by accessing the torrent session directly
+                    info_hash_bytes = bytes.fromhex(resumed_info_hash)
+                    async with session.lock:
+                        torrent_session = session.torrents.get(info_hash_bytes)
+                        if torrent_session:
+                            torrent_status = await torrent_session.get_status()
+                        else:
+                            torrent_status = None
                     if not torrent_status:
                         console.print(_("[yellow]Torrent session ended[/yellow]"))
                         break
@@ -76,4 +94,6 @@ async def resume_download(
         try:
             await session.stop()
         except Exception as e:
-            console.print(_("[yellow]Warning: Error stopping session: {e}[/yellow]").format(e=e))
+            console.print(
+                _("[yellow]Warning: Error stopping session: {e}[/yellow]").format(e=e)
+            )

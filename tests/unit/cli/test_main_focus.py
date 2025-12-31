@@ -40,7 +40,12 @@ class _FakeSession:
             network=SimpleNamespace(
                 listen_port=6881,
                 enable_utp=False,
-                protocol_v2=SimpleNamespace(enable_v2=False, prefer_v2=False),
+                protocol_v2=SimpleNamespace(
+                    enable_protocol_v2=False,
+                    prefer_protocol_v2=False,
+                    support_hybrid=False,
+                    v2_handshake_timeout=30.0,
+                ),
                 webtorrent=SimpleNamespace(
                     enable_webtorrent=False,
                     webtorrent_host="localhost",
@@ -157,12 +162,16 @@ def test_download_checkpoint_noninteractive(monkeypatch):
             
         async def stop(self):
             pass
-            
-        def load_torrent(self, _path):
-            # Minimal torrent-like dict expected by code
-            return {"info_hash": b"\x00" * 20, "name": "t"}
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _FakeMgr())
+
+    # Mock load_torrent from torrent_utils (not session manager)
+    def _mock_load_torrent(_path):
+        return {"info_hash": b"\x00" * 20, "name": "t", "pieces_info": {"piece_hashes": [], "piece_length": 16384, "num_pieces": 0, "total_length": 0}, "file_info": {"total_length": 0}, "announce": ""}
+
+    fake_torrent_utils_mod = ModuleType("ccbt.session.torrent_utils")
+    setattr(fake_torrent_utils_mod, "load_torrent", _mock_load_torrent)
+    monkeypatch.setitem(sys.modules, "ccbt.session.torrent_utils", fake_torrent_utils_mod)
 
     # Inject a fake CheckpointManager module with async load_checkpoint
     fake_mod = ModuleType("ccbt.storage.checkpoint")
@@ -185,6 +194,12 @@ def test_download_checkpoint_noninteractive(monkeypatch):
 
     # Force non-interactive branch by making stdin not a TTY
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    # Mock start_basic_download to avoid actual download execution
+    async def _mock_start_basic_download(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(cli_main, "start_basic_download", _mock_start_basic_download)
 
     # Patch asyncio.run to actually consume coroutines created by download flow
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
@@ -259,11 +274,11 @@ def test_magnet_happy_path_noninteractive(monkeypatch):
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
 
-    async def _dummy_download(session, torrent_data, console, resume=False):
+    async def _dummy_magnet_download(session, magnet_link, console, resume=False):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
+    monkeypatch.setattr(cli_main, "start_basic_magnet_download", _dummy_magnet_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     result = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "--no-checkpoint"]) 
@@ -281,12 +296,13 @@ def test_download_happy_path_noninteractive(monkeypatch):
             
         async def stop(self):
             pass
-            
-        def load_torrent(self, _path):
-            return {"info_hash": b"\x00" * 20, "name": "t"}
 
     async def _dummy_download(session, torrent_data, console, resume=False):
         return None
+
+    # Mock load_torrent from torrent_utils (not session method)
+    from ccbt.session import torrent_utils
+    monkeypatch.setattr(torrent_utils, "load_torrent", lambda _path: {"info_hash": b"\x00" * 20, "name": "t"})
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
     monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)

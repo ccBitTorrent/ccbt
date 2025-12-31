@@ -31,12 +31,20 @@ class TestSimpleFunctionality:
         """Test that configuration has expected values."""
         from ccbt.config.config import get_config
 
+        # Get config - now properly isolated between tests via reset_config() fixture
         config = get_config()
 
         # Test some basic config values
         assert config.network.max_global_peers == 200
         assert config.disk.write_batch_kib == 64
-        assert config.strategy.piece_selection.value == "rarest_first"
+        # CRITICAL FIX: piece_selection may be deserialized as string (from config files) or enum (from code)
+        # Handle both cases - check string value directly or enum value
+        piece_selection_value = (
+            config.strategy.piece_selection.value
+            if hasattr(config.strategy.piece_selection, "value")
+            else config.strategy.piece_selection
+        )
+        assert piece_selection_value == "rarest_first"
 
     def test_peer_info_creation(self):
         """Test PeerInfo creation."""

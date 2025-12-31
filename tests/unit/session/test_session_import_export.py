@@ -8,27 +8,42 @@ from pathlib import Path
 @pytest.mark.asyncio
 async def test_export_session_state_writes_json(monkeypatch, tmp_path):
     """Test export_session_state writes session data to JSON file."""
+    from unittest.mock import AsyncMock, patch
     from ccbt.session.session import AsyncSessionManager
 
     class _Session:
+        def __init__(self):
+            from types import SimpleNamespace
+            self.info = SimpleNamespace(name="test-torrent")
+            self.state = "active"
+            self.progress = 0.5
+            self.downloaded = 0
+            self.uploaded = 0
+        
         async def get_status(self):
             return {"name": "test-torrent", "progress": 0.5}
 
     mgr = AsyncSessionManager(str(tmp_path))
     ih_bytes = b"1" * 20
 
-    async with mgr.lock:
-        mgr.torrents[ih_bytes] = _Session()
+    # Add session to torrents dict (lock is not needed for simple dict assignment in tests)
+    mgr.torrents[ih_bytes] = _Session()
 
-    export_path = tmp_path / "session.json"
-    await mgr.export_session_state(export_path)
+    # Mock get_peers_for_torrent to return empty list to prevent hanging
+    with patch.object(mgr, "get_peers_for_torrent", new_callable=AsyncMock, return_value=[]):
+        export_path = tmp_path / "session.json"
+        await mgr.export_session_state(export_path)
 
     assert export_path.exists()
     data = json.loads(export_path.read_text(encoding="utf-8"))
     assert "torrents" in data
-    assert "config" in data
-    assert ih_bytes.hex() in data["torrents"]
-    assert data["torrents"][ih_bytes.hex()]["name"] == "test-torrent"
+    assert "global_limits" in data
+    # Torrents are exported as a list, not a dict
+    assert isinstance(data["torrents"], list)
+    # Find the torrent by info_hash
+    torrent = next((t for t in data["torrents"] if t["info_hash"] == ih_bytes.hex()), None)
+    assert torrent is not None
+    assert torrent["name"] == "test-torrent"
 
 
 @pytest.mark.asyncio
@@ -43,7 +58,8 @@ async def test_export_session_state_with_empty_torrents(tmp_path):
 
     assert export_path.exists()
     data = json.loads(export_path.read_text(encoding="utf-8"))
-    assert data["torrents"] == {}
+    # Torrents are exported as a list, not a dict
+    assert data["torrents"] == []
 
 
 @pytest.mark.asyncio

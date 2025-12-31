@@ -31,7 +31,9 @@ def tonic() -> None:
 
 
 @tonic.command("create")
-@click.argument("folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.argument(
+    "folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
+)
 @click.option(
     "--output",
     "-o",
@@ -95,7 +97,9 @@ def tonic_create(
 
 
 @tonic.command("link")
-@click.argument("folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.argument(
+    "folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
+)
 @click.option(
     "--tonic-file",
     type=click.Path(exists=True),
@@ -108,7 +112,7 @@ def tonic_create(
 )
 @click.pass_context
 def tonic_link(
-    ctx,
+    _ctx,
     folder_path: str,
     tonic_file: str | None,
     sync_mode: str | None,
@@ -149,7 +153,7 @@ def tonic_link(
             )
         else:
             # Generate .tonic file first, then link
-            _, link = asyncio.run(
+            _tonic_file_bytes, link = asyncio.run(
                 generate_tonic_from_folder(
                     folder_path=folder_path,
                     generate_link=True,
@@ -166,7 +170,7 @@ def tonic_link(
     except Exception as e:
         console.print(_("[red]Error generating tonic link: {e}[/red]").format(e=e))
         logger.exception(_("Failed to generate tonic link"))
-        raise click.Abort() from e
+        raise click.Abort from e
 
 
 @tonic.command("sync")
@@ -186,7 +190,7 @@ def tonic_link(
 )
 @click.pass_context
 def tonic_sync(
-    ctx,
+    _ctx,
     tonic_input: str,
     output_dir: str | None,
     check_interval: float,
@@ -199,22 +203,30 @@ def tonic_sync(
         if tonic_input.startswith("tonic?:"):
             # Parse tonic link
             link_info = parse_tonic_link(tonic_input)
-            console.print(_("[cyan]Parsed tonic link: {name}[/cyan]").format(name=link_info.display_name or _("Unknown")))
+            console.print(
+                _("[cyan]Parsed tonic link: {name}[/cyan]").format(
+                    name=link_info.display_name or _("Unknown")
+                )
+            )
 
             # For now, just show that we would sync
             # In full implementation, would:
             # 1. Fetch .tonic file using info_hash
             # 2. Create XetFolder instance
             # 3. Start real-time sync
-            console.print(_("[yellow]Tonic link sync not yet fully implemented[/yellow]"))
+            console.print(
+                _("[yellow]Tonic link sync not yet fully implemented[/yellow]")
+            )
             console.print(_("  This would fetch the .tonic file and start syncing"))
 
         else:
             # Assume it's a .tonic file path
             tonic_path = Path(tonic_input)
             if not tonic_path.exists():
-                console.print(_("[red]Tonic file not found: {path}[/red]").format(path=tonic_path))
-                raise click.Abort()
+                console.print(
+                    _("[red]Tonic file not found: {path}[/red]").format(path=tonic_path)
+                )
+                raise click.Abort
 
             # Parse .tonic file
             tonic_parser = TonicFile()
@@ -227,7 +239,9 @@ def tonic_sync(
             if not output_dir:
                 output_dir = folder_name
 
-            console.print(_("[cyan]Starting sync for: {name}[/cyan]").format(name=folder_name))
+            console.print(
+                _("[cyan]Starting sync for: {name}[/cyan]").format(name=folder_name)
+            )
             console.print(_("  Sync mode: {mode}").format(mode=sync_mode))
             console.print(_("  Output directory: {dir}").format(dir=output_dir))
 
@@ -248,11 +262,13 @@ def tonic_sync(
     except Exception as e:
         console.print(_("[red]Error starting sync: {e}[/red]").format(e=e))
         logger.exception(_("Failed to start sync"))
-        raise click.Abort() from e
+        raise click.Abort from e
 
 
 @tonic.command("status")
-@click.argument("folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.argument(
+    "folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
+)
 @click.pass_context
 def tonic_status(_ctx, folder_path: str) -> None:
     """Show sync status for a folder."""
@@ -262,7 +278,9 @@ def tonic_status(_ctx, folder_path: str) -> None:
         folder = XetFolder(folder_path=folder_path)
         status = folder.get_status()
 
-        console.print(_("[bold]Sync Status for: {path}[/bold]\n").format(path=folder_path))
+        console.print(
+            _("[bold]Sync Status for: {path}[/bold]\n").format(path=folder_path)
+        )
 
         table = Table(show_header=True, header_style="bold")
         table.add_column("Property", style="cyan")
@@ -289,7 +307,7 @@ def tonic_status(_ctx, folder_path: str) -> None:
     except Exception as e:
         console.print(_("[red]Error getting status: {e}[/red]").format(e=e))
         logger.exception(_("Failed to get sync status"))
-        raise click.Abort() from e
+        raise click.Abort from e
 
 
 @tonic.group("allowlist")
@@ -332,20 +350,24 @@ def tonic_allowlist_add(
                     raise ValueError(msg)
             except ValueError as e:
                 console.print(_("[red]Invalid public key: {e}[/red]").format(e=e))
-                raise click.Abort() from e
+                raise click.Abort from e
 
         allowlist.add_peer(peer_id=peer_id, public_key=public_key_bytes, alias=alias)
         asyncio.run(allowlist.save())
 
-        msg = _("[green]✓[/green] Added peer {peer_id} to allowlist").format(peer_id=peer_id)
+        msg = _("[green]✓[/green] Added peer {peer_id} to allowlist").format(
+            peer_id=peer_id
+        )
         if alias:
-            msg = _("[green]✓[/green] Added peer {peer_id} to allowlist with alias '{alias}'").format(peer_id=peer_id, alias=alias)
+            msg = _(
+                "[green]✓[/green] Added peer {peer_id} to allowlist with alias '{alias}'"
+            ).format(peer_id=peer_id, alias=alias)
         console.print(msg)
 
     except Exception as e:
         console.print(_("[red]Error adding peer to allowlist: {e}[/red]").format(e=e))
         logger.exception(_("Failed to add peer to allowlist"))
-        raise click.Abort() from e
+        raise click.Abort from e
 
 
 @tonic_allowlist.command("remove")
@@ -367,14 +389,24 @@ def tonic_allowlist_remove(
         removed = allowlist.remove_peer(peer_id)
         if removed:
             asyncio.run(allowlist.save())
-            console.print(_("[green]✓[/green] Removed peer {peer_id} from allowlist").format(peer_id=peer_id))
+            console.print(
+                _("[green]✓[/green] Removed peer {peer_id} from allowlist").format(
+                    peer_id=peer_id
+                )
+            )
         else:
-            console.print(_("[yellow]Peer {peer_id} not found in allowlist[/yellow]").format(peer_id=peer_id))
+            console.print(
+                _("[yellow]Peer {peer_id} not found in allowlist[/yellow]").format(
+                    peer_id=peer_id
+                )
+            )
 
     except Exception as e:
-        console.print(_("[red]Error removing peer from allowlist: {e}[/red]").format(e=e))
+        console.print(
+            _("[red]Error removing peer from allowlist: {e}[/red]").format(e=e)
+        )
         logger.exception(_("Failed to remove peer from allowlist"))
-        raise click.Abort() from e
+        raise click.Abort from e
 
 
 @tonic_allowlist.command("list")
@@ -394,7 +426,9 @@ def tonic_allowlist_list(_ctx, allowlist_path: str) -> None:
             console.print(_("[yellow]Allowlist is empty[/yellow]"))
             return
 
-        console.print(_("[bold]Allowlist ({count} peers):[/bold]\n").format(count=len(peers)))
+        console.print(
+            _("[bold]Allowlist ({count} peers):[/bold]\n").format(count=len(peers))
+        )
 
         table = Table(show_header=True, header_style="bold")
         table.add_column("Peer ID", style="cyan")
@@ -434,7 +468,7 @@ def tonic_allowlist_list(_ctx, allowlist_path: str) -> None:
     except Exception as e:
         console.print(_("[red]Error listing allowlist: {e}[/red]").format(e=e))
         logger.exception(_("Failed to list allowlist"))
-        raise click.Abort() from e
+        raise click.Abort from e
 
 
 @tonic.group("mode")
@@ -443,7 +477,9 @@ def tonic_mode() -> None:
 
 
 @tonic_mode.command("set")
-@click.argument("folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.argument(
+    "folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
+)
 @click.argument(
     "sync_mode",
     type=click.Choice(["designated", "best_effort", "broadcast", "consensus"]),
@@ -466,25 +502,31 @@ def tonic_mode_set(
         # Parse source peers
         source_peers_list: list[str] | None = None
         if source_peers:
-            source_peers_list = [p.strip() for p in source_peers.split(",") if p.strip()]
+            source_peers_list = [
+                p.strip() for p in source_peers.split(",") if p.strip()
+            ]
 
         # Update folder's sync mode
         folder = XetFolder(folder_path=folder_path)
         folder.set_sync_mode(sync_mode, source_peers_list)
-        
+
         console.print(_("[green]✓[/green] Sync mode updated"))
         console.print(_("  Mode: {mode}").format(mode=sync_mode))
         if source_peers_list:
-            console.print(_("  Source peers: {peers}").format(peers=', '.join(source_peers_list)))
+            console.print(
+                _("  Source peers: {peers}").format(peers=", ".join(source_peers_list))
+            )
 
     except Exception as e:
         console.print(_("[red]Error setting sync mode: {e}[/red]").format(e=e))
         logger.exception(_("Failed to set sync mode"))
-        raise click.Abort() from e
+        raise click.Abort from e
 
 
 @tonic_mode.command("get")
-@click.argument("folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.argument(
+    "folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
+)
 @click.pass_context
 def tonic_mode_get(_ctx, folder_path: str) -> None:
     """Get current synchronization mode for folder."""
@@ -494,13 +536,15 @@ def tonic_mode_get(_ctx, folder_path: str) -> None:
         folder = XetFolder(folder_path=folder_path)
         status = folder.get_status()
 
-        console.print(_("[bold]Sync Mode for: {path}[/bold]\n").format(path=folder_path))
+        console.print(
+            _("[bold]Sync Mode for: {path}[/bold]\n").format(path=folder_path)
+        )
         console.print(_("  Current mode: {mode}").format(mode=status.sync_mode))
 
     except Exception as e:
         console.print(_("[red]Error getting sync mode: {e}[/red]").format(e=e))
         logger.exception(_("Failed to get sync mode"))
-        raise click.Abort() from e
+        raise click.Abort from e
 
 
 @tonic_allowlist.group("alias")
@@ -527,22 +571,34 @@ def tonic_allowlist_alias_add(
         asyncio.run(allowlist.load())
 
         if not allowlist.is_allowed(peer_id):
-            console.print(_("[red]Peer {peer_id} not found in allowlist[/red]").format(peer_id=peer_id))
+            console.print(
+                _("[red]Peer {peer_id} not found in allowlist[/red]").format(
+                    peer_id=peer_id
+                )
+            )
             console.print(_("  Add the peer first using 'tonic allowlist add'"))
-            raise click.Abort()
+            raise click.Abort
 
         success = allowlist.set_alias(peer_id, alias)
         if success:
             asyncio.run(allowlist.save())
-            console.print(_("[green]✓[/green] Set alias '{alias}' for peer {peer_id}").format(alias=alias, peer_id=peer_id))
+            console.print(
+                _("[green]✓[/green] Set alias '{alias}' for peer {peer_id}").format(
+                    alias=alias, peer_id=peer_id
+                )
+            )
         else:
-            console.print(_("[red]Failed to set alias for peer {peer_id}[/red]").format(peer_id=peer_id))
-            raise click.Abort()
+            console.print(
+                _("[red]Failed to set alias for peer {peer_id}[/red]").format(
+                    peer_id=peer_id
+                )
+            )
+            raise click.Abort
 
     except Exception as e:
         console.print(_("[red]Error setting alias: {e}[/red]").format(e=e))
         logger.exception(_("Failed to set alias"))
-        raise click.Abort() from e
+        raise click.Abort from e
 
 
 @tonic_allowlist_alias.command("remove")
@@ -564,14 +620,22 @@ def tonic_allowlist_alias_remove(
         removed = allowlist.remove_alias(peer_id)
         if removed:
             asyncio.run(allowlist.save())
-            console.print(_("[green]✓[/green] Removed alias for peer {peer_id}").format(peer_id=peer_id))
+            console.print(
+                _("[green]✓[/green] Removed alias for peer {peer_id}").format(
+                    peer_id=peer_id
+                )
+            )
         else:
-            console.print(_("[yellow]No alias found for peer {peer_id}[/yellow]").format(peer_id=peer_id))
+            console.print(
+                _("[yellow]No alias found for peer {peer_id}[/yellow]").format(
+                    peer_id=peer_id
+                )
+            )
 
     except Exception as e:
         console.print(_("[red]Error removing alias: {e}[/red]").format(e=e))
         logger.exception(_("Failed to remove alias"))
-        raise click.Abort() from e
+        raise click.Abort from e
 
 
 @tonic_allowlist_alias.command("list")
@@ -611,4 +675,4 @@ def tonic_allowlist_alias_list(_ctx, allowlist_path: str) -> None:
     except Exception as e:
         console.print(_("[red]Error listing aliases: {e}[/red]").format(e=e))
         logger.exception(_("Failed to list aliases"))
-        raise click.Abort() from e
+        raise click.Abort from e

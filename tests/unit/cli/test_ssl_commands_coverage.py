@@ -40,9 +40,19 @@ class TestSSLPathValidationCoverage:
         mock_config_manager = MagicMock()
         mock_config_manager.config = mock_config
 
-        monkeypatch.setattr(
-            cli_ssl_commands, "ConfigManager", lambda: mock_config_manager
-        )
+        # Patch init_config in the config module (it's imported inside the function)
+        import sys
+        config_module = sys.modules.get('ccbt.config.config')
+        if config_module is None:
+            import ccbt.config.config
+            config_module = sys.modules['ccbt.config.config']
+        monkeypatch.setattr(config_module, "init_config", lambda: mock_config_manager)
+        # Patch _get_config_from_context in the main module
+        main_module = sys.modules.get('ccbt.cli.main')
+        if main_module is None:
+            import ccbt.cli.main
+            main_module = sys.modules['ccbt.cli.main']
+        monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: mock_config_manager)
 
         # Patch Path.expanduser to return a path that doesn't exist
         # This simulates the case where expanduser returns a path that doesn't exist
@@ -79,9 +89,19 @@ class TestSSLPathValidationCoverage:
         mock_config_manager = MagicMock()
         mock_config_manager.config = mock_config
 
-        monkeypatch.setattr(
-            cli_ssl_commands, "ConfigManager", lambda: mock_config_manager
-        )
+        # Patch init_config in the config module (it's imported inside the function)
+        import sys
+        config_module = sys.modules.get('ccbt.config.config')
+        if config_module is None:
+            import ccbt.config.config
+            config_module = sys.modules['ccbt.config.config']
+        monkeypatch.setattr(config_module, "init_config", lambda: mock_config_manager)
+        # Patch _get_config_from_context in the main module
+        main_module = sys.modules.get('ccbt.cli.main')
+        if main_module is None:
+            import ccbt.cli.main
+            main_module = sys.modules['ccbt.cli.main']
+        monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: mock_config_manager)
 
         # Patch Path methods to simulate special file (exists but not file/dir)
         with patch("pathlib.Path.expanduser") as mock_expanduser, patch(

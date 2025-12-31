@@ -105,7 +105,7 @@ def _should_skip_project_local_write(
 
 @click.group()
 def config():
-    """Configuration management commands."""
+    """Manage configuration commands."""
 
 
 @config.command("show")

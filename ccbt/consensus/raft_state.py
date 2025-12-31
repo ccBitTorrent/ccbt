@@ -8,9 +8,11 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Any
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +114,8 @@ class RaftState:
                 json.dump(state_dict, f, indent=2)
 
             logger.debug("Saved Raft state to %s", state_path)
-        except Exception as e:
-            logger.error("Failed to save Raft state: %s", e)
+        except Exception:
+            logger.exception("Failed to save Raft state")
             raise
 
     @classmethod
@@ -193,4 +195,5 @@ class RaftState:
         return len(self.log) - 1
 
 
-
+# Type alias for RaftState class type (must be after class definition)
+RaftStateType = type[RaftState]

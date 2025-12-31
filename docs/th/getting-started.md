@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 หรือติดตั้งจากซอร์สโค้ด:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-จุดเข้าใช้งานถูกกำหนดไว้ใน [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81)
+จุดเข้าใช้งานถูกกำหนดไว้ใน [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81)
 
 ## จุดเข้าใช้งานหลัก
 
@@ -42,8 +42,8 @@ ccBitTorrent ให้จุดเข้าใช้งานหลักสา�
 
 **Bitonic** เป็นอินเทอร์เฟซแดชบอร์ดเทอร์มินัลหลัก มันให้มุมมองแบบเรียลไทม์และโต้ตอบได้ของ torrent ทั้งหมด peer และเมตริกระบบ
 
-- จุดเข้าใช้งาน: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- กำหนดไว้ใน: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- จุดเข้าใช้งาน: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- กำหนดไว้ใน: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - เริ่มต้น: `uv run bitonic` หรือ `uv run ccbt dashboard`
 
 ดู [คู่มือ Bitonic](bitonic.md) สำหรับการใช้งานโดยละเอียด
@@ -52,8 +52,8 @@ ccBitTorrent ให้จุดเข้าใช้งานหลักสา�
 
 **btbt** เป็นอินเทอร์เฟซบรรทัดคำสั่งที่ปรับปรุงแล้วพร้อมคุณสมบัติที่หลากหลาย
 
-- จุดเข้าใช้งาน: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- กำหนดไว้ใน: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- จุดเข้าใช้งาน: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- กำหนดไว้ใน: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - เริ่มต้น: `uv run btbt`
 
 ดู [อ้างอิง btbt CLI](btbt-cli.md) สำหรับคำสั่งทั้งหมดที่มี
@@ -62,8 +62,8 @@ ccBitTorrent ให้จุดเข้าใช้งานหลักสา�
 
 **ccbt** เป็นอินเทอร์เฟซบรรทัดคำสั่งพื้นฐาน
 
-- จุดเข้าใช้งาน: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- กำหนดไว้ใน: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- จุดเข้าใช้งาน: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- กำหนดไว้ใน: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - เริ่มต้น: `uv run ccbt`
 
 ## เริ่มต้นอย่างรวดเร็ว
@@ -104,9 +104,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### กำหนดค่า ccBitTorrent
 
 สร้างไฟล์ `ccbt.toml` ในไดเรกทอรีการทำงานของคุณ ดูการกำหนดค่าตัวอย่าง:
-- การกำหนดค่าเริ่มต้น: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- ตัวแปรสภาพแวดล้อม: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- ระบบการกำหนดค่า: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- การกำหนดค่าเริ่มต้น: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- ตัวแปรสภาพแวดล้อม: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- ระบบการกำหนดค่า: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 ดู [คู่มือการกำหนดค่า](configuration.md) สำหรับตัวเลือกการกำหนดค่าโดยละเอียด
 
@@ -132,7 +132,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - ใช้ `uv run bitonic --help` หรือ `uv run btbt --help` สำหรับความช่วยเหลือคำสั่ง
 - ตรวจสอบ [อ้างอิง btbt CLI](btbt-cli.md) สำหรับตัวเลือกโดยละเอียด
-- เยี่ยมชม [ที่เก็บ GitHub](https://github.com/yourusername/ccbittorrent) ของเราสำหรับปัญหาและการอภิปราย
+- เยี่ยมชม [ที่เก็บ GitHub](https://github.com/ccBitTorrent/ccbittorrent) ของเราสำหรับปัญหาและการอภิปราย
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 หรือติดตั้งจากซอร์สโค้ด:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-จุดเข้าใช้งานถูกกำหนดไว้ใน [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81)
+จุดเข้าใช้งานถูกกำหนดไว้ใน [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81)
 
 ## จุดเข้าใช้งานหลัก
 
@@ -181,8 +181,8 @@ ccBitTorrent ให้จุดเข้าใช้งานหลักสา�
 
 **Bitonic** เป็นอินเทอร์เฟซแดชบอร์ดเทอร์มินัลหลัก มันให้มุมมองแบบเรียลไทม์และโต้ตอบได้ของ torrent ทั้งหมด peer และเมตริกระบบ
 
-- จุดเข้าใช้งาน: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- กำหนดไว้ใน: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- จุดเข้าใช้งาน: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- กำหนดไว้ใน: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - เริ่มต้น: `uv run bitonic` หรือ `uv run ccbt dashboard`
 
 ดู [คู่มือ Bitonic](bitonic.md) สำหรับการใช้งานโดยละเอียด
@@ -191,8 +191,8 @@ ccBitTorrent ให้จุดเข้าใช้งานหลักสา�
 
 **btbt** เป็นอินเทอร์เฟซบรรทัดคำสั่งที่ปรับปรุงแล้วพร้อมคุณสมบัติที่หลากหลาย
 
-- จุดเข้าใช้งาน: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- กำหนดไว้ใน: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- จุดเข้าใช้งาน: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- กำหนดไว้ใน: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - เริ่มต้น: `uv run btbt`
 
 ดู [อ้างอิง btbt CLI](btbt-cli.md) สำหรับคำสั่งทั้งหมดที่มี
@@ -201,8 +201,8 @@ ccBitTorrent ให้จุดเข้าใช้งานหลักสา�
 
 **ccbt** เป็นอินเทอร์เฟซบรรทัดคำสั่งพื้นฐาน
 
-- จุดเข้าใช้งาน: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- กำหนดไว้ใน: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- จุดเข้าใช้งาน: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- กำหนดไว้ใน: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - เริ่มต้น: `uv run ccbt`
 
 ## เริ่มต้นอย่างรวดเร็ว
@@ -243,9 +243,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### กำหนดค่า ccBitTorrent
 
 สร้างไฟล์ `ccbt.toml` ในไดเรกทอรีการทำงานของคุณ ดูการกำหนดค่าตัวอย่าง:
-- การกำหนดค่าเริ่มต้น: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- ตัวแปรสภาพแวดล้อม: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- ระบบการกำหนดค่า: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- การกำหนดค่าเริ่มต้น: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- ตัวแปรสภาพแวดล้อม: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- ระบบการกำหนดค่า: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 ดู [คู่มือการกำหนดค่า](configuration.md) สำหรับตัวเลือกการกำหนดค่าโดยละเอียด
 
@@ -271,7 +271,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - ใช้ `uv run bitonic --help` หรือ `uv run btbt --help` สำหรับความช่วยเหลือคำสั่ง
 - ตรวจสอบ [อ้างอิง btbt CLI](btbt-cli.md) สำหรับตัวเลือกโดยละเอียด
-- เยี่ยมชม [ที่เก็บ GitHub](https://github.com/yourusername/ccbittorrent) ของเราสำหรับปัญหาและการอภิปราย
+- เยี่ยมชม [ที่เก็บ GitHub](https://github.com/ccBitTorrent/ccbittorrent) ของเราสำหรับปัญหาและการอภิปราย
 
 
 

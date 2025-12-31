@@ -280,9 +280,3 @@ def build_minimal_tonic_data(
         "sync_mode": sync_mode,
         "is_tonic": True,  # Mark as tonic link for DHT setup
     }
-
-
-
-
-
-

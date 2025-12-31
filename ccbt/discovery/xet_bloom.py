@@ -7,7 +7,6 @@ peer bloom exchange and merging.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from ccbt.discovery.bloom_filter import BloomFilter
 
@@ -88,7 +87,9 @@ class XetChunkBloomFilter:
         return self.bloom_filter.serialize()
 
     @classmethod
-    def from_peer_bloom(cls, data: bytes, chunk_size: int = 1000) -> XetChunkBloomFilter:
+    def from_peer_bloom(
+        cls, data: bytes, chunk_size: int = 1000
+    ) -> XetChunkBloomFilter:
         """Create bloom filter from peer's serialized data.
 
         Args:
@@ -147,6 +148,3 @@ class XetChunkBloomFilter:
     def __repr__(self) -> str:
         """Return string representation."""
         return f"XetChunkBloomFilter(chunks={len(self)}, fpr={self.get_false_positive_rate():.4f})"
-
-
-

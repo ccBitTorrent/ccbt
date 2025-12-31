@@ -240,7 +240,7 @@ class Protocol(ABC):
         return self.state in [ProtocolState.CONNECTED, ProtocolState.ACTIVE]
 
     def is_healthy(self) -> bool:
-        """Synchronous health check wrapper."""
+        """Perform synchronous health check."""
         return self.state in [ProtocolState.CONNECTED, ProtocolState.ACTIVE]
 
     async def __aenter__(self):
@@ -756,5 +756,18 @@ class ProtocolManager:
         return results
 
 
-# Singleton pattern removed - ProtocolManager is now managed via AsyncSessionManager.protocol_manager
-# This ensures proper lifecycle management and prevents conflicts between multiple session managers
+# Global protocol manager instance
+_protocol_manager: ProtocolManager | None = None
+
+
+def get_protocol_manager() -> ProtocolManager:
+    """Get the global protocol manager singleton.
+
+    Returns:
+        ProtocolManager: Global protocol manager instance.
+
+    """
+    global _protocol_manager
+    if _protocol_manager is None:
+        _protocol_manager = ProtocolManager()
+    return _protocol_manager

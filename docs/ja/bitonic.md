@@ -2,9 +2,9 @@
 
 **Bitonic** は ccBitTorrent のメインエントリーポイントで、トレント、ピア、速度、システムメトリクスを監視および管理するためのライブで対話的なターミナルダッシュボードを提供します。
 
-- エントリーポイント: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3914)
-- 定義場所: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
-- メインクラス: [ccbt/interface/terminal_dashboard.py:TerminalDashboard](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3009)
+- エントリーポイント: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3914)
+- 定義場所: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
+- メインクラス: [ccbt/interface/terminal_dashboard.py:TerminalDashboard](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3009)
 
 ## Bitonic の起動
 
@@ -27,7 +27,7 @@ uv run bitonic --refresh 2.0
 uv run ccbt dashboard --rules /path/to/alert-rules.json
 ```
 
-実装: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
+実装: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
 
 ## 完全なユーザージャーニーの例
 
@@ -1555,22 +1555,22 @@ Step 11: NAT Options
 ## 機能
 
 ### リアルタイム更新
-ライブのトレントステータスと進捗追跡、設定可能な間隔で更新されます。参照：[ccbt/interface/terminal_dashboard.py:_poll_once](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L389)。
+ライブのトレントステータスと進捗追跡、設定可能な間隔で更新されます。参照：[ccbt/interface/terminal_dashboard.py:_poll_once](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L389)。
 
 ### ピア監視
-接続されたピア、その速度、クライアント情報を表示します。参照：[ccbt/interface/terminal_dashboard.py:PeersTable](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L228)。
+接続されたピア、その速度、クライアント情報を表示します。参照：[ccbt/interface/terminal_dashboard.py:PeersTable](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L228)。
 
 ### 速度可視化
-スパークライン付きのダウンロード/アップロード速度グラフ。参照：[ccbt/interface/terminal_dashboard.py:SpeedSparklines](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L250)。
+スパークライン付きのダウンロード/アップロード速度グラフ。参照：[ccbt/interface/terminal_dashboard.py:SpeedSparklines](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L250)。
 
 ### アラートシステム
-重要なイベントのリアルタイム通知。アラート表示については[ccbt/interface/terminal_dashboard.py:491](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L491)を参照してください。
+重要なイベントのリアルタイム通知。アラート表示については[ccbt/interface/terminal_dashboard.py:491](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L491)を参照してください。
 
 ### インタラクティブコントロール
-一般的な操作のキーボードショートカット。参照：[ccbt/interface/terminal_dashboard.py:on_key](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3240)。
+一般的な操作のキーボードショートカット。参照：[ccbt/interface/terminal_dashboard.py:on_key](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3240)。
 
 ### マルチトレントサポート
-複数のダウンロードを同時に監視します。参照：[ccbt/interface/terminal_dashboard.py:TorrentsTable](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L221)。
+複数のダウンロードを同時に監視します。参照：[ccbt/interface/terminal_dashboard.py:TorrentsTable](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L221)。
 
 ### 監視画面
 詳細な監視メトリクスのための専門画面：
@@ -1588,18 +1588,18 @@ Step 11: NAT Options
 ダッシュボードは[Textual](https://textual.textualize.io/)で構築され、パネルに整理されています：
 
 ### レイアウト構造
-- **ヘッダー**：時計とアプリケーションタイトル。参照：[ccbt/interface/terminal_dashboard.py:323](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L323)
-- **ボディ**：左右のセクションに分割。参照：[ccbt/interface/terminal_dashboard.py:324](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L324)
+- **ヘッダー**：時計とアプリケーションタイトル。参照：[ccbt/interface/terminal_dashboard.py:323](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L323)
+- **ボディ**：左右のセクションに分割。参照：[ccbt/interface/terminal_dashboard.py:324](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L324)
 - **左パネル**：概要と速度グラフ
 - **右パネル**：トレント、ピア、詳細、ログ
-- **フッター**：ステータスバーとアラート。参照：[ccbt/interface/terminal_dashboard.py:333-334](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L333-L334)
+- **フッター**：ステータスバーとアラート。参照：[ccbt/interface/terminal_dashboard.py:333-334](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L333-L334)
 
-CSSスタイリング：[ccbt/interface/terminal_dashboard.py:279-297](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L279-L297)
+CSSスタイリング：[ccbt/interface/terminal_dashboard.py:279-297](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L279-L297)
 
 ### Panels
 
 #### 概要パネル
-グローバル統計を表示します。実装：[ccbt/interface/terminal_dashboard.py:Overview](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L174)
+グローバル統計を表示します。実装：[ccbt/interface/terminal_dashboard.py:Overview](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L174)
 - ダウンロード速度：現在のグローバルダウンロードレート
 - アップロード速度：現在のグローバルアップロードレート
 - 接続ピア：接続されたピアの総数
@@ -1607,7 +1607,7 @@ CSSスタイリング：[ccbt/interface/terminal_dashboard.py:279-297](https://g
 - 平均進捗：全体的な進捗パーセンテージ
 
 #### トレントパネル
-テーブル内のすべてのアクティブなトレントを表示します。実装：[ccbt/interface/terminal_dashboard.py:TorrentsTable](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L196)
+テーブル内のすべてのアクティブなトレントを表示します。実装：[ccbt/interface/terminal_dashboard.py:TorrentsTable](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L196)
 - 情報ハッシュ：トレント識別子
 - 名前：トレント名
 - ステータス：現在のステータス（ダウンロード中、シード中、一時停止）
@@ -1615,7 +1615,7 @@ CSSスタイリング：[ccbt/interface/terminal_dashboard.py:279-297](https://g
 - ダウン/アップレート：転送速度
 
 #### ピアパネル
-選択されたトレントのピアを表示します。実装：[ccbt/interface/terminal_dashboard.py:PeersTable](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L228)
+選択されたトレントのピアを表示します。実装：[ccbt/interface/terminal_dashboard.py:PeersTable](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L228)
 - IPアドレス：ピアのIPアドレス
 - ポート：ピアのポート
 - ダウン/アップレート：ピアへの/からの転送速度
@@ -1623,16 +1623,16 @@ CSSスタイリング：[ccbt/interface/terminal_dashboard.py:279-297](https://g
 - クライアント：BitTorrentクライアント識別
 
 #### 速度スパークライン
-リアルタイム速度可視化。実装：[ccbt/interface/terminal_dashboard.py:SpeedSparklines](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L250)
+リアルタイム速度可視化。実装：[ccbt/interface/terminal_dashboard.py:SpeedSparklines](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L250)
 - ダウンロードグラフ：ダウンロード速度履歴を示すスパークライン
 - アップロードグラフ：アップロード速度履歴を示すスパークライン
-- 最後の120サンプルを維持（1秒更新で約2分）。参照：[ccbt/interface/terminal_dashboard.py:269](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L269)
+- 最後の120サンプルを維持（1秒更新で約2分）。参照：[ccbt/interface/terminal_dashboard.py:269](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L269)
 
 #### 詳細パネル
-選択されたトレントの詳細情報を表示します。実装：[ccbt/interface/terminal_dashboard.py:428-439](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L428-L439)
+選択されたトレントの詳細情報を表示します。実装：[ccbt/interface/terminal_dashboard.py:428-439](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L428-L439)
 
 #### アラートパネル
-アラートルールとアクティブなアラートを表示します。実装：[ccbt/interface/terminal_dashboard.py:3059-3102](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3059-L3102)
+アラートルールとアクティブなアラートを表示します。実装：[ccbt/interface/terminal_dashboard.py:3059-3102](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3059-L3102)
 
 ## 監視画面
 
@@ -1651,7 +1651,7 @@ Bitonicは、メインダッシュボードからアクセス可能な専門的�
 - プロセス数
 - ネットワークI/O統計（送信/受信バイト数）
 
-**実装**：[ccbt/interface/terminal_dashboard.py:SystemResourcesScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L690)
+**実装**：[ccbt/interface/terminal_dashboard.py:SystemResourcesScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L690)
 
 **ナビゲーション**：`Escape`または`q`キーを押してメインダッシュボードに戻る
 
@@ -1669,7 +1669,7 @@ Bitonicは、メインダッシュボードからアクセス可能な専門的�
 - MetricsPluginからのイベント駆動メトリクス（利用可能な場合）
 - メトリクス収集統計
 
-**実装**：[ccbt/interface/terminal_dashboard.py:PerformanceMetricsScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L811)
+**実装**：[ccbt/interface/terminal_dashboard.py:PerformanceMetricsScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L811)
 
 **データソース**：
 - `MetricsCollector.get_performance_metrics()`
@@ -1690,7 +1690,7 @@ Bitonicは、メインダッシュボードからアクセス可能な専門的�
 - 視覚的インジケーター付きのピア接続品質メトリクス
 - 接続品質スコア（0-100）
 
-**実装**：[ccbt/interface/terminal_dashboard.py:NetworkQualityScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L889)
+**実装**：[ccbt/interface/terminal_dashboard.py:NetworkQualityScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L889)
 
 **品質計算**：
 - ピア速度とチョークステータスに基づく
@@ -1716,7 +1716,7 @@ Bitonicは、メインダッシュボードからアクセス可能な専門的�
 - メモリ使用率
 - ピア接続
 
-**実装**：[ccbt/interface/terminal_dashboard.py:HistoricalTrendsScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1059)
+**実装**：[ccbt/interface/terminal_dashboard.py:HistoricalTrendsScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1059)
 
 **ナビゲーション**：`Escape`または`q`キーを押してメインダッシュボードに戻る
 
@@ -1732,7 +1732,7 @@ Bitonicは、メインダッシュボードからアクセス可能な専門的�
 - アラート履歴（解決ステータス付きの最後の50アラート）
 - アラート統計（トリガー、解決、送信された通知）
 
-**実装**：[ccbt/interface/terminal_dashboard.py:AlertsDashboardScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1201)
+**実装**：[ccbt/interface/terminal_dashboard.py:AlertsDashboardScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1201)
 
 **重大度フォーマット**：
 - **CRITICAL**：太字の赤
@@ -1756,7 +1756,7 @@ Bitonicは、メインダッシュボードからアクセス可能な専門的�
 - 現在および集約値
 - ラベルとメタデータ
 
-**実装**：[ccbt/interface/terminal_dashboard.py:MetricsExplorerScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1376)
+**実装**：[ccbt/interface/terminal_dashboard.py:MetricsExplorerScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1376)
 
 **使用方法**：
 - フィルター入力にタイプして`Enter`を押してメトリクスをフィルタリング
@@ -1781,7 +1781,7 @@ Bitonicは、グローバルおよびトレントごとの設定を管理する�
 - ランタイムまたはファイルへの保存
 - 確認ダイアログ付きの未保存変更の検出
 
-**実装**：[ccbt/interface/terminal_dashboard.py:GlobalConfigMainScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1793)
+**実装**：[ccbt/interface/terminal_dashboard.py:GlobalConfigMainScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1793)
 
 **利用可能なセクション**：
 - ネットワーク設定
@@ -1806,7 +1806,7 @@ Bitonicは、グローバルおよびトレントごとの設定を管理する�
 - ファイル選択ステータス
 - トレント操作（アナウンス、スクレイプ、一時停止、再開など）
 
-**実装**：[ccbt/interface/terminal_dashboard.py:PerTorrentConfigMainScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L2241)
+**実装**：[ccbt/interface/terminal_dashboard.py:PerTorrentConfigMainScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L2241)
 
 **利用可能な操作**：
 - レート制限を設定（KiB/s、0 = 無制限）
@@ -1822,65 +1822,65 @@ Bitonicは、グローバルおよびトレントごとの設定を管理する�
 
 ## キーボードショートカット
 
-すべてのキーボードショートカットは[ccbt/interface/terminal_dashboard.py:on_key](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L505)と[ccbt/interface/terminal_dashboard.py:BINDINGS](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L337)で定義されています。
+すべてのキーボードショートカットは[ccbt/interface/terminal_dashboard.py:on_key](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L505)と[ccbt/interface/terminal_dashboard.py:BINDINGS](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L337)で定義されています。
 
 ### ナビゲーション
 - `↑/↓` - トレントリストをナビゲート（DataTableナビゲーション）
-- `Enter` - ファイルブラウザーの選択を処理。参照：[ccbt/interface/terminal_dashboard.py:714](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L714)
+- `Enter` - ファイルブラウザーの選択を処理。参照：[ccbt/interface/terminal_dashboard.py:714](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L714)
 
 ### トレント制御
-- `P` / `p` - 選択されたトレントを一時停止。参照：[ccbt/interface/terminal_dashboard.py:534](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L534)
-- `R` / `r` - 選択されたトレントを再開。参照：[ccbt/interface/terminal_dashboard.py:541](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L541)
-- `Delete` - 選択されたトレントを削除（確認付き）。参照：[ccbt/interface/terminal_dashboard.py:510](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L510)
-- `y` - 削除を確認。参照：[ccbt/interface/terminal_dashboard.py:523](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L523)
-- `n` - 削除をキャンセル。参照：[ccbt/interface/terminal_dashboard.py:530](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L530)
+- `P` / `p` - 選択されたトレントを一時停止。参照：[ccbt/interface/terminal_dashboard.py:534](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L534)
+- `R` / `r` - 選択されたトレントを再開。参照：[ccbt/interface/terminal_dashboard.py:541](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L541)
+- `Delete` - 選択されたトレントを削除（確認付き）。参照：[ccbt/interface/terminal_dashboard.py:510](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L510)
+- `y` - 削除を確認。参照：[ccbt/interface/terminal_dashboard.py:523](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L523)
+- `n` - 削除をキャンセル。参照：[ccbt/interface/terminal_dashboard.py:530](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L530)
 
 ### 高度なアクション
-- `a` / `A` - 強制アナウンス（トレントが選択されている場合）。参照：[ccbt/interface/terminal_dashboard.py:3182](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3182)
-- `s` / `S` - 強制スクレイプ（トレントが選択されている場合）。参照：[ccbt/interface/terminal_dashboard.py:3197](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3197)
-- `e` / `E` - PEXを更新（トレントが選択されている場合）。参照：[ccbt/interface/terminal_dashboard.py:3207](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3207)
-- `h` / `H` - トレントを再ハッシュ（トレントが選択されている場合）。参照：[ccbt/interface/terminal_dashboard.py:3217](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3217)
-- `x` / `X` - セッションスナップショットをエクスポート。参照：[ccbt/interface/terminal_dashboard.py:3227](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3227)
+- `a` / `A` - 強制アナウンス（トレントが選択されている場合）。参照：[ccbt/interface/terminal_dashboard.py:3182](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3182)
+- `s` / `S` - 強制スクレイプ（トレントが選択されている場合）。参照：[ccbt/interface/terminal_dashboard.py:3197](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3197)
+- `e` / `E` - PEXを更新（トレントが選択されている場合）。参照：[ccbt/interface/terminal_dashboard.py:3207](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3207)
+- `h` / `H` - トレントを再ハッシュ（トレントが選択されている場合）。参照：[ccbt/interface/terminal_dashboard.py:3217](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3217)
+- `x` / `X` - セッションスナップショットをエクスポート。参照：[ccbt/interface/terminal_dashboard.py:3227](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3227)
 
 ### 監視画面ナビゲーション
-- `s` - システムリソース画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_system_resources](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3880)
-- `m` - パフォーマンスメトリクス画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_performance_metrics](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3884)
-- `n` - ネットワーク品質画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_network_quality](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3888)
-- `h` - 履歴トレンド画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_historical_trends](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3892)
-- `a` - アラートダッシュボード画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_alerts_dashboard](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3896)
-- `e` - メトリクスエクスプローラー画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_metrics_explorer](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3900)
+- `s` - システムリソース画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_system_resources](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3880)
+- `m` - パフォーマンスメトリクス画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_performance_metrics](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3884)
+- `n` - ネットワーク品質画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_network_quality](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3888)
+- `h` - 履歴トレンド画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_historical_trends](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3892)
+- `a` - アラートダッシュボード画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_alerts_dashboard](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3896)
+- `e` - メトリクスエクスプローラー画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_metrics_explorer](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3900)
 
 ### 設定画面
-- `g` - グローバル設定画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_global_config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3870)
-- `t` - トレントごとの設定画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_torrent_config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3875)
+- `g` - グローバル設定画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_global_config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3870)
+- `t` - トレントごとの設定画面を開く。参照：[ccbt/interface/terminal_dashboard.py:action_torrent_config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3875)
 
 ### レート制限
-- `1` - レート制限を無効化。参照：[ccbt/interface/terminal_dashboard.py:627](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L627)
-- `2` - レート制限を1024 KiB/sに設定。参照：[ccbt/interface/terminal_dashboard.py:635](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L635)
+- `1` - レート制限を無効化。参照：[ccbt/interface/terminal_dashboard.py:627](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L627)
+- `2` - レート制限を1024 KiB/sに設定。参照：[ccbt/interface/terminal_dashboard.py:635](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L635)
 
 ### ダッシュボード制御
-- `Q` / `q` - ダッシュボードを終了。参照：[ccbt/interface/terminal_dashboard.py:507](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L507)
-- `/` - フィルター入力を開く。参照：[ccbt/interface/terminal_dashboard.py:548](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L548)
-- `:` - コマンドパレットを開く。参照：[ccbt/interface/terminal_dashboard.py:561](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L561)
-- `m` / `M` - メトリクス収集間隔を切り替え。参照：[ccbt/interface/terminal_dashboard.py:645](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L645)
-- `R` - ダッシュボード更新間隔を切り替え。参照：[ccbt/interface/terminal_dashboard.py:659](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L659)
-- `t` / `T` - ライト/ダークテーマを切り替え。参照：[ccbt/interface/terminal_dashboard.py:673](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L673)
-- `c` / `C` - コンパクトモードを切り替え。参照：[ccbt/interface/terminal_dashboard.py:681](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L681)
-- `k` / `K` - すべてのアクティブなアラートを確認。参照：[ccbt/interface/terminal_dashboard.py:723](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L723)
+- `Q` / `q` - ダッシュボードを終了。参照：[ccbt/interface/terminal_dashboard.py:507](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L507)
+- `/` - フィルター入力を開く。参照：[ccbt/interface/terminal_dashboard.py:548](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L548)
+- `:` - コマンドパレットを開く。参照：[ccbt/interface/terminal_dashboard.py:561](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L561)
+- `m` / `M` - メトリクス収集間隔を切り替え。参照：[ccbt/interface/terminal_dashboard.py:645](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L645)
+- `R` - ダッシュボード更新間隔を切り替え。参照：[ccbt/interface/terminal_dashboard.py:659](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L659)
+- `t` / `T` - ライト/ダークテーマを切り替え。参照：[ccbt/interface/terminal_dashboard.py:673](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L673)
+- `c` / `C` - コンパクトモードを切り替え。参照：[ccbt/interface/terminal_dashboard.py:681](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L681)
+- `k` / `K` - すべてのアクティブなアラートを確認。参照：[ccbt/interface/terminal_dashboard.py:723](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L723)
 
 ### トレントの追加
-- `i` / `I` - クイックトレント追加。参照：[ccbt/interface/terminal_dashboard.py:702](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L702)
-- `o` / `O` - 高度なトレント追加。参照：[ccbt/interface/terminal_dashboard.py:706](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L706)
-- `b` / `B` - トレントファイルを参照。参照：[ccbt/interface/terminal_dashboard.py:710](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L710)
+- `i` / `I` - クイックトレント追加。参照：[ccbt/interface/terminal_dashboard.py:702](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L702)
+- `o` / `O` - 高度なトレント追加。参照：[ccbt/interface/terminal_dashboard.py:706](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L706)
+- `b` / `B` - トレントファイルを参照。参照：[ccbt/interface/terminal_dashboard.py:710](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L710)
 
 ## 設定
 
-ダッシュボード設定は[ccbt.toml:185-191](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L185-L191)で構成されます：
+ダッシュボード設定は[ccbt.toml:185-191](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L185-L191)で構成されます：
 
 - `refresh_interval`：UI更新間隔（秒）（デフォルト：1.0）
 - `default_view`：デフォルトダッシュボードビュー
 
-アラートルールは[ccbt.toml:170](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L170)で指定されたパス（`alerts_rules_path`）から読み込まれます。自動読み込みについては[ccbt/interface/terminal_dashboard.py:363-381](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L363-L381)を参照してください。
+アラートルールは[ccbt.toml:170](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L170)で指定されたパス（`alerts_rules_path`）から読み込まれます。自動読み込みについては[ccbt/interface/terminal_dashboard.py:363-381](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L363-L381)を参照してください。
 
 ## コマンドパレット
 
@@ -1896,20 +1896,20 @@ Bitonicは、グローバルおよびトレントごとの設定を管理する�
 - `backup <path>` - チェックポイントをバックアップ
 - `restore <path>` - チェックポイントを復元
 
-実装：[ccbt/interface/terminal_dashboard.py:_run_command](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L776)
+実装：[ccbt/interface/terminal_dashboard.py:_run_command](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L776)
 
 ## フィルタリング
 
-`/`を押して、名前またはステータスでトレントをフィルタリングします。実装：[ccbt/interface/terminal_dashboard.py:_apply_filter_and_update](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L762)
+`/`を押して、名前またはステータスでトレントをフィルタリングします。実装：[ccbt/interface/terminal_dashboard.py:_apply_filter_and_update](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L762)
 
 ## 監視との統合
 
 BitonicはccBitTorrentの監視システムと統合されています：
-- [ccbt/monitoring/metrics_collector.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/monitoring/metrics_collector.py)によるメトリクス収集
-- [ccbt/monitoring/alert_manager.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/monitoring/alert_manager.py)によるアラート管理
-- [ccbt/plugins/base.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/plugins/base.py)によるプラグインシステム
-- イベント駆動メトリクスのためのMetricsPlugin統合。参照：[ccbt/interface/terminal_dashboard.py:_get_metrics_plugin](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L626)
-- システムメトリクストラッキング。参照：[ccbt/interface/terminal_dashboard.py:3001-3019](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3001-L3019)
+- [ccbt/monitoring/metrics_collector.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/monitoring/metrics_collector.py)によるメトリクス収集
+- [ccbt/monitoring/alert_manager.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/monitoring/alert_manager.py)によるアラート管理
+- [ccbt/plugins/base.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/plugins/base.py)によるプラグインシステム
+- イベント駆動メトリクスのためのMetricsPlugin統合。参照：[ccbt/interface/terminal_dashboard.py:_get_metrics_plugin](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L626)
+- システムメトリクストラッキング。参照：[ccbt/interface/terminal_dashboard.py:3001-3019](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3001-L3019)
 
 ### メトリクスソース
 
@@ -1933,7 +1933,7 @@ Bitonicは複数のソースからのメトリクスを表示します：
 ### プラグインマネージャー統合
 
 Bitonicはグローバルプラグインマネージャーシングルトンを使用してプラグインにアクセスします：
-- `get_plugin_manager()`関数によるアクセス。参照：[ccbt/plugins/base.py:get_plugin_manager](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/plugins/base.py#L403)
+- `get_plugin_manager()`関数によるアクセス。参照：[ccbt/plugins/base.py:get_plugin_manager](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/plugins/base.py#L403)
 - 複数の方法によるMetricsPlugin検出（PluginManager、イベントバス、セッション属性）
 - プラグインが利用できない場合の適切な処理
 
@@ -1944,7 +1944,7 @@ Bitonicはグローバルプラグインマネージャーシングルトンを�
 2. ターミナルがUnicodeと色をサポートしているか確認
 3. ターミナルのエラーメッセージを確認
 
-実装はTextualの可用性を処理します：[ccbt/interface/terminal_dashboard.py:46-172](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L46-L172)
+実装はTextualの可用性を処理します：[ccbt/interface/terminal_dashboard.py:46-172](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L46-L172)
 
 ### パフォーマンスの問題
 1. 更新間隔を増やす：`--refresh 2.0`または`R`を押して間隔を切り替え
@@ -1959,9 +1959,9 @@ Bitonicはグローバルプラグインマネージャーシングルトンを�
 ## アーキテクチャ
 
 Bitonicは以下を使用します：
-- **Textual**：ターミナルUIフレームワーク。参照：[ccbt/interface/terminal_dashboard.py:47-60](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L47-L60)
+- **Textual**：ターミナルUIフレームワーク。参照：[ccbt/interface/terminal_dashboard.py:47-60](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L47-L60)
 - **Rich**：リッチテキストと美しいフォーマット
-- **AsyncSessionManager**：セッション管理。参照：[ccbt/session/session.py:AsyncSessionManager](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/session/session.py#L605)
+- **AsyncSessionManager**：セッション管理。参照：[ccbt/session/session.py:AsyncSessionManager](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/session/session.py#L605)
 - **MetricsCollector**：メトリクス収集（`get_metrics_collector()`によるシングルトン）
 - **AlertManager**：アラート管理（`get_alert_manager()`によるシングルトン）
 - **PluginManager**：プラグイン管理（`get_plugin_manager()`によるシングルトン）
@@ -1987,16 +1987,16 @@ TerminalDashboard (メインアプリ)
 ```
 
 **基底クラス**：
-- **MonitoringScreen**：共通機能（更新間隔、ナビゲーション、エラーハンドリング）を持つすべての監視画面の基底クラス。参照：[ccbt/interface/terminal_dashboard.py:MonitoringScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L558)
-- **ConfigScreen**：未保存変更の検出を備えた設定画面の基底クラス。参照：[ccbt/interface/terminal_dashboard.py:ConfigScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L433)
+- **MonitoringScreen**：共通機能（更新間隔、ナビゲーション、エラーハンドリング）を持つすべての監視画面の基底クラス。参照：[ccbt/interface/terminal_dashboard.py:MonitoringScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L558)
+- **ConfigScreen**：未保存変更の検出を備えた設定画面の基底クラス。参照：[ccbt/interface/terminal_dashboard.py:ConfigScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L433)
 
 **再利用可能なウィジェット**：
-- **ProgressBarWidget**：パーセンテージ用のプログレスバー。参照：[ccbt/interface/terminal_dashboard.py:ProgressBarWidget](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L309)
-- **MetricsTableWidget**：テーブル形式でのメトリクス表示。参照：[ccbt/interface/terminal_dashboard.py:MetricsTableWidget](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L335)
-- **SparklineGroup**：ラベル付きの複数のスパークライン。参照：[ccbt/interface/terminal_dashboard.py:SparklineGroup](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L379)
+- **ProgressBarWidget**：パーセンテージ用のプログレスバー。参照：[ccbt/interface/terminal_dashboard.py:ProgressBarWidget](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L309)
+- **MetricsTableWidget**：テーブル形式でのメトリクス表示。参照：[ccbt/interface/terminal_dashboard.py:MetricsTableWidget](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L335)
+- **SparklineGroup**：ラベル付きの複数のスパークライン。参照：[ccbt/interface/terminal_dashboard.py:SparklineGroup](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L379)
 
 **確認ダイアログ**：
-- **ConfirmationDialog**：確認プロンプト用のモーダルダイアログ（例：未保存の変更）。参照：[ccbt/interface/terminal_dashboard.py:ConfirmationDialog](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L471)
+- **ConfirmationDialog**：確認プロンプト用のモーダルダイアログ（例：未保存の変更）。参照：[ccbt/interface/terminal_dashboard.py:ConfirmationDialog](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L471)
 
 詳細については、以下を参照してください：
 - [APIリファレンス](API.md) - 監視機能を含むPython APIドキュメント

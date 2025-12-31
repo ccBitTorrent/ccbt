@@ -10,7 +10,9 @@ import ast
 from pathlib import Path
 
 
-def extract_strings_from_file(file_path: Path, comprehensive: bool = False) -> list[str]:
+def extract_strings_from_file(
+    file_path: Path, comprehensive: bool = False
+) -> list[str]:
     """Extract translatable strings from a Python file.
 
     Args:
@@ -24,7 +26,9 @@ def extract_strings_from_file(file_path: Path, comprehensive: bool = False) -> l
     if comprehensive:
         # Use comprehensive extraction
         try:
-            from ccbt.i18n.scripts.extract_comprehensive import extract_strings_from_file as extract_comprehensive_strings
+            from ccbt.i18n.scripts.extract_comprehensive import (
+                extract_strings_from_file as extract_comprehensive_strings,
+            )
 
             results = extract_comprehensive_strings(file_path)
             # Extract just the string values (deduplicate)
@@ -49,14 +53,17 @@ def extract_strings_from_file(file_path: Path, comprehensive: bool = False) -> l
 
         for node in ast.walk(tree):
             # Find _("...") calls
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id == "_":
-                    if node.args:
-                        # Handle both ast.Constant (Python 3.8+) and ast.Str (older)
-                        if isinstance(node.args[0], ast.Constant):
-                            strings.append(node.args[0].value)
-                        elif isinstance(node.args[0], ast.Str):  # Python < 3.8
-                            strings.append(node.args[0].s)
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "_"
+                and node.args
+            ):
+                # Handle both ast.Constant (Python 3.8+) and ast.Str (older)
+                if isinstance(node.args[0], ast.Constant):
+                    strings.append(node.args[0].value)
+                elif isinstance(node.args[0], ast.Str):  # type: ignore[deprecated] # Python < 3.8
+                    strings.append(node.args[0].s)
     except Exception:
         pass
 
@@ -106,14 +113,15 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: uv run extract.py <source_dir> [output_file] [--comprehensive]")
-        print("  --comprehensive: Extract all user-facing strings (not just _() calls)")
         sys.exit(1)
 
     source_dir = Path(sys.argv[1])
-    output_file = Path(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else source_dir / "ccbt.pot"
+    output_file = (
+        Path(sys.argv[2])
+        if len(sys.argv) > 2 and not sys.argv[2].startswith("--")
+        else source_dir / "ccbt.pot"
+    )
     comprehensive = "--comprehensive" in sys.argv
 
     generate_pot_template(source_dir, output_file, comprehensive=comprehensive)
     mode = "comprehensive" if comprehensive else "simple"
-    print(f"Generated {output_file} with translatable strings ({mode} mode)")

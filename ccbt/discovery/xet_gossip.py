@@ -5,7 +5,6 @@ Wraps generic gossip protocol for XET-specific message types.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Callable
 
@@ -142,7 +141,7 @@ class XetGossipManager:
 
         """
         # Process received messages
-        for msg_id, msg in messages.items():
+        for msg in messages.values():
             msg_type = msg.get("type")
 
             if msg_type == "chunk_update":
@@ -173,6 +172,3 @@ class XetGossipManager:
 
         # Return our messages that peer doesn't have (anti-entropy)
         return await self.gossip_protocol.receive_gossip(peer_id, messages)
-
-
-

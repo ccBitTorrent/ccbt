@@ -45,13 +45,15 @@ class XetDeduplication:
             dht_client: Optional DHT client instance for global chunk discovery
 
         """
+        # Initialize logger FIRST before _init_database() which uses it
+        self.logger = logging.getLogger(__name__)
+
         self.cache_path = Path(cache_db_path)
         self.chunk_store_path = self.cache_path.parent / "xet_chunks"
         self.chunk_store_path.mkdir(parents=True, exist_ok=True)
 
         self.db = self._init_database()
         self.dht_client = dht_client
-        self.logger = logging.getLogger(__name__)
 
     def _init_database(self) -> sqlite3.Connection:
         """Initialize SQLite cache database.
@@ -66,15 +68,49 @@ class XetDeduplication:
         # Ensure parent directory exists
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-        db = sqlite3.connect(str(self.cache_path))
-        
+        # CRITICAL FIX: Add retry logic for Windows file locking issues
+        # On Windows, the database file might be locked from a previous run
+        # Retry with exponential backoff to handle transient file locking
+        import sys
+
+        max_retries = 3 if sys.platform == "win32" else 1
+        retry_delay = 0.1
+
+        for attempt in range(max_retries):
+            try:
+                db = sqlite3.connect(str(self.cache_path), timeout=5.0)
+                break
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower() or "database is locked" in str(e).lower():
+                    if attempt < max_retries - 1:
+                        self.logger.warning(
+                            "Database file is locked (attempt %d/%d), retrying in %.2f seconds...",
+                            attempt + 1,
+                            max_retries,
+                            retry_delay,
+                        )
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        self.logger.exception(
+                            "Failed to connect to database after %d attempts",
+                            max_retries,
+                        )
+                        raise
+                else:
+                    # Not a locking error, re-raise immediately
+                    raise
+            except Exception:
+                # Other errors, re-raise immediately
+                raise
+
         # Check if schema version table exists (for migration support)
         cursor = db.execute("""
-            SELECT name FROM sqlite_master 
+            SELECT name FROM sqlite_master
             WHERE type='table' AND name='schema_version'
         """)
         schema_version_exists = cursor.fetchone() is not None
-        
+
         # Create schema version table if it doesn't exist
         if not schema_version_exists:
             db.execute("""
@@ -84,15 +120,18 @@ class XetDeduplication:
                 )
             """)
             # Set initial version to 1 (old schema with chunks only)
-            db.execute("""
-                INSERT INTO schema_version (version, applied_at) 
+            db.execute(
+                """
+                INSERT INTO schema_version (version, applied_at)
                 VALUES (1, ?)
-            """, (time.time(),))
-        
+            """,
+                (time.time(),),
+            )
+
         # Get current schema version
         cursor = db.execute("SELECT MAX(version) FROM schema_version")
         current_version = cursor.fetchone()[0] or 1
-        
+
         # Create chunks table (always needed)
         db.execute("""
             CREATE TABLE IF NOT EXISTS chunks (
@@ -110,7 +149,7 @@ class XetDeduplication:
         db.execute("""
             CREATE INDEX IF NOT EXISTS idx_last_accessed ON chunks(last_accessed)
         """)
-        
+
         # Migrate to version 2: Add file_chunks and file_metadata tables
         if current_version < 2:
             # Create file_chunks table to track file-to-chunk references
@@ -127,18 +166,18 @@ class XetDeduplication:
             """)
             # Indexes for file_chunks
             db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_file_chunks_file_path 
+                CREATE INDEX IF NOT EXISTS idx_file_chunks_file_path
                 ON file_chunks(file_path)
             """)
             db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_file_chunks_chunk_hash 
+                CREATE INDEX IF NOT EXISTS idx_file_chunks_chunk_hash
                 ON file_chunks(chunk_hash)
             """)
             db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_file_chunks_file_offset 
+                CREATE INDEX IF NOT EXISTS idx_file_chunks_file_offset
                 ON file_chunks(file_path, offset)
             """)
-            
+
             # Create file_metadata table for persistent file metadata storage
             db.execute("""
                 CREATE TABLE IF NOT EXISTS file_metadata (
@@ -153,17 +192,20 @@ class XetDeduplication:
             """)
             # Index for file_metadata
             db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_file_metadata_file_hash 
+                CREATE INDEX IF NOT EXISTS idx_file_metadata_file_hash
                 ON file_metadata(file_hash)
             """)
-            
+
             # Update schema version
-            db.execute("""
-                INSERT INTO schema_version (version, applied_at) 
+            db.execute(
+                """
+                INSERT INTO schema_version (version, applied_at)
                 VALUES (2, ?)
-            """, (time.time(),))
+            """,
+                (time.time(),),
+            )
             self.logger.info("Migrated XET deduplication database to schema version 2")
-        
+
         db.commit()
 
         return db
@@ -232,13 +274,13 @@ class XetDeduplication:
                 "Chunk %s already exists, incremented ref count",
                 chunk_hash.hex()[:16],
             )
-            
+
             # If file context provided, add file-to-chunk reference
             if file_path is not None and file_offset is not None:
                 await self.add_file_chunk_reference(
                     file_path, chunk_hash, file_offset, len(chunk_data)
                 )
-            
+
             return existing
 
         # Store new chunk
@@ -295,10 +337,10 @@ class XetDeduplication:
         """
         try:
             current_time = time.time()
-            
+
             # Check if reference already exists
             cursor = self.db.execute(
-                """SELECT 1 FROM file_chunks 
+                """SELECT 1 FROM file_chunks
                    WHERE file_path = ? AND chunk_hash = ? AND offset = ?""",
                 (file_path, chunk_hash, offset),
             )
@@ -310,16 +352,16 @@ class XetDeduplication:
                     offset,
                 )
                 return
-            
+
             # Insert file-to-chunk reference
             self.db.execute(
-                """INSERT INTO file_chunks 
+                """INSERT INTO file_chunks
                    (file_path, chunk_hash, offset, chunk_size, created_at)
                    VALUES (?, ?, ?, ?, ?)""",
                 (file_path, chunk_hash, offset, chunk_size, current_time),
             )
             self.db.commit()
-            
+
             self.logger.debug(
                 "Added file chunk reference: %s -> %s @ offset %d",
                 file_path,
@@ -359,13 +401,13 @@ class XetDeduplication:
         try:
             # Delete file-to-chunk reference
             cursor = self.db.execute(
-                """DELETE FROM file_chunks 
+                """DELETE FROM file_chunks
                    WHERE file_path = ? AND chunk_hash = ? AND offset = ?""",
                 (file_path, chunk_hash, offset),
             )
             deleted = cursor.rowcount > 0
             self.db.commit()
-            
+
             if not deleted:
                 self.logger.debug(
                     "File chunk reference not found: %s -> %s @ offset %d",
@@ -374,19 +416,17 @@ class XetDeduplication:
                     offset,
                 )
                 return False
-            
+
             # Decrement chunk reference count
             return self.remove_chunk_reference(chunk_hash)
-            
+
         except Exception as e:
             self.logger.warning(
                 "Failed to remove file chunk reference: %s", e, exc_info=True
             )
             return False
 
-    async def get_file_chunks(
-        self, file_path: str
-    ) -> list[tuple[bytes, int, int]]:
+    async def get_file_chunks(self, file_path: str) -> list[tuple[bytes, int, int]]:
         """Get ordered list of chunks for a file.
 
         Retrieves all chunks referenced by a file, ordered by offset.
@@ -401,18 +441,16 @@ class XetDeduplication:
         """
         try:
             cursor = self.db.execute(
-                """SELECT chunk_hash, offset, chunk_size 
-                   FROM file_chunks 
-                   WHERE file_path = ? 
+                """SELECT chunk_hash, offset, chunk_size
+                   FROM file_chunks
+                   WHERE file_path = ?
                    ORDER BY offset ASC""",
                 (file_path,),
             )
             rows = cursor.fetchall()
             return [(row[0], row[1], row[2]) for row in rows]
         except Exception as e:
-            self.logger.warning(
-                "Failed to get file chunks: %s", e, exc_info=True
-            )
+            self.logger.warning("Failed to get file chunks: %s", e, exc_info=True)
             return []
 
     async def reconstruct_file_from_chunks(
@@ -524,21 +562,19 @@ class XetDeduplication:
         """
         try:
             current_time = time.time()
-            
+
             # Serialize metadata to JSON
             metadata_dict = metadata.model_dump()
             # Convert bytes to hex strings for JSON serialization
             metadata_dict["file_hash"] = metadata.file_hash.hex()
-            metadata_dict["chunk_hashes"] = [
-                h.hex() for h in metadata.chunk_hashes
-            ]
+            metadata_dict["chunk_hashes"] = [h.hex() for h in metadata.chunk_hashes]
             metadata_dict["xorb_refs"] = [h.hex() for h in metadata.xorb_refs]
             metadata_json = json.dumps(metadata_dict)
-            
+
             # Insert or update file metadata
             self.db.execute(
-                """INSERT OR REPLACE INTO file_metadata 
-                   (file_path, file_hash, total_size, chunk_count, 
+                """INSERT OR REPLACE INTO file_metadata
+                   (file_path, file_hash, total_size, chunk_count,
                     created_at, last_modified, metadata_json)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
@@ -552,16 +588,14 @@ class XetDeduplication:
                 ),
             )
             self.db.commit()
-            
+
             self.logger.debug(
                 "Stored file metadata for %s (%d chunks)",
                 metadata.file_path,
                 len(metadata.chunk_hashes),
             )
         except Exception as e:
-            self.logger.warning(
-                "Failed to store file metadata: %s", e, exc_info=True
-            )
+            self.logger.warning("Failed to store file metadata: %s", e, exc_info=True)
 
     async def get_file_metadata(self, file_path: str) -> XetFileMetadata | None:
         """Get file metadata from persistent storage.
@@ -577,14 +611,14 @@ class XetDeduplication:
         """
         try:
             cursor = self.db.execute(
-                """SELECT metadata_json FROM file_metadata 
+                """SELECT metadata_json FROM file_metadata
                    WHERE file_path = ?""",
                 (file_path,),
             )
             row = cursor.fetchone()
             if not row:
                 return None
-            
+
             # Deserialize JSON to XetFileMetadata
             metadata_dict = json.loads(row[0])
             # Convert hex strings back to bytes
@@ -595,12 +629,10 @@ class XetDeduplication:
             metadata_dict["xorb_refs"] = [
                 bytes.fromhex(h) for h in metadata_dict.get("xorb_refs", [])
             ]
-            
+
             return XetFileMetadata(**metadata_dict)
         except Exception as e:
-            self.logger.warning(
-                "Failed to get file metadata: %s", e, exc_info=True
-            )
+            self.logger.warning("Failed to get file metadata: %s", e, exc_info=True)
             return None
 
     async def query_dht_for_chunk(self, chunk_hash: bytes) -> PeerInfo | None:

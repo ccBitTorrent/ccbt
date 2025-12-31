@@ -12,6 +12,7 @@ Provides centralized security management including:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -318,7 +319,9 @@ class SecurityManager:
             expires_in = None
             if self._default_expiration_hours:
                 expires_in = self._default_expiration_hours * 3600.0
-            self.add_to_blacklist(ip, description, expires_in=expires_in, source="violation")
+            self.add_to_blacklist(
+                ip, description, expires_in=expires_in, source="violation"
+            )
 
     def add_to_blacklist(
         self,
@@ -469,6 +472,7 @@ class SecurityManager:
 
         Returns:
             Set of blacklisted IP addresses (excluding expired entries)
+
         """
         current_time = time.time()
         return {
@@ -536,10 +540,8 @@ class SecurityManager:
             # Clean up temp file if it exists
             temp_file = blacklist_file.with_suffix(".tmp")
             if temp_file.exists():
-                try:
+                with contextlib.suppress(Exception):
                     temp_file.unlink()
-                except Exception:
-                    pass
 
     async def load_blacklist(self, blacklist_file: Path | None = None) -> None:
         """Load blacklist from persistent storage.
@@ -566,7 +568,7 @@ class SecurityManager:
         try:
             import ipaddress
 
-            async with aiofiles.open(blacklist_file, "r", encoding="utf-8") as f:
+            async with aiofiles.open(blacklist_file, encoding="utf-8") as f:
                 content = await f.read()
                 data = json.loads(content)
 
@@ -892,10 +894,13 @@ class SecurityManager:
 
         # Initialize auto-update if enabled OR if local source is enabled
         local_source_config = getattr(blacklist_config, "local_source", None)
-        local_source_enabled = (
-            local_source_config and getattr(local_source_config, "enabled", False)
+        local_source_enabled = local_source_config and getattr(
+            local_source_config, "enabled", False
         )
-        if getattr(blacklist_config, "auto_update_enabled", False) or local_source_enabled:
+        if (
+            getattr(blacklist_config, "auto_update_enabled", False)
+            or local_source_enabled
+        ):
             await self.initialize_blacklist_updater(blacklist_config)
 
     async def initialize_blacklist_updater(self, blacklist_config: Any) -> None:
@@ -912,7 +917,9 @@ class SecurityManager:
         local_source_config = getattr(blacklist_config, "local_source", None)
 
         # Initialize even if no external sources (for local source support)
-        if not sources and not (local_source_config and getattr(local_source_config, "enabled", False)):
+        if not sources and not (
+            local_source_config and getattr(local_source_config, "enabled", False)
+        ):
             logger.debug("No blacklist update sources configured")
             return
 

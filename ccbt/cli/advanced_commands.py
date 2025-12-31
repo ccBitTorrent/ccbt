@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import os
 import platform
@@ -19,10 +18,9 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from ccbt.config.config import ConfigManager, get_config
+from ccbt.config.config import get_config
 from ccbt.config.config_capabilities import SystemCapabilities
 from ccbt.i18n import _
-from ccbt.models import PreallocationStrategy
 from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.storage.disk_io import DiskIOManager
 
@@ -49,6 +47,7 @@ def _apply_optimizations(
 
     Returns:
         Dictionary of applied optimizations
+
     """
     console = Console()
     cfg = get_config()
@@ -57,9 +56,7 @@ def _apply_optimizations(
     # Detect system characteristics
     cpu_count = capabilities.detect_cpu_count()
     memory = capabilities.detect_memory()
-    storage_type = capabilities.detect_storage_type(
-        cfg.disk.download_path or "."
-    )
+    storage_type = capabilities.detect_storage_type(cfg.disk.download_path or ".")
     io_uring_available = capabilities.detect_io_uring()
 
     optimizations: dict[str, Any] = {}
@@ -146,7 +143,9 @@ def _apply_optimizations(
             from ccbt.config.config import ConfigManager
 
             config_path = Path(config_file or "ccbt.toml")
-            config_manager = ConfigManager(str(config_path) if config_path.exists() else None)
+            config_manager = ConfigManager(
+                str(config_path) if config_path.exists() else None
+            )
             config_manager.save_config()
             console.print(
                 _("[green]Optimizations saved to {path}[/green]").format(
@@ -253,7 +252,7 @@ def performance(
     benchmark: bool,
     profile: bool,
 ) -> None:
-    """Performance tuning and optimization."""
+    """Tune performance and optimize settings."""
     console = Console()
     cfg = get_config()
     if analyze:
@@ -273,21 +272,15 @@ def performance(
     if optimize:
         # Apply optimizations based on preset
         console.print(
-            _("[green]Applying {preset} optimizations...[/green]").format(
-                preset=preset
-            )
+            _("[green]Applying {preset} optimizations...[/green]").format(preset=preset)
         )
 
-        if save:
-            # Ask for confirmation before saving
-            if not Confirm.ask(
-                _(
-                    "This will modify your configuration file. Continue?"
-                ),
-                default=True,
-            ):
-                console.print(_("[yellow]Optimization cancelled[/yellow]"))
-                return
+        if save and not Confirm.ask(
+            _("This will modify your configuration file. Continue?"),
+            default=True,
+        ):
+            console.print(_("[yellow]Optimization cancelled[/yellow]"))
+            return
 
         applied = _apply_optimizations(
             preset=preset, save_to_file=save, config_file=config_file
@@ -316,7 +309,9 @@ def performance(
             )
         else:
             console.print(
-                _("[yellow]No optimizations were applied (already optimal or unsupported)[/yellow]")
+                _(
+                    "[yellow]No optimizations were applied (already optimal or unsupported)[/yellow]"
+                )
             )
     if benchmark or profile:
         if profile:
@@ -325,21 +320,9 @@ def performance(
 
             prof = cProfile.Profile()
             prof.enable()
-            # Guard against patched asyncio.run in tests leaving coroutine un-awaited
+            # _quick_disk_benchmark() is always async, await it directly
             try:
-                import inspect
-
-                maybe_coro = _quick_disk_benchmark()
-                if inspect.iscoroutine(maybe_coro):
-                    try:
-                        results = asyncio.run(maybe_coro)
-                    except Exception:
-                        # Ensure coroutine is properly closed to avoid warnings under mocked asyncio.run
-                        with contextlib.suppress(Exception):
-                            maybe_coro.close()  # type: ignore[attr-defined]
-                        raise
-                else:  # pragma: no cover - Defensive path for non-coroutine return from benchmark (should always return coroutine)
-                    results = maybe_coro  # type: ignore[assignment]  # pragma: no cover - Same defensive path
+                results = asyncio.run(_quick_disk_benchmark())
             except Exception:  # pragma: no cover - defensive in CLI path
                 results = {
                     "size_mb": 0,
@@ -349,27 +332,19 @@ def performance(
                     "read_time_s": 0,
                 }
             prof.disable()
-            console.print(_("[green]Benchmark results:[/green] {results}").format(results=json.dumps(results)))
+            console.print(
+                _("[green]Benchmark results:[/green] {results}").format(
+                    results=json.dumps(results)
+                )
+            )
             ps = pstats.Stats(prof).strip_dirs().sort_stats("tottime")
             console.print(_("Top profile entries:"))
             # Print top 10 lines
             ps.print_stats(10)
         else:
-            # Guard against patched asyncio.run in tests leaving coroutine un-awaited
+            # _quick_disk_benchmark() is always async, await it directly
             try:
-                import inspect
-
-                maybe_coro = _quick_disk_benchmark()
-                if inspect.iscoroutine(maybe_coro):
-                    try:
-                        results = asyncio.run(maybe_coro)
-                    except Exception:
-                        # Ensure coroutine is properly closed to avoid warnings under mocked asyncio.run
-                        with contextlib.suppress(Exception):
-                            maybe_coro.close()  # type: ignore[attr-defined]
-                        raise
-                else:  # pragma: no cover - Defensive path for non-coroutine return from benchmark (should always return coroutine)
-                    results = maybe_coro  # type: ignore[assignment]  # pragma: no cover - Same defensive path
+                results = asyncio.run(_quick_disk_benchmark())
             except Exception:  # pragma: no cover - defensive in CLI path
                 results = {
                     "size_mb": 0,
@@ -378,19 +353,31 @@ def performance(
                     "write_time_s": 0,
                     "read_time_s": 0,
                 }
-            console.print(_("[green]Benchmark results:[/green] {results}").format(results=json.dumps(results)))
+            console.print(
+                _("[green]Benchmark results:[/green] {results}").format(
+                    results=json.dumps(results)
+                )
+            )
 
             # Display cache statistics if available
             cache_stats = results.get("cache_stats", {})
             if isinstance(cache_stats, dict) and cache_stats:
                 console.print(_("\n[bold cyan]Cache Statistics:[/bold cyan]"))
-                console.print(_("Cache entries: {count}").format(count=cache_stats.get("entries", 0)))
+                console.print(
+                    _("Cache entries: {count}").format(
+                        count=cache_stats.get("entries", 0)
+                    )
+                )
                 hit_rate = cache_stats.get("hit_rate_percent")
                 if hit_rate is not None:
-                    console.print(_("Cache hit rate: {rate:.2f}%").format(rate=hit_rate))
+                    console.print(
+                        _("Cache hit rate: {rate:.2f}%").format(rate=hit_rate)
+                    )
                 eviction_rate = cache_stats.get("eviction_rate_per_sec")
                 if eviction_rate is not None:
-                    console.print(_("Eviction rate: {rate:.2f} /sec").format(rate=eviction_rate))
+                    console.print(
+                        _("Eviction rate: {rate:.2f} /sec").format(rate=eviction_rate)
+                    )
     if not any([analyze, optimize, benchmark, profile]):
         console.print(_("[yellow]No performance action specified[/yellow]"))
 
@@ -424,11 +411,15 @@ def security(scan: bool, validate: bool, encrypt: bool, rate_limit: bool) -> Non
         )
     if encrypt:
         console.print(
-            _("[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]"),
+            _(
+                "[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]"
+            ),
         )
     if rate_limit:
         console.print(
-            _("[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]"),
+            _(
+                "[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]"
+            ),
         )
     if not any([scan, validate, encrypt, rate_limit]):
         console.print(_("[yellow]No security action specified[/yellow]"))
@@ -453,7 +444,9 @@ def recover(
     try:
         ih_bytes = bytes.fromhex(info_hash)
     except ValueError:
-        console.print(_("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash))
+        console.print(
+            _("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash)
+        )
         return
     cm = CheckpointManager(cfg.disk)
     if verify:
@@ -465,7 +458,9 @@ def recover(
         )
     if rehash:
         console.print(
-            _("[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]"),
+            _(
+                "[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]"
+            ),
         )
     if repair:
         console.print(_("[yellow]Automatic repair not implemented[/yellow]"))
@@ -691,4 +686,3 @@ def test(
         subprocess.run(args, check=False)  # nosec S603 - CLI command execution, args are validated
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
         console.print(_("[red]Failed to run tests: {e}[/red]").format(e=e))
-

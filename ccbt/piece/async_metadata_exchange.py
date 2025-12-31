@@ -278,16 +278,19 @@ class AsyncMetadataExchange:
                 info_hash_calculated = hashlib.sha1(encoder.encode(info_dict)).digest()  # nosec B324 - SHA-1 required by BitTorrent protocol (BEP 3), not for security
 
                 # If we have expected info_hash, validate it matches
-                if hasattr(self, "info_hash") and self.info_hash:
-                    if info_hash_calculated != self.info_hash:
-                        self.logger.error(
-                            "Metadata info_hash mismatch: expected %s, got %s",
-                            self.info_hash.hex()
-                            if isinstance(self.info_hash, bytes)
-                            else str(self.info_hash),
-                            info_hash_calculated.hex(),
-                        )
-                        return None
+                if (
+                    hasattr(self, "info_hash")
+                    and self.info_hash
+                    and info_hash_calculated != self.info_hash
+                ):
+                    self.logger.error(
+                        "Metadata info_hash mismatch: expected %s, got %s",
+                        self.info_hash.hex()
+                        if isinstance(self.info_hash, bytes)
+                        else str(self.info_hash),
+                        info_hash_calculated.hex(),
+                    )
+                    return None
 
                 self.logger.info(
                     "Metadata validated successfully (info_hash: %s)",
@@ -297,7 +300,11 @@ class AsyncMetadataExchange:
                 try:
                     from ccbt.utils.events import Event, EventType, emit_event
 
-                    metadata_size = len(encoded_metadata) if hasattr(self, "metadata_data") and self.metadata_data else 0
+                    metadata_size = (
+                        len(self.metadata_data)
+                        if hasattr(self, "metadata_data") and self.metadata_data
+                        else 0
+                    )
                     await emit_event(
                         Event(
                             event_type=EventType.METADATA_FETCH_COMPLETED.value,
@@ -308,7 +315,9 @@ class AsyncMetadataExchange:
                         )
                     )
                 except Exception as e:
-                    self.logger.debug("Failed to emit METADATA_FETCH_COMPLETED event: %s", e)
+                    self.logger.debug(
+                        "Failed to emit METADATA_FETCH_COMPLETED event: %s", e
+                    )
             except Exception:
                 self.logger.exception("Metadata validation failed")
                 # Emit METADATA_FETCH_FAILED event for validation failure
@@ -325,7 +334,9 @@ class AsyncMetadataExchange:
                         )
                     )
                 except Exception as e:
-                    self.logger.debug("Failed to emit METADATA_FETCH_FAILED event: %s", e)
+                    self.logger.debug(
+                        "Failed to emit METADATA_FETCH_FAILED event: %s", e
+                    )
                 return None
 
         return self.metadata_dict  # pragma: no cover - Return path after timeout, difficult to test without actual metadata fetch
@@ -795,22 +806,27 @@ class AsyncMetadataExchange:
         received_count = sum(
             1 for p in self.metadata_pieces.values() if p.data is not None
         )
-        total_pieces = len(self.metadata_pieces) if self.metadata_pieces else session.num_pieces
+        total_pieces = (
+            len(self.metadata_pieces) if self.metadata_pieces else session.num_pieces
+        )
         progress = received_count / total_pieces if total_pieces > 0 else 0.0
-        
+
         self.logger.debug(
             "METADATA_EXCHANGE: Progress: %d/%d pieces received (%.1f%%)",
             received_count,
             total_pieces,
             progress * 100,
         )
-        
+
         # Emit progress event (every 10% or on significant milestones)
         try:
             from ccbt.utils.events import Event, EventType, emit_event
-            
+
             # Emit progress every 10% or on every 5th piece, whichever comes first
-            if received_count % max(1, total_pieces // 10) == 0 or received_count % 5 == 0:
+            if (
+                received_count % max(1, total_pieces // 10) == 0
+                or received_count % 5 == 0
+            ):
                 await emit_event(
                     Event(
                         event_type=EventType.METADATA_FETCH_PROGRESS.value,

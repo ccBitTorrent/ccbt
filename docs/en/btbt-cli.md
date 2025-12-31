@@ -2,9 +2,9 @@
 
 **btbt** is the enhanced command-line interface for ccBitTorrent, providing comprehensive control over torrent operations, monitoring, configuration, and advanced features.
 
-- Entry point: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- Defined in: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
-- Main CLI group: [ccbt/cli/main.py:cli](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
+- Entry point: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- Defined in: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
+- Main CLI group: [ccbt/cli/main.py:cli](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
 
 ## Basic Commands
 
@@ -12,7 +12,7 @@
 
 Download a torrent file.
 
-Implementation: [ccbt/cli/main.py:download](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L369)
+Implementation: [ccbt/cli/main.py:download](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L369)
 
 Usage:
 ```bash
@@ -29,7 +29,7 @@ Options:
 - `--files <indices...>`: Select specific files to download (can specify multiple times, e.g., `--files 0 --files 1`)
 - `--file-priority <spec>`: Set file priority as `file_index=priority` (e.g., `0=high,1=low`). Can specify multiple times.
 
-Network options (see [ccbt/cli/main.py:_apply_network_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L67)):
+Network options (see [ccbt/cli/main.py:_apply_network_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L67)):
 - `--listen-port <int>`: Listen port
 - `--max-peers <int>`: Maximum global peers
 - `--max-peers-per-torrent <int>`: Maximum peers per torrent
@@ -39,7 +39,7 @@ Network options (see [ccbt/cli/main.py:_apply_network_overrides](https://github.
 - `--global-down-kib <int>`: Global download limit (KiB/s)
 - `--global-up-kib <int>`: Global upload limit (KiB/s)
 
-Disk options (see [ccbt/cli/main.py:_apply_disk_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L179)):
+Disk options (see [ccbt/cli/main.py:_apply_disk_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L179)):
 - `--hash-workers <int>`: Number of hash verification workers
 - `--disk-workers <int>`: Number of disk I/O workers
 - `--use-mmap`: Enable memory mapping
@@ -48,13 +48,13 @@ Disk options (see [ccbt/cli/main.py:_apply_disk_overrides](https://github.com/yo
 - `--write-buffer-kib <int>`: Write buffer size in KiB
 - `--preallocate <str>`: Preallocation strategy (none|sparse|full)
 
-Strategy options (see [ccbt/cli/main.py:_apply_strategy_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L151)):
+Strategy options (see [ccbt/cli/main.py:_apply_strategy_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L151)):
 - `--piece-selection <str>`: Piece selection strategy (round_robin|rarest_first|sequential)
 - `--endgame-duplicates <int>`: Endgame duplicate requests
 - `--endgame-threshold <float>`: Endgame threshold
 - `--streaming`: Enable streaming mode
 
-Discovery options (see [ccbt/cli/main.py:_apply_discovery_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L123)):
+Discovery options (see [ccbt/cli/main.py:_apply_discovery_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L123)):
 - `--enable-dht`: Enable DHT
 - `--disable-dht`: Disable DHT
 - `--enable-pex`: Enable PEX
@@ -64,7 +64,7 @@ Discovery options (see [ccbt/cli/main.py:_apply_discovery_overrides](https://git
 - `--enable-udp-trackers`: Enable UDP trackers
 - `--disable-udp-trackers`: Disable UDP trackers
 
-Observability options (see [ccbt/cli/main.py:_apply_observability_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L217)):
+Observability options (see [ccbt/cli/main.py:_apply_observability_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L217)):
 - `--log-level <str>`: Log level (DEBUG|INFO|WARNING|ERROR|CRITICAL)
 - `--log-file <path>`: Log file path
 - `--enable-metrics`: Enable metrics collection
@@ -75,7 +75,7 @@ Observability options (see [ccbt/cli/main.py:_apply_observability_overrides](htt
 
 Download from a magnet link.
 
-Implementation: [ccbt/cli/main.py:magnet](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L608)
+Implementation: [ccbt/cli/main.py:magnet](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L608)
 
 Usage:
 ```bash
@@ -88,20 +88,20 @@ Options: Same as `download` command.
 
 Start interactive CLI mode.
 
-Implementation: [ccbt/cli/main.py:interactive](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L767)
+Implementation: [ccbt/cli/main.py:interactive](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L767)
 
 Usage:
 ```bash
 uv run btbt interactive
 ```
 
-Interactive CLI: [ccbt/cli/interactive.py:InteractiveCLI](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/interactive.py#L41)
+Interactive CLI: [ccbt/cli/interactive.py:InteractiveCLI](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/interactive.py#L41)
 
 ### status
 
 Show current session status.
 
-Implementation: [ccbt/cli/main.py:status](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L789)
+Implementation: [ccbt/cli/main.py:status](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L789)
 
 Usage:
 ```bash
@@ -110,13 +110,13 @@ uv run btbt status
 
 ## Checkpoint Commands
 
-Checkpoint management group: [ccbt/cli/main.py:checkpoints](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L849)
+Checkpoint management group: [ccbt/cli/main.py:checkpoints](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L849)
 
 ### checkpoints list
 
 List all available checkpoints.
 
-Implementation: [ccbt/cli/main.py:list_checkpoints](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L863)
+Implementation: [ccbt/cli/main.py:list_checkpoints](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L863)
 
 Usage:
 ```bash
@@ -127,7 +127,7 @@ uv run btbt checkpoints list [--format json|table]
 
 Clean old checkpoints.
 
-Implementation: [ccbt/cli/main.py:clean_checkpoints](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L930)
+Implementation: [ccbt/cli/main.py:clean_checkpoints](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L930)
 
 Usage:
 ```bash
@@ -138,7 +138,7 @@ uv run btbt checkpoints clean [--days <n>] [--dry-run]
 
 Delete a specific checkpoint.
 
-Implementation: [ccbt/cli/main.py:delete_checkpoint](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L978)
+Implementation: [ccbt/cli/main.py:delete_checkpoint](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L978)
 
 Usage:
 ```bash
@@ -149,7 +149,7 @@ uv run btbt checkpoints delete <info_hash>
 
 Verify a checkpoint.
 
-Implementation: [ccbt/cli/main.py:verify_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1016)
+Implementation: [ccbt/cli/main.py:verify_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1016)
 
 Usage:
 ```bash
@@ -160,7 +160,7 @@ uv run btbt checkpoints verify <info_hash>
 
 Export checkpoint to file.
 
-Implementation: [ccbt/cli/main.py:export_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1058)
+Implementation: [ccbt/cli/main.py:export_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1058)
 
 Usage:
 ```bash
@@ -171,7 +171,7 @@ uv run btbt checkpoints export <info_hash> [--format json|binary] [--output <pat
 
 Backup checkpoint to location.
 
-Implementation: [ccbt/cli/main.py:backup_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1099)
+Implementation: [ccbt/cli/main.py:backup_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1099)
 
 Usage:
 ```bash
@@ -182,7 +182,7 @@ uv run btbt checkpoints backup <info_hash> <destination> [--compress] [--encrypt
 
 Restore checkpoint from backup.
 
-Implementation: [ccbt/cli/main.py:restore_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1138)
+Implementation: [ccbt/cli/main.py:restore_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1138)
 
 Usage:
 ```bash
@@ -193,7 +193,7 @@ uv run btbt checkpoints restore <backup_file> [--info-hash <hash>]
 
 Migrate checkpoint between formats.
 
-Implementation: [ccbt/cli/main.py:migrate_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1173)
+Implementation: [ccbt/cli/main.py:migrate_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1173)
 
 Usage:
 ```bash
@@ -204,7 +204,7 @@ uv run btbt checkpoints migrate <info_hash> --from <format> --to <format>
 
 Resume download from checkpoint.
 
-Implementation: [ccbt/cli/main.py:resume](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1204)
+Implementation: [ccbt/cli/main.py:resume](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1204)
 
 Usage:
 ```bash
@@ -213,13 +213,13 @@ uv run btbt resume <info_hash> [--output <dir>] [--interactive]
 
 ## Monitoring Commands
 
-Monitoring command group: [ccbt/cli/monitoring_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py)
+Monitoring command group: [ccbt/cli/monitoring_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py)
 
 ### dashboard
 
 Start terminal monitoring dashboard (Bitonic).
 
-Implementation: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
+Implementation: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
 
 Usage:
 ```bash
@@ -232,7 +232,7 @@ See [Bitonic Guide](bitonic.md) for detailed usage.
 
 Manage alert rules and active alerts.
 
-Implementation: [ccbt/cli/monitoring_commands.py:alerts](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L48)
+Implementation: [ccbt/cli/monitoring_commands.py:alerts](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L48)
 
 Usage:
 ```bash
@@ -267,7 +267,7 @@ See the [API Reference](API.md#monitoring) for more information.
 
 Collect and export metrics.
 
-Implementation: [ccbt/cli/monitoring_commands.py:metrics](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L229)
+Implementation: [ccbt/cli/monitoring_commands.py:metrics](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L229)
 
 Usage:
 ```bash
@@ -287,7 +287,7 @@ See the [API Reference](API.md#monitoring) for more information.
 
 ## File Selection Commands
 
-File selection command group: [ccbt/cli/file_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py)
+File selection command group: [ccbt/cli/file_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py)
 
 Manage file selection and priorities for multi-file torrents.
 
@@ -295,7 +295,7 @@ Manage file selection and priorities for multi-file torrents.
 
 List all files in a torrent with their selection status, priorities, and download progress.
 
-Implementation: [ccbt/cli/file_commands.py:files_list](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L28)
+Implementation: [ccbt/cli/file_commands.py:files_list](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L28)
 
 Usage:
 ```bash
@@ -313,7 +313,7 @@ Output includes:
 
 Select one or more files for download.
 
-Implementation: [ccbt/cli/file_commands.py:files_select](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L72)
+Implementation: [ccbt/cli/file_commands.py:files_select](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L72)
 
 Usage:
 ```bash
@@ -333,7 +333,7 @@ uv run btbt files select abc123... 0
 
 Deselect one or more files from download.
 
-Implementation: [ccbt/cli/file_commands.py:files_deselect](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L108)
+Implementation: [ccbt/cli/file_commands.py:files_deselect](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L108)
 
 Usage:
 ```bash
@@ -344,7 +344,7 @@ uv run btbt files deselect <info_hash> <file_index> [<file_index> ...]
 
 Select all files in the torrent.
 
-Implementation: [ccbt/cli/file_commands.py:files_select_all](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L144)
+Implementation: [ccbt/cli/file_commands.py:files_select_all](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L144)
 
 Usage:
 ```bash
@@ -355,7 +355,7 @@ uv run btbt files select-all <info_hash>
 
 Deselect all files in the torrent.
 
-Implementation: [ccbt/cli/file_commands.py:files_deselect_all](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L161)
+Implementation: [ccbt/cli/file_commands.py:files_deselect_all](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L161)
 
 Usage:
 ```bash
@@ -366,7 +366,7 @@ uv run btbt files deselect-all <info_hash>
 
 Set priority for a specific file.
 
-Implementation: [ccbt/cli/file_commands.py:files_priority](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L178)
+Implementation: [ccbt/cli/file_commands.py:files_priority](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L178)
 
 Usage:
 ```bash
@@ -391,32 +391,32 @@ uv run btbt files priority abc123... 2 maximum
 
 ## Configuration Commands
 
-Configuration command group: [ccbt/cli/config_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/config_commands.py)
+Configuration command group: [ccbt/cli/config_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/config_commands.py)
 
 ### config
 
 Manage configuration.
 
-Implementation: [ccbt/cli/main.py:config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L810)
+Implementation: [ccbt/cli/main.py:config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L810)
 
 Usage:
 ```bash
 uv run btbt config [subcommand]
 ```
 
-Extended configuration commands: [ccbt/cli/config_commands_extended.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/config_commands_extended.py)
+Extended configuration commands: [ccbt/cli/config_commands_extended.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/config_commands_extended.py)
 
 See [Configuration Guide](configuration.md) for detailed configuration options.
 
 ## Advanced Commands
 
-Advanced command group: [ccbt/cli/advanced_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py)
+Advanced command group: [ccbt/cli/advanced_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py)
 
 ### performance
 
 Performance analysis and benchmarking.
 
-Implementation: [ccbt/cli/advanced_commands.py:performance](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L73)
+Implementation: [ccbt/cli/advanced_commands.py:performance](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L73)
 
 Usage:
 ```bash
@@ -427,7 +427,7 @@ uv run btbt performance [--analyze] [--benchmark]
 
 Security analysis and validation.
 
-Implementation: [ccbt/cli/advanced_commands.py:security](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L170)
+Implementation: [ccbt/cli/advanced_commands.py:security](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L170)
 
 Usage:
 ```bash
@@ -438,7 +438,7 @@ uv run btbt security [options]
 
 Recovery operations.
 
-Implementation: [ccbt/cli/advanced_commands.py:recover](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L209)
+Implementation: [ccbt/cli/advanced_commands.py:recover](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L209)
 
 Usage:
 ```bash
@@ -449,7 +449,7 @@ uv run btbt recover [options]
 
 Run tests and diagnostics.
 
-Implementation: [ccbt/cli/advanced_commands.py:test](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L248)
+Implementation: [ccbt/cli/advanced_commands.py:test](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L248)
 
 Usage:
 ```bash
@@ -460,7 +460,7 @@ uv run btbt test [options]
 
 ### Global Options
 
-Global options defined in: [ccbt/cli/main.py:cli](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
+Global options defined in: [ccbt/cli/main.py:cli](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
 
 - `--config <path>`: Configuration file path
 - `--verbose`: Verbose output
@@ -469,12 +469,12 @@ Global options defined in: [ccbt/cli/main.py:cli](https://github.com/yourusernam
 ### CLI Overrides
 
 All CLI options override configuration in this order:
-1. Defaults from [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
-2. Configuration file ([ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml))
-3. Environment variables ([env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example))
+1. Defaults from [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
+2. Configuration file ([ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml))
+3. Environment variables ([env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example))
 4. CLI arguments
 
-Override implementation: [ccbt/cli/main.py:_apply_cli_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L55)
+Override implementation: [ccbt/cli/main.py:_apply_cli_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L55)
 
 ## Examples
 
@@ -551,7 +551,7 @@ uv run btbt checkpoints clean --days 7
 
 Manage per-torrent configuration options and rate limits. These settings are persisted in checkpoints and daemon state.
 
-Implementation: [ccbt/cli/torrent_config_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/torrent_config_commands.py)
+Implementation: [ccbt/cli/torrent_config_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/torrent_config_commands.py)
 
 #### Set Per-Torrent Option
 

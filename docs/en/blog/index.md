@@ -26,7 +26,7 @@ Want to write a blog post? Check out our [Contributing Guide](../contributing.md
 Follow us on social media to stay updated:
 - [GitHub](https://github.com/ccBittorrent/ccbt)
 - [X (Twitter)](https://x.com/josephpollack)
-- [Discord](https://discord.gg/ccbittorrent)
+- [Discord](https://discord.gg/qdfnvSPcqP)
 
 
 
@@ -60,7 +60,7 @@ Want to write a blog post? Check out our [Contributing Guide](../contributing.md
 Follow us on social media to stay updated:
 - [GitHub](https://github.com/ccBittorrent/ccbt)
 - [X (Twitter)](https://x.com/josephpollack)
-- [Discord](https://discord.gg/ccbittorrent)
+- [Discord](https://discord.gg/qdfnvSPcqP)
 
 
 

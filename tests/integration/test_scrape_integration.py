@@ -47,24 +47,11 @@ def mock_config():
     from ccbt.models import CheckpointFormat
     config.disk.checkpoint_format = CheckpointFormat.BINARY  # Real enum value
     config.disk.checkpoint_enabled = True
+    # CRITICAL FIX: Add limits attribute to prevent TypeError
+    config.limits = MagicMock()
+    config.limits.global_down_kib = 0
+    config.limits.global_up_kib = 0
     return config
-
-
-@pytest_asyncio.fixture
-async def session_manager(mock_config):
-    """Create AsyncSessionManager instance for testing."""
-    with patch("ccbt.session.session.get_config") as mock_get_config:
-        mock_get_config.return_value = mock_config
-
-        session = AsyncSessionManager(".")
-        await session.start()
-        try:
-            yield session
-        finally:
-            # Ensure all background tasks are stopped
-            await session.stop()
-            # Give a moment for cleanup
-            await asyncio.sleep(0.1)
 
 
 @pytest.fixture
@@ -323,6 +310,9 @@ class TestPeriodicScrapeIntegration:
         try:
             # Restart session to start periodic loop with new config
             await session_manager.stop()
+            # Clear torrents dict manually since stop() doesn't clear it
+            async with session_manager.lock:
+                session_manager.torrents.clear()
             await session_manager.start()
 
             # Re-add torrent after restart (it was cleared during stop)

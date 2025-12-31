@@ -748,13 +748,21 @@ class TestMetricsCollectorCalculateRates:
 
     @pytest.mark.asyncio
     async def test_calculate_global_rates(self, metrics_collector):
-        """Test _calculate_global_rates() sets placeholder values."""
-        metrics_collector.global_download_rate = 100.0
-        metrics_collector.global_upload_rate = 50.0
+        """Test _calculate_global_rates() sets placeholder values when no rate_history."""
+        from collections import deque
+        
+        # Ensure rate_history is empty or has less than 2 entries
+        metrics_collector.rate_history = deque()
+        
+        # Delete attributes to test the initialization path (lines 342-345)
+        if hasattr(metrics_collector, "global_download_rate"):
+            delattr(metrics_collector, "global_download_rate")
+        if hasattr(metrics_collector, "global_upload_rate"):
+            delattr(metrics_collector, "global_upload_rate")
 
         await metrics_collector._calculate_global_rates()
 
-        # Implementation sets to 0.0 (placeholder)
+        # Implementation sets to 0.0 when rate_history has less than 2 entries and attributes don't exist (lines 340-346)
         assert metrics_collector.global_download_rate == 0.0
         assert metrics_collector.global_upload_rate == 0.0
 

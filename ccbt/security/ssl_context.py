@@ -79,11 +79,11 @@ class SSLContextBuilder:
                 self.logger.info("Loaded custom CA certificates from %s", ca_path)
             except ssl.SSLError as e:
                 msg = f"Failed to load CA certificates from {ca_path}: {e}"
-                self.logger.error(msg, exc_info=True)
+                self.logger.exception(msg)
                 raise OSError(msg) from e
             except OSError as e:
                 msg = f"Failed to read CA certificates from {ca_path}: {e}"
-                self.logger.error(msg, exc_info=True)
+                self.logger.exception(msg)
                 raise
 
         # Set protocol version
@@ -122,11 +122,11 @@ class SSLContextBuilder:
                 )
             except ssl.SSLError as e:
                 msg = f"Failed to load client certificate from {cert_path}: {e}"
-                self.logger.error(msg, exc_info=True)
+                self.logger.exception(msg)
                 raise OSError(msg) from e
             except OSError as e:
                 msg = f"Failed to read client certificate from {cert_path}: {e}"
-                self.logger.error(msg, exc_info=True)
+                self.logger.exception(msg)
                 raise
 
         # Set security options

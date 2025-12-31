@@ -43,8 +43,9 @@ class DummySession:
 
 @pytest.mark.asyncio
 async def test_interactive_basic_commands():
+    from tests.conftest import create_interactive_cli
     session = DummySession()
-    cli = InteractiveCLI(session, Console(record=True))
+    cli = create_interactive_cli(session, Console(record=True))
     # Prime current torrent
     cli.current_torrent = {"name": "test", "total_length": 1024}
     cli.current_info_hash_hex = "00" * 20
@@ -56,8 +57,9 @@ async def test_interactive_basic_commands():
 
 @pytest.mark.asyncio
 async def test_interactive_config_and_limits():
+    from tests.conftest import create_interactive_cli
     session = DummySession()
-    cli = InteractiveCLI(session, Console(record=True))
+    cli = create_interactive_cli(session, Console(record=True))
     await cli.cmd_config(["show"])  # print full config
     await cli.cmd_config(["get", "network.listen_port"])  # fetch a key
     await cli.cmd_config(["set", "network.listen_port", "7003"])  # set a key
@@ -66,8 +68,9 @@ async def test_interactive_config_and_limits():
 
 @pytest.mark.asyncio
 async def test_interactive_checkpoint_and_alerts():
+    from tests.conftest import create_interactive_cli
     session = DummySession()
-    cli = InteractiveCLI(session, Console(record=True))
+    cli = create_interactive_cli(session, Console(record=True))
     # These commands will exercise code paths; they may print warnings if backends unavailable
     await cli.cmd_metrics(["show"])  # metrics snapshot
     await cli.cmd_alerts(["list"])  # list rules

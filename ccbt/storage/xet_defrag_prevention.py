@@ -7,10 +7,10 @@ to maintain optimal chunk storage layout and access patterns.
 from __future__ import annotations
 
 import logging
-import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ccbt.storage.xet_deduplication import XetDeduplication
+if TYPE_CHECKING:
+    from ccbt.storage.xet_deduplication import XetDeduplication
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class XetDefragPrevention:
 
             # Analyze chunk access patterns
             cursor = self.dedup.db.execute(
-                """SELECT 
+                """SELECT
                     COUNT(*) as total,
                     AVG(last_accessed - created_at) as avg_age,
                     COUNT(DISTINCT storage_path) as unique_paths
@@ -91,7 +91,9 @@ class XetDefragPrevention:
 
             # Calculate fragmentation ratio
             # Higher ratio means more fragmentation
-            fragmentation_ratio = 1.0 - (total / unique_paths) if unique_paths > 0 else 0.0
+            fragmentation_ratio = (
+                1.0 - (total / unique_paths) if unique_paths > 0 else 0.0
+            )
             scattered_chunks = max(0, unique_paths - total)
             avg_age = row[1] or 0.0
 
@@ -108,9 +110,7 @@ class XetDefragPrevention:
             }
 
         except Exception as e:
-            self.logger.warning(
-                "Failed to check fragmentation: %s", e, exc_info=True
-            )
+            self.logger.warning("Failed to check fragmentation: %s", e, exc_info=True)
             return {
                 "fragmentation_ratio": 0.0,
                 "scattered_chunks": 0,
@@ -167,9 +167,7 @@ class XetDefragPrevention:
             }
 
         except Exception as e:
-            self.logger.warning(
-                "Failed to prevent fragmentation: %s", e, exc_info=True
-            )
+            self.logger.warning("Failed to prevent fragmentation: %s", e, exc_info=True)
             return {
                 "chunks_reorganized": 0,
                 "storage_optimized": 0,
@@ -192,9 +190,7 @@ class XetDefragPrevention:
         """
         try:
             if chunk_hashes:
-                self.logger.debug(
-                    "Optimizing layout for %d chunks", len(chunk_hashes)
-                )
+                self.logger.debug("Optimizing layout for %d chunks", len(chunk_hashes))
             else:
                 self.logger.debug("Optimizing layout for all chunks")
 
@@ -205,47 +201,8 @@ class XetDefragPrevention:
             }
 
         except Exception as e:
-            self.logger.warning(
-                "Failed to optimize chunk layout: %s", e, exc_info=True
-            )
+            self.logger.warning("Failed to optimize chunk layout: %s", e, exc_info=True)
             return {
                 "chunks_optimized": 0,
                 "layout_improved": False,
             }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

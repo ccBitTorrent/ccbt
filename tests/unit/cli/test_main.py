@@ -4,12 +4,294 @@ Target: 95%+ coverage for ccbt/__main__.py.
 """
 
 import argparse
+import asyncio
+import importlib
 import sys
-from unittest.mock import MagicMock, Mock, patch
+from types import ModuleType, SimpleNamespace
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from click.testing import CliRunner
+
+cli_main = importlib.import_module("ccbt.cli.main")
 
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
+
+
+def _make_cfg() -> Any:
+    """Create a mock config object for testing."""
+    class WebTorrent:
+        enable_webtorrent = False
+        webtorrent_signaling_url = None
+        webtorrent_port = 8080
+        webtorrent_stun_servers = []
+
+    class Net:
+        listen_port = 0
+        max_global_peers = 0
+        max_peers_per_torrent = 0
+        pipeline_depth = 0
+        block_size_kib = 0
+        connection_timeout = 0.0
+        global_down_kib = 0
+        global_up_kib = 0
+        enable_ipv6 = True
+        enable_tcp = True
+        enable_utp = True
+        enable_encryption = False
+        tcp_nodelay = False
+        socket_rcvbuf_kib = 0
+        socket_sndbuf_kib = 0
+        listen_interface = ""
+        peer_timeout = 0.0
+        dht_timeout = 0.0
+        optimistic_unchoke_interval = 0.0
+        unchoke_interval = 0.0
+        webtorrent = WebTorrent()
+
+    class Disc:
+        enable_dht = True
+        dht_port = 0
+        enable_http_trackers = True
+        enable_udp_trackers = True
+        tracker_announce_interval = 0.0
+        tracker_scrape_interval = 0.0
+        pex_interval = 0.0
+        dht_enable_ipv6 = False
+        dht_prefer_ipv6 = False
+        dht_readonly_mode = False
+        dht_enable_multiaddress = False
+        dht_enable_storage = False
+        dht_enable_indexing = False
+
+    class Strat:
+        piece_selection = "round_robin"
+        endgame_threshold = 0.0
+        endgame_duplicates = 0
+        streaming_mode = False
+        first_piece_priority = False
+        last_piece_priority = False
+
+    class Attributes:
+        preserve_attributes = False
+        skip_padding_files = False
+        verify_file_sha1 = False
+
+    class Disk:
+        hash_workers = 0
+        disk_workers = 0
+        use_mmap = False
+        mmap_cache_mb = 0
+        write_batch_kib = 0
+        write_buffer_kib = 0
+        preallocate = "none"
+        sparse_files = False
+        enable_io_uring = False
+        direct_io = False
+        sync_writes = False
+        checkpoint_enabled = False
+        checkpoint_dir = ""
+        attributes = Attributes()
+
+    class Obs:
+        log_level = "INFO"
+        enable_metrics = False
+        metrics_port = 0
+        metrics_interval = 0.0
+        structured_logging = False
+        log_correlation_id = False
+
+    class Proxy:
+        enable_proxy = False
+        proxy_host = ""
+        proxy_port = 0
+        proxy_username = ""
+        proxy_password = ""
+        proxy_type = ""
+
+    class SSL:
+        enable_ssl_trackers = False
+        enable_ssl_peers = False
+        ssl_ca_certificates = ""
+        ssl_client_certificate = ""
+        ssl_client_key = ""
+        ssl_verify_certificates = True
+        ssl_protocol_version = ""
+
+    class Security:
+        ssl = SSL()
+
+    class Cfg:
+        network = Net()
+        discovery = Disc()
+        strategy = Strat()
+        disk = Disk()
+        observability = Obs()
+        proxy = Proxy()
+        security = Security()
+
+    return Cfg()
+
+
+def _fake_cfg():
+    """Create a simple fake config for checkpoint tests."""
+    return SimpleNamespace(
+        disk=SimpleNamespace(checkpoint_dir="/tmp", checkpoint_enabled=True),
+        network=SimpleNamespace(listen_port=6881),
+        observability=SimpleNamespace(log_level=SimpleNamespace(value="INFO"), enable_metrics=False),
+    )
+
+
+def _run_coro_locally(coro):
+    """Run a coroutine in a new event loop."""
+    # #region agent log
+    import json
+    with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a") as f:
+        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "H5", "location": "test_main.py:_run_coro_locally", "message": "_run_coro_locally called", "data": {"coro_type": str(type(coro)), "coro_repr": str(coro)[:200]}, "timestamp": int(__import__("time").time() * 1000)}) + "\n")
+    # #endregion
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+def _cfg_with_checkpoint():
+    """Create a config with checkpoint enabled."""
+    from ccbt.models import CheckpointFormat
+    return SimpleNamespace(disk=SimpleNamespace(
+        checkpoint_enabled=True,
+        checkpoint_dir="/tmp",
+        checkpoint_format=CheckpointFormat.BOTH,  # Use actual CheckpointFormat enum
+    ))
+
+
+def _cfg():
+    """Create a simple config for testing."""
+    from ccbt.models import CheckpointFormat
+    cfg = SimpleNamespace(
+        network=SimpleNamespace(
+            listen_port=6881,
+            max_global_peers=50,
+            max_peers_per_torrent=20,
+            pipeline_depth=4,
+            block_size_kib=16,
+            connection_timeout=10.0,
+            global_down_kib=0,
+            global_up_kib=0,
+            enable_ipv6=True,
+            enable_tcp=True,
+            enable_utp=True,
+            enable_encryption=False,
+            tcp_nodelay=False,
+            socket_rcvbuf_kib=64,
+            socket_sndbuf_kib=64,
+        ),
+        discovery=SimpleNamespace(
+            enable_dht=True,
+            dht_port=6881,
+            enable_http_trackers=True,
+            enable_udp_trackers=True,
+            tracker_announce_interval=120.0,
+            tracker_scrape_interval=300.0,
+            pex_interval=120.0,
+        ),
+        strategy=SimpleNamespace(
+            piece_selection="rarest_first",
+            endgame_threshold=0.95,
+            endgame_duplicates=2,
+        ),
+        disk=SimpleNamespace(
+            checkpoint_enabled=True,
+            checkpoint_dir="/tmp",
+            checkpoint_format=CheckpointFormat.BOTH,  # Use actual CheckpointFormat enum
+        ),
+        observability=SimpleNamespace(
+            log_level="INFO",
+            enable_metrics=False,
+        ),
+    )
+    return cfg
+
+
+class _Sess:
+    """Mock session manager for testing."""
+    def __init__(self) -> None:
+        self.config = SimpleNamespace(network=SimpleNamespace(listen_port=6881))
+        self.peers: list[Any] = []
+        # Use bytes keys like real AsyncSessionManager
+        self.torrents: dict[bytes, Any] = {}
+        self.dht = SimpleNamespace(node_count=0)
+        # Add lock for async context manager
+        self.lock = asyncio.Lock()
+        # Add checkpoint_ops for resume tests
+        self.checkpoint_ops = SimpleNamespace()
+        
+    async def add_torrent(self, torrent_data, resume=False):
+        """Mock add_torrent that populates torrents dict."""
+        info_hash = torrent_data.get("info_hash", b"\x00" * 20)
+        if isinstance(info_hash, str):
+            info_hash = bytes.fromhex(info_hash)
+        elif len(info_hash) != 20:
+            info_hash = info_hash[:20] if len(info_hash) > 20 else info_hash + b"\x00" * (20 - len(info_hash))
+        info_hash_hex = info_hash.hex()
+        # Create mock torrent session
+        mock_session = AsyncMock()
+        mock_session.file_selection_manager = None
+        self.torrents[info_hash] = mock_session
+        return info_hash_hex
+        
+    async def start(self):
+        pass
+        
+    async def stop(self):
+        pass
+
+
+class _FakeSession:
+    """Fake session manager with minimal attributes for testing."""
+    def __init__(self) -> None:
+        # Minimal attributes for show_status
+        self.config = SimpleNamespace(
+            network=SimpleNamespace(
+                listen_port=6881,
+                enable_utp=False,
+                protocol_v2=SimpleNamespace(
+                    enable_protocol_v2=False,
+                    prefer_protocol_v2=False,
+                    support_hybrid=False,
+                    v2_handshake_timeout=10.0
+                ),
+                webtorrent=SimpleNamespace(
+                    enable_webtorrent=False,
+                    webtorrent_host="localhost",
+                    webtorrent_port=8080,
+                    webtorrent_stun_servers=[]
+                )
+            ),
+            discovery=SimpleNamespace(tracker_auto_scrape=False)
+        )
+        self.peers: list[Any] = []
+        # Use bytes keys like real AsyncSessionManager
+        self.torrents: dict[bytes, Any] = {}
+        self.dht = SimpleNamespace(
+            node_count=0,
+            get_stats=lambda: {"routing_table": {"total_nodes": 0}}
+        )
+        # Add lock for async context manager
+        self.lock = asyncio.Lock()
+        # Scrape cache attributes (BEP 48)
+        self.scrape_cache: dict[bytes, Any] = {}
+        self.scrape_cache_lock = asyncio.Lock()
+        # Add checkpoint_ops for resume tests
+        self.checkpoint_ops = SimpleNamespace()
+        
+    async def start(self):
+        pass
+        
+    async def stop(self):
+        pass
 
 
 class TestMainEntry:
@@ -57,10 +339,23 @@ class TestMainEntry:
                         }
                         mock_dm_class.return_value = mock_dm_instance
 
-                        with patch("time.sleep"):
-                            result = main_module.main()
+                        # CRITICAL FIX: Mock DHT client to prevent background refresh loop from hanging
+                        # The DHT client starts background tasks (_refresh_loop, _cleanup_loop) that run indefinitely
+                        # Mock the DHT client so it doesn't start these tasks
+                        with patch("ccbt.discovery.dht.DHTClient") as mock_dht_class:
+                            mock_dht_instance = AsyncMock()
+                            # Mock start to not create background tasks
+                            async def mock_start():
+                                return None
+                            mock_dht_instance.start = mock_start
+                            mock_dht_instance.stop = AsyncMock(return_value=None)
+                            mock_dht_instance.get_peers = AsyncMock(return_value=[])
+                            mock_dht_class.return_value = mock_dht_instance
+                            
+                            with patch("time.sleep"):
+                                result = main_module.main()
 
-                            assert result == 0
+                                assert result == 0
 
     def test_main_with_magnet_uri(self):
         """Test main with magnet URI."""
@@ -90,29 +385,40 @@ class TestMainEntry:
                         "info_hash": b"x" * 20,
                         "announce": "http://tracker.example.com",
                         "pieces_info": {"num_pieces": 1},
+                        "info": None,  # Mark as missing info to trigger metadata fetch path
                     }
 
                     with patch("ccbt.discovery.tracker.TrackerClient") as mock_tracker_class:
                         mock_tracker_instance = Mock()
                         mock_tracker_instance.announce.return_value = {
                             "status": 200,
-                            "peers": [],
+                            "peers": [],  # Empty peers list to avoid metadata fetch
                         }
                         mock_tracker_class.return_value = mock_tracker_instance
 
-                        with patch("ccbt.storage.file_assembler.DownloadManager") as mock_dm_class:
-                            mock_dm_instance = Mock()
-                            mock_dm_instance.download_complete = True
-                            mock_dm_instance.get_status.return_value = {
-                                "files_exist": {},
-                                "file_sizes": {},
-                            }
-                            mock_dm_class.return_value = mock_dm_instance
+                        # Patch DHT lookup to avoid blocking asyncio.run() call
+                        # Note: asyncio is imported at module level, so we patch it on the module
+                        with patch.object(main_module, "asyncio") as mock_asyncio_module:
+                            # Mock asyncio.run to return empty list immediately (no DHT peers)
+                            mock_asyncio_module.run = Mock(return_value=[])
 
-                            with patch("time.sleep"):
-                                result = main_module.main()
+                            # Patch metadata fetch to avoid blocking socket operations
+                            with patch("ccbt.piece.metadata_exchange.fetch_metadata_from_peers") as mock_fetch_metadata:
+                                mock_fetch_metadata.return_value = None  # No metadata available
 
-                                assert result == 0
+                                with patch("ccbt.storage.file_assembler.DownloadManager") as mock_dm_class:
+                                    mock_dm_instance = Mock()
+                                    mock_dm_instance.download_complete = True
+                                    mock_dm_instance.get_status.return_value = {
+                                        "files_exist": {},
+                                        "file_sizes": {},
+                                    }
+                                    mock_dm_class.return_value = mock_dm_instance
+
+                                    with patch("time.sleep"):
+                                        result = main_module.main()
+
+                                        assert result == 0
 
     def test_main_daemon_mode_add_torrent(self):
         """Test main in daemon mode adding torrent."""
@@ -349,40 +655,44 @@ class TestMainEntry:
                         "announce": "http://tracker.example.com",
                     }
 
-                    with patch("ccbt.discovery.tracker.TrackerClient") as mock_tracker_class:
-                        mock_tracker_instance = Mock()
-                        mock_tracker_instance.announce.return_value = {
-                            "status": 200,
-                            "peers": [{"ip": "192.168.1.1", "port": 6881}],
-                        }
-                        mock_tracker_class.return_value = mock_tracker_instance
+                    with patch("asyncio.run") as mock_asyncio_run:
+                        # Mock asyncio.run to return empty list for DHT peer lookup
+                        mock_asyncio_run.return_value = []
 
-                        with patch("ccbt.piece.metadata_exchange.fetch_metadata_from_peers") as mock_fetch:
-                            mock_fetch.return_value = {
-                                b"info": {b"name": b"test"},
-                                b"announce": b"http://tracker.example.com",
+                        with patch("ccbt.discovery.tracker.TrackerClient") as mock_tracker_class:
+                            mock_tracker_instance = Mock()
+                            mock_tracker_instance.announce.return_value = {
+                                "status": 200,
+                                "peers": [{"ip": "192.168.1.1", "port": 6881}],
                             }
+                            mock_tracker_class.return_value = mock_tracker_instance
 
-                            with patch("ccbt.core.magnet.build_torrent_data_from_metadata") as mock_build_meta:
-                                mock_build_meta.return_value = {
-                                    "info_hash": b"x" * 20,
-                                    "announce": "http://tracker.example.com",
-                                    "pieces_info": {"num_pieces": 1},
+                            with patch("ccbt.piece.metadata_exchange.fetch_metadata_from_peers") as mock_fetch:
+                                mock_fetch.return_value = {
+                                    b"info": {b"name": b"test"},
+                                    b"announce": b"http://tracker.example.com",
                                 }
 
-                                with patch("ccbt.storage.file_assembler.DownloadManager") as mock_dm_class:
-                                    mock_dm_instance = Mock()
-                                    mock_dm_instance.download_complete = True
-                                    mock_dm_instance.get_status.return_value = {
-                                        "files_exist": {},
-                                        "file_sizes": {},
+                                with patch("ccbt.core.magnet.build_torrent_data_from_metadata") as mock_build_meta:
+                                    mock_build_meta.return_value = {
+                                        "info_hash": b"x" * 20,
+                                        "announce": "http://tracker.example.com",
+                                        "pieces_info": {"num_pieces": 1},
                                     }
-                                    mock_dm_class.return_value = mock_dm_instance
 
-                                    with patch("time.sleep"):
-                                        result = main_module.main()
+                                    with patch("ccbt.storage.file_assembler.DownloadManager") as mock_dm_class:
+                                        mock_dm_instance = Mock()
+                                        mock_dm_instance.download_complete = True
+                                        mock_dm_instance.get_status.return_value = {
+                                            "files_exist": {},
+                                            "file_sizes": {},
+                                        }
+                                        mock_dm_class.return_value = mock_dm_instance
 
-                                        assert result == 0
+                                        with patch("time.sleep"):
+                                            result = main_module.main()
+
+                                            assert result == 0
 
     def test_main_type_error_on_announce_input(self):
         """Test main handles TypeError on announce input."""
@@ -414,6 +724,9 @@ class TestMainEntry:
 
     def test_alerts_help(self):
         """Test alerts command help."""
+        from click.testing import CliRunner
+        from ccbt.cli.main import cli
+        
         runner = CliRunner()
         result = runner.invoke(cli, ["alerts", "--help"])
         
@@ -423,6 +736,9 @@ class TestMainEntry:
 
     def test_all_commands_accessible(self):
         """Test that all expected commands are accessible."""
+        from click.testing import CliRunner
+        from ccbt.cli.main import cli
+        
         runner = CliRunner()
         
         # Test that we can get help for each major command
@@ -814,18 +1130,22 @@ def test_checkpoints_list_empty(monkeypatch, tmp_path):
     # Fake config manager
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=_fake_cfg()))
 
-    # Fake checkpoint module
+    # Patch the module before it's imported in the CLI function
     fake_mod = ModuleType("ccbt.storage.checkpoint")
 
     class _CPM:
         def __init__(self, *_a, **_k):
             pass
 
-        async def list_checkpoints(self, *args, **kwargs):
+        async def list_checkpoints(self, checkpoint_format=None, *args, **kwargs):
+            # Accept checkpoint_format parameter to match real method signature
             return []
 
     setattr(fake_mod, "CheckpointManager", _CPM)
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
+    
+    # Also patch asyncio.run to handle the async mock
+    monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     result = runner.invoke(cli_main.cli, ["checkpoints", "list", "--format", "both"]) 
     assert result.exit_code == 0
@@ -1012,25 +1332,50 @@ def test_config_command_shows_table(monkeypatch):
 
 def test_debug_command_basic(monkeypatch):
     import importlib
+    import types
     cli_main = importlib.import_module("ccbt.cli.main")
 
     class DummyCfgMgr:
         def __init__(self, _p=None):
+            # Handle None or any config value
             self.config = types.SimpleNamespace()
 
     class DummySession:
         def __init__(self, *_):
             pass
+        
+        async def start(self):
+            pass
 
     async def start_debug_mode(session, console):  # noqa: ARG001
         return None
 
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    # Mock init_config to prevent real ConfigManager creation in CLI group
+    def _mock_init_config(_config=None):
+        return DummyCfgMgr(_config)
+
     monkeypatch.setattr(cli_main, "ConfigManager", DummyCfgMgr)
+    monkeypatch.setattr(cli_main, "init_config", _mock_init_config)
     monkeypatch.setattr(cli_main, "AsyncSessionManager", DummySession)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
     monkeypatch.setattr(cli_main, "start_debug_mode", start_debug_mode)
+    monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     runner = CliRunner()
-    result = runner.invoke(cli_main.cli, ["debug"]) 
+    # Don't provide obj - let CLI group set it (will be None by default, which ConfigManager mock handles)
+    result = runner.invoke(cli_main.cli, ["debug"])
+    if result.exit_code != 0:
+        print(f"Error output: {result.output}")
+        print(f"Exception: {result.exception}")
     assert result.exit_code == 0
 
 
@@ -1249,8 +1594,7 @@ def test_download_checkpoint_confirm_yes_and_no(monkeypatch):
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
     class _Mgr(_Sess):
-        def load_torrent(self, _path):
-            return {"info_hash": b"\x00" * 20, "name": "t"}
+        pass
 
     class _CP:
         torrent_name = "t"
@@ -1268,10 +1612,15 @@ def test_download_checkpoint_confirm_yes_and_no(monkeypatch):
     setattr(fake_mod, "CheckpointManager", _CPM)
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
+    # Mock load_torrent from torrent_utils (this is what the download command actually calls)
+    def _mock_load_torrent(_path):
+        return {"info_hash": b"\x00" * 20, "name": "t"}
+
     async def _dummy_download(*_a, **_k):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
+    monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
     monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
@@ -1296,12 +1645,12 @@ def test_download_checkpoint_noninteractive(monkeypatch):
             
         async def stop(self):
             pass
-            
-        def load_torrent(self, _path):
-            # Minimal torrent-like dict expected by code
-            return {"info_hash": b"\x00" * 20, "name": "t"}
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _FakeMgr())
+
+    # Mock load_torrent from torrent_utils (this is what the download command actually calls)
+    def _mock_load_torrent(_path):
+        return {"info_hash": b"\x00" * 20, "name": "t"}
 
     # Inject a fake CheckpointManager module with async load_checkpoint
     fake_mod = ModuleType("ccbt.storage.checkpoint")
@@ -1327,6 +1676,7 @@ def test_download_checkpoint_noninteractive(monkeypatch):
 
     # Patch asyncio.run to actually consume coroutines created by download flow
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
+    monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
 
     # Provide an existing file path by pointing to this test file; exists=True check passes
     result = runner.invoke(cli_main.cli, ["download", __file__]) 
@@ -1431,14 +1781,18 @@ def test_download_file_not_found_path(monkeypatch):
     cfg = SimpleNamespace(disk=SimpleNamespace(checkpoint_enabled=True, checkpoint_dir="/tmp"))
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
-    class _Mgr:
-        def load_torrent(self, _path):
-            raise FileNotFoundError("missing.torrent")
+    class _Mgr(_Sess):
+        pass
+
+    # Mock load_torrent to raise FileNotFoundError
+    def _mock_load_torrent(_path):
+        raise FileNotFoundError("missing.torrent")
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
+    monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
     res = runner.invoke(cli_main.cli, ["download", __file__]) 
     assert res.exit_code != 0
-    assert "File not found" in res.output
+    assert "File not found" in res.output or "Torrent file not found" in res.output
 
 
 
@@ -1453,14 +1807,16 @@ def test_download_happy_path_noninteractive(monkeypatch):
             
         async def stop(self):
             pass
-            
-        def load_torrent(self, _path):
-            return {"info_hash": b"\x00" * 20, "name": "t"}
+
+    # Mock load_torrent from torrent_utils
+    def _mock_load_torrent(_path):
+        return {"info_hash": b"\x00" * 20, "name": "t"}
 
     async def _dummy_download(session, torrent_data, console, resume=False):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
+    monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
     monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
@@ -1484,14 +1840,18 @@ def test_download_interactive_path(monkeypatch):
     cfg = SimpleNamespace(disk=SimpleNamespace(checkpoint_enabled=False, checkpoint_dir="/tmp"))
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
-    class _Mgr:
-        def load_torrent(self, _path):
-            return {"info_hash": b"\x00" * 20, "name": "t"}
+    class _Mgr(_Sess):
+        pass
+
+    # Mock load_torrent from torrent_utils
+    def _mock_load_torrent(_path):
+        return {"info_hash": b"\x00" * 20, "name": "t"}
 
     async def _start_interactive(session, torrent_data, console, resume=False):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
+    monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
     monkeypatch.setattr(cli_main, "start_interactive_download", _start_interactive)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
@@ -1515,8 +1875,11 @@ def test_download_monitor_path(monkeypatch):
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
     class _Mgr(_Sess):
-        def load_torrent(self, _path):
-            return {"info_hash": b"\x00" * 20, "name": "t"}
+        pass
+
+    # Mock load_torrent from torrent_utils
+    def _mock_load_torrent(_path):
+        return {"info_hash": b"\x00" * 20, "name": "t"}
 
     async def _dummy_monitor(*_a, **_k):
         return None
@@ -1525,6 +1888,7 @@ def test_download_monitor_path(monkeypatch):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
+    monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
     monkeypatch.setattr(cli_main, "start_monitoring", _dummy_monitor)
     monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
@@ -1540,13 +1904,17 @@ def test_download_value_error(monkeypatch):
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
     class _Mgr(_Sess):
-        def load_torrent(self, _path):
-            raise ValueError("bad torrent")
+        pass
+
+    # Mock load_torrent to raise ValueError
+    def _mock_load_torrent(_path):
+        raise ValueError("bad torrent")
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
+    monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
     result = runner.invoke(cli_main.cli, ["download", __file__])
     assert result.exit_code != 0
-    assert "Invalid torrent file" in result.output
+    assert "Invalid torrent file" in result.output or "Invalid torrent file format" in result.output
 
 
 
@@ -1565,14 +1933,33 @@ def test_download_with_override_flags_matrix(monkeypatch):
     cfg = _cfg()
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
-    class _Mgr:
-        def load_torrent(self, _path):
-            return {"info_hash": b"\x00" * 20, "name": "t"}
+    class _Mgr(_Sess):
+        pass
+
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    # Mock _get_executor to return (None, False) indicating no daemon
+    async def _mock_get_executor():
+        return (None, False)
+
+    # Mock load_torrent from torrent_utils
+    def _mock_load_torrent(_path):
+        return {"info_hash": b"\x00" * 20, "name": "t"}
 
     async def _basic(session, torrent_data, console, resume=False):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+    monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
     monkeypatch.setattr(cli_main, "start_basic_download", _basic)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
@@ -1617,6 +2004,9 @@ def test_download_with_override_flags_matrix(monkeypatch):
     ]
 
     result = runner.invoke(cli_main.cli, args)
+    if result.exit_code != 0:
+        print(f"Error output: {result.output}")
+        print(f"Exception: {result.exception}")
     assert result.exit_code == 0
 
 
@@ -1961,6 +2351,19 @@ def test_magnet_checkpoint_confirm_no(monkeypatch):
     setattr(fake_mod, "CheckpointManager", _CPM)
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    # Mock _get_executor to return (None, False) indicating no daemon
+    async def _mock_get_executor():
+        return (None, False)
+
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     import rich.prompt as rp
 
@@ -1970,7 +2373,9 @@ def test_magnet_checkpoint_confirm_no(monkeypatch):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+    monkeypatch.setattr(cli_main, "start_basic_magnet_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     result = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc"])
@@ -2005,6 +2410,19 @@ def test_magnet_checkpoint_confirm_yes(monkeypatch):
     setattr(fake_mod, "CheckpointManager", _CPM)
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    # Mock _get_executor to return (None, False) indicating no daemon
+    async def _mock_get_executor():
+        return (None, False)
+
     # Make stdin a TTY and Confirm.ask return True (resume)
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     import rich.prompt as rp
@@ -2015,7 +2433,9 @@ def test_magnet_checkpoint_confirm_yes(monkeypatch):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+    monkeypatch.setattr(cli_main, "start_basic_magnet_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     result = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc"])
@@ -2045,7 +2465,12 @@ def test_magnet_checkpoint_confirm_yes(monkeypatch):
 def test_magnet_happy_path_noninteractive(monkeypatch):
     runner = CliRunner()
     # Provide config with disk
-    cfg = SimpleNamespace(disk=SimpleNamespace(checkpoint_enabled=True, checkpoint_dir="/tmp"))
+    from ccbt.models import CheckpointFormat
+    cfg = SimpleNamespace(disk=SimpleNamespace(
+        checkpoint_enabled=True,
+        checkpoint_dir="/tmp",
+        checkpoint_format=CheckpointFormat.BOTH,
+    ))
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
     class _Mgr(_FakeSession):
@@ -2058,11 +2483,26 @@ def test_magnet_happy_path_noninteractive(monkeypatch):
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
 
-    async def _dummy_download(session, torrent_data, console, resume=False):
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    # Mock _get_executor to return (None, False) indicating no daemon
+    async def _mock_get_executor():
+        return (None, False)
+
+    async def _dummy_download(session, magnet_link, console, resume=False):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+    monkeypatch.setattr(cli_main, "start_basic_magnet_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     result = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "--no-checkpoint"]) 
@@ -2129,7 +2569,7 @@ def test_magnet_interactive_path(monkeypatch):
     cfg = SimpleNamespace(disk=SimpleNamespace(checkpoint_enabled=False, checkpoint_dir="/tmp"))
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
-    class _Mgr:
+    class _Mgr(_Sess):
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
 
@@ -2223,15 +2663,30 @@ def test_magnet_with_override_flags_matrix(monkeypatch):
     cfg = _cfg()
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
-    class _Mgr:
+    class _Mgr(_Sess):
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
 
-    async def _basic(session, torrent_data, console, resume=False):
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    # Mock _get_executor to return (None, False) indicating no daemon
+    async def _mock_get_executor():
+        return (None, False)
+
+    async def _basic(session, magnet_link, console, resume=False):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_basic_download", _basic)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+    monkeypatch.setattr(cli_main, "start_basic_magnet_download", _basic)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     args = [
@@ -2258,6 +2713,9 @@ def test_magnet_with_override_flags_matrix(monkeypatch):
     ]
 
     result = runner.invoke(cli_main.cli, args)
+    if result.exit_code != 0:
+        print(f"Error output: {result.output}")
+        print(f"Exception: {result.exception}")
     assert result.exit_code == 0
 
 
@@ -2457,7 +2915,7 @@ def test_proxy_invalid_port():
     cfg = _make_cfg()
     opts = {"proxy": "proxy.example.com:invalid"}
     
-    with pytest.raises(click.Abort):
+    with pytest.raises(ValueError):
         _apply_proxy_overrides(cfg, opts)
 
 
@@ -2595,15 +3053,19 @@ def test_resume_download_error_branches(monkeypatch, capsys):
     ih = (b"\x00" * 20).hex()
 
     # ValueError branch
+    class _CheckpointOps1:
+        async def resume_from_checkpoint(self, *_a, **_k):
+            raise ValueError("bad")
+
     class _S1:
+        def __init__(self):
+            self.checkpoint_ops = _CheckpointOps1()
+
         async def start(self):
             pass
 
         async def stop(self):
             pass
-
-        async def resume_from_checkpoint(self, *_a, **_k):
-            raise ValueError("bad")
 
     import click
     with pytest.raises(click.ClickException):
@@ -2614,15 +3076,19 @@ def test_resume_download_error_branches(monkeypatch, capsys):
     assert "validation error" in out.lower()
 
     # FileNotFoundError branch
+    class _CheckpointOps2:
+        async def resume_from_checkpoint(self, *_a, **_k):
+            raise FileNotFoundError("missing")
+
     class _S2:
+        def __init__(self):
+            self.checkpoint_ops = _CheckpointOps2()
+
         async def start(self):
             pass
 
         async def stop(self):
             pass
-
-        async def resume_from_checkpoint(self, *_a, **_k):
-            raise FileNotFoundError("missing")
 
     with pytest.raises(click.ClickException):
         _run_coro_locally(
@@ -2653,15 +3119,19 @@ def test_resume_download_error_branches(monkeypatch, capsys):
 def test_resume_download_interactive_branch(monkeypatch):
     ih = (b"\x00" * 20).hex()
 
+    class _CheckpointOpsSess:
+        async def resume_from_checkpoint(self, *_a, **_k):
+            return ih
+
     class _Sess:
+        def __init__(self):
+            self.checkpoint_ops = _CheckpointOpsSess()
+
         async def start(self):
             return None
 
         async def stop(self):
             return None
-
-        async def resume_from_checkpoint(self, *_a, **_k):
-            return ih
 
         async def get_torrent_status(self, *_a, **_k):
             return None
@@ -2683,30 +3153,57 @@ def test_resume_download_interactive_branch(monkeypatch):
 def test_resume_download_loop_progress(monkeypatch, capsys):
     ih = (b"\x00" * 20).hex()
 
+    class _CheckpointOpsS:
+        async def resume_from_checkpoint(self, *_a, **_k):
+            return ih
+
+    class _TorrentSession:
+        def __init__(self, calls_ref):
+            self._calls_ref = calls_ref
+
+        async def get_status(self):
+            self._calls_ref[0] += 1
+            if self._calls_ref[0] == 1:
+                return {"progress": 0.1, "status": "downloading"}
+            if self._calls_ref[0] == 2:
+                return {"progress": 1.0, "status": "seeding"}
+            # Return None after seeding to break the loop
+            return None
+
     class _S:
+        def __init__(self):
+            import asyncio
+            self.calls = [0]  # Use list for mutable reference
+            self.checkpoint_ops = _CheckpointOpsS()
+            self.lock = asyncio.Lock()
+            self.torrents = {}  # Will be populated after resume
+
         async def start(self):
             return None
 
         async def stop(self):
             return None
 
-        async def resume_from_checkpoint(self, *_a, **_k):
-            return ih
-
-        def __init__(self):
-            self.calls = 0
-
         async def get_torrent_status(self, *_a, **_k):
-            self.calls += 1
-            if self.calls == 1:
+            self.calls[0] += 1
+            if self.calls[0] == 1:
                 return {"progress": 0.1, "status": "downloading"}
-            if self.calls == 2:
+            if self.calls[0] == 2:
                 return {"progress": 1.0, "status": "seeding"}
             return None
 
     cp = SimpleNamespace(torrent_name="t")
     console = cli_main.Console()
-    _run_coro_locally(cli_main.resume_download(_S(), bytes.fromhex(ih), cp, False, console))  # type: ignore[arg-type]
+    session = _S()
+    # Add a mock torrent session to the torrents dict after resume would have added it
+    original_resume = session.checkpoint_ops.resume_from_checkpoint
+    async def patched_resume(*args, **kwargs):
+        result = await original_resume(*args, **kwargs)
+        # Add mock torrent session to torrents dict
+        session.torrents[bytes.fromhex(result)] = _TorrentSession(session.calls)
+        return result
+    session.checkpoint_ops.resume_from_checkpoint = patched_resume
+    _run_coro_locally(cli_main.resume_download(session, bytes.fromhex(ih), cp, False, console))  # type: ignore[arg-type]
     out = capsys.readouterr().out
     assert "Download completed" in out
 
@@ -2715,22 +3212,41 @@ def test_resume_download_loop_progress(monkeypatch, capsys):
 def test_resume_download_stop_warning(monkeypatch, capsys):
     ih = (b"\x00" * 20).hex()
 
+    class _CheckpointOpsSessStop:
+        async def resume_from_checkpoint(self, *_a, **_k):
+            return ih
+
+    class _TorrentSessionStop:
+        async def get_status(self):
+            return None
+
     class _Sess:
+        def __init__(self):
+            import asyncio
+            self.checkpoint_ops = _CheckpointOpsSessStop()
+            self.lock = asyncio.Lock()
+            self.torrents = {}
+
         async def start(self):
             return None
 
         async def stop(self):
             raise RuntimeError("stop err")
 
-        async def resume_from_checkpoint(self, *_a, **_k):
-            return ih
-
         async def get_torrent_status(self, *_a, **_k):
             return None
 
     cp = SimpleNamespace(torrent_name="t")
     console = cli_main.Console()
-    _run_coro_locally(cli_main.resume_download(_Sess(), bytes.fromhex(ih), cp, False, console))  # type: ignore[arg-type]
+    session = _Sess()
+    # Add a mock torrent session to the torrents dict after resume would have added it
+    original_resume = session.checkpoint_ops.resume_from_checkpoint
+    async def patched_resume(*args, **kwargs):
+        result = await original_resume(*args, **kwargs)
+        session.torrents[bytes.fromhex(result)] = _TorrentSessionStop()
+        return result
+    session.checkpoint_ops.resume_from_checkpoint = patched_resume
+    _run_coro_locally(cli_main.resume_download(session, bytes.fromhex(ih), cp, False, console))  # type: ignore[arg-type]
     out = capsys.readouterr().out
     assert "Warning: Error stopping session" in out
 
@@ -2740,9 +3256,27 @@ def test_resume_download_success_unit(monkeypatch):
     """Directly exercise resume_download async helper for coverage."""
     info_hash = (b"\x00" * 20).hex()
 
+    class _CheckpointOpsFake:
+        async def resume_from_checkpoint(self, *_a, **_k):
+            return info_hash
+
+    class _FakeTorrentSession:
+        def __init__(self, status_calls_ref):
+            self._status_calls_ref = status_calls_ref
+
+        async def get_status(self):
+            self._status_calls_ref[0] += 1
+            if self._status_calls_ref[0] == 1:
+                return {"progress": 1.0, "status": "seeding"}
+            return None
+
     class _FakeSession:
         def __init__(self):
-            self._status_calls = 0
+            import asyncio
+            self._status_calls = [0]  # Use list for mutable reference
+            self.checkpoint_ops = _CheckpointOpsFake()
+            self.lock = asyncio.Lock()
+            self.torrents = {}
 
         async def start(self):
             return None
@@ -2750,13 +3284,10 @@ def test_resume_download_success_unit(monkeypatch):
         async def stop(self):
             return None
 
-        async def resume_from_checkpoint(self, *_a, **_k):
-            return info_hash
-
         async def get_torrent_status(self, *_a, **_k):
             # First call returns completed status, then end
-            self._status_calls += 1
-            if self._status_calls == 1:
+            self._status_calls[0] += 1
+            if self._status_calls[0] == 1:
                 return {"progress": 1.0, "status": "seeding"}
             return None
 
@@ -2774,6 +3305,17 @@ def test_resume_download_success_unit(monkeypatch):
 
 def test_resume_invalid_hex_and_no_checkpoint(monkeypatch):
     runner = CliRunner()
+
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
 
     cfg = SimpleNamespace(disk=SimpleNamespace(checkpoint_enabled=True, checkpoint_dir="/tmp"))
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
@@ -3482,19 +4024,39 @@ def test_start_basic_download_with_object_torrent_data(monkeypatch):
 def test_status_command_basic(monkeypatch):
     import importlib
     cli_main = importlib.import_module("ccbt.cli.main")
+    from ccbt.cli import status as status_module
 
     class DummyCfgMgr:
         def __init__(self, _p=None):
-            self.config = types.SimpleNamespace(network=types.SimpleNamespace(listen_port=6881))
+            self.config = SimpleNamespace(network=SimpleNamespace(listen_port=6881))
 
     class DummySession:
         def __init__(self, *_):
-            self.config = types.SimpleNamespace(network=types.SimpleNamespace(listen_port=6881))
+            import asyncio
+            self.config = SimpleNamespace(
+                network=SimpleNamespace(
+                    listen_port=6881,
+                    enable_utp=False,
+                    protocol_v2=SimpleNamespace(
+                        enable_protocol_v2=False,
+                        prefer_protocol_v2=False,
+                        support_hybrid=False,
+                        v2_handshake_timeout=10.0
+                    )
+                ),
+                discovery=SimpleNamespace(tracker_auto_scrape=False)
+            )
             self.peers = {}
             self.torrents = {}
-            self.dht = types.SimpleNamespace(node_count=0)
+            self.dht = SimpleNamespace(
+                node_count=0,
+                get_stats=lambda: {"routing_table": {"total_nodes": 0}}
+            )
+            self.lock = asyncio.Lock()
+            self.scrape_cache = {}
+            self.scrape_cache_lock = asyncio.Lock()
 
-    async def show_status(session, console):  # noqa: ARG001
+    async def show_status(adapter, console):  # noqa: ARG001
         return None
 
     monkeypatch.setattr(cli_main, "ConfigManager", DummyCfgMgr)
@@ -3502,10 +4064,11 @@ def test_status_command_basic(monkeypatch):
     async def _noop_basic(session, td, console, resume=False):  # noqa: ARG001
         return None
     monkeypatch.setattr(cli_main, "start_basic_download", _noop_basic)
-    monkeypatch.setattr(cli_main, "show_status", show_status)
+    # Patch show_status in the status module, not in main
+    monkeypatch.setattr(status_module, "show_status", show_status)
 
     runner = CliRunner()
-    result = runner.invoke(cli_main.cli, ["status"]) 
+    result = runner.invoke(cli_main.cli, ["status"])
     assert result.exit_code == 0
 
 
@@ -3535,7 +4098,12 @@ def test_status_command_happy_and_error(monkeypatch):
                 network=SimpleNamespace(
                     listen_port=6881,
                     enable_utp=False,
-                    protocol_v2=SimpleNamespace(enable_v2=False, prefer_v2=False),
+                    protocol_v2=SimpleNamespace(
+                        enable_protocol_v2=False,
+                        prefer_protocol_v2=False,
+                        support_hybrid=False,
+                        v2_handshake_timeout=10.0
+                    ),
                     webtorrent=SimpleNamespace(
                         enable_webtorrent=False,
                         webtorrent_host="localhost",

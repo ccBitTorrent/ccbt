@@ -332,15 +332,50 @@ class ProxyClient:
         async with self._pool_lock:
             for pool_key, session in list(self._pools.items()):
                 try:
-                    await session.close()
-                    logger.debug(
-                        "Closed proxy connection pool: %s", pool_key
-                    )  # pragma: no cover - tested but requires ProxyConnector
+                    if not session.closed:
+                        await session.close()
+                        # CRITICAL FIX: Wait for session to fully close (especially on Windows)
+                        import sys
+
+                        if sys.platform == "win32":
+                            await asyncio.sleep(0.2)
+                        else:
+                            await asyncio.sleep(0.1)
+
+                        # CRITICAL FIX: Close connector explicitly to ensure complete cleanup
+                        if hasattr(session, "connector") and session.connector:
+                            connector = session.connector
+                            if not connector.closed:
+                                try:
+                                    await connector.close()
+                                    if sys.platform == "win32":
+                                        await asyncio.sleep(
+                                            0.1
+                                        )  # Additional wait for connector cleanup on Windows
+                                except Exception as e:
+                                    logger.debug(
+                                        "Error closing connector for pool %s: %s",
+                                        pool_key,
+                                        e,
+                                    )
+
+                        logger.debug(
+                            "Closed proxy connection pool: %s", pool_key
+                        )  # pragma: no cover - tested but requires ProxyConnector
                 except Exception as e:
                     logger.warning(  # pragma: no cover - tested but requires ProxyConnector
                         "Error closing proxy pool %s: %s", pool_key, e
                     )  # pragma: no cover
-                del self._pools[pool_key]
+                    # CRITICAL FIX: Even if close() fails, try to clean up connector
+                    try:
+                        if hasattr(session, "connector") and session.connector:
+                            connector = session.connector
+                            if not connector.closed:
+                                await connector.close()
+                    except Exception:
+                        pass
+                finally:
+                    del self._pools[pool_key]
 
     def get_stats(self) -> ProxyStats:
         """Get proxy connection statistics.

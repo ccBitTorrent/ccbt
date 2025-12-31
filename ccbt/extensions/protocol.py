@@ -92,10 +92,10 @@ class ExtensionProtocol:
 
     def encode_handshake(self) -> bytes:
         """Encode extension handshake (BEP 10).
-        
+
         BEP 10 extension handshakes are bencoded dictionaries.
         This method encodes the extension information as a bencoded dictionary.
-        
+
         Returns:
             Encoded extension handshake message in format: <length><message_id><bencoded_data>
 
@@ -122,16 +122,16 @@ class ExtensionProtocol:
 
     def decode_handshake(self, data: bytes) -> dict[str, Any]:
         """Decode extension handshake (BEP 10).
-        
+
         BEP 10 extension handshakes are ALWAYS bencoded dictionaries, not JSON.
         This method decodes the bencoded handshake data.
-        
+
         Args:
             data: Extension handshake message in format: <length><message_id><bencoded_data>
-            
+
         Returns:
             Decoded handshake dictionary with extension information
-            
+
         Raises:
             ValueError: If data is invalid or incomplete
             BencodeDecodeError: If bencode decoding fails
@@ -227,17 +227,17 @@ class ExtensionProtocol:
     ) -> None:
         """Handle extension handshake from peer."""
         self.peer_extensions[peer_id] = extensions
-        
+
         # Extract SSL capability from extension handshake data
         # Check if SSL extension is registered in message map (BEP 10 "m" field)
+        # Note: BEP 10 extensions can have bytes keys, but type annotation is dict[str, Any]
         ssl_supported = False
         if isinstance(extensions, dict):
-            m_dict = extensions.get("m") or extensions.get(b"m", {})
-            if isinstance(m_dict, dict):
-                # SSL extension may be registered with message ID
-                if "ssl" in m_dict or b"ssl" in m_dict:
-                    ssl_supported = True
-        
+            m_dict = extensions.get("m") or extensions.get(b"m", {})  # type: ignore[no-matching-overload]
+            # SSL extension may be registered with message ID
+            if isinstance(m_dict, dict) and ("ssl" in m_dict or b"ssl" in m_dict):
+                ssl_supported = True
+
         # Store SSL capability in peer_extensions
         if not isinstance(self.peer_extensions[peer_id], dict):
             self.peer_extensions[peer_id] = {"raw": self.peer_extensions[peer_id]}

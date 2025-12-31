@@ -6,6 +6,7 @@ Provides multicast-based broadcasting for XET protocol updates.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import socket
@@ -87,7 +88,7 @@ class XetMulticastBroadcaster:
                 self.multicast_address,
                 self.multicast_port,
             )
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to start XET multicast broadcaster")
             await self.stop()
             raise
@@ -102,10 +103,8 @@ class XetMulticastBroadcaster:
         # Cancel listen task
         if self._listen_task:
             self._listen_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._listen_task
-            except asyncio.CancelledError:
-                pass
 
         # Close socket
         if self._socket:
@@ -267,9 +266,7 @@ class XetMulticastBroadcaster:
                                 try:
                                     self.chunk_callback(chunk_hash, peer_ip, peer_port)
                                 except Exception as e:
-                                    logger.warning(
-                                        "Error in chunk callback: %s", e
-                                    )
+                                    logger.warning("Error in chunk callback: %s", e)
 
                     elif message_type == "folder_update":
                         update_data = message.get("update", {})
@@ -297,6 +294,3 @@ class XetMulticastBroadcaster:
                 if self.running:
                     logger.warning("Error in multicast listener: %s", e)
                 await asyncio.sleep(1)
-
-
-

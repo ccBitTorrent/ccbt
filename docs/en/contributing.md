@@ -122,7 +122,7 @@ All development configuration files are located in [dev/](dev/):
 - Runs all checks identically to main, including:
   - All linting and type checking
   - Full test suite with coverage
-  - All benchmark checks from [dev/pre-commit-config.yaml:39-68](https://github.com/yourusername/ccbittorrent/blob/main/dev/pre-commit-config.yaml#L39-L68)
+  - All benchmark checks from [dev/pre-commit-config.yaml:39-68](https://github.com/ccBitTorrent/ccbittorrent/blob/main/dev/pre-commit-config.yaml#L39-L68)
   - Documentation builds
 
 ### Feature Branches
@@ -214,7 +214,7 @@ We maintain high code coverage standards. Coverage reports are generated and mus
 
 ### Benchmark Requirements
 
-Benchmark checks from [dev/pre-commit-config.yaml:39-68](https://github.com/yourusername/ccbittorrent/blob/main/dev/pre-commit-config.yaml#L39-L68) must pass. These include:
+Benchmark checks from [dev/pre-commit-config.yaml:39-68](https://github.com/ccBitTorrent/ccbittorrent/blob/main/dev/pre-commit-config.yaml#L39-L68) must pass. These include:
 
 - Hash verification benchmarks
 - Disk I/O benchmarks

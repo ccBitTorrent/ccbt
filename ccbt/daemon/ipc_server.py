@@ -56,12 +56,12 @@ from ccbt.daemon.ipc_protocol import (
     ExternalPortResponse,
     FilePriorityRequest,
     FileSelectRequest,
+    GlobalPeerListResponse,
+    GlobalPeerMetricsResponse,
     GlobalStatsResponse,
     ImportStateRequest,
     IPFilterStatsResponse,
     NATMapRequest,
-    GlobalPeerMetricsResponse,
-    GlobalPeerListResponse,
     NetworkTimingMetricsResponse,
     PeerListResponse,
     PeerPerformanceMetrics,
@@ -69,8 +69,8 @@ from ccbt.daemon.ipc_protocol import (
     PieceAvailabilityResponse,
     QueueAddRequest,
     QueueMoveRequest,
-    RateSamplesResponse,
     RateLimitRequest,
+    RateSamplesResponse,
     ResumeCheckpointRequest,
     ScrapeRequest,
     StatusResponse,
@@ -125,31 +125,35 @@ class IPCServer:
             from ccbt.executor.manager import ExecutorManager
 
             executor_manager = ExecutorManager.get_instance()
-            self.executor = executor_manager.get_executor(session_manager=session_manager)
+            self.executor = executor_manager.get_executor(
+                session_manager=session_manager
+            )
             logger.debug(
                 "Using executor from ExecutorManager (type: %s)",
                 type(self.executor).__name__,
             )
         except Exception as e:
-            logger.error(
-                "Failed to get executor from ExecutorManager: %s. "
-                "This may indicate initialization order issues.",
-                e,
-                exc_info=True,
+            logger.exception(
+                "Failed to get executor from ExecutorManager. "
+                "This may indicate initialization order issues."
             )
-            raise RuntimeError(f"Failed to get executor: {e}") from e
+            error_msg = f"Failed to get executor: {e}"
+            raise RuntimeError(error_msg) from e
 
         # CRITICAL FIX: Verify executor is ready
         # The executor should have access to session_manager and all required components
         if not hasattr(self.executor, "adapter") or self.executor.adapter is None:
-            raise RuntimeError("Executor adapter not initialized")
+            error_msg = "Executor adapter not initialized"
+            raise RuntimeError(error_msg)
         if (
             not hasattr(self.executor.adapter, "session_manager")
             or self.executor.adapter.session_manager is None
         ):
-            raise RuntimeError("Executor session_manager not initialized")
+            error_msg = "Executor session_manager not initialized"
+            raise RuntimeError(error_msg)
         if self.executor.adapter.session_manager is not session_manager:
-            raise RuntimeError("Executor session_manager reference mismatch")
+            error_msg = "Executor session_manager reference mismatch"
+            raise RuntimeError(error_msg)
         self.api_key = api_key
         self.key_manager = key_manager
         self.tls_enabled = tls_enabled
@@ -306,10 +310,7 @@ class IPCServer:
                 return await handler(request)
             except Exception as auth_error:
                 # Catch any exceptions in auth middleware to prevent daemon crash
-                logger.exception(
-                    "Error in authentication middleware: %s",
-                    auth_error,
-                )
+                logger.exception("Error in authentication middleware")
                 # Fall back to allowing the request through (will be caught by error middleware)
                 # Or return unauthorized if we can't authenticate
                 return web.json_response(  # type: ignore[attr-defined]
@@ -410,7 +411,7 @@ class IPCServer:
             f"{API_BASE_PATH}/metrics/global/detailed",
             self._handle_detailed_global_metrics,
         )
-        
+
         # IMPROVEMENT: New metrics endpoints for trickle improvements
         self.app.router.add_get(
             f"{API_BASE_PATH}/metrics/torrents/{{info_hash}}/dht",
@@ -513,6 +514,31 @@ class IPCServer:
             f"{API_BASE_PATH}/peers/rate-limit",
             self._handle_set_all_peers_rate_limit,
         )
+        # Per-torrent configuration endpoints
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/options",
+            self._handle_set_torrent_option,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/options/{{key}}",
+            self._handle_get_torrent_option,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/config",
+            self._handle_get_torrent_config,
+        )
+        self.app.router.add_delete(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/options",
+            self._handle_reset_torrent_options,
+        )
+        self.app.router.add_delete(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/options/{{key}}",
+            self._handle_reset_torrent_options,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/checkpoint",
+            self._handle_save_torrent_checkpoint,
+        )
         self.app.router.add_get(
             f"{API_BASE_PATH}/torrents/{{info_hash}}/piece-availability",
             self._handle_get_torrent_piece_availability,
@@ -528,6 +554,10 @@ class IPCServer:
         self.app.router.add_post(
             f"{API_BASE_PATH}/torrents/{{info_hash}}/pex/refresh",
             self._handle_refresh_pex,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/rehash",
+            self._handle_rehash_torrent,
         )
         self.app.router.add_post(
             f"{API_BASE_PATH}/torrents/{{info_hash}}/dht/aggressive",
@@ -552,7 +582,7 @@ class IPCServer:
 
         # Shutdown endpoint
         self.app.router.add_post(f"{API_BASE_PATH}/shutdown", self._handle_shutdown)
-        
+
         # Service restart endpoints
         self.app.router.add_post(
             f"{API_BASE_PATH}/services/{{service_name}}/restart",
@@ -675,13 +705,15 @@ class IPCServer:
             f"{API_BASE_PATH}/xet/folders/add", self._handle_add_xet_folder
         )
         self.app.router.add_delete(
-            f"{API_BASE_PATH}/xet/folders/{{folder_key}}", self._handle_remove_xet_folder
+            f"{API_BASE_PATH}/xet/folders/{{folder_key}}",
+            self._handle_remove_xet_folder,
         )
         self.app.router.add_get(
             f"{API_BASE_PATH}/xet/folders", self._handle_list_xet_folders
         )
         self.app.router.add_get(
-            f"{API_BASE_PATH}/xet/folders/{{folder_key}}", self._handle_get_xet_folder_status
+            f"{API_BASE_PATH}/xet/folders/{{folder_key}}",
+            self._handle_get_xet_folder_status,
         )
 
         # Security endpoints
@@ -797,10 +829,14 @@ class IPCServer:
             # CRITICAL FIX: session_manager.get_rate_samples() returns list[dict[str, float]]
             # but RateSamplesResponse expects list[RateSample]
             samples_dict = await self.session_manager.get_rate_samples(seconds)
-            logger.debug("IPCServer: Retrieved %d rate samples from session manager", len(samples_dict))
-            
+            logger.debug(
+                "IPCServer: Retrieved %d rate samples from session manager",
+                len(samples_dict),
+            )
+
             # Convert dict samples to RateSample objects
             from ccbt.daemon.ipc_protocol import RateSample
+
             rate_samples = [
                 RateSample(
                     timestamp=sample.get("timestamp", 0.0),
@@ -809,14 +845,17 @@ class IPCServer:
                 )
                 for sample in samples_dict
             ]
-            
+
             response = RateSamplesResponse(
                 resolution=1.0,
                 seconds=seconds,
                 sample_count=len(rate_samples),
                 samples=rate_samples,
             )
-            logger.debug("IPCServer: Returning RateSamplesResponse with %d samples", len(rate_samples))
+            logger.debug(
+                "IPCServer: Returning RateSamplesResponse with %d samples",
+                len(rate_samples),
+            )
             return web.json_response(response.model_dump())  # type: ignore[attr-defined]
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("Failed to get rate samples")
@@ -901,12 +940,15 @@ class IPCServer:
                 peers_list = []
                 if hasattr(torrent_session, "peers"):
                     from ccbt.monitoring import get_metrics_collector
+
                     metrics_collector = get_metrics_collector()
-                    
+
                     for peer_key, peer in torrent_session.peers.items():
                         peer_metrics_data = None
                         if metrics_collector:
-                            peer_metrics = metrics_collector.get_peer_metrics(str(peer_key))
+                            peer_metrics = metrics_collector.get_peer_metrics(  # type: ignore[attr-defined]
+                                str(peer_key)
+                            )
                             if peer_metrics:
                                 peer_metrics_data = {
                                     "download_rate": peer_metrics.download_rate,
@@ -919,28 +961,64 @@ class IPCServer:
                                     "bytes_downloaded": peer_metrics.bytes_downloaded,
                                     "bytes_uploaded": peer_metrics.bytes_uploaded,
                                 }
-                        
+
                         # Fallback to peer stats if metrics not available
                         if not peer_metrics_data and hasattr(peer, "stats"):
                             peer_stats = peer.stats
                             peer_metrics_data = {
-                                "download_rate": getattr(peer_stats, "download_rate", 0.0),
+                                "download_rate": getattr(
+                                    peer_stats, "download_rate", 0.0
+                                ),
                                 "upload_rate": getattr(peer_stats, "upload_rate", 0.0),
-                                "request_latency": getattr(peer_stats, "request_latency", 0.0),
+                                "request_latency": getattr(
+                                    peer_stats, "request_latency", 0.0
+                                ),
                                 "pieces_served": 0,
                                 "pieces_received": 0,
                                 "connection_duration": 0.0,
-                                "consecutive_failures": getattr(peer_stats, "consecutive_failures", 0),
+                                "consecutive_failures": getattr(
+                                    peer_stats, "consecutive_failures", 0
+                                ),
                                 "bytes_downloaded": 0,
                                 "bytes_uploaded": 0,
                             }
-                        
+
                         if peer_metrics_data:
                             peer_key_str = f"{getattr(peer, 'ip', 'unknown')}:{getattr(peer, 'port', 0)}"
+                            # Ensure int fields are properly typed and converted
+                            # Type checker: get() returns Unknown | float | int, so convert explicitly
+                            pieces_served = int(
+                                peer_metrics_data.get("pieces_served", 0) or 0
+                            )  # type: ignore[arg-type]
+                            pieces_received = int(
+                                peer_metrics_data.get("pieces_received", 0) or 0
+                            )  # type: ignore[arg-type]
+                            bytes_downloaded = int(
+                                peer_metrics_data.get("bytes_downloaded", 0) or 0
+                            )  # type: ignore[arg-type]
+                            bytes_uploaded = int(
+                                peer_metrics_data.get("bytes_uploaded", 0) or 0
+                            )  # type: ignore[arg-type]
+                            consecutive_failures = int(
+                                peer_metrics_data.get("consecutive_failures", 0) or 0
+                            )  # type: ignore[arg-type]
+                            # Get other fields with proper defaults
+                            download_rate = float(
+                                peer_metrics_data.get("download_rate", 0.0) or 0.0
+                            )
+                            upload_rate = float(
+                                peer_metrics_data.get("upload_rate", 0.0) or 0.0
+                            )
                             peers_list.append(
-                                PeerPerformanceMetrics(
+                                PeerPerformanceMetrics(  # type: ignore[arg-type]
                                     peer_key=peer_key_str,
-                                    **peer_metrics_data,
+                                    pieces_served=pieces_served,
+                                    pieces_received=pieces_received,
+                                    bytes_downloaded=bytes_downloaded,
+                                    bytes_uploaded=bytes_uploaded,
+                                    consecutive_failures=consecutive_failures,
+                                    download_rate=download_rate,
+                                    upload_rate=upload_rate,
                                 )
                             )
 
@@ -952,9 +1030,13 @@ class IPCServer:
                 piece_download_rate = 0.0
                 if hasattr(torrent_session, "piece_manager"):
                     # Estimate from download rate and piece size
-                    piece_size = getattr(torrent_session.piece_manager, "piece_length", 16384)
+                    piece_size = getattr(
+                        torrent_session.piece_manager, "piece_length", 16384
+                    )
                     if piece_size > 0:
-                        piece_download_rate = status.get("download_rate", 0.0) / piece_size
+                        piece_download_rate = (
+                            status.get("download_rate", 0.0) / piece_size
+                        )
 
                 # Calculate swarm availability (simplified)
                 swarm_availability = 0.0
@@ -963,7 +1045,11 @@ class IPCServer:
                     if hasattr(piece_manager, "availability"):
                         avail_list = piece_manager.availability
                         if avail_list:
-                            swarm_availability = sum(avail_list) / len(avail_list) if len(avail_list) > 0 else 0.0
+                            swarm_availability = (
+                                sum(avail_list) / len(avail_list)
+                                if len(avail_list) > 0
+                                else 0.0
+                            )
 
                 response = PerTorrentPerformanceResponse(
                     info_hash=info_hash_hex,
@@ -995,14 +1081,15 @@ class IPCServer:
         """Handle GET /api/v1/metrics/peers - global peer metrics across all torrents."""
         try:
             metrics_data = await self.session_manager.get_global_peer_metrics()
-            
+
             # Convert peer dictionaries to GlobalPeerMetrics objects
             from ccbt.daemon.ipc_protocol import GlobalPeerMetrics
+
             peer_metrics = [
                 GlobalPeerMetrics(**peer_data)
                 for peer_data in metrics_data.get("peers", [])
             ]
-            
+
             response = GlobalPeerMetricsResponse(
                 total_peers=metrics_data.get("total_peers", 0),
                 active_peers=metrics_data.get("active_peers", 0),
@@ -1031,14 +1118,13 @@ class IPCServer:
                     ).model_dump(),
                     status=400,
                 )
-            
+
             # Get peer metrics from session manager's metrics collector
             peer_metrics = None
-            if hasattr(self.session_manager, "metrics"):
-                metrics_collector = self.session_manager.metrics
-                if metrics_collector:
-                    peer_metrics = metrics_collector.get_peer_metrics(peer_key)
-            
+            metrics_collector = self.session_manager.get_session_metrics()
+            if metrics_collector:
+                peer_metrics = metrics_collector.get_peer_metrics(peer_key)
+
             if not peer_metrics:
                 return web.json_response(  # type: ignore[attr-defined]
                     ErrorResponse(
@@ -1047,7 +1133,7 @@ class IPCServer:
                     ).model_dump(),
                     status=404,
                 )
-            
+
             # Convert to response model
             response = DetailedPeerMetricsResponse(
                 peer_key=peer_metrics.peer_key,
@@ -1090,55 +1176,61 @@ class IPCServer:
             # Get all peer connections from all torrents
             all_peers: list[dict[str, Any]] = []
             peer_keys_seen: set[str] = set()
-            
+
             async with self.session_manager.lock:
                 for info_hash, torrent_session in self.session_manager.torrents.items():
                     info_hash_hex = info_hash.hex()
                     if not hasattr(torrent_session, "download_manager"):
                         continue
-                    
+
                     download_manager = torrent_session.download_manager
-                    if not hasattr(download_manager, "peer_manager") or download_manager.peer_manager is None:
+                    if (
+                        not hasattr(download_manager, "peer_manager")
+                        or download_manager.peer_manager is None
+                    ):
                         continue
-                    
+
                     peer_manager = download_manager.peer_manager
                     connected_peers = peer_manager.get_connected_peers()
-                    
+
                     for connection in connected_peers:
-                        if not hasattr(connection, "peer_info") or not hasattr(connection, "stats"):
+                        if not hasattr(connection, "peer_info") or not hasattr(
+                            connection, "stats"
+                        ):
                             continue
-                        
+
                         peer_key = str(connection.peer_info)
                         if peer_key in peer_keys_seen:
                             # Peer already added, skip to avoid duplicates
                             continue
                         peer_keys_seen.add(peer_key)
-                        
+
                         stats = connection.stats
-                        
+
                         # Get detailed metrics from metrics collector
                         peer_metrics = None
-                        if hasattr(self.session_manager, "metrics"):
-                            metrics_collector = self.session_manager.metrics
-                            if metrics_collector:
-                                peer_metrics = metrics_collector.get_peer_metrics(peer_key)
-                        
+                        metrics_collector = self.session_manager.get_session_metrics()
+                        if metrics_collector:
+                            peer_metrics = metrics_collector.get_peer_metrics(peer_key)
+
                         # Get connection success rate
                         connection_success_rate = 0.0
-                        if hasattr(self.session_manager, "metrics"):
-                            metrics_collector = self.session_manager.metrics
-                            if metrics_collector:
-                                try:
-                                    connection_success_rate = await metrics_collector.get_connection_success_rate(peer_key)
-                                except Exception:
-                                    pass
-                        
+                        if metrics_collector:
+                            with contextlib.suppress(Exception):
+                                connection_success_rate = (
+                                    await metrics_collector.get_connection_success_rate(
+                                        peer_key
+                                    )
+                                )
+
                         # Build peer data dictionary with all metrics
                         peer_data: dict[str, Any] = {
                             "peer_key": peer_key,
                             "ip": connection.peer_info.ip,
                             "port": connection.peer_info.port,
-                            "peer_source": getattr(connection.peer_info, "peer_source", "unknown"),
+                            "peer_source": getattr(
+                                connection.peer_info, "peer_source", "unknown"
+                            ),
                             "info_hash": info_hash_hex,
                             # Basic stats
                             "bytes_downloaded": getattr(stats, "bytes_downloaded", 0),
@@ -1146,41 +1238,53 @@ class IPCServer:
                             "download_rate": getattr(stats, "download_rate", 0.0),
                             "upload_rate": getattr(stats, "upload_rate", 0.0),
                             "request_latency": getattr(stats, "request_latency", 0.0),
-                            "consecutive_failures": getattr(stats, "consecutive_failures", 0),
-                            "connection_duration": getattr(stats, "connection_duration", 0.0),
+                            "consecutive_failures": getattr(
+                                stats, "consecutive_failures", 0
+                            ),
+                            "connection_duration": getattr(
+                                stats, "connection_duration", 0.0
+                            ),
                             "pieces_served": getattr(stats, "pieces_served", 0),
                             "pieces_received": getattr(stats, "pieces_received", 0),
                             "connection_success_rate": connection_success_rate,
                             # Performance metrics
-                            "performance_score": getattr(stats, "performance_score", 0.0),
+                            "performance_score": getattr(
+                                stats, "performance_score", 0.0
+                            ),
                             "efficiency_score": getattr(stats, "efficiency_score", 0.0),
                             "value_score": getattr(stats, "value_score", 0.0),
-                            "connection_quality_score": getattr(stats, "connection_quality_score", 0.0),
+                            "connection_quality_score": getattr(
+                                stats, "connection_quality_score", 0.0
+                            ),
                             "blocks_delivered": getattr(stats, "blocks_delivered", 0),
                             "blocks_failed": getattr(stats, "blocks_failed", 0),
-                            "average_block_latency": getattr(stats, "average_block_latency", 0.0),
+                            "average_block_latency": getattr(
+                                stats, "average_block_latency", 0.0
+                            ),
                         }
-                        
+
                         # Add enhanced metrics from metrics collector if available
                         if peer_metrics:
-                            peer_data.update({
-                                "pieces_per_second": peer_metrics.pieces_per_second,
-                                "bytes_per_connection": peer_metrics.bytes_per_connection,
-                                "bandwidth_utilization": peer_metrics.bandwidth_utilization,
-                                "error_rate": peer_metrics.error_rate,
-                                "success_rate": peer_metrics.success_rate,
-                                "peak_download_rate": peer_metrics.peak_download_rate,
-                                "peak_upload_rate": peer_metrics.peak_upload_rate,
-                                "performance_trend": peer_metrics.performance_trend,
-                                "piece_download_speeds": peer_metrics.piece_download_speeds,
-                                "piece_download_times": peer_metrics.piece_download_times,
-                            })
-                        
+                            peer_data.update(
+                                {
+                                    "pieces_per_second": peer_metrics.pieces_per_second,
+                                    "bytes_per_connection": peer_metrics.bytes_per_connection,
+                                    "bandwidth_utilization": peer_metrics.bandwidth_utilization,
+                                    "error_rate": peer_metrics.error_rate,
+                                    "success_rate": peer_metrics.success_rate,
+                                    "peak_download_rate": peer_metrics.peak_download_rate,
+                                    "peak_upload_rate": peer_metrics.peak_upload_rate,
+                                    "performance_trend": peer_metrics.performance_trend,
+                                    "piece_download_speeds": peer_metrics.piece_download_speeds,
+                                    "piece_download_times": peer_metrics.piece_download_times,
+                                }
+                            )
+
                         all_peers.append(peer_data)
-            
+
             # Sort by performance score (highest first)
             all_peers.sort(key=lambda p: p.get("performance_score", 0.0), reverse=True)
-            
+
             response = GlobalPeerListResponse(
                 total_peers=len(peer_keys_seen),
                 peers=all_peers,
@@ -1209,7 +1313,7 @@ class IPCServer:
                     ).model_dump(),
                     status=400,
                 )
-            
+
             # Get torrent status
             info_hash_bytes = bytes.fromhex(info_hash_hex)
             async with self.session_manager.lock:
@@ -1222,7 +1326,7 @@ class IPCServer:
                         ).model_dump(),
                         status=404,
                     )
-                
+
                 # Get torrent status
                 status = await self.session_manager.get_torrent_status(info_hash_hex)
                 if not status:
@@ -1233,18 +1337,22 @@ class IPCServer:
                         ).model_dump(),
                         status=500,
                     )
-                
+
                 # Get detailed metrics from utils/metrics.py MetricsCollector
-                from ccbt.utils.metrics import MetricsCollector as UtilsMetricsCollector
                 torrent_metrics = None
                 if hasattr(self.session_manager, "metrics_collector"):
                     utils_collector = self.session_manager.metrics_collector
                     if utils_collector:
-                        torrent_metrics = utils_collector.get_torrent_metrics(info_hash_hex)
-                
+                        torrent_metrics = utils_collector.get_torrent_metrics(
+                            info_hash_hex
+                        )
+
                 # Get piece availability if available
                 piece_availability = []
-                if hasattr(torrent_session, "piece_manager") and torrent_session.piece_manager:
+                if (
+                    hasattr(torrent_session, "piece_manager")
+                    and torrent_session.piece_manager
+                ):
                     piece_manager = torrent_session.piece_manager
                     piece_frequency = getattr(piece_manager, "piece_frequency", None)
                     if piece_frequency:
@@ -1254,20 +1362,25 @@ class IPCServer:
                         for piece_idx in range(num_pieces):
                             count = piece_frequency.get(piece_idx, 0)
                             piece_availability.append(count)
-                
+
                 # Get peer download speeds
                 peer_download_speeds = []
                 if hasattr(torrent_session, "peers"):
                     from ccbt.monitoring import get_metrics_collector
+
                     metrics_collector = get_metrics_collector()
                     for peer_key, peer in torrent_session.peers.items():
                         if metrics_collector:
-                            peer_metrics = metrics_collector.get_peer_metrics(str(peer_key))
+                            peer_metrics = metrics_collector.get_peer_metrics(  # type: ignore[attr-defined]
+                                str(peer_key)
+                            )
                             if peer_metrics:
                                 peer_download_speeds.append(peer_metrics.download_rate)
                         elif hasattr(peer, "stats"):
-                            peer_download_speeds.append(getattr(peer.stats, "download_rate", 0.0))
-                
+                            peer_download_speeds.append(
+                                getattr(peer.stats, "download_rate", 0.0)
+                            )
+
                 # Build response with enhanced metrics
                 response_data = {
                     "info_hash": info_hash_hex,
@@ -1281,40 +1394,56 @@ class IPCServer:
                     "connected_peers": status.get("connected_peers", 0),
                     "active_peers": status.get("active_peers", 0),
                 }
-                
+
                 # Add enhanced metrics if available
                 if torrent_metrics:
-                    response_data.update({
-                        "piece_availability_distribution": torrent_metrics.piece_availability_distribution,
-                        "average_piece_availability": torrent_metrics.average_piece_availability,
-                        "rarest_piece_availability": torrent_metrics.rarest_piece_availability,
-                        "swarm_health_score": torrent_metrics.swarm_health_score,
-                        "peer_performance_distribution": torrent_metrics.peer_performance_distribution,
-                        "average_peer_download_speed": torrent_metrics.average_peer_download_speed,
-                        "median_peer_download_speed": torrent_metrics.median_peer_download_speed,
-                        "fastest_peer_speed": torrent_metrics.fastest_peer_speed,
-                        "slowest_peer_speed": torrent_metrics.slowest_peer_speed,
-                        "piece_completion_rate": torrent_metrics.piece_completion_rate,
-                        "estimated_time_remaining": torrent_metrics.estimated_time_remaining,
-                        "swarm_efficiency": torrent_metrics.swarm_efficiency,
-                        "peer_contribution_balance": torrent_metrics.peer_contribution_balance,
-                    })
+                    response_data.update(
+                        {
+                            "piece_availability_distribution": torrent_metrics.piece_availability_distribution,
+                            "average_piece_availability": torrent_metrics.average_piece_availability,
+                            "rarest_piece_availability": torrent_metrics.rarest_piece_availability,
+                            "swarm_health_score": torrent_metrics.swarm_health_score,
+                            "peer_performance_distribution": torrent_metrics.peer_performance_distribution,
+                            "average_peer_download_speed": torrent_metrics.average_peer_download_speed,
+                            "median_peer_download_speed": torrent_metrics.median_peer_download_speed,
+                            "fastest_peer_speed": torrent_metrics.fastest_peer_speed,
+                            "slowest_peer_speed": torrent_metrics.slowest_peer_speed,
+                            "piece_completion_rate": torrent_metrics.piece_completion_rate,
+                            "estimated_time_remaining": torrent_metrics.estimated_time_remaining,
+                            "swarm_efficiency": torrent_metrics.swarm_efficiency,
+                            "peer_contribution_balance": torrent_metrics.peer_contribution_balance,
+                        }
+                    )
                 else:
                     # Calculate from available data
                     if piece_availability:
                         from collections import Counter
+
                         availability_counter = Counter(piece_availability)
-                        response_data["piece_availability_distribution"] = dict(availability_counter)
-                        response_data["average_piece_availability"] = sum(piece_availability) / len(piece_availability) if piece_availability else 0.0
-                        response_data["rarest_piece_availability"] = min(piece_availability) if piece_availability else 0
+                        response_data["piece_availability_distribution"] = dict(
+                            availability_counter
+                        )
+                        response_data["average_piece_availability"] = (
+                            sum(piece_availability) / len(piece_availability)
+                            if piece_availability
+                            else 0.0
+                        )
+                        response_data["rarest_piece_availability"] = (
+                            min(piece_availability) if piece_availability else 0
+                        )
                     if peer_download_speeds:
                         import statistics
-                        response_data["average_peer_download_speed"] = statistics.mean(peer_download_speeds)
-                        response_data["median_peer_download_speed"] = statistics.median(peer_download_speeds)
+
+                        response_data["average_peer_download_speed"] = statistics.mean(
+                            peer_download_speeds
+                        )
+                        response_data["median_peer_download_speed"] = statistics.median(
+                            peer_download_speeds
+                        )
                         response_data["fastest_peer_speed"] = max(peer_download_speeds)
                         response_data["slowest_peer_speed"] = min(peer_download_speeds)
-                
-                response = DetailedTorrentMetricsResponse(**response_data)
+
+                response = DetailedTorrentMetricsResponse(**response_data)  # type: ignore[arg-type]
                 return web.json_response(response.model_dump())  # type: ignore[attr-defined]
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("Failed to get detailed torrent metrics")
@@ -1331,27 +1460,44 @@ class IPCServer:
         try:
             # Get global peer metrics
             global_peer_metrics = await self.session_manager.get_global_peer_metrics()
-            
+
             # Get system-wide efficiency from session manager's metrics collector
             system_efficiency = {}
             connection_success_rate = 0.0
-            if hasattr(self.session_manager, "metrics"):
-                metrics_collector = self.session_manager.metrics
-                if metrics_collector:
-                    system_efficiency = metrics_collector.get_system_wide_efficiency()
-                    # Get global connection success rate
-                    try:
-                        connection_success_rate = await metrics_collector.get_connection_success_rate()
-                    except Exception as e:
-                        logger.debug("Failed to get connection success rate: %s", e)
-            
+            metrics_collector = self.session_manager.get_session_metrics()
+            if metrics_collector:
+                system_efficiency = metrics_collector.get_system_wide_efficiency()
+                # Get global connection success rate
+                try:
+                    connection_success_rate = (
+                        await metrics_collector.get_connection_success_rate()
+                    )
+                except Exception as e:
+                    logger.debug("Failed to get connection success rate: %s", e)
+
             # Combine into response
-            response_data = {
-                **global_peer_metrics,
-                **system_efficiency,
+            # Type cast: global_peer_metrics and system_efficiency are dicts with mixed types
+            # but response_data accepts Any values
+            from typing import cast
+
+            response_data: dict[str, Any] = {
+                **cast("dict[str, Any]", global_peer_metrics),
+                **cast("dict[str, Any]", system_efficiency),
                 "connection_success_rate": connection_success_rate,
             }
-            
+
+            # Ensure int fields are properly typed
+            if "total_peers" in response_data:
+                response_data["total_peers"] = int(response_data["total_peers"])
+            if "total_bytes_downloaded" in response_data:
+                response_data["total_bytes_downloaded"] = int(
+                    response_data["total_bytes_downloaded"]
+                )
+            if "total_bytes_uploaded" in response_data:
+                response_data["total_bytes_uploaded"] = int(
+                    response_data["total_bytes_uploaded"]
+                )
+
             response = DetailedGlobalMetricsResponse(**response_data)
             return web.json_response(response.model_dump())  # type: ignore[attr-defined]
         except Exception as exc:  # pragma: no cover - defensive
@@ -1367,7 +1513,7 @@ class IPCServer:
     async def _handle_dht_query_metrics(self, request: Request) -> Response:
         """Handle GET /api/v1/metrics/torrents/{info_hash}/dht - DHT query metrics."""
         from ccbt.daemon.ipc_protocol import DHTQueryMetricsResponse
-        
+
         try:
             info_hash_hex = request.match_info.get("info_hash")
             if not info_hash_hex:
@@ -1378,7 +1524,7 @@ class IPCServer:
                     ).model_dump(),
                     status=400,
                 )
-            
+
             info_hash_bytes = bytes.fromhex(info_hash_hex)
             async with self.session_manager.lock:
                 torrent_session = self.session_manager.torrents.get(info_hash_bytes)
@@ -1390,15 +1536,23 @@ class IPCServer:
                         ).model_dump(),
                         status=404,
                     )
-                
+
                 # Get DHT setup if available
                 dht_setup = getattr(torrent_session, "_dht_setup", None)
                 dht_client = getattr(torrent_session, "dht_client", None)
-                aggressive_mode = getattr(dht_setup, "_aggressive_mode", False) if dht_setup else False
-                
+                aggressive_mode = (
+                    getattr(dht_setup, "_aggressive_mode", False)
+                    if dht_setup
+                    else False
+                )
+
                 # Get DHT query metrics if available
-                dht_metrics = getattr(dht_setup, "_dht_query_metrics", None) if dht_setup else None
-                
+                dht_metrics = (
+                    getattr(dht_setup, "_dht_query_metrics", None)
+                    if dht_setup
+                    else None
+                )
+
                 # Initialize default metrics
                 metrics = {
                     "info_hash": info_hash_hex,
@@ -1414,25 +1568,46 @@ class IPCServer:
                     "last_query_nodes_queried": 0,
                     "routing_table_size": 0,
                 }
-                
+
                 # Use actual metrics if available
                 if dht_metrics:
+                    # Type checker: get() returns Unknown | float | int, so convert explicitly
                     total_queries = dht_metrics.get("total_queries", 0)
                     total_peers = dht_metrics.get("total_peers_found", 0)
                     query_depths = dht_metrics.get("query_depths", [])
                     nodes_queried = dht_metrics.get("nodes_queried", [])
                     last_query = dht_metrics.get("last_query", {})
-                    
-                    metrics["total_queries"] = total_queries
-                    metrics["total_peers_found"] = total_peers
-                    metrics["peers_found_per_query"] = total_peers / total_queries if total_queries > 0 else 0.0
-                    metrics["query_depth_achieved"] = sum(query_depths) / len(query_depths) if query_depths else 0.0
-                    metrics["nodes_queried_per_query"] = sum(nodes_queried) / len(nodes_queried) if nodes_queried else 0.0
-                    metrics["last_query_duration"] = last_query.get("duration", 0.0)
-                    metrics["last_query_peers_found"] = last_query.get("peers_found", 0)
-                    metrics["last_query_depth"] = last_query.get("depth", 0)
-                    metrics["last_query_nodes_queried"] = last_query.get("nodes_queried", 0)
-                
+
+                    metrics["total_queries"] = (
+                        int(total_queries) if total_queries else 0
+                    )  # type: ignore[arg-type]
+                    metrics["total_peers_found"] = (
+                        int(total_peers) if total_peers else 0
+                    )  # type: ignore[arg-type]
+                    metrics["peers_found_per_query"] = (
+                        total_peers / total_queries if total_queries > 0 else 0.0
+                    )
+                    metrics["query_depth_achieved"] = (
+                        sum(query_depths) / len(query_depths) if query_depths else 0.0
+                    )
+                    metrics["nodes_queried_per_query"] = (
+                        sum(nodes_queried) / len(nodes_queried)
+                        if nodes_queried
+                        else 0.0
+                    )
+                    # Ensure proper type conversions for metrics
+                    # Type checker: get() returns Unknown | float | int, so convert explicitly
+                    metrics["last_query_duration"] = float(
+                        last_query.get("duration", 0.0) or 0.0
+                    )  # type: ignore[arg-type]
+                    metrics["last_query_peers_found"] = int(
+                        last_query.get("peers_found", 0) or 0
+                    )  # type: ignore[arg-type]
+                    metrics["last_query_depth"] = int(last_query.get("depth", 0) or 0)  # type: ignore[arg-type]
+                    metrics["last_query_nodes_queried"] = int(
+                        last_query.get("nodes_queried", 0) or 0
+                    )  # type: ignore[arg-type]
+
                 # Get routing table size from DHT client
                 if dht_client and hasattr(dht_client, "routing_table"):
                     routing_table = dht_client.routing_table
@@ -1440,17 +1615,48 @@ class IPCServer:
                         metrics["routing_table_size"] = len(routing_table)
                     elif hasattr(routing_table, "get_all_nodes"):
                         nodes = routing_table.get_all_nodes()
-                        metrics["routing_table_size"] = len(nodes) if nodes else 0
-                
+                        metrics["routing_table_size"] = int(len(nodes) if nodes else 0)
+
                 # Get aggressive mode status from DHT setup
                 if dht_setup:
                     # Check if aggressive mode is enabled (stored in dht_setup)
                     aggressive_mode = getattr(dht_setup, "_aggressive_mode", False)
                     metrics["aggressive_mode_enabled"] = aggressive_mode
-                
+
                 # TODO: Track actual query metrics in DHT setup
                 # For now, return placeholder metrics
-                response = DHTQueryMetricsResponse(**metrics)
+                # Ensure all metrics values are properly typed for Pydantic model
+                typed_metrics: dict[str, Any] = {
+                    "info_hash": str(metrics.get("info_hash", "")),
+                    "peers_found_per_query": float(
+                        metrics.get("peers_found_per_query", 0.0) or 0.0
+                    ),
+                    "query_depth_achieved": float(
+                        metrics.get("query_depth_achieved", 0.0) or 0.0
+                    ),
+                    "nodes_queried_per_query": float(
+                        metrics.get("nodes_queried_per_query", 0.0) or 0.0
+                    ),
+                    "total_queries": int(metrics.get("total_queries", 0) or 0),
+                    "total_peers_found": int(metrics.get("total_peers_found", 0) or 0),
+                    "aggressive_mode_enabled": bool(
+                        metrics.get("aggressive_mode_enabled", False)
+                    ),
+                    "last_query_duration": float(
+                        metrics.get("last_query_duration", 0.0) or 0.0
+                    ),
+                    "last_query_peers_found": int(
+                        metrics.get("last_query_peers_found", 0) or 0
+                    ),
+                    "last_query_depth": int(metrics.get("last_query_depth", 0) or 0),
+                    "last_query_nodes_queried": int(
+                        metrics.get("last_query_nodes_queried", 0) or 0
+                    ),
+                    "routing_table_size": int(
+                        metrics.get("routing_table_size", 0) or 0
+                    ),
+                }
+                response = DHTQueryMetricsResponse(**typed_metrics)  # type: ignore[arg-type]
                 return web.json_response(response.model_dump())  # type: ignore[attr-defined]
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("Failed to get DHT query metrics")
@@ -1465,7 +1671,7 @@ class IPCServer:
     async def _handle_peer_quality_metrics(self, request: Request) -> Response:
         """Handle GET /api/v1/metrics/torrents/{info_hash}/peer-quality - peer quality metrics."""
         from ccbt.daemon.ipc_protocol import PeerQualityMetricsResponse
-        
+
         try:
             info_hash_hex = request.match_info.get("info_hash")
             if not info_hash_hex:
@@ -1476,7 +1682,7 @@ class IPCServer:
                     ).model_dump(),
                     status=400,
                 )
-            
+
             info_hash_bytes = bytes.fromhex(info_hash_hex)
             async with self.session_manager.lock:
                 torrent_session = self.session_manager.torrents.get(info_hash_bytes)
@@ -1488,60 +1694,78 @@ class IPCServer:
                         ).model_dump(),
                         status=404,
                     )
-                
+
                 # Get peer manager
                 peer_manager = None
                 if hasattr(torrent_session, "download_manager"):
                     download_manager = torrent_session.download_manager
                     if hasattr(download_manager, "peer_manager"):
                         peer_manager = download_manager.peer_manager
-                
+
                 # Get peer quality metrics from PeerConnectionHelper if available
                 peer_helper = getattr(torrent_session, "_peer_helper", None)
-                peer_quality_metrics = getattr(peer_helper, "_peer_quality_metrics", None) if peer_helper else None
-                
+                peer_quality_metrics = (
+                    getattr(peer_helper, "_peer_quality_metrics", None)
+                    if peer_helper
+                    else None
+                )
+
                 # Collect peer quality scores
                 quality_scores = []
                 top_peers = []
-                
+
                 if peer_manager and hasattr(peer_manager, "get_active_peers"):
                     active_peers = peer_manager.get_active_peers()
                     for peer in active_peers:
                         if not hasattr(peer, "peer_info") or not hasattr(peer, "stats"):
                             continue
-                        
+
                         # Calculate quality score (placeholder - should use actual ranking logic)
                         download_rate = getattr(peer.stats, "download_rate", 0.0)
                         upload_rate = getattr(peer.stats, "upload_rate", 0.0)
-                        performance_score = getattr(peer.stats, "performance_score", 0.5)
-                        
+                        performance_score = getattr(
+                            peer.stats, "performance_score", 0.5
+                        )
+
                         # Simple quality score calculation (matches ranking logic)
                         max_rate = 10 * 1024 * 1024
-                        upload_norm = min(1.0, upload_rate / max_rate) if max_rate > 0 else 0.0
-                        download_norm = min(1.0, download_rate / max_rate) if max_rate > 0 else 0.0
-                        quality_score = (upload_norm * 0.6) + (download_norm * 0.4) + (performance_score * 0.2)
-                        
+                        upload_norm = (
+                            min(1.0, upload_rate / max_rate) if max_rate > 0 else 0.0
+                        )
+                        download_norm = (
+                            min(1.0, download_rate / max_rate) if max_rate > 0 else 0.0
+                        )
+                        quality_score = (
+                            (upload_norm * 0.6)
+                            + (download_norm * 0.4)
+                            + (performance_score * 0.2)
+                        )
+
                         quality_scores.append(quality_score)
-                        top_peers.append({
-                            "peer_key": str(peer.peer_info),
-                            "ip": peer.peer_info.ip,
-                            "port": peer.peer_info.port,
-                            "quality_score": quality_score,
-                            "download_rate": download_rate,
-                            "upload_rate": upload_rate,
-                        })
-                
+                        top_peers.append(
+                            {
+                                "peer_key": str(peer.peer_info),
+                                "ip": peer.peer_info.ip,
+                                "port": peer.peer_info.port,
+                                "quality_score": quality_score,
+                                "download_rate": download_rate,
+                                "upload_rate": upload_rate,
+                            }
+                        )
+
                 # Sort top peers by quality
                 top_peers.sort(key=lambda p: p["quality_score"], reverse=True)
                 top_peers = top_peers[:10]  # Top 10
-                
+
                 # Calculate distribution
                 high_quality = sum(1 for s in quality_scores if s > 0.7)
                 medium_quality = sum(1 for s in quality_scores if 0.3 < s <= 0.7)
                 low_quality = sum(1 for s in quality_scores if s <= 0.3)
-                
-                avg_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
-                
+
+                avg_score = (
+                    sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+                )
+
                 # Use stored metrics if available and current calculation is empty
                 if not quality_scores and peer_quality_metrics:
                     last_ranking = peer_quality_metrics.get("last_ranking", {})
@@ -1549,8 +1773,7 @@ class IPCServer:
                     high_quality = last_ranking.get("high_quality_count", 0)
                     medium_quality = last_ranking.get("medium_quality_count", 0)
                     low_quality = last_ranking.get("low_quality_count", 0)
-                    total_ranked = last_ranking.get("peers_ranked", 0)
-                    
+
                     # Get top peers from stored scores if available
                     stored_scores = peer_quality_metrics.get("quality_scores", [])
                     if stored_scores:
@@ -1558,8 +1781,12 @@ class IPCServer:
                         high_quality = sum(1 for s in stored_scores if s > 0.7)
                         medium_quality = sum(1 for s in stored_scores if 0.3 < s <= 0.7)
                         low_quality = sum(1 for s in stored_scores if s <= 0.3)
-                        avg_score = sum(stored_scores) / len(stored_scores) if stored_scores else 0.0
-                
+                        avg_score = (
+                            sum(stored_scores) / len(stored_scores)
+                            if stored_scores
+                            else 0.0
+                        )
+
                 response = PeerQualityMetricsResponse(
                     info_hash=info_hash_hex,
                     total_peers_ranked=len(quality_scores),
@@ -1597,7 +1824,7 @@ class IPCServer:
                     ).model_dump(),
                     status=400,
                 )
-            
+
             info_hash_bytes = bytes.fromhex(info_hash_hex)
             async with self.session_manager.lock:
                 torrent_session = self.session_manager.torrents.get(info_hash_bytes)
@@ -1609,7 +1836,7 @@ class IPCServer:
                         ).model_dump(),
                         status=404,
                     )
-                
+
                 # Get piece manager
                 piece_manager = getattr(torrent_session, "piece_manager", None)
                 if not piece_manager:
@@ -1620,10 +1847,10 @@ class IPCServer:
                         ).model_dump(),
                         status=404,
                     )
-                
+
                 # Get piece selection metrics
                 metrics = piece_manager.get_piece_selection_metrics()
-                
+
                 return web.json_response(metrics)  # type: ignore[attr-defined]
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("Failed to get piece selection metrics")
@@ -1637,60 +1864,69 @@ class IPCServer:
 
     async def _handle_swarm_health(self, request: Request) -> Response:
         """Handle GET /api/v1/metrics/swarm-health - swarm health matrix with historical samples."""
-        from ccbt.daemon.ipc_protocol import SwarmHealthMatrixResponse, SwarmHealthSample
         import time
-        
+
+        from ccbt.daemon.ipc_protocol import (
+            SwarmHealthMatrixResponse,
+            SwarmHealthSample,
+        )
+
         try:
             # Parse query parameters
             limit_param = request.query.get("limit", "6")
-            seconds_param = request.query.get("seconds", "")
-            
+
             limit = 6
             try:
                 limit = max(1, min(100, int(limit_param)))
             except ValueError:
                 limit = 6
-            
-            seconds = None
-            if seconds_param:
-                try:
-                    seconds = max(1, min(3600, int(float(seconds_param))))
-                except ValueError:
-                    seconds = None
-            
+
             # Get all torrents from session manager
             async with self.session_manager.lock:
                 # Get all torrent statuses
                 all_torrents = []
-                for info_hash_bytes, torrent_session in self.session_manager.torrents.items():
+                for (
+                    info_hash_bytes,
+                    torrent_session,
+                ) in self.session_manager.torrents.items():
                     try:
                         info_hash_hex = info_hash_bytes.hex()
-                        status = await self.session_manager.get_torrent_status(info_hash_hex)
+                        status = await self.session_manager.get_torrent_status(
+                            info_hash_hex
+                        )
                         if status:
-                            all_torrents.append((info_hash_hex, status, torrent_session))
+                            all_torrents.append(
+                                (info_hash_hex, status, torrent_session)
+                            )
                     except Exception as e:
-                        logger.debug("Error getting status for torrent %s: %s", info_hash_bytes.hex()[:16], e)
+                        logger.debug(
+                            "Error getting status for torrent %s: %s",
+                            info_hash_bytes.hex()[:16],
+                            e,
+                        )
                         continue
-                
+
                 if not all_torrents:
                     return web.json_response(  # type: ignore[attr-defined]
-                        SwarmHealthMatrixResponse(samples=[], sample_count=0).model_dump()
+                        SwarmHealthMatrixResponse(
+                            samples=[], sample_count=0
+                        ).model_dump()
                     )
-                
+
                 # Get top torrents by download rate
                 def get_download_rate(item: tuple[str, dict[str, Any], Any]) -> float:
                     _, status, _ = item
                     return float(status.get("download_rate", 0.0))
-                
+
                 top_torrents = sorted(
                     all_torrents,
                     key=get_download_rate,
                     reverse=True,
                 )[:limit]
-                
+
                 samples = []
                 current_time = time.time()
-                
+
                 for info_hash_hex, status, torrent_session in top_torrents:
                     try:
                         # Get swarm availability from piece manager
@@ -1700,24 +1936,34 @@ class IPCServer:
                             if hasattr(piece_manager, "availability"):
                                 avail_list = piece_manager.availability
                                 if avail_list:
-                                    swarm_availability = sum(avail_list) / len(avail_list) if len(avail_list) > 0 else 0.0
-                        
+                                    swarm_availability = (
+                                        sum(avail_list) / len(avail_list)
+                                        if len(avail_list) > 0
+                                        else 0.0
+                                    )
+
                         # Get active peers count
                         active_peers = 0
                         if hasattr(torrent_session, "download_manager"):
                             download_manager = torrent_session.download_manager
                             if hasattr(download_manager, "peer_manager"):
                                 peer_manager = download_manager.peer_manager
-                                if peer_manager and hasattr(peer_manager, "connections"):
+                                if peer_manager and hasattr(
+                                    peer_manager, "connections"
+                                ):
                                     # Count active peers (those with download/upload activity)
                                     active_peers = sum(
-                                        1 for conn in peer_manager.connections.values()
-                                        if hasattr(conn, "stats") and (
-                                            getattr(conn.stats, "download_rate", 0.0) > 0 or
-                                            getattr(conn.stats, "upload_rate", 0.0) > 0
+                                        1
+                                        for conn in peer_manager.connections.values()
+                                        if hasattr(conn, "stats")
+                                        and (
+                                            getattr(conn.stats, "download_rate", 0.0)
+                                            > 0
+                                            or getattr(conn.stats, "upload_rate", 0.0)
+                                            > 0
                                         )
                                     )
-                        
+
                         sample = SwarmHealthSample(
                             info_hash=info_hash_hex,
                             name=str(status.get("name", info_hash_hex[:16])),
@@ -1731,20 +1977,32 @@ class IPCServer:
                         )
                         samples.append(sample)
                     except Exception as e:
-                        logger.debug("Error creating swarm health sample for %s: %s", info_hash_hex[:16], e)
+                        logger.debug(
+                            "Error creating swarm health sample for %s: %s",
+                            info_hash_hex[:16],
+                            e,
+                        )
                         continue
-                
+
                 # Calculate rarity percentiles
                 availabilities = [s.swarm_availability for s in samples]
                 availabilities.sort()
                 n = len(availabilities)
                 percentiles = {}
                 if n > 0:
-                    percentiles["p25"] = availabilities[n // 4] if n >= 4 else availabilities[0]
-                    percentiles["p50"] = availabilities[n // 2] if n >= 2 else availabilities[0]
-                    percentiles["p75"] = availabilities[3 * n // 4] if n >= 4 else availabilities[-1]
-                    percentiles["p90"] = availabilities[9 * n // 10] if n >= 10 else availabilities[-1]
-                
+                    percentiles["p25"] = (
+                        availabilities[n // 4] if n >= 4 else availabilities[0]
+                    )
+                    percentiles["p50"] = (
+                        availabilities[n // 2] if n >= 2 else availabilities[0]
+                    )
+                    percentiles["p75"] = (
+                        availabilities[3 * n // 4] if n >= 4 else availabilities[-1]
+                    )
+                    percentiles["p90"] = (
+                        availabilities[9 * n // 10] if n >= 10 else availabilities[-1]
+                    )
+
                 response = SwarmHealthMatrixResponse(
                     samples=samples,
                     sample_count=len(samples),
@@ -1764,9 +2022,9 @@ class IPCServer:
 
     async def _handle_aggressive_discovery_status(self, request: Request) -> Response:
         """Handle GET /api/v1/metrics/torrents/{info_hash}/aggressive-discovery - aggressive discovery status."""
-        from ccbt.daemon.ipc_protocol import AggressiveDiscoveryStatusResponse
         from ccbt.config.config import get_config
-        
+        from ccbt.daemon.ipc_protocol import AggressiveDiscoveryStatusResponse
+
         try:
             info_hash_hex = request.match_info.get("info_hash")
             if not info_hash_hex:
@@ -1777,7 +2035,7 @@ class IPCServer:
                     ).model_dump(),
                     status=400,
                 )
-            
+
             info_hash_bytes = bytes.fromhex(info_hash_hex)
             async with self.session_manager.lock:
                 torrent_session = self.session_manager.torrents.get(info_hash_bytes)
@@ -1789,53 +2047,66 @@ class IPCServer:
                         ).model_dump(),
                         status=404,
                     )
-                
+
                 # Get DHT setup
                 dht_setup = getattr(torrent_session, "_dht_setup", None)
-                aggressive_mode = getattr(dht_setup, "_aggressive_mode", False) if dht_setup else False
-                
-                # Get DHT query metrics if available
-                dht_metrics = getattr(dht_setup, "_dht_query_metrics", None) if dht_setup else None
-                
+                aggressive_mode = (
+                    getattr(dht_setup, "_aggressive_mode", False)
+                    if dht_setup
+                    else False
+                )
+
                 # Get current peer count and download rate
                 current_peer_count = 0
                 current_download_rate = 0.0
-                
+
                 if hasattr(torrent_session, "download_manager"):
                     download_manager = torrent_session.download_manager
                     if hasattr(download_manager, "peer_manager"):
                         peer_manager = download_manager.peer_manager
                         if peer_manager and hasattr(peer_manager, "connections"):
                             current_peer_count = len(peer_manager.connections)
-                    
+
                     if hasattr(torrent_session, "piece_manager"):
                         piece_manager = torrent_session.piece_manager
                         if hasattr(piece_manager, "stats"):
                             stats = piece_manager.stats
                             if hasattr(stats, "download_rate"):
                                 current_download_rate = stats.download_rate
-                
+
                 # Determine reason
                 config = get_config()
-                popular_threshold = config.discovery.aggressive_discovery_popular_threshold
-                active_threshold_kib = config.discovery.aggressive_discovery_active_threshold_kib
-                
+                popular_threshold = (
+                    config.discovery.aggressive_discovery_popular_threshold
+                )
+                active_threshold_kib = (
+                    config.discovery.aggressive_discovery_active_threshold_kib
+                )
+
                 reason = "normal"
                 if current_peer_count >= popular_threshold:
                     reason = "popular"
                 elif current_download_rate / 1024.0 >= active_threshold_kib:
                     reason = "active"
-                
+
                 # Get query interval
                 query_interval = 15.0  # Default
                 if aggressive_mode:
                     if reason == "active":
-                        query_interval = config.discovery.aggressive_discovery_interval_active
+                        query_interval = (
+                            config.discovery.aggressive_discovery_interval_active
+                        )
                     elif reason == "popular":
-                        query_interval = config.discovery.aggressive_discovery_interval_popular
-                
-                max_peers_per_query = config.discovery.aggressive_discovery_max_peers_per_query if aggressive_mode else 50
-                
+                        query_interval = (
+                            config.discovery.aggressive_discovery_interval_popular
+                        )
+
+                max_peers_per_query = (
+                    config.discovery.aggressive_discovery_max_peers_per_query
+                    if aggressive_mode
+                    else 50
+                )
+
                 response = AggressiveDiscoveryStatusResponse(
                     info_hash=info_hash_hex,
                     enabled=aggressive_mode,
@@ -1881,9 +2152,8 @@ class IPCServer:
                 )
             except Exception as json_error:
                 logger.exception(
-                    "Error parsing JSON in add_torrent request from %s: %s",
+                    "Error parsing JSON in add_torrent request from %s",
                     request.remote,
-                    json_error,
                 )
                 return web.json_response(  # type: ignore[attr-defined]
                     ErrorResponse(
@@ -1949,9 +2219,8 @@ class IPCServer:
                 except Exception as executor_error:
                     # Log the full exception with context
                     logger.exception(
-                        "Error in executor.execute() for torrent/magnet %s: %s",
+                        "Error in executor.execute() for torrent/magnet %s",
                         req.path_or_magnet[:100],
-                        executor_error,
                     )
                     # Return error response directly instead of re-raising
                     # This prevents the exception from propagating and potentially crashing the daemon
@@ -1970,7 +2239,7 @@ class IPCServer:
                         req.path_or_magnet[:100],
                         error_msg,
                     )
-                    
+
                     # Check if torrent already exists - return more user-friendly response
                     if error_msg and "already exists" in error_msg.lower():
                         return web.json_response(  # type: ignore[attr-defined]
@@ -1980,7 +2249,7 @@ class IPCServer:
                             ).model_dump(),
                             status=409,  # 409 Conflict is more appropriate for "already exists"
                         )
-                    
+
                     return web.json_response(  # type: ignore[attr-defined]
                         ErrorResponse(
                             error=error_msg,
@@ -2006,9 +2275,8 @@ class IPCServer:
                 # Catch any other unexpected errors (shouldn't happen due to inner try-except)
                 # But this is a safety net to ensure the daemon never crashes
                 logger.exception(
-                    "Unexpected error in _handle_add_torrent for %s: %s",
+                    "Unexpected error in _handle_add_torrent for %s",
                     req.path_or_magnet[:100] if "req" in locals() else "unknown",
-                    add_error,
                 )
                 return web.json_response(  # type: ignore[attr-defined]
                     ErrorResponse(
@@ -2022,7 +2290,7 @@ class IPCServer:
             # WebSocket errors should not prevent the torrent from being added
             # If the torrent was successfully added, return success even if WebSocket fails
             try:
-                await self._emit_websocket_event(
+                await self.emit_websocket_event(
                     EventType.TORRENT_ADDED,
                     {"info_hash": info_hash_hex, "name": req.path_or_magnet},
                 )
@@ -2058,9 +2326,8 @@ class IPCServer:
         except Exception as e:
             # Log the full exception with context for debugging
             logger.exception(
-                "Error adding torrent/magnet %s: %s",
+                "Error adding torrent/magnet %s",
                 path_or_magnet[:100] if path_or_magnet != "unknown" else "unknown",
-                e,
             )
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(error=str(e), code="ADD_TORRENT_ERROR").model_dump(),
@@ -2077,7 +2344,7 @@ class IPCServer:
             if result.success and result.data.get("removed"):
                 # Emit WebSocket event with error isolation
                 try:
-                    await self._emit_websocket_event(
+                    await self.emit_websocket_event(
                         EventType.TORRENT_REMOVED,
                         {"info_hash": info_hash},
                     )
@@ -2217,7 +2484,9 @@ class IPCServer:
         info_hash = request.match_info["info_hash"]
         try:
             # Pause then resume
-            pause_result = await self.executor.execute("torrent.pause", info_hash=info_hash)
+            pause_result = await self.executor.execute(
+                "torrent.pause", info_hash=info_hash
+            )
             if not pause_result.success:
                 return web.json_response(  # type: ignore[attr-defined]
                     ErrorResponse(
@@ -2226,11 +2495,13 @@ class IPCServer:
                     ).model_dump(),
                     status=400,
                 )
-            
+
             # Small delay before resume
             await asyncio.sleep(0.1)
-            
-            resume_result = await self.executor.execute("torrent.resume", info_hash=info_hash)
+
+            resume_result = await self.executor.execute(
+                "torrent.resume", info_hash=info_hash
+            )
             if resume_result.success and resume_result.data.get("resumed"):
                 return web.json_response({"status": "restarted"})  # type: ignore[attr-defined]
 
@@ -2257,7 +2528,9 @@ class IPCServer:
         try:
             result = await self.executor.execute("torrent.cancel", info_hash=info_hash)
             if result.success and result.data.get("cancelled"):
-                return web.json_response({"status": "cancelled", "info_hash": info_hash})  # type: ignore[attr-defined]
+                return web.json_response(
+                    {"status": "cancelled", "info_hash": info_hash}
+                )  # type: ignore[attr-defined]
 
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
@@ -2280,9 +2553,13 @@ class IPCServer:
         """Handle POST /api/v1/torrents/{info_hash}/force-start."""
         info_hash = request.match_info["info_hash"]
         try:
-            result = await self.executor.execute("torrent.force_start", info_hash=info_hash)
+            result = await self.executor.execute(
+                "torrent.force_start", info_hash=info_hash
+            )
             if result.success and result.data.get("force_started"):
-                return web.json_response({"status": "force_started", "info_hash": info_hash})  # type: ignore[attr-defined]
+                return web.json_response(
+                    {"status": "force_started", "info_hash": info_hash}
+                )  # type: ignore[attr-defined]
 
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
@@ -2306,16 +2583,20 @@ class IPCServer:
         try:
             data = await request.json()
             info_hashes = data.get("info_hashes", [])
-            
+
             results = []
             for info_hash in info_hashes:
-                result = await self.executor.execute("torrent.pause", info_hash=info_hash)
-                results.append({
-                    "info_hash": info_hash,
-                    "success": result.success,
-                    "error": result.error,
-                })
-            
+                result = await self.executor.execute(
+                    "torrent.pause", info_hash=info_hash
+                )
+                results.append(
+                    {
+                        "info_hash": info_hash,
+                        "success": result.success,
+                        "error": result.error,
+                    }
+                )
+
             return web.json_response({"results": results})  # type: ignore[attr-defined]
         except Exception as e:
             logger.exception("Error in batch pause")
@@ -2332,16 +2613,20 @@ class IPCServer:
         try:
             data = await request.json()
             info_hashes = data.get("info_hashes", [])
-            
+
             results = []
             for info_hash in info_hashes:
-                result = await self.executor.execute("torrent.resume", info_hash=info_hash)
-                results.append({
-                    "info_hash": info_hash,
-                    "success": result.success,
-                    "error": result.error,
-                })
-            
+                result = await self.executor.execute(
+                    "torrent.resume", info_hash=info_hash
+                )
+                results.append(
+                    {
+                        "info_hash": info_hash,
+                        "success": result.success,
+                        "error": result.error,
+                    }
+                )
+
             return web.json_response({"results": results})  # type: ignore[attr-defined]
         except Exception as e:
             logger.exception("Error in batch resume")
@@ -2358,20 +2643,28 @@ class IPCServer:
         try:
             data = await request.json()
             info_hashes = data.get("info_hashes", [])
-            
+
             results = []
             for info_hash in info_hashes:
                 # Pause then resume
-                pause_result = await self.executor.execute("torrent.pause", info_hash=info_hash)
+                pause_result = await self.executor.execute(
+                    "torrent.pause", info_hash=info_hash
+                )
                 await asyncio.sleep(0.1)
-                resume_result = await self.executor.execute("torrent.resume", info_hash=info_hash)
-                
-                results.append({
-                    "info_hash": info_hash,
-                    "success": pause_result.success and resume_result.success,
-                    "error": resume_result.error if not resume_result.success else pause_result.error,
-                })
-            
+                resume_result = await self.executor.execute(
+                    "torrent.resume", info_hash=info_hash
+                )
+
+                results.append(
+                    {
+                        "info_hash": info_hash,
+                        "success": pause_result.success and resume_result.success,
+                        "error": resume_result.error
+                        if not resume_result.success
+                        else pause_result.error,
+                    }
+                )
+
             return web.json_response({"results": results})  # type: ignore[attr-defined]
         except Exception as e:
             logger.exception("Error in batch restart")
@@ -2389,18 +2682,20 @@ class IPCServer:
             data = await request.json()
             info_hashes = data.get("info_hashes", [])
             remove_data = data.get("remove_data", False)
-            
+
             results = []
             for info_hash in info_hashes:
                 result = await self.executor.execute(
                     "torrent.remove", info_hash=info_hash, remove_data=remove_data
                 )
-                results.append({
-                    "info_hash": info_hash,
-                    "success": result.success,
-                    "error": result.error,
-                })
-            
+                results.append(
+                    {
+                        "info_hash": info_hash,
+                        "success": result.success,
+                        "error": result.error,
+                    }
+                )
+
             return web.json_response({"results": results})  # type: ignore[attr-defined]
         except Exception as e:
             logger.exception("Error in batch remove")
@@ -2450,9 +2745,15 @@ class IPCServer:
         return web.json_response(response.model_dump())  # type: ignore[attr-defined]
 
     async def _handle_get_torrent_trackers(self, request: Request) -> Response:
-        """Handle GET /api/v1/torrents/{info_hash}/trackers."""
+        """Handle GET /api/v1/torrents/{info_hash}/trackers.
+
+        Returns tracker information including statistics (seeds, peers, downloaders).
+        Statistics are retrieved from TrackerSession.last_complete/incomplete/downloaded
+        fields, which are updated from tracker responses. Falls back to ScrapeManager
+        scrape cache if session statistics are unavailable.
+        """
         info_hash = request.match_info["info_hash"]
-        
+
         try:
             # Convert hex string to bytes for lookup
             try:
@@ -2465,7 +2766,7 @@ class IPCServer:
                     ).model_dump(),
                     status=400,
                 )
-            
+
             # Get torrent session from session manager
             torrent_session = self.session_manager.torrents.get(info_hash_bytes)
             if not torrent_session:
@@ -2476,10 +2777,10 @@ class IPCServer:
                     ).model_dump(),
                     status=404,
                 )
-            
+
             # Get tracker information from torrent session
             tracker_infos = []
-            
+
             # Get tracker URLs from torrent data
             tracker_urls: list[str] = []
             if hasattr(torrent_session, "torrent_data"):
@@ -2501,7 +2802,7 @@ class IPCServer:
                                 tracker_urls.extend(tier)
                             else:
                                 tracker_urls.append(tier)
-            
+
             # Get tracker status from tracker client
             if hasattr(torrent_session, "tracker") and torrent_session.tracker:
                 tracker_client = torrent_session.tracker
@@ -2513,17 +2814,60 @@ class IPCServer:
                             status = "error"
                         elif tracker_session_obj.last_announce == 0:
                             status = "updating"
-                        
-                        # Get scrape results if available
-                        seeds = 0
-                        peers = 0
-                        downloaders = 0
-                        if hasattr(tracker_client, "_session_metrics"):
-                            metrics = tracker_client._session_metrics.get(url, {})
-                            seeds = metrics.get("complete", 0)
-                            peers = metrics.get("incomplete", 0)
-                            downloaders = metrics.get("incomplete", 0)
-                        
+
+                        # Get scrape results from tracker session
+                        # Statistics are stored in TrackerSession from last tracker response (announce or scrape)
+                        seeds = (
+                            tracker_session_obj.last_complete
+                            if tracker_session_obj.last_complete is not None
+                            else 0
+                        )
+                        peers = (
+                            tracker_session_obj.last_incomplete
+                            if tracker_session_obj.last_incomplete is not None
+                            else 0
+                        )
+                        downloaders = (
+                            tracker_session_obj.last_downloaded
+                            if tracker_session_obj.last_downloaded is not None
+                            else 0
+                        )
+
+                        # Fallback to scrape cache if session statistics are unavailable
+                        if seeds == 0 and peers == 0 and downloaders == 0:
+                            try:
+                                # Try to get statistics from scrape cache
+                                if hasattr(
+                                    self.session_manager, "scrape_cache"
+                                ) and hasattr(
+                                    self.session_manager, "scrape_cache_lock"
+                                ):
+                                    async with self.session_manager.scrape_cache_lock:
+                                        cached_result = (
+                                            self.session_manager.scrape_cache.get(
+                                                info_hash_bytes
+                                            )
+                                        )
+                                        if cached_result:
+                                            seeds = (
+                                                cached_result.seeders
+                                                if hasattr(cached_result, "seeders")
+                                                else 0
+                                            )
+                                            peers = (
+                                                cached_result.leechers
+                                                if hasattr(cached_result, "leechers")
+                                                else 0
+                                            )
+                                            downloaders = (
+                                                cached_result.completed
+                                                if hasattr(cached_result, "completed")
+                                                else 0
+                                            )
+                            except Exception:
+                                # If fallback fails, use 0 values (already set above)
+                                pass
+
                         tracker_infos.append(
                             TrackerInfo(
                                 url=url,
@@ -2532,10 +2876,12 @@ class IPCServer:
                                 peers=peers,
                                 downloaders=downloaders,
                                 last_update=tracker_session_obj.last_announce,
-                                error=None if tracker_session_obj.failure_count == 0 else f"Failed {tracker_session_obj.failure_count} times",
+                                error=None
+                                if tracker_session_obj.failure_count == 0
+                                else f"Failed {tracker_session_obj.failure_count} times",
                             )
                         )
-            
+
             # Add any trackers from announce_list that aren't in sessions yet
             for url in tracker_urls:
                 if url and not any(t.url == url for t in tracker_infos):
@@ -2550,14 +2896,14 @@ class IPCServer:
                             error=None,
                         )
                     )
-            
+
             response = TrackerListResponse(
                 info_hash=info_hash,
                 trackers=tracker_infos,
                 count=len(tracker_infos),
             )
             return web.json_response(response.model_dump())  # type: ignore[attr-defined]
-            
+
         except Exception as e:
             logger.exception("Error getting torrent trackers")
             return web.json_response(  # type: ignore[attr-defined]
@@ -2619,7 +2965,7 @@ class IPCServer:
         """Handle DELETE /api/v1/torrents/{info_hash}/trackers/{tracker_url}."""
         info_hash = request.match_info["info_hash"]
         tracker_url = request.match_info.get("tracker_url")
-        
+
         try:
             # Validate info hash format
             try:
@@ -2636,6 +2982,7 @@ class IPCServer:
             # URL decode tracker URL if needed
             if tracker_url:
                 from urllib.parse import unquote
+
                 tracker_url = unquote(tracker_url)
 
             if not tracker_url:
@@ -2674,10 +3021,12 @@ class IPCServer:
                 status=500,
             )
 
-    async def _handle_get_torrent_piece_availability(self, request: Request) -> Response:
+    async def _handle_get_torrent_piece_availability(
+        self, request: Request
+    ) -> Response:
         """Handle GET /api/v1/torrents/{info_hash}/piece-availability."""
         info_hash = request.match_info["info_hash"]
-        
+
         try:
             # Convert hex string to bytes for lookup
             try:
@@ -2690,7 +3039,7 @@ class IPCServer:
                     ).model_dump(),
                     status=400,
                 )
-            
+
             # Get torrent session from session manager
             torrent_session = self.session_manager.torrents.get(info_hash_bytes)
             if not torrent_session:
@@ -2701,20 +3050,23 @@ class IPCServer:
                     ).model_dump(),
                     status=404,
                 )
-            
+
             # Get piece availability from piece manager
             availability: list[int] = []
             num_pieces = 0
             max_peers = 0
-            
-            if hasattr(torrent_session, "piece_manager") and torrent_session.piece_manager:
+
+            if (
+                hasattr(torrent_session, "piece_manager")
+                and torrent_session.piece_manager
+            ):
                 piece_manager = torrent_session.piece_manager
-                
+
                 # Get number of pieces
                 num_pieces = getattr(piece_manager, "num_pieces", 0)
                 if num_pieces == 0:
                     num_pieces = len(getattr(piece_manager, "pieces", []))
-                
+
                 # Get piece_frequency Counter
                 piece_frequency = getattr(piece_manager, "piece_frequency", None)
                 if piece_frequency:
@@ -2723,7 +3075,7 @@ class IPCServer:
                         count = piece_frequency.get(piece_idx, 0)
                         availability.append(count)
                         max_peers = max(max_peers, count)
-            
+
             response = PieceAvailabilityResponse(
                 info_hash=info_hash,
                 availability=availability,
@@ -2731,7 +3083,7 @@ class IPCServer:
                 max_peers=max_peers,
             )
             return web.json_response(response.model_dump())  # type: ignore[attr-defined]
-            
+
         except Exception as e:
             logger.exception("Error getting torrent piece availability")
             return web.json_response(  # type: ignore[attr-defined]
@@ -2822,6 +3174,189 @@ class IPCServer:
                 status=500,
             )
 
+    async def _handle_set_torrent_option(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/options."""
+        try:
+            info_hash = request.match_info["info_hash"]
+            data = await request.json()
+            key = data.get("key")
+            value = data.get("value")
+
+            if not key:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Missing 'key' parameter",
+                        code="MISSING_PARAMETER",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            result = await self.executor.execute(
+                "torrent.set_option",
+                info_hash=info_hash,
+                key=key,
+                value=value,
+            )
+
+            if result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {"success": True, "key": key, "value": value},
+                    status=200,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to set option",
+                    code="SET_OPTION_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error setting torrent option")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_torrent_option(self, request: Request) -> Response:
+        """Handle GET /api/v1/torrents/{info_hash}/options/{key}."""
+        try:
+            info_hash = request.match_info["info_hash"]
+            key = request.match_info["key"]
+
+            result = await self.executor.execute(
+                "torrent.get_option",
+                info_hash=info_hash,
+                key=key,
+            )
+
+            if result.success:
+                value = result.data.get("value")
+                return web.json_response(  # type: ignore[attr-defined]
+                    {"key": key, "value": value},
+                    status=200,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to get option",
+                    code="GET_OPTION_FAILED",
+                ).model_dump(),
+                status=404,
+            )
+        except Exception as e:
+            logger.exception("Error getting torrent option")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_torrent_config(self, request: Request) -> Response:
+        """Handle GET /api/v1/torrents/{info_hash}/config."""
+        try:
+            info_hash = request.match_info["info_hash"]
+
+            result = await self.executor.execute(
+                "torrent.get_config",
+                info_hash=info_hash,
+            )
+
+            if result.success:
+                data = result.data
+                return web.json_response(  # type: ignore[attr-defined]
+                    {
+                        "options": data.get("options", {}),
+                        "rate_limits": data.get("rate_limits", {}),
+                    },
+                    status=200,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to get config",
+                    code="GET_CONFIG_FAILED",
+                ).model_dump(),
+                status=404,
+            )
+        except Exception as e:
+            logger.exception("Error getting torrent config")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_reset_torrent_options(self, request: Request) -> Response:
+        """Handle DELETE /api/v1/torrents/{info_hash}/options[/{key}]."""
+        try:
+            info_hash = request.match_info["info_hash"]
+            key = request.match_info.get("key")  # Optional
+
+            result = await self.executor.execute(
+                "torrent.reset_options",
+                info_hash=info_hash,
+                key=key,
+            )
+
+            if result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {"success": True, "key": key},
+                    status=200,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to reset options",
+                    code="RESET_OPTIONS_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error resetting torrent options")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_save_torrent_checkpoint(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/checkpoint."""
+        try:
+            info_hash = request.match_info["info_hash"]
+
+            result = await self.executor.execute(
+                "torrent.save_checkpoint",
+                info_hash=info_hash,
+            )
+
+            if result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {"success": True, "saved": True},
+                    status=200,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to save checkpoint",
+                    code="SAVE_CHECKPOINT_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error saving torrent checkpoint")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
     async def _handle_set_dht_aggressive_mode(self, request: Request) -> Response:
         """Handle POST /api/v1/torrents/{info_hash}/dht/aggressive."""
         info_hash = request.match_info["info_hash"]
@@ -2829,8 +3364,10 @@ class IPCServer:
             # Parse request body for enabled flag
             data = await request.json() if request.content_length else {}
             enabled = data.get("enabled", True)  # Default to True if not specified
-            
-            success = await self.session_manager.set_dht_aggressive_mode(info_hash, enabled)
+
+            success = await self.session_manager.set_dht_aggressive_mode(
+                info_hash, enabled
+            )
             if success:
                 return web.json_response(  # type: ignore[attr-defined]
                     {"status": "updated", "success": True, "enabled": enabled}
@@ -2843,7 +3380,9 @@ class IPCServer:
                 status=404,
             )
         except Exception as e:
-            logger.exception("Error setting DHT aggressive mode for torrent %s", info_hash)
+            logger.exception(
+                "Error setting DHT aggressive mode for torrent %s", info_hash
+            )
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=str(e) or "Failed to set DHT aggressive mode",
@@ -3004,8 +3543,9 @@ class IPCServer:
     async def _handle_shutdown(self, _request: Request) -> Response:
         """Handle POST /api/v1/shutdown."""
         logger.info("Shutdown requested via IPC")
-        # Schedule shutdown (don't block the response)
-        _ = asyncio.create_task(self._shutdown_async())
+        # Schedule shutdown (don't block the response) - fire-and-forget
+        asyncio.create_task(self._shutdown_async())  # noqa: RUF006
+        # Don't await - let it run after response is sent
         return web.json_response({"status": "shutting_down"})  # type: ignore[attr-defined]
 
     async def _shutdown_async(self) -> None:
@@ -3027,61 +3567,63 @@ class IPCServer:
                     await self.session_manager.dht_client.start()
                     # Emit COMPONENT_RESTARTED event
                     try:
-                        await self._emit_websocket_event(
+                        await self.emit_websocket_event(
                             EventType.COMPONENT_STOPPED,
                             {"component_name": "dht_client", "status": "stopped"},
                         )
-                        await self._emit_websocket_event(
+                        await self.emit_websocket_event(
                             EventType.COMPONENT_STARTED,
                             {"component_name": "dht_client", "status": "running"},
                         )
                     except Exception as e:
                         logger.debug("Failed to emit component events: %s", e)
-                    return web.json_response({"status": "restarted", "service": service_name})  # type: ignore[attr-defined]
-                else:
-                    return web.json_response(  # type: ignore[attr-defined]
-                        ErrorResponse(
-                            error="DHT client not available",
-                            code="SERVICE_NOT_FOUND",
-                        ).model_dump(),
-                        status=404,
-                    )
-            elif service_name == "nat":
-                # Restart NAT manager
-                if self.session_manager and self.session_manager.nat_manager:
-                    await self.session_manager.nat_manager.stop()
-                    await self.session_manager.nat_manager.start()
-                    return web.json_response({"status": "restarted", "service": service_name})  # type: ignore[attr-defined]
-                else:
-                    return web.json_response(  # type: ignore[attr-defined]
-                        ErrorResponse(
-                            error="NAT manager not available",
-                            code="SERVICE_NOT_FOUND",
-                        ).model_dump(),
-                        status=404,
-                    )
-            elif service_name == "tcp_server":
-                # Restart TCP server
-                if self.session_manager and self.session_manager.tcp_server:
-                    await self.session_manager.tcp_server.stop()
-                    await self.session_manager.tcp_server.start()
-                    return web.json_response({"status": "restarted", "service": service_name})  # type: ignore[attr-defined]
-                else:
-                    return web.json_response(  # type: ignore[attr-defined]
-                        ErrorResponse(
-                            error="TCP server not available",
-                            code="SERVICE_NOT_FOUND",
-                        ).model_dump(),
-                        status=404,
-                    )
-            else:
+                    return web.json_response(
+                        {"status": "restarted", "service": service_name}
+                    )  # type: ignore[attr-defined]
                 return web.json_response(  # type: ignore[attr-defined]
                     ErrorResponse(
-                        error=f"Unknown service: {service_name}",
+                        error="DHT client not available",
                         code="SERVICE_NOT_FOUND",
                     ).model_dump(),
                     status=404,
                 )
+            if service_name == "nat":
+                # Restart NAT manager
+                if self.session_manager and self.session_manager.nat_manager:
+                    await self.session_manager.nat_manager.stop()
+                    await self.session_manager.nat_manager.start()
+                    return web.json_response(
+                        {"status": "restarted", "service": service_name}
+                    )  # type: ignore[attr-defined]
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="NAT manager not available",
+                        code="SERVICE_NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            if service_name == "tcp_server":
+                # Restart TCP server
+                if self.session_manager and self.session_manager.tcp_server:
+                    await self.session_manager.tcp_server.stop()
+                    await self.session_manager.tcp_server.start()
+                    return web.json_response(
+                        {"status": "restarted", "service": service_name}
+                    )  # type: ignore[attr-defined]
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="TCP server not available",
+                        code="SERVICE_NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Unknown service: {service_name}",
+                    code="SERVICE_NOT_FOUND",
+                ).model_dump(),
+                status=404,
+            )
         except Exception as e:
             logger.exception("Error restarting service %s", service_name)
             return web.json_response(  # type: ignore[attr-defined]
@@ -3096,30 +3638,38 @@ class IPCServer:
         """Handle GET /api/v1/services/status."""
         try:
             services = {}
-            
+
             if self.session_manager:
                 services["dht"] = {
                     "enabled": self.session_manager.dht_client is not None,
-                    "status": "running" if self.session_manager.dht_client else "stopped",
+                    "status": "running"
+                    if self.session_manager.dht_client
+                    else "stopped",
                 }
                 services["nat"] = {
                     "enabled": self.session_manager.nat_manager is not None,
-                    "status": "running" if self.session_manager.nat_manager else "stopped",
+                    "status": "running"
+                    if self.session_manager.nat_manager
+                    else "stopped",
                 }
                 services["tcp_server"] = {
                     "enabled": self.session_manager.tcp_server is not None,
-                    "status": "running" if self.session_manager.tcp_server else "stopped",
+                    "status": "running"
+                    if self.session_manager.tcp_server
+                    else "stopped",
                 }
                 services["peer_service"] = {
                     "enabled": self.session_manager.peer_service is not None,
-                    "status": "running" if self.session_manager.peer_service else "stopped",
+                    "status": "running"
+                    if self.session_manager.peer_service
+                    else "stopped",
                 }
-            
+
             services["ipc_server"] = {
                 "enabled": True,
                 "status": "running",
             }
-            
+
             return web.json_response({"services": services})  # type: ignore[attr-defined]
         except Exception as e:
             logger.exception("Error getting services status")
@@ -3291,6 +3841,33 @@ class IPCServer:
 
         return web.json_response(result.data)  # type: ignore[attr-defined]
 
+    async def _handle_rehash_torrent(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/rehash."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            _ = bytes.fromhex(info_hash)  # Validate hex format
+        except ValueError:
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error="Invalid info hash format",
+                    code="INVALID_INFO_HASH",
+                ).model_dump(),
+                status=400,
+            )
+
+        result = await self.executor.execute("torrent.rehash", info_hash=info_hash)
+
+        if not result.success:
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to rehash torrent",
+                    code="REHASH_FAILED",
+                ).model_dump(),
+                status=404,
+            )
+
+        return web.json_response(result.data)  # type: ignore[attr-defined]
+
     async def _handle_get_metadata_status(self, request: Request) -> Response:
         """Handle GET /api/v1/torrents/{info_hash}/metadata/status."""
         info_hash = request.match_info["info_hash"]
@@ -3328,7 +3905,10 @@ class IPCServer:
                     hasattr(torrent_session, "torrent_data")
                     and isinstance(torrent_session.torrent_data, dict)
                     and torrent_session.torrent_data.get("info_hash") is not None
-                    and torrent_session.torrent_data.get("file_info", {}).get("total_length", 0) == 0
+                    and torrent_session.torrent_data.get("file_info", {}).get(
+                        "total_length", 0
+                    )
+                    == 0
                 )
 
                 return web.json_response(  # type: ignore[attr-defined]
@@ -3810,7 +4390,10 @@ class IPCServer:
                 )
 
             return web.json_response(  # type: ignore[attr-defined]
-                {"status": "added", "folder_key": result.data.get("folder_key", folder_path)}
+                {
+                    "status": "added",
+                    "folder_key": result.data.get("folder_key", folder_path),
+                }
             )
         except Exception as e:
             logger.exception("Error adding XET folder")
@@ -3948,7 +4531,7 @@ class IPCServer:
         )
         return web.json_response(response.model_dump())  # type: ignore[attr-defined]
 
-    async def _handle_global_pause_all(self, request: Request) -> Response:
+    async def _handle_global_pause_all(self, _request: Request) -> Response:
         """Handle POST /api/v1/global/pause-all."""
         try:
             result = await self.executor.execute("torrent.global_pause_all")
@@ -3972,7 +4555,7 @@ class IPCServer:
                 status=500,
             )
 
-    async def _handle_global_resume_all(self, request: Request) -> Response:
+    async def _handle_global_resume_all(self, _request: Request) -> Response:
         """Handle POST /api/v1/global/resume-all."""
         try:
             result = await self.executor.execute("torrent.global_resume_all")
@@ -3996,7 +4579,7 @@ class IPCServer:
                 status=500,
             )
 
-    async def _handle_global_force_start_all(self, request: Request) -> Response:
+    async def _handle_global_force_start_all(self, _request: Request) -> Response:
         """Handle POST /api/v1/global/force-start-all."""
         try:
             result = await self.executor.execute("torrent.global_force_start_all")
@@ -4230,7 +4813,7 @@ class IPCServer:
                 )
 
             # Emit WebSocket event
-            await self._emit_websocket_event(
+            await self.emit_websocket_event(
                 EventType.SECURITY_BLACKLIST_UPDATED,
                 {"ip": req.ip, "action": "added"},
             )
@@ -4262,7 +4845,7 @@ class IPCServer:
             )
 
         # Emit WebSocket event
-        await self._emit_websocket_event(
+        await self.emit_websocket_event(
             EventType.SECURITY_BLACKLIST_UPDATED,
             {"ip": ip, "action": "removed"},
         )
@@ -4291,7 +4874,7 @@ class IPCServer:
                 )
 
             # Emit WebSocket event
-            await self._emit_websocket_event(
+            await self.emit_websocket_event(
                 EventType.SECURITY_WHITELIST_UPDATED,
                 {"ip": req.ip, "action": "added"},
             )
@@ -4323,7 +4906,7 @@ class IPCServer:
             )
 
         # Emit WebSocket event
-        await self._emit_websocket_event(
+        await self.emit_websocket_event(
             EventType.SECURITY_WHITELIST_UPDATED,
             {"ip": ip, "action": "removed"},
         )
@@ -4500,11 +5083,11 @@ class IPCServer:
         except Exception as e:
             logger.debug("WebSocket heartbeat error: %s", e)
 
-    async def _setup_event_bridge(self) -> None:
+    async def setup_event_bridge(self) -> None:
         """Set up event bridge to convert utils.events to IPC WebSocket events."""
         try:
             from ccbt.utils.events import Event, EventHandler, get_event_bus
-            
+
             # Event type mapping from utils.events to IPC EventType
             # Comprehensive mapping of all relevant events for interface/UI consumption
             event_type_mapping = {
@@ -4569,7 +5152,7 @@ class IPCServer:
                 "system_stop": EventType.SERVICE_STOPPED,
                 "system_error": EventType.COMPONENT_STOPPED,
             }
-            
+
             async def event_bridge_handler(event: Event) -> None:
                 """Bridge event from utils.events to IPC WebSocket."""
                 try:
@@ -4579,44 +5162,56 @@ class IPCServer:
                         # Extract data from event - handle both dict and object attributes
                         event_data = {}
                         if hasattr(event, "data") and event.data:
-                            event_data = event.data if isinstance(event.data, dict) else event.data.__dict__
+                            event_data = (
+                                event.data
+                                if isinstance(event.data, dict)
+                                else event.data.__dict__
+                            )
                         elif hasattr(event, "__dict__"):
                             # Extract non-internal attributes
                             event_data = {
-                                k: v for k, v in event.__dict__.items()
+                                k: v
+                                for k, v in event.__dict__.items()
                                 if not k.startswith("_") and k != "event_type"
                             }
-                        await self._emit_websocket_event(ipc_event_type, event_data)
+                        await self.emit_websocket_event(ipc_event_type, event_data)
                 except Exception as e:
-                    logger.debug("Error bridging event %s to IPC WebSocket: %s", event.event_type, e)
-            
+                    logger.debug(
+                        "Error bridging event %s to IPC WebSocket: %s",
+                        event.event_type,
+                        e,
+                    )
+
             # Register handler for all relevant event types
             event_bus = get_event_bus()
-            
+
             # Ensure event bus is started
             if not event_bus.running:
                 await event_bus.start()
-            
+
             # Create a proper EventHandler subclass
             class IPCEventBridgeHandler(EventHandler):
                 def __init__(self, bridge_func: Any, ipc_server: Any):
                     super().__init__("ipc_event_bridge")
                     self.bridge_func = bridge_func
                     self.ipc_server = ipc_server
-                
+
                 async def handle(self, event: Event) -> None:
                     await self.bridge_func(event)
-            
+
             handler = IPCEventBridgeHandler(event_bridge_handler, self)
-            
-            for event_type_str in event_type_mapping.keys():
+
+            for event_type_str in event_type_mapping:
                 event_bus.register_handler(event_type_str, handler)
-            
-            logger.debug("Event bridge set up for IPC WebSocket events (%d event types)", len(event_type_mapping))
+
+            logger.debug(
+                "Event bridge set up for IPC WebSocket events (%d event types)",
+                len(event_type_mapping),
+            )
         except Exception as e:
             logger.warning("Failed to set up event bridge: %s", e)
 
-    async def _emit_websocket_event(
+    async def emit_websocket_event(
         self,
         event_type: EventType,
         data: dict[str, Any],
@@ -4718,24 +5313,17 @@ class IPCServer:
                 # Wait a moment for the server to fully initialize
                 await asyncio.sleep(0.1)
                 if not self.site._server:  # noqa: SLF001
-                    raise RuntimeError(
-                        f"IPC server site.start() completed but _server is None on {self.host}:{self.port}"
-                    )
-                if (
-                    not hasattr(self.site._server, "sockets")
-                    or not self.site._server.sockets
-                ):
-                    raise RuntimeError(
-                        f"IPC server site.start() completed but no sockets are listening on {self.host}:{self.port}"
-                    )
-                sockets = self.site._server.sockets  # noqa: SLF001
+                    error_msg = f"IPC server site.start() completed but _server is None on {self.host}:{self.port}"
+                    raise RuntimeError(error_msg)
+                server = getattr(self.site, "_server", None)
+                if not server or not hasattr(server, "sockets") or not server.sockets:
+                    error_msg = f"IPC server site.start() completed but no sockets are listening on {self.host}:{self.port}"
+                    raise RuntimeError(error_msg)
+                sockets = self.site._server.sockets  # type: ignore[attr-defined] # noqa: SLF001
                 # Type guard for len() - sockets might be a sequence
                 # Use try/except to handle type checker's conservative analysis
                 try:
-                    if hasattr(sockets, "__len__"):
-                        socket_count = len(sockets)  # type: ignore[arg-type]
-                    else:
-                        socket_count = 0
+                    socket_count = len(sockets) if hasattr(sockets, "__len__") else 0  # type: ignore[arg-type]
                 except (TypeError, AttributeError):
                     socket_count = 0
                 logger.debug(
@@ -4749,6 +5337,7 @@ class IPCServer:
                 error_code = e.errno if hasattr(e, "errno") else None
                 # sys is imported at module level (line 15), but ensure it's accessible
                 import sys as _sys_module  # Re-import to ensure type checker sees it
+
                 if (error_code == 10048 and _sys_module.platform == "win32") or (
                     error_code == 98 and _sys_module.platform != "win32"
                 ):
@@ -4760,42 +5349,46 @@ class IPCServer:
                         f"IPC server failed to bind to {self.host}:{self.port}: {e}\n\n"
                         f"{resolution}"
                     )
-                    logger.exception("IPC server failed to bind to %s:%d", self.host, self.port)
+                    logger.exception(
+                        "IPC server failed to bind to %s:%d", self.host, self.port
+                    )
                     # Clean up runner if site failed to start
                     if self.runner:
                         await self.runner.cleanup()
                     raise RuntimeError(error_msg) from e
                 # Other binding errors (permission denied, etc.)
                 logger.exception(
-                    "Failed to start IPC server on %s:%d: %s",
+                    "Failed to start IPC server on %s:%d",
                     self.host,
                     self.port,
-                    e,
                 )
                 # Clean up runner if site failed to start
                 if self.runner:
                     await self.runner.cleanup()
-                raise RuntimeError(
-                    f"IPC server failed to bind to {self.host}:{self.port}: {e}"
-                ) from e
+                error_msg = f"IPC server failed to bind to {self.host}:{self.port}: {e}"
+                raise RuntimeError(error_msg) from e
             except Exception as e:
                 # Catch any other unexpected errors during startup
                 logger.exception(
-                    "Unexpected error starting IPC server on %s:%d: %s",
+                    "Unexpected error starting IPC server on %s:%d",
                     self.host,
                     self.port,
-                    e,
                 )
                 # Clean up runner if site failed to start
                 if self.runner:
                     await self.runner.cleanup()
-                raise RuntimeError(
+                error_msg = (
                     f"IPC server failed to start on {self.host}:{self.port}: {e}"
-                ) from e
+                )
+                raise RuntimeError(error_msg) from e
 
             # Get actual port (in case port 0 was used for random port)
-            if self.site._server and self.site._server.sockets:  # noqa: SLF001
-                sock = self.site._server.sockets[0]  # noqa: SLF001
+            if (
+                self.site._server  # noqa: SLF001
+                and hasattr(self.site._server, "sockets")  # noqa: SLF001
+                and self.site._server.sockets  # noqa: SLF001
+            ):
+                sock = self.site._server.sockets[0]  # noqa: SLF001  # type: ignore[attr-defined]
                 self.port = sock.getsockname()[1]
                 # Log actual binding address for debugging
                 actual_addr = sock.getsockname()
@@ -4813,7 +5406,7 @@ class IPCServer:
             )
 
             # Set up event bridge to forward utils.events to WebSocket
-            await self._setup_event_bridge()
+            await self.setup_event_bridge()
 
             # CRITICAL: On Windows, verify the server is actually accepting HTTP connections
             # Socket test alone isn't sufficient - aiohttp might not be ready for HTTP yet
@@ -4905,13 +5498,12 @@ class IPCServer:
                     "IPC server socket is listening but HTTP verification failed. "
                     "Server may still be initializing - this is normal on Windows."
                 )
-        except Exception as e:
+        except Exception:
             # Final safety net - log and re-raise any unhandled exceptions
             logger.exception(
-                "Critical error during IPC server startup on %s:%d: %s",
+                "Critical error during IPC server startup on %s:%d",
                 self.host,
                 self.port,
-                e,
             )
             raise
 

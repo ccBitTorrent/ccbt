@@ -80,6 +80,17 @@ def test_resume_cli_success_with_checkpoint(monkeypatch):
 def test_resume_invalid_hex_and_no_checkpoint(monkeypatch):
     runner = CliRunner()
 
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+
     cfg = SimpleNamespace(disk=SimpleNamespace(checkpoint_enabled=True, checkpoint_dir="/tmp"))
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
@@ -143,6 +154,12 @@ def test_magnet_interactive_path(monkeypatch):
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
     class _Mgr:
+        async def start(self):
+            pass
+            
+        async def stop(self):
+            pass
+            
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
 
@@ -163,8 +180,19 @@ def test_download_interactive_path(monkeypatch):
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
     class _Mgr:
-        def load_torrent(self, _path):
-            return {"info_hash": b"\x00" * 20, "name": "t"}
+        async def start(self):
+            pass
+            
+        async def stop(self):
+            pass
+
+    # Mock load_torrent from torrent_utils (not session manager)
+    def _mock_load_torrent(_path):
+        return {"info_hash": b"\x00" * 20, "name": "t", "pieces_info": {"piece_hashes": [], "piece_length": 16384, "num_pieces": 0, "total_length": 0}, "file_info": {"total_length": 0}, "announce": ""}
+
+    fake_torrent_utils_mod = ModuleType("ccbt.session.torrent_utils")
+    setattr(fake_torrent_utils_mod, "load_torrent", _mock_load_torrent)
+    monkeypatch.setitem(sys.modules, "ccbt.session.torrent_utils", fake_torrent_utils_mod)
 
     async def _start_interactive(session, torrent_data, console, resume=False):
         return None
@@ -183,10 +211,22 @@ def test_download_file_not_found_path(monkeypatch):
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
     class _Mgr:
-        def load_torrent(self, _path):
-            raise FileNotFoundError("missing.torrent")
+        async def start(self):
+            pass
+            
+        async def stop(self):
+            pass
+
+    # Mock load_torrent from torrent_utils to raise FileNotFoundError
+    def _mock_load_torrent(_path):
+        raise FileNotFoundError("missing.torrent")
+
+    fake_torrent_utils_mod = ModuleType("ccbt.session.torrent_utils")
+    setattr(fake_torrent_utils_mod, "load_torrent", _mock_load_torrent)
+    monkeypatch.setitem(sys.modules, "ccbt.session.torrent_utils", fake_torrent_utils_mod)
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
+    monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
     res = runner.invoke(cli_main.cli, ["download", __file__]) 
     assert res.exit_code != 0
     assert "File not found" in res.output

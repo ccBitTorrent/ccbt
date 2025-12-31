@@ -114,7 +114,7 @@ See the full implementation:
 
 2. **AsyncSessionManager in `ccbt/session/session.py`**: More comprehensive implementation with DHT, queue management, NAT traversal, and scrape support.
 
-The more comprehensive `AsyncSessionManager` in `ccbt/session/session.py` (starting at line 1317) includes additional components:
+The more comprehensive `AsyncSessionManager` in `ccbt/session/session.py` (starting at line 2278) includes additional components:
 
 - `dht_client`: DHT client for peer discovery
 - `peer_service`: `PeerService` instance for managing peer connections
@@ -122,36 +122,96 @@ The more comprehensive `AsyncSessionManager` in `ccbt/session/session.py` (start
 - `nat_manager`: NAT traversal manager for port mapping
 - `private_torrents`: Set tracking private torrents (BEP 27)
 - `scrape_cache`: Cache for tracker scrape results (BEP 48)
-- Background tasks for cleanup, metrics collection, and periodic scraping
-
-See the full implementation:
-
-```python
---8<-- "ccbt/session/session.py:1317:1367"
-```
+- `_task_supervisor`: `TaskSupervisor` for managing background task lifecycles
+- `torrent_addition_handler`: `TorrentAdditionHandler` for torrent addition workflow
+- `background_tasks`: `ManagerBackgroundTasks` for cleanup and metrics loops
+- `scrape_manager`: `ScrapeManager` for tracker scraping operations
 
 **Responsibilities:**
-- Torrent lifecycle management
+- Torrent lifecycle management (delegated to `TorrentAdditionHandler`)
 - Peer connection coordination via `PeerService`
 - Protocol management (`BitTorrentProtocol`, `IPFSProtocol`)
 - Resource allocation and limits
 - Event dispatching through `EventBus`
-- Checkpoint management
+- Checkpoint management (delegated to `CheckpointOperations`)
 - DHT client management
 - Queue management for torrent prioritization
 - NAT traversal via `NATManager`
-- Tracker scraping (BEP 48)
+- Tracker scraping (delegated to `ScrapeManager`)
+- Background task supervision via `TaskSupervisor`
+
+### AsyncTorrentSession
+
+Represents one active torrent's lifecycle with async operations. The session uses a controller-based architecture with dependency injection via `SessionContext`.
+
+**Key Components:**
+- `_task_supervisor`: `TaskSupervisor` for managing background task lifecycles
+- `ctx`: `SessionContext` - Dependency injection container for session components
+- `lifecycle_controller`: `LifecycleController` - Manages start/pause/resume/stop sequencing
+- `status_aggregator`: `StatusAggregator` - Collects and aggregates torrent status
+- `checkpoint_controller`: `CheckpointController` - Handles checkpoint save/load with batching
+- `checkpoint_manager`: `CheckpointManager` - Manages checkpoint persistence
+- `piece_manager`: `AsyncPieceManager` - Manages piece downloading and verification
+- `peer_manager`: `AsyncPeerManager` - Manages peer connections
+- `download_manager`: `AsyncDownloadManager` - Manages download operations
+- `file_selection_manager`: `FileSelectionManager` - Manages file selection for partial downloads
+
+**SessionContext Pattern:**
+
+The `SessionContext` provides dependency injection for session components, allowing controllers to access shared state without tight coupling:
+
+```python
+class SessionContext:
+    """Dependency injection container for session components."""
+    config: Any
+    torrent_data: dict[str, Any] | TorrentInfoModel
+    output_dir: Path
+    info: TorrentInfo
+    session_manager: AsyncSessionManager | None
+    logger: logging.Logger
+    piece_manager: PieceManagerProtocol | None
+    peer_manager: PeerManagerProtocol | None
+    tracker: AsyncTrackerClient | None
+    dht_client: AsyncDHTClient | None
+    checkpoint_manager: CheckpointManager | None
+    download_manager: AsyncDownloadManager | None
+    file_selection_manager: FileSelectionManager | None
+```
+
+Controllers receive the `SessionContext` in their constructors, providing access to all necessary dependencies without direct references to the session object.
 
 #### Session Orchestration
 
-The session management follows a delegation pattern where `AsyncSessionManager` orchestrates operations and delegates to specialized controllers:
+The session management follows a delegation pattern where `AsyncSessionManager` orchestrates operations and delegates to specialized controllers. This modular architecture improves maintainability, testability, and separation of concerns.
 
-**Session Controllers** (under `ccbt/session/`):
-- `announce.py`: Tracker announcement coordination
-- `checkpointing.py`: Checkpoint save/load operations
+**Core Infrastructure** (under `ccbt/session/`):
+- `models.py`: `SessionContext` - Dependency injection container for session components
+- `tasks.py`: `TaskSupervisor` - Manages lifecycle of background asyncio tasks with cancellation and error handling
+
+**Session-Level Controllers** (per `AsyncTorrentSession`):
+- `lifecycle.py`: `LifecycleController` - Manages start/pause/resume/stop sequencing
+- `checkpointing.py`: `CheckpointController` - Checkpoint save/load operations with batching and fast resume support
+- `status_aggregation.py`: `StatusAggregator` - Collects and aggregates torrent status from multiple sources
+- `announce.py`: `AnnounceLoop` - Tracker announcement coordination with adaptive intervals
+- `metrics_status.py`: `StatusLoop` - Background status monitoring and metrics emission
+- `peer_events.py`: `PeerEventsBinder` - Consistent event binding for peer and piece managers
+- `magnet_handling.py`: `MagnetHandler` - Magnet link file selection and metadata operations (BEP 53)
+- `fast_resume.py`: `FastResumeLoader` - Fast resume data loading, validation, migration, and integrity verification
+
+**Manager-Level Controllers** (per `AsyncSessionManager`):
+- `torrent_addition.py`: `TorrentAdditionHandler` - Torrent addition workflow with queue integration and error recovery
+- `manager_background.py`: `ManagerBackgroundTasks` - Background tasks for cleanup and metrics collection
+- `scrape.py`: `ScrapeManager` - Tracker scraping operations with caching (BEP 48)
+- `checkpoint_operations.py`: `CheckpointOperations` - Manager-level checkpoint operations (list, find, validate, cleanup)
+- `manager_startup.py`: Component startup sequence coordination
+
+**Peer Management Controllers**:
+- `peers.py`: 
+  - `PeerManagerInitializer` - Peer manager creation and callback wiring
+  - `PeerConnectionHelper` - Centralized peer connection logic with deduplication
+  - `PexBinder` - PEX (Peer Exchange) setup and binding (BEP 11)
+- `dht_setup.py`: DHT discovery setup and metadata exchange for magnet links
 - `download_startup.py`: Download initialization flow
-- `torrent_addition.py`: Torrent addition workflow
-- `manager_startup.py`: Component startup sequence
 
 **Command Executor** (`ccbt/executor/`):
 - `executor.py`: `UnifiedCommandExecutor` routes commands to domain executors

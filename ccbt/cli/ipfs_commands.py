@@ -1,4 +1,3 @@
-
 """IPFS protocol CLI commands (add, get, pin, unpin, stats, peers)."""
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ try:
 except ImportError:
     IPFSProtocol = None  # type: ignore[assignment, misc]
 
-from ccbt.session.session import AsyncSessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +76,7 @@ async def _get_ipfs_protocol() -> IPFSProtocol | None:
     try:
         from ccbt.cli.main import _ensure_local_session_safe
 
-        session = await _ensure_local_session_safe(force_local=True)
+        session = await _ensure_local_session_safe(_force_local=True)
         try:
             # Find IPFS protocol in session's protocols list
             protocols = getattr(session, "protocols", [])
@@ -129,7 +127,9 @@ def ipfs_add(path: Path, pin: bool, json_output: bool) -> None:
                 if json_output:
                     console.print(json.dumps({"cid": cid, "pinned": pin}))
                 else:
-                    console.print(_("[green]Added to IPFS:[/green] {cid}").format(cid=cid))
+                    console.print(
+                        _("[green]Added to IPFS:[/green] {cid}").format(cid=cid)
+                    )
                     if pin:
                         console.print(_("[green]Content pinned[/green]"))
             else:
@@ -168,7 +168,11 @@ def ipfs_get(cid: str, output: Path | None, json_output: bool) -> None:
                 if json_output:
                     console.print(json.dumps({"cid": cid, "saved_to": str(output)}))
                 else:
-                    console.print(_("[green]Content saved to:[/green] {output}").format(output=output))
+                    console.print(
+                        _("[green]Content saved to:[/green] {output}").format(
+                            output=output
+                        )
+                    )
             elif json_output:
                 console.print(json.dumps({"cid": cid, "size": len(content)}))
             else:
@@ -275,7 +279,9 @@ def ipfs_stats(cid: str | None, all_stats: bool, json_output: bool) -> None:
                         table.add_row(key, str(value))
                     console.print(table)
                 else:
-                    console.print(_("[red]No stats found for CID: {cid}[/red]").format(cid=cid))
+                    console.print(
+                        _("[red]No stats found for CID: {cid}[/red]").format(cid=cid)
+                    )
             else:
                 console.print(_("[red]Specify CID or use --all[/red]"))
         except Exception as e:  # pragma: no cover - CLI error handler

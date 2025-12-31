@@ -1,4 +1,3 @@
-
 """CLI commands for queue management."""
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ from ccbt.i18n import _
 def _get_executor():
     """Lazy import to avoid circular dependency."""
     from ccbt.cli.main import _get_executor as _get_executor_impl
+
     return _get_executor_impl
 
 
@@ -25,7 +25,7 @@ def queue() -> None:
 
 @queue.command("list")
 @click.pass_context
-def queue_list(ctx) -> None:
+def queue_list(_ctx) -> None:
     """List all torrents in queue with their priorities."""
     console = Console()
 
@@ -36,8 +36,10 @@ def queue_list(ctx) -> None:
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                _("Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'")
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -72,11 +74,21 @@ def queue_list(ctx) -> None:
             # Print statistics
             stats = queue_list_response.statistics
             console.print(_("\n[bold]Statistics:[/bold]"))
-            console.print(_("  Total: {count}").format(count=stats.get('total_torrents', 0)))
-            console.print(_("  Active Downloading: {count}").format(count=stats.get('active_downloading', 0)))
-            console.print(_("  Active Seeding: {count}").format(count=stats.get('active_seeding', 0)))
-            console.print(_("  Queued: {count}").format(count=stats.get('queued', 0)))
-            console.print(_("  Paused: {count}").format(count=stats.get('paused', 0)))
+            console.print(
+                _("  Total: {count}").format(count=stats.get("total_torrents", 0))
+            )
+            console.print(
+                _("  Active Downloading: {count}").format(
+                    count=stats.get("active_downloading", 0)
+                )
+            )
+            console.print(
+                _("  Active Seeding: {count}").format(
+                    count=stats.get("active_seeding", 0)
+                )
+            )
+            console.print(_("  Queued: {count}").format(count=stats.get("queued", 0)))
+            console.print(_("  Paused: {count}").format(count=stats.get("paused", 0)))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -100,7 +112,7 @@ def queue_list(ctx) -> None:
     help="Priority level",
 )
 @click.pass_context
-def queue_add(ctx, info_hash: str, priority: str) -> None:
+def queue_add(_ctx, info_hash: str, priority: str) -> None:
     """Add torrent to queue with specified priority."""
     console = Console()
 
@@ -111,8 +123,10 @@ def queue_add(ctx, info_hash: str, priority: str) -> None:
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                _("Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'")
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -146,7 +160,7 @@ def queue_add(ctx, info_hash: str, priority: str) -> None:
 @queue.command("remove")
 @click.argument("info_hash")
 @click.pass_context
-def queue_remove(ctx, info_hash: str) -> None:
+def queue_remove(_ctx, info_hash: str) -> None:
     """Remove torrent from queue."""
     console = Console()
 
@@ -157,8 +171,10 @@ def queue_remove(ctx, info_hash: str) -> None:
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                _("Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'")
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -195,7 +211,7 @@ def queue_remove(ctx, info_hash: str) -> None:
     type=click.Choice(["maximum", "high", "normal", "low", "paused"]),
 )
 @click.pass_context
-def queue_priority(ctx, info_hash: str, priority: str) -> None:
+def queue_priority(_ctx, info_hash: str, priority: str) -> None:
     """Set torrent priority."""
     console = Console()
 
@@ -206,8 +222,10 @@ def queue_priority(ctx, info_hash: str, priority: str) -> None:
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                _("Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'")
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -224,7 +242,11 @@ def queue_priority(ctx, info_hash: str, priority: str) -> None:
                     return
                 raise click.ClickException(result.error or _("Failed to set priority"))
 
-            console.print(_("[green]Set priority to {priority}[/green]").format(priority=priority.upper()))
+            console.print(
+                _("[green]Set priority to {priority}[/green]").format(
+                    priority=priority.upper()
+                )
+            )
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -243,7 +265,7 @@ def queue_priority(ctx, info_hash: str, priority: str) -> None:
 @click.argument("info_hash")
 @click.argument("position", type=int)
 @click.pass_context
-def queue_reorder(ctx, info_hash: str, position: int) -> None:
+def queue_reorder(_ctx, info_hash: str, position: int) -> None:
     """Move torrent to specific position in queue."""
     console = Console()
 
@@ -254,8 +276,10 @@ def queue_reorder(ctx, info_hash: str, position: int) -> None:
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                _("Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'")
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -275,7 +299,11 @@ def queue_reorder(ctx, info_hash: str, position: int) -> None:
                     return
                 raise click.ClickException(result.error or _("Failed to move in queue"))
 
-            console.print(_("[green]Moved to position {position}[/green]").format(position=position))
+            console.print(
+                _("[green]Moved to position {position}[/green]").format(
+                    position=position
+                )
+            )
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -293,7 +321,7 @@ def queue_reorder(ctx, info_hash: str, position: int) -> None:
 @queue.command("pause")
 @click.argument("info_hash")
 @click.pass_context
-def queue_pause(ctx, info_hash: str) -> None:
+def queue_pause(_ctx, info_hash: str) -> None:
     """Pause torrent in queue."""
     console = Console()
 
@@ -304,8 +332,10 @@ def queue_pause(ctx, info_hash: str) -> None:
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                _("Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'")
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -336,7 +366,7 @@ def queue_pause(ctx, info_hash: str) -> None:
 @queue.command("resume")
 @click.argument("info_hash")
 @click.pass_context
-def queue_resume(ctx, info_hash: str) -> None:
+def queue_resume(_ctx, info_hash: str) -> None:
     """Resume paused torrent."""
     console = Console()
 
@@ -347,8 +377,10 @@ def queue_resume(ctx, info_hash: str) -> None:
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                _("Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'")
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -359,7 +391,9 @@ def queue_resume(ctx, info_hash: str) -> None:
                 if "not found" in (result.error or "").lower():
                     console.print(_("[yellow]Torrent not found[/yellow]"))
                     return
-                raise click.ClickException(result.error or _("Failed to resume torrent"))
+                raise click.ClickException(
+                    result.error or _("Failed to resume torrent")
+                )
 
             console.print(_("[green]Resumed torrent[/green]"))
         finally:
@@ -378,7 +412,7 @@ def queue_resume(ctx, info_hash: str) -> None:
 
 @queue.command("clear")
 @click.pass_context
-def queue_clear(ctx) -> None:
+def queue_clear(_ctx) -> None:
     """Clear all torrents from queue."""
     console = Console()
 
@@ -389,8 +423,10 @@ def queue_clear(ctx) -> None:
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                _("Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'")
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:

@@ -5,7 +5,6 @@ Provides TTL-based flooding with duplicate detection to prevent loops.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import logging
 import time
@@ -83,16 +82,6 @@ class ControlledFlooding:
         self._message_timestamps[message_id] = time.time()
 
         # Add flooding metadata
-        flood_message = {
-            **message,
-            "_flood_metadata": {
-                "message_id": message_id,
-                "ttl": self.max_hops,
-                "hops": 0,
-                "sender": self.node_id,
-                "priority": priority,
-            },
-        }
 
         logger.debug("Flooding message %s (priority: %d)", message_id[:8], priority)
 
@@ -105,9 +94,7 @@ class ControlledFlooding:
                 except Exception as e:
                     logger.warning("Error forwarding to %s: %s", peer_id, e)
 
-    async def receive_flood(
-        self, peer_id: str, message: dict[str, Any]
-    ) -> bool:
+    async def receive_flood(self, peer_id: str, message: dict[str, Any]) -> bool:
         """Receive a flooded message.
 
         Args:
@@ -122,7 +109,7 @@ class ControlledFlooding:
         message_id = flood_metadata.get("message_id")
         ttl = flood_metadata.get("ttl", self.max_hops)
         hops = flood_metadata.get("hops", 0)
-        sender = flood_metadata.get("sender")
+        flood_metadata.get("sender")
 
         if not message_id:
             logger.warning("Received flood message without message_id")
@@ -156,14 +143,6 @@ class ControlledFlooding:
         new_hops = hops + 1
         if new_hops < ttl:
             # Update metadata for forwarding
-            forward_message = {
-                **message,
-                "_flood_metadata": {
-                    **flood_metadata,
-                    "hops": new_hops,
-                    "sender": self.node_id,
-                },
-            }
 
             logger.debug(
                 "Forwarding flood message %s (hops: %d/%d)",
@@ -212,6 +191,3 @@ class ControlledFlooding:
 
         if expired_messages:
             logger.debug("Cleaned up %d seen messages", len(expired_messages))
-
-
-

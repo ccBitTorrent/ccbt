@@ -46,15 +46,35 @@ def mock_session():
 
 
 @pytest.fixture
+def mock_console():
+    """Create a mock Console."""
+    console = MagicMock(spec=Console)
+    console.print = Mock()
+    console.clear = Mock()
+    console.print_json = Mock()
+    return console
+
+
+@pytest.fixture
 def interactive_cli(mock_session):
     """Create InteractiveCLI instance."""
     from ccbt.cli.interactive import InteractiveCLI
+    from ccbt.executor.executor import UnifiedCommandExecutor
+    from ccbt.executor.session_adapter import LocalSessionAdapter
     
     console = Mock(spec=Console)
     console.print = Mock()
     console.clear = Mock()
     console.print_json = Mock()
-    cli = InteractiveCLI(mock_session, console)
+    # CRITICAL FIX: Rich Progress requires console.get_time method
+    import time
+    console.get_time = Mock(return_value=time.time)
+    
+    # Create proper adapter and executor
+    adapter = LocalSessionAdapter(mock_session)
+    executor = UnifiedCommandExecutor(adapter)
+    
+    cli = InteractiveCLI(executor, adapter, console, session=mock_session)
     return cli
 
 
@@ -399,8 +419,12 @@ class TestInteractiveComprehensive:
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
         
+        # Import FileSelectionManager to use as spec for isinstance check
+        from ccbt.piece.file_selection import FileSelectionManager
+        
         mock_torrent_session = MagicMock()
-        mock_file_manager = AsyncMock()
+        # Use spec=FileSelectionManager so isinstance check passes
+        mock_file_manager = AsyncMock(spec=FileSelectionManager)
         mock_file_manager.select_file = AsyncMock()
         mock_file_manager.get_all_file_states = AsyncMock(return_value={0: MagicMock()})
         mock_torrent_session.file_selection_manager = mock_file_manager
@@ -419,8 +443,12 @@ class TestInteractiveComprehensive:
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
         
+        # Import FileSelectionManager to use as spec for isinstance check
+        from ccbt.piece.file_selection import FileSelectionManager
+        
         mock_torrent_session = MagicMock()
-        mock_file_manager = AsyncMock()
+        # Use spec=FileSelectionManager so isinstance check passes
+        mock_file_manager = AsyncMock(spec=FileSelectionManager)
         mock_file_manager.deselect_file = AsyncMock()
         mock_file_manager.get_all_file_states = AsyncMock(return_value={0: MagicMock()})
         mock_torrent_session.file_selection_manager = mock_file_manager
@@ -439,8 +467,12 @@ class TestInteractiveComprehensive:
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
         
+        # Import FileSelectionManager to use as spec for isinstance check
+        from ccbt.piece.file_selection import FileSelectionManager
+        
         mock_torrent_session = MagicMock()
-        mock_file_manager = AsyncMock()
+        # Use spec=FileSelectionManager so isinstance check passes
+        mock_file_manager = AsyncMock(spec=FileSelectionManager)
         mock_file_manager.set_file_priority = AsyncMock()
         mock_file_manager.get_all_file_states = AsyncMock(return_value={0: MagicMock()})
         mock_torrent_session.file_selection_manager = mock_file_manager
@@ -1447,9 +1479,61 @@ async def test_cmd_metrics(interactive_cli):
 @pytest.mark.asyncio
 async def test_cmd_network(interactive_cli):
     """Test cmd_network command handler."""
-    if hasattr(interactive_cli, "cmd_network"):
-        await interactive_cli.cmd_network([])
-        assert True
+    from unittest.mock import MagicMock, patch
+    
+    # Create a comprehensive mock config with all network settings
+    mock_config = MagicMock()
+    mock_config.network = MagicMock()
+    # Set all network config attributes that might be accessed
+    mock_config.network.listen_port = 6881
+    mock_config.network.listen_port_tcp = None
+    mock_config.network.listen_port_udp = None
+    mock_config.network.max_global_peers = 200
+    mock_config.network.max_peers_per_torrent = 50
+    mock_config.network.max_connections_per_peer = 1
+    mock_config.network.pipeline_depth = 5
+    mock_config.network.pipeline_adaptive_depth = True
+    mock_config.network.block_size_kib = 16
+    mock_config.network.min_block_size_kib = 4
+    mock_config.network.max_block_size_kib = 64
+    mock_config.network.connection_timeout = 30
+    mock_config.network.handshake_timeout = 10
+    mock_config.network.peer_timeout = 60
+    mock_config.network.timeout_adaptive = True
+    mock_config.network.keepalive_interval = 60
+    mock_config.network.max_idle_time = 120
+    mock_config.network.enable_utp = True
+    mock_config.network.enable_tcp = True
+    mock_config.network.enable_ipv6 = False
+    mock_config.network.enable_encryption = True
+    mock_config.network.prefer_encryption = True
+    mock_config.network.global_down_kib = 0
+    mock_config.network.global_up_kib = 0
+    mock_config.network.connection_pool_max_connections = 100
+    mock_config.network.connection_pool_warmup_enabled = False
+    mock_config.network.socket_rcvbuf_kib = 256
+    mock_config.network.socket_sndbuf_kib = 256
+    mock_config.network.socket_adaptive_buffers = True
+    mock_config.network.tcp_nodelay = True
+    
+    # Mock get_network_optimizer to avoid import/initialization issues
+    mock_optimizer = MagicMock()
+    mock_optimizer.get_stats.return_value = {
+        "connection_pool": {
+            "total_connections": 0,
+            "active_connections": 0,
+            "failed_connections": 0,
+            "bytes_sent": 0,
+            "bytes_received": 0,
+        },
+        "socket_configs": {},
+    }
+    
+    with patch("ccbt.cli.interactive.get_config", return_value=mock_config), \
+         patch("ccbt.utils.network_optimizer.get_network_optimizer", return_value=mock_optimizer):
+        if hasattr(interactive_cli, "cmd_network"):
+            await interactive_cli.cmd_network([])
+            assert True
 
 
 
@@ -1546,10 +1630,23 @@ async def test_cmd_resume_with_torrent(interactive_cli):
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
     
+    # Mock executor to return success with checkpoint info
+    from ccbt.executor.executor import CommandResult
+    interactive_cli.executor.execute = AsyncMock(return_value=CommandResult(
+        success=True,
+        data={"checkpoint_restored": False}  # No checkpoint found
+    ))
+    
     await interactive_cli.cmd_resume([])
     
-    interactive_cli.session.resume_torrent.assert_called_once_with("abcd1234")
-    interactive_cli.console.print.assert_called_with("Download resumed")
+    # Verify executor was called
+    interactive_cli.executor.execute.assert_called_once_with(
+        "torrent.resume", info_hash="abcd1234"
+    )
+    # The message includes checkpoint info - check that it contains "Download resumed"
+    calls = interactive_cli.console.print.call_args_list
+    resume_calls = [str(call) for call in calls if "Download resumed" in str(call)]
+    assert len(resume_calls) > 0, f"Expected 'Download resumed' message, got calls: {calls}"
 
 
 
@@ -1762,7 +1859,7 @@ async def test_download_torrent(interactive_cli):
     interactive_cli.running = False
     torrent_data = {"name": "test", "info_hash": b"abcd1234"}
     
-    info_hash_hex = "abcd1234"
+    info_hash_hex = "abcd1234" * 4  # 32 chars = 16 bytes (typical info hash length)
     info_hash_bytes = bytes.fromhex(info_hash_hex)
     mock_torrent_session = AsyncMock()
     mock_torrent_session.file_selection_manager = None
@@ -1772,7 +1869,7 @@ async def test_download_torrent(interactive_cli):
     
     assert interactive_cli.current_torrent == torrent_data
     interactive_cli.session.add_torrent.assert_called_once_with(torrent_data, resume=False)
-    assert interactive_cli.current_info_hash_hex == "abcd1234"
+    assert interactive_cli.current_info_hash_hex == "abcd1234" * 4  # Match mock return value
 
 
 
@@ -1815,9 +1912,9 @@ async def test_download_torrent_with_resume(interactive_cli):
 @pytest.mark.asyncio
 async def test_interactive_cli_init(mock_session, mock_console):
     """Test InteractiveCLI initialization (lines 44-110)."""
-    from ccbt.cli.interactive import InteractiveCLI
+    from tests.conftest import create_interactive_cli
     
-    cli = InteractiveCLI(mock_session, mock_console)
+    cli = create_interactive_cli(mock_session, mock_console)
     
     assert cli.session == mock_session
     assert cli.console == mock_console
@@ -2474,6 +2571,20 @@ async def test_update_download_stats_with_status(interactive_cli):
     """Test update_download_stats with session status (lines 328-380)."""
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
+    
+    # CRITICAL FIX: Mock executor.execute to return status data in expected format
+    from unittest.mock import AsyncMock
+    mock_status = {
+        "download_rate": 1000.0,
+        "upload_rate": 500.0,
+        "pieces_completed": 10,
+        "pieces_total": 100,
+        "progress": 0.1,
+    }
+    interactive_cli.executor.execute = AsyncMock(return_value=type('obj', (object,), {
+        'success': True,
+        'data': {'status': mock_status}
+    })())
     
     await interactive_cli.update_download_stats()
     

@@ -341,7 +341,7 @@ class TestTrackerSSLIntegration:
 
                 torrent_data = {
                     "announce": "https://tracker.example.com/announce",
-                    "info_hash": b"test_info_hash_20_bytes!",
+                    "info_hash": b"test_info_hash_20_!!",  # Exactly 20 bytes
                     "file_info": {"total_length": 1024},
                 }
 
@@ -349,10 +349,13 @@ class TestTrackerSSLIntegration:
                 with patch.object(client, "_build_tracker_url") as mock_build_url:
                     mock_build_url.return_value = "https://tracker.example.com/announce?info_hash=..."
                     with patch.object(client, "_parse_response_async") as mock_parse:
-                        mock_parse.return_value = {
-                            "interval": 3600,
-                            "peers": b"\x01\x02\x03\x04\x05\x06",
-                        }
+                        # CRITICAL FIX: _parse_response_async returns TrackerResponse object, not dict
+                        from ccbt.discovery.tracker import TrackerResponse
+                        mock_response = TrackerResponse(
+                            interval=3600,
+                            peers=[],  # Empty list of PeerInfo objects
+                        )
+                        mock_parse.return_value = mock_response
                         with patch.object(client, "_update_tracker_session"):
                             response = await client.announce(
                                 torrent_data,
@@ -360,6 +363,7 @@ class TestTrackerSSLIntegration:
                             )
 
                             assert response is not None
+                            assert isinstance(response, TrackerResponse)
                             mock_session.get.assert_called()
 
     @pytest.mark.asyncio
@@ -394,7 +398,7 @@ class TestTrackerSSLIntegration:
 
             torrent_data = {
                 "announce": "https://tracker.example.com/announce",
-                "info_hash": b"test_info_hash_20_bytes!",
+                "info_hash": b"test_info_hash_20_!!",  # Exactly 20 bytes
                 "file_info": {"total_length": 1024},
             }
 

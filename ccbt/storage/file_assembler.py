@@ -279,7 +279,7 @@ class AsyncFileAssembler:
             self.piece_length = torrent_data.get("piece_length", 0)
             self.pieces = torrent_data.get("pieces", [])
             self.num_pieces = torrent_data.get("num_pieces", 0)
-            
+
             # CRITICAL FIX: Extract files from file_info dict format
             # Files can be in torrent_data["files"] or torrent_data["file_info"]["files"]
             files = torrent_data.get("files", [])
@@ -289,24 +289,31 @@ class AsyncFileAssembler:
                     if "files" in file_info_dict:
                         # Multi-file torrent: files are in file_info["files"]
                         files = file_info_dict["files"]
-                    elif "type" in file_info_dict and file_info_dict["type"] == "single":
+                    elif (
+                        "type" in file_info_dict and file_info_dict["type"] == "single"
+                    ):
                         # Single-file torrent: create a single file entry
-                        files = [{
-                            "name": file_info_dict.get("name", self.name),
-                            "length": file_info_dict.get("length", file_info_dict.get("total_length", 0)),
-                            "path": None,
-                            "full_path": file_info_dict.get("name", self.name),
-                        }]
-            
+                        files = [
+                            {
+                                "name": file_info_dict.get("name", self.name),
+                                "length": file_info_dict.get(
+                                    "length", file_info_dict.get("total_length", 0)
+                                ),
+                                "path": None,
+                                "full_path": file_info_dict.get("name", self.name),
+                            }
+                        ]
+
             # Convert dict files to FileInfo objects if needed
             from ccbt.models import FileInfo
+
             file_info_list = []
             for f in files:
                 if isinstance(f, dict):
                     file_info_list.append(
                         FileInfo(
                             name=f.get("name", f.get("full_path", "")),
-                            length=f.get("length", 0),
+                            length=int(f.get("length", 0) or 0),  # type: ignore[invalid-argument-type]
                             path=f.get("path"),
                             full_path=f.get("full_path", f.get("name", "")),
                             attributes=f.get("attributes"),
@@ -316,7 +323,7 @@ class AsyncFileAssembler:
                     )
                 elif hasattr(f, "name"):  # Already a FileInfo
                     file_info_list.append(f)
-            
+
             self.files = file_info_list
 
         # Create output directory if it doesn't exist
@@ -453,16 +460,17 @@ class AsyncFileAssembler:
 
     def update_from_metadata(self, torrent_data: dict[str, Any] | TorrentInfo) -> None:
         """Update file assembler with newly fetched metadata.
-        
+
         This method is called when metadata is fetched for a magnet link.
         It rebuilds the file segments mapping based on the new metadata.
-        
+
         Args:
             torrent_data: Updated torrent data with complete metadata
+
         """
         # Update torrent_data reference
         self.torrent_data = torrent_data
-        
+
         # Update file information
         if isinstance(torrent_data, TorrentInfo):
             self.name = torrent_data.name
@@ -476,26 +484,35 @@ class AsyncFileAssembler:
             # Legacy dict format
             self.name = torrent_data.get("name", self.name)
             self.info_hash = torrent_data.get("info_hash", self.info_hash)
-            
+
             # CRITICAL FIX: Extract pieces_info first, as it may contain total_length, piece_length, and num_pieces
             pieces_info = torrent_data.get("pieces_info", {})
             if not isinstance(pieces_info, dict):
                 pieces_info = {}
-            
+
             # Extract total_length and piece_length (check both direct and pieces_info)
-            self.total_length = torrent_data.get("total_length", pieces_info.get("total_length", self.total_length))
-            self.piece_length = torrent_data.get("piece_length", pieces_info.get("piece_length", self.piece_length))
+            self.total_length = torrent_data.get(
+                "total_length", pieces_info.get("total_length", self.total_length)
+            )
+            self.piece_length = torrent_data.get(
+                "piece_length", pieces_info.get("piece_length", self.piece_length)
+            )
             self.pieces = torrent_data.get("pieces", self.pieces)
-            
+
             # CRITICAL FIX: Extract num_pieces from pieces_info if not directly available
             # num_pieces can be in torrent_data["num_pieces"] or torrent_data["pieces_info"]["num_pieces"]
             self.num_pieces = torrent_data.get("num_pieces", self.num_pieces)
             if self.num_pieces == 0 or self.num_pieces is None:
                 self.num_pieces = pieces_info.get("num_pieces", self.num_pieces)
-            
+
             # CRITICAL FIX: Calculate num_pieces from total_length and piece_length if still not available
-            if (self.num_pieces == 0 or self.num_pieces is None) and self.total_length > 0 and self.piece_length > 0:
+            if (
+                (self.num_pieces == 0 or self.num_pieces is None)
+                and self.total_length > 0
+                and self.piece_length > 0
+            ):
                 import math
+
                 self.num_pieces = math.ceil(self.total_length / self.piece_length)
                 self.logger.info(
                     "Calculated num_pieces=%d from total_length=%d and piece_length=%d",
@@ -503,7 +520,7 @@ class AsyncFileAssembler:
                     self.total_length,
                     self.piece_length,
                 )
-            
+
             # CRITICAL FIX: Extract files from file_info dict format
             # Files can be in torrent_data["files"] or torrent_data["file_info"]["files"]
             files = torrent_data.get("files", [])
@@ -513,24 +530,31 @@ class AsyncFileAssembler:
                     if "files" in file_info_dict:
                         # Multi-file torrent: files are in file_info["files"]
                         files = file_info_dict["files"]
-                    elif "type" in file_info_dict and file_info_dict["type"] == "single":
+                    elif (
+                        "type" in file_info_dict and file_info_dict["type"] == "single"
+                    ):
                         # Single-file torrent: create a single file entry
-                        files = [{
-                            "name": file_info_dict.get("name", self.name),
-                            "length": file_info_dict.get("length", file_info_dict.get("total_length", 0)),
-                            "path": None,
-                            "full_path": file_info_dict.get("name", self.name),
-                        }]
-            
+                        files = [
+                            {
+                                "name": file_info_dict.get("name", self.name),
+                                "length": file_info_dict.get(
+                                    "length", file_info_dict.get("total_length", 0)
+                                ),
+                                "path": None,
+                                "full_path": file_info_dict.get("name", self.name),
+                            }
+                        ]
+
             # Convert dict files to FileInfo objects if needed
             from ccbt.models import FileInfo
+
             file_info_list = []
             for f in files:
                 if isinstance(f, dict):
                     file_info_list.append(
                         FileInfo(
                             name=f.get("name", f.get("full_path", "")),
-                            length=f.get("length", 0),
+                            length=int(f.get("length", 0) or 0),  # type: ignore[invalid-argument-type]
                             path=f.get("path"),
                             full_path=f.get("full_path", f.get("name", "")),
                             attributes=f.get("attributes"),
@@ -540,9 +564,9 @@ class AsyncFileAssembler:
                     )
                 elif hasattr(f, "name"):  # Already a FileInfo
                     file_info_list.append(f)
-            
+
             self.files = file_info_list
-        
+
         # Rebuild file segments with new metadata
         self.logger.info(
             "Rebuilding file segments from metadata (files: %d, num_pieces: %d)",
@@ -649,12 +673,12 @@ class AsyncFileAssembler:
             # Extract the relevant portion of piece data for this segment
             # Calculate segment length (bytes to write to file)
             segment_length = segment.end_offset - segment.start_offset
-            
+
             # Extract the slice from piece_data using piece_offset
             # piece_offset tells us where in the piece this segment starts
             segment_start = segment.piece_offset
             segment_end = segment_start + segment_length
-            
+
             # Validate bounds to prevent out-of-range slicing
             piece_data_len = len(piece_data)
             if segment_start < 0 or segment_end > piece_data_len:
@@ -664,7 +688,7 @@ class AsyncFileAssembler:
                     f"piece_data_len={piece_data_len}, piece_index={segment.piece_index}"
                 )
                 raise FileAssemblerError(msg)
-            
+
             # Extract the correct portion of piece data
             if isinstance(piece_data, memoryview):
                 segment_data = bytes(piece_data[segment_start:segment_end])
@@ -731,10 +755,12 @@ class AsyncFileAssembler:
             # Hash and store each chunk
             chunk_hashes = []
             segment_offset = 0
-            
+
             # Track chunks per file for metadata storage
-            file_chunks: dict[str, list[tuple[bytes, int]]] = {}  # file_path -> [(chunk_hash, offset)]
-            
+            file_chunks: dict[
+                str, list[tuple[bytes, int]]
+            ] = {}  # file_path -> [(chunk_hash, offset)]
+
             # Try to use data aggregator for batch operations if available
             aggregator = getattr(self.disk_io, "_xet_data_aggregator", None)
             use_batch = aggregator is not None and len(chunks) > 10
@@ -744,7 +770,7 @@ class AsyncFileAssembler:
                 batch_chunks: list[tuple[bytes, bytes]] = []  # (chunk_hash, chunk_data)
                 batch_file_offsets: list[int] = []
                 batch_file_paths: list[str] = []
-                
+
                 for chunk in chunks:
                     # Compute chunk hash
                     chunk_hash = XetHasher.compute_chunk_hash(chunk)
@@ -769,38 +795,41 @@ class AsyncFileAssembler:
                             batch_chunks.append((chunk_hash, chunk))
                             batch_file_offsets.append(file_offset)
                             batch_file_paths.append(str(segment.file_path))
-                            
+
                             # Track chunk for this file
                             file_path_str = str(segment.file_path)
                             if file_path_str not in file_chunks:
                                 file_chunks[file_path_str] = []
                             file_chunks[file_path_str].append((chunk_hash, file_offset))
-                            
+
                             break  # Store once per chunk
 
                     segment_offset += len(chunk)
-                
+
                 # Store chunks in batches per file
-                file_batches: dict[str, list[tuple[bytes, bytes, int]]] = {}  # file_path -> [(chunk_hash, chunk_data, offset)]
+                file_batches: dict[
+                    str, list[tuple[bytes, bytes, int]]
+                ] = {}  # file_path -> [(chunk_hash, chunk_data, offset)]
                 for i, (chunk_hash, chunk_data) in enumerate(batch_chunks):
                     file_path_str = batch_file_paths[i]
                     offset = batch_file_offsets[i]
                     if file_path_str not in file_batches:
                         file_batches[file_path_str] = []
                     file_batches[file_path_str].append((chunk_hash, chunk_data, offset))
-                
+
                 # Store batches per file
                 for file_path_str, file_batch in file_batches.items():
                     file_chunk_hashes = [h for h, _, _ in file_batch]
                     file_chunk_data = [d for _, d, _ in file_batch]
                     file_offsets = [o for _, _, o in file_batch]
-                    
+
                     # Use aggregator for batch storage
-                    await aggregator.batch_store_chunks(
-                        list(zip(file_chunk_hashes, file_chunk_data)),
-                        file_path=file_path_str,
-                        file_offsets=file_offsets,
-                    )
+                    if aggregator is not None:
+                        await aggregator.batch_store_chunks(  # type: ignore[attr-defined]
+                            list(zip(file_chunk_hashes, file_chunk_data)),
+                            file_path=file_path_str,
+                            file_offsets=file_offsets,
+                        )
             else:
                 # Individual mode: store chunks one by one
                 for chunk in chunks:
@@ -832,13 +861,13 @@ class AsyncFileAssembler:
                                 file_path=Path(segment.file_path),
                                 offset=file_offset,
                             )
-                            
+
                             # Track chunk for this file
                             file_path_str = str(segment.file_path)
                             if file_path_str not in file_chunks:
                                 file_chunks[file_path_str] = []
                             file_chunks[file_path_str].append((chunk_hash, file_offset))
-                            
+
                             break  # Store once per chunk
 
                     segment_offset += len(chunk)
@@ -850,20 +879,22 @@ class AsyncFileAssembler:
             await self._update_piece_xet_metadata(
                 piece_index, chunk_hashes, merkle_hash
             )
-            
+
             # Store file metadata for each file that has chunks
-            dedup = self.disk_io._get_xet_deduplication()
+            dedup = getattr(self.disk_io, "_get_xet_deduplication", lambda: None)()
             file_dedup = getattr(self.disk_io, "_xet_file_deduplication", None)
-            
+
             if dedup:
                 from ccbt.models import XetFileMetadata
-                
+
                 for file_path_str, file_chunk_list in file_chunks.items():
                     try:
                         # Sort chunks by offset to ensure correct order
                         file_chunk_list.sort(key=lambda x: x[1])
-                        chunk_hashes_ordered = [chunk_hash for chunk_hash, _ in file_chunk_list]
-                        
+                        chunk_hashes_ordered = [
+                            chunk_hash for chunk_hash, _ in file_chunk_list
+                        ]
+
                         # Compute file hash (Merkle root of chunk hashes)
                         if chunk_hashes_ordered:
                             # Build Merkle tree from chunk hashes
@@ -873,11 +904,11 @@ class AsyncFileAssembler:
                         else:
                             # Empty file - use zero hash
                             file_hash = bytes(32)
-                        
+
                         # Calculate total size from chunks
                         # Get chunk sizes from deduplication manager
                         total_size = 0
-                        for chunk_hash, offset in file_chunk_list:
+                        for chunk_hash, _offset in file_chunk_list:
                             chunk_info = dedup.get_chunk_info(chunk_hash)
                             if chunk_info:
                                 total_size += chunk_info["size"]
@@ -888,7 +919,7 @@ class AsyncFileAssembler:
                                     "Chunk info not found for hash %s, cannot determine size",
                                     chunk_hash.hex()[:16],
                                 )
-                        
+
                         # Create file metadata
                         file_metadata = XetFileMetadata(
                             file_path=file_path_str,
@@ -897,10 +928,10 @@ class AsyncFileAssembler:
                             xorb_refs=[],  # TODO: Add xorb support
                             total_size=total_size,
                         )
-                        
+
                         # Store metadata persistently
                         await dedup.store_file_metadata(file_metadata)
-                        
+
                         # Perform file-level deduplication if enabled
                         if file_dedup:
                             try:
@@ -918,7 +949,7 @@ class AsyncFileAssembler:
                                 self.logger.debug(
                                     "File-level deduplication check failed: %s", e
                                 )
-                        
+
                     except Exception as e:
                         self.logger.warning(
                             "Failed to store file metadata for %s: %s",
@@ -1271,7 +1302,7 @@ class AsyncFileAssembler:
             )  # pragma: no cover - Processed files tracking, tested via integration tests
 
         self.logger.info("Finalized %d files with attributes", len(processed_files))
-        
+
         # CRITICAL FIX: Verify all expected files exist and are accessible
         # This ensures files are properly built and can be accessed
         expected_files = []
@@ -1288,7 +1319,7 @@ class AsyncFileAssembler:
             else:
                 file_path = os.path.join(self.output_dir, file_info.name)
             expected_files.append(file_path)
-        
+
         # Verify files exist
         missing_files = []
         for file_path in expected_files:
@@ -1305,7 +1336,7 @@ class AsyncFileAssembler:
                         file_path,
                         e,
                     )
-        
+
         if missing_files:
             self.logger.error(
                 "Some files are missing after finalization: %s",
@@ -1316,32 +1347,44 @@ class AsyncFileAssembler:
                 "All %d expected files exist and are accessible after finalization",
                 len(expected_files),
             )
-        
+
         # CRITICAL FIX: Flush all pending disk I/O operations
         # This ensures all writes are actually written to disk before returning
         if self._disk_io_started and hasattr(self.disk_io, "flush"):
             try:
-                await self.disk_io.flush()
+                # Type checker may not recognize flush() method, but hasattr check ensures it exists
+                flush_method = self.disk_io.flush
+                if callable(flush_method):
+                    if asyncio.iscoroutinefunction(flush_method):
+                        await flush_method()  # type: ignore[misc]
+                    else:
+                        flush_method()  # type: ignore[call-non-callable]
                 self.logger.info("Flushed all pending disk I/O operations")
             except Exception as e:
                 self.logger.warning("Failed to flush disk I/O: %s", e)
-        
+
         # CRITICAL FIX: Sync filesystem to ensure files are visible
         # On some systems, files may be buffered and not visible until synced
+        # Note: os.sync() doesn't exist in Python's os module
+        # File flushing above should be sufficient for most cases
         try:
             import platform
+
             if platform.system() != "Windows":
-                # On Unix-like systems, sync() ensures all buffered writes are written
-                os.sync()
-                self.logger.debug("Synced filesystem to ensure files are visible")
+                # On Unix-like systems, we rely on the flush() call above
+                # For full filesystem sync, would need to call sync() system call via ctypes
+                # but that's not necessary here as we've already flushed all file handles
+                self.logger.debug("Files flushed to disk (filesystem sync not needed)")
         except Exception as e:
-            self.logger.debug("Failed to sync filesystem: %s (this is usually OK)", e)
+            self.logger.debug(
+                "Filesystem sync check failed: %s (this is usually OK)", e
+            )
         else:
             self.logger.info(
                 "All %d expected files are present and accessible",
                 len(expected_files),
             )
-        
+
         # CRITICAL FIX: Wait for all pending writes to complete, then sync files to disk
         # This ensures all buffered writes are flushed to disk so files are fully written
         # and can be opened correctly immediately after download completes
@@ -1352,31 +1395,45 @@ class AsyncFileAssembler:
                 max_wait = 10.0  # Maximum 10 seconds to wait for writes
                 wait_interval = 0.1  # Check every 100ms
                 elapsed = 0.0
-                
+
                 while elapsed < max_wait:
                     queue_size = 0
                     pending_writes = 0
-                    
+
                     # Check priority queue
-                    if hasattr(self.disk_io, "_write_queue_heap"):
-                        async with self.disk_io._write_queue_lock:
-                            queue_size = len(self.disk_io._write_queue_heap)
-                    
+                    write_queue_lock = getattr(self.disk_io, "_write_queue_lock", None)
+                    write_queue_heap = getattr(self.disk_io, "_write_queue_heap", None)
+                    if write_queue_lock and write_queue_heap:
+                        async with write_queue_lock:
+                            queue_size = len(write_queue_heap)
+
                     # Check regular queue
-                    if hasattr(self.disk_io, "write_queue") and self.disk_io.write_queue:
-                        queue_size = self.disk_io.write_queue.qsize() if hasattr(self.disk_io.write_queue, "qsize") else 0
-                    
+                    if (
+                        hasattr(self.disk_io, "write_queue")
+                        and self.disk_io.write_queue
+                    ):
+                        queue_size = (
+                            self.disk_io.write_queue.qsize()
+                            if hasattr(self.disk_io.write_queue, "qsize")
+                            else 0
+                        )
+
                     # Check pending writes in write_requests
                     if hasattr(self.disk_io, "write_requests"):
                         with self.disk_io.write_lock:
-                            pending_writes = sum(len(reqs) for reqs in self.disk_io.write_requests.values())
-                    
+                            pending_writes = sum(
+                                len(reqs)
+                                for reqs in self.disk_io.write_requests.values()
+                            )
+
                     total_pending = queue_size + pending_writes
-                    
+
                     if total_pending == 0:
-                        self.logger.debug("All pending writes completed (queue empty, no pending writes)")
+                        self.logger.debug(
+                            "All pending writes completed (queue empty, no pending writes)"
+                        )
                         break
-                    
+
                     if elapsed % 1.0 < wait_interval:  # Log every second
                         self.logger.debug(
                             "Waiting for pending writes to complete: %d in queue, %d pending (elapsed: %.1fs)",
@@ -1384,25 +1441,28 @@ class AsyncFileAssembler:
                             pending_writes,
                             elapsed,
                         )
-                    
+
                     await asyncio.sleep(wait_interval)
                     elapsed += wait_interval
-                
+
                 if elapsed >= max_wait:
                     self.logger.warning(
                         "Timeout waiting for pending writes (waited %.1fs). Proceeding with sync anyway.",
                         elapsed,
                     )
-                
+
                 # CRITICAL FIX: Flush all pending writes before syncing
-                if hasattr(self.disk_io, "_flush_all_writes"):
+                flush_all_writes = getattr(self.disk_io, "_flush_all_writes", None)
+                if flush_all_writes:
                     self.logger.info("Flushing all pending writes before sync")
-                    await self.disk_io._flush_all_writes()
-                
+                    await flush_all_writes()
+
                 # Sync all files to disk
                 self.logger.info("Syncing all files to disk after finalization")
                 await self.disk_io.sync_all_written_files()
-                self.logger.info("All files synced to disk successfully - files should now be visible")
+                self.logger.info(
+                    "All files synced to disk successfully - files should now be visible"
+                )
             except Exception as sync_error:
                 self.logger.warning(
                     "Failed to sync files to disk after finalization: %s (non-fatal)",

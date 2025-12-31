@@ -595,15 +595,25 @@ class TestEventBus:
 
     @pytest.mark.asyncio
     async def test_handle_event_exception(self, event_bus):
-        """Test EventBus._handle_event() - exception handling (lines 579-580)."""
+        """Test EventBus._handle_event() - exception handling (lines 777-784)."""
         await event_bus.start()
         
-        # Create event that causes exception in LoggingContext or handler processing
-        # Mock LoggingContext to raise exception
-        with patch("ccbt.utils.events.LoggingContext", side_effect=Exception("Context error")):
-            event = Event(event_type="test_event")
-            # Should handle exceptions gracefully (lines 579-580)
-            await event_bus._handle_event(event)
+        # Create a handler that raises an exception
+        handler = MagicMock(spec=EventHandler)
+        handler.name = "test_handler"
+        handler.can_handle = MagicMock(return_value=True)
+        handler.handle = AsyncMock(side_effect=Exception("Handler error"))
+        
+        # Register handler
+        event_bus.register_handler("test_event", handler)
+        
+        # Create event that will trigger the exception
+        event = Event(event_type="test_event")
+        # Should handle exceptions gracefully (lines 777-784)
+        await event_bus._handle_event(event)
+        
+        # Verify handler was called (exception was caught)
+        handler.handle.assert_called_once_with(event)
         
         await event_bus.stop()
 

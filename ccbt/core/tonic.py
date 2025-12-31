@@ -11,11 +11,13 @@ from __future__ import annotations
 import hashlib
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ccbt.core.bencode import decode, encode
-from ccbt.models import XetTorrentMetadata
 from ccbt.utils.exceptions import TorrentError
+
+if TYPE_CHECKING:
+    from ccbt.models import XetTorrentMetadata
 
 
 class TonicError(TorrentError):
@@ -144,7 +146,9 @@ class TonicFile:
         file_tree: dict[bytes, Any] = {}
         for file_meta in xet_metadata.file_metadata:
             # Convert file path to tree structure
-            path_parts = [p for p in file_meta.file_path.split("/") if p]  # Remove empty parts
+            path_parts = [
+                p for p in file_meta.file_path.split("/") if p
+            ]  # Remove empty parts
             if not path_parts:
                 continue
 
@@ -185,29 +189,27 @@ class TonicFile:
         }
 
         # Add file metadata
-        file_meta_list: list[dict[bytes, Any]] = []
-        for file_meta in xet_metadata.file_metadata:
-            file_meta_list.append(
-                {
-                    b"file path": file_meta.file_path.encode("utf-8"),
-                    b"file hash": file_meta.file_hash,
-                    b"chunk hashes": file_meta.chunk_hashes,
-                    b"total size": file_meta.total_size,
-                }
-            )
+        file_meta_list: list[dict[bytes, Any]] = [
+            {
+                b"file path": file_meta.file_path.encode("utf-8"),
+                b"file hash": file_meta.file_hash,
+                b"chunk hashes": file_meta.chunk_hashes,
+                b"total size": file_meta.total_size,
+            }
+            for file_meta in xet_metadata.file_metadata
+        ]
         xet_dict[b"file metadata"] = file_meta_list
 
         # Add piece metadata if available
         if xet_metadata.piece_metadata:
-            piece_meta_list: list[dict[bytes, Any]] = []
-            for piece_meta in xet_metadata.piece_metadata:
-                piece_meta_list.append(
-                    {
-                        b"piece index": piece_meta.piece_index,
-                        b"chunk hashes": piece_meta.chunk_hashes,
-                        b"merkle hash": piece_meta.merkle_hash,
-                    }
-                )
+            piece_meta_list: list[dict[bytes, Any]] = [
+                {
+                    b"piece index": piece_meta.piece_index,
+                    b"chunk hashes": piece_meta.chunk_hashes,
+                    b"merkle hash": piece_meta.merkle_hash,
+                }
+                for piece_meta in xet_metadata.piece_metadata
+            ]
             xet_dict[b"piece metadata"] = piece_meta_list
 
         # Add xorb hashes if available
@@ -269,9 +271,20 @@ class TonicFile:
 
         """
         info = tonic_data.get("info", {})
-        file_tree = info.get("file tree") or info.get(b"file tree")
+        # CRITICAL FIX: Check for both "file_tree" (from _extract_tonic_data) and "file tree" (from raw bencoded)
+        # Also check for bytes keys for backward compatibility
+        file_tree = (
+            info.get("file_tree")  # From _extract_tonic_data (parsed format)
+            or info.get("file tree")  # From raw bencoded (string key)
+            or info.get(b"file tree")  # From raw bencoded (bytes key)
+        )
         if file_tree:
-            # Convert bytes keys to strings for easier use
+            # If already decoded (from _extract_tonic_data), return as-is
+            if isinstance(file_tree, dict) and any(
+                isinstance(k, str) for k in file_tree
+            ):
+                return file_tree
+            # Otherwise convert bytes keys to strings for easier use
             return self._convert_tree_keys(file_tree)
         # Fallback to files list if file tree not available
         files = info.get("files") or info.get(b"files", [])
@@ -279,7 +292,9 @@ class TonicFile:
             return self._build_tree_from_files(files)
         return {}
 
-    def _convert_tree_keys(self, tree: dict[bytes, Any] | dict[str, Any]) -> dict[str, Any]:
+    def _convert_tree_keys(
+        self, tree: dict[bytes, Any] | dict[str, Any]
+    ) -> dict[str, Any]:
         """Convert tree keys from bytes to strings recursively.
 
         Args:
@@ -291,10 +306,7 @@ class TonicFile:
         """
         result: dict[str, Any] = {}
         for key, value in tree.items():
-            if isinstance(key, bytes):
-                key_str = key.decode("utf-8")
-            else:
-                key_str = str(key)
+            key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
 
             if isinstance(value, dict):
                 result[key_str] = self._convert_tree_keys(value)
@@ -307,7 +319,10 @@ class TonicFile:
                 result[key_str] = value
         return result
 
-    def _build_tree_from_files(self, files: list[dict[bytes, Any] | dict[str, Any]]) -> dict[str, Any]:
+    def _build_tree_from_files(
+        self,
+        files: list[dict[bytes | str, Any]],  # Can have both bytes and str keys
+    ) -> dict[str, Any]:
         """Build file tree from files list.
 
         Args:
@@ -319,14 +334,13 @@ class TonicFile:
         """
         tree: dict[str, Any] = {}
         for file_entry in files:
-            path = file_entry.get("path") or file_entry.get(b"path")
-            if isinstance(path, bytes):
-                path_str = path.decode("utf-8")
-            else:
-                path_str = str(path)
+            # Type checker: file_entry is dict[bytes | str, Any], so both key types are valid
+            # Try str key first, then bytes key as fallback
+            path = file_entry.get("path") or file_entry.get(b"path")  # type: ignore[invalid-argument-type,no-matching-overload]
+            path_str = path.decode("utf-8") if isinstance(path, bytes) else str(path)
 
-            length = file_entry.get("length") or file_entry.get(b"length", 0)
-            file_hash = file_entry.get("file hash") or file_entry.get(b"file hash")
+            length = file_entry.get("length") or file_entry.get(b"length", 0)  # type: ignore[invalid-argument-type,no-matching-overload]
+            file_hash = file_entry.get("file hash") or file_entry.get(b"file hash")  # type: ignore[invalid-argument-type]
 
             # Build tree path
             path_parts = [p for p in path_str.split("/") if p]
@@ -345,7 +359,9 @@ class TonicFile:
                 current[filename] = {}
             current[filename][""] = {
                 "length": length,
-                "file hash": file_hash.hex() if isinstance(file_hash, bytes) else file_hash,
+                "file hash": file_hash.hex()
+                if isinstance(file_hash, bytes)
+                else file_hash,
             }
 
         return tree
@@ -367,10 +383,7 @@ class TonicFile:
         # Convert back to bytes format for encoding
         info_bytes_dict: dict[bytes, Any] = {}
         for key, value in info_dict.items():
-            if isinstance(key, str):
-                key_bytes = key.encode("utf-8")
-            else:
-                key_bytes = key
+            key_bytes = key.encode("utf-8") if isinstance(key, str) else key
             info_bytes_dict[key_bytes] = value
 
         info_bencoded = encode(info_bytes_dict)
@@ -507,8 +520,7 @@ class TonicFile:
 
         if b"announce-list" in data:
             result["announce_list"] = [
-                [url.decode("utf-8") for url in tier]
-                for tier in data[b"announce-list"]
+                [url.decode("utf-8") for url in tier] for tier in data[b"announce-list"]
             ]
 
         if b"comment" in data:
@@ -523,7 +535,9 @@ class TonicFile:
         if b"sync mode" in data:
             sync_mode = data[b"sync mode"]
             result["sync_mode"] = (
-                sync_mode.decode("utf-8") if isinstance(sync_mode, bytes) else str(sync_mode)
+                sync_mode.decode("utf-8")
+                if isinstance(sync_mode, bytes)
+                else str(sync_mode)
             )
         else:
             result["sync_mode"] = "best_effort"  # Default
@@ -573,5 +587,3 @@ class TonicFile:
             else:
                 result[key_str] = value
         return result
-
-

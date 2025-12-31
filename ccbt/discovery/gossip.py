@@ -6,11 +6,11 @@ Provides anti-entropy and rumor mongering strategies for distributed updates.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import logging
 import random
 import time
-from collections import defaultdict
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
@@ -89,17 +89,13 @@ class GossipProtocol:
         # Cancel tasks
         if self._gossip_task:
             self._gossip_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._gossip_task
-            except asyncio.CancelledError:
-                pass
 
         if self._cleanup_task:
             self._cleanup_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
 
         logger.info("Stopped gossip protocol")
 
@@ -184,10 +180,11 @@ class GossipProtocol:
         self.add_peer(peer_id)
 
         # Find messages we have that peer doesn't
-        our_messages: dict[str, dict[str, Any]] = {}
-        for msg_id, msg in self.messages.items():
-            if msg_id not in messages:
-                our_messages[msg_id] = msg
+        our_messages: dict[str, dict[str, Any]] = {
+            msg_id: msg
+            for msg_id, msg in self.messages.items()
+            if msg_id not in messages
+        }
 
         # Add new messages from peer
         for msg_id, msg in messages.items():
@@ -200,7 +197,7 @@ class GossipProtocol:
         return our_messages
 
     async def _gossip_loop(self) -> None:
-        """Main gossip loop (rumor mongering)."""
+        """Run main gossip loop (rumor mongering)."""
         while self.running:
             try:
                 await asyncio.sleep(self.interval)
@@ -262,7 +259,9 @@ class GossipProtocol:
                     del self.message_timestamps[msg_id]
 
                 if expired_messages:
-                    logger.debug("Cleaned up %d expired messages", len(expired_messages))
+                    logger.debug(
+                        "Cleaned up %d expired messages", len(expired_messages)
+                    )
 
             except asyncio.CancelledError:
                 break
@@ -270,6 +269,3 @@ class GossipProtocol:
                 if self.running:
                     logger.warning("Error in cleanup loop: %s", e)
                 await asyncio.sleep(1)
-
-
-

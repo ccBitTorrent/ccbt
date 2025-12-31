@@ -305,7 +305,8 @@ class TestStatusScrapeDisplay:
         from ccbt.models import ScrapeResult
         from io import StringIO
 
-        session = MagicMock()
+        # Use SimpleNamespace instead of MagicMock to avoid attribute access issues
+        session = SimpleNamespace()
         network = SimpleNamespace(
             listen_port=6881,
             enable_utp=False,
@@ -324,12 +325,16 @@ class TestStatusScrapeDisplay:
         session.peers = []
         session.torrents = {}
         session.dht = None
-        session.lock = AsyncMock()
-        session.lock.__aenter__ = AsyncMock(return_value=None)
-        session.lock.__aexit__ = AsyncMock(return_value=None)
+        
+        # Create lock mock
+        lock_enter = AsyncMock(return_value=None)
+        lock_exit = AsyncMock(return_value=None)
+        session.lock = MagicMock()
+        session.lock.__aenter__ = lock_enter
+        session.lock.__aexit__ = lock_exit
 
-        # Scrape cache with entries
-        session.scrape_cache = {
+        # Scrape cache with entries - use a real dict, not MagicMock attribute
+        scrape_cache_dict = {
             b"x" * 20: ScrapeResult(
                 info_hash=b"x" * 20,
                 seeders=100,
@@ -339,9 +344,24 @@ class TestStatusScrapeDisplay:
                 scrape_count=1,
             ),
         }
-        session.scrape_cache_lock = AsyncMock()
-        session.scrape_cache_lock.__aenter__ = AsyncMock(return_value=None)
-        session.scrape_cache_lock.__aexit__ = AsyncMock(return_value=None)
+        session.scrape_cache = scrape_cache_dict
+        # Create proper async context manager mock
+        # Use a real async context manager class to ensure it works with async with
+        class AsyncLock:
+            def __init__(self):
+                self.entered = False
+                self.exited = False
+            
+            async def __aenter__(self):
+                self.entered = True
+                return self
+            
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                self.exited = True
+                return False
+        
+        lock_mock = AsyncLock()
+        session.scrape_cache_lock = lock_mock
 
         console = Console(file=StringIO(), width=120)
         
@@ -356,16 +376,18 @@ class TestStatusScrapeDisplay:
         
         console.print = tracked_print
 
-        # Call show_status directly
-        await cli_main.show_status(session, console)
-
-        # Verify scrape cache was accessed
-        session.scrape_cache_lock.__aenter__.assert_called()
-        session.scrape_cache_lock.__aexit__.assert_called()
+        # Call show_status directly with session (matching actual implementation)
+        from ccbt.cli.status import show_status
         
+        await show_status(session, console)
+
         # Verify output contains scrape statistics
         output = console.file.getvalue()
         assert "Tracker Scrape Statistics" in output
+        
+        # Verify lock was used
+        assert lock_mock.entered, "scrape_cache_lock should have been entered"
+        assert lock_mock.exited, "scrape_cache_lock should have been exited"
         
         # Verify console.print was called for the table (to ensure line 2585 is covered)
         # We expect at least 2 calls: one for the header and one for the table
@@ -404,8 +426,10 @@ class TestStatusScrapeDisplay:
 
         console = Console(file=StringIO(), width=120)
 
-        # Call show_status directly - should not error even without scrape_cache
-        await cli_main.show_status(session, console)
+        # Call show_status directly with session (matching actual implementation)
+        from ccbt.cli.status import show_status
+        
+        await show_status(session, console)
 
         # Verify output does not contain scrape statistics
         output = console.file.getvalue()

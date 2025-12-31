@@ -47,21 +47,21 @@ class TranslationManager:
                 if _is_valid_locale(locale_code):
                     try:
                         set_locale(locale_code)
-                        logger.debug(f"Locale set from config: {locale_code}")
+                        logger.debug("Locale set from config: %s", locale_code)
                         return
                     except ValueError as e:
                         logger.warning(
-                            f"Invalid locale '{locale_code}' in config: {e}. "
-                            "Falling back to environment/system locale."
+                            "Invalid locale '%s' in config: %s. Falling back to environment/system locale.",
+                            locale_code,
+                            e,
                         )
                 else:
                     logger.warning(
-                        f"Locale '{locale_code}' from config is not available. "
-                        "Falling back to environment/system locale."
+                        "Locale '%s' from config is not available. Falling back to environment/system locale.",
+                        locale_code,
                     )
 
         # Fall back to environment/system locale
         # get_locale() will handle the fallback chain
         final_locale = get_locale()
-        logger.debug(f"Using locale: {final_locale}")
-
+        logger.debug("Using locale: %s", final_locale)

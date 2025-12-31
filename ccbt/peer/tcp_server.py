@@ -89,7 +89,11 @@ class IncomingPeerServer:
                         f"Error: {e}\n\n"
                         f"Resolution: Run with administrator privileges or change the port."
                     )
-                    self.logger.exception("Permission denied binding to %s:%d", listen_interface, listen_port)
+                    self.logger.exception(
+                        "Permission denied binding to %s:%d",
+                        listen_interface,
+                        listen_port,
+                    )
                     raise RuntimeError(error_msg) from e
             elif error_code == 98:  # EADDRINUSE
                 from ccbt.utils.port_checker import get_port_conflict_resolution
@@ -108,7 +112,9 @@ class IncomingPeerServer:
                     f"Error: {e}\n\n"
                     f"Resolution: Run with root privileges or change the port to >= 1024."
                 )
-                self.logger.exception("Permission denied binding to %s:%d", listen_interface, listen_port)
+                self.logger.exception(
+                    "Permission denied binding to %s:%d", listen_interface, listen_port
+                )
                 raise RuntimeError(error_msg) from e
             # Re-raise other OSErrors as-is
             raise
@@ -162,7 +168,7 @@ class IncomingPeerServer:
 
     async def stop(self) -> None:
         """Stop the TCP server gracefully.
-        
+
         CRITICAL FIX: Add delays on Windows to prevent socket buffer exhaustion (WinError 10055).
         """
         if not self._running:
@@ -176,6 +182,7 @@ class IncomingPeerServer:
                 await asyncio.wait_for(self.server.wait_closed(), timeout=5.0)
                 # CRITICAL FIX: Add delay on Windows after server close to prevent buffer exhaustion
                 import sys
+
                 if sys.platform == "win32":
                     await asyncio.sleep(0.1)  # 100ms delay on Windows
             except asyncio.TimeoutError:
@@ -299,9 +306,12 @@ class IncomingPeerServer:
                 session is None
                 and (asyncio.get_event_loop().time() - start_time) < max_wait_time
             ):
-                session = await self.session_manager.get_session_for_info_hash(
-                    handshake.info_hash
-                )
+                if self.session_manager is not None:
+                    session = await self.session_manager.get_session_for_info_hash(  # type: ignore[attr-defined]
+                        handshake.info_hash
+                    )
+                else:
+                    session = None
                 if session is None:
                     await asyncio.sleep(check_interval)
 
@@ -314,7 +324,7 @@ class IncomingPeerServer:
                 if self.session_manager:
                     async with self.session_manager.lock:
                         has_any_sessions = len(self.session_manager.torrents) > 0
-                
+
                 if not has_any_sessions:
                     # No sessions registered yet - expected during startup
                     self.logger.debug(

@@ -358,136 +358,417 @@ class TestMSEEncryptionHandshake:
         mock_config.network.connection_pool_health_check_interval = 60.0
         # Disable circuit breaker to avoid MagicMock issues
         mock_config.network.circuit_breaker_enabled = False
+        # CRITICAL FIX: Set adaptive limit config attributes to numeric values (not MagicMock)
+        mock_config.network.connection_pool_adaptive_limit_enabled = False  # Disable adaptive limit to avoid MagicMock issues
+        mock_config.network.connection_pool_adaptive_limit_min = 50
+        mock_config.network.connection_pool_adaptive_limit_max = 1000
+        mock_config.network.connection_pool_cpu_threshold = 0.8
+        mock_config.network.connection_pool_memory_threshold = 0.8
+        # CRITICAL FIX: Set limits config attributes to numeric values (not MagicMock)
+        mock_config.limits = MagicMock()
+        mock_config.limits.per_peer_up_kib = 0  # Set to numeric value (attribute name is per_peer_up_kib, not per_peer_upload_limit_kib)
+        # CRITICAL FIX: Set network.max_global_peers to numeric value for max_concurrent semaphore
+        mock_config.network.max_global_peers = 200  # Set to numeric value
+        # CRITICAL FIX: Set max_concurrent_connection_attempts to numeric value
+        mock_config.network.max_concurrent_connection_attempts = 20  # Set to numeric value
+        # CRITICAL FIX: Set unchoke_interval to numeric value to prevent choking loop errors
+        mock_config.network.unchoke_interval = 10.0  # Set to numeric value (seconds)
+        # CRITICAL FIX: Set peer_evaluation_interval to numeric value to prevent peer evaluation loop errors
+        mock_config.network.peer_evaluation_interval = 30.0  # Set to numeric value (seconds)
+        # CRITICAL FIX: Set handshake timeout values to prevent MagicMock comparison errors
+        mock_config.network.handshake_timeout = 10.0
+        mock_config.network.handshake_timeout_min = 5.0
+        mock_config.network.handshake_timeout_max = 30.0
         
         with patch("ccbt.peer.async_peer_connection.get_config", return_value=mock_config):
-            manager = AsyncPeerConnectionManager(
-                mock_torrent_data, mock_piece_manager
-            )
-            
-            # Force UTP check to return False to ensure TCP path is used
-            manager._should_use_utp = lambda _: False
-            
-            # Mock connection pool to return None (no pooled connection)
-            # This ensures we go through the TCP connection path
-            manager.connection_pool.acquire = AsyncMock(return_value=None)
-
-            # Mock encrypted streams
-            mock_encrypted_reader = MagicMock()
-            mock_encrypted_writer = MagicMock()
-
-            # Mock cipher
-            mock_cipher = MagicMock()
-
-            # Mock MSE handshake result
-            mock_mse_result = type("obj", (object,), {
-                "success": True,
-                "cipher": mock_cipher,
-                "error": None,
-            })()
-
-            # Mock MSE handshake
-            mock_mse = MagicMock()
-            mock_mse.initiate_as_initiator = AsyncMock(return_value=mock_mse_result)
-
-            # Mock stream readers/writers
-            mock_reader = AsyncMock()
-            mock_writer = AsyncMock()
-            mock_writer.drain = AsyncMock()
-            # write() is called with await in the code, so it needs to be async
-            mock_writer.write = AsyncMock()
-            mock_writer.close = MagicMock()
-            mock_writer.wait_closed = AsyncMock()
-
-            # Mock handshake response - need to provide both the handshake we send and receive
-            from ccbt.peer.peer import Handshake
-
-            info_hash = mock_torrent_data["info_hash"]
-            peer_handshake = Handshake(info_hash, b"remote_peer_id_20_by")
-            handshake_data = peer_handshake.encode()
-            
-            # First readexactly is for handshake response (68 bytes)
-            # Additional calls may be needed for other protocol messages
-            mock_reader.readexactly = AsyncMock(return_value=handshake_data)
-
-            # Track if encrypted streams were created
-            encrypted_streams_created = []
-            
-            def mock_reader_init(reader, cipher):
-                encrypted_streams_created.append(("reader", reader, cipher))
-                return mock_encrypted_reader
-            
-            def mock_writer_init(writer, cipher):
-                encrypted_streams_created.append(("writer", writer, cipher))
-                return mock_encrypted_writer
-
+            # CRITICAL FIX: Mock AdaptiveTimeoutCalculator to return a simple timeout value
+            # This prevents MagicMock comparison errors in _calculate_adaptive_handshake_timeout
             with patch(
-                "ccbt.security.encrypted_stream.EncryptedStreamReader",
-                side_effect=mock_reader_init,
-            ) as mock_reader_class:
-                with patch(
-                    "ccbt.security.encrypted_stream.EncryptedStreamWriter",
-                    side_effect=mock_writer_init,
-                ):
-                    with patch(
-                        "ccbt.security.mse_handshake.MSEHandshake",
-                        return_value=mock_mse,
-                    ):
-                        # Mock asyncio.wait_for to return the mocked connection directly
-                        # This avoids timeout issues
-                        async def mock_wait_for(coro, timeout=None):
-                            return await coro
+                "ccbt.utils.timeout_adapter.AdaptiveTimeoutCalculator"
+            ) as mock_timeout_calc_class:
+                mock_timeout_calculator = MagicMock()
+                mock_timeout_calculator.calculate_handshake_timeout = MagicMock(return_value=10.0)
+                mock_timeout_calc_class.return_value = mock_timeout_calculator
+                
+                manager = AsyncPeerConnectionManager(
+                    mock_torrent_data, mock_piece_manager
+                )
+                
+                # CRITICAL FIX: Start the manager before connecting
+                # The manager needs to be running for _connect_to_peer to work
+                await manager.start()
+                
+                try:
+                    # Force UTP check to return False to ensure TCP path is used
+                    manager._should_use_utp = lambda _: False
+                    
+                    # Mock connection pool to return None (no pooled connection)
+                    # This ensures we go through the TCP connection path
+                    manager.connection_pool.acquire = AsyncMock(return_value=None)
+
+                    # CRITICAL FIX: Define is_closing_false function before using it
+                    def is_closing_false():
+                        return False
+                    
+                    # Mock handshake response - need to provide both the handshake we send and receive
+                    from ccbt.peer.peer import Handshake
+
+                    info_hash = mock_torrent_data["info_hash"]
+                    peer_handshake = Handshake(info_hash, b"remote_peer_id_20_by")
+                    handshake_data = peer_handshake.encode()
+                    
+                    # CRITICAL FIX: Define mock_readexactly function BEFORE using it
+                    # The code first reads 1 byte (protocol length), then reads the remaining 67 bytes
+                    # Track how many times it's been called to handle handshake vs message loop
+                    readexactly_call_count = [0]  # Use list to allow modification in nested function
+                    async def mock_readexactly(size):
+                        readexactly_call_count[0] += 1
+                        if size == 1:
+                            # Return first byte (protocol length, should be 19 for BitTorrent)
+                            return handshake_data[:1]
+                        elif size == 67:
+                            # Return remaining 67 bytes
+                            return handshake_data[1:]
+                        elif readexactly_call_count[0] <= 2:
+                            # First two calls are for handshake (1 byte + 67 bytes)
+                            # For any other size during handshake, return the full handshake data (truncated to size)
+                            return handshake_data[:size]
+                        else:
+                            # After handshake, raise ConnectionError to signal connection closed
+                            # This prevents the message loop from hanging
+                            raise ConnectionError("Connection closed for test")
+                    
+                    # Mock encrypted streams
+                    mock_encrypted_reader = MagicMock()
+                    # CRITICAL FIX: Ensure encrypted reader has readexactly method that returns proper data
+                    mock_encrypted_reader.readexactly = mock_readexactly
+                    mock_encrypted_writer = MagicMock()
+                    # CRITICAL FIX: Ensure encrypted writer has AsyncMock for drain method
+                    mock_encrypted_writer.drain = AsyncMock()
+                    mock_encrypted_writer.write = MagicMock()
+                    mock_encrypted_writer.is_closing = is_closing_false
+
+                    # Mock cipher - decrypt should return the data as-is (no encryption in test)
+                    mock_cipher = MagicMock()
+                    mock_cipher.decrypt = lambda data: data  # Return data unchanged
+                    mock_cipher.encrypt = lambda data: data  # Return data unchanged
+
+                    # Mock MSE handshake result
+                    mock_mse_result = type("obj", (object,), {
+                        "success": True,
+                        "cipher": mock_cipher,
+                        "error": None,
+                    })()
+
+                    # Mock MSE handshake
+                    mock_mse = MagicMock()
+                    mock_mse.initiate_as_initiator = AsyncMock(return_value=mock_mse_result)
+
+                    # CRITICAL FIX: Create a mock reader that implements the required interface
+                    # The encryption code checks isinstance(reader, asyncio.StreamReader) OR hasattr checks
+                    # We'll create a mock that passes the hasattr checks and has our mock_readexactly
+                    import asyncio
+                    # Create a mock that looks like a StreamReader but uses our mock_readexactly
+                    # Store mock_readexactly in a variable that can be accessed by MockEncryptedReader
+                    _mock_readexactly_func = mock_readexactly
+                    
+                    class MockStreamReader:
+                        """Mock StreamReader that uses our mock_readexactly."""
+                        def __init__(self, readexactly_func):
+                            self._readexactly = readexactly_func
+                            self._read = AsyncMock()
                         
+                        async def readexactly(self, n):
+                            """Call our mock readexactly function."""
+                            return await self._readexactly(n)
+                        
+                        async def read(self, n=-1):
+                            """Mock read method."""
+                            return await self._read(n)
+                    
+                    # CRITICAL FIX: Create mock reader that passes isinstance check
+                    # Use MockStreamReader class we defined above
+                    mock_reader = MockStreamReader(mock_readexactly)
+                    
+                    # CRITICAL FIX: Create mock writer that passes isinstance check
+                    # CRITICAL FIX: writer.write() is synchronous and returns None, not a coroutine
+                    mock_writer = AsyncMock()
+                    mock_writer.drain = AsyncMock()
+                    mock_writer.write = MagicMock(return_value=None)  # Synchronous, returns None
+                    mock_writer.close = MagicMock()
+                    mock_writer.wait_closed = AsyncMock()
+                    # CRITICAL FIX: Add is_closing() method to prevent connection validation failure
+                    def is_closing_false():
+                        return False
+                    mock_writer.is_closing = is_closing_false
+                    
+                    # CRITICAL FIX: Patch isinstance to return True for our mocks
+                    # This is necessary because the encryption code checks isinstance(reader, asyncio.StreamReader)
+                    import builtins
+                    # Store original isinstance before patching to avoid recursion
+                    _original_isinstance = builtins.isinstance.__wrapped__ if hasattr(builtins.isinstance, '__wrapped__') else builtins.isinstance
+                    # Get the real isinstance from the builtins module directly
+                    import types
+                    _real_isinstance = types.__builtins__.get('isinstance', builtins.isinstance)
+                    def patched_isinstance(obj, class_or_tuple):
+                        # Check for our mocks first to avoid recursion
+                        # Use type() instead of isinstance to avoid recursion
+                        if obj is mock_reader:
+                            if class_or_tuple is asyncio.StreamReader:
+                                return True
+                            if type(class_or_tuple) is tuple and asyncio.StreamReader in class_or_tuple:
+                                return True
+                        if obj is mock_writer:
+                            if class_or_tuple is asyncio.StreamWriter:
+                                return True
+                            if type(class_or_tuple) is tuple and asyncio.StreamWriter in class_or_tuple:
+                                return True
+                        # Use the real isinstance from builtins to avoid recursion
+                        return _real_isinstance(obj, class_or_tuple)
+
+                    # Track if encrypted streams were created
+                    encrypted_streams_created = []
+                    
+                    def mock_reader_init(reader, cipher):
+                        encrypted_streams_created.append(("reader", reader, cipher))
+                        # CRITICAL FIX: Create a real EncryptedStreamReader-like object
+                        # that wraps the original reader and uses mock_readexactly
+                        # Since EncryptedStreamReader.readexactly calls self.reader.readexactly,
+                        # we need to ensure the underlying reader has the correct readexactly
+                        class MockEncryptedReader:
+                            def __init__(self, underlying_reader, cipher):
+                                self.reader = underlying_reader
+                                self.cipher = cipher
+                                # CRITICAL FIX: Store mock_readexactly in a closure variable
+                                # This ensures we can access it from the async method
+                                self._mock_readexactly = mock_readexactly
+                            
+                            async def readexactly(self, n):
+                                # CRITICAL FIX: Call mock_readexactly directly instead of delegating
+                                # This avoids issues with asyncio.StreamReader's built-in readexactly
+                                # Use the stored mock_readexactly function
+                                encrypted = await self._mock_readexactly(n)
+                                # #region agent log
+                                try:
+                                    import json
+                                    import time
+                                    log_data = {
+                                        "sessionId": "debug-session",
+                                        "runId": "pre-fix",
+                                        "hypothesisId": "K",
+                                        "location": "test:MockEncryptedReader.readexactly",
+                                        "message": "MockEncryptedReader.readexactly called",
+                                        "data": {
+                                            "n": n,
+                                            "encrypted_type": type(encrypted).__name__ if encrypted else None,
+                                            "encrypted_is_bytes": isinstance(encrypted, bytes) if encrypted else False,
+                                            "encrypted_len": len(encrypted) if encrypted and isinstance(encrypted, bytes) else None,
+                                            "cipher_type": type(self.cipher).__name__ if self.cipher else None,
+                                            "has_decrypt": hasattr(self.cipher, "decrypt") if self.cipher else False,
+                                            "decrypt_callable": callable(getattr(self.cipher, "decrypt", None)) if self.cipher else False,
+                                        },
+                                        "timestamp": int(time.time() * 1000),
+                                    }
+                                    with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a", encoding="utf-8") as f:
+                                        f.write(json.dumps(log_data) + "\n")
+                                except Exception as e:
+                                    # Log the exception so we can see what's wrong
+                                    try:
+                                        import json
+                                        import time
+                                        log_data = {
+                                            "sessionId": "debug-session",
+                                            "runId": "pre-fix",
+                                            "hypothesisId": "K",
+                                            "location": "test:MockEncryptedReader.readexactly",
+                                            "message": "Error in readexactly log",
+                                            "data": {"error": str(e), "error_type": type(e).__name__},
+                                            "timestamp": int(time.time() * 1000),
+                                        }
+                                        with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a", encoding="utf-8") as f:
+                                            f.write(json.dumps(log_data) + "\n")
+                                    except Exception:
+                                        pass
+                                # #endregion
+                                # CRITICAL FIX: Ensure decrypt returns bytes, not MagicMock
+                                if hasattr(self.cipher, "decrypt") and callable(self.cipher.decrypt):
+                                    decrypted = self.cipher.decrypt(encrypted)
+                                else:
+                                    # Fallback: return encrypted data as-is
+                                    decrypted = encrypted
+                                # #region agent log
+                                try:
+                                    import json
+                                    import time
+                                    log_data = {
+                                        "sessionId": "debug-session",
+                                        "runId": "pre-fix",
+                                        "hypothesisId": "K",
+                                        "location": "test:MockEncryptedReader.readexactly",
+                                        "message": "After decrypt in MockEncryptedReader",
+                                        "data": {
+                                            "decrypted_type": type(decrypted).__name__ if decrypted else None,
+                                            "decrypted_is_bytes": isinstance(decrypted, bytes) if decrypted else False,
+                                            "decrypted_len": len(decrypted) if decrypted and isinstance(decrypted, bytes) else None,
+                                        },
+                                        "timestamp": int(time.time() * 1000),
+                                    }
+                                    with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a", encoding="utf-8") as f:
+                                        f.write(json.dumps(log_data) + "\n")
+                                except Exception:
+                                    pass
+                                # #endregion
+                                return decrypted
+                            
+                            def __getattr__(self, name):
+                                # CRITICAL FIX: Don't delegate readexactly - we have our own implementation
+                                # Python should find readexactly directly on the instance, not via __getattr__
+                                if name == "readexactly":
+                                    # This should never be called since readexactly is defined on the class
+                                    # But if it is, return our method
+                                    return self.readexactly
+                                return getattr(self.reader, name)
+                        
+                        return MockEncryptedReader(reader, cipher)
+                    
+                    def mock_writer_init(writer, cipher):
+                        encrypted_streams_created.append(("writer", writer, cipher))
+                        # CRITICAL FIX: Ensure encrypted writer has is_closing method that returns False
+                        # Use the same function defined above (is_closing_false is in outer scope)
+                        mock_encrypted_writer.is_closing = is_closing_false
+                        return mock_encrypted_writer
+
+                    # CRITICAL FIX: Patch EncryptedStreamReader at the source module
+                    # It's imported inside the encryption code block, but we patch it at the source
+                    with patch(
+                        "ccbt.security.encrypted_stream.EncryptedStreamReader",
+                        side_effect=mock_reader_init,
+                    ) as mock_reader_class:
                         with patch(
-                            "asyncio.open_connection",
-                            return_value=(mock_reader, mock_writer),
-                        ), patch(
-                            "asyncio.wait_for",
-                            side_effect=mock_wait_for,
-                        ):
-                            # Use actual EncryptionMode enum
-                            from ccbt.security.encryption import EncryptionMode
-                            
-                            # Verify EncryptionMode construction works
-                            test_mode = EncryptionMode(mock_config.security.encryption_mode)
-                            assert test_mode != EncryptionMode.DISABLED, "Encryption mode should not be DISABLED"
-                            
-                            # Ensure manager has the correct config
-                            manager.config = mock_config
-                            
-                            # Verify config is set correctly before connecting
-                            assert manager.config.security.enable_encryption is True, "Config should have encryption enabled"
-                            assert manager.config.security.encryption_mode == "preferred", "Config should have preferred encryption mode"
-
-                            # Try to connect - this should reach the encryption handshake code
-                            try:
-                                await manager._connect_to_peer(peer_info)
-                            except Exception:
-                                # Expected to fail later (likely at handshake validation or message handling)
-                                # The important part is that MSE handshake was called before the failure
-                                pass
-
-                            # Verify that the encryption code path was attempted
-                            # The connection should reach the encryption handshake section
-                            # Check if MSE handshake was called (indicates encryption path was taken)
-                            
-                            # Debug: Check what actually happened
-                            mse_called = mock_mse.initiate_as_initiator.called
-                            
-                            # If encryption is enabled and mode is not DISABLED, encryption should be attempted
-                            if mock_config.security.enable_encryption and test_mode != EncryptionMode.DISABLED:
-                                # Verify MSE handshake was called (this covers lines 541-544)
-                                assert mse_called, (
-                                    f"MSE handshake should be called when enable_encryption=True and "
-                                    f"mode={test_mode}. Manager config: enable_encryption={manager.config.security.enable_encryption}"
-                                )
+                            "ccbt.security.encrypted_stream.EncryptedStreamWriter",
+                            side_effect=mock_writer_init,
+                        ) as mock_writer_class:
+                            with patch(
+                                "ccbt.security.mse_handshake.MSEHandshake",
+                                return_value=mock_mse,
+                            ):
+                                # CRITICAL FIX: Patch the encryption condition check directly
+                                # Instead of patching isinstance (which causes recursion), we'll patch the encryption
+                                # condition check itself by modifying the condition in the encryption code path.
+                                # We'll use a context manager to temporarily modify the encryption condition.
                                 
-                                # If MSE succeeded, encrypted streams should be created
-                                if mse_called and mock_mse_result.success:
-                                    assert len(encrypted_streams_created) >= 2, (
-                                        f"Encrypted streams should be created when MSE handshake succeeds, "
-                                        f"but only {len(encrypted_streams_created)} were created."
-                                    )
-                                    assert mock_reader_class.called, "EncryptedStreamReader should be instantiated"
+                                # Mock asyncio.wait_for to return the mocked connection directly
+                                # This avoids timeout issues
+                                async def mock_wait_for(coro, timeout=None):
+                                    # Handle both coroutines and non-coroutines (like MagicMock)
+                                    if asyncio.iscoroutine(coro):
+                                        return await coro
+                                    else:
+                                        return coro
+                                
+                                # CRITICAL FIX: Patch the encryption condition by patching the isinstance check
+                                # at the module level. We'll create a wrapper function that checks for our mocks.
+                                # Since isinstance is a builtin, we need to be careful. We'll patch it only in
+                                # the encryption code path by patching the condition check itself.
+                                
+                                # Actually, the simplest approach: Make the mock_writer pass isinstance by
+                                # using a real StreamWriter instance or by patching the condition check.
+                                # Let's patch the encryption condition check directly by modifying the condition.
+                                
+                                # We'll patch the encryption code to bypass the isinstance check for our mocks
+                                # by patching the condition check itself.
+                                original_encryption_condition = None
+                                
+                                def should_encrypt_patch(self, reader, writer, connection):
+                                    """Patch to bypass isinstance checks in encryption condition."""
+                                    from ccbt.security.encryption import EncryptionMode
+                                    if not self.config.security.enable_encryption:
+                                        return False
+                                    encryption_mode = EncryptionMode(self.config.security.encryption_mode)
+                                    if encryption_mode == EncryptionMode.DISABLED:
+                                        return False
+                                    if connection is None:
+                                        return False
+                                    # Bypass isinstance checks for our mocks
+                                    if reader is mock_reader and writer is mock_writer:
+                                        return True
+                                    # For real readers/writers, use original check
+                                    return isinstance(reader, asyncio.StreamReader) and isinstance(writer, asyncio.StreamWriter)
+                                
+                                with patch(
+                                    "asyncio.open_connection",
+                                    return_value=(mock_reader, mock_writer),
+                                ), patch(
+                                    "asyncio.wait_for",
+                                    side_effect=mock_wait_for,
+                                ), patch(
+                                    "ccbt.peer.async_peer_connection.isinstance",
+                                    side_effect=patched_isinstance,
+                                ):
+                                    # Use actual EncryptionMode enum
+                                    from ccbt.security.encryption import EncryptionMode
+                                    
+                                    # Verify EncryptionMode construction works
+                                    test_mode = EncryptionMode(mock_config.security.encryption_mode)
+                                    assert test_mode != EncryptionMode.DISABLED, "Encryption mode should not be DISABLED"
+                                    
+                                    # Ensure manager has the correct config
+                                    manager.config = mock_config
+                                    
+                                    # Verify config is set correctly before connecting
+                                    assert manager.config.security.enable_encryption is True, "Config should have encryption enabled"
+                                    assert manager.config.security.encryption_mode == "preferred", "Config should have preferred encryption mode"
+
+                                    # Try to connect - this should reach the encryption handshake code
+                                    # CRITICAL FIX: Don't catch all exceptions - let them propagate to see what's failing
+                                    # We'll catch specific expected exceptions after encryption is attempted
+                                    await manager._connect_to_peer(peer_info)
+                                    
+                                    # CRITICAL FIX: Wait briefly for connection to be established and task to be created
+                                    await asyncio.sleep(0.1)
+
+                                    # CRITICAL FIX: Disconnect the connection immediately after handshake verification
+                                    # to prevent the message loop from hanging waiting for messages
+                                    peer_key = (peer_info.ip, peer_info.port)
+                                    async with manager.connection_lock:
+                                        if peer_key in manager.connections:
+                                            connection = manager.connections[peer_key]
+                                            # Cancel the connection task first to stop the message loop
+                                            if hasattr(connection, 'connection_task') and connection.connection_task:
+                                                if not connection.connection_task.done():
+                                                    connection.connection_task.cancel()
+                                                    try:
+                                                        await asyncio.wait_for(connection.connection_task, timeout=0.5)
+                                                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                                                        pass
+                                            await manager._disconnect_peer(connection)
+
+                                    # Verify that the encryption code path was attempted
+                                    # The connection should reach the encryption handshake section
+                                    # Check if MSE handshake was called (indicates encryption path was taken)
+                                    
+                                    # Debug: Check what actually happened
+                                    mse_called = mock_mse.initiate_as_initiator.called
+                                    
+                                    # If encryption is enabled and mode is not DISABLED, encryption should be attempted
+                                    if mock_config.security.enable_encryption and test_mode != EncryptionMode.DISABLED:
+                                        # Verify MSE handshake was called (this covers lines 541-544)
+                                        assert mse_called, (
+                                            f"MSE handshake should be called when enable_encryption=True and "
+                                            f"mode={test_mode}. Manager config: enable_encryption={manager.config.security.enable_encryption}"
+                                        )
+                                        
+                                        # If MSE succeeded, encrypted streams should be created
+                                        if mse_called and mock_mse_result.success:
+                                            assert len(encrypted_streams_created) >= 2, (
+                                                f"Encrypted streams should be created when MSE handshake succeeds, "
+                                                f"but only {len(encrypted_streams_created)} were created."
+                                            )
+                                            assert mock_reader_class.called, "EncryptedStreamReader should be instantiated"
+                                            assert mock_writer_class.called, "EncryptedStreamWriter should be instantiated"
+                finally:
+                    # CRITICAL FIX: Stop the manager after the test
+                    await manager.stop()
 
 
 class TestErrorHandlerDisconnect:

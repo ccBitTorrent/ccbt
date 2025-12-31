@@ -64,6 +64,12 @@ class PeerConnection:
     is_encrypted: bool = False
     encryption_cipher: Any = None  # CipherSuite instance from MSE handshake
 
+    # Choking state (matching AsyncPeerConnection for compatibility)
+    am_choking: bool = True
+    peer_choking: bool = True
+    am_interested: bool = False
+    peer_interested: bool = False
+
     def __str__(
         self,
     ):  # pragma: no cover - String representation for debugging, tested implicitly via logging/errors

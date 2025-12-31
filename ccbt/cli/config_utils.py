@@ -1,4 +1,3 @@
-
 """Configuration utilities for CLI commands.
 
 Provides functions to detect config changes requiring daemon restart
@@ -12,10 +11,11 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 from rich.prompt import Confirm
 
-from ccbt.config.config import ConfigManager
-from ccbt.i18n import _
+if TYPE_CHECKING:
+    from ccbt.config.config import ConfigManager
 from ccbt.daemon.daemon_manager import DaemonManager
 from ccbt.daemon.ipc_client import IPCClient  # type: ignore[attr-defined]
+from ccbt.i18n import _
 from ccbt.utils.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -164,10 +164,7 @@ def requires_daemon_restart(old_config: Config, new_config: Config) -> bool:
     # Limits config changes require restart
     old_limits = old_config.limits.model_dump()
     new_limits = new_config.limits.model_dump()
-    if old_limits != new_limits:
-        return True
-
-    return False
+    return old_limits != new_limits
 
 
 async def _restart_daemon_async(force: bool = False) -> bool:
@@ -192,7 +189,7 @@ async def _restart_daemon_async(force: bool = False) -> bool:
     # Stop daemon
     logger.info(_("Stopping daemon for restart..."))
     try:
-        config_manager = init_config()
+        init_config()  # Initialize config (result not used)
         cfg = get_config()
 
         if cfg.daemon and cfg.daemon.api_key:
@@ -225,8 +222,8 @@ async def _restart_daemon_async(force: bool = False) -> bool:
         else:
             # No API key, use signal-based shutdown
             daemon_manager.stop(timeout=30.0, force=force)
-    except Exception as e:
-        logger.exception(_("Error stopping daemon: %s"), e)
+    except Exception:
+        logger.exception(_("Error stopping daemon"))
         return False
 
     # Wait a moment for process to fully exit
@@ -244,13 +241,13 @@ async def _restart_daemon_async(force: bool = False) -> bool:
             logger.info(_("Daemon restarted successfully (PID: %d)"), pid)
             return True
         return False
-    except Exception as e:
-        logger.exception(_("Error starting daemon: %s"), e)
+    except Exception:
+        logger.exception(_("Error starting daemon"))
         return False
 
 
 def restart_daemon_if_needed(
-    config_manager: ConfigManager,
+    _config_manager: ConfigManager,
     requires_restart: bool,
     auto_restart: bool | None = None,
     force: bool = False,
@@ -283,14 +280,18 @@ def restart_daemon_if_needed(
     elif auto_restart is False:
         should_restart = False
         console.print(
-            _("[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]")
+            _(
+                "[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]"
+            )
         )
         console.print(
             _("[dim]Please restart the daemon manually: 'btbt daemon restart'[/dim]")
         )
     else:
         # Prompt user
-        console.print(_("[yellow]Configuration changes require daemon restart.[/yellow]"))
+        console.print(
+            _("[yellow]Configuration changes require daemon restart.[/yellow]")
+        )
         should_restart = Confirm.ask(
             _("Restart daemon now?"),
             default=True,
@@ -312,7 +313,7 @@ def restart_daemon_if_needed(
         console.print(_("[dim]Please restart manually: 'btbt daemon restart'[/dim]"))
         return False
     except Exception as e:
-        logger.exception(_("Error restarting daemon: %s"), e)
+        logger.exception(_("Error restarting daemon"))
         console.print(_("[red]Error restarting daemon: {e}[/red]").format(e=e))
         console.print(_("[dim]Please restart manually: 'btbt daemon restart'[/dim]"))
         return False

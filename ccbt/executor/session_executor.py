@@ -16,7 +16,7 @@ class SessionExecutor(CommandExecutor):
     async def execute(
         self,
         command: str,
-        *args: Any,
+        *_args: Any,
         **kwargs: Any,
     ) -> CommandResult:
         """Execute session command.
@@ -51,10 +51,11 @@ class SessionExecutor(CommandExecutor):
         """Restart a service component."""
         try:
             # Check if adapter has restart_service method
-            if hasattr(self.adapter, "restart_service"):
-                success = await self.adapter.restart_service(service_name)
+            restart_service = getattr(self.adapter, "restart_service", None)
+            if restart_service is not None:
+                success = await restart_service(service_name)
                 return CommandResult(success=success, data={"restarted": success})
-            
+
             return CommandResult(
                 success=False,
                 error="Service restart not supported by adapter",

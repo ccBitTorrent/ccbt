@@ -91,8 +91,28 @@ class TestWebCommand:
         assert "web" in result.output.lower()
 
     @patch("ccbt.cli.main.asyncio.run")
-    def test_web_start(self, mock_asyncio_run):
+    @patch("ccbt.cli.main.AsyncSessionManager")
+    @patch("ccbt.cli.main.DaemonManager")
+    def test_web_start(self, mock_daemon_manager, mock_session_manager, mock_asyncio_run):
         """Test web start command."""
+        # Mock DaemonManager to return no PID file
+        class MockPath:
+            def exists(self):
+                return False
+        
+        mock_dm_instance = MagicMock()
+        mock_dm_instance.pid_file = MockPath()
+        mock_daemon_manager.return_value = mock_dm_instance
+        
+        # Mock AsyncSessionManager to return a session with start_web_interface that returns a coroutine
+        async def mock_web_interface(host, port):
+            """Mock async web interface."""
+            return None
+        
+        mock_session = MagicMock()
+        mock_session.start_web_interface = mock_web_interface
+        mock_session_manager.return_value = mock_session
+        
         mock_asyncio_run.return_value = None
         
         runner = CliRunner()

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from enum import IntEnum
-from typing import Any
+from typing import Any, ClassVar
 
 from ccbt.utils.logging_config import get_logger
 
@@ -28,7 +28,7 @@ class VerbosityManager:
     """Manages verbosity levels and maps them to logging levels."""
 
     # Map verbosity count to VerbosityLevel
-    COUNT_TO_LEVEL: dict[int, VerbosityLevel] = {
+    COUNT_TO_LEVEL: ClassVar[dict[int, VerbosityLevel]] = {
         0: VerbosityLevel.NORMAL,
         1: VerbosityLevel.VERBOSE,
         2: VerbosityLevel.DEBUG,
@@ -36,7 +36,7 @@ class VerbosityManager:
     }
 
     # Map VerbosityLevel to logging level
-    LEVEL_TO_LOGGING: dict[VerbosityLevel, int] = {
+    LEVEL_TO_LOGGING: ClassVar[dict[VerbosityLevel, int]] = {
         VerbosityLevel.QUIET: logging.ERROR,
         VerbosityLevel.NORMAL: logging.INFO,
         VerbosityLevel.VERBOSE: logging.INFO,
@@ -52,7 +52,9 @@ class VerbosityManager:
 
         """
         self.verbosity_count = max(0, min(3, verbosity_count))  # Clamp to 0-3
-        self.level = self.COUNT_TO_LEVEL.get(self.verbosity_count, VerbosityLevel.NORMAL)
+        self.level = self.COUNT_TO_LEVEL.get(
+            self.verbosity_count, VerbosityLevel.NORMAL
+        )
         self.logging_level = self.LEVEL_TO_LOGGING[self.level]
 
     @classmethod
@@ -172,4 +174,3 @@ def log_with_verbosity(
         exc_info = level >= logging.WARNING
 
     logger_instance.log(level, message, *args, exc_info=exc_info, **kwargs)
-
