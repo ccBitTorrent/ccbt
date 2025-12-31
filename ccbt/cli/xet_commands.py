@@ -1,4 +1,3 @@
-
 """Xet protocol CLI commands (enable, disable, status, stats, cache-info)."""
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from ccbt.config.config import ConfigManager
 from ccbt.i18n import _
 from ccbt.protocols.base import ProtocolType
 from ccbt.protocols.xet import XetProtocol
-from ccbt.session.session import AsyncSessionManager
 from ccbt.storage.xet_deduplication import XetDeduplication
 
 logger = logging.getLogger(__name__)
@@ -24,18 +22,17 @@ logger = logging.getLogger(__name__)
 
 async def _get_xet_protocol() -> XetProtocol | None:
     """Get Xet protocol instance from session manager.
-    
+
     Note: If daemon is running, this will check via IPC but cannot return
     the actual protocol instance. Commands using this should handle None
     and route operations via IPC instead.
     """
     from ccbt.cli.main import _get_executor
     from ccbt.executor.session_adapter import LocalSessionAdapter
-    from ccbt.executor.executor import UnifiedCommandExecutor
-    
+
     # Get executor (daemon or local)
     executor, is_daemon = await _get_executor()
-    
+
     if is_daemon and executor:
         # Daemon mode - use executor to get protocol info
         result = await executor.execute("protocol.get_xet")
@@ -44,9 +41,11 @@ async def _get_xet_protocol() -> XetProtocol | None:
             # Protocol is enabled in daemon, but we can't return the instance
             # Commands should use executor for operations instead
             if protocol_info.enabled:
-                return None  # Protocol enabled but instance not available in daemon mode
+                return (
+                    None  # Protocol enabled but instance not available in daemon mode
+                )
         return None
-    
+
     # Local mode - get protocol from session
     if executor and isinstance(executor.adapter, LocalSessionAdapter):
         session = executor.adapter.session_manager
@@ -64,13 +63,13 @@ async def _get_xet_protocol() -> XetProtocol | None:
                     return xet_protocol
         except Exception:  # pragma: no cover - CLI error handler
             logger.exception("Failed to get Xet protocol from session")
-    
+
     # Fallback: create temporary session if executor not available
     # CRITICAL FIX: Use safe local session creation helper
     try:
         from ccbt.cli.main import _ensure_local_session_safe
 
-        session = await _ensure_local_session_safe(force_local=True)
+        session = await _ensure_local_session_safe(_force_local=True)
         try:
             # Find Xet protocol in session's protocols list
             protocols = getattr(session, "protocols", [])
@@ -104,12 +103,11 @@ def xet_enable(_ctx, config_file: str | None) -> None:
     console = Console()
     from ccbt.cli.main import _get_config_from_context
     from ccbt.config.config import init_config
-    
+
     # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
         from ccbt.cli.main import _get_config_from_context
-    from ccbt.config.config import init_config
-    
+
     # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
         cm = ConfigManager(config_file)
@@ -132,7 +130,11 @@ def xet_enable(_ctx, config_file: str | None) -> None:
         cm.config_file.write_text(toml.dumps(config_dict), encoding="utf-8")
 
     console.print(_("[green]✓[/green] Xet protocol enabled"))
-    console.print(_("  Configuration saved to: {location}").format(location=cm.config_file or 'default location'))
+    console.print(
+        _("  Configuration saved to: {location}").format(
+            location=cm.config_file or "default location"
+        )
+    )
 
 
 @xet.command("disable")
@@ -143,7 +145,7 @@ def xet_disable(_ctx, config_file: str | None) -> None:
     console = Console()
     from ccbt.cli.main import _get_config_from_context
     from ccbt.config.config import init_config
-    
+
     # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
         cm = ConfigManager(config_file)
@@ -166,7 +168,11 @@ def xet_disable(_ctx, config_file: str | None) -> None:
         cm.config_file.write_text(toml.dumps(config_dict), encoding="utf-8")
 
     console.print(_("[yellow]✓[/yellow] Xet protocol disabled"))
-    console.print(_("  Configuration saved to: {location}").format(location=cm.config_file or 'default location'))
+    console.print(
+        _("  Configuration saved to: {location}").format(
+            location=cm.config_file or "default location"
+        )
+    )
 
 
 @xet.command("status")
@@ -177,7 +183,7 @@ def xet_status(_ctx, config_file: str | None) -> None:
     console = Console()
     from ccbt.cli.main import _get_config_from_context
     from ccbt.config.config import init_config
-    
+
     # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
         cm = ConfigManager(config_file)
@@ -194,15 +200,29 @@ def xet_status(_ctx, config_file: str | None) -> None:
     xet_config = config.disk
     console.print(_("[bold]Configuration:[/bold]"))
     console.print(_("  Enabled: {enabled}").format(enabled=xet_config.xet_enabled))
-    console.print(_("  Deduplication: {enabled}").format(enabled=xet_config.xet_deduplication_enabled))
-    console.print(_("  P2P CAS: {enabled}").format(enabled=xet_config.xet_use_p2p_cas))
-    console.print(_("  Compression: {enabled}").format(enabled=xet_config.xet_compression_enabled))
     console.print(
-        _("  Chunk size range: {min}-{max} bytes").format(min=xet_config.xet_chunk_min_size, max=xet_config.xet_chunk_max_size)
+        _("  Deduplication: {enabled}").format(
+            enabled=xet_config.xet_deduplication_enabled
+        )
     )
-    console.print(_("  Target chunk size: {size} bytes").format(size=xet_config.xet_chunk_target_size))
+    console.print(_("  P2P CAS: {enabled}").format(enabled=xet_config.xet_use_p2p_cas))
+    console.print(
+        _("  Compression: {enabled}").format(enabled=xet_config.xet_compression_enabled)
+    )
+    console.print(
+        _("  Chunk size range: {min}-{max} bytes").format(
+            min=xet_config.xet_chunk_min_size, max=xet_config.xet_chunk_max_size
+        )
+    )
+    console.print(
+        _("  Target chunk size: {size} bytes").format(
+            size=xet_config.xet_chunk_target_size
+        )
+    )
     console.print(_("  Cache DB: {path}").format(path=xet_config.xet_cache_db_path))
-    console.print(_("  Chunk store: {path}").format(path=xet_config.xet_chunk_store_path))
+    console.print(
+        _("  Chunk store: {path}").format(path=xet_config.xet_chunk_store_path)
+    )
 
     # Runtime status (if session is available)
     async def _show_runtime_status() -> None:
@@ -211,7 +231,9 @@ def xet_status(_ctx, config_file: str | None) -> None:
             protocol = await _get_xet_protocol()
             if protocol:
                 console.print(_("\n[bold]Runtime Status:[/bold]"))
-                console.print(_("  Protocol state: {state}").format(state=protocol.state))
+                console.print(
+                    _("  Protocol state: {state}").format(state=protocol.state)
+                )
                 if protocol.cas_client:
                     console.print(_("  P2P CAS client: Active"))
                 else:
@@ -236,7 +258,7 @@ def xet_stats(_ctx, config_file: str | None, json_output: bool) -> None:
     console = Console()
     from ccbt.cli.main import _get_config_from_context
     from ccbt.config.config import init_config
-    
+
     # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
         cm = ConfigManager(config_file)
@@ -264,7 +286,9 @@ def xet_stats(_ctx, config_file: str | None, json_output: bool) -> None:
                 if json_output:
                     click.echo(json.dumps(stats, indent=2))
                 else:
-                    console.print(_("[bold]Xet Deduplication Cache Statistics[/bold]\n"))
+                    console.print(
+                        _("[bold]Xet Deduplication Cache Statistics[/bold]\n")
+                    )
 
                     table = Table(show_header=True, header_style="bold")
                     table.add_column("Metric", style="cyan")
@@ -302,7 +326,7 @@ def xet_cache_info(
     console = Console()
     from ccbt.cli.main import _get_config_from_context
     from ccbt.config.config import init_config
-    
+
     # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
         cm = ConfigManager(config_file)
@@ -358,10 +382,20 @@ def xet_cache_info(
                     )
                 else:
                     console.print(_("[bold]Xet Cache Information[/bold]\n"))
-                    console.print(_("Total chunks: {count}").format(count=stats.get('total_chunks', 0)))
-                    console.print(_("Cache size: {size} bytes").format(size=stats.get('cache_size', 0)))
                     console.print(
-                        _("\n[bold]Sample chunks (last {limit} accessed):[/bold]\n").format(limit=limit)
+                        _("Total chunks: {count}").format(
+                            count=stats.get("total_chunks", 0)
+                        )
+                    )
+                    console.print(
+                        _("Cache size: {size} bytes").format(
+                            size=stats.get("cache_size", 0)
+                        )
+                    )
+                    console.print(
+                        _(
+                            "\n[bold]Sample chunks (last {limit} accessed):[/bold]\n"
+                        ).format(limit=limit)
                     )
 
                     import sqlite3
@@ -426,7 +460,7 @@ def xet_cleanup(
     console = Console()
     from ccbt.cli.main import _get_config_from_context
     from ccbt.config.config import init_config
-    
+
     # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
         cm = ConfigManager(config_file)
@@ -450,12 +484,16 @@ def xet_cleanup(
             async with XetDeduplication(dedup_path) as dedup:
                 if dry_run:
                     console.print(
-                        _("[yellow]Dry run: Would clean chunks older than {days} days[/yellow]").format(days=max_age_days)
+                        _(
+                            "[yellow]Dry run: Would clean chunks older than {days} days[/yellow]"
+                        ).format(days=max_age_days)
                     )
                     # Get stats before cleanup
                     stats_before = dedup.get_cache_stats()
                     console.print(
-                        _("Current chunks: {count}").format(count=stats_before.get('total_chunks', 0))
+                        _("Current chunks: {count}").format(
+                            count=stats_before.get("total_chunks", 0)
+                        )
                     )
                 else:
                     max_age_seconds = max_age_days * 24 * 60 * 60
@@ -465,10 +503,16 @@ def xet_cleanup(
                         max_age_seconds=max_age_seconds
                     )
 
-                    console.print(_("[green]✓[/green] Cleaned {cleaned} unused chunks").format(cleaned=cleaned))
+                    console.print(
+                        _("[green]✓[/green] Cleaned {cleaned} unused chunks").format(
+                            cleaned=cleaned
+                        )
+                    )
                     stats_after = dedup.get_cache_stats()
                     console.print(
-                        _("Remaining chunks: {count}").format(count=stats_after.get('total_chunks', 0))
+                        _("Remaining chunks: {count}").format(
+                            count=stats_after.get("total_chunks", 0)
+                        )
                     )
 
         except Exception as e:

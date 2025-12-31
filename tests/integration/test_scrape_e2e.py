@@ -20,6 +20,30 @@ async def session_manager():
 
     with patch("ccbt.session.session.get_config") as mock_get_config:
         mock_config = MagicMock()
+        # Set rate limits to integers (not MagicMock) to avoid comparison errors
+        mock_config.limits = MagicMock()
+        mock_config.limits.global_down_kib = 0
+        mock_config.limits.global_up_kib = 0
+        mock_config.discovery = MagicMock()
+        mock_config.discovery.tracker_auto_scrape = False
+        mock_config.discovery.enable_dht = False
+        mock_config.nat = MagicMock()
+        mock_config.nat.auto_map_ports = False
+        mock_config.security = MagicMock()
+        mock_config.security.ip_filter = MagicMock()
+        mock_config.security.ip_filter.filter_update_interval = 3600.0
+        mock_config.queue = MagicMock()
+        mock_config.queue.auto_manage_queue = False
+        mock_config.disk = MagicMock()
+        mock_config.disk.checkpoint_interval = 30.0
+        mock_config.disk.resume_save_interval = 30.0
+        mock_config.disk.fast_resume_enabled = False
+        from ccbt.models import CheckpointFormat
+        mock_config.disk.checkpoint_format = CheckpointFormat.BINARY
+        mock_config.disk.checkpoint_enabled = True
+        mock_config.network = MagicMock()
+        mock_config.network.max_global_peers = 100
+        mock_config.network.connection_timeout = 30.0
         mock_get_config.return_value = mock_config
 
         session = AsyncSessionManager()

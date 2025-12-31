@@ -18,10 +18,22 @@ from ccbt.monitoring.alert_manager import AlertRule, AlertSeverity
 class TestDashboardCommand:
     """Test dashboard CLI command."""
 
-    @patch("ccbt.cli.monitoring_commands.run_dashboard")
-    @patch("ccbt.cli.monitoring_commands.AsyncSessionManager")
-    def test_dashboard_basic(self, mock_session_manager, mock_run_dashboard):
+    @patch("ccbt.interface.terminal_dashboard.run_dashboard")
+    @patch("ccbt.interface.terminal_dashboard._ensure_daemon_running")
+    @patch("ccbt.interface.terminal_dashboard._show_startup_splash")
+    @patch("ccbt.interface.daemon_session_adapter.DaemonInterfaceAdapter")
+    def test_dashboard_basic(self, mock_adapter, mock_splash, mock_ensure_daemon, mock_run_dashboard):
         """Test dashboard command without rules."""
+        # Mock splash screen
+        mock_splash.return_value = (None, None)
+        # Mock daemon running successfully
+        mock_ipc_client = MagicMock()
+        async def mock_ensure(splash_manager=None):
+            return (True, mock_ipc_client)
+        mock_ensure_daemon.side_effect = mock_ensure
+        # Mock adapter
+        mock_adapter.return_value = MagicMock()
+        
         runner = CliRunner()
         with patch("ccbt.cli.monitoring_commands.get_alert_manager") as mock_get_am:
             result = runner.invoke(dashboard, ["--refresh", "1.0"])
@@ -30,10 +42,22 @@ class TestDashboardCommand:
         mock_get_am.assert_not_called()
         mock_run_dashboard.assert_called_once()
 
-    @patch("ccbt.cli.monitoring_commands.run_dashboard")
-    @patch("ccbt.cli.monitoring_commands.AsyncSessionManager")
-    def test_dashboard_with_rules_success(self, mock_session_manager, mock_run_dashboard):
+    @patch("ccbt.interface.terminal_dashboard.run_dashboard")
+    @patch("ccbt.interface.terminal_dashboard._ensure_daemon_running")
+    @patch("ccbt.interface.terminal_dashboard._show_startup_splash")
+    @patch("ccbt.interface.daemon_session_adapter.DaemonInterfaceAdapter")
+    def test_dashboard_with_rules_success(self, mock_adapter, mock_splash, mock_ensure_daemon, mock_run_dashboard):
         """Test dashboard command with rules file."""
+        # Mock splash screen
+        mock_splash.return_value = (None, None)
+        # Mock daemon running successfully
+        mock_ipc_client = MagicMock()
+        async def mock_ensure(splash_manager=None):
+            return (True, mock_ipc_client)
+        mock_ensure_daemon.side_effect = mock_ensure
+        # Mock adapter
+        mock_adapter.return_value = MagicMock()
+        
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             rules_path = Path(f.name)
             json.dump({"rules": []}, f)
@@ -49,10 +73,22 @@ class TestDashboardCommand:
         finally:
             rules_path.unlink(missing_ok=True)
 
-    @patch("ccbt.cli.monitoring_commands.run_dashboard")
-    @patch("ccbt.cli.monitoring_commands.AsyncSessionManager")
-    def test_dashboard_with_rules_failure(self, mock_session_manager, mock_run_dashboard):
+    @patch("ccbt.interface.terminal_dashboard.run_dashboard")
+    @patch("ccbt.interface.terminal_dashboard._ensure_daemon_running")
+    @patch("ccbt.interface.terminal_dashboard._show_startup_splash")
+    @patch("ccbt.interface.daemon_session_adapter.DaemonInterfaceAdapter")
+    def test_dashboard_with_rules_failure(self, mock_adapter, mock_splash, mock_ensure_daemon, mock_run_dashboard):
         """Test dashboard command with invalid rules file."""
+        # Mock splash screen
+        mock_splash.return_value = (None, None)
+        # Mock daemon running successfully
+        mock_ipc_client = MagicMock()
+        async def mock_ensure(splash_manager=None):
+            return (True, mock_ipc_client)
+        mock_ensure_daemon.side_effect = mock_ensure
+        # Mock adapter
+        mock_adapter.return_value = MagicMock()
+        
         am = MagicMock()
         am.load_rules_from_file.side_effect = ValueError("Invalid rules")
         
@@ -64,10 +100,22 @@ class TestDashboardCommand:
         assert "Failed to load alert rules" in result.output
         mock_run_dashboard.assert_called_once()
 
-    @patch("ccbt.cli.monitoring_commands.run_dashboard")
-    @patch("ccbt.cli.monitoring_commands.AsyncSessionManager")
-    def test_dashboard_error(self, mock_session_manager, mock_run_dashboard):
+    @patch("ccbt.interface.terminal_dashboard.run_dashboard")
+    @patch("ccbt.interface.terminal_dashboard._ensure_daemon_running")
+    @patch("ccbt.interface.terminal_dashboard._show_startup_splash")
+    @patch("ccbt.interface.daemon_session_adapter.DaemonInterfaceAdapter")
+    def test_dashboard_error(self, mock_adapter, mock_splash, mock_ensure_daemon, mock_run_dashboard):
         """Test dashboard command with error."""
+        # Mock splash screen
+        mock_splash.return_value = (None, None)
+        # Mock daemon running successfully
+        mock_ipc_client = MagicMock()
+        async def mock_ensure(splash_manager=None):
+            return (True, mock_ipc_client)
+        mock_ensure_daemon.side_effect = mock_ensure
+        # Mock adapter
+        mock_adapter.return_value = MagicMock()
+        
         mock_run_dashboard.side_effect = RuntimeError("Dashboard failed")
         
         runner = CliRunner()

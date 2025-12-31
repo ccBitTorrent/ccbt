@@ -12,8 +12,15 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from ccbt.cli.main import _get_executor
 from ccbt.i18n import _
+
+
+def _get_executor():
+    """Lazy import to avoid circular dependency."""
+    from ccbt.cli.main import _get_executor as _get_executor_impl
+
+    return _get_executor_impl
+
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +60,7 @@ def scrape_torrent(_ctx, info_hash: str, force: bool):
     async def _scrape_torrent() -> None:
         """Async helper for scrape torrent."""
         # Get executor (scrape commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
@@ -117,7 +124,7 @@ def scrape_list(_ctx):
     async def _list_scrape_results() -> None:
         """Async helper for scrape list."""
         # Get executor (scrape commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(

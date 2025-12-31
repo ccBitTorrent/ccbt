@@ -128,17 +128,23 @@ def ssl_enable_trackers(_ctx) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]SSL for trackers enabled (skipped write in test mode)[/yellow]")
+                    _(
+                        "[yellow]SSL for trackers enabled (skipped write in test mode)[/yellow]"
+                    )
                 )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config_toml = config_manager.export(fmt="toml")
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[green]SSL for trackers enabled. Configuration saved to {config_file}[/green]").format(config_file=config_manager.config_file)
+                _(
+                    "[green]SSL for trackers enabled. Configuration saved to {config_file}[/green]"
+                ).format(config_file=config_manager.config_file)
             )
         else:
             console.print(
-                _("[yellow]SSL for trackers enabled (configuration not persisted - no config file)[/yellow]")
+                _(
+                    "[yellow]SSL for trackers enabled (configuration not persisted - no config file)[/yellow]"
+                )
             )
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
@@ -168,17 +174,23 @@ def ssl_disable_trackers(_ctx) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]SSL for trackers disabled (skipped write in test mode)[/yellow]")
+                    _(
+                        "[yellow]SSL for trackers disabled (skipped write in test mode)[/yellow]"
+                    )
                 )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config_toml = config_manager.export(fmt="toml")
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[green]SSL for trackers disabled. Configuration saved to {config_file}[/green]").format(config_file=config_manager.config_file)
+                _(
+                    "[green]SSL for trackers disabled. Configuration saved to {config_file}[/green]"
+                ).format(config_file=config_manager.config_file)
             )
         else:  # pragma: no cover - Config not persisted path, tested via config file exists path
             console.print(
-                _("[yellow]SSL for trackers disabled (configuration not persisted - no config file)[/yellow]")
+                _(
+                    "[yellow]SSL for trackers disabled (configuration not persisted - no config file)[/yellow]"
+                )
             )
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
@@ -208,17 +220,23 @@ def ssl_enable_peers(_ctx) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]SSL for peers enabled (experimental, skipped write in test mode)[/yellow]")
+                    _(
+                        "[yellow]SSL for peers enabled (experimental, skipped write in test mode)[/yellow]"
+                    )
                 )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config_toml = config_manager.export(fmt="toml")
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[green]SSL for peers enabled (experimental). Configuration saved to {config_file}[/green]").format(config_file=config_manager.config_file)
+                _(
+                    "[green]SSL for peers enabled (experimental). Configuration saved to {config_file}[/green]"
+                ).format(config_file=config_manager.config_file)
             )
         else:  # pragma: no cover - Config not persisted path, tested via config file exists path
             console.print(
-                _("[yellow]SSL for peers enabled (experimental, configuration not persisted - no config file)[/yellow]")
+                _(
+                    "[yellow]SSL for peers enabled (experimental, configuration not persisted - no config file)[/yellow]"
+                )
             )
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
@@ -248,17 +266,23 @@ def ssl_disable_peers(_ctx) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]SSL for peers disabled (skipped write in test mode)[/yellow]")
+                    _(
+                        "[yellow]SSL for peers disabled (skipped write in test mode)[/yellow]"
+                    )
                 )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config_toml = config_manager.export(fmt="toml")
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[green]SSL for peers disabled. Configuration saved to {config_file}[/green]").format(config_file=config_manager.config_file)
+                _(
+                    "[green]SSL for peers disabled. Configuration saved to {config_file}[/green]"
+                ).format(config_file=config_manager.config_file)
             )
         else:  # pragma: no cover - Config not persisted path, tested via config file exists path
             console.print(
-                _("[yellow]SSL for peers disabled (configuration not persisted - no config file)[/yellow]")
+                _(
+                    "[yellow]SSL for peers disabled (configuration not persisted - no config file)[/yellow]"
+                )
             )
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
@@ -278,12 +302,16 @@ def ssl_set_ca_certs(_ctx, path: Path) -> None:
         # Validate path
         path_expanded = path.expanduser()
         if not path_expanded.exists():
-            console.print(_("[red]Path does not exist: {path}[/red]").format(path=path_expanded))
+            console.print(
+                _("[red]Path does not exist: {path}[/red]").format(path=path_expanded)
+            )
             raise click.Abort
 
         if not (path_expanded.is_file() or path_expanded.is_dir()):
             console.print(
-                _("[red]Path must be a file or directory: {path}[/red]").format(path=path_expanded)
+                _("[red]Path must be a file or directory: {path}[/red]").format(
+                    path=path_expanded
+                )
             )
             raise click.Abort
 
@@ -304,21 +332,29 @@ def ssl_set_ca_certs(_ctx, path: Path) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]CA certificates path set to {path} (skipped write in test mode)[/yellow]").format(path=path_expanded)
+                    _(
+                        "[yellow]CA certificates path set to {path} (skipped write in test mode)[/yellow]"
+                    ).format(path=path_expanded)
                 )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config_toml = config_manager.export(fmt="toml")
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[green]CA certificates path set to {path}. Configuration saved to {config_file}[/green]").format(path=path_expanded, config_file=config_manager.config_file)
+                _(
+                    "[green]CA certificates path set to {path}. Configuration saved to {config_file}[/green]"
+                ).format(path=path_expanded, config_file=config_manager.config_file)
             )
         else:  # pragma: no cover - Config not persisted path, tested via config file exists path
             console.print(
-                _("[yellow]CA certificates path set to {path} (configuration not persisted - no config file)[/yellow]").format(path=path_expanded)
+                _(
+                    "[yellow]CA certificates path set to {path} (configuration not persisted - no config file)[/yellow]"
+                ).format(path=path_expanded)
             )
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(_("[red]Error setting CA certificates path: {e}[/red]").format(e=e))
+        console.print(
+            _("[red]Error setting CA certificates path: {e}[/red]").format(e=e)
+        )
         raise click.Abort from e
 
 
@@ -341,28 +377,40 @@ def ssl_set_client_cert(_ctx, cert_path: Path, key_path: Path) -> None:
             not cert_path_expanded.exists()
         ):  # pragma: no cover - Validation error path, tested via valid paths
             console.print(
-                _("[red]Certificate file does not exist: {path}[/red]").format(path=cert_path_expanded)
+                _("[red]Certificate file does not exist: {path}[/red]").format(
+                    path=cert_path_expanded
+                )
             )
             raise click.Abort
 
         if (
             not key_path_expanded.exists()
         ):  # pragma: no cover - Validation error path, tested via valid paths
-            console.print(_("[red]Key file does not exist: {path}[/red]").format(path=key_path_expanded))
+            console.print(
+                _("[red]Key file does not exist: {path}[/red]").format(
+                    path=key_path_expanded
+                )
+            )
             raise click.Abort
 
         if (
             not cert_path_expanded.is_file()
         ):  # pragma: no cover - Validation error path, tested via valid paths
             console.print(
-                _("[red]Certificate path must be a file: {path}[/red]").format(path=cert_path_expanded)
+                _("[red]Certificate path must be a file: {path}[/red]").format(
+                    path=cert_path_expanded
+                )
             )
             raise click.Abort
 
         if (
             not key_path_expanded.is_file()
         ):  # pragma: no cover - Validation error path, tested via valid paths
-            console.print(_("[red]Key path must be a file: {path}[/red]").format(path=key_path_expanded))
+            console.print(
+                _("[red]Key path must be a file: {path}[/red]").format(
+                    path=key_path_expanded
+                )
+            )
             raise click.Abort
 
         from ccbt.cli.main import _get_config_from_context
@@ -383,7 +431,9 @@ def ssl_set_client_cert(_ctx, cert_path: Path, key_path: Path) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]Client certificate set (skipped write in test mode)[/yellow]")
+                    _(
+                        "[yellow]Client certificate set (skipped write in test mode)[/yellow]"
+                    )
                 )  # pragma: no cover - Test mode protection path
                 console.print(
                     _("  Certificate: {path}").format(path=cert_path_expanded)
@@ -395,13 +445,17 @@ def ssl_set_client_cert(_ctx, cert_path: Path, key_path: Path) -> None:
             config_toml = config_manager.export(fmt="toml")
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[green]Client certificate set. Configuration saved to {config_file}[/green]").format(config_file=config_manager.config_file)
+                _(
+                    "[green]Client certificate set. Configuration saved to {config_file}[/green]"
+                ).format(config_file=config_manager.config_file)
             )
             console.print(_("  Certificate: {path}").format(path=cert_path_expanded))
             console.print(_("  Key: {path}").format(path=key_path_expanded))
         else:  # pragma: no cover - Config not persisted path, tested via config file exists path
             console.print(
-                _("[yellow]Client certificate set (configuration not persisted - no config file)[/yellow]")
+                _(
+                    "[yellow]Client certificate set (configuration not persisted - no config file)[/yellow]"
+                )
             )
             console.print(_("  Certificate: {path}").format(path=cert_path_expanded))
             console.print(_("  Key: {path}").format(path=key_path_expanded))
@@ -440,17 +494,23 @@ def ssl_set_protocol(_ctx, version: str) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]TLS protocol version set to {version} (skipped write in test mode)[/yellow]").format(version=version)
+                    _(
+                        "[yellow]TLS protocol version set to {version} (skipped write in test mode)[/yellow]"
+                    ).format(version=version)
                 )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config_toml = config_manager.export(fmt="toml")
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[green]TLS protocol version set to {version}. Configuration saved to {config_file}[/green]").format(version=version, config_file=config_manager.config_file)
+                _(
+                    "[green]TLS protocol version set to {version}. Configuration saved to {config_file}[/green]"
+                ).format(version=version, config_file=config_manager.config_file)
             )
         else:  # pragma: no cover - Config not persisted path, tested via config file exists path
             console.print(
-                _("[yellow]TLS protocol version set to {version} (configuration not persisted - no config file)[/yellow]").format(version=version)
+                _(
+                    "[yellow]TLS protocol version set to {version} (configuration not persisted - no config file)[/yellow]"
+                ).format(version=version)
             )
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
@@ -480,21 +540,29 @@ def ssl_verify_on(_ctx) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]")
+                    _(
+                        "[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]"
+                    )
                 )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config_toml = config_manager.export(fmt="toml")
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[green]SSL certificate verification enabled. Configuration saved to {config_file}[/green]").format(config_file=config_manager.config_file)
+                _(
+                    "[green]SSL certificate verification enabled. Configuration saved to {config_file}[/green]"
+                ).format(config_file=config_manager.config_file)
             )
         else:  # pragma: no cover - Config not persisted path, tested via config file exists path
             console.print(
-                _("[yellow]SSL certificate verification enabled (configuration not persisted - no config file)[/yellow]")
+                _(
+                    "[yellow]SSL certificate verification enabled (configuration not persisted - no config file)[/yellow]"
+                )
             )
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(_("[red]Error enabling certificate verification: {e}[/red]").format(e=e))
+        console.print(
+            _("[red]Error enabling certificate verification: {e}[/red]").format(e=e)
+        )
         raise click.Abort from e
 
 
@@ -520,20 +588,27 @@ def ssl_verify_off(_ctx) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]SSL certificate verification disabled (not recommended, skipped write in test mode)[/yellow]")
+                    _(
+                        "[yellow]SSL certificate verification disabled (not recommended, skipped write in test mode)[/yellow]"
+                    )
                 )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config_toml = config_manager.export(fmt="toml")
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[yellow]SSL certificate verification disabled (not recommended). Configuration saved to {config_file}[/yellow]").format(config_file=config_manager.config_file)
+                _(
+                    "[yellow]SSL certificate verification disabled (not recommended). Configuration saved to {config_file}[/yellow]"
+                ).format(config_file=config_manager.config_file)
             )
         else:  # pragma: no cover - Config not persisted path, tested via config file exists path
             console.print(
-                _("[yellow]SSL certificate verification disabled (not recommended, configuration not persisted - no config file)[/yellow]")
+                _(
+                    "[yellow]SSL certificate verification disabled (not recommended, configuration not persisted - no config file)[/yellow]"
+                )
             )
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(_("[red]Error disabling certificate verification: {e}[/red]").format(e=e))
+        console.print(
+            _("[red]Error disabling certificate verification: {e}[/red]").format(e=e)
+        )
         raise click.Abort from e
-

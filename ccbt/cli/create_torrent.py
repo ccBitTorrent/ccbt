@@ -81,6 +81,7 @@ logger = logging.getLogger(__name__)
 @click.option(
     "--verbose",
     "-v",
+    "_verbose",
     count=True,
     help="Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)",
 )
@@ -98,7 +99,7 @@ def create_torrent(
     created_by: str,
     piece_length: int | None,
     private: bool,
-    verbose: int,
+    _verbose: int = 0,  # ARG001: Unused parameter (Click count=True)
 ) -> None:
     """Create a torrent file from a directory or file.
 
@@ -151,7 +152,11 @@ def create_torrent(
     # Validate source path
     if not source.exists():  # pragma: no cover - Defensive check: Click validates paths, but this guards against race conditions
         logger.error(_("Source path does not exist: %s"), source)
-        console.print(_("[red]Error: Source path does not exist: {path}[/red]").format(path=source))
+        console.print(
+            _("[red]Error: Source path does not exist: {path}[/red]").format(
+                path=source
+            )
+        )
         raise click.Abort
 
     if source.is_dir() and not any(source.iterdir()):
@@ -164,7 +169,9 @@ def create_torrent(
     if piece_length is not None:
         if piece_length < 16384:  # 16 KiB minimum
             console.print(
-                _("[red]Error: Piece length must be at least 16 KiB (16384 bytes)[/red]"),
+                _(
+                    "[red]Error: Piece length must be at least 16 KiB (16384 bytes)[/red]"
+                ),
             )
             raise click.Abort
         if piece_length & (piece_length - 1) != 0:
@@ -173,7 +180,11 @@ def create_torrent(
             )
             raise click.Abort
 
-    console.print(_("[cyan]Creating {format} torrent...[/cyan]").format(format=torrent_format.upper()))
+    console.print(
+        _("[cyan]Creating {format} torrent...[/cyan]").format(
+            format=torrent_format.upper()
+        )
+    )
     console.print(_("[dim]Source: {path}[/dim]").format(path=source))
     console.print(_("[dim]Output: {path}[/dim]").format(path=output))
     if tracker:
@@ -188,7 +199,9 @@ def create_torrent(
             console=console,
         ) as progress:
             task = progress.add_task(
-                _("Generating {format} torrent...").format(format=torrent_format.upper()),
+                _("Generating {format} torrent...").format(
+                    format=torrent_format.upper()
+                ),
                 total=None,
             )
 
@@ -233,7 +246,9 @@ def create_torrent(
                     task, description=_("V1 torrent generation not yet implemented")
                 )
                 console.print(
-                    _("[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]"),
+                    _(
+                        "[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]"
+                    ),
                 )
                 console.print(
                     _("[yellow]Please use --v2 or --hybrid flags for now.[/yellow]"),
@@ -242,14 +257,21 @@ def create_torrent(
 
             if torrent_bytes:
                 # Save torrent file
-                progress.update(task, description=_("Saving torrent to {path}...").format(path=output))
+                progress.update(
+                    task,
+                    description=_("Saving torrent to {path}...").format(path=output),
+                )
                 output.parent.mkdir(parents=True, exist_ok=True)
                 with open(output, "wb") as f:
                     f.write(torrent_bytes)
 
-                progress.update(task, description=_("Torrent saved to {path}").format(path=output))
+                progress.update(
+                    task, description=_("Torrent saved to {path}").format(path=output)
+                )
                 console.print(
-                    _("[green]✓ Torrent created successfully: {path}[/green]").format(path=output)
+                    _("[green]✓ Torrent created successfully: {path}[/green]").format(
+                        path=output
+                    )
                 )
 
                 # Parse torrent to show info hashes
@@ -273,18 +295,16 @@ def create_torrent(
 
                     if info_hash_v2:
                         console.print(
-                            _("[dim]Info hash v2 (SHA-256): {hash}...[/dim]").format(hash=info_hash_v2.hex()[:32]),
+                            _("[dim]Info hash v2 (SHA-256): {hash}...[/dim]").format(
+                                hash=info_hash_v2.hex()[:32]
+                            ),
                         )
                     if torrent_format == "hybrid" and info_hash_v1:
                         console.print(
-                            _("[dim]Info hash v1 (SHA-1): {hash}...[/dim]").format(hash=info_hash_v1.hex()[:32]),
+                            _("[dim]Info hash v1 (SHA-1): {hash}...[/dim]").format(
+                                hash=info_hash_v1.hex()[:32]
+                            ),
                         )
-
-    except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        logger.exception(_("Error creating torrent"))
-        console.print(_("[red]Error: {e}[/red]").format(e=e))
-        raise click.Abort from e
-
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
         logger.exception(_("Error creating torrent"))

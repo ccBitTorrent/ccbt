@@ -1,14 +1,24 @@
+"""CLI commands for managing torrent checkpoints.
+
+Provides commands to list, clean, delete, verify, export, backup, restore,
+and migrate checkpoint files.
+"""
+
 from __future__ import annotations
 
 import asyncio
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from ccbt.config.config import ConfigManager
+if TYPE_CHECKING:
+    from rich.console import Console
+
+    from ccbt.config.config import ConfigManager
+
 from ccbt.i18n import _
 from ccbt.utils.logging_config import get_logger
 
@@ -16,6 +26,7 @@ logger = get_logger(__name__)
 
 
 def list_checkpoints(config_manager: ConfigManager, console: Console) -> None:
+    """List all available checkpoints."""
     from ccbt.storage.checkpoint import CheckpointManager
 
     checkpoint_manager = CheckpointManager(config_manager.config.disk)
@@ -43,6 +54,7 @@ def list_checkpoints(config_manager: ConfigManager, console: Console) -> None:
 def clean_checkpoints(
     config_manager: ConfigManager, days: int, dry_run: bool, console: Console
 ) -> None:
+    """Clean up old checkpoints older than specified days."""
     from ccbt.storage.checkpoint import CheckpointManager
 
     checkpoint_manager = CheckpointManager(config_manager.config.disk)
@@ -51,15 +63,29 @@ def clean_checkpoints(
         cutoff_time = time.time() - (days * 24 * 60 * 60)
         old_checkpoints = [cp for cp in checkpoints if cp.updated_at < cutoff_time]
         if not old_checkpoints:
-            console.print(_("[green]No checkpoints older than {days} days found[/green]").format(days=days))
+            console.print(
+                _("[green]No checkpoints older than {days} days found[/green]").format(
+                    days=days
+                )
+            )
             return
         console.print(
-            _("[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]").format(count=len(old_checkpoints), days=days)
+            _(
+                "[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]"
+            ).format(count=len(old_checkpoints), days=days)
         )
         for cp in old_checkpoints:
             format_value = getattr(cp, "format", None)
-            format_str = format_value.value if format_value and hasattr(format_value, "value") else "unknown"
-            console.print(_("  - {hash}... ({format})").format(hash=cp.info_hash.hex()[:16], format=format_str))
+            format_str = (
+                format_value.value
+                if format_value and hasattr(format_value, "value")
+                else "unknown"
+            )
+            console.print(
+                _("  - {hash}... ({format})").format(
+                    hash=cp.info_hash.hex()[:16], format=format_str
+                )
+            )
         return
     with Progress(
         SpinnerColumn(),
@@ -70,12 +96,17 @@ def clean_checkpoints(
         task = progress.add_task(_("Cleaning up old checkpoints..."), total=None)
         deleted_count = asyncio.run(checkpoint_manager.cleanup_old_checkpoints(days))
         progress.update(task, description=_("Cleanup complete"))
-    console.print(_("[green]Cleaned up {count} old checkpoints[/green]").format(count=deleted_count))
+    console.print(
+        _("[green]Cleaned up {count} old checkpoints[/green]").format(
+            count=deleted_count
+        )
+    )
 
 
 def delete_checkpoint(
     config_manager: ConfigManager, info_hash: str, console: Console
 ) -> None:
+    """Delete a checkpoint for a specific torrent."""
     from ccbt.storage.checkpoint import CheckpointManager
 
     checkpoint_manager = CheckpointManager(config_manager.config.disk)
@@ -83,18 +114,25 @@ def delete_checkpoint(
         ih_bytes = bytes.fromhex(info_hash)
     except ValueError:
         logger.exception(_("Invalid info hash format: %s"), info_hash)
-        console.print(_("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash))
+        console.print(
+            _("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash)
+        )
         raise
     deleted = asyncio.run(checkpoint_manager.delete_checkpoint(ih_bytes))
     if deleted:
-        console.print(_("[green]Deleted checkpoint for {hash}[/green]").format(hash=info_hash))
+        console.print(
+            _("[green]Deleted checkpoint for {hash}[/green]").format(hash=info_hash)
+        )
     else:
-        console.print(_("[yellow]No checkpoint found for {hash}[/yellow]").format(hash=info_hash))
+        console.print(
+            _("[yellow]No checkpoint found for {hash}[/yellow]").format(hash=info_hash)
+        )
 
 
 def verify_checkpoint(
     config_manager: ConfigManager, info_hash: str, console: Console
 ) -> None:
+    """Verify the integrity of a checkpoint file."""
     from ccbt.storage.checkpoint import CheckpointManager
 
     checkpoint_manager = CheckpointManager(config_manager.config.disk)
@@ -102,14 +140,20 @@ def verify_checkpoint(
         ih_bytes = bytes.fromhex(info_hash)
     except ValueError:
         logger.exception(_("Invalid info hash format: %s"), info_hash)
-        console.print(_("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash))
+        console.print(
+            _("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash)
+        )
         raise
     valid = asyncio.run(checkpoint_manager.verify_checkpoint(ih_bytes))
     if valid:
-        console.print(_("[green]Checkpoint for {hash} is valid[/green]").format(hash=info_hash))
+        console.print(
+            _("[green]Checkpoint for {hash} is valid[/green]").format(hash=info_hash)
+        )
     else:
         console.print(
-            _("[yellow]Checkpoint for {hash} is missing or invalid[/yellow]").format(hash=info_hash)
+            _("[yellow]Checkpoint for {hash} is missing or invalid[/yellow]").format(
+                hash=info_hash
+            )
         )
 
 
@@ -120,6 +164,7 @@ def export_checkpoint(
     output_path: str,
     console: Console,
 ) -> None:
+    """Export a checkpoint to a file in the specified format."""
     from ccbt.storage.checkpoint import CheckpointManager
 
     checkpoint_manager = CheckpointManager(config_manager.config.disk)
@@ -127,7 +172,9 @@ def export_checkpoint(
         ih_bytes = bytes.fromhex(info_hash)
     except ValueError:
         logger.exception(_("Invalid info hash format: %s"), info_hash)
-        console.print(_("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash))
+        console.print(
+            _("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash)
+        )
         raise
     with Progress(
         SpinnerColumn(),
@@ -140,7 +187,9 @@ def export_checkpoint(
         progress.update(task, description=_("Writing export file..."))
         Path(output_path).write_bytes(data)
         progress.update(task, description=_("Export complete"))
-    console.print(_("[green]Exported checkpoint to {path}[/green]").format(path=output_path))
+    console.print(
+        _("[green]Exported checkpoint to {path}[/green]").format(path=output_path)
+    )
 
 
 def backup_checkpoint(
@@ -151,6 +200,7 @@ def backup_checkpoint(
     encrypt: bool,
     console: Console,
 ) -> None:
+    """Create a backup of a checkpoint with optional compression and encryption."""
     from ccbt.storage.checkpoint import CheckpointManager
 
     checkpoint_manager = CheckpointManager(config_manager.config.disk)
@@ -158,7 +208,9 @@ def backup_checkpoint(
         ih_bytes = bytes.fromhex(info_hash)
     except ValueError:
         logger.exception(_("Invalid info hash format: %s"), info_hash)
-        console.print(_("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash))
+        console.print(
+            _("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash)
+        )
         raise
     dest_path = Path(destination)
     with Progress(
@@ -187,6 +239,7 @@ def restore_checkpoint(
     info_hash: str | None,
     console: Console,
 ) -> None:
+    """Restore a checkpoint from a backup file."""
     from ccbt.storage.checkpoint import CheckpointManager
 
     checkpoint_manager = CheckpointManager(config_manager.config.disk)
@@ -195,7 +248,9 @@ def restore_checkpoint(
         try:
             ih_bytes = bytes.fromhex(info_hash)
         except ValueError:
-            console.print(_("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash))
+            console.print(
+                _("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash)
+            )
             raise
     with Progress(
         SpinnerColumn(),
@@ -209,7 +264,9 @@ def restore_checkpoint(
         )
         progress.update(task, description=_("Restore complete"))
     console.print(
-        _("[green]Restored checkpoint for: {name}[/green]\nInfo hash: {hash}").format(name=cp.torrent_name, hash=cp.info_hash.hex())
+        _("[green]Restored checkpoint for: {name}[/green]\nInfo hash: {hash}").format(
+            name=cp.torrent_name, hash=cp.info_hash.hex()
+        )
     )
 
 
@@ -220,6 +277,7 @@ def migrate_checkpoint(
     to_format: str,
     console: Console,
 ) -> None:
+    """Migrate a checkpoint from one format to another."""
     from ccbt.models import CheckpointFormat
     from ccbt.storage.checkpoint import CheckpointManager
 
@@ -228,7 +286,9 @@ def migrate_checkpoint(
         ih_bytes = bytes.fromhex(info_hash)
     except ValueError:
         logger.exception(_("Invalid info hash format: %s"), info_hash)
-        console.print(_("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash))
+        console.print(
+            _("[red]Invalid info hash format: {hash}[/red]").format(hash=info_hash)
+        )
         raise
     src = CheckpointFormat[from_format.upper()]
     dst = CheckpointFormat[to_format.upper()]
@@ -248,4 +308,6 @@ def migrate_checkpoint(
             checkpoint_manager.convert_checkpoint_format(ih_bytes, src, dst)
         )
         progress.update(task, description=_("Migration complete"))
-    console.print(_("[green]Migrated checkpoint to {path}[/green]").format(path=new_path))
+    console.print(
+        _("[green]Migrated checkpoint to {path}[/green]").format(path=new_path)
+    )

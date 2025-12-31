@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import signal
 import sys
 import time
 import warnings
@@ -55,24 +54,24 @@ if sys.platform == "win32":
         if exc_type is AttributeError and "_ssock" in str(exc_value) and exc_traceback:
             # Check if this is the ProactorEventLoop cleanup bug
             # The error occurs in __del__ during garbage collection
-                try:
-                    import traceback
+            try:
+                import traceback
 
-                    tb_lines = traceback.format_exception(
-                        exc_type, exc_value, exc_traceback
-                    )
-                    tb_str = "".join(tb_lines)
-                    # Very specific check: must be ProactorEventLoop.__del__ trying to access _ssock
-                    if (
-                        "ProactorEventLoop" in tb_str
-                        and "__del__" in tb_str
-                        and "_close_self_pipe" in tb_str
-                    ):
-                        # This is the known cleanup bug - silently ignore it
-                        return
-                except Exception:
-                    # If we can't parse the traceback, don't filter (be safe)
-                    pass
+                tb_lines = traceback.format_exception(
+                    exc_type, exc_value, exc_traceback
+                )
+                tb_str = "".join(tb_lines)
+                # Very specific check: must be ProactorEventLoop.__del__ trying to access _ssock
+                if (
+                    "ProactorEventLoop" in tb_str
+                    and "__del__" in tb_str
+                    and "_close_self_pipe" in tb_str
+                ):
+                    # This is the known cleanup bug - silently ignore it
+                    return
+            except Exception:
+                # If we can't parse the traceback, don't filter (be safe)
+                pass
         # Call original excepthook for all other exceptions
         _original_excepthook(exc_type, exc_value, exc_traceback)
 
@@ -128,7 +127,9 @@ def daemon():
     "--no-wait",
     "--background-only",
     is_flag=True,
-    help=_("Start daemon in background without waiting for completion (faster startup)"),
+    help=_(
+        "Start daemon in background without waiting for completion (faster startup)"
+    ),
 )
 @click.option(
     "--no-splash",
@@ -190,7 +191,9 @@ def start(
     if port:
         cfg.daemon.ipc_port = port
         if verbosity.is_verbose():
-            console.print(_("[cyan]Using custom IPC port: {port}[/cyan]").format(port=port))
+            console.print(
+                _("[cyan]Using custom IPC port: {port}[/cyan]").format(port=port)
+            )
 
     # Save config if daemon config was created or modified
     # This ensures DaemonMain can read the config when it initializes
@@ -227,14 +230,22 @@ def start(
 
                 if verbosity.is_verbose():
                     console.print(
-                        _("[green]✓[/green] Updated config file: {file}").format(file=config_manager.config_file)
+                        _("[green]✓[/green] Updated config file: {file}").format(
+                            file=config_manager.config_file
+                        )
                     )
                 # LOGGING OPTIMIZATION: Use verbosity-aware logging - important operation
-                log_info_normal(logger, verbosity, _("Updated config file with daemon configuration"))
+                log_info_normal(
+                    logger,
+                    verbosity,
+                    _("Updated config file with daemon configuration"),
+                )
         except Exception as e:
             if verbosity.is_verbose():
                 console.print(
-                    _("[yellow]⚠[/yellow] Could not save daemon config to config file: {e}").format(e=e)
+                    _(
+                        "[yellow]⚠[/yellow] Could not save daemon config to config file: {e}"
+                    ).format(e=e)
                 )
             logger.warning(_("Could not save daemon config to config file: %s"), e)
 
@@ -245,7 +256,8 @@ def start(
     if not daemon_manager.ensure_single_instance():
         pid = daemon_manager.get_pid()
         console.print(
-            _("[red]✗[/red] Daemon is already running with PID {pid}").format(pid=pid), style="red"
+            _("[red]✗[/red] Daemon is already running with PID {pid}").format(pid=pid),
+            style="red",
         )
         raise click.Abort
 
@@ -258,30 +270,38 @@ def start(
         # Show splash screen for foreground mode (allow with -v and -vv, but hide with -vvv or higher)
         splash_manager = None
         splash_thread = None
-        expected_duration = 60.0  # Default duration, will be overridden if detector available
-        if verbosity.verbosity_count <= 2 and not no_splash:  # Allow with -v and -vv, hide with -vvv+
-            from ccbt.interface.splash.splash_manager import SplashManager
-            from ccbt.cli.task_detector import get_detector
+        expected_duration = (
+            60.0  # Default duration, will be overridden if detector available
+        )
+        if (
+            verbosity.verbosity_count <= 2 and not no_splash
+        ):  # Allow with -v and -vv, hide with -vvv+
             import threading
-            
+
+            from ccbt.cli.task_detector import get_detector
+            from ccbt.interface.splash.splash_manager import SplashManager
+
             detector = get_detector()
             if detector.should_show_splash("daemon.start"):
-                splash_manager = SplashManager.from_verbosity_count(verbose, console=console)
+                splash_manager = SplashManager.from_verbosity_count(
+                    verbose, console=console
+                )
                 expected_duration = detector.get_expected_duration("daemon.start")
                 # Update splash message to indicate daemon is starting
-                try:
+                with contextlib.suppress(Exception):
                     splash_manager.update_progress_message("Starting daemon process...")
-                except Exception:
-                    pass  # Ignore errors updating splash
+
                 # Start splash screen in background thread
                 def run_splash():
-                    asyncio.run(
-                        splash_manager.show_splash_for_task(
-                            task_name="daemon start",
-                            max_duration=expected_duration,
-                            show_progress=True,
+                    if splash_manager is not None:
+                        asyncio.run(
+                            splash_manager.show_splash_for_task(
+                                task_name="daemon start",
+                                max_duration=expected_duration,
+                                show_progress=True,
+                            )
                         )
-                    )
+
                 splash_thread = threading.Thread(target=run_splash, daemon=True)
                 splash_thread.start()
 
@@ -297,7 +317,7 @@ def start(
                 foreground=True,
             )
             daemon_main_ref = daemon_main
-            
+
             # Signal handlers are set up in daemon_main.start() via daemon_manager
             # The signal handler will set _shutdown_event, which run() checks in its loop
             # The run() method catches KeyboardInterrupt and calls stop() in its finally block
@@ -315,34 +335,42 @@ def start(
             console.print(_("\n[yellow]Shutting down daemon...[/yellow]"))
             # Ensure shutdown event is set if it wasn't already
             if daemon_main_ref is not None:
-                if daemon_main_ref._shutdown_event and not daemon_main_ref._shutdown_event.is_set():
-                    daemon_main_ref._shutdown_event.set()
-                    logger.debug("Shutdown event set from CLI KeyboardInterrupt handler")
-                
+                if (
+                    daemon_main_ref.shutdown_event
+                    and not daemon_main_ref.shutdown_event.is_set()
+                ):
+                    daemon_main_ref.shutdown_event.set()
+                    logger.debug(
+                        "Shutdown event set from CLI KeyboardInterrupt handler"
+                    )
+
                 # CRITICAL FIX: If stop() wasn't called yet (event loop was cancelled before handler ran),
                 # try to ensure shutdown completes in a new event loop
-                if not daemon_main_ref._stopping:
+                if not daemon_main_ref.is_stopping:
                     try:
+
                         async def _ensure_shutdown() -> None:
                             """Ensure daemon shutdown completes."""
+                            if daemon_main_ref is None:
+                                return
                             try:
                                 # Use timeout to prevent hanging
-                                await asyncio.wait_for(daemon_main_ref.stop(), timeout=10.0)
+                                await asyncio.wait_for(
+                                    daemon_main_ref.stop(), timeout=10.0
+                                )
                             except asyncio.TimeoutError:
                                 logger.warning("Shutdown timeout - forcing cleanup")
                                 # At least try to remove PID file
-                                try:
-                                    daemon_main_ref.daemon_manager.remove_pid()
-                                except Exception:
-                                    pass
+                                with contextlib.suppress(Exception):
+                                    if hasattr(daemon_main_ref, "daemon_manager"):
+                                        daemon_main_ref.daemon_manager.remove_pid()
                             except Exception as e:
                                 logger.warning("Error ensuring shutdown: %s", e)
                                 # At least try to remove PID file
-                                try:
-                                    daemon_main_ref.daemon_manager.remove_pid()
-                                except Exception:
-                                    pass
-                        
+                                with contextlib.suppress(Exception):
+                                    if hasattr(daemon_main_ref, "daemon_manager"):
+                                        daemon_main_ref.daemon_manager.remove_pid()
+
                         # Run in a new event loop to ensure shutdown completes
                         asyncio.run(_ensure_shutdown())
                     except Exception as e:
@@ -353,7 +381,7 @@ def start(
                                 daemon_main_ref.daemon_manager.remove_pid()
                         except Exception:
                             pass
-            
+
             console.print(_("[green]Daemon stopped[/green]"))
     else:
         # Start daemon in background
@@ -364,30 +392,38 @@ def start(
         # Start splash screen just before daemon process actually starts
         splash_manager = None
         splash_thread = None
-        expected_duration = 60.0  # Default duration, will be overridden if detector available
-        if verbosity.verbosity_count <= 2 and not no_splash:  # Allow with -v and -vv, hide with -vvv+
-            from ccbt.interface.splash.splash_manager import SplashManager
-            from ccbt.cli.task_detector import get_detector
+        expected_duration = (
+            60.0  # Default duration, will be overridden if detector available
+        )
+        if (
+            verbosity.verbosity_count <= 2 and not no_splash
+        ):  # Allow with -v and -vv, hide with -vvv+
             import threading
-            
+
+            from ccbt.cli.task_detector import get_detector
+            from ccbt.interface.splash.splash_manager import SplashManager
+
             detector = get_detector()
             if detector.should_show_splash("daemon.start"):
-                splash_manager = SplashManager.from_verbosity_count(verbose, console=console)
+                splash_manager = SplashManager.from_verbosity_count(
+                    verbose, console=console
+                )
                 expected_duration = detector.get_expected_duration("daemon.start")
                 # Update splash message to indicate daemon is starting
-                try:
+                with contextlib.suppress(Exception):
                     splash_manager.update_progress_message("Starting daemon process...")
-                except Exception:
-                    pass  # Ignore errors updating splash
+
                 # Start splash screen in background thread
                 def run_splash():
-                    asyncio.run(
-                        splash_manager.show_splash_for_task(
-                            task_name="daemon start",
-                            max_duration=expected_duration,
-                            show_progress=True,
+                    if splash_manager is not None:
+                        asyncio.run(
+                            splash_manager.show_splash_for_task(
+                                task_name="daemon start",
+                                max_duration=expected_duration,
+                                show_progress=True,
+                            )
                         )
-                    )
+
                 splash_thread = threading.Thread(target=run_splash, daemon=True)
                 splash_thread.start()
 
@@ -405,22 +441,34 @@ def start(
             except (OSError, ProcessLookupError, Exception):
                 # Process died immediately
                 console.print(
-                    _("[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting").format(pid=pid)
+                    _(
+                        "[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting"
+                    ).format(pid=pid)
                 )
                 console.print(
-                    _("[yellow]The daemon process crashed during initialization.[/yellow]")
+                    _(
+                        "[yellow]The daemon process crashed during initialization.[/yellow]"
+                    )
                 )
                 if verbosity.is_verbose():
                     console.print(
-                        _("[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]")
+                        _(
+                            "[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]"
+                        )
                     )
                     console.print(
-                        _("[dim]Try running with --foreground flag to see detailed error output:[/dim]")
+                        _(
+                            "[dim]Try running with --foreground flag to see detailed error output:[/dim]"
+                        )
                     )
-                    console.print(_("[dim]  uv run btbt daemon start --foreground[/dim]"))
+                    console.print(
+                        _("[dim]  uv run btbt daemon start --foreground[/dim]")
+                    )
                 else:
                     console.print(
-                        _("[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]")
+                        _(
+                            "[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]"
+                        )
                     )
                 raise click.Abort from None
 
@@ -431,11 +479,11 @@ def start(
             if not no_wait:
                 # Update splash message to indicate initialization
                 if splash_manager:
-                    try:
-                        splash_manager.update_progress_message("Initializing daemon components...")
-                    except Exception:
-                        pass  # Ignore errors updating splash
-                
+                    with contextlib.suppress(Exception):
+                        splash_manager.update_progress_message(
+                            "Initializing daemon components..."
+                        )
+
                 if verbosity.is_verbose():
                     console.print(_("[cyan]Waiting for daemon to be ready...[/cyan]"))
                     with Progress(
@@ -455,36 +503,46 @@ def start(
                             splash_manager=splash_manager,
                         )
                 else:
-                    daemon_ready = _wait_for_daemon(cfg.daemon, timeout=expected_duration, splash_manager=splash_manager)
+                    daemon_ready = _wait_for_daemon(
+                        cfg.daemon,
+                        timeout=expected_duration,
+                        splash_manager=splash_manager,
+                    )
 
                 if daemon_ready:
                     elapsed = time.time() - start_time
                     # Update splash screen message to indicate initialization complete
                     if splash_manager:
-                        try:
-                            splash_manager.update_progress_message("Daemon initialization complete!")
-                        except Exception:
-                            pass  # Ignore errors updating splash
+                        with contextlib.suppress(Exception):
+                            splash_manager.update_progress_message(
+                                "Daemon initialization complete!"
+                            )  # Ignore errors updating splash
                     # Small additional delay to ensure "Daemon initialization complete" message has been logged
                     time.sleep(0.5)
                     console.print(
-                        _("[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)").format(pid=pid, elapsed=elapsed)
+                        _(
+                            "[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)"
+                        ).format(pid=pid, elapsed=elapsed)
                     )
                     # Clear splash screen only after daemon initialization is fully complete
                     if splash_manager:
-                        try:
+                        with contextlib.suppress(Exception):
                             splash_manager.clear_progress_messages()
-                        except Exception:
-                            pass  # Ignore errors clearing splash
                 else:
                     console.print(
-                        _("[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet").format(pid=pid)
+                        _(
+                            "[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet"
+                        ).format(pid=pid)
                     )
                     console.print(
                         _("[dim]Use 'btbt daemon status' to check daemon status[/dim]")
                     )
             else:
-                console.print(_("[green]✓[/green] Daemon process started (PID {pid})").format(pid=pid))
+                console.print(
+                    _("[green]✓[/green] Daemon process started (PID {pid})").format(
+                        pid=pid
+                    )
+                )
                 console.print(
                     _("[dim]Use 'btbt daemon status' to check daemon status[/dim]")
                 )
@@ -495,7 +553,7 @@ def start(
 
 
 async def _run_daemon_foreground(
-    daemon_config: DaemonConfig, config_file: str | None
+    _daemon_config: DaemonConfig, config_file: str | None
 ) -> None:
     """Run daemon in foreground mode."""
     from ccbt.daemon.main import DaemonMain
@@ -508,7 +566,11 @@ async def _run_daemon_foreground(
     await daemon.run()
 
 
-def _wait_for_daemon(daemon_config: DaemonConfig, timeout: float = 15.0, splash_manager: Any | None = None) -> bool:
+def _wait_for_daemon(
+    daemon_config: DaemonConfig,
+    timeout: float = 15.0,
+    splash_manager: Any | None = None,
+) -> bool:
     """Wait for daemon to be ready.
 
     Args:
@@ -534,7 +596,9 @@ def _wait_for_daemon(daemon_config: DaemonConfig, timeout: float = 15.0, splash_
                     # Update splash to indicate waiting for full initialization
                     if splash_manager and last_stage != "waiting":
                         try:
-                            splash_manager.update_progress_message("Waiting for daemon to be ready...")
+                            splash_manager.update_progress_message(
+                                "Waiting for daemon to be ready..."
+                            )
                             last_stage = "waiting"
                         except Exception:
                             pass
@@ -584,8 +648,9 @@ def _wait_for_daemon_with_progress(
         timeout: Timeout in seconds
         progress: Rich Progress object (optional)
         task: Task ID for progress (optional)
-        verbose: Enable verbose output
+        verbosity: Verbosity level for output
         daemon_pid: Daemon PID to monitor
+        splash_manager: Splash screen manager (optional)
 
     Returns:
         True if daemon is ready, False otherwise
@@ -702,24 +767,30 @@ def _wait_for_daemon_with_progress(
                         )
                     if verbosity and verbosity.is_verbose():
                         console.print(
-                            _("[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)").format(
-                                pid=initial_pid, elapsed=elapsed
-                            )
+                            _(
+                                "[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)"
+                            ).format(pid=initial_pid, elapsed=elapsed)
                         )
                         console.print(
-                            _("[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]")
+                            _(
+                                "[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]"
+                            )
                         )
                     else:
                         console.print(
-                            _("[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)").format(
-                                pid=initial_pid, elapsed=elapsed
+                            _(
+                                "[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)"
+                            ).format(pid=initial_pid, elapsed=elapsed)
+                        )
+                        console.print(
+                            _(
+                                "[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]"
                             )
                         )
                         console.print(
-                            _("[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]")
-                        )
-                        console.print(
-                            _("[dim]Use -v flag for more details or check daemon logs[/dim]")
+                            _(
+                                "[dim]Use -v flag for more details or check daemon logs[/dim]"
+                            )
                         )
                     return False
 
@@ -732,10 +803,8 @@ def _wait_for_daemon_with_progress(
                     last_detected_stage = stage_idx
                     # Update splash screen with stage description
                     if splash_manager:
-                        try:
+                        with contextlib.suppress(Exception):
                             splash_manager.update_progress_message(stage_desc)
-                        except Exception:
-                            pass  # Ignore errors updating splash
 
                 if progress and task is not None:
                     progress.update(task, description=stage_desc)
@@ -745,10 +814,10 @@ def _wait_for_daemon_with_progress(
                 if is_ready:
                     # Update splash to indicate waiting for full initialization
                     if splash_manager:
-                        try:
-                            splash_manager.update_progress_message("Waiting for daemon initialization to complete...")
-                        except Exception:
-                            pass
+                        with contextlib.suppress(Exception):
+                            splash_manager.update_progress_message(
+                                "Waiting for daemon initialization to complete..."
+                            )
                     # Small delay to ensure daemon has fully initialized (including "Daemon initialization complete" message)
                     await asyncio.sleep(1.0)
                     return True
@@ -765,15 +834,21 @@ def _wait_for_daemon_with_progress(
         if progress and task is not None:
             progress.update(
                 task,
-                description=_("[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]").format(last_status=last_status),
+                description=_(
+                    "[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]"
+                ).format(last_status=last_status),
             )
 
         if verbosity and verbosity.is_verbose():
             console.print(
-                _("[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})").format(timeout=timeout, last_status=last_status)
+                _(
+                    "[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})"
+                ).format(timeout=timeout, last_status=last_status)
             )
             console.print(
-                _("[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]")
+                _(
+                    "[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]"
+                )
             )
 
         return False
@@ -837,18 +912,25 @@ def exit_daemon(force: bool, timeout: float) -> None:
                             TimeElapsedColumn(),
                             console=console,
                         ) as progress:
-                            task = progress.add_task(_("Stopping daemon..."), total=None)
+                            task = progress.add_task(
+                                _("Stopping daemon..."), total=None
+                            )
                             while time.time() - start_time < timeout:
                                 if not daemon_manager.is_running():
                                     progress.update(
-                                        task, description=_("[green]Daemon stopped gracefully[/green]")
+                                        task,
+                                        description=_(
+                                            "[green]Daemon stopped gracefully[/green]"
+                                        ),
                                     )
                                     click.echo(_("Daemon stopped gracefully"))
                                     return
                                 elapsed = time.time() - start_time
                                 progress.update(
                                     task,
-                                    description=_("Stopping daemon... ({elapsed:.1f}s)").format(elapsed=elapsed),
+                                    description=_(
+                                        "Stopping daemon... ({elapsed:.1f}s)"
+                                    ).format(elapsed=elapsed),
                                 )
                                 time.sleep(0.5)
                 except Exception as e:
@@ -896,16 +978,32 @@ def status() -> None:
                 client = IPCClient(api_key=cfg.daemon.api_key)  # type: ignore[union-attr]
                 try:
                     status = await client.get_status()
-                    console.print(_("\n[cyan]Status:[/cyan] {status}").format(status=status.status))
-                    console.print(_("[cyan]Torrents:[/cyan] {num_torrents}").format(num_torrents=status.num_torrents))
-                    console.print(_("[cyan]Uptime:[/cyan] {uptime:.1f}s").format(uptime=status.uptime))
+                    console.print(
+                        _("\n[cyan]Status:[/cyan] {status}").format(
+                            status=status.status
+                        )
+                    )
+                    console.print(
+                        _("[cyan]Torrents:[/cyan] {num_torrents}").format(
+                            num_torrents=status.num_torrents
+                        )
+                    )
+                    console.print(
+                        _("[cyan]Uptime:[/cyan] {uptime:.1f}s").format(
+                            uptime=status.uptime
+                        )
+                    )
                     if hasattr(status, "download_rate"):
                         console.print(
-                            _("[cyan]Download:[/cyan] {rate:.2f} KiB/s").format(rate=status.download_rate)
+                            _("[cyan]Download:[/cyan] {rate:.2f} KiB/s").format(
+                                rate=status.download_rate
+                            )
                         )
                     if hasattr(status, "upload_rate"):
                         console.print(
-                            _("[cyan]Upload:[/cyan] {rate:.2f} KiB/s").format(rate=status.upload_rate)
+                            _("[cyan]Upload:[/cyan] {rate:.2f} KiB/s").format(
+                                rate=status.upload_rate
+                            )
                         )
                 finally:
                     await client.close()
@@ -913,7 +1011,9 @@ def status() -> None:
             asyncio.run(_get_status())
         else:
             console.print(
-                _("[yellow]API key not found in config, cannot get detailed status[/yellow]")
+                _(
+                    "[yellow]API key not found in config, cannot get detailed status[/yellow]"
+                )
             )
     except Exception as e:
         logger.debug(_("Error getting daemon status: %s"), e)

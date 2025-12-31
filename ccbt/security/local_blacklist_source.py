@@ -208,9 +208,7 @@ class LocalBlacklistSource:
             # Aggregate by metric type
             if entry.metric_type == "handshake_failure":
                 summary.failed_handshakes += int(entry.value)
-            elif entry.metric_type == "connection_attempt":
-                summary.total_connection_attempts += int(entry.value)
-            elif entry.metric_type == "connection_success":
+            elif entry.metric_type in {"connection_attempt", "connection_success"}:
                 summary.total_connection_attempts += int(entry.value)
             elif entry.metric_type == "spam":
                 summary.spam_score += entry.value
@@ -220,14 +218,16 @@ class LocalBlacklistSource:
         # Get reputation scores from SecurityManager
         for ip, summary in ip_metrics.items():
             # Find peer reputation by IP
-            for peer_id, reputation in self.security_manager.peer_reputations.items():
+            for reputation in self.security_manager.peer_reputations.values():
                 if reputation.ip == ip:
                     summary.reputation_score = reputation.reputation_score
                     break
 
             # Calculate connection success rate
             if summary.total_connection_attempts > 0:
-                successful = summary.total_connection_attempts - summary.failed_handshakes
+                successful = (
+                    summary.total_connection_attempts - summary.failed_handshakes
+                )
                 summary.connection_success_rate = (
                     successful / summary.total_connection_attempts
                 )
@@ -248,9 +248,7 @@ class LocalBlacklistSource:
                     source="local_metrics",
                 )
                 blacklisted_count += 1
-                logger.info(
-                    "Auto-blacklisted IP %s: %s", ip, reason
-                )
+                logger.info("Auto-blacklisted IP %s: %s", ip, reason)
 
         # Cleanup old metrics
         self._cleanup_old_metrics(cutoff_time)
@@ -325,16 +323,12 @@ class LocalBlacklistSource:
         reasons = []
 
         if summary.failed_handshakes >= self.thresholds.get("failed_handshakes", 5):
-            reasons.append(
-                f"{summary.failed_handshakes} failed handshakes"
-            )
+            reasons.append(f"{summary.failed_handshakes} failed handshakes")
 
         if summary.total_connection_attempts > 0:
             failure_rate = summary.failed_handshakes / summary.total_connection_attempts
             if failure_rate >= self.thresholds.get("handshake_failure_rate", 0.8):
-                reasons.append(
-                    f"{failure_rate:.0%} handshake failure rate"
-                )
+                reasons.append(f"{failure_rate:.0%} handshake failure rate")
 
         if summary.spam_score >= self.thresholds.get("spam_score", 10.0):
             reasons.append(f"spam score {summary.spam_score:.1f}")
@@ -348,17 +342,17 @@ class LocalBlacklistSource:
         time_span = summary.last_seen - summary.first_seen
         if time_span > 0:
             attempts_per_minute = (summary.total_connection_attempts / time_span) * 60
-            if attempts_per_minute >= self.thresholds.get("connection_attempt_rate", 20):
-                reasons.append(
-                    f"{attempts_per_minute:.1f} connection attempts/min"
-                )
+            if attempts_per_minute >= self.thresholds.get(
+                "connection_attempt_rate", 20
+            ):
+                reasons.append(f"{attempts_per_minute:.1f} connection attempts/min")
 
         if not reasons:
             return "Multiple threshold violations"
 
         return "Local metrics: " + ", ".join(reasons)
 
-    def _cleanup_old_metrics(self, cutoff_time: float) -> None:
+    def _cleanup_old_metrics(self, _cutoff_time: float) -> None:
         """Remove metrics older than cutoff time.
 
         Args:
@@ -425,11 +419,3 @@ class LocalBlacklistSource:
             "metric_types": metric_type_counts,
             "window_seconds": self.metric_window,
         }
-
-
-
-
-
-
-
-

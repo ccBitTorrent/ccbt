@@ -299,9 +299,12 @@ class Handshake:
         self.set_extension_protocol()
 
         # Protocol v2 support (BEP 52)
-        if hasattr(config, "network") and hasattr(config.network, "protocol_v2"):
-            if config.network.protocol_v2.enable_protocol_v2:
-                self.set_v2_support()
+        if (
+            hasattr(config, "network")
+            and hasattr(config.network, "protocol_v2")
+            and config.network.protocol_v2.enable_protocol_v2
+        ):
+            self.set_v2_support()
 
         # DHT support (byte 7, bit 0)
         if hasattr(config, "discovery") and config.discovery.enable_dht:
@@ -1356,7 +1359,7 @@ class MessageDecoder(AsyncMessageDecoder):
 
 
 def create_message(message_type: MessageType, **kwargs) -> PeerMessage:
-    """Factory function to create messages.
+    """Create message.
 
     Args:
         message_type: Type of message to create
@@ -1595,9 +1598,10 @@ _socket_optimizer: SocketOptimizer | None = None
 
 def _get_socket_optimizer() -> SocketOptimizer:
     """Get the global socket optimizer instance (lazy initialization).
-    
+
     Returns:
         SocketOptimizer: The global socket optimizer instance
+
     """
     global _socket_optimizer
     if _socket_optimizer is None:

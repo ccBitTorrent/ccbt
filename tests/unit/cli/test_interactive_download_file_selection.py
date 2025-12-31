@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-cli_main = __import__("ccbt.cli.main", fromlist=["start_interactive_download", "start_basic_download"])
+cli_downloads = __import__("ccbt.cli.downloads", fromlist=["start_interactive_download", "start_basic_download"])
 
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
 
@@ -35,6 +35,7 @@ def mock_torrent_session():
     mock_manager = MagicMock()
     mock_manager.deselect_all = AsyncMock()
     mock_manager.select_files = AsyncMock()
+    mock_manager.select_file = AsyncMock()  # This is what LocalSessionAdapter actually calls
     mock_manager.set_file_priority = AsyncMock()
     
     mock_session = SimpleNamespace(
@@ -72,21 +73,31 @@ class TestStartInteractiveDownloadFileSelection:
     """Tests for file selection in start_interactive_download (lines 2395-2428)."""
 
     @pytest.mark.asyncio
+    @patch("ccbt.cli.interactive.Prompt.ask")
+    @patch("ccbt.cli.downloads.LocalSessionAdapter")
     async def test_files_selection_before_interactive(
-        self, mock_session_manager, mock_torrent_session, mock_console
+        self, mock_adapter_class, mock_prompt, mock_session_manager, mock_torrent_session, mock_console
     ):
         """Test files_selection applied before interactive mode (lines 2406-2408)."""
-        from ccbt.cli.interactive import InteractiveCLI
+        # Mock Prompt.ask to return "done" immediately to exit interactive file selection loop
+        mock_prompt.return_value = "done"
+        
+        # Mock the adapter and its select_files method
+        mock_adapter = MagicMock()
+        mock_adapter.select_files = AsyncMock(return_value={"status": "selected", "file_indices": [0, 1]})
+        mock_adapter_class.return_value = mock_adapter
         
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
         
-        with patch("ccbt.cli.main.InteractiveCLI") as mock_interactive_cli:
+        # Mock the download_torrent method to exit quickly
+        with patch("ccbt.cli.downloads.InteractiveCLI") as mock_interactive_cli:
             mock_interactive = MagicMock()
             mock_interactive.download_torrent = AsyncMock()
             mock_interactive.current_info_hash_hex = "0" * 40
+            mock_interactive.running = False  # Exit download loop immediately
             mock_interactive_cli.return_value = mock_interactive
             
-            await cli_main.start_interactive_download(
+            await cli_downloads.start_interactive_download(
                 mock_session_manager,
                 torrent_data,
                 mock_console,
@@ -94,26 +105,34 @@ class TestStartInteractiveDownloadFileSelection:
                 files_selection=(0, 1),
             )
             
-            # Verify deselect_all and select_files were called
-            mock_torrent_session.file_selection_manager.deselect_all.assert_called_once()
-            mock_torrent_session.file_selection_manager.select_files.assert_called_once_with([0, 1])
+            # Verify executor called adapter.select_files with correct parameters
+            # The executor calls adapter.select_files with positional args: (info_hash, file_indices)
+            mock_adapter.select_files.assert_called_once()
+            call_args = mock_adapter.select_files.call_args
+            assert len(call_args.args) >= 2, "select_files should be called with at least 2 positional args"
+            assert call_args.args[0] == "0" * 40, f"Expected info_hash '0'*40, got {call_args.args[0]}"
+            assert call_args.args[1] == [0, 1], f"Expected file_indices [0, 1], got {call_args.args[1]}"
 
     @pytest.mark.asyncio
+    @patch("ccbt.cli.interactive.Prompt.ask")
     async def test_file_priorities_before_interactive(
-        self, mock_session_manager, mock_torrent_session, mock_console
+        self, mock_prompt, mock_session_manager, mock_torrent_session, mock_console
     ):
         """Test file_priorities applied before interactive mode (lines 2411-2428)."""
-        from ccbt.cli.interactive import InteractiveCLI
+        # Mock Prompt.ask to return "done" immediately to exit interactive file selection loop
+        mock_prompt.return_value = "done"
         
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
         
-        with patch("ccbt.cli.main.InteractiveCLI") as mock_interactive_cli:
+        # Mock the download_torrent method to exit quickly
+        with patch("ccbt.cli.downloads.InteractiveCLI") as mock_interactive_cli:
             mock_interactive = MagicMock()
             mock_interactive.download_torrent = AsyncMock()
             mock_interactive.current_info_hash_hex = "0" * 40
+            mock_interactive.running = False  # Exit download loop immediately
             mock_interactive_cli.return_value = mock_interactive
             
-            await cli_main.start_interactive_download(
+            await cli_downloads.start_interactive_download(
                 mock_session_manager,
                 torrent_data,
                 mock_console,
@@ -125,22 +144,26 @@ class TestStartInteractiveDownloadFileSelection:
             assert mock_torrent_session.file_selection_manager.set_file_priority.call_count == 2
 
     @pytest.mark.asyncio
+    @patch("ccbt.cli.interactive.Prompt.ask")
     async def test_file_priorities_invalid_format(
-        self, mock_session_manager, mock_torrent_session, mock_console
+        self, mock_prompt, mock_session_manager, mock_torrent_session, mock_console
     ):
         """Test file_priorities with invalid format (lines 2420-2428)."""
-        from ccbt.cli.interactive import InteractiveCLI
+        # Mock Prompt.ask to return "done" immediately to exit interactive file selection loop
+        mock_prompt.return_value = "done"
         
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
         
-        with patch("ccbt.cli.main.InteractiveCLI") as mock_interactive_cli:
+        # Mock the download_torrent method to exit quickly
+        with patch("ccbt.cli.downloads.InteractiveCLI") as mock_interactive_cli:
             mock_interactive = MagicMock()
             mock_interactive.download_torrent = AsyncMock()
             mock_interactive.current_info_hash_hex = "0" * 40
+            mock_interactive.running = False  # Exit download loop immediately
             mock_interactive_cli.return_value = mock_interactive
             
             # Test with invalid format (no = separator)
-            await cli_main.start_interactive_download(
+            await cli_downloads.start_interactive_download(
                 mock_session_manager,
                 torrent_data,
                 mock_console,
@@ -152,22 +175,26 @@ class TestStartInteractiveDownloadFileSelection:
             assert mock_console.print.called
 
     @pytest.mark.asyncio
+    @patch("ccbt.cli.interactive.Prompt.ask")
     async def test_file_priorities_invalid_priority_name(
-        self, mock_session_manager, mock_torrent_session, mock_console
+        self, mock_prompt, mock_session_manager, mock_torrent_session, mock_console
     ):
         """Test file_priorities with invalid priority name (KeyError) (lines 2425-2428)."""
-        from ccbt.cli.interactive import InteractiveCLI
+        # Mock Prompt.ask to return "done" immediately to exit interactive file selection loop
+        mock_prompt.return_value = "done"
         
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
         
-        with patch("ccbt.cli.main.InteractiveCLI") as mock_interactive_cli:
+        # Mock the download_torrent method to exit quickly
+        with patch("ccbt.cli.downloads.InteractiveCLI") as mock_interactive_cli:
             mock_interactive = MagicMock()
             mock_interactive.download_torrent = AsyncMock()
             mock_interactive.current_info_hash_hex = "0" * 40
+            mock_interactive.running = False  # Exit download loop immediately
             mock_interactive_cli.return_value = mock_interactive
             
             # Test with invalid priority name
-            await cli_main.start_interactive_download(
+            await cli_downloads.start_interactive_download(
                 mock_session_manager,
                 torrent_data,
                 mock_console,
@@ -179,22 +206,26 @@ class TestStartInteractiveDownloadFileSelection:
             assert mock_console.print.called
 
     @pytest.mark.asyncio
+    @patch("ccbt.cli.interactive.Prompt.ask")
     async def test_file_priorities_with_value_error(
-        self, mock_session_manager, mock_torrent_session, mock_console
+        self, mock_prompt, mock_session_manager, mock_torrent_session, mock_console
     ):
         """Test file_priorities with ValueError (invalid file index) (lines 2420-2428)."""
-        from ccbt.cli.interactive import InteractiveCLI
+        # Mock Prompt.ask to return "done" immediately to exit interactive file selection loop
+        mock_prompt.return_value = "done"
         
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
         
-        with patch("ccbt.cli.main.InteractiveCLI") as mock_interactive_cli:
+        # Mock the download_torrent method to exit quickly
+        with patch("ccbt.cli.downloads.InteractiveCLI") as mock_interactive_cli:
             mock_interactive = MagicMock()
             mock_interactive.download_torrent = AsyncMock()
             mock_interactive.current_info_hash_hex = "0" * 40
+            mock_interactive.running = False  # Exit download loop immediately
             mock_interactive_cli.return_value = mock_interactive
             
             # Test with invalid file index (non-numeric)
-            await cli_main.start_interactive_download(
+            await cli_downloads.start_interactive_download(
                 mock_session_manager,
                 torrent_data,
                 mock_console,
@@ -210,10 +241,16 @@ class TestStartBasicDownloadFileSelection:
     """Tests for file selection in start_basic_download (lines 2482-2519)."""
 
     @pytest.mark.asyncio
+    @patch("ccbt.cli.downloads.LocalSessionAdapter")
     async def test_files_selection_in_basic_download(
-        self, mock_session_manager, mock_torrent_session, mock_console
+        self, mock_adapter_class, mock_session_manager, mock_torrent_session, mock_console
     ):
         """Test files_selection in basic download (lines 2493-2499)."""
+        # Mock the adapter and its select_files method
+        mock_adapter = MagicMock()
+        mock_adapter.select_files = AsyncMock(return_value={"status": "selected", "file_indices": [0, 1]})
+        mock_adapter_class.return_value = mock_adapter
+        
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
         
         # Mock the progress monitoring loop to exit immediately
@@ -237,7 +274,7 @@ class TestStartBasicDownloadFileSelection:
             mock_session_manager.get_torrent_status = AsyncMock(side_effect=mock_get_status)
             
             try:
-                await cli_main.start_basic_download(
+                await cli_downloads.start_basic_download(
                     mock_session_manager,
                     torrent_data,
                     mock_console,
@@ -248,9 +285,11 @@ class TestStartBasicDownloadFileSelection:
                 # Expected when loop exits
                 pass
             
-            # Verify deselect_all and select_files were called
-            mock_torrent_session.file_selection_manager.deselect_all.assert_called_once()
-            mock_torrent_session.file_selection_manager.select_files.assert_called_once_with([0, 1])
+            # Verify executor called adapter.select_files with correct parameters
+            mock_adapter.select_files.assert_called_once()
+            call_args = mock_adapter.select_files.call_args
+            assert len(call_args.args) >= 2, "select_files should be called with at least 2 positional args"
+            assert call_args.args[1] == [0, 1], f"Expected file_indices [0, 1], got {call_args.args[1]}"
             # Verify success message was printed
             assert mock_console.print.called
 
@@ -282,7 +321,7 @@ class TestStartBasicDownloadFileSelection:
             mock_session_manager.get_torrent_status = AsyncMock(side_effect=mock_get_status)
             
             try:
-                await cli_main.start_basic_download(
+                await cli_downloads.start_basic_download(
                     mock_session_manager,
                     torrent_data,
                     mock_console,
@@ -323,7 +362,7 @@ class TestStartBasicDownloadFileSelection:
             mock_session_manager.get_torrent_status = AsyncMock(side_effect=mock_get_status)
             
             try:
-                await cli_main.start_basic_download(
+                await cli_downloads.start_basic_download(
                     mock_session_manager,
                     torrent_data,
                     mock_console,

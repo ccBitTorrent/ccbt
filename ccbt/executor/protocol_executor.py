@@ -16,8 +16,8 @@ class ProtocolExecutor(CommandExecutor):
     async def execute(
         self,
         command: str,
-        *args: Any,
-        **kwargs: Any,
+        *_args: Any,
+        **_kwargs: Any,
     ) -> CommandResult:
         """Execute protocol command.
 

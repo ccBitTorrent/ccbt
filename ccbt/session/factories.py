@@ -68,12 +68,12 @@ class ComponentFactory:
             # BEP 27: Set callback to check if torrent is private
             # This allows DHT client to skip operations for private torrents
             if hasattr(self.manager, "private_torrents"):
-                dht_client.is_private_torrent = lambda info_hash: info_hash in self.manager.private_torrents
+                dht_client.is_private_torrent = (
+                    lambda info_hash: info_hash in self.manager.private_torrents
+                )
             return dht_client
-        except Exception as e:
-            self.logger.error(
-                "Failed to create DHT client: %s", e, exc_info=True
-            )
+        except Exception:
+            self.logger.exception("Failed to create DHT client")
             return None
 
     def create_nat_manager(self) -> Any | None:
@@ -115,8 +115,6 @@ class ComponentFactory:
             from ccbt.peer.tcp_server import IncomingPeerServer
 
             return IncomingPeerServer(self.manager, self.manager.config)
-        except Exception as e:
-            self.logger.error(
-                "Failed to create TCP server: %s", e, exc_info=True
-            )
+        except Exception:
+            self.logger.exception("Failed to create TCP server")
             return None

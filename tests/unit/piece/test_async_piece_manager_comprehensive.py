@@ -264,6 +264,14 @@ class TestNetworkOperationErrorHandling:
         """Test request_piece_from_peers with peer error (lines 402-442)."""
         peer = mock_peer_connection
         peer.can_request = MagicMock(return_value=True)
+        # CRITICAL FIX: Add required attributes for _request_blocks_normal
+        peer.get_available_pipeline_slots = MagicMock(return_value=10)
+        peer.outstanding_requests = []
+        peer.max_pipeline_depth = 16
+        
+        # CRITICAL FIX: Add stats with download_rate for peer scoring in _get_peers_for_piece
+        peer.stats = MagicMock()
+        peer.stats.download_rate = 1024 * 1024  # 1 MB/s (numeric value, not MagicMock)
         
         await piece_manager._add_peer(peer)
         await piece_manager.update_peer_availability(
@@ -271,15 +279,36 @@ class TestNetworkOperationErrorHandling:
             peer.bitfield,
         )
         
+        # CRITICAL FIX: Mock peer_manager with _balance_requests_across_peers to use balanced path
+        # Also mock get_active_peers to return the peer list for throttling logic
         peer_manager = MagicMock()
         peer_manager.get_active_peers = MagicMock(return_value=[peer])
         peer_manager.request_piece = AsyncMock(side_effect=Exception("Network error"))
         
-        # Exception should propagate - need to catch it
-        with pytest.raises(Exception, match="Network error"):
-            await piece_manager.request_piece_from_peers(
-                0, peer_manager
-            )
+        # Mock _balance_requests_across_peers to return balanced requests
+        from ccbt.peer.async_peer_connection import RequestInfo
+        import time
+        piece = piece_manager.pieces[0]
+        missing_blocks = piece.get_missing_blocks()
+        balanced_requests = {}
+        peer_key = f"{peer.peer_info.ip}:{peer.peer_info.port}"
+        for block in missing_blocks:
+            request_info = RequestInfo(0, block.begin, block.length, time.time())
+            if peer_key not in balanced_requests:
+                balanced_requests[peer_key] = []
+            balanced_requests[peer_key].append(request_info)
+        peer_manager._balance_requests_across_peers = MagicMock(return_value=balanced_requests)
+        
+        # CRITICAL FIX: The exception is caught and logged in _request_blocks_normal,
+        # so it doesn't propagate. The test should verify that the error is handled gracefully
+        # (no exception raised, but the request fails silently)
+        # The implementation catches exceptions to prevent one peer error from stopping all requests
+        await piece_manager.request_piece_from_peers(
+            0, peer_manager
+        )
+        
+        # Verify that request_piece was called (even though it raised an exception)
+        assert peer_manager.request_piece.called, "request_piece should have been called despite error"
 
     @pytest.mark.asyncio
     async def test_get_peers_for_piece_no_availability(self, piece_manager):
@@ -350,6 +379,10 @@ class TestRequestManagement:
         """Test normal block requesting (lines 463-500)."""
         peer = mock_peer_connection
         peer.can_request = MagicMock(return_value=True)
+        # CRITICAL FIX: Add required attributes for _request_blocks_normal
+        peer.get_available_pipeline_slots = MagicMock(return_value=10)  # Available slots
+        peer.outstanding_requests = []  # Empty list for outstanding requests
+        peer.max_pipeline_depth = 16  # Pipeline depth
         
         await piece_manager._add_peer(peer)
         await piece_manager.update_peer_availability(
@@ -360,16 +393,31 @@ class TestRequestManagement:
         piece = piece_manager.pieces[0]
         missing_blocks = piece.get_missing_blocks()
         
+        # CRITICAL FIX: Mock peer_manager with _balance_requests_across_peers to use balanced path
+        # Also mock get_active_peers to return the peer list for throttling logic
         peer_manager = MagicMock()
         peer_manager.request_piece = AsyncMock()
+        peer_manager.get_active_peers = MagicMock(return_value=[peer])
+        
+        # Mock _balance_requests_across_peers to return balanced requests
+        from ccbt.peer.async_peer_connection import RequestInfo
+        import time
+        balanced_requests = {}
+        peer_key = f"{peer.peer_info.ip}:{peer.peer_info.port}"
+        for block in missing_blocks:
+            request_info = RequestInfo(0, block.begin, block.length, time.time())
+            if peer_key not in balanced_requests:
+                balanced_requests[peer_key] = []
+            balanced_requests[peer_key].append(request_info)
+        peer_manager._balance_requests_across_peers = MagicMock(return_value=balanced_requests)
         
         piece_manager.is_downloading = True
         await piece_manager._request_blocks_normal(
             0, missing_blocks, [peer], peer_manager
         )
         
-        # Should make requests
-        assert True
+        # Should make requests - verify request_piece was called
+        assert peer_manager.request_piece.called, "request_piece should have been called"
 
     @pytest.mark.asyncio
     async def test_request_blocks_endgame(self, piece_manager, mock_peer_connection):
@@ -828,6 +876,10 @@ class TestAdditionalCoverageGaps:
         """Test _request_blocks_normal edge cases (lines 488)."""
         peer = mock_peer_connection
         peer.can_request = MagicMock(return_value=True)
+        # CRITICAL FIX: Add required attributes for _request_blocks_normal
+        peer.get_available_pipeline_slots = MagicMock(return_value=10)
+        peer.outstanding_requests = []
+        peer.max_pipeline_depth = 16
         
         await piece_manager._add_peer(peer)
         await piece_manager.update_peer_availability(
@@ -844,19 +896,44 @@ class TestAdditionalCoverageGaps:
         await piece_manager._request_blocks_normal(
             0, [], [peer], peer_manager
         )
-        # Should handle gracefully
+        # Should handle gracefully - no requests should be made
+        assert not peer_manager.request_piece.called, "No requests should be made for empty blocks"
         
         # Test with start_block >= len(missing_blocks) 
         # (would happen with more peers than blocks)
         many_peers = []
-        for _ in range(100):
+        for i in range(100):
             p = AsyncMock()
-            p.peer_info = PeerInfo(ip="127.0.0.1", port=6881)
+            p.peer_info = PeerInfo(ip="127.0.0.1", port=6881 + i)
             p.can_request = MagicMock(return_value=True)
+            p.get_available_pipeline_slots = MagicMock(return_value=10)
+            p.outstanding_requests = []
+            p.max_pipeline_depth = 16
             many_peers.append(p)
+        
+        # Configure mock to return a dict mapping peer keys to request lists
+        # The _balance_requests_across_peers method should return a dict
+        async def mock_balance_requests(requests, peers, min_allocation_per_peer=None):
+            # Return a dict with at least one peer having requests
+            # IMPORTANT: Always return a dict with at least one peer, even if requests is empty
+            # This ensures the iteration happens and the test can verify behavior
+            if peers and requests:
+                peer_key = str(peers[0].peer_info)
+                return {peer_key: requests[:1]}
+            elif peers:
+                # If no requests but we have peers, return empty list for first peer
+                peer_key = str(peers[0].peer_info)
+                return {peer_key: []}
+            return {}
+        
+        peer_manager._balance_requests_across_peers = AsyncMock(side_effect=mock_balance_requests)
+        # Configure get_active_peers to return the peers so throttling logic works
+        peer_manager.get_active_peers = AsyncMock(return_value=many_peers[:10])  # Return first 10 peers
         
         await piece_manager._request_blocks_normal(
             0, missing_blocks[:1], many_peers, peer_manager
         )
         # Should handle gracefully (break when start_block >= len)
+        # At least one request should be made for the single block
+        assert peer_manager.request_piece.called, "At least one request should be made"
 

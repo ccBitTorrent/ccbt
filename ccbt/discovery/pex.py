@@ -91,8 +91,12 @@ class AsyncPexManager:
 
         # XET chunk tracking
         self.known_chunks: dict[bytes, set[tuple[str, int]]] = {}  # chunk_hash -> peers
-        self.previous_known_chunks: dict[str, set[bytes]] = defaultdict(set)  # peer_key -> chunks
-        self.chunks_sent_to_session: dict[str, set[bytes]] = defaultdict(set)  # peer_key -> chunks
+        self.previous_known_chunks: dict[str, set[bytes]] = defaultdict(
+            set
+        )  # peer_key -> chunks
+        self.chunks_sent_to_session: dict[str, set[bytes]] = defaultdict(
+            set
+        )  # peer_key -> chunks
         self.chunk_callbacks: list[Callable[[list[bytes]], None]] = []
 
         self.logger = logging.getLogger(__name__)
@@ -119,13 +123,15 @@ class AsyncPexManager:
 
     async def _pex_loop(self) -> None:
         """Background task for PEX operations.
-        
+
         CRITICAL FIX: Adaptive PEX interval based on peer count.
         When peer count is low, exchange peers more frequently.
         """
-        base_pex_interval = 60.0  # Base interval: 60 seconds (BEP 11 compliant: max 1 per minute)
+        base_pex_interval = (
+            60.0  # Base interval: 60 seconds (BEP 11 compliant: max 1 per minute)
+        )
         pex_interval = base_pex_interval
-        
+
         while True:  # pragma: no cover - Background loop, tested via cancellation
             try:
                 # CRITICAL FIX: Adaptive PEX interval based on connected peer count
@@ -135,7 +141,7 @@ class AsyncPexManager:
                     try:
                         connected_peers = await self.get_connected_peers_callback()
                         peer_count = len(connected_peers) if connected_peers else 0
-                        
+
                         if peer_count < 3:
                             # Ultra-low peer count - exchange peers every 30 seconds (BEP 11 compliant minimum)
                             pex_interval = 30.0
@@ -160,11 +166,13 @@ class AsyncPexManager:
                             pex_interval = base_pex_interval
                     except Exception as e:
                         # Fallback to base interval if callback fails
-                        self.logger.debug("Failed to get peer count for PEX interval: %s", e)
+                        self.logger.debug(
+                            "Failed to get peer count for PEX interval: %s", e
+                        )
                         pex_interval = base_pex_interval
                 else:
                     pex_interval = base_pex_interval
-                
+
                 await asyncio.sleep(pex_interval)
                 await (
                     self._send_pex_messages()
@@ -419,6 +427,7 @@ class AsyncPexManager:
 
         Args:
             peers: List of PexPeer objects to add
+
         """
         added_count = 0
         for peer in peers:
@@ -429,18 +438,24 @@ class AsyncPexManager:
                 added_count += 1
                 self.logger.debug(
                     "Added peer %s:%d from %s to PEX manager",
-                    peer.ip, peer.port, peer.source
+                    peer.ip,
+                    peer.port,
+                    peer.source,
                 )
 
         if added_count > 0:
             # Trigger callbacks with new peers
             for callback in self.pex_callbacks:
+                if callback is None:
+                    continue
                 try:
                     # Only pass the newly added peers
                     new_peers = [p for p in peers if (p.ip, p.port) in self.known_peers]
-                    if new_peers:
+                    # Type checker: callback is Callable, but may be coroutine function
+                    # Check if it's a coroutine function before awaiting
+                    if new_peers and callback is not None:
                         if asyncio.iscoroutinefunction(callback):
-                            await callback(new_peers)
+                            await callback(new_peers)  # type: ignore[invalid-await,misc]
                         else:
                             callback(new_peers)
                 except Exception as e:

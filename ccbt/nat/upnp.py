@@ -107,7 +107,9 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
         raise UPnPError(msg)
 
     devices: list[dict[str, str]] = []
-    seen_locations: set[str] = set()  # Cache clearing: track seen devices to avoid duplicates
+    seen_locations: set[str] = (
+        set()
+    )  # Cache clearing: track seen devices to avoid duplicates
 
     # CRITICAL FIX: Get local network interfaces for proper multicast binding
     import sys
@@ -144,7 +146,9 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                 if local_ip:
                     try:
                         interface_ip = socket.inet_aton(local_ip)
-                        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, interface_ip)
+                        sock.setsockopt(
+                            socket.IPPROTO_IP, socket.IP_MULTICAST_IF, interface_ip
+                        )
                         logger.debug("Set multicast interface to %s", local_ip)
                     except OSError as e:
                         logger.debug("Failed to set multicast interface: %s", e)
@@ -176,25 +180,45 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                     interface_ip = socket.inet_aton(local_ip)
                     mreq = multicast_ip + interface_ip
                     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                    logger.debug("Joined SSDP multicast group %s on interface %s", SSDP_MULTICAST_IP, local_ip)
+                    logger.debug(
+                        "Joined SSDP multicast group %s on interface %s",
+                        SSDP_MULTICAST_IP,
+                        local_ip,
+                    )
                 except OSError as e:
-                    logger.debug("Failed to join multicast group on %s: %s, trying INADDR_ANY", local_ip, e)
+                    logger.debug(
+                        "Failed to join multicast group on %s: %s, trying INADDR_ANY",
+                        local_ip,
+                        e,
+                    )
                     # Fallback to INADDR_ANY
                     mreq = multicast_ip + socket.inet_aton("0.0.0.0")  # nosec B104 - Multicast membership fallback to INADDR_ANY for SSDP
                     try:
-                        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                        logger.debug("Joined SSDP multicast group %s on all interfaces", SSDP_MULTICAST_IP)
+                        sock.setsockopt(
+                            socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq
+                        )
+                        logger.debug(
+                            "Joined SSDP multicast group %s on all interfaces",
+                            SSDP_MULTICAST_IP,
+                        )
                     except OSError as e2:
-                        logger.debug("Failed to join multicast group on all interfaces: %s", e2)
+                        logger.debug(
+                            "Failed to join multicast group on all interfaces: %s", e2
+                        )
                         # Continue anyway - some systems don't require explicit membership
             else:
                 # Use INADDR_ANY (0.0.0.0) to receive on all interfaces
                 mreq = multicast_ip + socket.inet_aton("0.0.0.0")  # nosec B104 - Multicast membership uses INADDR_ANY for all interfaces
                 try:
                     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                    logger.debug("Joined SSDP multicast group %s on all interfaces", SSDP_MULTICAST_IP)
+                    logger.debug(
+                        "Joined SSDP multicast group %s on all interfaces",
+                        SSDP_MULTICAST_IP,
+                    )
                 except OSError as e:
-                    logger.debug("Failed to join multicast group (may be normal): %s", e)
+                    logger.debug(
+                        "Failed to join multicast group (may be normal): %s", e
+                    )
                     # Continue anyway - some systems don't require explicit membership
 
             multicast_addr = (SSDP_MULTICAST_IP, SSDP_MULTICAST_PORT)
@@ -207,15 +231,17 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
             # Some routers only respond to device type searches, not service type
             search_targets = [
                 UPNP_IGD_SERVICE_TYPE,  # Try service type first
-                UPNP_IGD_DEVICE_TYPE,   # Fallback to device type
-                "ssdp:all",              # Last resort: search for all devices
+                UPNP_IGD_DEVICE_TYPE,  # Fallback to device type
+                "ssdp:all",  # Last resort: search for all devices
             ]
 
             for search_idx, search_target in enumerate(search_targets):
                 request = build_msearch_request(search_target)
                 try:
                     # Use asyncio for non-blocking sendto on Windows
-                    bytes_sent = await asyncio.get_event_loop().sock_sendto(sock, request, multicast_addr)
+                    bytes_sent = await asyncio.get_event_loop().sock_sendto(
+                        sock, request, multicast_addr
+                    )
                     logger.debug(
                         "Sent M-SEARCH request (attempt %d/%d, target %d/%d: %s): %d bytes to %s:%d",
                         attempt + 1,
@@ -231,7 +257,9 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                     if search_idx < len(search_targets) - 1:
                         await asyncio.sleep(0.2)
                 except Exception as e:
-                    logger.debug("Failed to send M-SEARCH request for %s: %s", search_target, e)
+                    logger.debug(
+                        "Failed to send M-SEARCH request for %s: %s", search_target, e
+                    )
 
             # CRITICAL FIX: Wait a bit after sending before listening for responses
             # Routers need time to process M-SEARCH and send responses
@@ -308,7 +336,9 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                                 headers.get("server", "unknown"),
                             )
                         else:
-                            logger.debug("Skipping duplicate device location: %s", location)
+                            logger.debug(
+                                "Skipping duplicate device location: %s", location
+                            )
                     else:
                         logger.debug(
                             "SSDP response is not IGD device (ST=%s, NT=%s)",
@@ -353,7 +383,9 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         try:
                             interface_ip = socket.inet_aton(local_ip)
                             mreq = socket.inet_aton(SSDP_MULTICAST_IP) + interface_ip
-                            sock.setsockopt(socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq)
+                            sock.setsockopt(
+                                socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq
+                            )
                         except Exception:
                             pass
                     sock.close()
@@ -446,12 +478,26 @@ async def fetch_device_description(location_url: str) -> dict[str, str]:
                 await asyncio.sleep(0.5)
                 continue
             raise last_error from e
+        except Exception as e:
+            # Catch any other exceptions (e.g., OSError from ClientSession constructor)
+            last_error = UPnPError(f"Error fetching device description: {e}")
+            if attempt < max_retries - 1:
+                logger.debug(
+                    "Device description fetch error (attempt %d/%d): %s, retrying...",
+                    attempt + 1,
+                    max_retries,
+                    e,
+                )
+                await asyncio.sleep(0.5)
+                continue
+            raise last_error from e
 
     if xml_content is None:
         # All retries exhausted
         if last_error:
             raise last_error
-        raise UPnPError("Failed to fetch device description after retries")
+        msg = "Failed to fetch device description after retries"
+        raise UPnPError(msg)
 
     # Parse XML (UPnP device description from trusted local network)
     # Uses defusedxml.ElementTree for secure parsing (imported above)
@@ -1037,7 +1083,11 @@ class UPnPClient:
                 except UPnPError as e:
                     # Error 713 or 714 means no more entries (end of list)
                     error_msg = str(e)
-                    if "713" in error_msg or "714" in error_msg or "NoSuchEntryInArray" in error_msg:
+                    if (
+                        "713" in error_msg
+                        or "714" in error_msg
+                        or "NoSuchEntryInArray" in error_msg
+                    ):
                         break
                     # Other errors are unexpected - log and stop
                     self.logger.debug(
@@ -1075,9 +1125,7 @@ class UPnPClient:
         if not self.control_url:
             discovered = await self.discover()
             if not discovered:
-                self.logger.debug(
-                    "Cannot clear mappings: UPnP device not discovered"
-                )
+                self.logger.debug("Cannot clear mappings: UPnP device not discovered")
                 return 0
 
         try:
@@ -1114,9 +1162,7 @@ class UPnPClient:
                                 desc,
                             )
                 except (ValueError, UPnPError) as e:
-                    self.logger.debug(
-                        "Failed to delete mapping during cleanup: %s", e
-                    )
+                    self.logger.debug("Failed to delete mapping during cleanup: %s", e)
                     continue
 
         if deleted_count > 0:

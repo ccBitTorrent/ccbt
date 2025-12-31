@@ -13,7 +13,7 @@ class ExponentialBackoff:
     base_delay: float = 1.0
     multiplier: float = 2.0
     max_delay: float = 60.0
-    jitter: float = 0.1 
+    jitter: float = 0.1
 
     def next_delay(self, retries: int) -> float:
         """Calculate the next delay for given retry count (0-based)."""

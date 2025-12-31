@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from types import SimpleNamespace
+from types import SimpleNamespace, ModuleType
 from typing import Any
 
 import pytest
@@ -87,6 +87,19 @@ def test_magnet_checkpoint_confirm_yes(monkeypatch):
     setattr(fake_mod, "CheckpointManager", _CPM)
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    # Mock _get_executor to return (None, False) indicating no daemon
+    async def _mock_get_executor():
+        return (None, False)
+
     # Make stdin a TTY and Confirm.ask return True (resume)
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     import rich.prompt as rp
@@ -97,7 +110,9 @@ def test_magnet_checkpoint_confirm_yes(monkeypatch):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+    monkeypatch.setattr(cli_main, "start_basic_magnet_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     result = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc"])
@@ -131,6 +146,19 @@ def test_magnet_checkpoint_confirm_no(monkeypatch):
     setattr(fake_mod, "CheckpointManager", _CPM)
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    # Mock _get_executor to return (None, False) indicating no daemon
+    async def _mock_get_executor():
+        return (None, False)
+
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     import rich.prompt as rp
 
@@ -140,7 +168,9 @@ def test_magnet_checkpoint_confirm_no(monkeypatch):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+    monkeypatch.setattr(cli_main, "start_basic_magnet_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     result = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc"])
@@ -163,7 +193,12 @@ def test_download_monitor_path(monkeypatch):
     async def _dummy_download(*_a, **_k):
         return None
 
+    # Mock load_torrent from torrent_utils
+    def _mock_load_torrent(_path):
+        return {"info_hash": b"\x00" * 20, "name": "t"}
+    
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
+    monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
     monkeypatch.setattr(cli_main, "start_monitoring", _dummy_monitor)
     monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
@@ -193,8 +228,19 @@ def test_download_checkpoint_confirm_yes_and_no(monkeypatch):
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
     class _Mgr(_Sess):
-        def load_torrent(self, _path):
-            return {"info_hash": b"\x00" * 20, "name": "t"}
+        async def start(self):
+            pass
+            
+        async def stop(self):
+            pass
+
+    # Mock load_torrent from torrent_utils (not session manager)
+    def _mock_load_torrent(_path):
+        return {"info_hash": b"\x00" * 20, "name": "t", "pieces_info": {"piece_hashes": [], "piece_length": 16384, "num_pieces": 0, "total_length": 0}, "file_info": {"total_length": 0}, "announce": ""}
+
+    fake_torrent_utils_mod = ModuleType("ccbt.session.torrent_utils")
+    setattr(fake_torrent_utils_mod, "load_torrent", _mock_load_torrent)
+    monkeypatch.setitem(sys.modules, "ccbt.session.torrent_utils", fake_torrent_utils_mod)
 
     class _CP:
         torrent_name = "t"

@@ -181,7 +181,9 @@ class NATManager:
         # This prevents conflicts from stale mappings left by previous sessions
         if self.active_protocol == "upnp" and self.upnp_client:
             try:
-                deleted_count = await self.upnp_client.clear_all_mappings("ccBitTorrent")
+                deleted_count = await self.upnp_client.clear_all_mappings(
+                    "ccBitTorrent"
+                )
                 if deleted_count > 0:
                     self.logger.info(
                         "Cleared %d existing UPnP port mapping(s) before creating new ones",
@@ -460,13 +462,12 @@ class NATManager:
                 # Unexpected errors - log with full details for debugging
                 error_type = type(e).__name__
                 self.logger.exception(
-                    "Unexpected error mapping port %s:%s via %s (attempt %d/%d): %s (%s)",
+                    "Unexpected error mapping port %s:%s via %s (attempt %d/%d) (%s)",
                     protocol,
                     external_port or internal_port,
                     self.active_protocol or "unknown",
                     attempt + 1,
                     max_attempts,
-                    e,
                     error_type,
                 )
                 # Retry on next iteration if not last attempt
@@ -602,7 +603,7 @@ class NATManager:
     async def _renew_mapping_callback(
         self, mapping: PortMapping
     ) -> tuple[bool, int | None]:
-        """Callback for port mapping renewal.
+        """Handle port mapping renewal callback.
 
         This is passed to PortMappingManager to enable renewal.
 
@@ -670,8 +671,7 @@ class NATManager:
             self.config.network.listen_port_udp or self.config.network.listen_port
         )
         configured_tracker_udp_port = (
-            self.config.network.tracker_udp_port
-            or self.config.network.listen_port
+            self.config.network.tracker_udp_port or self.config.network.listen_port
         )
         # XET protocol port (uses listen_port_udp if not set)
         configured_xet_port = (
@@ -704,7 +704,6 @@ class NATManager:
                 # CRITICAL FIX: Verify mapping was actually created and uses correct ports
                 verified = False
                 internal_port_match = False
-                external_port_match = False
                 if result:
                     # Check if mapping exists in port_mapping_manager
                     mappings = await self.port_mapping_manager.get_all_mappings()
@@ -714,7 +713,6 @@ class NATManager:
                             and m.external_port == configured_tcp_port
                         ):
                             verified = True
-                            external_port_match = True
                             if m.internal_port == configured_tcp_port:
                                 internal_port_match = True
                             else:
@@ -821,14 +819,11 @@ class NATManager:
 
         # CRITICAL FIX: Map both TCP and UDP for tracker_udp_port if different from listen ports
         # Check if tracker port is different from both TCP and UDP listen ports
-        tracker_port_different = (
-            configured_tracker_udp_port != configured_tcp_port
-            and configured_tracker_udp_port != configured_udp_port
+        tracker_port_different = configured_tracker_udp_port not in (
+            configured_tcp_port,
+            configured_udp_port,
         )
-        if (
-            self.config.nat.map_udp_port
-            and tracker_port_different
-        ):
+        if self.config.nat.map_udp_port and tracker_port_different:
             # Map UDP for tracker port
             if configured_tracker_udp_port <= 0 or configured_tracker_udp_port > 65535:
                 self.logger.error(
@@ -882,7 +877,10 @@ class NATManager:
 
             # CRITICAL FIX: Also map TCP for tracker port (both protocols needed)
             if self.config.nat.map_tcp_port:
-                if configured_tracker_udp_port <= 0 or configured_tracker_udp_port > 65535:
+                if (
+                    configured_tracker_udp_port <= 0
+                    or configured_tracker_udp_port > 65535
+                ):
                     self.logger.error(
                         "NAT: Invalid configured UDP tracker port %d (must be 1-65535), skipping TCP tracker port mapping",
                         configured_tracker_udp_port,
@@ -908,7 +906,11 @@ class NATManager:
                                 break
 
                     mapping_results.append(
-                        ("TCP (Tracker)", configured_tracker_udp_port, result and verified)
+                        (
+                            "TCP (Tracker)",
+                            configured_tracker_udp_port,
+                            result and verified,
+                        )
                     )
                     if result and verified and internal_port_match:
                         self.logger.info(
@@ -974,15 +976,17 @@ class NATManager:
             and self.config.xet_sync.enable_xet
         ):
             # Check if XET port is different from already mapped ports
-            xet_port_different = (
-                configured_xet_port != configured_tcp_port
-                and configured_xet_port != configured_udp_port
-                and configured_xet_port != configured_tracker_udp_port
+            xet_port_different = configured_xet_port not in (
+                configured_tcp_port,
+                configured_udp_port,
+                configured_tracker_udp_port,
             )
             # Also check if different from DHT port
             dht_port = getattr(self.config.discovery, "dht_port", None)
             if dht_port:
-                xet_port_different = xet_port_different and configured_xet_port != dht_port
+                xet_port_different = (
+                    xet_port_different and configured_xet_port != dht_port
+                )
 
             if xet_port_different:
                 # Map UDP for XET protocol port (only if different from other ports)
@@ -1050,11 +1054,11 @@ class NATManager:
             and self.config.xet_sync.enable_xet
         ):
             # Check if multicast port is different from already mapped ports
-            multicast_port_different = (
-                configured_xet_multicast_port != configured_tcp_port
-                and configured_xet_multicast_port != configured_udp_port
-                and configured_xet_multicast_port != configured_tracker_udp_port
-                and configured_xet_multicast_port != configured_xet_port
+            multicast_port_different = configured_xet_multicast_port not in (
+                configured_tcp_port,
+                configured_udp_port,
+                configured_tracker_udp_port,
+                configured_xet_port,
             )
             dht_port = getattr(self.config.discovery, "dht_port", None)
             if dht_port:
@@ -1230,11 +1234,10 @@ class NATManager:
         if self.external_ip:
             return self.external_ip
 
-        if not self.active_protocol:
-            # CRITICAL FIX: Only try discovery once if not already attempted
-            # This prevents multiple discovery attempts
-            if not self._discovery_attempted:
-                await self.discover()
+        # CRITICAL FIX: Only try discovery once if not already attempted
+        # This prevents multiple discovery attempts
+        if not self.active_protocol and not self._discovery_attempted:
+            await self.discover()
 
         if self.active_protocol == "natpmp" and self.natpmp_client:
             try:

@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 या स्रोत से स्थापित करें:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-एंट्री पॉइंट [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81) में परिभाषित हैं।
+एंट्री पॉइंट [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81) में परिभाषित हैं।
 
 ## मुख्य एंट्री पॉइंट
 
@@ -42,8 +42,8 @@ ccBitTorrent तीन मुख्य एंट्री पॉइंट प्
 
 **Bitonic** मुख्य टर्मिनल डैशबोर्ड इंटरफ़ेस है। यह सभी टोरेंट्स, पीयर्स और सिस्टम मेट्रिक्स का लाइव, इंटरैक्टिव दृश्य प्रदान करता है।
 
-- एंट्री पॉइंट: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- परिभाषित: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- एंट्री पॉइंट: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- परिभाषित: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - लॉन्च: `uv run bitonic` या `uv run ccbt dashboard`
 
 विस्तृत उपयोग के लिए [Bitonic गाइड](bitonic.md) देखें।
@@ -52,8 +52,8 @@ ccBitTorrent तीन मुख्य एंट्री पॉइंट प्
 
 **btbt** समृद्ध सुविधाओं के साथ वर्धित कमांड-लाइन इंटरफ़ेस है।
 
-- एंट्री पॉइंट: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- परिभाषित: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- एंट्री पॉइंट: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- परिभाषित: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - लॉन्च: `uv run btbt`
 
 सभी उपलब्ध कमांड के लिए [btbt CLI संदर्भ](btbt-cli.md) देखें।
@@ -62,8 +62,8 @@ ccBitTorrent तीन मुख्य एंट्री पॉइंट प्
 
 **ccbt** मूल कमांड-लाइन इंटरफ़ेस है।
 
-- एंट्री पॉइंट: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- परिभाषित: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- एंट्री पॉइंट: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- परिभाषित: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - लॉन्च: `uv run ccbt`
 
 ## त्वरित प्रारंभ
@@ -104,9 +104,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### ccBitTorrent कॉन्फ़िगर करें
 
 अपने कार्य निर्देशिका में एक `ccbt.toml` फ़ाइल बनाएं। उदाहरण कॉन्फ़िगरेशन देखें:
-- डिफ़ॉल्ट कॉन्फ़िग: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- पर्यावरण चर: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- कॉन्फ़िगरेशन सिस्टम: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- डिफ़ॉल्ट कॉन्फ़िग: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- पर्यावरण चर: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- कॉन्फ़िगरेशन सिस्टम: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 विस्तृत कॉन्फ़िगरेशन विकल्पों के लिए [कॉन्फ़िगरेशन गाइड](configuration.md) देखें।
 
@@ -132,7 +132,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - कमांड मदद के लिए `uv run bitonic --help` या `uv run btbt --help` का उपयोग करें
 - विस्तृत विकल्पों के लिए [btbt CLI संदर्भ](btbt-cli.md) देखें
-- समस्याओं और चर्चाओं के लिए हमारे [GitHub रिपॉजिटरी](https://github.com/yourusername/ccbittorrent) पर जाएं
+- समस्याओं और चर्चाओं के लिए हमारे [GitHub रिपॉजिटरी](https://github.com/ccBitTorrent/ccbittorrent) पर जाएं
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 या स्रोत से स्थापित करें:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-एंट्री पॉइंट [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81) में परिभाषित हैं।
+एंट्री पॉइंट [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81) में परिभाषित हैं।
 
 ## मुख्य एंट्री पॉइंट
 
@@ -181,8 +181,8 @@ ccBitTorrent तीन मुख्य एंट्री पॉइंट प्
 
 **Bitonic** मुख्य टर्मिनल डैशबोर्ड इंटरफ़ेस है। यह सभी टोरेंट्स, पीयर्स और सिस्टम मेट्रिक्स का लाइव, इंटरैक्टिव दृश्य प्रदान करता है।
 
-- एंट्री पॉइंट: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- परिभाषित: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- एंट्री पॉइंट: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- परिभाषित: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - लॉन्च: `uv run bitonic` या `uv run ccbt dashboard`
 
 विस्तृत उपयोग के लिए [Bitonic गाइड](bitonic.md) देखें।
@@ -191,8 +191,8 @@ ccBitTorrent तीन मुख्य एंट्री पॉइंट प्
 
 **btbt** समृद्ध सुविधाओं के साथ वर्धित कमांड-लाइन इंटरफ़ेस है।
 
-- एंट्री पॉइंट: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- परिभाषित: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- एंट्री पॉइंट: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- परिभाषित: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - लॉन्च: `uv run btbt`
 
 सभी उपलब्ध कमांड के लिए [btbt CLI संदर्भ](btbt-cli.md) देखें।
@@ -201,8 +201,8 @@ ccBitTorrent तीन मुख्य एंट्री पॉइंट प्
 
 **ccbt** मूल कमांड-लाइन इंटरफ़ेस है।
 
-- एंट्री पॉइंट: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- परिभाषित: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- एंट्री पॉइंट: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- परिभाषित: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - लॉन्च: `uv run ccbt`
 
 ## त्वरित प्रारंभ
@@ -243,9 +243,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### ccBitTorrent कॉन्फ़िगर करें
 
 अपने कार्य निर्देशिका में एक `ccbt.toml` फ़ाइल बनाएं। उदाहरण कॉन्फ़िगरेशन देखें:
-- डिफ़ॉल्ट कॉन्फ़िग: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- पर्यावरण चर: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- कॉन्फ़िगरेशन सिस्टम: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- डिफ़ॉल्ट कॉन्फ़िग: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- पर्यावरण चर: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- कॉन्फ़िगरेशन सिस्टम: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 विस्तृत कॉन्फ़िगरेशन विकल्पों के लिए [कॉन्फ़िगरेशन गाइड](configuration.md) देखें।
 
@@ -271,7 +271,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - कमांड मदद के लिए `uv run bitonic --help` या `uv run btbt --help` का उपयोग करें
 - विस्तृत विकल्पों के लिए [btbt CLI संदर्भ](btbt-cli.md) देखें
-- समस्याओं और चर्चाओं के लिए हमारे [GitHub रिपॉजिटरी](https://github.com/yourusername/ccbittorrent) पर जाएं
+- समस्याओं और चर्चाओं के लिए हमारे [GitHub रिपॉजिटरी](https://github.com/ccBitTorrent/ccbittorrent) पर जाएं
 
 
 

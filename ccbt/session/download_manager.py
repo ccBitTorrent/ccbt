@@ -1,10 +1,17 @@
+"""Download management for torrent sessions.
+
+This module manages the download process, including piece selection,
+download coordination, and progress tracking.
+"""
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
+import typing
 from collections import deque
-from typing import Any, Callable, cast
+from typing import Any, Callable
 
 from ccbt.config.config import get_config
 from ccbt.core.magnet import (
@@ -64,7 +71,7 @@ class AsyncDownloadManager:
         if not isinstance(torrent_dict, dict):
             msg = f"Expected dict for torrent_dict, got {type(torrent_dict)}"
             raise TypeError(msg)
-        torrent_dict = cast("dict[str, Any]", torrent_dict)
+        torrent_dict = typing.cast("dict[str, Any]", torrent_dict)
         if "pieces_info" not in torrent_dict and {
             "piece_length",
             "pieces",
@@ -101,6 +108,7 @@ class AsyncDownloadManager:
         self.download_complete = False
         self.start_time: float | None = None
         self._background_tasks: set[asyncio.Task] = set()
+        self._piece_verified_background_tasks: set[asyncio.Task[None]] = set()
 
         # Metadata fetch tracking
         self._metadata_fetching = False
@@ -157,10 +165,11 @@ class AsyncDownloadManager:
         self, peers: list[dict[str, Any]], max_peers_per_torrent: int | None = None
     ) -> None:
         """Start the download process.
-        
+
         Args:
             peers: List of peer dictionaries to connect to
             max_peers_per_torrent: Optional maximum peers per torrent (overrides config)
+
         """
         self.start_time = time.time()
 
@@ -216,39 +225,62 @@ class AsyncDownloadManager:
         except Exception:
             self.logger.exception("Failed to initialize peer manager")
             raise
-        self.peer_manager._security_manager = self.security_manager  # type: ignore[attr-defined]
-        self.peer_manager._is_private = is_private  # type: ignore[attr-defined]
+        # Set security manager and private flag using public setters
+        self.peer_manager.set_security_manager(self.security_manager)
+        self.peer_manager.set_is_private(is_private)
 
         # Wire callbacks
         self.peer_manager.on_peer_connected = self._on_peer_connected
         self.peer_manager.on_peer_disconnected = self._on_peer_disconnected
         self.peer_manager.on_piece_received = self._on_piece_received
         self.peer_manager.on_bitfield_received = self._on_bitfield_received
-        
+
         # CRITICAL FIX: Propagate callbacks to existing connections if any exist
         # This handles the case where connections are created before callbacks are registered
         # The property setters will automatically propagate, but we also do it explicitly here
         # to ensure it happens immediately
-        if hasattr(self.peer_manager, "connections") and hasattr(self.peer_manager, "_propagate_callbacks_to_connections"):
+        if hasattr(self.peer_manager, "connections") and hasattr(
+            self.peer_manager, "_propagate_callbacks_to_connections"
+        ):
             try:
                 # Try to propagate immediately if event loop is running
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 # Schedule propagation (non-blocking)
-                asyncio.create_task(self.peer_manager._propagate_callbacks_to_connections())
-                self.logger.debug("Scheduled callback propagation to existing connections")
+                propagate_method = getattr(
+                    self.peer_manager, "_propagate_callbacks_to_connections", None
+                )
+                if propagate_method:
+                    asyncio.create_task(propagate_method())  # noqa: RUF006
+                self.logger.debug(
+                    "Scheduled callback propagation to existing connections"
+                )
             except RuntimeError:
                 # No running event loop - property setters will handle propagation when loop starts
-                self.logger.debug("No running event loop, callbacks will propagate when connections are created")
+                self.logger.debug(
+                    "No running event loop, callbacks will propagate when connections are created"
+                )
 
         self.piece_manager.on_piece_completed = self._on_piece_completed
         # CRITICAL FIX: Don't override on_piece_verified if it's already set by session
         # The session's callback writes to disk, this one just broadcasts HAVE
         # Only set if not already set (session will set it before start_download is called)
         # Check if callback exists and is not None - if session set it, keep it
-        existing_callback = getattr(self.piece_manager, 'on_piece_verified', None)
+        existing_callback = getattr(self.piece_manager, "on_piece_verified", None)
         if existing_callback is None:
             # No callback set yet - use download manager's callback (will be overridden by session if needed)
-            self.piece_manager.on_piece_verified = self._on_piece_verified
+            # Wrap async _on_piece_verified in sync callback that creates a task
+            def _wrap_on_piece_verified(piece_index: int) -> None:
+                """Wrap async _on_piece_verified for sync callback interface."""
+                task = asyncio.create_task(self._on_piece_verified(piece_index))
+                # Store task reference to prevent garbage collection
+                if not hasattr(self, "_piece_verified_background_tasks"):
+                    self._piece_verified_background_tasks: set[asyncio.Task[None]] = (
+                        set()
+                    )
+                self._piece_verified_background_tasks.add(task)
+                task.add_done_callback(self._piece_verified_background_tasks.discard)
+
+            self.piece_manager.on_piece_verified = _wrap_on_piece_verified  # type: ignore[assignment]
         self.piece_manager.on_download_complete = self._on_download_complete
 
         if hasattr(self.peer_manager, "start") and callable(
@@ -286,6 +318,12 @@ class AsyncDownloadManager:
         return (self._download_rate, self._upload_rate)
 
     async def get_status(self) -> dict[str, Any]:
+        """Get current download status.
+
+        Returns:
+            Dictionary containing download status information
+
+        """
         has_metadata = (
             self.torrent_data
             and isinstance(self.torrent_data, dict)
@@ -475,7 +513,7 @@ class AsyncDownloadManager:
         """Handle received piece block from peer."""
         # CRITICAL FIX: Log at INFO level to track piece reception (suppress during shutdown)
         from ccbt.utils.shutdown import is_shutting_down
-        
+
         if not is_shutting_down():
             self.logger.info(
                 "DOWNLOAD_MANAGER: Received piece %d block from %s (offset=%d, size=%d bytes)",
@@ -491,7 +529,7 @@ class AsyncDownloadManager:
                 piece_message.piece_index,
                 connection.peer_info,
             )
-        
+
         if not self.piece_manager:
             self.logger.warning(
                 "Received piece %d from %s but piece_manager is None!",
@@ -499,7 +537,7 @@ class AsyncDownloadManager:
                 connection.peer_info,
             )
             return
-            
+
         # Update peer availability
         task = asyncio.create_task(
             self.piece_manager.update_peer_have(
@@ -532,7 +570,9 @@ class AsyncDownloadManager:
     async def _on_piece_verified(self, piece_index: int) -> None:
         # NOTE: This method is typically overridden by the session's async callback
         # If called directly, send HAVE messages synchronously
-        self.logger.debug("Download manager _on_piece_verified called for piece %s", piece_index)
+        self.logger.debug(
+            "Download manager _on_piece_verified called for piece %s", piece_index
+        )
         if self.peer_manager:
             await self.peer_manager.broadcast_have(piece_index)
 
@@ -554,7 +594,18 @@ async def _announce_to_trackers(
         announce = torrent_data.get("announce")
         if announce:
             tracker_urls = [announce]
-    tracker_urls = [url for url in tracker_urls if url]
+    # CRITICAL FIX: Filter out empty, None, and invalid URLs before announcing
+    # This prevents announce attempts to invalid trackers
+    tracker_urls = [
+        url.strip()
+        for url in tracker_urls
+        if (
+            url
+            and isinstance(url, str)
+            and url.strip()
+            and url.strip().startswith(("http://", "https://", "udp://"))
+        )
+    ]
     if not tracker_urls:
         return
 
@@ -582,7 +633,7 @@ async def _announce_to_trackers(
             if not hasattr(response, "peers") or not response.peers:
                 continue
             for peer_info in response.peers:
-                peer = cast("Any", peer_info)
+                peer = typing.cast("Any", peer_info)
                 peer_key = (peer.ip, peer.port)
                 if peer_key not in seen_peers:
                     seen_peers.add(peer_key)
@@ -610,7 +661,9 @@ async def _announce_to_trackers(
             logging.getLogger(__name__).debug("Error stopping tracker client: %s", e)
 
 
-async def download_torrent(torrent_path: str, output_dir: str = ".") -> AsyncDownloadManager | None:
+async def download_torrent(
+    torrent_path: str, output_dir: str = "."
+) -> AsyncDownloadManager | None:
     """Download a single torrent file (compat helper for tests)."""
     import contextlib
 
@@ -638,7 +691,7 @@ async def download_torrent(torrent_path: str, output_dir: str = ".") -> AsyncDow
             else torrent_data
         )  # type: ignore[union-attr]
         if not isinstance(td, dict):
-            td = cast("dict[str, Any]", td)
+            td = typing.cast("dict[str, Any]", td)
         await _announce_to_trackers(
             td, download_manager, port=config.network.listen_port
         )
@@ -656,7 +709,9 @@ async def download_torrent(torrent_path: str, output_dir: str = ".") -> AsyncDow
     return download_manager
 
 
-async def download_magnet(magnet_uri: str, output_dir: str = ".") -> AsyncDownloadManager | None:
+async def download_magnet(
+    magnet_uri: str, output_dir: str = "."
+) -> AsyncDownloadManager | None:
     """Download from a magnet link (compat helper for tests)."""
     download_manager = None
     tracker_clients = []
@@ -694,7 +749,7 @@ async def download_magnet(magnet_uri: str, output_dir: str = ".") -> AsyncDownlo
                         if not hasattr(response, "peers") or not response.peers:
                             continue
                         for peer_info in response.peers:
-                            peer = cast("Any", peer_info)
+                            peer = typing.cast("Any", peer_info)
                             peers.append(
                                 {
                                     "ip": peer.ip,
@@ -716,9 +771,10 @@ async def download_magnet(magnet_uri: str, output_dir: str = ".") -> AsyncDownlo
 
         metadata = await fetch_metadata_from_peers(magnet_info.info_hash, peers)
         if metadata:
+            # Type cast: metadata is dict[bytes, Any] but function accepts dict[bytes | str, Any]
             torrent_data = build_torrent_data_from_metadata(
                 magnet_info.info_hash,
-                metadata,
+                typing.cast("dict[bytes | str, Any]", metadata),
             )
             download_manager = AsyncDownloadManager(torrent_data, output_dir)
             await download_manager.start()
@@ -746,7 +802,7 @@ async def download_magnet(magnet_uri: str, output_dir: str = ".") -> AsyncDownlo
                         if not hasattr(response, "peers") or not response.peers:
                             continue
                         for peer_info in response.peers:
-                            peer = cast("Any", peer_info)
+                            peer = typing.cast("Any", peer_info)
                             peer_key = (peer.ip, peer.port)
                             if peer_key not in seen_peers:
                                 seen_peers.add(peer_key)
@@ -786,6 +842,8 @@ async def download_magnet(magnet_uri: str, output_dir: str = ".") -> AsyncDownlo
             try:
                 await tracker_client.stop()
             except Exception as e:
-                logging.getLogger(__name__).debug(f"Error stopping tracker client: {e}")
+                logging.getLogger(__name__).debug(
+                    "Error stopping tracker client: %s", e
+                )
 
     return download_manager

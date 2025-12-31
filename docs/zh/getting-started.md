@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 或从源代码安装：
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-入口点定义在 [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81)。
+入口点定义在 [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81)。
 
 ## 主要入口点
 
@@ -42,8 +42,8 @@ ccBitTorrent 提供三个主要入口点：
 
 **Bitonic** 是主终端仪表板界面。它提供所有 torrent、对等节点和系统指标的实时交互视图。
 
-- 入口点: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- 定义位置: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- 入口点: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- 定义位置: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - 启动: `uv run bitonic` 或 `uv run ccbt dashboard`
 
 详细用法请参阅 [Bitonic 指南](bitonic.md)。
@@ -52,8 +52,8 @@ ccBitTorrent 提供三个主要入口点：
 
 **btbt** 是具有丰富功能的增强命令行界面。
 
-- 入口点: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- 定义位置: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- 入口点: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- 定义位置: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - 启动: `uv run btbt`
 
 所有可用命令请参阅 [btbt CLI 参考](btbt-cli.md)。
@@ -62,8 +62,8 @@ ccBitTorrent 提供三个主要入口点：
 
 **ccbt** 是基本命令行界面。
 
-- 入口点: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- 定义位置: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- 入口点: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- 定义位置: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - 启动: `uv run ccbt`
 
 ## 快速开始
@@ -104,9 +104,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### 配置 ccBitTorrent
 
 在工作目录中创建 `ccbt.toml` 文件。参考示例配置：
-- 默认配置: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- 环境变量: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- 配置系统: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- 默认配置: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- 环境变量: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- 配置系统: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 详细配置选项请参阅 [配置指南](configuration.md)。
 
@@ -132,7 +132,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - 使用 `uv run bitonic --help` 或 `uv run btbt --help` 获取命令帮助
 - 查看 [btbt CLI 参考](btbt-cli.md) 了解详细选项
-- 访问我们的 [GitHub 仓库](https://github.com/yourusername/ccbittorrent) 获取问题和讨论
+- 访问我们的 [GitHub 仓库](https://github.com/ccBitTorrent/ccbittorrent) 获取问题和讨论
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 或从源代码安装：
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-入口点定义在 [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81)。
+入口点定义在 [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81)。
 
 ## 主要入口点
 
@@ -181,8 +181,8 @@ ccBitTorrent 提供三个主要入口点：
 
 **Bitonic** 是主终端仪表板界面。它提供所有 torrent、对等节点和系统指标的实时交互视图。
 
-- 入口点: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- 定义位置: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- 入口点: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- 定义位置: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - 启动: `uv run bitonic` 或 `uv run ccbt dashboard`
 
 详细用法请参阅 [Bitonic 指南](bitonic.md)。
@@ -191,8 +191,8 @@ ccBitTorrent 提供三个主要入口点：
 
 **btbt** 是具有丰富功能的增强命令行界面。
 
-- 入口点: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- 定义位置: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- 入口点: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- 定义位置: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - 启动: `uv run btbt`
 
 所有可用命令请参阅 [btbt CLI 参考](btbt-cli.md)。
@@ -201,8 +201,8 @@ ccBitTorrent 提供三个主要入口点：
 
 **ccbt** 是基本命令行界面。
 
-- 入口点: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- 定义位置: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- 入口点: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- 定义位置: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - 启动: `uv run ccbt`
 
 ## 快速开始
@@ -243,9 +243,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### 配置 ccBitTorrent
 
 在工作目录中创建 `ccbt.toml` 文件。参考示例配置：
-- 默认配置: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- 环境变量: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- 配置系统: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- 默认配置: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- 环境变量: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- 配置系统: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 详细配置选项请参阅 [配置指南](configuration.md)。
 
@@ -271,7 +271,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - 使用 `uv run bitonic --help` 或 `uv run btbt --help` 获取命令帮助
 - 查看 [btbt CLI 参考](btbt-cli.md) 了解详细选项
-- 访问我们的 [GitHub 仓库](https://github.com/yourusername/ccbittorrent) 获取问题和讨论
+- 访问我们的 [GitHub 仓库](https://github.com/ccBitTorrent/ccbittorrent) 获取问题和讨论
 
 
 

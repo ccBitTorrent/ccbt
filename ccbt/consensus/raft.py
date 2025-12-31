@@ -6,6 +6,7 @@ Provides leader election, log replication, and safety guarantees for distributed
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import random
 import time
@@ -13,7 +14,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
-from ccbt.consensus.raft_state import LogEntry, RaftState
+from ccbt.consensus.raft_state import RaftState
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +104,9 @@ class RaftNode:
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._apply_task = asyncio.create_task(self._apply_committed_loop())
 
-        logger.info("Started Raft node %s (term: %d)", self.node_id, self.state.current_term)
+        logger.info(
+            "Started Raft node %s (term: %d)", self.node_id, self.state.current_term
+        )
 
     async def stop(self) -> None:
         """Stop Raft node."""
@@ -116,10 +119,8 @@ class RaftNode:
         for task in [self._election_task, self._heartbeat_task, self._apply_task]:
             if task:
                 task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
 
         # Save state
         if self.state_path:
@@ -165,6 +166,15 @@ class RaftNode:
         # Replicate to followers (simplified - would use network calls)
         logger.debug("Appended entry %d to log", entry.index)
 
+        # In single-node cluster (no peers), immediately commit since we have majority (1/1)
+        # In multi-node, commit_index would be updated via append_entries RPC responses
+        if len(self.peers) == 0:
+            # Single node: commit immediately
+            self.state.commit_index = entry.index
+            logger.debug("Committed entry %d (single-node cluster)", entry.index)
+        # Note: In multi-node setup, commit_index is updated via append_entries RPC
+        # when majority of followers acknowledge the entry
+
         return True
 
     async def vote_request(
@@ -195,9 +205,7 @@ class RaftNode:
 
         # Vote if haven't voted for another candidate in this term
         # and candidate's log is at least as up-to-date
-        can_vote = (
-            self.state.voted_for is None or self.state.voted_for == candidate_id
-        )
+        can_vote = self.state.voted_for is None or self.state.voted_for == candidate_id
 
         if can_vote:
             # Check if candidate's log is at least as up-to-date
@@ -267,7 +275,9 @@ class RaftNode:
 
         # Update commit_index
         if leader_commit > self.state.commit_index:
-            self.state.commit_index = min(leader_commit, self.state.get_last_log_index())
+            self.state.commit_index = min(
+                leader_commit, self.state.get_last_log_index()
+            )
 
         return True
 
@@ -280,50 +290,59 @@ class RaftNode:
         """Election loop for candidate role."""
         while self.running:
             try:
-                if self.role == RaftRole.FOLLOWER:
-                    # Wait for election timeout
-                    if self.election_deadline and time.time() >= self.election_deadline:
-                        # Start election
-                        self.state.current_term += 1
-                        self.state.voted_for = self.node_id
-                        self.role = RaftRole.CANDIDATE
-                        self.leader_id = None
+                if (
+                    self.role == RaftRole.FOLLOWER
+                    and self.election_deadline
+                    and time.time() >= self.election_deadline
+                ):
+                    # Start election
+                    self.state.current_term += 1
+                    self.state.voted_for = self.node_id
+                    self.role = RaftRole.CANDIDATE
+                    self.leader_id = None
 
+                    logger.info(
+                        "Starting election for term %d",
+                        self.state.current_term,
+                    )
+
+                    # Request votes from peers (simplified)
+                    votes = 1  # Vote for self
+                    for peer_id in self.peers:
+                        if self.send_vote_request:
+                            try:
+                                result = await self.send_vote_request(
+                                    peer_id,
+                                    {
+                                        "term": self.state.current_term,
+                                        "candidate_id": self.node_id,
+                                        "last_log_index": self.state.get_last_log_index(),
+                                        "last_log_term": self.state.get_last_log_term(),
+                                    },
+                                )
+                                if result:
+                                    votes += 1
+                            except Exception as e:
+                                logger.warning(
+                                    "Error requesting vote from %s: %s", peer_id, e
+                                )
+
+                    # Check if we won election
+                    if votes > len(self.peers) / 2:
+                        self.role = RaftRole.LEADER
+                        self.leader_id = self.node_id
                         logger.info(
-                            "Starting election for term %d",
-                            self.state.current_term,
+                            "Elected as leader in term %d", self.state.current_term
                         )
+                    else:
+                        # Lost election, become follower
+                        self.role = RaftRole.FOLLOWER
+                        self._reset_election_timer()
 
-                        # Request votes from peers (simplified)
-                        votes = 1  # Vote for self
-                        for peer_id in self.peers:
-                            if self.send_vote_request:
-                                try:
-                                    result = await self.send_vote_request(
-                                        peer_id,
-                                        {
-                                            "term": self.state.current_term,
-                                            "candidate_id": self.node_id,
-                                            "last_log_index": self.state.get_last_log_index(),
-                                            "last_log_term": self.state.get_last_log_term(),
-                                        },
-                                    )
-                                    if result:
-                                        votes += 1
-                                except Exception as e:
-                                    logger.warning("Error requesting vote from %s: %s", peer_id, e)
-
-                        # Check if we won election
-                        if votes > len(self.peers) / 2:
-                            self.role = RaftRole.LEADER
-                            self.leader_id = self.node_id
-                            logger.info("Elected as leader in term %d", self.state.current_term)
-                        else:
-                            # Lost election, become follower
-                            self.role = RaftRole.FOLLOWER
-                            self._reset_election_timer()
-
-                await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.1)
+                else:
+                    # CRITICAL FIX: Add sleep when election condition is false to prevent busy-waiting
+                    await asyncio.sleep(0.1)
 
             except asyncio.CancelledError:
                 break
@@ -353,7 +372,9 @@ class RaftNode:
                                     },
                                 )
                             except Exception as e:
-                                logger.warning("Error sending heartbeat to %s: %s", peer_id, e)
+                                logger.warning(
+                                    "Error sending heartbeat to %s: %s", peer_id, e
+                                )
 
                     await asyncio.sleep(self.heartbeat_interval)
                 else:
@@ -377,8 +398,8 @@ class RaftNode:
                     if entry and self.apply_command_callback:
                         try:
                             self.apply_command_callback(entry.command)
-                        except Exception as e:
-                            logger.error("Error applying command: %s", e)
+                        except Exception:
+                            logger.exception("Error applying command")
 
                 await asyncio.sleep(0.1)
 
@@ -388,4 +409,3 @@ class RaftNode:
                 if self.running:
                     logger.warning("Error in apply loop: %s", e)
                 await asyncio.sleep(0.1)
-

@@ -9,7 +9,12 @@ Provides support for:
 
 from __future__ import annotations
 
-from ccbt.protocols.base import Protocol, ProtocolManager, ProtocolType
+from ccbt.protocols.base import (
+    Protocol,
+    ProtocolManager,
+    ProtocolType,
+    get_protocol_manager,
+)
 from ccbt.protocols.bittorrent import BitTorrentProtocol
 
 try:
@@ -35,4 +40,5 @@ __all__ = [
     "ProtocolManager",
     "ProtocolType",
     "WebTorrentProtocol",
+    "get_protocol_manager",
 ]

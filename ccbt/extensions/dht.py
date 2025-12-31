@@ -441,6 +441,7 @@ class DHTExtension:
             # Announcement was successful
             token = message["a"]["token"]
             info_hash = message.get("a", {}).get("info_hash")
+            info_hash_bytes: bytes | None = None
 
             # Store token for this info_hash if available
             if info_hash:
@@ -467,6 +468,8 @@ class DHTExtension:
                                     info_hash_bytes.hex()
                                     if isinstance(info_hash_bytes, bytes)
                                     else str(info_hash)
+                                    if info_hash
+                                    else ""
                                 ),
                                 "announcement_successful": True,
                                 "token_received": True,

@@ -2,109 +2,109 @@
 
 ccBitTorrent hutumia mfumo kamili wa usanidi na msaada wa TOML, uthibitishaji, upakiaji wa joto, na upakiaji wa kihierarkia kutoka vyanzo vingi.
 
-Mfumo wa usanidi: [ccbt/config/config.py:ConfigManager](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py#L40)
+Mfumo wa usanidi: [ccbt/config/config.py:ConfigManager](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py#L40)
 
 ## Vyanzo vya Usanidi na Kipaumbele
 
 Usanidi hupakiwa kwa mpangilio huu (vyanzo vya baadaye vinabadilisha vya awali):
 
-1. **Vigezo vya Kawaida**: Vigezo vya kawaida vya akili vya ndani kutoka [ccbt/models.py:Config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
-2. **Faili ya Usanidi**: `ccbt.toml` katika saraka ya sasa au `~/.config/ccbt/ccbt.toml`. Angalia: [ccbt/config/config.py:_find_config_file](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py#L55)
-3. **Vigezo vya Mazingira**: Vigezo vilivyo na kiambishi `CCBT_*`. Angalia: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-4. **Hoja za CLI**: Mabadiliko ya mstari wa amri. Angalia: [ccbt/cli/main.py:_apply_cli_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L55)
+1. **Vigezo vya Kawaida**: Vigezo vya kawaida vya akili vya ndani kutoka [ccbt/models.py:Config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
+2. **Faili ya Usanidi**: `ccbt.toml` katika saraka ya sasa au `~/.config/ccbt/ccbt.toml`. Angalia: [ccbt/config/config.py:_find_config_file](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py#L55)
+3. **Vigezo vya Mazingira**: Vigezo vilivyo na kiambishi `CCBT_*`. Angalia: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+4. **Hoja za CLI**: Mabadiliko ya mstari wa amri. Angalia: [ccbt/cli/main.py:_apply_cli_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L55)
 5. **Kwa Torrent**: Mipangilio ya torrent ya kibinafsi (kipengele cha baadaye)
 
-Upakiaji wa usanidi: [ccbt/config/config.py:_load_config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py#L76)
+Upakiaji wa usanidi: [ccbt/config/config.py:_load_config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py#L76)
 
 ## Faili ya Usanidi
 
 ### Usanidi wa Kawaida
 
-Rejea faili ya usanidi wa kawaida: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
+Rejea faili ya usanidi wa kawaida: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
 
 Usanidi umepangwa katika sehemu:
 
 ### Usanidi wa Mtandao
 
-Mipangilio ya mtandao: [ccbt.toml:4-43](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L4-L43)
+Mipangilio ya mtandao: [ccbt.toml:4-43](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L4-L43)
 
-- Mipaka ya muunganisho: [ccbt.toml:6-8](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L6-L8)
-- Bomba la maombi: [ccbt.toml:11-14](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L11-L14)
-- Urekebishaji wa socket: [ccbt.toml:17-19](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L17-L19)
-- Muda wa mwisho: [ccbt.toml:22-26](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L22-L26)
-- Mipangilio ya kusikiliza: [ccbt.toml:29-31](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L29-L31)
-- Itifaki za usafiri: [ccbt.toml:34-36](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L34-L36)
-- Mipaka ya kasi: [ccbt.toml:39-42](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L39-L42)
-- Mkakati wa kukaba: [ccbt.toml:45-47](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L45-L47)
-- Mipangilio ya tracker: [ccbt.toml:50-54](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L50-L54)
+- Mipaka ya muunganisho: [ccbt.toml:6-8](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L6-L8)
+- Bomba la maombi: [ccbt.toml:11-14](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L11-L14)
+- Urekebishaji wa socket: [ccbt.toml:17-19](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L17-L19)
+- Muda wa mwisho: [ccbt.toml:22-26](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L22-L26)
+- Mipangilio ya kusikiliza: [ccbt.toml:29-31](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L29-L31)
+- Itifaki za usafiri: [ccbt.toml:34-36](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L34-L36)
+- Mipaka ya kasi: [ccbt.toml:39-42](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L39-L42)
+- Mkakati wa kukaba: [ccbt.toml:45-47](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L45-L47)
+- Mipangilio ya tracker: [ccbt.toml:50-54](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L50-L54)
 
-Mfano wa usanidi wa mtandao: [ccbt/models.py:NetworkConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa mtandao: [ccbt/models.py:NetworkConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Diski
 
-Mipangilio ya diski: [ccbt.toml:57-96](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L57-L96)
+Mipangilio ya diski: [ccbt.toml:57-96](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L57-L96)
 
-- Utayarishaji: [ccbt.toml:59-60](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L59-L60)
-- Uboreshaji wa kuandika: [ccbt.toml:63-67](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L63-L67)
-- Uthibitishaji wa hash: [ccbt.toml:70-73](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L70-L73)
-- Threading ya I/O: [ccbt.toml:76-78](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L76-L78)
-- Mipangilio ya hali ya juu: [ccbt.toml:81-85](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L81-L85)
-- Mipangilio ya huduma ya uhifadhi: [ccbt.toml:87-89](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L87-L89)
+- Utayarishaji: [ccbt.toml:59-60](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L59-L60)
+- Uboreshaji wa kuandika: [ccbt.toml:63-67](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L63-L67)
+- Uthibitishaji wa hash: [ccbt.toml:70-73](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L70-L73)
+- Threading ya I/O: [ccbt.toml:76-78](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L76-L78)
+- Mipangilio ya hali ya juu: [ccbt.toml:81-85](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L81-L85)
+- Mipangilio ya huduma ya uhifadhi: [ccbt.toml:87-89](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L87-L89)
   - `max_file_size_mb`: Kikomo cha juu cha ukubwa wa faili katika MB kwa huduma ya uhifadhi (0 au None = bila kikomo, upeo 1048576 = 1TB). Inazuia kuandika diski bila kikomo wakati wa majaribio na inaweza kusanidiwa kwa matumizi ya uzalishaji.
-- Mipangilio ya alama ya kuangalia: [ccbt.toml:91-96](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L91-L96)
+- Mipangilio ya alama ya kuangalia: [ccbt.toml:91-96](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L91-L96)
 
-Mfano wa usanidi wa diski: [ccbt/models.py:DiskConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa diski: [ccbt/models.py:DiskConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Mkakati
 
-Mipangilio ya mkakati: [ccbt.toml:99-114](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L99-L114)
+Mipangilio ya mkakati: [ccbt.toml:99-114](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L99-L114)
 
-- Uchaguzi wa kipande: [ccbt.toml:101-104](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L101-L104)
-- Mkakati wa hali ya juu: [ccbt.toml:107-109](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L107-L109)
-- Kipaumbele cha vipande: [ccbt.toml:112-113](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L112-L113)
+- Uchaguzi wa kipande: [ccbt.toml:101-104](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L101-L104)
+- Mkakati wa hali ya juu: [ccbt.toml:107-109](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L107-L109)
+- Kipaumbele cha vipande: [ccbt.toml:112-113](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L112-L113)
 
-Mfano wa usanidi wa mkakati: [ccbt/models.py:StrategyConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa mkakati: [ccbt/models.py:StrategyConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Ugunduzi
 
-Mipangilio ya ugunduzi: [ccbt.toml:116-136](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L116-L136)
+Mipangilio ya ugunduzi: [ccbt.toml:116-136](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L116-L136)
 
-- Mipangilio ya DHT: [ccbt.toml:118-125](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L118-L125)
-- Mipangilio ya PEX: [ccbt.toml:128-129](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L128-L129)
-- Mipangilio ya tracker: [ccbt.toml:132-135](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L132-L135)
+- Mipangilio ya DHT: [ccbt.toml:118-125](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L118-L125)
+- Mipangilio ya PEX: [ccbt.toml:128-129](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L128-L129)
+- Mipangilio ya tracker: [ccbt.toml:132-135](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L132-L135)
   - `tracker_announce_interval`: Muda wa kutangaza tracker kwa sekunde (kawaida: 1800.0, anuwai: 60.0-86400.0)
   - `tracker_scrape_interval`: Muda wa kukwaruza tracker kwa sekunde kwa kukwaruza mara kwa mara (kawaida: 3600.0, anuwai: 60.0-86400.0)
   - `tracker_auto_scrape`: Kukwaruza trackers kiotomatiki wakati torrents zinaongezwa (BEP 48) (kawaida: false)
   - Vigezo vya mazingira: `CCBT_TRACKER_ANNOUNCE_INTERVAL`, `CCBT_TRACKER_SCRAPE_INTERVAL`, `CCBT_TRACKER_AUTO_SCRAPE`
 
-Mfano wa usanidi wa ugunduzi: [ccbt/models.py:DiscoveryConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa ugunduzi: [ccbt/models.py:DiscoveryConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Mipaka
 
-Mipaka ya kasi: [ccbt.toml:138-152](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L138-L152)
+Mipaka ya kasi: [ccbt.toml:138-152](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L138-L152)
 
-- Mipaka ya kimataifa: [ccbt.toml:140-141](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L140-L141)
-- Mipaka ya torrent: [ccbt.toml:144-145](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L144-L145)
-- Mipaka ya peer: [ccbt.toml:148](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L148)
-- Mipangilio ya ratiba: [ccbt.toml:151](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L151)
+- Mipaka ya kimataifa: [ccbt.toml:140-141](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L140-L141)
+- Mipaka ya torrent: [ccbt.toml:144-145](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L144-L145)
+- Mipaka ya peer: [ccbt.toml:148](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L148)
+- Mipangilio ya ratiba: [ccbt.toml:151](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L151)
 
-Mfano wa usanidi wa mipaka: [ccbt/models.py:LimitsConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa mipaka: [ccbt/models.py:LimitsConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Uchunguzi
 
-Mipangilio ya uchunguzi: [ccbt.toml:154-171](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L154-L171)
+Mipangilio ya uchunguzi: [ccbt.toml:154-171](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L154-L171)
 
-- Uwekaji alama: [ccbt.toml:156-160](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L156-L160)
-- Vipimo: [ccbt.toml:163-165](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L163-L165)
-- Ufuatiliaji na tahadhari: [ccbt.toml:168-170](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L168-L170)
+- Uwekaji alama: [ccbt.toml:156-160](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L156-L160)
+- Vipimo: [ccbt.toml:163-165](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L163-L165)
+- Ufuatiliaji na tahadhari: [ccbt.toml:168-170](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L168-L170)
 
-Mfano wa usanidi wa uchunguzi: [ccbt/models.py:ObservabilityConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa uchunguzi: [ccbt/models.py:ObservabilityConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Usalama
 
-Mipangilio ya usalama: [ccbt.toml:173-178](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L173-L178)
+Mipangilio ya usalama: [ccbt.toml:173-178](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L173-L178)
 
-Mfano wa usanidi wa usalama: [ccbt/models.py:SecurityConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa usalama: [ccbt/models.py:SecurityConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 #### Usanidi wa Usimbaji
 
@@ -157,47 +157,47 @@ encryption_allow_plain_fallback = true
 
 **Maelezo ya Utekelezaji:**
 
-Utekelezaji wa usimbaji: [ccbt/security/encryption.py:EncryptionManager](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/security/encryption.py#L131)
+Utekelezaji wa usimbaji: [ccbt/security/encryption.py:EncryptionManager](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/security/encryption.py#L131)
 
-- Mkono wa MSE: [ccbt/security/mse_handshake.py:MSEHandshake](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/security/mse_handshake.py#L45)
-- Seti za Cipher: [ccbt/security/ciphers/__init__.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/security/ciphers/__init__.py) (RC4, AES)
-- Mabadilishano ya Diffie-Hellman: [ccbt/security/dh_exchange.py:DHPeerExchange](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/security/dh_exchange.py)
+- Mkono wa MSE: [ccbt/security/mse_handshake.py:MSEHandshake](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/security/mse_handshake.py#L45)
+- Seti za Cipher: [ccbt/security/ciphers/__init__.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/security/ciphers/__init__.py) (RC4, AES)
+- Mabadilishano ya Diffie-Hellman: [ccbt/security/dh_exchange.py:DHPeerExchange](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/security/dh_exchange.py)
 
 ### Usanidi wa ML
 
-Mipangilio ya kujifunza kwa mashine: [ccbt.toml:180-183](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L180-L183)
+Mipangilio ya kujifunza kwa mashine: [ccbt.toml:180-183](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L180-L183)
 
-Mfano wa usanidi wa ML: [ccbt/models.py:MLConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa ML: [ccbt/models.py:MLConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Dashboard
 
-Mipangilio ya dashboard: [ccbt.toml:185-191](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L185-L191)
+Mipangilio ya dashboard: [ccbt.toml:185-191](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L185-L191)
 
-Mfano wa usanidi wa dashboard: [ccbt/models.py:DashboardConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa dashboard: [ccbt/models.py:DashboardConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ## Vigezo vya Mazingira
 
 Vigezo vya mazingira hutumia kiambishi `CCBT_` na hufuata mpangilio wa majina wa kihierarkia.
 
-Marejeo: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
+Marejeo: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
 
 Muundo: `CCBT_<SECTION>_<OPTION>=<value>`
 
 Mifano:
-- Mtandao: [env.example:10-58](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L10-L58)
-- Diski: [env.example:62-102](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L62-L102)
-- Mkakati: [env.example:106-121](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L106-L121)
-- Ugunduzi: [env.example:125-141](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L125-L141)
-- Uchunguzi: [env.example:145-162](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L145-L162)
-- Mipaka: [env.example:166-180](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L166-L180)
-- Usalama: [env.example:184-189](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L184-L189)
-- ML: [env.example:193-196](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L193-L196)
+- Mtandao: [env.example:10-58](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L10-L58)
+- Diski: [env.example:62-102](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L62-L102)
+- Mkakati: [env.example:106-121](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L106-L121)
+- Ugunduzi: [env.example:125-141](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L125-L141)
+- Uchunguzi: [env.example:145-162](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L145-L162)
+- Mipaka: [env.example:166-180](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L166-L180)
+- Usalama: [env.example:184-189](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L184-L189)
+- ML: [env.example:193-196](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L193-L196)
 
-Uchambuzi wa vigezo vya mazingira: [ccbt/config/config.py:_get_env_config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+Uchambuzi wa vigezo vya mazingira: [ccbt/config/config.py:_get_env_config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 ## Mpango wa Usanidi
 
-Mpango wa usanidi na uthibitishaji: [ccbt/config/config_schema.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_schema.py)
+Mpango wa usanidi na uthibitishaji: [ccbt/config/config_schema.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_schema.py)
 
 Mpango unafafanua:
 - Aina za sehemu na vikwazo
@@ -207,11 +207,11 @@ Mpango unafafanua:
 
 ## Uwezo wa Usanidi
 
-Uwezo wa usanidi na ugunduzi wa kipengele: [ccbt/config/config_capabilities.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_capabilities.py)
+Uwezo wa usanidi na ugunduzi wa kipengele: [ccbt/config/config_capabilities.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_capabilities.py)
 
 ## Mfano wa Usanidi
 
-Mfano wa usanidi uliofafanuliwa hapo awali: [ccbt/config/config_templates.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_templates.py)
+Mfano wa usanidi uliofafanuliwa hapo awali: [ccbt/config/config_templates.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_templates.py)
 
 Mfano kwa:
 - Usanidi wa utendakazi wa juu
@@ -230,45 +230,45 @@ Mifano ya usanidi inapatikana katika saraka ya [examples/](examples/):
 
 ## Upakiaji wa Joto
 
-Msaada wa upakiaji wa joto wa usanidi: [ccbt/config/config.py:ConfigManager](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py#L40)
+Msaada wa upakiaji wa joto wa usanidi: [ccbt/config/config.py:ConfigManager](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py#L40)
 
 Mfumo wa usanidi unasaidia upakiaji upya wa mabadiliko bila kuanzisha upya klienti.
 
 ## Uhamishaji wa Usanidi
 
-Zana za uhamishaji wa usanidi: [ccbt/config/config_migration.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_migration.py)
+Zana za uhamishaji wa usanidi: [ccbt/config/config_migration.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_migration.py)
 
 Zana za kuhamisha kati ya matoleo ya usanidi.
 
 ## Usanidi wa Backup na Tofauti
 
 Zana za usimamizi wa usanidi:
-- Backup: [ccbt/config/config_backup.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_backup.py)
-- Tofauti: [ccbt/config/config_diff.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_diff.py)
+- Backup: [ccbt/config/config_backup.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_backup.py)
+- Tofauti: [ccbt/config/config_diff.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_diff.py)
 
 ## Usanidi wa Masharti
 
-Msaada wa usanidi wa masharti: [ccbt/config/config_conditional.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_conditional.py)
+Msaada wa usanidi wa masharti: [ccbt/config/config_conditional.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_conditional.py)
 
 ## Vidokezo na Mbinu Bora
 
 ### Urekebishaji wa Utendakazi
 
-- Ongeza `disk.write_buffer_kib` kwa kuandika kwa mpangilio kwa kiasi kikubwa: [ccbt.toml:64](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L64)
-- Wezesha `direct_io` kwenye Linux/NVMe kwa utoaji bora wa kuandika: [ccbt.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L81)
-- Rekebisha `network.pipeline_depth` na `network.block_size_kib` kwa mtandao wako: [ccbt.toml:11-13](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L11-L13)
+- Ongeza `disk.write_buffer_kib` kwa kuandika kwa mpangilio kwa kiasi kikubwa: [ccbt.toml:64](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L64)
+- Wezesha `direct_io` kwenye Linux/NVMe kwa utoaji bora wa kuandika: [ccbt.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L81)
+- Rekebisha `network.pipeline_depth` na `network.block_size_kib` kwa mtandao wako: [ccbt.toml:11-13](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L11-L13)
 
 ### Uboreshaji wa Rasilimali
 
-- Rekebisha `disk.hash_workers` kulingana na cores za CPU: [ccbt.toml:70](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L70)
-- Sanidi `disk.cache_size_mb` kulingana na RAM inayopatikana: [ccbt.toml:78](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L78)
-- Weka `network.max_global_peers` kulingana na bandwidth: [ccbt.toml:6](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L6)
+- Rekebisha `disk.hash_workers` kulingana na cores za CPU: [ccbt.toml:70](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L70)
+- Sanidi `disk.cache_size_mb` kulingana na RAM inayopatikana: [ccbt.toml:78](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L78)
+- Weka `network.max_global_peers` kulingana na bandwidth: [ccbt.toml:6](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L6)
 
 ### Usanidi wa Mtandao
 
-- Sanidi muda wa mwisho kulingana na hali ya mtandao: [ccbt.toml:22-26](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L22-L26)
-- Wezesha/zima itifaki kama inahitajika: [ccbt.toml:34-36](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L34-L36)
-- Weka mipaka ya kasi kwa usahihi: [ccbt.toml:39-42](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L39-L42)
+- Sanidi muda wa mwisho kulingana na hali ya mtandao: [ccbt.toml:22-26](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L22-L26)
+- Wezesha/zima itifaki kama inahitajika: [ccbt.toml:34-36](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L34-L36)
+- Weka mipaka ya kasi kwa usahihi: [ccbt.toml:39-42](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L39-L42)
 
 Kwa urekebishaji wa kina wa utendakazi, angalia [Mwongozo wa Urekebishaji wa Utendakazi](performance.md).
 
@@ -279,109 +279,109 @@ Kwa urekebishaji wa kina wa utendakazi, angalia [Mwongozo wa Urekebishaji wa Ute
 
 ccBitTorrent hutumia mfumo kamili wa usanidi na msaada wa TOML, uthibitishaji, upakiaji wa joto, na upakiaji wa kihierarkia kutoka vyanzo vingi.
 
-Mfumo wa usanidi: [ccbt/config/config.py:ConfigManager](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py#L40)
+Mfumo wa usanidi: [ccbt/config/config.py:ConfigManager](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py#L40)
 
 ## Vyanzo vya Usanidi na Kipaumbele
 
 Usanidi hupakiwa kwa mpangilio huu (vyanzo vya baadaye vinabadilisha vya awali):
 
-1. **Vigezo vya Kawaida**: Vigezo vya kawaida vya akili vya ndani kutoka [ccbt/models.py:Config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
-2. **Faili ya Usanidi**: `ccbt.toml` katika saraka ya sasa au `~/.config/ccbt/ccbt.toml`. Angalia: [ccbt/config/config.py:_find_config_file](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py#L55)
-3. **Vigezo vya Mazingira**: Vigezo vilivyo na kiambishi `CCBT_*`. Angalia: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-4. **Hoja za CLI**: Mabadiliko ya mstari wa amri. Angalia: [ccbt/cli/main.py:_apply_cli_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L55)
+1. **Vigezo vya Kawaida**: Vigezo vya kawaida vya akili vya ndani kutoka [ccbt/models.py:Config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
+2. **Faili ya Usanidi**: `ccbt.toml` katika saraka ya sasa au `~/.config/ccbt/ccbt.toml`. Angalia: [ccbt/config/config.py:_find_config_file](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py#L55)
+3. **Vigezo vya Mazingira**: Vigezo vilivyo na kiambishi `CCBT_*`. Angalia: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+4. **Hoja za CLI**: Mabadiliko ya mstari wa amri. Angalia: [ccbt/cli/main.py:_apply_cli_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L55)
 5. **Kwa Torrent**: Mipangilio ya torrent ya kibinafsi (kipengele cha baadaye)
 
-Upakiaji wa usanidi: [ccbt/config/config.py:_load_config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py#L76)
+Upakiaji wa usanidi: [ccbt/config/config.py:_load_config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py#L76)
 
 ## Faili ya Usanidi
 
 ### Usanidi wa Kawaida
 
-Rejea faili ya usanidi wa kawaida: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
+Rejea faili ya usanidi wa kawaida: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
 
 Usanidi umepangwa katika sehemu:
 
 ### Usanidi wa Mtandao
 
-Mipangilio ya mtandao: [ccbt.toml:4-43](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L4-L43)
+Mipangilio ya mtandao: [ccbt.toml:4-43](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L4-L43)
 
-- Mipaka ya muunganisho: [ccbt.toml:6-8](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L6-L8)
-- Bomba la maombi: [ccbt.toml:11-14](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L11-L14)
-- Urekebishaji wa socket: [ccbt.toml:17-19](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L17-L19)
-- Muda wa mwisho: [ccbt.toml:22-26](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L22-L26)
-- Mipangilio ya kusikiliza: [ccbt.toml:29-31](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L29-L31)
-- Itifaki za usafiri: [ccbt.toml:34-36](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L34-L36)
-- Mipaka ya kasi: [ccbt.toml:39-42](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L39-L42)
-- Mkakati wa kukaba: [ccbt.toml:45-47](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L45-L47)
-- Mipangilio ya tracker: [ccbt.toml:50-54](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L50-L54)
+- Mipaka ya muunganisho: [ccbt.toml:6-8](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L6-L8)
+- Bomba la maombi: [ccbt.toml:11-14](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L11-L14)
+- Urekebishaji wa socket: [ccbt.toml:17-19](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L17-L19)
+- Muda wa mwisho: [ccbt.toml:22-26](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L22-L26)
+- Mipangilio ya kusikiliza: [ccbt.toml:29-31](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L29-L31)
+- Itifaki za usafiri: [ccbt.toml:34-36](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L34-L36)
+- Mipaka ya kasi: [ccbt.toml:39-42](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L39-L42)
+- Mkakati wa kukaba: [ccbt.toml:45-47](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L45-L47)
+- Mipangilio ya tracker: [ccbt.toml:50-54](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L50-L54)
 
-Mfano wa usanidi wa mtandao: [ccbt/models.py:NetworkConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa mtandao: [ccbt/models.py:NetworkConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Diski
 
-Mipangilio ya diski: [ccbt.toml:57-96](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L57-L96)
+Mipangilio ya diski: [ccbt.toml:57-96](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L57-L96)
 
-- Utayarishaji: [ccbt.toml:59-60](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L59-L60)
-- Uboreshaji wa kuandika: [ccbt.toml:63-67](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L63-L67)
-- Uthibitishaji wa hash: [ccbt.toml:70-73](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L70-L73)
-- Threading ya I/O: [ccbt.toml:76-78](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L76-L78)
-- Mipangilio ya hali ya juu: [ccbt.toml:81-85](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L81-L85)
-- Mipangilio ya huduma ya uhifadhi: [ccbt.toml:87-89](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L87-L89)
+- Utayarishaji: [ccbt.toml:59-60](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L59-L60)
+- Uboreshaji wa kuandika: [ccbt.toml:63-67](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L63-L67)
+- Uthibitishaji wa hash: [ccbt.toml:70-73](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L70-L73)
+- Threading ya I/O: [ccbt.toml:76-78](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L76-L78)
+- Mipangilio ya hali ya juu: [ccbt.toml:81-85](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L81-L85)
+- Mipangilio ya huduma ya uhifadhi: [ccbt.toml:87-89](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L87-L89)
   - `max_file_size_mb`: Kikomo cha juu cha ukubwa wa faili katika MB kwa huduma ya uhifadhi (0 au None = bila kikomo, upeo 1048576 = 1TB). Inazuia kuandika diski bila kikomo wakati wa majaribio na inaweza kusanidiwa kwa matumizi ya uzalishaji.
-- Mipangilio ya alama ya kuangalia: [ccbt.toml:91-96](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L91-L96)
+- Mipangilio ya alama ya kuangalia: [ccbt.toml:91-96](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L91-L96)
 
-Mfano wa usanidi wa diski: [ccbt/models.py:DiskConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa diski: [ccbt/models.py:DiskConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Mkakati
 
-Mipangilio ya mkakati: [ccbt.toml:99-114](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L99-L114)
+Mipangilio ya mkakati: [ccbt.toml:99-114](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L99-L114)
 
-- Uchaguzi wa kipande: [ccbt.toml:101-104](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L101-L104)
-- Mkakati wa hali ya juu: [ccbt.toml:107-109](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L107-L109)
-- Kipaumbele cha vipande: [ccbt.toml:112-113](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L112-L113)
+- Uchaguzi wa kipande: [ccbt.toml:101-104](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L101-L104)
+- Mkakati wa hali ya juu: [ccbt.toml:107-109](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L107-L109)
+- Kipaumbele cha vipande: [ccbt.toml:112-113](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L112-L113)
 
-Mfano wa usanidi wa mkakati: [ccbt/models.py:StrategyConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa mkakati: [ccbt/models.py:StrategyConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Ugunduzi
 
-Mipangilio ya ugunduzi: [ccbt.toml:116-136](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L116-L136)
+Mipangilio ya ugunduzi: [ccbt.toml:116-136](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L116-L136)
 
-- Mipangilio ya DHT: [ccbt.toml:118-125](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L118-L125)
-- Mipangilio ya PEX: [ccbt.toml:128-129](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L128-L129)
-- Mipangilio ya tracker: [ccbt.toml:132-135](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L132-L135)
+- Mipangilio ya DHT: [ccbt.toml:118-125](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L118-L125)
+- Mipangilio ya PEX: [ccbt.toml:128-129](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L128-L129)
+- Mipangilio ya tracker: [ccbt.toml:132-135](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L132-L135)
   - `tracker_announce_interval`: Muda wa kutangaza tracker kwa sekunde (kawaida: 1800.0, anuwai: 60.0-86400.0)
   - `tracker_scrape_interval`: Muda wa kukwaruza tracker kwa sekunde kwa kukwaruza mara kwa mara (kawaida: 3600.0, anuwai: 60.0-86400.0)
   - `tracker_auto_scrape`: Kukwaruza trackers kiotomatiki wakati torrents zinaongezwa (BEP 48) (kawaida: false)
   - Vigezo vya mazingira: `CCBT_TRACKER_ANNOUNCE_INTERVAL`, `CCBT_TRACKER_SCRAPE_INTERVAL`, `CCBT_TRACKER_AUTO_SCRAPE`
 
-Mfano wa usanidi wa ugunduzi: [ccbt/models.py:DiscoveryConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa ugunduzi: [ccbt/models.py:DiscoveryConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Mipaka
 
-Mipaka ya kasi: [ccbt.toml:138-152](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L138-L152)
+Mipaka ya kasi: [ccbt.toml:138-152](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L138-L152)
 
-- Mipaka ya kimataifa: [ccbt.toml:140-141](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L140-L141)
-- Mipaka ya torrent: [ccbt.toml:144-145](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L144-L145)
-- Mipaka ya peer: [ccbt.toml:148](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L148)
-- Mipangilio ya ratiba: [ccbt.toml:151](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L151)
+- Mipaka ya kimataifa: [ccbt.toml:140-141](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L140-L141)
+- Mipaka ya torrent: [ccbt.toml:144-145](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L144-L145)
+- Mipaka ya peer: [ccbt.toml:148](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L148)
+- Mipangilio ya ratiba: [ccbt.toml:151](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L151)
 
-Mfano wa usanidi wa mipaka: [ccbt/models.py:LimitsConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa mipaka: [ccbt/models.py:LimitsConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Uchunguzi
 
-Mipangilio ya uchunguzi: [ccbt.toml:154-171](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L154-L171)
+Mipangilio ya uchunguzi: [ccbt.toml:154-171](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L154-L171)
 
-- Uwekaji alama: [ccbt.toml:156-160](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L156-L160)
-- Vipimo: [ccbt.toml:163-165](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L163-L165)
-- Ufuatiliaji na tahadhari: [ccbt.toml:168-170](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L168-L170)
+- Uwekaji alama: [ccbt.toml:156-160](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L156-L160)
+- Vipimo: [ccbt.toml:163-165](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L163-L165)
+- Ufuatiliaji na tahadhari: [ccbt.toml:168-170](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L168-L170)
 
-Mfano wa usanidi wa uchunguzi: [ccbt/models.py:ObservabilityConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa uchunguzi: [ccbt/models.py:ObservabilityConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Usalama
 
-Mipangilio ya usalama: [ccbt.toml:173-178](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L173-L178)
+Mipangilio ya usalama: [ccbt.toml:173-178](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L173-L178)
 
-Mfano wa usanidi wa usalama: [ccbt/models.py:SecurityConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa usalama: [ccbt/models.py:SecurityConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 #### Usanidi wa Usimbaji
 
@@ -434,47 +434,47 @@ encryption_allow_plain_fallback = true
 
 **Maelezo ya Utekelezaji:**
 
-Utekelezaji wa usimbaji: [ccbt/security/encryption.py:EncryptionManager](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/security/encryption.py#L131)
+Utekelezaji wa usimbaji: [ccbt/security/encryption.py:EncryptionManager](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/security/encryption.py#L131)
 
-- Mkono wa MSE: [ccbt/security/mse_handshake.py:MSEHandshake](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/security/mse_handshake.py#L45)
-- Seti za Cipher: [ccbt/security/ciphers/__init__.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/security/ciphers/__init__.py) (RC4, AES)
-- Mabadilishano ya Diffie-Hellman: [ccbt/security/dh_exchange.py:DHPeerExchange](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/security/dh_exchange.py)
+- Mkono wa MSE: [ccbt/security/mse_handshake.py:MSEHandshake](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/security/mse_handshake.py#L45)
+- Seti za Cipher: [ccbt/security/ciphers/__init__.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/security/ciphers/__init__.py) (RC4, AES)
+- Mabadilishano ya Diffie-Hellman: [ccbt/security/dh_exchange.py:DHPeerExchange](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/security/dh_exchange.py)
 
 ### Usanidi wa ML
 
-Mipangilio ya kujifunza kwa mashine: [ccbt.toml:180-183](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L180-L183)
+Mipangilio ya kujifunza kwa mashine: [ccbt.toml:180-183](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L180-L183)
 
-Mfano wa usanidi wa ML: [ccbt/models.py:MLConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa ML: [ccbt/models.py:MLConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ### Usanidi wa Dashboard
 
-Mipangilio ya dashboard: [ccbt.toml:185-191](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L185-L191)
+Mipangilio ya dashboard: [ccbt.toml:185-191](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L185-L191)
 
-Mfano wa usanidi wa dashboard: [ccbt/models.py:DashboardConfig](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/models.py)
+Mfano wa usanidi wa dashboard: [ccbt/models.py:DashboardConfig](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/models.py)
 
 ## Vigezo vya Mazingira
 
 Vigezo vya mazingira hutumia kiambishi `CCBT_` na hufuata mpangilio wa majina wa kihierarkia.
 
-Marejeo: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
+Marejeo: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
 
 Muundo: `CCBT_<SECTION>_<OPTION>=<value>`
 
 Mifano:
-- Mtandao: [env.example:10-58](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L10-L58)
-- Diski: [env.example:62-102](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L62-L102)
-- Mkakati: [env.example:106-121](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L106-L121)
-- Ugunduzi: [env.example:125-141](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L125-L141)
-- Uchunguzi: [env.example:145-162](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L145-L162)
-- Mipaka: [env.example:166-180](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L166-L180)
-- Usalama: [env.example:184-189](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L184-L189)
-- ML: [env.example:193-196](https://github.com/yourusername/ccbittorrent/blob/main/env.example#L193-L196)
+- Mtandao: [env.example:10-58](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L10-L58)
+- Diski: [env.example:62-102](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L62-L102)
+- Mkakati: [env.example:106-121](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L106-L121)
+- Ugunduzi: [env.example:125-141](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L125-L141)
+- Uchunguzi: [env.example:145-162](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L145-L162)
+- Mipaka: [env.example:166-180](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L166-L180)
+- Usalama: [env.example:184-189](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L184-L189)
+- ML: [env.example:193-196](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example#L193-L196)
 
-Uchambuzi wa vigezo vya mazingira: [ccbt/config/config.py:_get_env_config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+Uchambuzi wa vigezo vya mazingira: [ccbt/config/config.py:_get_env_config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 ## Mpango wa Usanidi
 
-Mpango wa usanidi na uthibitishaji: [ccbt/config/config_schema.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_schema.py)
+Mpango wa usanidi na uthibitishaji: [ccbt/config/config_schema.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_schema.py)
 
 Mpango unafafanua:
 - Aina za sehemu na vikwazo
@@ -484,11 +484,11 @@ Mpango unafafanua:
 
 ## Uwezo wa Usanidi
 
-Uwezo wa usanidi na ugunduzi wa kipengele: [ccbt/config/config_capabilities.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_capabilities.py)
+Uwezo wa usanidi na ugunduzi wa kipengele: [ccbt/config/config_capabilities.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_capabilities.py)
 
 ## Mfano wa Usanidi
 
-Mfano wa usanidi uliofafanuliwa hapo awali: [ccbt/config/config_templates.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_templates.py)
+Mfano wa usanidi uliofafanuliwa hapo awali: [ccbt/config/config_templates.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_templates.py)
 
 Mfano kwa:
 - Usanidi wa utendakazi wa juu
@@ -507,45 +507,45 @@ Mifano ya usanidi inapatikana katika saraka ya [examples/](examples/):
 
 ## Upakiaji wa Joto
 
-Msaada wa upakiaji wa joto wa usanidi: [ccbt/config/config.py:ConfigManager](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py#L40)
+Msaada wa upakiaji wa joto wa usanidi: [ccbt/config/config.py:ConfigManager](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py#L40)
 
 Mfumo wa usanidi unasaidia upakiaji upya wa mabadiliko bila kuanzisha upya klienti.
 
 ## Uhamishaji wa Usanidi
 
-Zana za uhamishaji wa usanidi: [ccbt/config/config_migration.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_migration.py)
+Zana za uhamishaji wa usanidi: [ccbt/config/config_migration.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_migration.py)
 
 Zana za kuhamisha kati ya matoleo ya usanidi.
 
 ## Usanidi wa Backup na Tofauti
 
 Zana za usimamizi wa usanidi:
-- Backup: [ccbt/config/config_backup.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_backup.py)
-- Tofauti: [ccbt/config/config_diff.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_diff.py)
+- Backup: [ccbt/config/config_backup.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_backup.py)
+- Tofauti: [ccbt/config/config_diff.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_diff.py)
 
 ## Usanidi wa Masharti
 
-Msaada wa usanidi wa masharti: [ccbt/config/config_conditional.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config_conditional.py)
+Msaada wa usanidi wa masharti: [ccbt/config/config_conditional.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config_conditional.py)
 
 ## Vidokezo na Mbinu Bora
 
 ### Urekebishaji wa Utendakazi
 
-- Ongeza `disk.write_buffer_kib` kwa kuandika kwa mpangilio kwa kiasi kikubwa: [ccbt.toml:64](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L64)
-- Wezesha `direct_io` kwenye Linux/NVMe kwa utoaji bora wa kuandika: [ccbt.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L81)
-- Rekebisha `network.pipeline_depth` na `network.block_size_kib` kwa mtandao wako: [ccbt.toml:11-13](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L11-L13)
+- Ongeza `disk.write_buffer_kib` kwa kuandika kwa mpangilio kwa kiasi kikubwa: [ccbt.toml:64](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L64)
+- Wezesha `direct_io` kwenye Linux/NVMe kwa utoaji bora wa kuandika: [ccbt.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L81)
+- Rekebisha `network.pipeline_depth` na `network.block_size_kib` kwa mtandao wako: [ccbt.toml:11-13](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L11-L13)
 
 ### Uboreshaji wa Rasilimali
 
-- Rekebisha `disk.hash_workers` kulingana na cores za CPU: [ccbt.toml:70](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L70)
-- Sanidi `disk.cache_size_mb` kulingana na RAM inayopatikana: [ccbt.toml:78](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L78)
-- Weka `network.max_global_peers` kulingana na bandwidth: [ccbt.toml:6](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L6)
+- Rekebisha `disk.hash_workers` kulingana na cores za CPU: [ccbt.toml:70](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L70)
+- Sanidi `disk.cache_size_mb` kulingana na RAM inayopatikana: [ccbt.toml:78](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L78)
+- Weka `network.max_global_peers` kulingana na bandwidth: [ccbt.toml:6](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L6)
 
 ### Usanidi wa Mtandao
 
-- Sanidi muda wa mwisho kulingana na hali ya mtandao: [ccbt.toml:22-26](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L22-L26)
-- Wezesha/zima itifaki kama inahitajika: [ccbt.toml:34-36](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L34-L36)
-- Weka mipaka ya kasi kwa usahihi: [ccbt.toml:39-42](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L39-L42)
+- Sanidi muda wa mwisho kulingana na hali ya mtandao: [ccbt.toml:22-26](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L22-L26)
+- Wezesha/zima itifaki kama inahitajika: [ccbt.toml:34-36](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L34-L36)
+- Weka mipaka ya kasi kwa usahihi: [ccbt.toml:39-42](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L39-L42)
 
 Kwa urekebishaji wa kina wa utendakazi, angalia [Mwongozo wa Urekebishaji wa Utendakazi](performance.md).
 

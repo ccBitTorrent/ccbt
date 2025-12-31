@@ -279,7 +279,9 @@ class CheckpointManager:
         if checkpoint.session_state is not None:
             checkpoint_dict["session_state"] = checkpoint.session_state
         if checkpoint.session_state_timestamp is not None:
-            checkpoint_dict["session_state_timestamp"] = checkpoint.session_state_timestamp
+            checkpoint_dict["session_state_timestamp"] = (
+                checkpoint.session_state_timestamp
+            )
         if checkpoint.recent_events is not None:
             checkpoint_dict["recent_events"] = checkpoint.recent_events
 
@@ -391,7 +393,9 @@ class CheckpointManager:
                 if checkpoint.session_state is not None:
                     metadata["session_state"] = checkpoint.session_state
                 if checkpoint.session_state_timestamp is not None:
-                    metadata["session_state_timestamp"] = checkpoint.session_state_timestamp
+                    metadata["session_state_timestamp"] = (
+                        checkpoint.session_state_timestamp
+                    )
                 if checkpoint.recent_events is not None:
                     metadata["recent_events"] = checkpoint.recent_events
 
@@ -782,7 +786,9 @@ class CheckpointManager:
             if "session_state" in metadata:
                 checkpoint_dict["session_state"] = metadata["session_state"]
             if "session_state_timestamp" in metadata:
-                checkpoint_dict["session_state_timestamp"] = metadata["session_state_timestamp"]
+                checkpoint_dict["session_state_timestamp"] = metadata[
+                    "session_state_timestamp"
+                ]
             if "recent_events" in metadata:
                 checkpoint_dict["recent_events"] = metadata["recent_events"]
 
@@ -829,8 +835,14 @@ class CheckpointManager:
 
         return deleted
 
-    async def list_checkpoints(self) -> list[CheckpointFileInfo]:
+    async def list_checkpoints(
+        self,
+        checkpoint_format: Any = None,  # noqa: ARG002
+    ) -> list[CheckpointFileInfo]:
         """List all available checkpoints.
+
+        Args:
+            checkpoint_format: Optional format filter (currently unused, for future filtering)
 
         Returns:
             List of checkpoint file incheckpoint_formation
@@ -1202,9 +1214,7 @@ class GlobalCheckpointManager:
 
             # Write JSON file
             def _write_json():
-                with open(
-                    self.global_checkpoint_file, "w", encoding="utf-8"
-                ) as f:
+                with open(self.global_checkpoint_file, "w", encoding="utf-8") as f:
                     json.dump(checkpoint_dict, f, indent=2, ensure_ascii=False)
                     f.flush()
                     os.fsync(f.fileno())
@@ -1238,9 +1248,7 @@ class GlobalCheckpointManager:
             return None
 
         def _read_json():
-            with open(
-                self.global_checkpoint_file, encoding="utf-8"
-            ) as f:
+            with open(self.global_checkpoint_file, encoding="utf-8") as f:
                 content = f.read().strip()
                 if not content:
                     msg = "Global checkpoint file is empty"
@@ -1266,9 +1274,7 @@ class GlobalCheckpointManager:
                     if "info_hash" in queue_item and isinstance(
                         queue_item["info_hash"], str
                     ):
-                        queue_item["info_hash"] = bytes.fromhex(
-                            queue_item["info_hash"]
-                        )
+                        queue_item["info_hash"] = bytes.fromhex(queue_item["info_hash"])
 
             # Validate version
             if checkpoint_dict.get("version", "1.0") != "1.0":
@@ -1320,12 +1326,12 @@ class GlobalCheckpointManager:
 
         try:
             if checkpoint_format == CheckpointFormat.JSON:
-                path = await self._save_json_checkpoint(checkpoint)
+                path = await self._save_json_checkpoint(checkpoint)  # type: ignore[attr-defined]
             elif checkpoint_format == CheckpointFormat.BINARY:
-                path = await self._save_binary_checkpoint(checkpoint)
+                path = await self._save_binary_checkpoint(checkpoint)  # type: ignore[attr-defined]
             else:
                 # For BOTH format, save JSON (faster for incremental)
-                path = await self._save_json_checkpoint(checkpoint)
+                path = await self._save_json_checkpoint(checkpoint)  # type: ignore[attr-defined]
 
             self.logger.debug(
                 "Saved incremental checkpoint with %d changed fields: %s",
@@ -1358,7 +1364,7 @@ class GlobalCheckpointManager:
 
         """
         # Load full checkpoint (incremental is handled by changed_fields tracking)
-        checkpoint = await self.load_checkpoint(info_hash)
+        checkpoint = await self.load_checkpoint(info_hash)  # type: ignore[attr-defined]
         if checkpoint is None:
             return None
 

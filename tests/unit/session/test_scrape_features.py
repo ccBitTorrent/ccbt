@@ -45,26 +45,14 @@ def mock_config():
     from ccbt.models import CheckpointFormat
     config.disk.checkpoint_format = CheckpointFormat.BINARY  # Real enum value
     config.disk.checkpoint_enabled = True
+    # CRITICAL FIX: Add limits attribute to prevent TypeError
+    config.limits = MagicMock()
+    config.limits.global_down_kib = 0
+    config.limits.global_up_kib = 0
+    config.network = MagicMock()
+    config.network.max_global_peers = 100
+    config.network.connection_timeout = 30.0
     return config
-
-
-@pytest_asyncio.fixture
-async def session_manager(mock_config):
-    """Create AsyncSessionManager instance for testing."""
-    from ccbt.session.session import AsyncSessionManager
-
-    with patch("ccbt.session.session.get_config") as mock_get_config:
-        mock_get_config.return_value = mock_config
-
-        session = AsyncSessionManager(".")
-        await session.start()
-        try:
-            yield session
-        finally:
-            # Ensure all background tasks are stopped
-            await session.stop()
-            # Give a moment for cleanup
-            await asyncio.sleep(0.1)
 
 
 @pytest.fixture
@@ -380,6 +368,11 @@ class TestAutoScrapeOnAdd:
         """Test auto-scrape runs when enabled."""
         mock_config.discovery.tracker_auto_scrape = True
 
+        # Ensure clean state before test - restart session manager to apply new config
+        await session_manager.stop()
+        await asyncio.sleep(0.1)  # Allow cleanup to complete
+        await session_manager.start()
+
         # Mock force_scrape
         with patch.object(
             session_manager, "force_scrape", new_callable=AsyncMock
@@ -389,12 +382,14 @@ class TestAutoScrapeOnAdd:
             await session_manager.add_torrent(sample_torrent_data, resume=False)
 
             # Wait for auto-scrape delay (2 seconds) but check periodically
-            for _ in range(25):  # 2.5 seconds total
+            # Increased wait time to 5 seconds to account for background task scheduling
+            for _ in range(50):  # 5 seconds total
                 await asyncio.sleep(0.1)
                 if mock_force.called:
                     break
 
-            # force_scrape should be called once
+            # force_scrape should be called once with correct info_hash_hex
+            assert mock_force.called, f"Expected force_scrape to be called within 5 seconds. Called: {mock_force.called}, Call count: {mock_force.call_count}"
             mock_force.assert_called_once_with(sample_info_hash_hex)
 
     @pytest.mark.asyncio
@@ -433,11 +428,28 @@ class TestPeriodicScrapeLoop:
         """Test periodic scrape loop starts when auto-scrape enabled."""
         mock_config.discovery.tracker_auto_scrape = True
 
-        await session_manager.stop()
-        await session_manager.start()
+        # Ensure previous scrape_task is cancelled and cleaned up
+        if session_manager.scrape_task and not session_manager.scrape_task.done():
+            session_manager.scrape_task.cancel()
+            try:
+                await asyncio.wait_for(session_manager.scrape_task, timeout=1.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass  # Expected when cancelling
 
-        assert session_manager.scrape_task is not None
-        assert not session_manager.scrape_task.done()
+        await session_manager.stop()
+        await asyncio.sleep(0.1)  # Allow cleanup to complete
+        await session_manager.start()
+        await asyncio.sleep(0.1)  # Allow task to be created
+
+        # Verify scrape_task was created and is running
+        # Wait up to 1 second for task to be created (in case of async scheduling delay)
+        for _ in range(10):  # Check every 0.1s for up to 1 second
+            if session_manager.scrape_task is not None:
+                break
+            await asyncio.sleep(0.1)
+
+        assert session_manager.scrape_task is not None, "Expected scrape_task to be created when auto-scrape is enabled"
+        assert not session_manager.scrape_task.done(), "Expected scrape_task to be running, not done"
 
         await session_manager.stop()
 

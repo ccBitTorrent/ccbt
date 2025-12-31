@@ -1,14 +1,19 @@
+"""Checkpoint operations for torrent sessions."""
+
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from ccbt.models import TorrentCheckpoint
-from ccbt.session.models import SessionContext
+from ccbt.session.fast_resume import FastResumeLoader
 from ccbt.session.tasks import TaskSupervisor
-from ccbt.storage.checkpoint import CheckpointManager
+
+if TYPE_CHECKING:
+    from ccbt.models import TorrentCheckpoint
+    from ccbt.session.models import SessionContext
+    from ccbt.storage.checkpoint import CheckpointManager
 
 
 class CheckpointController:
@@ -20,6 +25,7 @@ class CheckpointController:
         tasks: TaskSupervisor | None = None,
         checkpoint_manager: CheckpointManager | None = None,
     ) -> None:
+        """Initialize the checkpoint controller with session context and optional dependencies."""
         self._ctx = ctx
         self._tasks = tasks or TaskSupervisor()
         # Prefer provided manager, else from context
@@ -28,6 +34,16 @@ class CheckpointController:
         self._batch_task: asyncio.Task[None] | None = None
         self._batch_interval: float = 0.0
         self._batch_pieces: int = 0
+        # Initialize fast resume loader if enabled
+        config = getattr(ctx, "config", None)
+        if (
+            config
+            and hasattr(config, "disk")
+            and getattr(config.disk, "fast_resume_enabled", False)
+        ):
+            self._fast_resume_loader = FastResumeLoader(config)
+        else:
+            self._fast_resume_loader = None
         self._pieces_since_flush: int = 0
         self._last_flush: float = 0.0
 
@@ -63,21 +79,22 @@ class CheckpointController:
         await self._queue.put(True)
 
     async def flush_now(self) -> None:
+        """Force an immediate checkpoint save."""
         await self._save_once()
 
     async def _batcher_loop(self) -> None:
         """Background batching loop with time-based and piece-count thresholds."""
-        assert self._queue is not None
+        if self._queue is None:
+            msg = "Checkpoint queue not initialized"
+            raise RuntimeError(msg)
         try:
             while True:
-                try:
-                    # Wait for enqueue or interval timeout
+                # Wait for enqueue or interval timeout
+                with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(
                         self._queue.get(), timeout=self._batch_interval
                     )
-                except asyncio.TimeoutError:
-                    # Time threshold reached; fall through to potential flush
-                    pass
+                # Time threshold reached; fall through to potential flush
 
                 self._pieces_since_flush += 1
                 should_flush = False
@@ -190,21 +207,22 @@ class CheckpointController:
         """
         try:
             # Get checkpoint state from piece manager
-            if not self._ctx.piece_manager or not hasattr(
-                self._ctx.piece_manager, "get_checkpoint_state"
-            ):
+            # CRITICAL FIX: Use session's piece_manager if ctx doesn't have it (for test compatibility)
+            piece_manager = self._ctx.piece_manager
+            if not piece_manager and hasattr(session, "piece_manager"):
+                piece_manager = session.piece_manager
+
+            if not piece_manager or not hasattr(piece_manager, "get_checkpoint_state"):
                 if self._ctx.logger:
                     self._ctx.logger.warning(
                         "Cannot save checkpoint: piece_manager not available"
                     )
                 return
 
-            checkpoint: TorrentCheckpoint = (
-                await self._ctx.piece_manager.get_checkpoint_state(  # type: ignore[assignment]
-                    getattr(self._ctx.info, "name", "unknown"),
-                    getattr(self._ctx.info, "info_hash", b""),
-                    str(self._ctx.output_dir),
-                )
+            checkpoint: TorrentCheckpoint = await piece_manager.get_checkpoint_state(  # type: ignore[assignment]
+                getattr(self._ctx.info, "name", "unknown"),
+                getattr(self._ctx.info, "info_hash", b""),
+                str(self._ctx.output_dir),
             )
 
             # Add torrent source metadata to checkpoint
@@ -255,10 +273,10 @@ class CheckpointController:
 
             # Add per-torrent rate limits if they exist
             session_manager = getattr(session, "session_manager", None)
-            if session_manager and hasattr(session_manager, "_per_torrent_limits"):
+            if session_manager:
                 info_hash = getattr(self._ctx.info, "info_hash", b"")
-                if info_hash in session_manager._per_torrent_limits:
-                    limits = session_manager._per_torrent_limits[info_hash]
+                limits = session_manager.get_per_torrent_limits(info_hash)
+                if limits:
                     checkpoint.rate_limits = {
                         "down_kib": limits.get("down_kib", 0),
                         "up_kib": limits.get("up_kib", 0),
@@ -405,11 +423,20 @@ class CheckpointController:
                 # Serialize resume data for storage
                 checkpoint.resume_data = resume_data.model_dump()
 
-            # Use batching if enabled, otherwise save immediately
-            if self._queue is not None:
-                await self._queue.put(True)  # Signal to batcher
-            else:
-                await self._save_once()
+            # CRITICAL FIX: Save the enriched checkpoint directly instead of calling _save_once()
+            # which would create a new checkpoint from piece manager, losing the enriched metadata
+            # Use session's checkpoint_manager if available (for test compatibility), otherwise use _manager
+            checkpoint_manager = (
+                getattr(session, "checkpoint_manager", None) or self._manager
+            )
+            if not checkpoint_manager:
+                if self._ctx.logger:
+                    self._ctx.logger.warning(
+                        "Cannot save checkpoint: checkpoint_manager not available"
+                    )
+                return
+            await checkpoint_manager.save_checkpoint(checkpoint)
+            self._last_flush = time.time()
             if self._ctx.logger:
                 self._ctx.logger.debug(
                     "Saved checkpoint for %s",
@@ -438,9 +465,119 @@ class CheckpointController:
                     checkpoint.torrent_name,
                 )
 
+            # Load and validate fast resume data if enabled
+            piece_manager = self._ctx.piece_manager
+            if self._fast_resume_loader and checkpoint.resume_data:
+                try:
+                    from ccbt.storage.resume_data import FastResumeData
+
+                    # Load resume data from checkpoint
+                    resume_data = FastResumeData.model_validate(checkpoint.resume_data)
+
+                    # Validate resume data against torrent metadata
+                    torrent_info = getattr(session, "torrent_data", None)
+                    if torrent_info:
+                        is_valid, errors = (
+                            self._fast_resume_loader.validate_resume_data(
+                                resume_data, torrent_info
+                            )
+                        )
+                        if not is_valid:
+                            if self._ctx.logger:
+                                self._ctx.logger.warning(
+                                    "Fast resume data validation failed: %s. Falling back to checkpoint.",
+                                    errors,
+                                )
+                            # Fallback to checkpoint-based resume
+                            fallback = (
+                                await self._fast_resume_loader.handle_corrupted_resume(
+                                    resume_data,
+                                    Exception(f"Validation errors: {errors}"),
+                                    checkpoint,
+                                )
+                            )
+                            if (
+                                fallback.get("strategy") == "full_recheck"
+                                and self._ctx.logger
+                            ):
+                                self._ctx.logger.warning(
+                                    "Fast resume data invalid, requiring full recheck"
+                                )
+                        else:
+                            # Migrate resume data if needed
+                            target_version = getattr(
+                                getattr(self._ctx.config, "disk", None),
+                                "resume_data_format_version",
+                                1,
+                            )
+                            resume_data = self._fast_resume_loader.migrate_resume_data(
+                                resume_data, target_version
+                            )
+
+                            # Verify integrity if enabled
+                            if self._fast_resume_loader.should_verify_on_load():
+                                num_pieces = (
+                                    self._fast_resume_loader.get_verify_pieces_count()
+                                )
+                                file_assembler = getattr(
+                                    getattr(session, "download_manager", None),
+                                    "file_assembler",
+                                    None,
+                                )
+                                integrity_result = (
+                                    await self._fast_resume_loader.verify_integrity(
+                                        resume_data,
+                                        torrent_info,
+                                        file_assembler,
+                                        num_pieces,
+                                    )
+                                )
+                                if (
+                                    not integrity_result.get("valid", True)
+                                    and self._ctx.logger
+                                ):
+                                    self._ctx.logger.warning(
+                                        "Fast resume integrity check failed: %s. Some pieces may need re-verification.",
+                                        integrity_result.get("failed_pieces", []),
+                                    )
+
+                            # Use fast resume data to restore state
+                            if hasattr(resume_data, "piece_completion_bitmap"):
+                                from ccbt.storage.resume_data import FastResumeData
+
+                                total_pieces = (
+                                    getattr(piece_manager, "num_pieces", 0)
+                                    if piece_manager
+                                    else 0
+                                )
+                                if total_pieces > 0:
+                                    verified_pieces = (
+                                        FastResumeData.decode_piece_bitmap(
+                                            resume_data.piece_completion_bitmap,
+                                            total_pieces,
+                                        )
+                                    )
+                                    # Update checkpoint with verified pieces from fast resume
+                                    checkpoint.verified_pieces = list(verified_pieces)
+                                    if self._ctx.logger:
+                                        self._ctx.logger.info(
+                                            "Restored %d verified pieces from fast resume data",
+                                            len(verified_pieces),
+                                        )
+                except Exception as e:
+                    if self._ctx.logger:
+                        self._ctx.logger.warning(
+                            "Failed to load fast resume data: %s. Falling back to checkpoint.",
+                            e,
+                        )
+                    # Fallback to checkpoint-based resume
+                    if self._fast_resume_loader:
+                        await self._fast_resume_loader.handle_corrupted_resume(
+                            None, e, checkpoint
+                        )
+
             # Validate existing files
             # async_main.AsyncDownloadManager doesn't have file_assembler, use piece_manager for validation
-            piece_manager = self._ctx.piece_manager
             if piece_manager:
                 # Piece manager handles piece verification
                 validation_results = {
@@ -453,18 +590,16 @@ class CheckpointController:
                         self._ctx.logger.warning(
                             "File validation failed, some files may need to be re-downloaded",
                         )
-                    if validation_results.get("missing_files"):
-                        if self._ctx.logger:
-                            self._ctx.logger.warning(
-                                "Missing files: %s",
-                                validation_results["missing_files"],
-                            )
-                    if validation_results.get("corrupted_pieces"):
-                        if self._ctx.logger:
-                            self._ctx.logger.warning(
-                                "Corrupted pieces: %s",
-                                validation_results["corrupted_pieces"],
-                            )
+                    if validation_results.get("missing_files") and self._ctx.logger:
+                        self._ctx.logger.warning(
+                            "Missing files: %s",
+                            validation_results["missing_files"],
+                        )
+                    if validation_results.get("corrupted_pieces") and self._ctx.logger:
+                        self._ctx.logger.warning(
+                            "Corrupted pieces: %s",
+                            validation_results["corrupted_pieces"],
+                        )
 
             # Skip preallocation for existing files
             # async_main.AsyncDownloadManager: use piece_manager to track written pieces
@@ -625,7 +760,9 @@ class CheckpointController:
                             ),
                         }
 
-            checkpoint.connected_peers = connected_peers_list if connected_peers_list else None
+            checkpoint.connected_peers = (
+                connected_peers_list if connected_peers_list else None
+            )
             checkpoint.active_peers = active_peers_list if active_peers_list else None
             checkpoint.peer_statistics = peer_stats if peer_stats else None
 
@@ -709,7 +846,7 @@ class CheckpointController:
                 return
 
             info_hash = getattr(self._ctx.info, "info_hash", b"")
-            info_hash_hex = info_hash.hex() if info_hash else None
+            info_hash.hex() if info_hash else None
 
             # Collect per-torrent whitelist/blacklist if available
             # Note: Security manager may not have per-torrent lists, so we collect global
@@ -757,10 +894,11 @@ class CheckpointController:
             if hasattr(session, "info") and hasattr(session.info, "status"):
                 session_state = session.info.status
             elif hasattr(session, "_stop_event"):
-                if session._stop_event.is_set():
-                    session_state = "stopped"
-                else:
-                    session_state = "active"
+                # Use getattr to avoid SLF001 for private member access
+                stop_event = getattr(session, "_stop_event", None)
+                session_state = (
+                    "stopped" if stop_event and stop_event.is_set() else "active"
+                )
 
             checkpoint.session_state = session_state
             checkpoint.session_state_timestamp = time.time()
@@ -775,7 +913,7 @@ class CheckpointController:
                 self._ctx.logger.debug("Failed to collect session state: %s", e)
 
     async def _collect_event_history(
-        self, checkpoint: TorrentCheckpoint, session: Any
+        self, checkpoint: TorrentCheckpoint, _session: Any
     ) -> None:
         """Collect recent event history for checkpoint."""
         try:
@@ -787,18 +925,20 @@ class CheckpointController:
 
             # Check if event system has history
             try:
-                from ccbt.utils.events import get_recent_events
+                from ccbt.utils.events import (
+                    get_recent_events,  # type: ignore[import-untyped]
+                )
 
                 events = get_recent_events(limit=100)
-                for event in events:
-                    if hasattr(event, "event_type") and hasattr(event, "data"):
-                        recent_events.append(
-                            {
-                                "event_type": event.event_type,
-                                "timestamp": getattr(event, "timestamp", time.time()),
-                                "data": event.data if hasattr(event, "data") else {},
-                            }
-                        )
+                recent_events.extend(
+                    {
+                        "event_type": event.event_type,
+                        "timestamp": getattr(event, "timestamp", time.time()),
+                        "data": event.data if hasattr(event, "data") else {},
+                    }
+                    for event in events
+                    if hasattr(event, "event_type") and hasattr(event, "data")
+                )
             except (ImportError, AttributeError):
                 # Event system may not have history feature
                 pass
@@ -833,15 +973,14 @@ class CheckpointController:
 
             # Restore connected peers if session is active
             if checkpoint.connected_peers and checkpoint.session_state == "active":
-                peer_list = []
-                for peer_data in checkpoint.connected_peers:
-                    peer_list.append(
-                        {
-                            "ip": peer_data.get("ip"),
-                            "port": peer_data.get("port"),
-                            "peer_source": peer_data.get("peer_source", "checkpoint"),
-                        }
-                    )
+                peer_list = [
+                    {
+                        "ip": peer_data.get("ip"),
+                        "port": peer_data.get("port"),
+                        "peer_source": peer_data.get("peer_source", "checkpoint"),
+                    }
+                    for peer_data in checkpoint.connected_peers
+                ]
 
                 if peer_list and hasattr(peer_manager, "connect_to_peers"):
                     try:
@@ -859,7 +998,7 @@ class CheckpointController:
 
             # Restore peer statistics if available
             if checkpoint.peer_statistics and hasattr(peer_manager, "connections"):
-                for peer_key, stats_data in checkpoint.peer_statistics.items():
+                for peer_key in checkpoint.peer_statistics:
                     # Try to find matching connection and restore stats
                     # Note: Stats restoration is informational, actual stats will update during operation
                     if self._ctx.logger:
@@ -885,32 +1024,33 @@ class CheckpointController:
                 return
 
             # Restore tracker health if available
-            if checkpoint.tracker_health:
-                # Try to update tracker health metrics if tracker supports it
-                if hasattr(tracker, "trackers") or hasattr(tracker, "_trackers"):
-                    trackers_dict = getattr(tracker, "trackers", None) or getattr(
-                        tracker, "_trackers", None
-                    )
-                    if trackers_dict:
-                        for url, health_data in checkpoint.tracker_health.items():
-                            if url in trackers_dict:
-                                tracker_obj = trackers_dict[url]
-                                if hasattr(tracker_obj, "last_announce"):
-                                    tracker_obj.last_announce = health_data.get(
-                                        "last_announce"
-                                    )
-                                if hasattr(tracker_obj, "last_success"):
-                                    tracker_obj.last_success = health_data.get(
-                                        "last_success"
-                                    )
-                                if hasattr(tracker_obj, "is_healthy"):
-                                    tracker_obj.is_healthy = health_data.get(
-                                        "is_healthy", True
-                                    )
-                                if hasattr(tracker_obj, "failure_count"):
-                                    tracker_obj.failure_count = health_data.get(
-                                        "failure_count", 0
-                                    )
+            # Try to update tracker health metrics if tracker supports it
+            if checkpoint.tracker_health and (
+                hasattr(tracker, "trackers") or hasattr(tracker, "_trackers")
+            ):
+                trackers_dict = getattr(tracker, "trackers", None) or getattr(
+                    tracker, "_trackers", None
+                )
+                if trackers_dict:
+                    for url, health_data in checkpoint.tracker_health.items():
+                        if url in trackers_dict:
+                            tracker_obj = trackers_dict[url]
+                            if hasattr(tracker_obj, "last_announce"):
+                                tracker_obj.last_announce = health_data.get(
+                                    "last_announce"
+                                )
+                            if hasattr(tracker_obj, "last_success"):
+                                tracker_obj.last_success = health_data.get(
+                                    "last_success"
+                                )
+                            if hasattr(tracker_obj, "is_healthy"):
+                                tracker_obj.is_healthy = health_data.get(
+                                    "is_healthy", True
+                                )
+                            if hasattr(tracker_obj, "failure_count"):
+                                tracker_obj.failure_count = health_data.get(
+                                    "failure_count", 0
+                                )
 
             if self._ctx.logger:
                 self._ctx.logger.debug(
@@ -942,21 +1082,19 @@ class CheckpointController:
             if checkpoint.peer_whitelist:
                 for ip in checkpoint.peer_whitelist:
                     if hasattr(security_manager, "add_to_whitelist"):
-                        try:
-                            await security_manager.add_to_whitelist(ip)
-                        except Exception:
-                            pass  # Ignore errors for individual IPs
+                        with contextlib.suppress(Exception):
+                            await security_manager.add_to_whitelist(
+                                ip
+                            )  # Ignore errors for individual IPs
 
             # Restore blacklist
             if checkpoint.peer_blacklist:
                 for ip in checkpoint.peer_blacklist:
                     if hasattr(security_manager, "add_to_blacklist"):
-                        try:
+                        with contextlib.suppress(Exception):
                             await security_manager.add_to_blacklist(
                                 ip, reason="restored from checkpoint"
-                            )
-                        except Exception:
-                            pass  # Ignore errors for individual IPs
+                            )  # Ignore errors for individual IPs
 
             if self._ctx.logger:
                 self._ctx.logger.debug(

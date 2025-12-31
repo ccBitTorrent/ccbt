@@ -383,6 +383,7 @@ class XetProtocol(Protocol):
                         lpd_peers = await self.lpd_client.discover_peers(timeout=2.0)
                         if lpd_peers:
                             from ccbt.models import PeerInfo
+
                             for ip, port in lpd_peers:
                                 peers.append(PeerInfo(ip=ip, port=port))
                             self.logger.debug(
@@ -392,23 +393,6 @@ class XetProtocol(Protocol):
                             )
                 except Exception as e:
                     self.logger.warning("Error querying LPD for peers: %s", e)
-
-            # Strategy 2c: Peer Exchange (PEX) for chunk availability
-            if self.pex_manager and chunk_hashes_to_query:
-                try:
-                    if hasattr(self.pex_manager, "get_peers_with_chunks"):
-                        pex_peers = await self.pex_manager.get_peers_with_chunks(
-                            chunk_hashes_to_query[:20]  # Limit queries
-                        )
-                        if pex_peers:
-                            peers.extend(pex_peers)
-                            self.logger.debug(
-                                "Found %d peers via PEX for torrent %s",
-                                len(pex_peers),
-                                torrent_info.name,
-                            )
-                except Exception as e:
-                    self.logger.warning("Error querying PEX for peers: %s", e)
 
             # Strategy 3: Extract chunk hashes from Xet metadata if available
             # This is the primary method for chunk discovery when Xet is enabled
@@ -448,14 +432,47 @@ class XetProtocol(Protocol):
                     len(chunk_hashes_to_query),
                 )
 
+            # Strategy 2c: Peer Exchange (PEX) for chunk availability
+            if self.pex_manager and chunk_hashes_to_query:
+                try:
+                    if hasattr(self.pex_manager, "get_peers_with_chunks"):
+                        pex_peers = await self.pex_manager.get_peers_with_chunks(
+                            chunk_hashes_to_query[:20]  # Limit queries
+                        )
+                        if pex_peers:
+                            peers.extend(pex_peers)
+                            self.logger.debug(
+                                "Found %d peers via PEX for torrent %s",
+                                len(pex_peers),
+                                torrent_info.name,
+                            )
+                except Exception as e:
+                    self.logger.warning("Error querying PEX for peers: %s", e)
+
+            # Strategy 3b: Pre-filter using Bloom Filters
+            # For v2 torrents, piece layers contain SHA-256 hashes that can be used
+            # as identifiers for content discovery (though not perfect, since Xet chunks
+            # are content-defined, not piece-aligned)
+            if not chunk_hashes_to_query and torrent_info.piece_layers:
+                # For v2 torrents, use piece layer roots as potential chunk identifiers
+                # This is more accurate than v1 piece hashes since they're SHA-256
+                piece_layer_roots = list(torrent_info.piece_layers.keys())
+                # Limit to first 20 piece layers to avoid excessive queries
+                chunk_hashes_to_query.extend(piece_layer_roots[:20])
+                self.logger.debug(
+                    "Using %d piece layer roots from v2 torrent for chunk discovery",
+                    len(chunk_hashes_to_query),
+                )
+
             # Strategy 3b: Pre-filter using Bloom Filters
             if self.bloom_filter and chunk_hashes_to_query:
                 try:
                     # Filter chunks that might be available based on bloom filter
-                    filtered_chunks = []
-                    for chunk_hash in chunk_hashes_to_query:
-                        if self.bloom_filter.has_chunk(chunk_hash):
-                            filtered_chunks.append(chunk_hash)
+                    filtered_chunks = [
+                        chunk_hash
+                        for chunk_hash in chunk_hashes_to_query
+                        if self.bloom_filter.has_chunk(chunk_hash)
+                    ]
                     if filtered_chunks:
                         chunk_hashes_to_query = filtered_chunks
                         self.logger.debug(
@@ -472,25 +489,31 @@ class XetProtocol(Protocol):
                     if self.catalog or (
                         hasattr(self.cas_client, "catalog") and self.cas_client.catalog
                     ):
-                        catalog_to_use = self.catalog or self.cas_client.catalog
-                        try:
-                            catalog_results = await catalog_to_use.get_peers_by_chunks(
-                                chunk_hashes_to_query[:50]
-                            )
-                            # Add catalog results
-                            for chunk_hash, catalog_peers in catalog_results.items():
-                                if catalog_peers:
-                                    from ccbt.models import PeerInfo
+                        catalog_to_use = self.catalog or (
+                            self.cas_client.catalog if self.cas_client else None
+                        )
+                        if catalog_to_use is not None:
+                            try:
+                                catalog_results = await catalog_to_use.get_peers_by_chunks(  # type: ignore[attr-defined]
+                                    chunk_hashes_to_query[:50]
+                                )
+                                # Add catalog results
+                                for (
+                                    chunk_hash,
+                                    catalog_peers,
+                                ) in catalog_results.items():
+                                    if catalog_peers:
+                                        from ccbt.models import PeerInfo
 
-                                    for ip, port in catalog_peers:
-                                        peers.append(PeerInfo(ip=ip, port=port))
-                                    discovered_chunks.add(chunk_hash)
-                            self.logger.debug(
-                                "Found %d chunks in catalog",
-                                len(catalog_results),
-                            )
-                        except Exception as e:
-                            self.logger.warning("Error querying catalog: %s", e)
+                                        for ip, port in catalog_peers:
+                                            peers.append(PeerInfo(ip=ip, port=port))
+                                        discovered_chunks.add(chunk_hash)
+                                self.logger.debug(
+                                    "Found %d chunks in catalog",
+                                    len(catalog_results),
+                                )
+                            except Exception as e:
+                                self.logger.warning("Error querying catalog: %s", e)
 
                     # Use batch query if available, otherwise parallel queries
                     if hasattr(self.cas_client, "find_chunks_peers_batch"):
@@ -510,11 +533,17 @@ class XetProtocol(Protocol):
 
                         async def query_with_limit(chunk_hash: bytes) -> list[PeerInfo]:
                             async with semaphore:
-                                return await self.cas_client.find_chunk_peers(chunk_hash)
+                                if self.cas_client is not None:
+                                    return await self.cas_client.find_chunk_peers(  # type: ignore[attr-defined]
+                                        chunk_hash
+                                    )
+                                return []
 
                         chunk_peer_tasks = [
                             query_with_limit(chunk_hash)
-                            for chunk_hash in chunk_hashes_to_query[:50]  # Configurable limit
+                            for chunk_hash in chunk_hashes_to_query[
+                                :50
+                            ]  # Configurable limit
                         ]
                         chunk_peer_results = await asyncio.gather(
                             *chunk_peer_tasks, return_exceptions=True
@@ -562,7 +591,9 @@ class XetProtocol(Protocol):
                         min(5, len(chunk_hashes_to_query)),
                     )
                 except Exception as e:
-                    self.logger.warning("Error propagating chunk updates via gossip: %s", e)
+                    self.logger.warning(
+                        "Error propagating chunk updates via gossip: %s", e
+                    )
 
             # Strategy 6: Controlled flooding for urgent chunk announcements
             if self.flooding_client and chunk_hashes_to_query:

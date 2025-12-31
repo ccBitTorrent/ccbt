@@ -109,9 +109,8 @@ class ExecutorManager:
 
         """
         if session_manager is None and ipc_client is None:
-            raise ValueError(
-                "Either session_manager or ipc_client must be provided"
-            )
+            msg = "Either session_manager or ipc_client must be provided"
+            raise ValueError(msg)
 
         # Clean up dead references first
         self._cleanup_dead_references()
@@ -123,7 +122,9 @@ class ExecutorManager:
             _session_obj = session_manager  # Reserved for future use
         else:
             # For IPC client, use the client object ID
-            assert ipc_client is not None
+            if ipc_client is None:
+                msg = "IPC client must be provided when session_manager is None"
+                raise ValueError(msg)
             session_id = self._get_session_id(ipc_client)
             session_key = "ipc_client"
             _session_obj = ipc_client  # Reserved for future use
@@ -158,8 +159,7 @@ class ExecutorManager:
                     and adapter.ipc_client is not ipc_client
                 ):
                     logger.warning(
-                        "IPC client reference mismatch detected. "
-                        "Recreating executor."
+                        "IPC client reference mismatch detected. Recreating executor."
                     )
                     # Remove old executor and create new one
                     self._executors.pop(session_id, None)
@@ -195,29 +195,31 @@ class ExecutorManager:
                     not hasattr(adapter, "session_manager")
                     or adapter.session_manager is not session_manager
                 ):
-                    raise RuntimeError(
-                        "LocalSessionAdapter session_manager reference mismatch"
-                    )
+                    msg = "LocalSessionAdapter session_manager reference mismatch"
+                    raise RuntimeError(msg)
             else:
                 # Daemon session adapter
-                assert ipc_client is not None
+                if ipc_client is None:
+                    msg = "IPC client must be provided when session_manager is None"
+                    raise ValueError(msg)
                 adapter = DaemonSessionAdapter(ipc_client)
                 # Validate adapter
                 if (
                     not hasattr(adapter, "ipc_client")
                     or adapter.ipc_client is not ipc_client
                 ):
-                    raise RuntimeError(
-                        "DaemonSessionAdapter ipc_client reference mismatch"
-                    )
+                    msg = "DaemonSessionAdapter ipc_client reference mismatch"
+                    raise RuntimeError(msg)
 
             executor = UnifiedCommandExecutor(adapter)
 
             # Validate executor
             if not hasattr(executor, "adapter") or executor.adapter is None:
-                raise RuntimeError("Executor adapter not initialized")
+                msg = "Executor adapter not initialized"
+                raise RuntimeError(msg)
             if executor.adapter is not adapter:
-                raise RuntimeError("Executor adapter reference mismatch")
+                msg = "Executor adapter reference mismatch"
+                raise RuntimeError(msg)
 
             # Store executor and create weak reference
             self._executors[session_id] = (executor, adapter)
@@ -237,12 +239,12 @@ class ExecutorManager:
 
         except Exception as e:
             logger.exception(
-                "Failed to create executor for %s (id: %d): %s",
+                "Failed to create executor for %s (id: %d)",
                 session_key,
                 session_id,
-                e,
             )
-            raise RuntimeError(f"Failed to create executor: {e}") from e
+            msg = f"Failed to create executor: {e}"
+            raise RuntimeError(msg) from e
 
     def remove_executor(
         self,
@@ -263,7 +265,9 @@ class ExecutorManager:
         if session_manager is not None:
             session_id = self._get_session_id(session_manager)
         else:
-            assert ipc_client is not None
+            if ipc_client is None:
+                msg = "IPC client must be provided when session_manager is None"
+                raise ValueError(msg)
             session_id = self._get_session_id(ipc_client)
 
         # Remove executor
@@ -282,23 +286,3 @@ class ExecutorManager:
         self._executors.clear()
         self._session_refs.clear()
         self._ipc_clients.clear()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -100,8 +100,43 @@ class WebSeedExtension:
     async def stop(self) -> None:
         """Stop WebSeed extension."""
         if self.session:
-            await self.session.close()
-            self.session = None
+            try:
+                if not self.session.closed:
+                    await self.session.close()
+                    # CRITICAL FIX: Wait for session to fully close (especially on Windows)
+                    # This prevents "Unclosed client session" warnings
+                    import sys
+
+                    if sys.platform == "win32":
+                        await asyncio.sleep(0.2)
+                    else:
+                        await asyncio.sleep(0.1)
+
+                    # CRITICAL FIX: Close connector explicitly to ensure complete cleanup
+                    # This is especially important on Windows where connector cleanup can be delayed
+                    if hasattr(self.session, "connector") and self.session.connector:
+                        connector = self.session.connector
+                        if not connector.closed:
+                            try:
+                                await connector.close()
+                                if sys.platform == "win32":
+                                    await asyncio.sleep(
+                                        0.1
+                                    )  # Additional wait for connector cleanup on Windows
+                            except Exception as e:
+                                self.logger.debug("Error closing connector: %s", e)
+            except Exception as e:
+                self.logger.debug("Error closing WebSeed session: %s", e)
+                # CRITICAL FIX: Even if close() fails, try to clean up connector
+                try:
+                    if hasattr(self.session, "connector") and self.session.connector:
+                        connector = self.session.connector
+                        if not connector.closed:
+                            await connector.close()
+                except Exception:
+                    pass
+            finally:
+                self.session = None
 
     def add_webseed(self, url: str, name: str | None = None) -> str:
         """Add WebSeed URL."""

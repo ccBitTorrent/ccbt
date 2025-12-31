@@ -210,7 +210,7 @@ class Profiler:
         module_name: str | None = None,
         profile_type: ProfileType = ProfileType.FUNCTION,
     ):
-        """Decorator for profiling functions."""
+        """Provide decorator for profiling functions."""
 
         def decorator(func):
             name = function_name or func.__name__
@@ -235,7 +235,7 @@ class Profiler:
         module_name: str | None = None,
         profile_type: ProfileType = ProfileType.ASYNC,
     ):
-        """Decorator for profiling async functions."""
+        """Provide decorator for profiling async functions."""
 
         def decorator(func):
             name = function_name or func.__name__

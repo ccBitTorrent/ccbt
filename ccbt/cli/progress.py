@@ -415,9 +415,7 @@ class ProgressManager:
 
         return Progress(*columns, console=self.console)
 
-    def create_multi_task_progress(
-        self, _description: str | None = None
-    ) -> Progress:
+    def create_multi_task_progress(self, _description: str | None = None) -> Progress:
         """Create a progress bar for multiple parallel tasks.
 
         Args:
@@ -520,6 +518,7 @@ class ProgressManager:
             Callback function that can be called with (completed, fields_dict)
 
         """
+
         def callback(completed: float, fields: dict[str, Any] | None = None) -> None:
             """Update progress with completed amount and optional fields."""
             progress.update(task_id, completed=completed)

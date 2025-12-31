@@ -206,6 +206,7 @@ class TorrentQueueManager:
 
             # Reorder remaining entries
             await self._reorder_queue()
+
             await self._update_statistics()
 
         return True
@@ -380,6 +381,7 @@ class TorrentQueueManager:
 
         Returns:
             True if force started, False if not found
+
         """
         async with self._lock:
             # Ensure torrent is in queue (add if not)
@@ -467,8 +469,10 @@ class TorrentQueueManager:
             )
             # Don't fail - the torrent might still start in background
             return True
-        except Exception as e:
-            self.logger.exception("Error force starting torrent %s", info_hash.hex()[:8])
+        except Exception:
+            self.logger.exception(
+                "Error force starting torrent %s", info_hash.hex()[:8]
+            )
             # Remove from active sets on error
             async with self._lock:
                 self._active_downloading.discard(info_hash)
@@ -790,7 +794,7 @@ class TorrentQueueManager:
             await self._update_statistics()
 
     async def _pause_torrent_internal(self, info_hash: bytes) -> None:
-        """Internal method to pause torrent (assumes lock held)."""
+        """Pause torrent (assumes lock held)."""
         entry = self.queue.get(info_hash)
         if not entry:
             return
@@ -830,18 +834,14 @@ class TorrentQueueManager:
             try:
                 await asyncio.sleep(5.0)  # Check every 5 seconds
 
-                async with self._lock:  # pragma: no cover - tested via integration tests (monitor loop execution)
-                    # Sync active sets with actual session states
-                    await (
-                        self._sync_active_sets()
-                    )  # pragma: no cover - tested via integration tests
+                await (
+                    self._sync_active_sets()
+                )  # pragma: no cover - tested via integration tests
 
-                    # Enforce limits
-                    await (
-                        self._enforce_queue_limits()
-                    )  # pragma: no cover - tested via integration tests
+                await (
+                    self._enforce_queue_limits()
+                )  # pragma: no cover - tested via integration tests
 
-                # Try to start queued torrents (outside lock)
                 await (
                     self._try_start_next_torrent()
                 )  # pragma: no cover - tested via integration tests

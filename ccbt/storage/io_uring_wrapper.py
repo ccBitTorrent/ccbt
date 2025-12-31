@@ -19,7 +19,7 @@ IO_URING_AVAILABLE = False
 
 try:
     # Try aiofiles first (simpler, more portable)
-    import aiofiles  # type: ignore[import-untyped]
+    import aiofiles  # type: ignore[import-untyped]  # noqa: F401 - Feature detection import
 
     HAS_IO_URING = True
     IO_URING_AVAILABLE = True
@@ -28,7 +28,7 @@ except ImportError:
     # Try direct io_uring bindings (more complex, requires specific library)
     try:
         # Common io_uring Python bindings
-        import liburing  # type: ignore[import-untyped]
+        import liburing  # type: ignore[import-untyped]  # noqa: F401 - Feature detection import
 
         HAS_IO_URING = True
         IO_URING_AVAILABLE = True
@@ -36,7 +36,7 @@ except ImportError:
     except ImportError:
         try:
             # Alternative: pyuring
-            import pyuring  # type: ignore[import-untyped]
+            import pyuring  # type: ignore[import-untyped]  # noqa: F401 - Feature detection import
 
             HAS_IO_URING = True
             IO_URING_AVAILABLE = True
@@ -81,9 +81,7 @@ class IOUringWrapper:
         else:
             logger.debug("io_uring not available, will use fallback I/O")
 
-    async def read(
-        self, file_path: str | Any, offset: int, length: int
-    ) -> bytes:
+    async def read(self, file_path: str | Any, offset: int, length: int) -> bytes:
         """Read data using io_uring if available, otherwise fallback.
 
         Args:
@@ -102,18 +100,15 @@ class IOUringWrapper:
         try:
             if self.io_uring_type == "aiofiles":
                 return await self._read_aiofiles(file_path, offset, length)
-            else:
-                # Direct io_uring bindings would go here
-                # For now, fallback to regular I/O
-                return await self._read_fallback(file_path, offset, length)
+            # Direct io_uring bindings would go here
+            # For now, fallback to regular I/O
+            return await self._read_fallback(file_path, offset, length)
         except Exception as e:
             self.error_count += 1
             logger.debug("io_uring read failed, using fallback: %s", e)
             return await self._read_fallback(file_path, offset, length)
 
-    async def write(
-        self, file_path: str | Any, offset: int, data: bytes
-    ) -> int:
+    async def write(self, file_path: str | Any, offset: int, data: bytes) -> int:
         """Write data using io_uring if available, otherwise fallback.
 
         Args:
@@ -132,10 +127,9 @@ class IOUringWrapper:
         try:
             if self.io_uring_type == "aiofiles":
                 return await self._write_aiofiles(file_path, offset, data)
-            else:
-                # Direct io_uring bindings would go here
-                # For now, fallback to regular I/O
-                return await self._write_fallback(file_path, offset, data)
+            # Direct io_uring bindings would go here
+            # For now, fallback to regular I/O
+            return await self._write_fallback(file_path, offset, data)
         except Exception as e:
             self.error_count += 1
             logger.debug("io_uring write failed, using fallback: %s", e)
@@ -201,6 +195,7 @@ class IOUringWrapper:
 
         Returns:
             Dictionary with statistics
+
         """
         return {
             "available": self.available,
@@ -208,42 +203,3 @@ class IOUringWrapper:
             "operation_count": self.operation_count,
             "error_count": self.error_count,
         }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

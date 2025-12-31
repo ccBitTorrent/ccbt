@@ -8,6 +8,7 @@ repo_name: ccbt
 
 theme:
   name: material
+  custom_dir: ../docs/overrides  # Custom theme overrides for unsupported languages (relative to config file location)
   logo: assets/logo.png
   favicon: assets/favicon.ico
   repo_url: https://github.com/ccBittorrent/ccbt
@@ -68,30 +69,46 @@ plugins:
           build: true
         - locale: es
           name: Español
+          build: true
         - locale: fr
           name: Français
+          build: true
         - locale: ja
           name: 日本語
+          build: true
         - locale: ko
           name: 한국어
+          build: true
         - locale: hi
           name: हिन्दी
+          build: true
         - locale: ur
           name: اردو
+          build: true
         - locale: fa
           name: فارسی
+          build: true
         - locale: th
           name: ไทย
+          build: true
         - locale: zh
           name: 中文
+          build: true
         - locale: eu
           name: Euskara
+          build: true
         - locale: ha
           name: Hausa
+          build: true  # Custom language template in docs/overrides/partials/languages/ha.html
         - locale: sw
           name: Kiswahili
+          build: true  # Custom language template in docs/overrides/partials/languages/sw.html
         - locale: yo
           name: Yorùbá
+          build: true  # Custom language template in docs/overrides/partials/languages/yo.html
+        - locale: arc
+          name: ܐܪܡܝܐ (Aramaic)
+          build: true  # Custom language template in docs/overrides/partials/languages/arc.html (RTL)
   - mkdocstrings:
       handlers:
         python:
@@ -129,9 +146,16 @@ plugins:
   - coverage:
       page_path: en/reports/coverage
       html_report_dir: site/reports/htmlcov
+      # Note: fail_under is not a valid option for mkdocs-coverage plugin
+      # Coverage warnings about missing directory are expected if coverage hasn't been generated
 
 # Suppress warnings for code file links (these are intentional references to source code)
 # Warnings about links to Python files and TOML configs are expected
+# Note: Some warnings are expected and acceptable:
+# - Missing files in 'arc/' directory (Aramaic is not in build list)
+# - Missing report directories (generated during CI)
+# - Multiple primary URLs (expected with i18n plugin for multi-language docs)
+# - Missing anchors in translated pages (some translations incomplete)
 strict: false
 
 markdown_extensions:
@@ -224,7 +248,7 @@ extra:
     - icon: fontawesome/brands/x-twitter
       link: https://x.com/josephpollack
     - icon: fontawesome/brands/discord
-      link: https://discord.gg/ccbittorrent
+      link: https://discord.gg/qdfnvSPcqP
   author: ccBitTorrent Contributors
   keywords:
     - BitTorrent

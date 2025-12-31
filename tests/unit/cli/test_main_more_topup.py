@@ -47,7 +47,12 @@ def test_status_command_happy_and_error(monkeypatch):
                 network=SimpleNamespace(
                     listen_port=6881,
                     enable_utp=False,
-                    protocol_v2=SimpleNamespace(enable_v2=False, prefer_v2=False),
+                    protocol_v2=SimpleNamespace(
+                    enable_protocol_v2=False,
+                    prefer_protocol_v2=False,
+                    support_hybrid=False,
+                    v2_handshake_timeout=30.0,
+                ),
                     webtorrent=SimpleNamespace(
                         enable_webtorrent=False,
                         webtorrent_host="localhost",

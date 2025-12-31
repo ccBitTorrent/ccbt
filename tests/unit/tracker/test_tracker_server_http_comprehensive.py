@@ -310,28 +310,23 @@ class TestRunHTTPTracker:
     def test_run_http_tracker_exception_handling(self):
         """Test run_http_tracker with exception.
         
-        Note: Skipped during coverage runs to prevent pytest from interpreting
-        KeyboardInterrupt as a real user interrupt and exiting early.
-        This test intentionally raises KeyboardInterrupt to verify server cleanup on interrupt.
+        Verifies that server_close is called even when serve_forever raises an exception.
         """
-        # Skip only if coverage is running to prevent early test suite exit
-        import sys
-        if any("--cov" in arg or "-m" in arg and "cov" in arg for arg in sys.argv):
-            pytest.skip(
-                "KeyboardInterrupt test skipped in coverage runs to prevent early test suite exit. "
-                "This test intentionally raises KeyboardInterrupt which pytest may interpret as a "
-                "real user interrupt, causing the test suite to exit at 94%. "
-                "Run with --no-cov to execute this test.",
-                allow_module_level=False,
-            )  # pragma: no cover
         with patch("ccbt.discovery.tracker_server_http.HTTPServer") as mock_server_class:
             mock_server = Mock()
             mock_server.serve_forever = Mock(side_effect=KeyboardInterrupt())
             mock_server.server_close = Mock()
             mock_server_class.return_value = mock_server
 
-            # Should still close server on exception
-            run_http_tracker("127.0.0.1", 6969)
+            # Catch KeyboardInterrupt to prevent pytest from treating it as a real interrupt
+            try:
+                run_http_tracker("127.0.0.1", 6969)
+            except KeyboardInterrupt:
+                # Expected - the function should propagate the exception after cleanup
+                pass
 
-            # Verify server_close was called (in finally)
+            # Verify server_close was called (in finally block)
             mock_server.server_close.assert_called_once()
+            
+            # Verify serve_forever was called (and raised the exception)
+            mock_server.serve_forever.assert_called_once()

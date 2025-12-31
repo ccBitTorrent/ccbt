@@ -343,6 +343,14 @@ class TestAsyncUDPTrackerClientResponseHandling:
     def test_handle_response_connect(self):
         """Test handling CONNECT response."""
         client = AsyncUDPTrackerClient()
+        # CRITICAL FIX: Set socket ready flag so handle_response doesn't drop the response
+        client._socket_ready = True
+        # Also mock transport to ensure socket health checks pass
+        from unittest.mock import Mock
+        mock_transport = Mock()
+        mock_transport.is_closing = Mock(return_value=False)
+        mock_transport.get_extra_info = Mock(return_value=("127.0.0.1", 0))
+        client.transport = mock_transport
         transaction_id = 12345
         future = asyncio.Future()
         client.pending_requests[transaction_id] = future
@@ -362,6 +370,14 @@ class TestAsyncUDPTrackerClientResponseHandling:
     def test_handle_response_announce(self):
         """Test handling ANNOUNCE response."""
         client = AsyncUDPTrackerClient()
+        # CRITICAL FIX: Set socket ready flag so handle_response doesn't drop the response
+        client._socket_ready = True
+        # Also mock transport to ensure socket health checks pass
+        from unittest.mock import Mock
+        mock_transport = Mock()
+        mock_transport.is_closing = Mock(return_value=False)
+        mock_transport.get_extra_info = Mock(return_value=("127.0.0.1", 0))
+        client.transport = mock_transport
         transaction_id = 12345
         future = asyncio.Future()
         client.pending_requests[transaction_id] = future
@@ -393,6 +409,14 @@ class TestAsyncUDPTrackerClientResponseHandling:
     def test_handle_response_error(self):
         """Test handling ERROR response."""
         client = AsyncUDPTrackerClient()
+        # CRITICAL FIX: Set socket ready flag so handle_response doesn't drop the response
+        client._socket_ready = True
+        # Also mock transport to ensure socket health checks pass
+        from unittest.mock import Mock
+        mock_transport = Mock()
+        mock_transport.is_closing = Mock(return_value=False)
+        mock_transport.get_extra_info = Mock(return_value=("127.0.0.1", 0))
+        client.transport = mock_transport
         transaction_id = 12345
         future = asyncio.Future()
         client.pending_requests[transaction_id] = future

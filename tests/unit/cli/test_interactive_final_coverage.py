@@ -42,11 +42,12 @@ def interactive_cli(mock_session):
     """Create InteractiveCLI instance."""
     from ccbt.cli.interactive import InteractiveCLI
     
+    from tests.conftest import create_interactive_cli
     console = Mock(spec=Console)
     console.print = Mock()
     console.clear = Mock()
     console.print_json = Mock()
-    cli = InteractiveCLI(mock_session, console)
+    cli = create_interactive_cli(mock_session, console)
     return cli
 
 

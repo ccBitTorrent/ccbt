@@ -68,6 +68,7 @@ try:
     # ProactorEventLoop has known bugs with UDP sockets (WinError 10022)
     # This must be set BEFORE wrapping with _SafeEventLoopPolicy
     import sys
+
     if sys.platform == "win32":
         current_policy = asyncio.get_event_loop_policy()
         # Check if we're using ProactorEventLoopPolicy (the default on Windows)

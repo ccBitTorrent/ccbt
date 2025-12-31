@@ -1,10 +1,18 @@
+"""Tracker announcement management.
+
+This module handles periodic announcements to trackers, including
+announce loops, scrape operations, and tracker health monitoring.
+"""
+
 from __future__ import annotations
 
 import asyncio
-from typing import Any, List
+from typing import TYPE_CHECKING, Any
 
 from ccbt.session.models import SessionContext
-from ccbt.session.types import TrackerClientProtocol
+
+if TYPE_CHECKING:
+    from ccbt.session.types import TrackerClientProtocol
 
 try:
     # Prefer the concrete type for better typing where available
@@ -17,12 +25,19 @@ class AnnounceController:
     """Encapsulates tracker announce flows for initial peer discovery."""
 
     def __init__(self, ctx: SessionContext, tracker: TrackerClientProtocol) -> None:
+        """Initialize announce controller.
+
+        Args:
+            ctx: Session context containing logger and config
+            tracker: Tracker client protocol instance
+
+        """
         self._ctx = ctx
         self._tracker = tracker
         self._logger = getattr(ctx, "logger", None)
         self._config = getattr(ctx, "config", None)
 
-    async def announce_initial(self) -> List[TrackerResponse]:
+    async def announce_initial(self) -> list[TrackerResponse]:
         """Perform an initial announce to all known trackers concurrently.
 
         Returns:
@@ -30,8 +45,8 @@ class AnnounceController:
 
         """
         td = self._prepare_torrent_dict(self._ctx.torrent_data)
-        tracker_urls = self._collect_trackers(td)
-        
+        tracker_urls = self.collect_trackers(td)
+
         # CRITICAL FIX: Log collected trackers for debugging
         if self._logger:
             self._logger.info(
@@ -44,7 +59,8 @@ class AnnounceController:
             if tracker_urls:
                 self._logger.debug(
                     "TRACKER_COLLECTION: Trackers: %s",
-                    ", ".join(tracker_urls[:10]) + ("..." if len(tracker_urls) > 10 else ""),
+                    ", ".join(tracker_urls[:10])
+                    + ("..." if len(tracker_urls) > 10 else ""),
                 )
 
         if not tracker_urls:
@@ -93,7 +109,11 @@ class AnnounceController:
                 )
         # CRITICAL FIX: Try to get port from session_manager config if available
         # Avoid hardcoded 6881 fallback - use actual configured port
-        elif self._ctx and self._ctx.session_manager and hasattr(self._ctx.session_manager, "config"):
+        elif (
+            self._ctx
+            and self._ctx.session_manager
+            and hasattr(self._ctx.session_manager, "config")
+        ):
             config = self._ctx.session_manager.config
             listen_port = (
                 getattr(config.network, "listen_port_tcp", None)
@@ -213,7 +233,7 @@ class AnnounceController:
             result["file_info"] = {"total_length": 0}
         return result
 
-    def _collect_trackers(self, td: dict[str, Any]) -> list[str]:
+    def collect_trackers(self, td: dict[str, Any]) -> list[str]:
         """Collect and deduplicate tracker URLs from torrent_data."""
         urls: list[str] = []
 
@@ -252,9 +272,10 @@ class AnnounceController:
         # Get healthy trackers from health manager (prioritize these)
         healthy_trackers: list[str] = []
         try:
-            if hasattr(self._tracker, "get_healthy_trackers"):
+            get_healthy_trackers = getattr(self._tracker, "get_healthy_trackers", None)
+            if get_healthy_trackers is not None:
                 # Get healthy trackers, excluding ones we already have from torrent
-                healthy_trackers = self._tracker.get_healthy_trackers(set(unique))
+                healthy_trackers = get_healthy_trackers(set(unique))
         except Exception as e:
             if self._logger:
                 self._logger.debug("Failed to get healthy trackers: %s", e)
@@ -264,7 +285,9 @@ class AnnounceController:
 
         # Add fallback trackers if needed
         try:
-            has_http = any(u.startswith(("http://", "https://")) for u in combined_trackers)
+            has_http = any(
+                u.startswith(("http://", "https://")) for u in combined_trackers
+            )
             if (
                 not has_http
                 and self._config
@@ -274,8 +297,13 @@ class AnnounceController:
                 # Get fallback trackers from health manager
                 fallback_trackers = []
                 try:
-                    if hasattr(self._tracker, "get_fallback_trackers"):
-                        fallback_trackers = self._tracker.get_fallback_trackers(set(combined_trackers))
+                    get_fallback_trackers = getattr(
+                        self._tracker, "get_fallback_trackers", None
+                    )
+                    if get_fallback_trackers is not None:
+                        fallback_trackers = get_fallback_trackers(
+                            set(combined_trackers)
+                        )
                     else:
                         fallback_trackers = [
                             "https://tracker.opentrackr.org:443/announce",
@@ -320,13 +348,20 @@ class AnnounceLoop:
     """Periodic tracker announce loop extracted from session."""
 
     def __init__(self, session: Any) -> None:
+        """Initialize announce loop.
+
+        Args:
+            session: AsyncTorrentSession instance
+
+        """
         self.s = session  # AsyncTorrentSession instance
 
     async def run(self) -> None:
+        """Run the announce loop."""
         announce_interval = self.s.config.network.announce_interval
-        while not self.s._stop_event.is_set():
+        while not self.s.is_stopped():
             # Set connecting state
-            self.s._tracker_connection_status = "connecting"
+            self.s.tracker_connection_status = "connecting"
             try:
                 # Normalize torrent_data for tracker usage
                 if isinstance(self.s.torrent_data, dict):
@@ -382,22 +417,24 @@ class AnnounceLoop:
                 # CRITICAL FIX: Collect all trackers (not just single announce URL)
                 # This ensures all trackers from magnet links are used
                 announce_controller = AnnounceController(
-                    SessionContext(
+                    SessionContext(  # type: ignore[missing-argument]
+                        config=self.s.config,
                         torrent_data=td,
+                        output_dir=self.s.output_dir,
                         info=self.s.info,
                         logger=self.s.logger,
                     ),
                     self.s.tracker,
                 )
-                tracker_urls = announce_controller._collect_trackers(td)
-                
+                tracker_urls = announce_controller.collect_trackers(td)
+
                 if not tracker_urls:
                     self.s.logger.debug(
                         "No tracker URLs available, skipping announce (using DHT/PEX)"
                     )
                     await asyncio.sleep(announce_interval)
                     continue
-                
+
                 # Keep single announce_url for backward compatibility with events
                 announce_url = tracker_urls[0] if tracker_urls else ""
 
@@ -450,6 +487,7 @@ class AnnounceLoop:
                 # Emit TRACKER_ANNOUNCE_STARTED event
                 try:
                     from ccbt.utils.events import Event, emit_event
+
                     info_hash_hex = ""
                     if isinstance(td, dict) and "info_hash" in td:
                         info_hash = td["info_hash"]
@@ -457,7 +495,7 @@ class AnnounceLoop:
                             info_hash_hex = info_hash.hex()
                         else:
                             info_hash_hex = str(info_hash)
-                    
+
                     await emit_event(
                         Event(
                             event_type="tracker_announce",
@@ -468,8 +506,10 @@ class AnnounceLoop:
                         )
                     )
                 except Exception as e:
-                    self.s.logger.debug("Failed to emit TRACKER_ANNOUNCE_STARTED event: %s", e)
-                
+                    self.s.logger.debug(
+                        "Failed to emit TRACKER_ANNOUNCE_STARTED event: %s", e
+                    )
+
                 # CRITICAL FIX: Announce to all trackers, not just one
                 # This ensures all trackers from magnet links are used for peer discovery
                 if hasattr(self.s.tracker, "announce_to_multiple"):
@@ -481,17 +521,20 @@ class AnnounceLoop:
                     total_peers = sum(
                         len(getattr(r, "peers", []) or []) for r in successful_responses
                     )
-                    
+
                     if not successful_responses:
                         self.s.logger.warning(
                             "All tracker announces failed (%d trackers tried)",
-                            len(tracker_urls)
+                            len(tracker_urls),
                         )
-                        self.s._tracker_connection_status = "error"
-                        self.s._last_tracker_error = "All trackers returned None response"
+                        self.s.tracker_connection_status = "error"
+                        self.s.last_tracker_error = (
+                            "All trackers returned None response"
+                        )
                         # Emit TRACKER_ANNOUNCE_ERROR event
                         try:
                             from ccbt.utils.events import Event, emit_event
+
                             info_hash_hex = ""
                             if isinstance(td, dict) and "info_hash" in td:
                                 info_hash = td["info_hash"]
@@ -499,7 +542,7 @@ class AnnounceLoop:
                                     info_hash_hex = info_hash.hex()
                                 else:
                                     info_hash_hex = str(info_hash)
-                            
+
                             await emit_event(
                                 Event(
                                     event_type="tracker_announce_error",
@@ -511,10 +554,12 @@ class AnnounceLoop:
                                 )
                             )
                         except Exception as e:
-                            self.s.logger.debug("Failed to emit TRACKER_ANNOUNCE_ERROR event: %s", e)
+                            self.s.logger.debug(
+                                "Failed to emit TRACKER_ANNOUNCE_ERROR event: %s", e
+                            )
                         await asyncio.sleep(announce_interval)
                         continue
-                    
+
                     # Success - at least one tracker responded
                     self.s.logger.info(
                         "Periodic announce: %d/%d tracker(s) responded, %d total peer(s)",
@@ -528,7 +573,7 @@ class AnnounceLoop:
                     for resp in successful_responses:
                         if resp and hasattr(resp, "peers") and resp.peers:
                             all_peers.extend(resp.peers)
-                    
+
                     # Create a synthetic response with all aggregated peers for compatibility
                     # Use the first response as a template (for interval, etc.)
                     response = successful_responses[0] if successful_responses else None
@@ -545,18 +590,19 @@ class AnnounceLoop:
                     response = await self.s.tracker.announce(td, port=announce_port)
                     if not response:
                         self.s.logger.warning("Tracker announce returned None response")
-                        self.s._tracker_connection_status = "error"
-                        self.s._last_tracker_error = "Tracker returned None response"
+                        self.s.tracker_connection_status = "error"
+                        self.s.last_tracker_error = "Tracker returned None response"
                         await asyncio.sleep(announce_interval)
                         continue
 
                 # Success
-                self.s._tracker_connection_status = "connected"
-                self.s._last_tracker_error = None
-                
+                self.s.tracker_connection_status = "connected"
+                self.s.last_tracker_error = None
+
                 # Emit TRACKER_ANNOUNCE_SUCCESS event
                 try:
                     from ccbt.utils.events import Event, emit_event
+
                     info_hash_hex = ""
                     if isinstance(td, dict) and "info_hash" in td:
                         info_hash = td["info_hash"]
@@ -564,11 +610,11 @@ class AnnounceLoop:
                             info_hash_hex = info_hash.hex()
                         else:
                             info_hash_hex = str(info_hash)
-                    
+
                     peer_count = 0
                     if response and hasattr(response, "peers") and response.peers:
                         peer_count = len(response.peers)
-                    
+
                     await emit_event(
                         Event(
                             event_type="tracker_announce_success",
@@ -580,9 +626,10 @@ class AnnounceLoop:
                         )
                     )
                 except Exception as e:
-                    self.s.logger.debug("Failed to emit TRACKER_ANNOUNCE_SUCCESS event: %s", e)
-                if hasattr(self.s, "_tracker_consecutive_failures"):
-                    self.s._tracker_consecutive_failures = 0  # type: ignore[attr-defined]
+                    self.s.logger.debug(
+                        "Failed to emit TRACKER_ANNOUNCE_SUCCESS event: %s", e
+                    )
+                self.s.tracker_consecutive_failures = 0
 
                 # Connect peers to the existing download path when running
                 if (
@@ -633,7 +680,7 @@ class AnnounceLoop:
                                     (retry + 1) * 0.5,
                                 )
                                 break
-                        
+
                         # If still not ready after retries, queue peers for later
                         if not has_peer_manager:
                             self.s.logger.warning(
@@ -643,7 +690,15 @@ class AnnounceLoop:
                             )
                             # Build peer list for queuing
                             peer_list = []
-                            for p in response.peers if (response and hasattr(response, "peers") and response.peers) else []:
+                            for p in (
+                                response.peers
+                                if (
+                                    response
+                                    and hasattr(response, "peers")
+                                    and response.peers
+                                )
+                                else []
+                            ):
                                 try:
                                     if hasattr(p, "ip") and hasattr(p, "port"):
                                         peer_list.append(
@@ -651,10 +706,16 @@ class AnnounceLoop:
                                                 "ip": p.ip,
                                                 "port": p.port,
                                                 "peer_source": "tracker",
-                                                "ssl_capable": getattr(p, "ssl_capable", None),
+                                                "ssl_capable": getattr(
+                                                    p, "ssl_capable", None
+                                                ),
                                             }
                                         )
-                                    elif isinstance(p, dict) and "ip" in p and "port" in p:
+                                    elif (
+                                        isinstance(p, dict)
+                                        and "ip" in p
+                                        and "port" in p
+                                    ):
                                         peer_list.append(
                                             {
                                                 "ip": str(p["ip"]),
@@ -665,31 +726,40 @@ class AnnounceLoop:
                                         )
                                 except (ValueError, TypeError, KeyError):
                                     pass
-                            
+
                             # Queue peers for later connection (using same mechanism as DHT)
                             if peer_list:
                                 import time as time_module
+
                                 current_time = time_module.time()
                                 # Add timestamp to each peer for timeout checking
                                 for peer in peer_list:
                                     peer["_queued_at"] = current_time
-                                
-                                if not hasattr(self.s, "_queued_peers"):
-                                    self.s._queued_peers = []  # type: ignore[attr-defined]
-                                self.s._queued_peers.extend(peer_list)  # type: ignore[attr-defined]
+
+                                for peer in peer_list:
+                                    self.s.add_queued_peer(peer)
+                                queued_peers = self.s.get_queued_peers()
                                 self.s.logger.info(
                                     "📦 TRACKER PEER CONNECTION: Queued %d peer(s) for later connection (total queued: %d)",
                                     len(peer_list),
-                                    len(self.s._queued_peers),  # type: ignore[attr-defined]
+                                    len(queued_peers),
                                 )
                             return  # Exit early since peers are queued
-                    
+
                     # CRITICAL FIX: If peer manager exists (or became ready after retry), connect peers directly
                     if has_peer_manager:
                         peer_list = []
                         # CRITICAL FIX: Use aggregated peers from all successful tracker responses
                         # The response object now contains all peers from all successful trackers
-                        for p in response.peers if (response and hasattr(response, "peers") and response.peers) else []:
+                        for p in (
+                            response.peers
+                            if (
+                                response
+                                and hasattr(response, "peers")
+                                and response.peers
+                            )
+                            else []
+                        ):
                             try:
                                 if hasattr(p, "ip") and hasattr(p, "port"):
                                     peer_list.append(
@@ -697,7 +767,9 @@ class AnnounceLoop:
                                             "ip": p.ip,
                                             "port": p.port,
                                             "peer_source": "tracker",
-                                            "ssl_capable": getattr(p, "ssl_capable", None),
+                                            "ssl_capable": getattr(
+                                                p, "ssl_capable", None
+                                            ),
                                         }
                                     )
                                 elif isinstance(p, dict) and "ip" in p and "port" in p:
@@ -732,7 +804,7 @@ class AnnounceLoop:
                                 if peer_key not in seen_peers:
                                     seen_peers.add(peer_key)
                                     unique_peer_list.append(peer)
-                            
+
                             if len(unique_peer_list) < len(peer_list):
                                 self.s.logger.debug(
                                     "Deduplicated %d duplicate peer(s) from tracker response (%d -> %d unique)",
@@ -740,7 +812,7 @@ class AnnounceLoop:
                                     len(peer_list),
                                     len(unique_peer_list),
                                 )
-                            
+
                             self.s.logger.info(
                                 "🔗 TRACKER PEER CONNECTION: Connecting %d unique peer(s) from tracker to peer manager for %s (response had %d total peers)",
                                 len(unique_peer_list),
@@ -748,10 +820,11 @@ class AnnounceLoop:
                                 len(response.peers) if response.peers else 0,
                             )
                             try:
-                                # Connect peers to existing peer manager
-                                await self.s.download_manager.peer_manager.connect_to_peers(
-                                    unique_peer_list
-                                )  # type: ignore[misc]
+                                # Use PeerConnectionHelper for consistent peer connection handling
+                                from ccbt.session.peers import PeerConnectionHelper
+
+                                helper = PeerConnectionHelper(self.s)
+                                await helper.connect_peers_to_download(unique_peer_list)
                                 self.s.logger.info(
                                     "✅ TRACKER PEER CONNECTION: Successfully initiated connection to %d peer(s) from tracker for %s",
                                     len(unique_peer_list),
@@ -760,35 +833,43 @@ class AnnounceLoop:
 
                                 # CRITICAL FIX: Also add tracker peers to PEX manager for sharing with other peers
                                 # This helps bootstrap the PEX network with known good peers from trackers
-                                if hasattr(self.s, "pex_manager") and self.s.pex_manager:
+                                if (
+                                    hasattr(self.s, "pex_manager")
+                                    and self.s.pex_manager
+                                ):
                                     try:
                                         # Convert peer list to PEX format
                                         pex_peers = []
                                         for peer in unique_peer_list:
                                             try:
                                                 from ccbt.discovery.pex import PexPeer
+
                                                 pex_peer = PexPeer(
                                                     ip=peer.get("ip", ""),
                                                     port=peer.get("port", 0),
-                                                    source="tracker"
+                                                    source="tracker",
                                                 )
                                                 pex_peers.append(pex_peer)
                                             except Exception as pex_error:
                                                 self.s.logger.debug(
                                                     "Failed to create PEX peer from tracker peer %s: %s",
-                                                    peer, pex_error
+                                                    peer,
+                                                    pex_error,
                                                 )
 
                                         if pex_peers:
                                             # Add peers to PEX manager
-                                            await self.s.pex_manager.add_peers(pex_peers)
+                                            await self.s.pex_manager.add_peers(
+                                                pex_peers
+                                            )
                                             self.s.logger.debug(
                                                 "Added %d tracker peer(s) to PEX manager for sharing",
-                                                len(pex_peers)
+                                                len(pex_peers),
                                             )
                                     except Exception as pex_error:
                                         self.s.logger.debug(
-                                            "Failed to add tracker peers to PEX manager: %s", pex_error
+                                            "Failed to add tracker peers to PEX manager: %s",
+                                            pex_error,
                                         )
 
                                 # CRITICAL FIX: Also notify DHT callbacks about tracker-discovered peers
@@ -806,26 +887,41 @@ class AnnounceLoop:
                                             except Exception as dht_error:
                                                 self.s.logger.debug(
                                                     "Failed to convert tracker peer to DHT format %s: %s",
-                                                    peer, dht_error
+                                                    peer,
+                                                    dht_error,
                                                 )
 
                                         if dht_peers:
                                             # Invoke DHT callbacks with tracker peers
-                                            self.s.dht_client._invoke_peer_callbacks(
-                                                dht_peers, self.s.info.info_hash
-                                            )
+                                            if hasattr(
+                                                self.s.dht_client,
+                                                "invoke_peer_callbacks",
+                                            ):
+                                                self.s.dht_client.invoke_peer_callbacks(
+                                                    dht_peers, self.s.info.info_hash
+                                                )
+                                            elif hasattr(
+                                                self.s.dht_client,
+                                                "_invoke_peer_callbacks",
+                                            ):
+                                                # Fallback for backward compatibility
+                                                self.s.dht_client._invoke_peer_callbacks(  # noqa: SLF001
+                                                    dht_peers, self.s.info.info_hash
+                                                )
                                             self.s.logger.debug(
                                                 "Invoked DHT callbacks with %d tracker peer(s)",
-                                                len(dht_peers)
+                                                len(dht_peers),
                                             )
                                     except Exception as dht_error:
                                         self.s.logger.debug(
-                                            "Failed to invoke DHT callbacks with tracker peers: %s", dht_error
+                                            "Failed to invoke DHT callbacks with tracker peers: %s",
+                                            dht_error,
                                         )
                             except Exception as connect_error:
                                 self.s.logger.warning(
                                     "Failed to connect tracker peers for %s: %s",
-                                    self.s.info.name, connect_error
+                                    self.s.info.name,
+                                    connect_error,
                                 )
                                 # CRITICAL FIX: Verify connections after a delay
                                 await asyncio.sleep(
@@ -847,7 +943,9 @@ class AnnounceLoop:
                                         self.s.info.name,
                                         active_count,
                                         len(unique_peer_list),
-                                        (active_count / len(unique_peer_list) * 100) if unique_peer_list else 0.0,
+                                        (active_count / len(unique_peer_list) * 100)
+                                        if unique_peer_list
+                                        else 0.0,
                                     )
 
                                 # CRITICAL FIX: Trigger metadata exchange for magnet links when peers connect from tracker
@@ -857,15 +955,22 @@ class AnnounceLoop:
                                     and self.s.torrent_data.get("file_info") is None
                                 ) or (
                                     isinstance(self.s.torrent_data, dict)
-                                    and self.s.torrent_data.get("file_info", {}).get("total_length", 0) == 0
+                                    and self.s.torrent_data.get("file_info", {}).get(
+                                        "total_length", 0
+                                    )
+                                    == 0
                                 )
 
                                 if is_magnet_link:
                                     # Check if metadata is already available
                                     metadata_available = (
                                         isinstance(self.s.torrent_data, dict)
-                                        and self.s.torrent_data.get("file_info") is not None
-                                        and self.s.torrent_data.get("file_info", {}).get("total_length", 0) > 0
+                                        and self.s.torrent_data.get("file_info")
+                                        is not None
+                                        and self.s.torrent_data.get(
+                                            "file_info", {}
+                                        ).get("total_length", 0)
+                                        > 0
                                     )
 
                                     if not metadata_available:
@@ -876,8 +981,10 @@ class AnnounceLoop:
                                         )
                                         try:
                                             # Use DHT setup's metadata exchange handler if available
-                                            if hasattr(self.s, "_dht_setup") and self.s._dht_setup:
-                                                metadata_fetched = await self.s._dht_setup._handle_magnet_metadata_exchange(peer_list)
+                                            if self.s.dht_setup:
+                                                metadata_fetched = await self.s.handle_magnet_metadata_exchange(
+                                                    peer_list
+                                                )
                                                 if metadata_fetched:
                                                     self.s.logger.info(
                                                         "Successfully fetched metadata from tracker-discovered peers for %s",
@@ -888,10 +995,13 @@ class AnnounceLoop:
                                                 from ccbt.piece.async_metadata_exchange import (
                                                     fetch_metadata_from_peers,
                                                 )
-                                                metadata = await fetch_metadata_from_peers(
-                                                    self.s.info.info_hash,
-                                                    peer_list,
-                                                    timeout=60.0,
+
+                                                metadata = (
+                                                    await fetch_metadata_from_peers(
+                                                        self.s.info.info_hash,
+                                                        peer_list,
+                                                        timeout=60.0,
+                                                    )
                                                 )
                                                 if metadata:
                                                     self.s.logger.info(
@@ -899,19 +1009,35 @@ class AnnounceLoop:
                                                         self.s.info.name,
                                                     )
                                                     # Update torrent_data with metadata
+                                                    # Type cast: metadata is dict[bytes, Any] but function accepts dict[bytes | str, Any]
+                                                    # The function handles both types, so cast is safe
+                                                    from typing import cast
+
                                                     from ccbt.core.magnet import (
                                                         build_torrent_data_from_metadata,
                                                     )
+
                                                     updated_torrent_data = build_torrent_data_from_metadata(
                                                         self.s.info.info_hash,
-                                                        metadata,
+                                                        cast(
+                                                            "dict[bytes | str, Any]",
+                                                            metadata,
+                                                        ),
                                                     )
-                                                    if isinstance(self.s.torrent_data, dict):
-                                                        self.s.torrent_data.update(updated_torrent_data)
+                                                    if isinstance(
+                                                        self.s.torrent_data, dict
+                                                    ):
+                                                        self.s.torrent_data.update(
+                                                            updated_torrent_data
+                                                        )
                                                         # CRITICAL FIX: Update file assembler if it exists (rebuild file segments)
                                                         if (
-                                                            hasattr(self.s.download_manager, "file_assembler")
-                                                            and self.s.download_manager.file_assembler is not None
+                                                            hasattr(
+                                                                self.s.download_manager,
+                                                                "file_assembler",
+                                                            )
+                                                            and self.s.download_manager.file_assembler
+                                                            is not None
                                                         ):
                                                             try:
                                                                 self.s.download_manager.file_assembler.update_from_metadata(
@@ -927,23 +1053,51 @@ class AnnounceLoop:
                                                                     e,
                                                                 )
                                                         # Update piece_manager with new metadata
-                                                        if hasattr(self.s.download_manager, "piece_manager") and self.s.download_manager.piece_manager:
+                                                        if (
+                                                            hasattr(
+                                                                self.s.download_manager,
+                                                                "piece_manager",
+                                                            )
+                                                            and self.s.download_manager.piece_manager
+                                                        ):
                                                             piece_manager = self.s.download_manager.piece_manager
-                                                            if "pieces_info" in updated_torrent_data:
-                                                                pieces_info = updated_torrent_data["pieces_info"]
-                                                                if "num_pieces" in pieces_info:
-                                                                    piece_manager.num_pieces = int(pieces_info["num_pieces"])
+                                                            if (
+                                                                "pieces_info"
+                                                                in updated_torrent_data
+                                                            ):
+                                                                pieces_info = updated_torrent_data[
+                                                                    "pieces_info"
+                                                                ]
+                                                                if (
+                                                                    "num_pieces"
+                                                                    in pieces_info
+                                                                ):
+                                                                    piece_manager.num_pieces = int(
+                                                                        pieces_info[
+                                                                            "num_pieces"
+                                                                        ]
+                                                                    )
                                                                     self.s.logger.info(
                                                                         "Updated piece_manager.num_pieces to %d from metadata",
                                                                         piece_manager.num_pieces,
                                                                     )
-                                                                if "piece_length" in pieces_info:
-                                                                    piece_manager.piece_length = int(pieces_info["piece_length"])
+                                                                if (
+                                                                    "piece_length"
+                                                                    in pieces_info
+                                                                ):
+                                                                    piece_manager.piece_length = int(
+                                                                        pieces_info[
+                                                                            "piece_length"
+                                                                        ]
+                                                                    )
                                                                     self.s.logger.info(
                                                                         "Updated piece_manager.piece_length to %d from metadata",
                                                                         piece_manager.piece_length,
                                                                     )
-                                                            if hasattr(piece_manager, "torrent_data"):
+                                                            if hasattr(
+                                                                piece_manager,
+                                                                "torrent_data",
+                                                            ):
                                                                 piece_manager.torrent_data = self.s.torrent_data
                                                 else:
                                                     self.s.logger.debug(
@@ -956,14 +1110,6 @@ class AnnounceLoop:
                                                 metadata_error,
                                                 exc_info=True,
                                             )
-                            except Exception as e:
-                                self.s.logger.warning(
-                                    "Failed to connect %d peers from tracker for %s: %s",
-                                    len(peer_list),
-                                    self.s.info.name,
-                                    e,
-                                    exc_info=True,
-                                )
                         else:
                             self.s.logger.debug(
                                 "No valid peers to connect from tracker response for %s (response had %d peer objects)",
@@ -1007,10 +1153,10 @@ class AnnounceLoop:
                 break
             except Exception as e:
                 # Failure/backoff management (simplified)
-                consecutive = getattr(self.s, "_tracker_consecutive_failures", 0) + 1
-                self.s._tracker_consecutive_failures = consecutive  # type: ignore[attr-defined]
-                self.s._tracker_connection_status = "error"
-                self.s._last_tracker_error = f"Tracker announce failed: {e}"
+                consecutive = self.s.tracker_consecutive_failures + 1
+                self.s.tracker_consecutive_failures = consecutive
+                self.s.tracker_connection_status = "error"
+                self.s.last_tracker_error = f"Tracker announce failed: {e}"
                 is_net = (
                     "Network error" in str(e)
                     or "Connection" in type(e).__name__

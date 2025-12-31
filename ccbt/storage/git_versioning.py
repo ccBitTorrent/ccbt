@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -84,7 +85,9 @@ class GitVersioning:
                 ["log", f"--max-count={max_refs}", "--format=%H"]
             )
             if result:
-                refs = [ref.strip() for ref in result.strip().split("\n") if ref.strip()]
+                refs = [
+                    ref.strip() for ref in result.strip().split("\n") if ref.strip()
+                ]
                 return refs[:max_refs]
         except Exception as e:
             self.logger.debug("Error getting commit refs: %s", e)
@@ -115,10 +118,7 @@ class GitVersioning:
                 result = await self._run_git_command(["diff", "--name-only", "HEAD"])
 
             if result:
-                files = [
-                    f.strip() for f in result.strip().split("\n") if f.strip()
-                ]
-                return files
+                return [f.strip() for f in result.strip().split("\n") if f.strip()]
         except Exception as e:
             self.logger.debug("Error getting changed files: %s", e)
 
@@ -198,9 +198,7 @@ class GitVersioning:
                 await self._run_git_command(["add", "-A"])
 
             # Create commit
-            result = await self._run_git_command(
-                ["commit", "-m", message]
-            )
+            await self._run_git_command(["commit", "-m", message])
 
             # Get new commit hash
             commit_hash = await self.get_current_commit()
@@ -269,8 +267,8 @@ class GitVersioning:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 cwd=str(self.folder_path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
 
             stdout, stderr = await process.communicate()
@@ -300,12 +298,12 @@ class GitVersioning:
 
         """
         try:
-            cmd = ["git"] + args
+            cmd = ["git", *args]
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 cwd=str(self.folder_path),
-                stdout=asyncio.subprocess.PIPE if capture_output else None,
-                stderr=asyncio.subprocess.PIPE if capture_output else None,
+                stdout=subprocess.PIPE if capture_output else None,
+                stderr=subprocess.PIPE if capture_output else None,
             )
 
             if capture_output:
@@ -353,9 +351,7 @@ class GitVersioning:
 
                 # Get current branch
                 branch = asyncio.run(
-                    self._run_git_command(
-                        ["rev-parse", "--abbrev-ref", "HEAD"]
-                    )
+                    self._run_git_command(["rev-parse", "--abbrev-ref", "HEAD"])
                 )
                 if branch:
                     info["branch"] = branch.strip()
@@ -365,4 +361,3 @@ class GitVersioning:
 
         info["is_git_repo"] = True
         return info
-

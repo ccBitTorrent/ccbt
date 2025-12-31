@@ -445,3 +445,62 @@ class TestProtocolV2CLIFlags:
         assert torrent_data[b"info"][b"private"] == 1
         assert torrent_data[b"info"][b"meta version"] == 2
 
+
+class TestCreateTorrentVerbose:
+    """Test verbose option for create-torrent command."""
+
+    def test_create_torrent_with_verbose(self, cli_runner, temp_test_file, tmp_path):
+        """Test create-torrent command with --verbose option."""
+        output_file = tmp_path / "verbose_test.torrent"
+
+        result = cli_runner.invoke(
+            create_torrent,
+            [
+                str(temp_test_file),
+                "--v2",
+                "--output",
+                str(output_file),
+                "--tracker",
+                "http://tracker.example.com/announce",
+                "--verbose",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert output_file.exists()
+
+        # Verify torrent file
+        with open(output_file, "rb") as f:
+            torrent_data = decode(f.read())
+
+        assert b"info" in torrent_data
+        info_dict = torrent_data[b"info"]
+        assert info_dict[b"meta version"] == 2
+
+    def test_create_torrent_with_multiple_verbose(self, cli_runner, temp_test_file, tmp_path):
+        """Test create-torrent command with -vv (debug) option."""
+        output_file = tmp_path / "debug_test.torrent"
+
+        result = cli_runner.invoke(
+            create_torrent,
+            [
+                str(temp_test_file),
+                "--v2",
+                "--output",
+                str(output_file),
+                "--tracker",
+                "http://tracker.example.com/announce",
+                "-vv",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert output_file.exists()
+
+        # Verify torrent file
+        with open(output_file, "rb") as f:
+            torrent_data = decode(f.read())
+
+        assert b"info" in torrent_data
+        info_dict = torrent_data[b"info"]
+        assert info_dict[b"meta version"] == 2
