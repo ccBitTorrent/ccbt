@@ -2,9 +2,9 @@
 
 **btbt** 是 ccBitTorrent 的增强命令行界面，提供对种子操作、监控、配置和高级功能的全面控制。
 
-- 入口点: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- 定义位置: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
-- 主CLI组: [ccbt/cli/main.py:cli](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
+- 入口点: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- 定义位置: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
+- 主CLI组: [ccbt/cli/main.py:cli](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
 
 ## 基本命令
 
@@ -12,7 +12,7 @@
 
 下载种子文件。
 
-实现: [ccbt/cli/main.py:download](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L369)
+实现: [ccbt/cli/main.py:download](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L369)
 
 用法:
 ```bash
@@ -29,7 +29,7 @@ uv run btbt download <torrent_file> [options]
 - `--files <indices...>`: 选择要下载的特定文件（可多次指定，例如 `--files 0 --files 1`）
 - `--file-priority <spec>`: 将文件优先级设置为 `file_index=priority`（例如 `0=high,1=low`）。可多次指定。
 
-网络选项（参见 [ccbt/cli/main.py:_apply_network_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L67)）:
+网络选项（参见 [ccbt/cli/main.py:_apply_network_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L67)）:
 - `--listen-port <int>`: 监听端口
 - `--max-peers <int>`: 最大全局对等节点数
 - `--max-peers-per-torrent <int>`: 每个种子的最大对等节点数
@@ -39,7 +39,7 @@ uv run btbt download <torrent_file> [options]
 - `--global-down-kib <int>`: 全局下载限制（KiB/s）
 - `--global-up-kib <int>`: 全局上传限制（KiB/s）
 
-磁盘选项（参见 [ccbt/cli/main.py:_apply_disk_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L179)）:
+磁盘选项（参见 [ccbt/cli/main.py:_apply_disk_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L179)）:
 - `--hash-workers <int>`: 哈希验证工作线程数
 - `--disk-workers <int>`: 磁盘I/O工作线程数
 - `--use-mmap`: 启用内存映射
@@ -48,13 +48,13 @@ uv run btbt download <torrent_file> [options]
 - `--write-buffer-kib <int>`: 写入缓冲区大小（KiB）
 - `--preallocate <str>`: 预分配策略（none|sparse|full）
 
-策略选项（参见 [ccbt/cli/main.py:_apply_strategy_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L151)）:
+策略选项（参见 [ccbt/cli/main.py:_apply_strategy_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L151)）:
 - `--piece-selection <str>`: 片段选择策略（round_robin|rarest_first|sequential）
 - `--endgame-duplicates <int>`: 终局重复请求
 - `--endgame-threshold <float>`: 终局阈值
 - `--streaming`: 启用流式传输模式
 
-发现选项（参见 [ccbt/cli/main.py:_apply_discovery_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L123)）:
+发现选项（参见 [ccbt/cli/main.py:_apply_discovery_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L123)）:
 - `--enable-dht`: 启用DHT
 - `--disable-dht`: 禁用DHT
 - `--enable-pex`: 启用PEX
@@ -64,7 +64,7 @@ uv run btbt download <torrent_file> [options]
 - `--enable-udp-trackers`: 启用UDP跟踪器
 - `--disable-udp-trackers`: 禁用UDP跟踪器
 
-可观测性选项（参见 [ccbt/cli/main.py:_apply_observability_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L217)）:
+可观测性选项（参见 [ccbt/cli/main.py:_apply_observability_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L217)）:
 - `--log-level <str>`: 日志级别（DEBUG|INFO|WARNING|ERROR|CRITICAL）
 - `--log-file <path>`: 日志文件路径
 - `--enable-metrics`: 启用指标收集
@@ -75,7 +75,7 @@ uv run btbt download <torrent_file> [options]
 
 从磁力链接下载。
 
-实现: [ccbt/cli/main.py:magnet](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L608)
+实现: [ccbt/cli/main.py:magnet](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L608)
 
 用法:
 ```bash
@@ -88,20 +88,20 @@ uv run btbt magnet <magnet_link> [options]
 
 启动交互式CLI模式。
 
-实现: [ccbt/cli/main.py:interactive](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L767)
+实现: [ccbt/cli/main.py:interactive](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L767)
 
 用法:
 ```bash
 uv run btbt interactive
 ```
 
-交互式CLI: [ccbt/cli/interactive.py:InteractiveCLI](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/interactive.py#L41)
+交互式CLI: [ccbt/cli/interactive.py:InteractiveCLI](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/interactive.py#L41)
 
 ### status
 
 显示当前会话状态。
 
-实现: [ccbt/cli/main.py:status](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L789)
+实现: [ccbt/cli/main.py:status](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L789)
 
 用法:
 ```bash
@@ -110,13 +110,13 @@ uv run btbt status
 
 ## 检查点命令
 
-检查点管理组: [ccbt/cli/main.py:checkpoints](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L849)
+检查点管理组: [ccbt/cli/main.py:checkpoints](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L849)
 
 ### checkpoints list
 
 列出所有可用的检查点。
 
-实现: [ccbt/cli/main.py:list_checkpoints](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L863)
+实现: [ccbt/cli/main.py:list_checkpoints](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L863)
 
 用法:
 ```bash
@@ -127,7 +127,7 @@ uv run btbt checkpoints list [--format json|table]
 
 清理旧检查点。
 
-实现: [ccbt/cli/main.py:clean_checkpoints](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L930)
+实现: [ccbt/cli/main.py:clean_checkpoints](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L930)
 
 用法:
 ```bash
@@ -138,7 +138,7 @@ uv run btbt checkpoints clean [--days <n>] [--dry-run]
 
 删除特定检查点。
 
-实现: [ccbt/cli/main.py:delete_checkpoint](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L978)
+实现: [ccbt/cli/main.py:delete_checkpoint](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L978)
 
 用法:
 ```bash
@@ -149,7 +149,7 @@ uv run btbt checkpoints delete <info_hash>
 
 验证检查点。
 
-实现: [ccbt/cli/main.py:verify_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1016)
+实现: [ccbt/cli/main.py:verify_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1016)
 
 用法:
 ```bash
@@ -160,7 +160,7 @@ uv run btbt checkpoints verify <info_hash>
 
 将检查点导出到文件。
 
-实现: [ccbt/cli/main.py:export_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1058)
+实现: [ccbt/cli/main.py:export_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1058)
 
 用法:
 ```bash
@@ -171,7 +171,7 @@ uv run btbt checkpoints export <info_hash> [--format json|binary] [--output <pat
 
 将检查点备份到位置。
 
-实现: [ccbt/cli/main.py:backup_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1099)
+实现: [ccbt/cli/main.py:backup_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1099)
 
 用法:
 ```bash
@@ -182,7 +182,7 @@ uv run btbt checkpoints backup <info_hash> <destination> [--compress] [--encrypt
 
 从备份恢复检查点。
 
-实现: [ccbt/cli/main.py:restore_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1138)
+实现: [ccbt/cli/main.py:restore_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1138)
 
 用法:
 ```bash
@@ -193,7 +193,7 @@ uv run btbt checkpoints restore <backup_file> [--info-hash <hash>]
 
 在格式之间迁移检查点。
 
-实现: [ccbt/cli/main.py:migrate_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1173)
+实现: [ccbt/cli/main.py:migrate_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1173)
 
 用法:
 ```bash
@@ -204,7 +204,7 @@ uv run btbt checkpoints migrate <info_hash> --from <format> --to <format>
 
 从检查点恢复下载。
 
-实现: [ccbt/cli/main.py:resume](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1204)
+实现: [ccbt/cli/main.py:resume](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1204)
 
 用法:
 ```bash
@@ -213,13 +213,13 @@ uv run btbt resume <info_hash> [--output <dir>] [--interactive]
 
 ## 监控命令
 
-监控命令组: [ccbt/cli/monitoring_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py)
+监控命令组: [ccbt/cli/monitoring_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py)
 
 ### dashboard
 
 启动终端监控仪表板（Bitonic）。
 
-实现: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
+实现: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
 
 用法:
 ```bash
@@ -232,7 +232,7 @@ uv run btbt dashboard [--refresh <seconds>] [--rules <path>]
 
 管理警报规则和活动警报。
 
-实现: [ccbt/cli/monitoring_commands.py:alerts](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L48)
+实现: [ccbt/cli/monitoring_commands.py:alerts](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L48)
 
 用法:
 ```bash
@@ -267,7 +267,7 @@ uv run btbt alerts --save <path>
 
 收集和导出指标。
 
-实现: [ccbt/cli/monitoring_commands.py:metrics](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L229)
+实现: [ccbt/cli/monitoring_commands.py:metrics](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L229)
 
 用法:
 ```bash
@@ -287,7 +287,7 @@ uv run btbt metrics --format prometheus > metrics.txt
 
 ## 文件选择命令
 
-文件选择命令组: [ccbt/cli/file_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py)
+文件选择命令组: [ccbt/cli/file_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py)
 
 管理多文件种子的文件选择和优先级。
 
@@ -295,7 +295,7 @@ uv run btbt metrics --format prometheus > metrics.txt
 
 列出种子中的所有文件及其选择状态、优先级和下载进度。
 
-实现: [ccbt/cli/file_commands.py:files_list](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L28)
+实现: [ccbt/cli/file_commands.py:files_list](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L28)
 
 用法:
 ```bash
@@ -313,7 +313,7 @@ uv run btbt files list <info_hash>
 
 选择一个或多个文件进行下载。
 
-实现: [ccbt/cli/file_commands.py:files_select](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L72)
+实现: [ccbt/cli/file_commands.py:files_select](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L72)
 
 用法:
 ```bash
@@ -333,7 +333,7 @@ uv run btbt files select abc123... 0
 
 从下载中取消选择一个或多个文件。
 
-实现: [ccbt/cli/file_commands.py:files_deselect](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L108)
+实现: [ccbt/cli/file_commands.py:files_deselect](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L108)
 
 用法:
 ```bash
@@ -344,7 +344,7 @@ uv run btbt files deselect <info_hash> <file_index> [<file_index> ...]
 
 选择种子中的所有文件。
 
-实现: [ccbt/cli/file_commands.py:files_select_all](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L144)
+实现: [ccbt/cli/file_commands.py:files_select_all](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L144)
 
 用法:
 ```bash
@@ -355,7 +355,7 @@ uv run btbt files select-all <info_hash>
 
 取消选择种子中的所有文件。
 
-实现: [ccbt/cli/file_commands.py:files_deselect_all](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L161)
+实现: [ccbt/cli/file_commands.py:files_deselect_all](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L161)
 
 用法:
 ```bash
@@ -366,7 +366,7 @@ uv run btbt files deselect-all <info_hash>
 
 设置特定文件的优先级。
 
-实现: [ccbt/cli/file_commands.py:files_priority](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L178)
+实现: [ccbt/cli/file_commands.py:files_priority](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L178)
 
 用法:
 ```bash
@@ -391,32 +391,32 @@ uv run btbt files priority abc123... 2 maximum
 
 ## 配置命令
 
-配置命令组: [ccbt/cli/config_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/config_commands.py)
+配置命令组: [ccbt/cli/config_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/config_commands.py)
 
 ### config
 
 管理配置。
 
-实现: [ccbt/cli/main.py:config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L810)
+实现: [ccbt/cli/main.py:config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L810)
 
 用法:
 ```bash
 uv run btbt config [subcommand]
 ```
 
-扩展配置命令: [ccbt/cli/config_commands_extended.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/config_commands_extended.py)
+扩展配置命令: [ccbt/cli/config_commands_extended.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/config_commands_extended.py)
 
 详细配置选项请参见 [配置指南](configuration.md)。
 
 ## 高级命令
 
-高级命令组: [ccbt/cli/advanced_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py)
+高级命令组: [ccbt/cli/advanced_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py)
 
 ### performance
 
 性能分析和基准测试。
 
-实现: [ccbt/cli/advanced_commands.py:performance](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L73)
+实现: [ccbt/cli/advanced_commands.py:performance](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L73)
 
 用法:
 ```bash
@@ -427,7 +427,7 @@ uv run btbt performance [--analyze] [--benchmark]
 
 安全分析和验证。
 
-实现: [ccbt/cli/advanced_commands.py:security](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L170)
+实现: [ccbt/cli/advanced_commands.py:security](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L170)
 
 用法:
 ```bash
@@ -438,7 +438,7 @@ uv run btbt security [options]
 
 恢复操作。
 
-实现: [ccbt/cli/advanced_commands.py:recover](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L209)
+实现: [ccbt/cli/advanced_commands.py:recover](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L209)
 
 用法:
 ```bash
@@ -449,7 +449,7 @@ uv run btbt recover [options]
 
 运行测试和诊断。
 
-实现: [ccbt/cli/advanced_commands.py:test](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L248)
+实现: [ccbt/cli/advanced_commands.py:test](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L248)
 
 用法:
 ```bash
@@ -460,7 +460,7 @@ uv run btbt test [options]
 
 ### 全局选项
 
-全局选项定义位置: [ccbt/cli/main.py:cli](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
+全局选项定义位置: [ccbt/cli/main.py:cli](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
 
 - `--config <path>`: 配置文件路径
 - `--verbose`: 详细输出
@@ -469,12 +469,12 @@ uv run btbt test [options]
 ### CLI覆盖
 
 所有CLI选项按以下顺序覆盖配置:
-1. [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py) 的默认值
-2. 配置文件（[ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)）
-3. 环境变量（[env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)）
+1. [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py) 的默认值
+2. 配置文件（[ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)）
+3. 环境变量（[env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)）
 4. CLI参数
 
-覆盖实现: [ccbt/cli/main.py:_apply_cli_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L55)
+覆盖实现: [ccbt/cli/main.py:_apply_cli_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L55)
 
 ## 示例
 
@@ -551,7 +551,7 @@ uv run btbt checkpoints clean --days 7
 
 管理每个种子的配置选项和速率限制。这些设置会持久化到检查点和守护进程状态中。
 
-实现: [ccbt/cli/torrent_config_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/torrent_config_commands.py)
+实现: [ccbt/cli/torrent_config_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/torrent_config_commands.py)
 
 #### 设置每个种子的选项
 

@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 ܐܘ ܐܪܡܝ ܡܢ ܡܒܘܥܐ:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-ܢܩܒܬܐ ܕܥܠܝܬܐ ܡܬܚܪܪܐ ܒ [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81).
+ܢܩܒܬܐ ܕܥܠܝܬܐ ܡܬܚܪܪܐ ܒ [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81).
 
 ## ܢܩܒܬܐ ܕܥܠܝܬܐ ܪܫܝܬܐ
 
@@ -42,8 +42,8 @@ ccBitTorrent ܡܦܠܚ ܠܬܠܬ ܢܩܒܬܐ ܕܥܠܝܬܐ ܪܫܝܬܐ:
 
 **Bitonic** ܗܘ ܦܐܬܐ ܕܕܐܫܒܘܪܕ ܕܛܪܡܝܢܠ ܪܫܝܬܐ. ܡܦܠܚ ܠܚܙܝܐ ܚܝܐ ܘܡܫܬܘܬܦܢܐ ܕܟܠ ܛܘܪܢܛܝܢ، ܦܝܪܝܢ، ܘܡܝܬܪܝܟܣ ܕܡܕܝܢܬܐ.
 
-- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- ܡܬܚܪܪܐ ܒ: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- ܡܬܚܪܪܐ ܒ: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - ܫܪܝ: `uv run bitonic` ܐܘ `uv run ccbt dashboard`
 
 ܚܙܝ ܠ [ܡܕܒܪܢܘܬܐ ܕܒܝܛܘܢܝܩ](bitonic.md) ܠܡܫܬܡܫܢܘܬܐ ܡܦܪܫܬܐ.
@@ -52,8 +52,8 @@ ccBitTorrent ܡܦܠܚ ܠܬܠܬ ܢܩܒܬܐ ܕܥܠܝܬܐ ܪܫܝܬܐ:
 
 **btbt** ܗܘ ܦܐܬܐ ܕܦܘܩܕܢܐ-ܫܪܝܬܐ ܕܡܬܬܟܝܢ ܥܡ ܡܢܝܘܬܐ ܪܒܬܐ.
 
-- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- ܡܬܚܪܪܐ ܒ: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- ܡܬܚܪܪܐ ܒ: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - ܫܪܝ: `uv run btbt`
 
 ܚܙܝ ܠ [ܡܥܠܝܬܐ ܕܒܝܛܒܝܛ CLI](btbt-cli.md) ܠܟܠ ܦܘܩܕܢܐ ܕܐܝܬܝܗܘܢ.
@@ -62,8 +62,8 @@ ccBitTorrent ܡܦܠܚ ܠܬܠܬ ܢܩܒܬܐ ܕܥܠܝܬܐ ܪܫܝܬܐ:
 
 **ccbt** ܗܘ ܦܐܬܐ ܕܦܘܩܕܢܐ-ܫܪܝܬܐ ܒܣܝܣܝܬܐ.
 
-- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- ܡܬܚܪܪܐ ܒ: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- ܡܬܚܪܪܐ ܒ: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - ܫܪܝ: `uv run ccbt`
 
 ## ܫܘܪܝܐ ܥܓܠ
@@ -104,9 +104,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### ܬܟܢܝ ܠܟܘܢܝܐ ܕܟܘܢܝܐ
 
 ܒܪܝ ܦܝܠܐ ܕ `ccbt.toml` ܒܕܝܪܟܬܘܪܝ ܕܥܒܕܟ. ܚܙܝ ܠܬܟܢܝܬܐ ܕܡܬܠܐ:
-- ܬܟܢܝܬܐ ܕܒܣܝܣܝܬܐ: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- ܡܫܚܠܦܢܐ ܕܐܬܪܐ: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- ܡܕܝܢܬܐ ܕܬܟܢܝܬܐ: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- ܬܟܢܝܬܐ ܕܒܣܝܣܝܬܐ: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- ܡܫܚܠܦܢܐ ܕܐܬܪܐ: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- ܡܕܝܢܬܐ ܕܬܟܢܝܬܐ: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 ܚܙܝ ܠ [ܡܕܒܪܢܘܬܐ ܕܬܟܢܝܬܐ](configuration.md) ܠܓܒܝܬܐ ܕܬܟܢܝܬܐ ܡܦܪܫܬܐ.
 
@@ -132,7 +132,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - ܡܫܬܡܫ ܒ `uv run bitonic --help` ܐܘ `uv run btbt --help` ܠܥܕܪܐ ܕܦܘܩܕܢܐ
 - ܒܨܝ ܠ [ܡܥܠܝܬܐ ܕܒܝܛܒܝܛ CLI](btbt-cli.md) ܠܓܒܝܬܐ ܡܦܪܫܬܐ
-- ܙܘܪ ܠ [ܡܐܟܙܢܐ ܕܓܝܛܗܘܒ](https://github.com/yourusername/ccbittorrent) ܕܝܠܢ ܠܡܫܐܠܐ ܘܡܠܟܫܐ
+- ܙܘܪ ܠ [ܡܐܟܙܢܐ ܕܓܝܛܗܘܒ](https://github.com/ccBitTorrent/ccbittorrent) ܕܝܠܢ ܠܡܫܐܠܐ ܘܡܠܟܫܐ
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 ܐܘ ܐܪܡܝ ܡܢ ܡܒܘܥܐ:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-ܢܩܒܬܐ ܕܥܠܝܬܐ ܡܬܚܪܪܐ ܒ [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81).
+ܢܩܒܬܐ ܕܥܠܝܬܐ ܡܬܚܪܪܐ ܒ [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81).
 
 ## ܢܩܒܬܐ ܕܥܠܝܬܐ ܪܫܝܬܐ
 
@@ -181,8 +181,8 @@ ccBitTorrent ܡܦܠܚ ܠܬܠܬ ܢܩܒܬܐ ܕܥܠܝܬܐ ܪܫܝܬܐ:
 
 **Bitonic** ܗܘ ܦܐܬܐ ܕܕܐܫܒܘܪܕ ܕܛܪܡܝܢܠ ܪܫܝܬܐ. ܡܦܠܚ ܠܚܙܝܐ ܚܝܐ ܘܡܫܬܘܬܦܢܐ ܕܟܠ ܛܘܪܢܛܝܢ، ܦܝܪܝܢ، ܘܡܝܬܪܝܟܣ ܕܡܕܝܢܬܐ.
 
-- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- ܡܬܚܪܪܐ ܒ: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- ܡܬܚܪܪܐ ܒ: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - ܫܪܝ: `uv run bitonic` ܐܘ `uv run ccbt dashboard`
 
 ܚܙܝ ܠ [ܡܕܒܪܢܘܬܐ ܕܒܝܛܘܢܝܩ](bitonic.md) ܠܡܫܬܡܫܢܘܬܐ ܡܦܪܫܬܐ.
@@ -191,8 +191,8 @@ ccBitTorrent ܡܦܠܚ ܠܬܠܬ ܢܩܒܬܐ ܕܥܠܝܬܐ ܪܫܝܬܐ:
 
 **btbt** ܗܘ ܦܐܬܐ ܕܦܘܩܕܢܐ-ܫܪܝܬܐ ܕܡܬܬܟܝܢ ܥܡ ܡܢܝܘܬܐ ܪܒܬܐ.
 
-- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- ܡܬܚܪܪܐ ܒ: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- ܡܬܚܪܪܐ ܒ: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - ܫܪܝ: `uv run btbt`
 
 ܚܙܝ ܠ [ܡܥܠܝܬܐ ܕܒܝܛܒܝܛ CLI](btbt-cli.md) ܠܟܠ ܦܘܩܕܢܐ ܕܐܝܬܝܗܘܢ.
@@ -201,8 +201,8 @@ ccBitTorrent ܡܦܠܚ ܠܬܠܬ ܢܩܒܬܐ ܕܥܠܝܬܐ ܪܫܝܬܐ:
 
 **ccbt** ܗܘ ܦܐܬܐ ܕܦܘܩܕܢܐ-ܫܪܝܬܐ ܒܣܝܣܝܬܐ.
 
-- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- ܡܬܚܪܪܐ ܒ: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- ܢܩܒܬܐ ܕܥܠܝܬܐ: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- ܡܬܚܪܪܐ ܒ: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - ܫܪܝ: `uv run ccbt`
 
 ## ܫܘܪܝܐ ܥܓܠ
@@ -243,9 +243,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### ܬܟܢܝ ܠܟܘܢܝܐ ܕܟܘܢܝܐ
 
 ܒܪܝ ܦܝܠܐ ܕ `ccbt.toml` ܒܕܝܪܟܬܘܪܝ ܕܥܒܕܟ. ܚܙܝ ܠܬܟܢܝܬܐ ܕܡܬܠܐ:
-- ܬܟܢܝܬܐ ܕܒܣܝܣܝܬܐ: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- ܡܫܚܠܦܢܐ ܕܐܬܪܐ: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- ܡܕܝܢܬܐ ܕܬܟܢܝܬܐ: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- ܬܟܢܝܬܐ ܕܒܣܝܣܝܬܐ: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- ܡܫܚܠܦܢܐ ܕܐܬܪܐ: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- ܡܕܝܢܬܐ ܕܬܟܢܝܬܐ: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 ܚܙܝ ܠ [ܡܕܒܪܢܘܬܐ ܕܬܟܢܝܬܐ](configuration.md) ܠܓܒܝܬܐ ܕܬܟܢܝܬܐ ܡܦܪܫܬܐ.
 
@@ -271,7 +271,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - ܡܫܬܡܫ ܒ `uv run bitonic --help` ܐܘ `uv run btbt --help` ܠܥܕܪܐ ܕܦܘܩܕܢܐ
 - ܒܨܝ ܠ [ܡܥܠܝܬܐ ܕܒܝܛܒܝܛ CLI](btbt-cli.md) ܠܓܒܝܬܐ ܡܦܪܫܬܐ
-- ܙܘܪ ܠ [ܡܐܟܙܢܐ ܕܓܝܛܗܘܒ](https://github.com/yourusername/ccbittorrent) ܕܝܠܢ ܠܡܫܐܠܐ ܘܡܠܟܫܐ
+- ܙܘܪ ܠ [ܡܐܟܙܢܐ ܕܓܝܛܗܘܒ](https://github.com/ccBitTorrent/ccbittorrent) ܕܝܠܢ ܠܡܫܐܠܐ ܘܡܠܟܫܐ
 
 
 

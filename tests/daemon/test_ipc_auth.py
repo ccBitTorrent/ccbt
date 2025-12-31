@@ -7,6 +7,7 @@ Tests mandatory authentication on all IPC endpoints.
 
 from __future__ import annotations
 
+import os
 import pytest
 
 import aiohttp
@@ -17,12 +18,37 @@ from ccbt.session.session import AsyncSessionManager
 
 
 @pytest.fixture
-async def mock_session_manager():
-    """Create a mock session manager."""
+async def mock_session_manager(monkeypatch):
+    """Create a mock session manager with lightweight initialization.
+    
+    Disables heavy components (NAT, TCP server, DHT) to prevent test hangs.
+    """
+    from unittest.mock import AsyncMock, patch
+    
+    # Disable NAT auto port mapping to prevent 60s wait
+    monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
+    # Disable DHT to prevent network initialization  
+    monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+    
     session = AsyncSessionManager()
-    await session.start()
-    yield session
-    await session.stop()
+    
+    # Patch config to disable heavy components
+    session.config.network.enable_tcp = False
+    session.config.nat.auto_map_ports = False
+    session.config.discovery.enable_dht = False
+    
+    # Mock heavy initialization methods to prevent hangs
+    session._make_nat_manager = lambda: None  # type: ignore[method-assign]
+    session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+    
+    # Mock DHT client start to avoid network initialization
+    async def mock_dht_start():
+        pass
+    
+    with patch.object(session, "_make_dht_client", return_value=None):
+        await session.start()
+        yield session
+        await session.stop()
 
 
 @pytest.fixture

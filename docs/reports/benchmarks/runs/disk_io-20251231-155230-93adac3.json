@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "benchmark": "disk_io",
+    "config": "example-config-performance",
+    "timestamp": "2025-12-31T15:52:30.884452+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "11",
+      "python": "3.13.3"
+    },
+    "git": {
+      "commit_hash": "93adac392d5ba53e2130dde88f2036b6ff8611e9",
+      "commit_hash_short": "93adac3",
+      "branch": "addssessionrefactor",
+      "author": "Joseph Pollack",
+      "is_dirty": true
+    }
+  },
+  "results": [
+    {
+      "size_bytes": 262144,
+      "iterations": 10,
+      "write_elapsed_s": 1.0571535999988555,
+      "read_elapsed_s": 0.009318299998994917,
+      "write_throughput_bytes_per_s": 2479715.341273811,
+      "read_throughput_bytes_per_s": 281321700.3404861
+    },
+    {
+      "size_bytes": 1048576,
+      "iterations": 10,
+      "write_elapsed_s": 0.039751000000251224,
+      "read_elapsed_s": 0.005799399998068111,
+      "write_throughput_bytes_per_s": 263786068.27334484,
+      "read_throughput_bytes_per_s": 1808076698.19171
+    },
+    {
+      "size_bytes": 4194304,
+      "iterations": 10,
+      "write_elapsed_s": 0.07562549999784096,
+      "read_elapsed_s": 0.01257640000039828,
+      "write_throughput_bytes_per_s": 554615043.8833123,
+      "read_throughput_bytes_per_s": 3335059317.3461175
+    }
+  ]
+}

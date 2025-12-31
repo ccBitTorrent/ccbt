@@ -1,9 +1,17 @@
+"""Session data models.
+
+This module defines data models and structures used throughout the session
+management system, including session context and state models.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TorrentStatus(str, Enum):

@@ -406,12 +406,18 @@ class TestSequentialEdgeCases:
     @pytest.mark.asyncio
     async def test_sequential_fallback_no_missing(self, piece_manager):
         """Test _select_sequential_with_fallback when no missing pieces."""
+        import asyncio
+        
         # Mark all pieces as verified
         for i in range(len(piece_manager.pieces)):
             piece_manager.pieces[i].state = PieceState.VERIFIED
             piece_manager.verified_pieces.add(i)
         
         # Should return early without error
-        await piece_manager._select_sequential_with_fallback()
+        # Add timeout to prevent hanging if there's a blocking operation
+        await asyncio.wait_for(
+            piece_manager._select_sequential_with_fallback(),
+            timeout=5.0
+        )
         assert True
 

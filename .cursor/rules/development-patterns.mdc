@@ -34,11 +34,22 @@ description: Development patterns and coding standards for ccBitTorrent
 - **Orchestration modules**: [`ccbt/cli/downloads.py`](mdc:ccbt/cli/downloads.py), [`ccbt/cli/status.py`](mdc:ccbt/cli/status.py), [`ccbt/cli/resume.py`](mdc:ccbt/cli/resume.py) bridge CLI→Session.
 
 ### Session Delegation Pattern
-- `AsyncSessionManager` orchestrates; delegates to controllers:
-  - [`ccbt/session/announce.py`](mdc:ccbt/session/announce.py): Tracker announces
-  - [`ccbt/session/checkpointing.py`](mdc:ccbt/session/checkpointing.py): Checkpoint operations
+- `AsyncTorrentSession` orchestrates; delegates to controllers:
+  - [`ccbt/session/lifecycle.py`](mdc:ccbt/session/lifecycle.py): Lifecycle sequencing (start/pause/resume/stop/cancel)
+  - [`ccbt/session/checkpointing.py`](mdc:ccbt/session/checkpointing.py): Checkpoint operations with fast resume support
+  - [`ccbt/session/status_aggregation.py`](mdc:ccbt/session/status_aggregation.py): Status collection and aggregation
+  - [`ccbt/session/announce.py`](mdc:ccbt/session/announce.py): Tracker announces (AnnounceLoop, AnnounceController)
+  - [`ccbt/session/metrics_status.py`](mdc:ccbt/session/metrics_status.py): Status monitoring loop (StatusLoop)
+  - [`ccbt/session/peers.py`](mdc:ccbt/session/peers.py): Peer management (PeerManagerInitializer, PeerConnectionHelper, PexBinder)
+  - [`ccbt/session/peer_events.py`](mdc:ccbt/session/peer_events.py): Peer event binding (PeerEventsBinder)
+  - [`ccbt/session/magnet_handling.py`](mdc:ccbt/session/magnet_handling.py): Magnet file selection (MagnetHandler)
+  - [`ccbt/session/dht_setup.py`](mdc:ccbt/session/dht_setup.py): DHT discovery setup (DiscoveryController)
   - [`ccbt/session/download_startup.py`](mdc:ccbt/session/download_startup.py): Download initialization
-  - [`ccbt/session/torrent_addition.py`](mdc:ccbt/session/torrent_addition.py): Torrent addition flow
+- `AsyncSessionManager` orchestrates; delegates to managers:
+  - [`ccbt/session/torrent_addition.py`](mdc:ccbt/session/torrent_addition.py): Torrent addition flow (TorrentAdditionHandler)
+  - [`ccbt/session/manager_background.py`](mdc:ccbt/session/manager_background.py): Background tasks (ManagerBackgroundTasks)
+  - [`ccbt/session/scrape.py`](mdc:ccbt/session/scrape.py): Tracker scraping (ScrapeManager)
+  - [`ccbt/session/checkpoint_operations.py`](mdc:ccbt/session/checkpoint_operations.py): Manager-level checkpoint operations (CheckpointOperations)
   - [`ccbt/session/manager_startup.py`](mdc:ccbt/session/manager_startup.py): Component startup sequence
 
 ### Dependency Injection

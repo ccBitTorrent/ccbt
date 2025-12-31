@@ -19,7 +19,8 @@ class TestPackageInit:
         """Test version is defined."""
         import ccbt
 
-        assert ccbt.__version__ == "0.1.0"
+        # Version is defined in ccbt/__init__.py and pyproject.toml
+        assert ccbt.__version__ == "0.0.1"
 
     def test_imports_work(self):
         """Test that main imports work."""
@@ -115,7 +116,8 @@ class TestPackageInit:
         import ccbt
         
         # The exception handling in __init__ should allow import to continue
-        assert ccbt.__version__ == "0.1.0"
+        # Version should be accessible even if policy setup fails
+        assert ccbt.__version__ == "0.0.1"
 
     def test_all_exports(self):
         """Test that __all__ exports are available."""

@@ -48,7 +48,9 @@ def utp_show() -> None:
     table.add_column("Value", style="green")
     table.add_column("Description", style="yellow")
 
-    table.add_row(_("Enabled"), str(config.network.enable_utp), _("uTP transport enabled"))
+    table.add_row(
+        _("Enabled"), str(config.network.enable_utp), _("uTP transport enabled")
+    )
     table.add_row(
         _("Prefer over TCP"),
         str(utp_config.prefer_over_tcp),
@@ -161,8 +163,12 @@ def utp_config_get(key: str | None) -> None:
     }
 
     if key not in key_mapping:
-        console.print(_("[red]Error:[/red] Unknown configuration key: {key}").format(key=key))
-        console.print(_("Available keys: {keys}").format(keys=', '.join(key_mapping.keys())))
+        console.print(
+            _("[red]Error:[/red] Unknown configuration key: {key}").format(key=key)
+        )
+        console.print(
+            _("Available keys: {keys}").format(keys=", ".join(key_mapping.keys()))
+        )
         raise click.Abort
 
     attr_name = key_mapping[key]
@@ -199,8 +205,12 @@ def utp_config_set(key: str, value: str) -> None:
     }
 
     if key not in key_mapping:
-        console.print(_("[red]Error:[/red] Unknown configuration key: {key}").format(key=key))
-        console.print(_("Available keys: {keys}").format(keys=', '.join(key_mapping.keys())))
+        console.print(
+            _("[red]Error:[/red] Unknown configuration key: {key}").format(key=key)
+        )
+        console.print(
+            _("Available keys: {keys}").format(keys=", ".join(key_mapping.keys()))
+        )
         raise click.Abort
 
     attr_name, value_type = key_mapping[key]
@@ -216,13 +226,21 @@ def utp_config_set(key: str, value: str) -> None:
         else:
             converted_value = value
     except ValueError as e:
-        console.print(_("[red]Error:[/red] Invalid value for {key}: {value}").format(key=key, value=value))
-        console.print(_("Expected type: {type_name}").format(type_name=value_type.__name__))
+        console.print(
+            _("[red]Error:[/red] Invalid value for {key}: {value}").format(
+                key=key, value=value
+            )
+        )
+        console.print(
+            _("Expected type: {type_name}").format(type_name=value_type.__name__)
+        )
         raise click.Abort from e
 
     # Set the value
     setattr(utp_config, attr_name, converted_value)
-    console.print(_("[green]✓[/green] Set {key} = {value}").format(key=key, value=converted_value))
+    console.print(
+        _("[green]✓[/green] Set {key} = {value}").format(key=key, value=converted_value)
+    )
     logger.info(_("uTP configuration updated: %s = %s"), key, converted_value)
 
     # Note: This is a runtime change. To persist, save config:
@@ -259,7 +277,9 @@ def utp_config_set(key: str, value: str) -> None:
                 toml.dump(config_data, f)
 
             console.print(
-                _("[green]✓[/green] Configuration saved to {file}").format(file=config_manager.config_file)
+                _("[green]✓[/green] Configuration saved to {file}").format(
+                    file=config_manager.config_file
+                )
             )  # pragma: no cover
     except Exception as e:  # pragma: no cover
         # Defensive error handling: file save should not fail, but handle gracefully
@@ -292,4 +312,3 @@ def utp_config_reset() -> None:
 
     console.print(_("[green]✓[/green] uTP configuration reset to defaults"))
     logger.info(_("uTP configuration reset to defaults via CLI"))
-

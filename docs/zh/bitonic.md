@@ -2,9 +2,9 @@
 
 **Bitonic** 是 ccBitTorrent 的主要入口点，提供实时交互式终端仪表板，用于监控和管理种子、对等节点、速度和系统指标。
 
-- 入口点: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3914)
-- 定义位置: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
-- 主类: [ccbt/interface/terminal_dashboard.py:TerminalDashboard](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3009)
+- 入口点: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3914)
+- 定义位置: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
+- 主类: [ccbt/interface/terminal_dashboard.py:TerminalDashboard](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3009)
 
 ## 启动 Bitonic
 
@@ -27,7 +27,7 @@ uv run bitonic --refresh 2.0
 uv run ccbt dashboard --rules /path/to/alert-rules.json
 ```
 
-实现: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
+实现: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
 
 ## 完整用户旅程示例
 
@@ -1555,22 +1555,22 @@ Step 11: NAT Options
 ## 功能
 
 ### 实时更新
-实时种子状态和进度跟踪，按可配置的间隔更新。参见 [ccbt/interface/terminal_dashboard.py:_poll_once](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L389)。
+实时种子状态和进度跟踪，按可配置的间隔更新。参见 [ccbt/interface/terminal_dashboard.py:_poll_once](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L389)。
 
 ### 对等节点监控
-查看已连接的对等节点、其速度和客户端信息。参见 [ccbt/interface/terminal_dashboard.py:PeersTable](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L228)。
+查看已连接的对等节点、其速度和客户端信息。参见 [ccbt/interface/terminal_dashboard.py:PeersTable](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L228)。
 
 ### 速度可视化
-带有迷你图的下载/上传速度图表。参见 [ccbt/interface/terminal_dashboard.py:SpeedSparklines](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L250)。
+带有迷你图的下载/上传速度图表。参见 [ccbt/interface/terminal_dashboard.py:SpeedSparklines](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L250)。
 
 ### 警报系统
-重要事件的实时通知。警报显示参见 [ccbt/interface/terminal_dashboard.py:491](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L491)。
+重要事件的实时通知。警报显示参见 [ccbt/interface/terminal_dashboard.py:491](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L491)。
 
 ### 交互式控制
-常用操作的键盘快捷键。参见 [ccbt/interface/terminal_dashboard.py:on_key](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3240)。
+常用操作的键盘快捷键。参见 [ccbt/interface/terminal_dashboard.py:on_key](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3240)。
 
 ### 多种子支持
-同时监控多个下载。参见 [ccbt/interface/terminal_dashboard.py:TorrentsTable](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L221)。
+同时监控多个下载。参见 [ccbt/interface/terminal_dashboard.py:TorrentsTable](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L221)。
 
 ### 监控屏幕
 用于详细监控指标的专用屏幕：
@@ -1588,18 +1588,18 @@ Step 11: NAT Options
 仪表板使用 [Textual](https://textual.textualize.io/) 构建，并组织成面板：
 
 ### 布局结构
-- **页眉**：时钟和应用程序标题。参见 [ccbt/interface/terminal_dashboard.py:323](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L323)
-- **主体**：分为左右两部分。参见 [ccbt/interface/terminal_dashboard.py:324](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L324)
+- **页眉**：时钟和应用程序标题。参见 [ccbt/interface/terminal_dashboard.py:323](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L323)
+- **主体**：分为左右两部分。参见 [ccbt/interface/terminal_dashboard.py:324](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L324)
 - **左面板**：概览和速度图表
 - **右面板**：种子、对等节点、详细信息和日志
-- **页脚**：状态栏和警报。参见 [ccbt/interface/terminal_dashboard.py:333-334](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L333-L334)
+- **页脚**：状态栏和警报。参见 [ccbt/interface/terminal_dashboard.py:333-334](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L333-L334)
 
-CSS 样式： [ccbt/interface/terminal_dashboard.py:279-297](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L279-L297)
+CSS 样式： [ccbt/interface/terminal_dashboard.py:279-297](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L279-L297)
 
 ### Panels
 
 #### 概览面板
-显示全局统计信息。实现： [ccbt/interface/terminal_dashboard.py:Overview](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L174)
+显示全局统计信息。实现： [ccbt/interface/terminal_dashboard.py:Overview](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L174)
 - 下载速度：当前全局下载速率
 - 上传速度：当前全局上传速率
 - 已连接对等节点：已连接对等节点的总数
@@ -1607,7 +1607,7 @@ CSS 样式： [ccbt/interface/terminal_dashboard.py:279-297](https://github.com/
 - 平均进度：总体进度百分比
 
 #### 种子面板
-在表格中显示所有活动种子。实现： [ccbt/interface/terminal_dashboard.py:TorrentsTable](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L196)
+在表格中显示所有活动种子。实现： [ccbt/interface/terminal_dashboard.py:TorrentsTable](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L196)
 - 信息哈希：种子标识符
 - 名称：种子名称
 - 状态：当前状态（下载中、做种中、已暂停）
@@ -1615,7 +1615,7 @@ CSS 样式： [ccbt/interface/terminal_dashboard.py:279-297](https://github.com/
 - 下载/上传速率：传输速度
 
 #### 对等节点面板
-显示所选种子的对等节点。实现： [ccbt/interface/terminal_dashboard.py:PeersTable](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L228)
+显示所选种子的对等节点。实现： [ccbt/interface/terminal_dashboard.py:PeersTable](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L228)
 - IP 地址：对等节点的 IP 地址
 - 端口：对等节点的端口
 - 下载/上传速率：与对等节点的传输速度
@@ -1623,16 +1623,16 @@ CSS 样式： [ccbt/interface/terminal_dashboard.py:279-297](https://github.com/
 - 客户端：BitTorrent 客户端标识
 
 #### 速度迷你图
-实时速度可视化。实现： [ccbt/interface/terminal_dashboard.py:SpeedSparklines](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L250)
+实时速度可视化。实现： [ccbt/interface/terminal_dashboard.py:SpeedSparklines](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L250)
 - 下载图表：显示下载速度历史的迷你图
 - 上传图表：显示上传速度历史的迷你图
-- 保持最后 120 个样本（1 秒刷新时约 2 分钟）。参见 [ccbt/interface/terminal_dashboard.py:269](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L269)
+- 保持最后 120 个样本（1 秒刷新时约 2 分钟）。参见 [ccbt/interface/terminal_dashboard.py:269](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L269)
 
 #### 详细信息面板
-显示所选种子的详细信息。实现： [ccbt/interface/terminal_dashboard.py:428-439](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L428-L439)
+显示所选种子的详细信息。实现： [ccbt/interface/terminal_dashboard.py:428-439](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L428-L439)
 
 #### 警报面板
-显示警报规则和活动警报。实现： [ccbt/interface/terminal_dashboard.py:3059-3102](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3059-L3102)
+显示警报规则和活动警报。实现： [ccbt/interface/terminal_dashboard.py:3059-3102](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3059-L3102)
 
 ## 监控屏幕
 
@@ -1651,7 +1651,7 @@ Bitonic 提供从主仪表板访问的专用监控屏幕。每个屏幕专注于
 - 进程数
 - 网络 I/O 统计（发送/接收的字节数）
 
-**实现**： [ccbt/interface/terminal_dashboard.py:SystemResourcesScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L690)
+**实现**： [ccbt/interface/terminal_dashboard.py:SystemResourcesScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L690)
 
 **导航**：按 `Escape` 或 `q` 返回主仪表板
 
@@ -1669,7 +1669,7 @@ Bitonic 提供从主仪表板访问的专用监控屏幕。每个屏幕专注于
 - 来自 MetricsPlugin 的事件驱动指标（如果可用）
 - 指标收集统计
 
-**实现**： [ccbt/interface/terminal_dashboard.py:PerformanceMetricsScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L811)
+**实现**： [ccbt/interface/terminal_dashboard.py:PerformanceMetricsScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L811)
 
 **数据源**：
 - `MetricsCollector.get_performance_metrics()`
@@ -1690,7 +1690,7 @@ Bitonic 提供从主仪表板访问的专用监控屏幕。每个屏幕专注于
 - 带视觉指示器的对等节点连接质量指标
 - 连接质量评分（0-100）
 
-**实现**： [ccbt/interface/terminal_dashboard.py:NetworkQualityScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L889)
+**实现**： [ccbt/interface/terminal_dashboard.py:NetworkQualityScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L889)
 
 **质量计算**：
 - 基于对等节点速度和阻塞状态
@@ -1716,7 +1716,7 @@ Bitonic 提供从主仪表板访问的专用监控屏幕。每个屏幕专注于
 - 内存使用率
 - 对等节点连接
 
-**实现**： [ccbt/interface/terminal_dashboard.py:HistoricalTrendsScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1059)
+**实现**： [ccbt/interface/terminal_dashboard.py:HistoricalTrendsScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1059)
 
 **导航**：按 `Escape` 或 `q` 返回主仪表板
 
@@ -1732,7 +1732,7 @@ Bitonic 提供从主仪表板访问的专用监控屏幕。每个屏幕专注于
 - 警报历史（最后 50 个警报，带解决状态）
 - 警报统计（已触发、已解决、已发送的通知）
 
-**实现**： [ccbt/interface/terminal_dashboard.py:AlertsDashboardScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1201)
+**实现**： [ccbt/interface/terminal_dashboard.py:AlertsDashboardScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1201)
 
 **严重程度格式**：
 - **CRITICAL**：粗体红色
@@ -1756,7 +1756,7 @@ Bitonic 提供从主仪表板访问的专用监控屏幕。每个屏幕专注于
 - 当前值和聚合值
 - 标签和元数据
 
-**实现**： [ccbt/interface/terminal_dashboard.py:MetricsExplorerScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1376)
+**实现**： [ccbt/interface/terminal_dashboard.py:MetricsExplorerScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1376)
 
 **使用方法**：
 - 在过滤器输入中键入并按 `Enter` 过滤指标
@@ -1781,7 +1781,7 @@ Bitonic 提供用于管理全局和每个种子设置的配置屏幕。
 - 保存到运行时或文件
 - 带确认对话框的未保存更改检测
 
-**实现**： [ccbt/interface/terminal_dashboard.py:GlobalConfigMainScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1793)
+**实现**： [ccbt/interface/terminal_dashboard.py:GlobalConfigMainScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1793)
 
 **可用部分**：
 - 网络配置
@@ -1806,7 +1806,7 @@ Bitonic 提供用于管理全局和每个种子设置的配置屏幕。
 - 文件选择状态
 - 种子操作（宣布、抓取、暂停、恢复等）
 
-**实现**： [ccbt/interface/terminal_dashboard.py:PerTorrentConfigMainScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L2241)
+**实现**： [ccbt/interface/terminal_dashboard.py:PerTorrentConfigMainScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L2241)
 
 **可用操作**：
 - 设置速率限制（KiB/s，0 = 无限制）
@@ -1822,65 +1822,65 @@ Bitonic 提供用于管理全局和每个种子设置的配置屏幕。
 
 ## 键盘快捷键
 
-所有键盘快捷键在 [ccbt/interface/terminal_dashboard.py:on_key](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L505) 和 [ccbt/interface/terminal_dashboard.py:BINDINGS](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L337) 中定义。
+所有键盘快捷键在 [ccbt/interface/terminal_dashboard.py:on_key](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L505) 和 [ccbt/interface/terminal_dashboard.py:BINDINGS](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L337) 中定义。
 
 ### 导航
 - `↑/↓` - 导航种子列表（DataTable 导航）
-- `Enter` - 处理文件浏览器选择。参见 [ccbt/interface/terminal_dashboard.py:714](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L714)
+- `Enter` - 处理文件浏览器选择。参见 [ccbt/interface/terminal_dashboard.py:714](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L714)
 
 ### 种子控制
-- `P` / `p` - 暂停所选种子。参见 [ccbt/interface/terminal_dashboard.py:534](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L534)
-- `R` / `r` - 恢复所选种子。参见 [ccbt/interface/terminal_dashboard.py:541](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L541)
-- `Delete` - 删除所选种子（带确认）。参见 [ccbt/interface/terminal_dashboard.py:510](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L510)
-- `y` - 确认删除。参见 [ccbt/interface/terminal_dashboard.py:523](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L523)
-- `n` - 取消删除。参见 [ccbt/interface/terminal_dashboard.py:530](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L530)
+- `P` / `p` - 暂停所选种子。参见 [ccbt/interface/terminal_dashboard.py:534](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L534)
+- `R` / `r` - 恢复所选种子。参见 [ccbt/interface/terminal_dashboard.py:541](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L541)
+- `Delete` - 删除所选种子（带确认）。参见 [ccbt/interface/terminal_dashboard.py:510](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L510)
+- `y` - 确认删除。参见 [ccbt/interface/terminal_dashboard.py:523](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L523)
+- `n` - 取消删除。参见 [ccbt/interface/terminal_dashboard.py:530](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L530)
 
 ### 高级操作
-- `a` / `A` - 强制宣布（选择种子时）。参见 [ccbt/interface/terminal_dashboard.py:3182](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3182)
-- `s` / `S` - 强制抓取（选择种子时）。参见 [ccbt/interface/terminal_dashboard.py:3197](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3197)
-- `e` / `E` - 刷新 PEX（选择种子时）。参见 [ccbt/interface/terminal_dashboard.py:3207](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3207)
-- `h` / `H` - 重新哈希种子（选择种子时）。参见 [ccbt/interface/terminal_dashboard.py:3217](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3217)
-- `x` / `X` - 导出会话快照。参见 [ccbt/interface/terminal_dashboard.py:3227](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3227)
+- `a` / `A` - 强制宣布（选择种子时）。参见 [ccbt/interface/terminal_dashboard.py:3182](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3182)
+- `s` / `S` - 强制抓取（选择种子时）。参见 [ccbt/interface/terminal_dashboard.py:3197](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3197)
+- `e` / `E` - 刷新 PEX（选择种子时）。参见 [ccbt/interface/terminal_dashboard.py:3207](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3207)
+- `h` / `H` - 重新哈希种子（选择种子时）。参见 [ccbt/interface/terminal_dashboard.py:3217](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3217)
+- `x` / `X` - 导出会话快照。参见 [ccbt/interface/terminal_dashboard.py:3227](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3227)
 
 ### 监控屏幕导航
-- `s` - 打开系统资源屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_system_resources](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3880)
-- `m` - 打开性能指标屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_performance_metrics](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3884)
-- `n` - 打开网络质量屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_network_quality](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3888)
-- `h` - 打开历史趋势屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_historical_trends](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3892)
-- `a` - 打开警报仪表板屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_alerts_dashboard](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3896)
-- `e` - 打开指标浏览器屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_metrics_explorer](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3900)
+- `s` - 打开系统资源屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_system_resources](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3880)
+- `m` - 打开性能指标屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_performance_metrics](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3884)
+- `n` - 打开网络质量屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_network_quality](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3888)
+- `h` - 打开历史趋势屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_historical_trends](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3892)
+- `a` - 打开警报仪表板屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_alerts_dashboard](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3896)
+- `e` - 打开指标浏览器屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_metrics_explorer](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3900)
 
 ### 配置屏幕
-- `g` - 打开全局配置屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_global_config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3870)
-- `t` - 打开每个种子配置屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_torrent_config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3875)
+- `g` - 打开全局配置屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_global_config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3870)
+- `t` - 打开每个种子配置屏幕。参见 [ccbt/interface/terminal_dashboard.py:action_torrent_config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3875)
 
 ### 速率限制
-- `1` - 禁用速率限制。参见 [ccbt/interface/terminal_dashboard.py:627](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L627)
-- `2` - 将速率限制设置为 1024 KiB/s。参见 [ccbt/interface/terminal_dashboard.py:635](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L635)
+- `1` - 禁用速率限制。参见 [ccbt/interface/terminal_dashboard.py:627](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L627)
+- `2` - 将速率限制设置为 1024 KiB/s。参见 [ccbt/interface/terminal_dashboard.py:635](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L635)
 
 ### 仪表板控制
-- `Q` / `q` - 退出仪表板。参见 [ccbt/interface/terminal_dashboard.py:507](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L507)
-- `/` - 打开过滤器输入。参见 [ccbt/interface/terminal_dashboard.py:548](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L548)
-- `:` - 打开命令面板。参见 [ccbt/interface/terminal_dashboard.py:561](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L561)
-- `m` / `M` - 切换指标收集间隔。参见 [ccbt/interface/terminal_dashboard.py:645](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L645)
-- `R` - 切换仪表板刷新间隔。参见 [ccbt/interface/terminal_dashboard.py:659](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L659)
-- `t` / `T` - 切换浅色/深色主题。参见 [ccbt/interface/terminal_dashboard.py:673](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L673)
-- `c` / `C` - 切换紧凑模式。参见 [ccbt/interface/terminal_dashboard.py:681](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L681)
-- `k` / `K` - 确认所有活动警报。参见 [ccbt/interface/terminal_dashboard.py:723](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L723)
+- `Q` / `q` - 退出仪表板。参见 [ccbt/interface/terminal_dashboard.py:507](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L507)
+- `/` - 打开过滤器输入。参见 [ccbt/interface/terminal_dashboard.py:548](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L548)
+- `:` - 打开命令面板。参见 [ccbt/interface/terminal_dashboard.py:561](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L561)
+- `m` / `M` - 切换指标收集间隔。参见 [ccbt/interface/terminal_dashboard.py:645](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L645)
+- `R` - 切换仪表板刷新间隔。参见 [ccbt/interface/terminal_dashboard.py:659](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L659)
+- `t` / `T` - 切换浅色/深色主题。参见 [ccbt/interface/terminal_dashboard.py:673](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L673)
+- `c` / `C` - 切换紧凑模式。参见 [ccbt/interface/terminal_dashboard.py:681](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L681)
+- `k` / `K` - 确认所有活动警报。参见 [ccbt/interface/terminal_dashboard.py:723](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L723)
 
 ### 添加种子
-- `i` / `I` - 快速添加种子。参见 [ccbt/interface/terminal_dashboard.py:702](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L702)
-- `o` / `O` - 高级添加种子。参见 [ccbt/interface/terminal_dashboard.py:706](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L706)
-- `b` / `B` - 浏览种子文件。参见 [ccbt/interface/terminal_dashboard.py:710](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L710)
+- `i` / `I` - 快速添加种子。参见 [ccbt/interface/terminal_dashboard.py:702](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L702)
+- `o` / `O` - 高级添加种子。参见 [ccbt/interface/terminal_dashboard.py:706](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L706)
+- `b` / `B` - 浏览种子文件。参见 [ccbt/interface/terminal_dashboard.py:710](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L710)
 
 ## 配置
 
-仪表板设置在 [ccbt.toml:185-191](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L185-L191) 中配置：
+仪表板设置在 [ccbt.toml:185-191](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L185-L191) 中配置：
 
 - `refresh_interval`：UI 刷新间隔（秒）（默认值：1.0）
 - `default_view`：默认仪表板视图
 
-警报规则从 [ccbt.toml:170](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml#L170) 中指定的路径（`alerts_rules_path`）加载。自动加载参见 [ccbt/interface/terminal_dashboard.py:363-381](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L363-L381)。
+警报规则从 [ccbt.toml:170](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml#L170) 中指定的路径（`alerts_rules_path`）加载。自动加载参见 [ccbt/interface/terminal_dashboard.py:363-381](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L363-L381)。
 
 ## 命令面板
 
@@ -1896,20 +1896,20 @@ Bitonic 提供用于管理全局和每个种子设置的配置屏幕。
 - `backup <path>` - 备份检查点
 - `restore <path>` - 恢复检查点
 
-实现： [ccbt/interface/terminal_dashboard.py:_run_command](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L776)
+实现： [ccbt/interface/terminal_dashboard.py:_run_command](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L776)
 
 ## 过滤
 
-按 `/` 按名称或状态过滤种子。实现： [ccbt/interface/terminal_dashboard.py:_apply_filter_and_update](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L762)
+按 `/` 按名称或状态过滤种子。实现： [ccbt/interface/terminal_dashboard.py:_apply_filter_and_update](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L762)
 
 ## 与监控的集成
 
 Bitonic 与 ccBitTorrent 的监控系统集成：
-- 通过 [ccbt/monitoring/metrics_collector.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/monitoring/metrics_collector.py) 进行指标收集
-- 通过 [ccbt/monitoring/alert_manager.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/monitoring/alert_manager.py) 进行警报管理
-- 通过 [ccbt/plugins/base.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/plugins/base.py) 的插件系统
-- 用于事件驱动指标的 MetricsPlugin 集成。参见 [ccbt/interface/terminal_dashboard.py:_get_metrics_plugin](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L626)
-- 系统指标跟踪。参见 [ccbt/interface/terminal_dashboard.py:3001-3019](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3001-L3019)
+- 通过 [ccbt/monitoring/metrics_collector.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/monitoring/metrics_collector.py) 进行指标收集
+- 通过 [ccbt/monitoring/alert_manager.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/monitoring/alert_manager.py) 进行警报管理
+- 通过 [ccbt/plugins/base.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/plugins/base.py) 的插件系统
+- 用于事件驱动指标的 MetricsPlugin 集成。参见 [ccbt/interface/terminal_dashboard.py:_get_metrics_plugin](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L626)
+- 系统指标跟踪。参见 [ccbt/interface/terminal_dashboard.py:3001-3019](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L3001-L3019)
 
 ### 指标源
 
@@ -1933,7 +1933,7 @@ Bitonic 显示来自多个源的指标：
 ### 插件管理器集成
 
 Bitonic 使用全局插件管理器单例来访问插件：
-- 通过 `get_plugin_manager()` 函数访问。参见 [ccbt/plugins/base.py:get_plugin_manager](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/plugins/base.py#L403)
+- 通过 `get_plugin_manager()` 函数访问。参见 [ccbt/plugins/base.py:get_plugin_manager](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/plugins/base.py#L403)
 - 通过多种方法发现 MetricsPlugin（PluginManager、事件总线、会话属性）
 - 当插件不可用时的优雅处理
 
@@ -1944,7 +1944,7 @@ Bitonic 使用全局插件管理器单例来访问插件：
 2. 验证终端支持 Unicode 和颜色
 3. 检查终端中的错误消息
 
-实现处理 Textual 可用性： [ccbt/interface/terminal_dashboard.py:46-172](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L46-L172)
+实现处理 Textual 可用性： [ccbt/interface/terminal_dashboard.py:46-172](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L46-L172)
 
 ### 性能问题
 1. 增加刷新间隔：`--refresh 2.0` 或按 `R` 循环间隔
@@ -1959,9 +1959,9 @@ Bitonic 使用全局插件管理器单例来访问插件：
 ## 架构
 
 Bitonic 使用：
-- **Textual**：终端 UI 框架。参见 [ccbt/interface/terminal_dashboard.py:47-60](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L47-L60)
+- **Textual**：终端 UI 框架。参见 [ccbt/interface/terminal_dashboard.py:47-60](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L47-L60)
 - **Rich**：富文本和美观的格式
-- **AsyncSessionManager**：会话管理。参见 [ccbt/session/session.py:AsyncSessionManager](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/session/session.py#L605)
+- **AsyncSessionManager**：会话管理。参见 [ccbt/session/session.py:AsyncSessionManager](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/session/session.py#L605)
 - **MetricsCollector**：指标收集（通过 `get_metrics_collector()` 的单例）
 - **AlertManager**：警报管理（通过 `get_alert_manager()` 的单例）
 - **PluginManager**：插件管理（通过 `get_plugin_manager()` 的单例）
@@ -1987,16 +1987,16 @@ TerminalDashboard (主应用)
 ```
 
 **基类**：
-- **MonitoringScreen**：所有监控屏幕的基类，具有通用功能（刷新间隔、导航、错误处理）。参见 [ccbt/interface/terminal_dashboard.py:MonitoringScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L558)
-- **ConfigScreen**：配置屏幕的基类，具有未保存更改检测。参见 [ccbt/interface/terminal_dashboard.py:ConfigScreen](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L433)
+- **MonitoringScreen**：所有监控屏幕的基类，具有通用功能（刷新间隔、导航、错误处理）。参见 [ccbt/interface/terminal_dashboard.py:MonitoringScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L558)
+- **ConfigScreen**：配置屏幕的基类，具有未保存更改检测。参见 [ccbt/interface/terminal_dashboard.py:ConfigScreen](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L433)
 
 **可重用小部件**：
-- **ProgressBarWidget**：用于百分比的进度条。参见 [ccbt/interface/terminal_dashboard.py:ProgressBarWidget](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L309)
-- **MetricsTableWidget**：表格格式的指标显示。参见 [ccbt/interface/terminal_dashboard.py:MetricsTableWidget](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L335)
-- **SparklineGroup**：带标签的多个迷你图。参见 [ccbt/interface/terminal_dashboard.py:SparklineGroup](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L379)
+- **ProgressBarWidget**：用于百分比的进度条。参见 [ccbt/interface/terminal_dashboard.py:ProgressBarWidget](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L309)
+- **MetricsTableWidget**：表格格式的指标显示。参见 [ccbt/interface/terminal_dashboard.py:MetricsTableWidget](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L335)
+- **SparklineGroup**：带标签的多个迷你图。参见 [ccbt/interface/terminal_dashboard.py:SparklineGroup](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L379)
 
 **确认对话框**：
-- **ConfirmationDialog**：用于确认提示的模态对话框（例如，未保存的更改）。参见 [ccbt/interface/terminal_dashboard.py:ConfirmationDialog](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L471)
+- **ConfirmationDialog**：用于确认提示的模态对话框（例如，未保存的更改）。参见 [ccbt/interface/terminal_dashboard.py:ConfirmationDialog](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L471)
 
 更多信息，请参见：
 - [API 参考](API.md) - 包括监控功能的 Python API 文档

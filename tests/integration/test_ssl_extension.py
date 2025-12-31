@@ -38,16 +38,23 @@ class TestSSLExtensionIntegration:
         # Encode handshake
         handshake_data = protocol_ext.encode_handshake()
 
-        # Decode to verify SSL extension is included
-        # Format: <length><message_id><json_data>
+        # Verify message format
+        # Format: <length><message_id><bencoded_data> (BEP 10 uses bencode, not JSON)
         length = struct.unpack("!I", handshake_data[:4])[0]
         message_id = handshake_data[4]
-        json_data = handshake_data[5:].decode("utf-8")
-        extensions = json.loads(json_data)
-
+        
         assert message_id == ExtensionMessageType.EXTENDED
+        
+        # CRITICAL FIX: Use decode_handshake method which properly handles bencode decoding
+        # and converts bytes keys to strings
+        extensions = protocol_ext.decode_handshake(handshake_data)
+
         assert "ssl" in extensions
-        assert extensions["ssl"]["version"] == "1.0"
+        # Handle both bytes and string values (bencode may return bytes)
+        version = extensions["ssl"]["version"]
+        if isinstance(version, bytes):
+            version = version.decode("utf-8")
+        assert version == "1.0"
 
     @pytest.mark.asyncio
     async def test_ssl_extension_message_flow(self):

@@ -32,7 +32,7 @@ cd ccbt
 uv pip install -e .
 ```
 
-Entry points are defined in [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81).
+Entry points are defined in [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81).
 
 ## Main Entry Points
 
@@ -42,8 +42,8 @@ ccBitTorrent provides three main entry points:
 
 **Bitonic** is the main terminal dashboard interface. It provides a live, interactive view of all torrents, peers, and system metrics.
 
-- Entry point: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- Defined in: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- Entry point: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- Defined in: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - Launch: `uv run bitonic` or `uv run ccbt dashboard`
 
 See [Bitonic Guide](bitonic.md) for detailed usage.
@@ -52,8 +52,8 @@ See [Bitonic Guide](bitonic.md) for detailed usage.
 
 **btbt** is the enhanced command-line interface with rich features.
 
-- Entry point: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- Defined in: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- Entry point: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- Defined in: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - Launch: `uv run btbt`
 
 See [btbt CLI Reference](btbt-cli.md) for all available commands.
@@ -62,8 +62,8 @@ See [btbt CLI Reference](btbt-cli.md) for all available commands.
 
 **ccbt** is the basic command-line interface.
 
-- Entry point: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- Defined in: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- Entry point: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- Defined in: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - Launch: `uv run ccbt`
 
 ## Quick Start

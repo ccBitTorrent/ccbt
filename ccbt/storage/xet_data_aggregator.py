@@ -9,9 +9,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ccbt.storage.xet_deduplication import XetDeduplication
+if TYPE_CHECKING:
+    from ccbt.storage.xet_deduplication import XetDeduplication
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,7 @@ class XetDataAggregator:
 
     """
 
-    def __init__(
-        self, dedup: XetDeduplication, batch_size: int = 100
-    ):
+    def __init__(self, dedup: XetDeduplication, batch_size: int = 100):
         """Initialize data aggregator.
 
         Args:
@@ -43,9 +42,7 @@ class XetDataAggregator:
         self.batch_size = batch_size
         self.logger = logging.getLogger(__name__)
 
-    async def aggregate_chunks(
-        self, chunk_hashes: list[bytes]
-    ) -> bytes:
+    async def aggregate_chunks(self, chunk_hashes: list[bytes]) -> bytes:
         """Aggregate multiple chunks into a single byte stream.
 
         Reads multiple chunks in parallel and concatenates them.
@@ -102,7 +99,9 @@ class XetDataAggregator:
         # Create tasks for parallel storage
         tasks = []
         for i, (chunk_hash, chunk_data) in enumerate(chunks):
-            file_offset = file_offsets[i] if file_offsets and i < len(file_offsets) else None
+            file_offset = (
+                file_offsets[i] if file_offsets and i < len(file_offsets) else None
+            )
             task = self.dedup.store_chunk(
                 chunk_hash=chunk_hash,
                 chunk_data=chunk_data,
@@ -122,18 +121,14 @@ class XetDataAggregator:
         paths = []
         for result in results:
             if isinstance(result, Exception):
-                self.logger.warning(
-                    "Failed to store chunk in batch: %s", result
-                )
+                self.logger.warning("Failed to store chunk in batch: %s", result)
                 paths.append(Path())  # Placeholder for failed chunk
             else:
                 paths.append(result)
 
         return paths
 
-    async def batch_read_chunks(
-        self, chunk_hashes: list[bytes]
-    ) -> dict[bytes, bytes]:
+    async def batch_read_chunks(self, chunk_hashes: list[bytes]) -> dict[bytes, bytes]:
         """Read multiple chunks in parallel.
 
         Reads chunks in parallel for improved performance.
@@ -161,9 +156,7 @@ class XetDataAggregator:
             batch_hashes = [h for h, _ in batch]
             batch_tasks = [t for _, t in batch]
 
-            batch_results = await asyncio.gather(
-                *batch_tasks, return_exceptions=True
-            )
+            batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
 
             for chunk_hash, chunk_data in zip(batch_hashes, batch_results):
                 if isinstance(chunk_data, Exception):
@@ -197,18 +190,13 @@ class XetDataAggregator:
 
             # Read chunk data in executor to avoid blocking
             loop = asyncio.get_event_loop()
-            chunk_data = await loop.run_in_executor(
-                None, chunk_path.read_bytes
-            )
-            return chunk_data
+            return await loop.run_in_executor(None, chunk_path.read_bytes)
         except Exception as e:
-            self.logger.debug(
-                "Failed to read chunk %s: %s", chunk_hash.hex()[:16], e
-            )
+            self.logger.debug("Failed to read chunk %s: %s", chunk_hash.hex()[:16], e)
             return None
 
     async def optimize_storage_layout(
-        self, chunk_hashes: list[bytes] | None = None
+        self, _chunk_hashes: list[bytes] | None = None
     ) -> dict[str, Any]:
         """Optimize storage layout for chunks.
 
@@ -230,40 +218,3 @@ class XetDataAggregator:
             "storage_reorganized": 0,
             "access_improvement": 0.0,
         }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

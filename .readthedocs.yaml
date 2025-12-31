@@ -11,9 +11,15 @@ build:
   os: ubuntu-24.04
   tools:
     python: "3.11"
+  commands:
+    # Use the patched build script to ensure i18n plugin works correctly
+    # This applies patches to mkdocs-static-i18n before building
+    - python dev/build_docs_patched_clean.py
 
 # MkDocs configuration
 # Point to the mkdocs.yml file in the dev directory
+# Note: We override the default build with build.commands above,
+# but this is still needed for Read the Docs to detect MkDocs project
 mkdocs:
   configuration: dev/mkdocs.yml
 

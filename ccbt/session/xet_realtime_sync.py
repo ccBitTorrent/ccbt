@@ -9,10 +9,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ccbt.storage.xet_folder_manager import XetFolder
 from ccbt.utils.events import Event, EventType, emit_event
+
+if TYPE_CHECKING:
+    from ccbt.storage.xet_folder_manager import XetFolder
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +80,7 @@ class XetRealtimeSync:
         self.logger.info("Stopped real-time sync for %s", self.folder.folder_path)
 
     async def _sync_loop(self) -> None:
-        """Main synchronization loop."""
+        """Run main synchronization loop."""
         while self._is_running:
             try:
                 await asyncio.sleep(self.check_interval)
@@ -90,7 +92,7 @@ class XetRealtimeSync:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception:
                 self.logger.exception("Error in sync loop")
                 await asyncio.sleep(self.check_interval)
 
@@ -136,7 +138,7 @@ class XetRealtimeSync:
                         # Update git ref in sync manager
                         if current_ref:
                             self.folder.sync_manager.set_current_git_ref(current_ref)
-                            
+
                             # Auto-commit if enabled
                             if self.folder.git_versioning.auto_commit:
                                 try:
@@ -146,7 +148,9 @@ class XetRealtimeSync:
                                     )
                                     if new_commit:
                                         self._last_git_ref = new_commit
-                                        self.folder.sync_manager.set_current_git_ref(new_commit)
+                                        self.folder.sync_manager.set_current_git_ref(
+                                            new_commit
+                                        )
                                         self.logger.debug(
                                             "Auto-committed changes, new ref: %s",
                                             new_commit[:16],
@@ -199,7 +203,7 @@ class XetRealtimeSync:
             except Exception as e:
                 self.logger.debug("Error emitting sync event: %s", e)
 
-        except Exception as e:
+        except Exception:
             self.logger.exception(
                 "Error checking for updates in folder %s", self.folder.folder_path
             )
@@ -254,7 +258,7 @@ class XetRealtimeSync:
             # Update hash cache
             self._last_chunk_hashes = current_hashes
 
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error checking chunk hashes")
 
     async def _queue_file_update(self, file_path: str) -> None:
@@ -279,9 +283,7 @@ class XetRealtimeSync:
                             file_data = f.read()
                             chunk_hash = hashlib.sha256(file_data).digest()
                     except (OSError, PermissionError) as e:
-                        self.logger.warning(
-                            "Error reading file %s: %s", file_path, e
-                        )
+                        self.logger.warning("Error reading file %s: %s", file_path, e)
                         return
 
                     # Get git ref with timeout
@@ -317,13 +319,12 @@ class XetRealtimeSync:
                             )
                             await asyncio.sleep(retry_delay * (attempt + 1))
                             continue
-                        else:
-                            self.logger.warning(
-                                "Failed to queue update for %s after %d attempts",
-                                file_path,
-                                max_retries,
-                            )
-                            return
+                        self.logger.warning(
+                            "Failed to queue update for %s after %d attempts",
+                            file_path,
+                            max_retries,
+                        )
+                        return
                 else:
                     # File doesn't exist or isn't a file, skip
                     return
@@ -362,7 +363,7 @@ class XetRealtimeSync:
                     "Would discover peers for %d queued updates", queue_size
                 )
 
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error discovering peers")
 
     def get_last_check_time(self) -> float:

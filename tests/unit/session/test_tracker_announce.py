@@ -67,7 +67,9 @@ class TestAnnounceToTrackers:
 
         download_manager.start_download = AsyncMock()
 
-        with patch("ccbt.discovery.tracker.AsyncTrackerClient", return_value=mock_client):
+        # CRITICAL FIX: Patch where AsyncTrackerClient is used, not where it's defined
+        # The code imports it in download_manager.py, so we need to patch it there
+        with patch("ccbt.session.download_manager.AsyncTrackerClient", return_value=mock_client):
             with patch("ccbt.session.download_manager.get_config") as mock_get_config:
                 mock_config = MagicMock()
                 mock_config.network.listen_port = 6881
@@ -128,7 +130,8 @@ class TestAnnounceToTrackers:
 
         download_manager.start_download = AsyncMock()
 
-        with patch("ccbt.discovery.tracker.AsyncTrackerClient", return_value=mock_client):
+        # CRITICAL FIX: Patch where AsyncTrackerClient is used
+        with patch("ccbt.session.download_manager.AsyncTrackerClient", return_value=mock_client):
             with patch("ccbt.session.download_manager.get_config"):
                 await _announce_to_trackers(torrent_data, download_manager, port=6881)
 
@@ -153,7 +156,8 @@ class TestAnnounceToTrackers:
 
         download_manager.start_download = AsyncMock()
 
-        with patch("ccbt.discovery.tracker.AsyncTrackerClient", return_value=mock_client):
+        # CRITICAL FIX: Patch where AsyncTrackerClient is used
+        with patch("ccbt.session.download_manager.AsyncTrackerClient", return_value=mock_client):
             with patch("ccbt.session.download_manager.get_config"):
                 with patch("ccbt.session.download_manager.logging") as mock_logging:
                     await _announce_to_trackers(torrent_data, download_manager, port=6881)
@@ -175,7 +179,8 @@ class TestAnnounceToTrackers:
 
         download_manager.start_download = AsyncMock()
 
-        with patch("ccbt.discovery.tracker.AsyncTrackerClient", return_value=mock_client):
+        # CRITICAL FIX: Patch where AsyncTrackerClient is used
+        with patch("ccbt.session.download_manager.AsyncTrackerClient", return_value=mock_client):
             with patch("ccbt.session.download_manager.get_config"):
                 # Should not raise exception
                 await _announce_to_trackers(torrent_data, download_manager, port=6881)
@@ -213,7 +218,8 @@ class TestAnnounceToTrackers:
 
         download_manager.start_download = AsyncMock()
 
-        with patch("ccbt.discovery.tracker.AsyncTrackerClient", return_value=mock_client):
+        # CRITICAL FIX: Patch where AsyncTrackerClient is used
+        with patch("ccbt.session.download_manager.AsyncTrackerClient", return_value=mock_client):
             with patch("ccbt.session.download_manager.get_config"):
                 await _announce_to_trackers(torrent_data, download_manager, port=6881)
 
@@ -247,7 +253,8 @@ class TestAnnounceToTrackers:
 
         download_manager.start_download = AsyncMock()
 
-        with patch("ccbt.discovery.tracker.AsyncTrackerClient", return_value=mock_client):
+        # CRITICAL FIX: Patch where AsyncTrackerClient is used
+        with patch("ccbt.session.download_manager.AsyncTrackerClient", return_value=mock_client):
             with patch("ccbt.session.download_manager.get_config"):
                 await _announce_to_trackers(torrent_data, download_manager, port=6881)
 

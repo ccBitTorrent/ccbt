@@ -8,6 +8,7 @@ and configurable log levels.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import logging.config
@@ -26,7 +27,6 @@ from ccbt.utils.rich_logging import (
 
 if TYPE_CHECKING:  # pragma: no cover
     # Type-only import for static type checking, not executed at runtime
-    from ccbt.cli.verbosity import VerbosityManager
     from ccbt.models import ObservabilityConfig
 
 # Context variable for correlation ID
@@ -154,19 +154,20 @@ class ColoredFormatter(logging.Formatter):
 
 def _generate_timestamped_log_filename(base_path: str | None) -> str:
     """Generate a unique timestamped log file name.
-    
+
     Args:
         base_path: Base log file path (directory or file path)
-        
+
     Returns:
         Timestamped log file path
-        
+
     Format: ccbt-YYYYMMDD-HHMMSS-<random>.log
+
     """
-    from datetime import datetime
     import random
     import string
-    
+    from datetime import datetime
+
     if base_path is None:
         # Default to .ccbt/logs directory
         log_dir = Path.home() / ".ccbt" / "logs"
@@ -180,22 +181,24 @@ def _generate_timestamped_log_filename(base_path: str | None) -> str:
             # It's a file path, use its directory
             base_dir = base_path_obj.parent
             base_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Generate timestamp: YYYYMMDD-HHMMSS
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    
+    from datetime import timezone
+
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
+
     # Generate random suffix (4 characters) to ensure uniqueness
-    random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
-    
+    random_suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+
     # Create filename: ccbt-YYYYMMDD-HHMMSS-<random>.log
     log_filename = f"ccbt-{timestamp}-{random_suffix}.log"
-    
+
     return str(base_dir / log_filename)
 
 
 def setup_logging(config: ObservabilityConfig) -> None:
     """Set up logging configuration with Rich support.
-    
+
     Log files are automatically timestamped with format: ccbt-YYYYMMDD-HHMMSS-<random>.log
     """
     # Generate timestamped log file name if log_file is specified
@@ -292,17 +295,19 @@ def setup_logging(config: ObservabilityConfig) -> None:
         logging_config["loggers"]["ccbt"]["handlers"].append("file")
 
     import os
-    if 'PYTHONUNBUFFERED' not in os.environ:
-        os.environ['PYTHONUNBUFFERED'] = '1'
-    
+
+    if "PYTHONUNBUFFERED" not in os.environ:
+        os.environ["PYTHONUNBUFFERED"] = "1"
+
     # Reconfigure stdout to use line buffering (flush after each line)
     try:
         # Python 3.7+ supports reconfigure
-        if hasattr(sys.stdout, 'reconfigure'):
-            sys.stdout.reconfigure(line_buffering=True)
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(line_buffering=True)  # type: ignore[call-non-callable]
         # Fallback: wrap stdout in a line-buffered TextIOWrapper
-        elif hasattr(sys.stdout, 'buffer'):
+        elif hasattr(sys.stdout, "buffer"):
             import io
+
             sys.stdout = io.TextIOWrapper(
                 sys.stdout.buffer,
                 encoding=sys.stdout.encoding,
@@ -339,60 +344,76 @@ def setup_logging(config: ObservabilityConfig) -> None:
         # Add RichHandler
         root_logger.addHandler(rich_handler)
         ccbt_logger.addHandler(rich_handler)
-        
+
         # Wrap emit to force flush after each log message
-        if hasattr(rich_handler, 'console'):
+        if hasattr(rich_handler, "console"):
             # Rich Console - ensure it flushes
             original_emit = rich_handler.emit
+
             def make_emit_with_flush(original: Any, console: Any) -> Any:
                 """Create an emit function that flushes Rich Console after each log."""
+
                 def emit_with_flush(record: logging.LogRecord) -> None:
                     original(record)
                     try:
                         # Force Rich Console to flush
-                        if hasattr(console, '_file') and hasattr(console._file, 'flush'):
-                            console._file.flush()
-                        elif hasattr(console, 'file') and hasattr(console.file, 'flush'):
+                        console_file = getattr(console, "_file", None)
+                        if console_file and hasattr(console_file, "flush"):
+                            console_file.flush()
+                        elif hasattr(console, "file") and hasattr(
+                            console.file, "flush"
+                        ):
                             console.file.flush()
                     except Exception:
                         pass  # Ignore flush errors
+
                 return emit_with_flush
-            rich_handler.emit = make_emit_with_flush(original_emit, rich_handler.console)  # type: ignore[method-assign,attr-defined]
-        elif hasattr(rich_handler, 'stream') and hasattr(rich_handler.stream, 'flush'):
+
+            rich_handler.emit = make_emit_with_flush(
+                original_emit, rich_handler.console
+            )  # type: ignore[method-assign,attr-defined]
+        elif hasattr(rich_handler, "stream") and hasattr(rich_handler.stream, "flush"):
             # Standard StreamHandler - ensure it flushes
             original_emit = rich_handler.emit
+
             def make_emit_with_flush(original: Any, stream: Any) -> Any:
                 """Create an emit function that flushes stream after each log."""
+
                 def emit_with_flush(record: logging.LogRecord) -> None:
                     original(record)
-                    try:
-                        stream.flush()
-                    except Exception:
-                        pass  # Ignore flush errors
+                    with contextlib.suppress(Exception):
+                        stream.flush()  # Ignore flush errors
+
                 return emit_with_flush
+
             rich_handler.emit = make_emit_with_flush(original_emit, rich_handler.stream)  # type: ignore[method-assign]
-    
+
     # this is for standard StreamHandlers
     for logger_name in [None, "ccbt"]:  # root logger and ccbt logger
         logger = logging.getLogger(logger_name)
         for handler in logger.handlers:
             # Skip RichHandler (already handled above) and handlers without stdout stream
-            if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stdout:
+            if (
+                isinstance(handler, logging.StreamHandler)
+                and handler.stream == sys.stdout
+            ):
                 # Check if this is a RichHandler (has console attribute) - skip if already handled
-                if hasattr(handler, 'console'):
+                if hasattr(handler, "console"):
                     continue  # RichHandler already handled above
-                
+
                 # Create a wrapper that flushes after each emit
                 original_emit = handler.emit
+
                 def make_emit_with_flush(original: Any, stream: Any) -> Any:
                     """Create an emit function that flushes after each log."""
+
                     def emit_with_flush(record: logging.LogRecord) -> None:
                         original(record)
-                        try:
-                            stream.flush()
-                        except Exception:
-                            pass  # Ignore flush errors
+                        with contextlib.suppress(Exception):
+                            stream.flush()  # Ignore flush errors
+
                     return emit_with_flush
+
                 handler.emit = make_emit_with_flush(original_emit, handler.stream)  # type: ignore[method-assign]
 
     # Set up correlation ID for main thread
@@ -430,13 +451,14 @@ class LoggingContext:
         **kwargs,
     ):
         """Initialize operation context manager.
-        
+
         Args:
             operation: Name of the operation
             log_level: Logging level (default: DEBUG for most operations, INFO for slow ones)
             slow_threshold: Duration in seconds above which to log at INFO level (default: 1.0s)
             verbosity_manager: Optional VerbosityManager instance for verbosity-aware logging
             **kwargs: Additional context to include in logs
+
         """
         self.operation = operation
         self.kwargs = kwargs
@@ -447,23 +469,35 @@ class LoggingContext:
         self.verbosity_manager = verbosity_manager
         # Operations that should always log at INFO level (even at NORMAL verbosity)
         self.info_operations = {
-            "torrent_add", "torrent_remove", "torrent_complete", 
-            "session_start", "session_stop", "daemon_start", "daemon_stop"
+            "torrent_add",
+            "torrent_remove",
+            "torrent_complete",
+            "session_start",
+            "session_stop",
+            "daemon_start",
+            "daemon_stop",
         }
         # Operations that should only log at VERBOSE or higher
         self.verbose_operations = {
-            "config_load", "config_save", "peer_connect", "peer_disconnect",
-            "piece_request", "piece_received", "tracker_announce", "dht_query",
+            "config_load",
+            "config_save",
+            "peer_connect",
+            "peer_disconnect",
+            "piece_request",
+            "piece_received",
+            "tracker_announce",
+            "dht_query",
         }
 
     def _should_log(self, level: int) -> bool:
         """Check if should log at this level based on verbosity.
-        
+
         Args:
             level: Logging level
-            
+
         Returns:
             True if should log
+
         """
         if self.verbosity_manager is None:
             return True  # No verbosity manager, log everything
@@ -473,7 +507,7 @@ class LoggingContext:
         """Enter the context manager."""
         self.start_time = time.time()
         set_correlation_id()
-        
+
         # Determine log level
         level = self.log_level
         if level is None:
@@ -484,11 +518,11 @@ class LoggingContext:
                 level = logging.INFO  # But will be filtered by verbosity
             else:
                 level = logging.DEBUG
-        
+
         # Check if should log based on verbosity
         if self._should_log(level):
             self.logger.log(level, "Starting %s", self.operation, extra=self.kwargs)
-        
+
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -499,13 +533,16 @@ class LoggingContext:
             # Log at INFO if operation was slow or is important, otherwise DEBUG
             level = self.log_level
             if level is None:
-                if self.operation in self.info_operations or duration >= self.slow_threshold:
+                if (
+                    self.operation in self.info_operations
+                    or duration >= self.slow_threshold
+                ):
                     level = logging.INFO
                 elif self.operation in self.verbose_operations:
                     level = logging.INFO  # Verbose operations
                 else:
                     level = logging.DEBUG
-            
+
             # Check if should log based on verbosity
             if self._should_log(level):
                 self.logger.log(
@@ -552,7 +589,7 @@ def log_with_verbosity(
     **kwargs: Any,
 ) -> None:
     """Log a message respecting verbosity level.
-    
+
     Args:
         logger: Logger instance
         verbosity_manager: VerbosityManager instance (None = always log)
@@ -560,12 +597,13 @@ def log_with_verbosity(
         message: Message to log
         *args: Format arguments
         **kwargs: Additional logging kwargs
+
     """
     if verbosity_manager is None:
         # No verbosity manager, log everything
         logger.log(level, message, *args, **kwargs)
         return
-    
+
     # Check if should log based on verbosity
     if verbosity_manager.should_log(level):
         logger.log(level, message, *args, **kwargs)
@@ -579,21 +617,22 @@ def log_info_verbose(
     **kwargs: Any,
 ) -> None:
     """Log at INFO level, but only if verbosity is VERBOSE or higher.
-    
+
     Use this for detailed INFO messages that should not appear at NORMAL verbosity.
-    
+
     Args:
         logger: Logger instance
         verbosity_manager: VerbosityManager instance
         message: Message to log
         *args: Format arguments
         **kwargs: Additional logging kwargs
+
     """
     if verbosity_manager is None:
         # No verbosity manager, log everything
         logger.info(message, *args, **kwargs)
         return
-    
+
     # Only log if verbosity is VERBOSE or higher
     if verbosity_manager.is_verbose() or verbosity_manager.is_debug():
         logger.info(message, *args, **kwargs)
@@ -607,21 +646,22 @@ def log_info_normal(
     **kwargs: Any,
 ) -> None:
     """Log at INFO level, but only if verbosity is NORMAL or higher.
-    
+
     Use this for important INFO messages that should appear at NORMAL verbosity.
-    
+
     Args:
         logger: Logger instance
         verbosity_manager: VerbosityManager instance (None = always log)
         message: Message to log
         *args: Format arguments
         **kwargs: Additional logging kwargs
+
     """
     if verbosity_manager is None:
         # No verbosity manager, log everything
         logger.info(message, *args, **kwargs)
         return
-    
+
     # Log if verbosity is NORMAL or higher (always log at NORMAL)
     if verbosity_manager.verbosity_count >= 0:  # NORMAL or higher
         logger.info(message, *args, **kwargs)

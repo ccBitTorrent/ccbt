@@ -34,7 +34,9 @@ class TorrentFileNotFoundError(ValueError):
 
     def __init__(self, file_path: str):  # pragma: no cover
         """Initialize torrent file not found error."""
-        super().__init__(_(f"Torrent file not found: {file_path}"))  # pragma: no cover
+        super().__init__(
+            _("Torrent file not found: %s") % file_path
+        )  # pragma: no cover
 
 
 class InvalidTorrentExtensionError(ValueError):
@@ -43,7 +45,7 @@ class InvalidTorrentExtensionError(ValueError):
     def __init__(self, file_path: str):  # pragma: no cover
         """Initialize invalid torrent extension error."""
         super().__init__(
-            _(f"File must have .torrent extension: {file_path}")
+            _("File must have .torrent extension: %s") % file_path
         )  # pragma: no cover
 
 
@@ -737,29 +739,32 @@ class DashboardManager:
         try:
             path = Path(file_path)
             if not path.exists():
-                return {"valid": False, "error": _(f"File not found: {file_path}")}
+                return {"valid": False, "error": _("File not found: %s") % file_path}
 
             if not path.is_file():
-                return {"valid": False, "error": _(f"Path is not a file: {file_path}")}
+                return {
+                    "valid": False,
+                    "error": _("Path is not a file: %s") % file_path,
+                }
 
             if not file_path.lower().endswith(".torrent"):
                 return {
                     "valid": False,
-                    "error": _(f"File must have .torrent extension: {file_path}"),
+                    "error": _("File must have .torrent extension: %s") % file_path,
                 }
 
             # Check file size (basic validation)
             if path.stat().st_size == 0:
                 return {
                     "valid": False,
-                    "error": _(f"Torrent file is empty: {file_path}"),
+                    "error": _("Torrent file is empty: %s") % file_path,
                 }
 
             return {"valid": True, "path": str(path.absolute())}
         except Exception as e:  # pragma: no cover
             return {
                 "valid": False,
-                "error": _(f"Validation error: {e}"),
+                "error": _("Validation error: %s") % e,
             }  # pragma: no cover
 
     def validate_magnet_link(self, magnet_uri: str) -> dict[str, Any]:
@@ -798,7 +803,7 @@ class DashboardManager:
         except Exception as e:  # pragma: no cover
             return {
                 "valid": False,
-                "error": _(f"Validation error: {e}"),
+                "error": _("Validation error: %s") % e,
             }  # pragma: no cover
         else:
             return {"valid": True, "uri": magnet_uri}

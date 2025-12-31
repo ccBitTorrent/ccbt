@@ -150,7 +150,7 @@ class PeerInfo(BaseModel):
         return v
 
     def __str__(self) -> str:
-        """String representation of peer info."""
+        """Return string representation of peer info."""
         return f"{self.ip}:{self.port}"
 
     def __hash__(self) -> int:
@@ -382,9 +382,7 @@ class TonicLinkInfo(BaseModel):
         None,
         description="Synchronization mode (designated/best_effort/broadcast/consensus)",
     )
-    source_peers: list[str] | None = Field(
-        None, description="List of source peer IDs"
-    )
+    source_peers: list[str] | None = Field(None, description="List of source peer IDs")
     allowlist_hash: bytes | None = Field(
         None,
         min_length=32,
@@ -402,15 +400,11 @@ class XetSyncStatus(BaseModel):
     last_sync_time: float | None = Field(
         None, description="Timestamp of last successful sync"
     )
-    current_git_ref: str | None = Field(
-        None, description="Current git commit hash"
-    )
+    current_git_ref: str | None = Field(None, description="Current git commit hash")
     pending_changes: int = Field(
         default=0, description="Number of pending file changes"
     )
-    connected_peers: int = Field(
-        default=0, description="Number of connected peers"
-    )
+    connected_peers: int = Field(default=0, description="Number of connected peers")
     synced_peers: int = Field(
         default=0, description="Number of peers with latest version"
     )
@@ -777,7 +771,7 @@ class NetworkConfig(BaseModel):
         le=60.0,
         description="DHT request timeout in seconds",
     )
-    
+
     # Adaptive handshake timeout settings
     handshake_adaptive_timeout_enabled: bool = Field(
         default=True,
@@ -977,7 +971,7 @@ class NetworkConfig(BaseModel):
         le=600.0,
         description="Unchoke interval in seconds",
     )
-    
+
     # IMPROVEMENT: Choking optimization weights
     choking_upload_rate_weight: float = Field(
         default=0.6,
@@ -997,7 +991,7 @@ class NetworkConfig(BaseModel):
         le=1.0,
         description="Weight for performance score in choking/unchoking decisions (0.0-1.0)",
     )
-    
+
     # IMPROVEMENT: Peer quality ranking weights
     peer_quality_performance_weight: float = Field(
         default=0.4,
@@ -1105,7 +1099,7 @@ class NetworkConfig(BaseModel):
         le=600.0,
         description="Interval for connection health checks (seconds)",
     )
-    
+
     # Adaptive connection limit settings
     connection_pool_adaptive_limit_enabled: bool = Field(
         default=True,
@@ -1135,7 +1129,7 @@ class NetworkConfig(BaseModel):
         le=0.95,
         description="Memory usage threshold (0.0-1.0) above which connection limit is reduced",
     )
-    
+
     # Performance-based recycling settings
     connection_pool_performance_recycling_enabled: bool = Field(
         default=True,
@@ -1147,7 +1141,7 @@ class NetworkConfig(BaseModel):
         le=1.0,
         description="Performance score threshold (0.0-1.0) below which connections are recycled",
     )
-    
+
     # Connection quality scoring settings
     connection_pool_quality_threshold: float = Field(
         default=0.3,
@@ -1161,7 +1155,7 @@ class NetworkConfig(BaseModel):
         le=600.0,
         description="Grace period in seconds for new connections before quality checks (allows time for bandwidth establishment)",
     )
-    
+
     # Connection bandwidth thresholds
     connection_pool_min_download_bandwidth: float = Field(
         default=0.0,
@@ -1173,7 +1167,7 @@ class NetworkConfig(BaseModel):
         ge=0.0,
         description="Minimum upload bandwidth in bytes/second for connections to be considered healthy (0 = disabled)",
     )
-    
+
     # Connection health degradation/recovery thresholds
     connection_pool_health_degradation_threshold: float = Field(
         default=0.5,
@@ -1377,7 +1371,7 @@ class AttributeConfig(BaseModel):
     )
 
 
-class DiskConfig(BaseModel):  # noqa: PLR0913
+class DiskConfig(BaseModel):
     """Disk I/O configuration."""
 
     preallocate: PreallocationStrategy = Field(
@@ -1801,7 +1795,7 @@ class StrategyConfig(BaseModel):
         le=1.0,
         description="Fallback to rarest-first if availability < threshold",
     )
-    
+
     # Advanced piece selection strategies
     bandwidth_weighted_rarest_weight: float = Field(
         default=0.7,
@@ -1830,7 +1824,7 @@ class OptimizationConfig(BaseModel):
         default=OptimizationProfile.BALANCED,
         description="Optimization profile to use",
     )
-    
+
     # Profile-specific overrides (applied when profile is not CUSTOM)
     # These allow fine-tuning of profile behavior
     speed_aggressive_peer_recycling: bool = Field(
@@ -1849,7 +1843,7 @@ class OptimizationConfig(BaseModel):
         le=100,
         description="Maximum connections for low_resource profile",
     )
-    
+
     # Adaptive settings
     enable_adaptive_intervals: bool = Field(
         default=True,
@@ -1887,7 +1881,7 @@ class DiscoveryConfig(BaseModel):
         ],
         description="DHT bootstrap nodes",
     )
-    
+
     # DHT adaptive interval settings
     dht_adaptive_interval_enabled: bool = Field(
         default=True,
@@ -1921,7 +1915,7 @@ class DiscoveryConfig(BaseModel):
         le=50,
         description="Number of recent response times to track per node for quality calculation",
     )
-    
+
     # DHT adaptive timeout settings
     dht_adaptive_timeout_enabled: bool = Field(
         default=True,
@@ -1977,7 +1971,7 @@ class DiscoveryConfig(BaseModel):
         le=86400.0,
         description="Tracker scrape interval in seconds",
     )
-    
+
     # Tracker adaptive interval settings
     tracker_adaptive_interval_enabled: bool = Field(
         default=True,
@@ -2017,7 +2011,7 @@ class DiscoveryConfig(BaseModel):
         default=True,
         description="Automatically scrape trackers when adding torrents",
     )
-    
+
     # Default trackers for magnet links without tr= parameters
     default_trackers: list[str] = Field(
         default_factory=lambda: [
@@ -2070,7 +2064,7 @@ class DiscoveryConfig(BaseModel):
         le=60.0,
         description="Initial DHT query interval in seconds when aggressive mode is enabled (for first 5 minutes, minimum 30s)",
     )
-    
+
     # IMPROVEMENT: Aggressive discovery for popular torrents
     aggressive_discovery_popular_threshold: int = Field(
         default=20,
@@ -2102,7 +2096,7 @@ class DiscoveryConfig(BaseModel):
         le=500,
         description="Maximum peers to query per DHT query in aggressive mode",
     )
-    
+
     # DHT query parameters (Kademlia algorithm)
     dht_normal_alpha: int = Field(
         default=5,
@@ -2140,7 +2134,7 @@ class DiscoveryConfig(BaseModel):
         le=50,
         description="Maximum depth for aggressive DHT iterative lookups",
     )
-    
+
     discovery_cache_ttl: float = Field(
         default=60.0,
         ge=1.0,
@@ -2545,7 +2539,7 @@ class QueueConfig(BaseModel):
 
 class SecurityConfig(BaseModel):
     """Security related configuration."""
-    
+
     peer_quality_threshold: float = Field(
         default=0.3,
         ge=0.0,
@@ -3377,7 +3371,10 @@ class ScrapeResult(BaseModel):
 class DaemonConfig(BaseModel):
     """Daemon configuration."""
 
-    api_key: str | None = Field(default=None, description="API key for authentication (auto-generated if not set)")
+    api_key: str | None = Field(
+        default=None,
+        description="API key for authentication (auto-generated if not set)",
+    )
     ed25519_public_key: str | None = Field(
         None,
         description="Ed25519 public key for cryptographic authentication (hex format)",
@@ -3712,9 +3709,7 @@ class Config(BaseModel):
 
         for port, names in seen_tcp_ports.items():
             if len(names) > 1:
-                conflicts.append(
-                    f"TCP port {port} is used by: {', '.join(names)}"
-                )
+                conflicts.append(f"TCP port {port} is used by: {', '.join(names)}")
 
         # Check UDP port conflicts
         seen_udp_ports: dict[int, list[str]] = {}
@@ -3726,9 +3721,7 @@ class Config(BaseModel):
 
         for port, names in seen_udp_ports.items():
             if len(names) > 1:
-                conflicts.append(
-                    f"UDP port {port} is used by: {', '.join(names)}"
-                )
+                conflicts.append(f"UDP port {port} is used by: {', '.join(names)}")
 
         if conflicts:
             msg = "Port conflicts detected:\n  " + "\n  ".join(conflicts)

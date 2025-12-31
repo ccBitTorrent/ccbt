@@ -26,6 +26,7 @@ def get_version() -> str:
 
     Returns:
         Version string (e.g., "0.0.1", "0.1.0", "1.2.3")
+
     """
     try:
         # Try to get version from installed package metadata
@@ -51,6 +52,7 @@ def parse_version(version: str) -> tuple[int, int, int]:
 
     Raises:
         ValueError: If version format is invalid
+
     """
     # Remove any pre-release or build metadata (e.g., "0.1.0-alpha.1" -> "0.1.0")
     version_clean = re.split(r"[-+]", version)[0]
@@ -87,11 +89,12 @@ def get_peer_id_prefix(version: str | None = None) -> bytes:
 
     Returns:
         Peer ID prefix as bytes (e.g., b"-BT0001-", b"-BT0100-")
+
     """
     if version is None:
         version = get_version()
 
-    major, minor, patch = parse_version(version)
+    major, minor, _patch = parse_version(version)
 
     # Special case: Until first 0.1.0 release, all 0.0.x versions use -BT0001-
     if major == 0 and minor == 0:
@@ -107,6 +110,7 @@ def get_network_client_name() -> str:
 
     Returns:
         Network client name: "btonic"
+
     """
     return NETWORK_CLIENT_NAME
 
@@ -116,6 +120,7 @@ def get_ui_client_name() -> str:
 
     Returns:
         UI client name: "ccBitTorrent"
+
     """
     return UI_CLIENT_NAME
 
@@ -130,6 +135,7 @@ def get_user_agent(version: str | None = None) -> str:
 
     Returns:
         User-agent string (e.g., "btonic/0.0.1")
+
     """
     if version is None:
         version = get_version()
@@ -149,6 +155,7 @@ def get_full_peer_id(version: str | None = None) -> bytes:
 
     Returns:
         20-byte peer_id
+
     """
     import os
 
@@ -156,14 +163,3 @@ def get_full_peer_id(version: str | None = None) -> bytes:
     # Generate 12 random bytes to complete the 20-byte peer_id
     random_bytes = os.urandom(12)
     return prefix + random_bytes
-
-
-
-
-
-
-
-
-
-
-

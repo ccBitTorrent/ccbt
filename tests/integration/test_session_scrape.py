@@ -5,27 +5,13 @@ Tests AsyncSessionManager.force_scrape() integration with protocol and tracker c
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 import pytest_asyncio
 
 pytestmark = [pytest.mark.integration, pytest.mark.session]
-
-
-@pytest_asyncio.fixture
-async def session_manager():
-    """Create AsyncSessionManager instance for testing."""
-    from ccbt.session.session import AsyncSessionManager
-
-    with patch("ccbt.session.session.get_config") as mock_get_config:
-        mock_config = MagicMock()
-        mock_get_config.return_value = mock_config
-
-        session = AsyncSessionManager()
-        await session.start()
-        yield session
-        await session.stop()
 
 
 @pytest.fixture

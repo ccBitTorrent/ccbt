@@ -35,9 +35,9 @@ def mock_session():
 @pytest.fixture
 def interactive_cli(mock_session):
     """Create InteractiveCLI instance."""
-    from ccbt.cli.interactive import InteractiveCLI
+    from tests.conftest import create_interactive_cli
     console = Console(file=open("nul", "w") if hasattr(open, "__call__") else None)
-    cli = InteractiveCLI(mock_session, console)
+    cli = create_interactive_cli(mock_session, console)
     return cli
 
 

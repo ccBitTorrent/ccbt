@@ -47,8 +47,7 @@ async def _get_torrent_session(
         return None
 
     async with session_manager.lock:
-        torrent_session = session_manager.torrents.get(info_hash)
-        return torrent_session
+        return session_manager.torrents.get(info_hash)
 
 
 def _parse_value(raw: str) -> bool | int | float | str:
@@ -84,6 +83,95 @@ def torrent_config() -> None:
     """Manage per-torrent configuration options."""
 
 
+async def _set_torrent_option(
+    info_hash: str, key: str, value: str, save_checkpoint: bool
+) -> None:
+    """Set a per-torrent configuration option (async implementation).
+
+    Args:
+        info_hash: Torrent info hash as hex string
+        key: Configuration option key
+        value: Configuration option value (will be parsed)
+        save_checkpoint: Whether to save checkpoint after setting option
+
+    """
+    # Check if daemon is running
+    daemon_manager = DaemonManager()
+    if daemon_manager.is_running():
+        # Use daemon executor
+        from ccbt.executor.manager import ExecutorManager
+
+        client = IPCClient()
+        try:
+            executor_manager = ExecutorManager.get_instance()
+            executor = executor_manager.get_executor(ipc_client=client)
+            # Check if torrent exists via adapter
+            adapter = executor.adapter
+            torrent_status = await adapter.get_torrent_status(info_hash)
+            if not torrent_status:
+                console.print(
+                    _("[red]Torrent not found: {hash}[/red]").format(
+                        hash=info_hash[:12] + "..."
+                    )
+                )
+                return
+
+            parsed_value = _parse_value(value)
+            success = await adapter.set_torrent_option(
+                info_hash=info_hash,
+                key=key,
+                value=parsed_value,
+            )
+            if success:
+                console.print(
+                    _("[green]Set {key} = {value} for torrent {hash}[/green]").format(
+                        key=key, value=parsed_value, hash=info_hash[:12] + "..."
+                    )
+                )
+                if save_checkpoint:
+                    checkpoint_success = await adapter.save_torrent_checkpoint(
+                        info_hash=info_hash
+                    )
+                    if checkpoint_success:
+                        console.print(_("[green]Checkpoint saved[/green]"))
+                    else:
+                        console.print(
+                            _("[yellow]Warning: Checkpoint save failed[/yellow]")
+                        )
+            else:
+                console.print(_("[red]Failed to set option[/red]"))
+        finally:
+            await client.close()
+    else:
+        # Use local session
+        session_manager = AsyncSessionManager(".")
+        torrent_session = await _get_torrent_session(info_hash, session_manager)
+        if torrent_session is None:
+            console.print(
+                _("[red]Torrent not found: {hash}[/red]").format(
+                    hash=info_hash[:12] + "..."
+                )
+            )
+            return
+
+        # Set option
+        parsed_value = _parse_value(value)
+        torrent_session.options[key] = parsed_value
+        torrent_session.apply_per_torrent_options()
+
+        console.print(
+            _("[green]Set {key} = {value} for torrent {hash}[/green]").format(
+                key=key, value=parsed_value, hash=info_hash[:12] + "..."
+            )
+        )
+
+        if save_checkpoint and hasattr(torrent_session, "checkpoint_controller"):
+            await torrent_session.checkpoint_controller.save_checkpoint_state(
+                torrent_session
+            )
+            console.print(_("[green]Checkpoint saved[/green]"))
+
+
 @torrent_config.command("set")
 @click.argument("info_hash")
 @click.argument("key")
@@ -95,7 +183,7 @@ def torrent_config() -> None:
 )
 @click.pass_context
 def torrent_config_set(
-    ctx: click.Context, info_hash: str, key: str, value: str, save_checkpoint: bool
+    _ctx: click.Context, info_hash: str, key: str, value: str, save_checkpoint: bool
 ) -> None:
     """Set a per-torrent configuration option.
 
@@ -105,90 +193,64 @@ def torrent_config_set(
         btbt torrent config set abc123... max_peers_per_torrent 50
 
     """
+
     async def _set_option() -> None:
-        # Check if daemon is running
-        daemon_manager = DaemonManager()
-        if daemon_manager.is_running():
-            # Use daemon IPC
-            client = IPCClient()
-            try:
-                # Get torrent session via IPC
-                result = await client.execute(
-                    "torrent.get_session", info_hash=info_hash
-                )
-                if not result.success:
-                    console.print(
-                        _("[red]Torrent not found: {hash}[/red]").format(
-                            hash=info_hash[:12] + "..."
-                        )
-                    )
-                    return
-
-                # Set option via IPC
-                parsed_value = _parse_value(value)
-                result = await client.execute(
-                    "torrent.set_option",
-                    info_hash=info_hash,
-                    key=key,
-                    value=parsed_value,
-                )
-                if result.success:
-                    console.print(
-                        _("[green]Set {key} = {value} for torrent {hash}[/green]").format(
-                            key=key, value=parsed_value, hash=info_hash[:12] + "..."
-                        )
-                    )
-                    if save_checkpoint:
-                        await client.execute(
-                            "torrent.save_checkpoint", info_hash=info_hash
-                        )
-                        console.print(_("[green]Checkpoint saved[/green]"))
-                else:
-                    console.print(
-                        _("[red]Failed to set option: {error}[/red]").format(
-                            error=result.error or "Unknown error"
-                        )
-                    )
-            finally:
-                await client.close()
-        else:
-            # Use local session
-            session_manager = AsyncSessionManager(".")
-            torrent_session = await _get_torrent_session(info_hash, session_manager)
-            if torrent_session is None:
-                console.print(
-                    _("[red]Torrent not found: {hash}[/red]").format(
-                        hash=info_hash[:12] + "..."
-                    )
-                )
-                return
-
-            # Set option
-            parsed_value = _parse_value(value)
-            torrent_session.options[key] = parsed_value
-            torrent_session._apply_per_torrent_options()
-
-            console.print(
-                _("[green]Set {key} = {value} for torrent {hash}[/green]").format(
-                    key=key, value=parsed_value, hash=info_hash[:12] + "..."
-                )
-            )
-
-            if save_checkpoint:
-                if hasattr(torrent_session, "checkpoint_controller"):
-                    await torrent_session.checkpoint_controller.save_checkpoint_state(
-                        torrent_session
-                    )
-                    console.print(_("[green]Checkpoint saved[/green]"))
+        await _set_torrent_option(info_hash, key, value, save_checkpoint)
 
     asyncio.run(_set_option())
+
+
+async def _get_torrent_option(info_hash: str, key: str) -> None:
+    """Get a per-torrent configuration option value (async implementation).
+
+    Args:
+        info_hash: Torrent info hash as hex string
+        key: Configuration option key
+
+    """
+    # Check if daemon is running
+    daemon_manager = DaemonManager()
+    if daemon_manager.is_running():
+        # Use daemon executor
+        from ccbt.executor.manager import ExecutorManager
+
+        client = IPCClient()
+        try:
+            executor_manager = ExecutorManager.get_instance()
+            executor = executor_manager.get_executor(ipc_client=client)
+            adapter = executor.adapter
+            value = await adapter.get_torrent_option(info_hash=info_hash, key=key)
+            if value is not None:
+                console.print(_("{key} = {value}").format(key=key, value=value))
+            else:
+                console.print(_("[yellow]{key} is not set[/yellow]").format(key=key))
+        finally:
+            await client.close()
+    else:
+        # Use local session
+        session_manager = AsyncSessionManager(".")
+        torrent_session = await _get_torrent_session(info_hash, session_manager)
+        if torrent_session is None:
+            console.print(
+                _("[red]Torrent not found: {hash}[/red]").format(
+                    hash=info_hash[:12] + "..."
+                )
+            )
+            return
+
+        # Get option
+        value = torrent_session.options.get(key)
+        if value is not None:
+            console.print(_("{key} = {value}").format(key=key, value=value))
+        else:
+            console.print(_("[yellow]{key} is not set[/yellow]").format(key=key))
 
 
 @torrent_config.command("get")
 @click.argument("info_hash")
 @click.argument("key")
 @click.pass_context
-def torrent_config_get(ctx: click.Context, info_hash: str, key: str) -> None:
+def torrent_config_get(_ctx: click.Context, info_hash: str, key: str) -> None:
     """Get a per-torrent configuration option value.
 
     Examples:
@@ -196,131 +258,38 @@ def torrent_config_get(ctx: click.Context, info_hash: str, key: str) -> None:
         btbt torrent config get abc123... streaming_mode
 
     """
-    async def _get_option() -> None:
-        # Check if daemon is running
-        daemon_manager = DaemonManager()
-        if daemon_manager.is_running():
-            # Use daemon IPC
-            client = IPCClient()
-            try:
-                result = await client.execute(
-                    "torrent.get_option", info_hash=info_hash, key=key
-                )
-                if result.success:
-                    value = result.data.get("value")
-                    if value is not None:
-                        console.print(_("{key} = {value}").format(key=key, value=value))
-                    else:
-                        console.print(_("[yellow]{key} is not set[/yellow]").format(key=key))
-                else:
-                    console.print(
-                        _("[red]Torrent not found or option not set[/red]")
-                    )
-            finally:
-                await client.close()
-        else:
-            # Use local session
-            session_manager = AsyncSessionManager(".")
-            torrent_session = await _get_torrent_session(info_hash, session_manager)
-            if torrent_session is None:
-                console.print(
-                    _("[red]Torrent not found: {hash}[/red]").format(
-                        hash=info_hash[:12] + "..."
-                    )
-                )
-                return
 
-            # Get option
-            value = torrent_session.options.get(key)
-            if value is not None:
-                console.print(_("{key} = {value}").format(key=key, value=value))
-            else:
-                console.print(_("[yellow]{key} is not set[/yellow]").format(key=key))
+    async def _get_option() -> None:
+        await _get_torrent_option(info_hash, key)
 
     asyncio.run(_get_option())
 
 
-@torrent_config.command("list")
-@click.argument("info_hash")
-@click.pass_context
-def torrent_config_list(ctx: click.Context, info_hash: str) -> None:
-    """List all per-torrent configuration options and rate limits.
+async def _list_torrent_options(info_hash: str) -> None:
+    """List all per-torrent configuration options and rate limits (async implementation).
 
-    Examples:
-        btbt torrent config list abc123...
+    Args:
+        info_hash: Torrent info hash as hex string
 
     """
-    async def _list_options() -> None:
-        # Check if daemon is running
-        daemon_manager = DaemonManager()
-        if daemon_manager.is_running():
-            # Use daemon IPC
-            client = IPCClient()
-            try:
-                result = await client.execute(
-                    "torrent.get_config", info_hash=info_hash
-                )
-                if result.success:
-                    data = result.data
-                    options = data.get("options", {})
-                    rate_limits = data.get("rate_limits", {})
+    # Check if daemon is running
+    daemon_manager = DaemonManager()
+    if daemon_manager.is_running():
+        # Use daemon executor
+        from ccbt.executor.manager import ExecutorManager
 
-                    table = Table(title=_("Per-Torrent Config: {hash}...").format(hash=info_hash[:12]))
-                    table.add_column(_("Option"), style="cyan")
-                    table.add_column(_("Value"), style="green")
+        client = IPCClient()
+        try:
+            executor_manager = ExecutorManager.get_instance()
+            executor = executor_manager.get_executor(ipc_client=client)
+            adapter = executor.adapter
+            data = await adapter.get_torrent_config(info_hash=info_hash)
+            options = data.get("options", {})
+            rate_limits = data.get("rate_limits", {})
 
-                    if options:
-                        for opt_key, opt_value in sorted(options.items()):
-                            table.add_row(opt_key, str(opt_value))
-                    else:
-                        table.add_row(_("(no options set)"), "-")
-
-                    if rate_limits:
-                        table.add_row("", "")  # Separator
-                        table.add_row(
-                            _("Download Limit"),
-                            f"{rate_limits.get('down_kib', 0)} KiB/s"
-                            if rate_limits.get("down_kib", 0) > 0
-                            else _("Unlimited"),
-                        )
-                        table.add_row(
-                            _("Upload Limit"),
-                            f"{rate_limits.get('up_kib', 0)} KiB/s"
-                            if rate_limits.get("up_kib", 0) > 0
-                            else _("Unlimited"),
-                        )
-
-                    console.print(table)
-                else:
-                    console.print(
-                        _("[red]Torrent not found: {hash}[/red]").format(
-                            hash=info_hash[:12] + "..."
-                        )
-                    )
-            finally:
-                await client.close()
-        else:
-            # Use local session
-            session_manager = AsyncSessionManager(".")
-            torrent_session = await _get_torrent_session(info_hash, session_manager)
-            if torrent_session is None:
-                console.print(
-                    _("[red]Torrent not found: {hash}[/red]").format(
-                        hash=info_hash[:12] + "..."
-                    )
-                )
-                return
-
-            # Get options and rate limits
-            options = torrent_session.options
-            rate_limits = {}
-            if session_manager and hasattr(session_manager, "_per_torrent_limits"):
-                info_hash_bytes = bytes.fromhex(info_hash)
-                rate_limits = session_manager._per_torrent_limits.get(
-                    info_hash_bytes, {}
-                )
-
-            table = Table(title=_("Per-Torrent Config: {hash}...").format(hash=info_hash[:12]))
+            table = Table(
+                title=_("Per-Torrent Config: {hash}...").format(hash=info_hash[:12])
+            )
             table.add_column(_("Option"), style="cyan")
             table.add_column(_("Value"), style="green")
 
@@ -346,8 +315,165 @@ def torrent_config_list(ctx: click.Context, info_hash: str) -> None:
                 )
 
             console.print(table)
+        finally:
+            await client.close()
+    else:
+        # Use local session
+        session_manager = AsyncSessionManager(".")
+        torrent_session = await _get_torrent_session(info_hash, session_manager)
+        if torrent_session is None:
+            console.print(
+                _("[red]Torrent not found: {hash}[/red]").format(
+                    hash=info_hash[:12] + "..."
+                )
+            )
+            return
+
+        # Get options and rate limits
+        options = torrent_session.options
+        rate_limits = {}
+        if session_manager:
+            info_hash_bytes = bytes.fromhex(info_hash)
+            limits = session_manager.get_per_torrent_limits(info_hash_bytes)
+            if limits:
+                rate_limits = limits
+
+        table = Table(
+            title=_("Per-Torrent Config: {hash}...").format(hash=info_hash[:12])
+        )
+        table.add_column(_("Option"), style="cyan")
+        table.add_column(_("Value"), style="green")
+
+        if options:
+            for opt_key, opt_value in sorted(options.items()):
+                table.add_row(opt_key, str(opt_value))
+        else:
+            table.add_row(_("(no options set)"), "-")
+
+        if rate_limits:
+            table.add_row("", "")  # Separator
+            table.add_row(
+                _("Download Limit"),
+                f"{rate_limits.get('down_kib', 0)} KiB/s"
+                if rate_limits.get("down_kib", 0) > 0
+                else _("Unlimited"),
+            )
+            table.add_row(
+                _("Upload Limit"),
+                f"{rate_limits.get('up_kib', 0)} KiB/s"
+                if rate_limits.get("up_kib", 0) > 0
+                else _("Unlimited"),
+            )
+
+        console.print(table)
+
+
+@torrent_config.command("list")
+@click.argument("info_hash")
+@click.pass_context
+def torrent_config_list(_ctx: click.Context, info_hash: str) -> None:
+    """List all per-torrent configuration options and rate limits.
+
+    Examples:
+        btbt torrent config list abc123...
+
+    """
+
+    async def _list_options() -> None:
+        await _list_torrent_options(info_hash)
 
     asyncio.run(_list_options())
+
+
+async def _reset_torrent_options(
+    info_hash: str, key: str | None, save_checkpoint: bool
+) -> None:
+    """Reset per-torrent configuration options (async implementation).
+
+    Args:
+        info_hash: Torrent info hash as hex string
+        key: Optional specific key to reset (None to reset all)
+        save_checkpoint: Whether to save checkpoint after reset
+
+    """
+    # Check if daemon is running
+    daemon_manager = DaemonManager()
+    if daemon_manager.is_running():
+        # Use daemon executor
+        from ccbt.executor.manager import ExecutorManager
+
+        client = IPCClient()
+        try:
+            executor_manager = ExecutorManager.get_instance()
+            executor = executor_manager.get_executor(ipc_client=client)
+            adapter = executor.adapter
+            success = await adapter.reset_torrent_options(
+                info_hash=info_hash,
+                key=key,
+            )
+            if success:
+                if key:
+                    console.print(
+                        _("[green]Reset {key} for torrent {hash}[/green]").format(
+                            key=key, hash=info_hash[:12] + "..."
+                        )
+                    )
+                else:
+                    console.print(
+                        _("[green]Reset all options for torrent {hash}[/green]").format(
+                            hash=info_hash[:12] + "..."
+                        )
+                    )
+                if save_checkpoint:
+                    checkpoint_success = await adapter.save_torrent_checkpoint(
+                        info_hash=info_hash
+                    )
+                    if checkpoint_success:
+                        console.print(_("[green]Checkpoint saved[/green]"))
+                    else:
+                        console.print(
+                            _("[yellow]Warning: Checkpoint save failed[/yellow]")
+                        )
+            else:
+                console.print(_("[red]Failed to reset options[/red]"))
+        finally:
+            await client.close()
+    else:
+        # Use local session
+        session_manager = AsyncSessionManager(".")
+        torrent_session = await _get_torrent_session(info_hash, session_manager)
+        if torrent_session is None:
+            console.print(
+                _("[red]Torrent not found: {hash}[/red]").format(
+                    hash=info_hash[:12] + "..."
+                )
+            )
+            return
+
+        # Reset options
+        if key:
+            torrent_session.options.pop(key, None)
+            console.print(
+                _("[green]Reset {key} for torrent {hash}[/green]").format(
+                    key=key, hash=info_hash[:12] + "..."
+                )
+            )
+        else:
+            torrent_session.options.clear()
+            console.print(
+                _("[green]Reset all options for torrent {hash}[/green]").format(
+                    hash=info_hash[:12] + "..."
+                )
+            )
+
+        # Re-apply options (will use global defaults)
+        torrent_session.apply_per_torrent_options()
+
+        if save_checkpoint and hasattr(torrent_session, "checkpoint_controller"):
+            await torrent_session.checkpoint_controller.save_checkpoint_state(
+                torrent_session
+            )
+            console.print(_("[green]Checkpoint saved[/green]"))
 
 
 @torrent_config.command("reset")
@@ -364,7 +490,7 @@ def torrent_config_list(ctx: click.Context, info_hash: str) -> None:
 )
 @click.pass_context
 def torrent_config_reset(
-    ctx: click.Context, info_hash: str, key: str | None, save_checkpoint: bool
+    _ctx: click.Context, info_hash: str, key: str | None, save_checkpoint: bool
 ) -> None:
     """Reset per-torrent configuration options.
 
@@ -373,87 +499,8 @@ def torrent_config_reset(
         btbt torrent config reset abc123... --key piece_selection  # Reset specific option
 
     """
+
     async def _reset_options() -> None:
-        # Check if daemon is running
-        daemon_manager = DaemonManager()
-        if daemon_manager.is_running():
-            # Use daemon IPC
-            client = IPCClient()
-            try:
-                result = await client.execute(
-                    "torrent.reset_options",
-                    info_hash=info_hash,
-                    key=key,
-                )
-                if result.success:
-                    if key:
-                        console.print(
-                            _("[green]Reset {key} for torrent {hash}[/green]").format(
-                                key=key, hash=info_hash[:12] + "..."
-                            )
-                        )
-                    else:
-                        console.print(
-                            _("[green]Reset all options for torrent {hash}[/green]").format(
-                                hash=info_hash[:12] + "..."
-                            )
-                        )
-                    if save_checkpoint:
-                        await client.execute(
-                            "torrent.save_checkpoint", info_hash=info_hash
-                        )
-                        console.print(_("[green]Checkpoint saved[/green]"))
-                else:
-                    console.print(
-                        _("[red]Failed to reset options: {error}[/red]").format(
-                            error=result.error or "Unknown error"
-                        )
-                    )
-            finally:
-                await client.close()
-        else:
-            # Use local session
-            session_manager = AsyncSessionManager(".")
-            torrent_session = await _get_torrent_session(info_hash, session_manager)
-            if torrent_session is None:
-                console.print(
-                    _("[red]Torrent not found: {hash}[/red]").format(
-                        hash=info_hash[:12] + "..."
-                    )
-                )
-                return
-
-            # Reset options
-            if key:
-                torrent_session.options.pop(key, None)
-                console.print(
-                    _("[green]Reset {key} for torrent {hash}[/green]").format(
-                        key=key, hash=info_hash[:12] + "..."
-                    )
-                )
-            else:
-                torrent_session.options.clear()
-                console.print(
-                    _("[green]Reset all options for torrent {hash}[/green]").format(
-                        hash=info_hash[:12] + "..."
-                    )
-                )
-
-            # Re-apply options (will use global defaults)
-            torrent_session._apply_per_torrent_options()
-
-            if save_checkpoint:
-                if hasattr(torrent_session, "checkpoint_controller"):
-                    await torrent_session.checkpoint_controller.save_checkpoint_state(
-                        torrent_session
-                    )
-                    console.print(_("[green]Checkpoint saved[/green]"))
+        await _reset_torrent_options(info_hash, key, save_checkpoint)
 
     asyncio.run(_reset_options())
-
-
-
-
-
-
-

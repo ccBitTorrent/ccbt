@@ -26,6 +26,7 @@ class AdaptiveTimeoutCalculator:
         Args:
             config: Configuration object with timeout settings
             peer_manager: Optional peer manager for health tracking
+
         """
         self.config = config
         self.peer_manager = peer_manager
@@ -36,6 +37,7 @@ class AdaptiveTimeoutCalculator:
 
         Returns:
             Number of active peers, or 0 if unavailable
+
         """
         if self.peer_manager is None:
             return 0
@@ -74,19 +76,20 @@ class AdaptiveTimeoutCalculator:
 
         Returns:
             Mode string: "desperation", "normal", or "healthy"
+
         """
         if active_peer_count < 5:
             return "desperation"
-        elif active_peer_count < 20:
+        if active_peer_count < 20:
             return "normal"
-        else:
-            return "healthy"
+        return "healthy"
 
     def calculate_dht_timeout(self) -> float:
         """Calculate adaptive DHT query timeout based on peer health.
 
         Returns:
             Timeout in seconds
+
         """
         # Check if adaptive timeouts are enabled
         if not getattr(
@@ -141,7 +144,9 @@ class AdaptiveTimeoutCalculator:
         elif mode == "normal":
             # Scale based on peer count (more peers = slightly longer timeout)
             # Linear interpolation between min and max based on peer count (5-20 range)
-            peer_ratio = (active_peer_count - 5) / 15.0  # 0.0 at 5 peers, 1.0 at 20 peers
+            peer_ratio = (
+                active_peer_count - 5
+            ) / 15.0  # 0.0 at 5 peers, 1.0 at 20 peers
             timeout = min_timeout + (max_timeout - min_timeout) * peer_ratio
         else:  # healthy
             # Use longer timeout for healthy swarms
@@ -164,6 +169,7 @@ class AdaptiveTimeoutCalculator:
 
         Returns:
             Timeout in seconds
+
         """
         # Check if adaptive timeouts are enabled
         if not getattr(
@@ -192,7 +198,9 @@ class AdaptiveTimeoutCalculator:
             # CRITICAL FIX: Reduced from 60s to 20s max - 60s was causing connections to hang
             # 20s is sufficient for slow peers/NAT traversal without blocking batch processing
             # BitTorrent spec recommends 10-30s for handshake timeouts
-            timeout = max(min_timeout, max_timeout)  # Use configured values, ensure at least min_timeout
+            timeout = max(
+                min_timeout, max_timeout
+            )  # Use configured values, ensure at least min_timeout
         elif mode == "normal":
             min_timeout = getattr(
                 self.config.network,
@@ -222,7 +230,9 @@ class AdaptiveTimeoutCalculator:
         elif mode == "normal":
             # Scale based on peer count (more peers = slightly longer timeout)
             # Linear interpolation between min and max based on peer count (5-20 range)
-            peer_ratio = (active_peer_count - 5) / 15.0  # 0.0 at 5 peers, 1.0 at 20 peers
+            peer_ratio = (
+                active_peer_count - 5
+            ) / 15.0  # 0.0 at 5 peers, 1.0 at 20 peers
             timeout = min_timeout + (max_timeout - min_timeout) * peer_ratio
         else:  # healthy
             # Use longer timeout for healthy swarms
@@ -248,5 +258,3 @@ class AdaptiveTimeoutCalculator:
             )
 
         return timeout
-
-

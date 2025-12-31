@@ -35,13 +35,14 @@ import logging
 import os
 import sys
 import time
+import typing
 from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
 
 def main():
-    """Main entry point for the BitTorrent client."""
+    """Run the BitTorrent client main entry point."""
     parser = argparse.ArgumentParser(description="ccBitTorrent - A BitTorrent client")
     parser.add_argument("torrent", help="Path to torrent file, URL, or magnet URI")
     parser.add_argument(
@@ -127,7 +128,7 @@ def main():
     if not isinstance(announce_input, dict):
         msg = f"Expected dict for announce_input, got {type(announce_input)}"
         raise TypeError(msg)
-    response = tracker.announce(cast("dict[str, Any]", announce_input))
+    response = tracker.announce(typing.cast("dict[str, Any]", announce_input))
 
     if response["status"] == 200:
         # Print first few peers as example
@@ -227,9 +228,10 @@ def main():
         if info_dict:
             from ccbt.core import magnet as _magnet_mod2
 
+            # Type cast: info_dict is dict[bytes, Any] but function accepts dict[bytes | str, Any]
             torrent_data = _magnet_mod2.build_torrent_data_from_metadata(
                 info_hash,
-                info_dict,
+                cast("dict[bytes | str, Any]", info_dict),
             )
 
     # Initialize download manager

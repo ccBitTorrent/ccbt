@@ -375,18 +375,36 @@ class TestAsyncPieceManagerHandlePieceBlock:
     @pytest.mark.asyncio
     async def test_handle_piece_block_schedules_verification(self, piece_manager):
         """Test that completing a piece schedules verification."""
+        import hashlib
+        
         piece_index = 0
         piece = piece_manager.pieces[piece_index]
 
-        # Complete piece
+        # CRITICAL FIX: Set correct piece hash that matches the test data
+        # The test data is b"x" * block.length for each block, so we need to calculate
+        # the hash of the complete piece data
+        piece_data = b"x" * piece.length
+        expected_hash = hashlib.sha1(piece_data).digest()  # nosec B324
+        piece_manager.piece_hashes[piece_index] = expected_hash
+
+        # Complete piece by adding all blocks
         for block in piece.blocks:
             await piece_manager.handle_piece_block(piece_index, block.begin, b"x" * block.length)
 
-        # Give time for verification task to start
-        await asyncio.sleep(0.05)
+        # Give time for verification task to start and piece state to update
+        await asyncio.sleep(0.1)
 
-        # Verification should have been scheduled
-        assert len(piece_manager._background_tasks) > 0 or piece.state == PieceState.COMPLETE
+        # Piece should be complete (or verified if verification completed quickly)
+        assert piece.state in (PieceState.COMPLETE, PieceState.VERIFIED), f"Piece state is {piece.state}, expected COMPLETE or VERIFIED"
+        
+        # Verification should have been scheduled (check that task was added, even if it completed quickly)
+        # The task might complete before we check, so we verify the piece is complete and was in completed_pieces
+        # Note: If verification fails, the piece is removed from completed_pieces, so we check state instead
+        # If verification succeeded, piece should be verified; if still verifying, it should be in completed_pieces
+        assert (
+            piece_index in piece_manager.completed_pieces or 
+            piece.state == PieceState.VERIFIED
+        ), f"Piece should be in completed_pieces or verified (state={piece.state}, completed_pieces={piece_manager.completed_pieces})"
 
 
 class TestAsyncPieceManagerBackpressure:

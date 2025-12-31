@@ -137,7 +137,9 @@ def proxy_set(
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]")
+                    _(
+                        "[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]"
+                    )
                 )  # pragma: no cover - Test mode protection path
                 console.print(
                     _("[green]Proxy configuration updated successfully[/green]")
@@ -171,7 +173,9 @@ def proxy_set(
             config_toml = config_manager.export(fmt="toml", encrypt_passwords=True)
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[green]Proxy configuration saved to {config_file}[/green]").format(config_file=config_manager.config_file)
+                _("[green]Proxy configuration saved to {config_file}[/green]").format(
+                    config_file=config_manager.config_file
+                )
             )
         else:
             console.print(
@@ -190,7 +194,9 @@ def proxy_set(
             console.print(_("  Bypass list: {value}").format(value=bypass_list))
 
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(_("[red]Failed to set proxy configuration: {e}[/red]").format(e=e))
+        console.print(
+            _("[red]Failed to set proxy configuration: {e}[/red]").format(e=e)
+        )
         raise click.Abort from e
 
 
@@ -212,7 +218,9 @@ def proxy_test(_ctx) -> None:
             raise click.Abort
 
         console.print(
-            _("[cyan]Testing proxy connection to {host}:{port}...[/cyan]").format(host=config.proxy.proxy_host, port=config.proxy.proxy_port)
+            _("[cyan]Testing proxy connection to {host}:{port}...[/cyan]").format(
+                host=config.proxy.proxy_host, port=config.proxy.proxy_port
+            )
         )
 
         async def _test() -> bool:
@@ -230,10 +238,16 @@ def proxy_test(_ctx) -> None:
         if result:
             console.print(_("[green]✓ Proxy connection test successful[/green]"))
             stats = ProxyClient().get_stats()
-            console.print(_("  Total connections: {count}").format(count=stats.connections_total))
-            console.print(_("  Successful: {count}").format(count=stats.connections_successful))
+            console.print(
+                _("  Total connections: {count}").format(count=stats.connections_total)
+            )
+            console.print(
+                _("  Successful: {count}").format(count=stats.connections_successful)
+            )
             console.print(_("  Failed: {count}").format(count=stats.connections_failed))
-            console.print(_("  Auth failures: {count}").format(count=stats.auth_failures))
+            console.print(
+                _("  Auth failures: {count}").format(count=stats.auth_failures)
+            )
         else:  # pragma: no cover - Proxy test failure path, tested via successful connection path
             console.print(_("[red]✗ Proxy connection test failed[/red]"))
             raise click.Abort
@@ -331,13 +345,17 @@ def proxy_disable(_ctx) -> None:
             # Safety: avoid overwriting project-local config during tests
             if _should_skip_project_local_write(config_manager.config_file):
                 console.print(
-                    _("[yellow]Proxy has been disabled (skipped write in test mode)[/yellow]")
+                    _(
+                        "[yellow]Proxy has been disabled (skipped write in test mode)[/yellow]"
+                    )
                 )  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
             config_toml = config_manager.export(fmt="toml", encrypt_passwords=True)
             config_manager.config_file.write_text(config_toml, encoding="utf-8")
             console.print(
-                _("[green]Proxy configuration saved to {config_file}[/green]").format(config_file=config_manager.config_file)
+                _("[green]Proxy configuration saved to {config_file}[/green]").format(
+                    config_file=config_manager.config_file
+                )
             )
         else:
             console.print(
@@ -349,4 +367,3 @@ def proxy_disable(_ctx) -> None:
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
         console.print(_("[red]Failed to disable proxy: {e}[/red]").format(e=e))
         raise click.Abort from e
-

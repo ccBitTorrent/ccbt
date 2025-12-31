@@ -2,9 +2,9 @@
 
 **btbt** は ccBitTorrent の拡張コマンドラインインターフェースで、トレント操作、監視、設定、高度な機能に対する包括的な制御を提供します。
 
-- エントリーポイント: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- 定義場所: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
-- メインCLIグループ: [ccbt/cli/main.py:cli](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
+- エントリーポイント: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- 定義場所: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
+- メインCLIグループ: [ccbt/cli/main.py:cli](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
 
 ## 基本コマンド
 
@@ -12,7 +12,7 @@
 
 トレントファイルをダウンロードします。
 
-実装: [ccbt/cli/main.py:download](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L369)
+実装: [ccbt/cli/main.py:download](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L369)
 
 使用方法:
 ```bash
@@ -29,7 +29,7 @@ uv run btbt download <torrent_file> [options]
 - `--files <indices...>`: ダウンロードする特定のファイルを選択（複数回指定可能、例: `--files 0 --files 1`）
 - `--file-priority <spec>`: ファイルの優先度を `file_index=priority` として設定（例: `0=high,1=low`）。複数回指定可能。
 
-ネットワークオプション（[ccbt/cli/main.py:_apply_network_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L67) を参照）:
+ネットワークオプション（[ccbt/cli/main.py:_apply_network_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L67) を参照）:
 - `--listen-port <int>`: リスンポート
 - `--max-peers <int>`: グローバルピアの最大数
 - `--max-peers-per-torrent <int>`: トレントあたりの最大ピア数
@@ -39,7 +39,7 @@ uv run btbt download <torrent_file> [options]
 - `--global-down-kib <int>`: グローバルダウンロード制限（KiB/s）
 - `--global-up-kib <int>`: グローバルアップロード制限（KiB/s）
 
-ディスクオプション（[ccbt/cli/main.py:_apply_disk_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L179) を参照）:
+ディスクオプション（[ccbt/cli/main.py:_apply_disk_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L179) を参照）:
 - `--hash-workers <int>`: ハッシュ検証ワーカーの数
 - `--disk-workers <int>`: ディスクI/Oワーカーの数
 - `--use-mmap`: メモリマッピングを有効化
@@ -48,13 +48,13 @@ uv run btbt download <torrent_file> [options]
 - `--write-buffer-kib <int>`: 書き込みバッファサイズ（KiB）
 - `--preallocate <str>`: 事前割り当て戦略（none|sparse|full）
 
-戦略オプション（[ccbt/cli/main.py:_apply_strategy_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L151) を参照）:
+戦略オプション（[ccbt/cli/main.py:_apply_strategy_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L151) を参照）:
 - `--piece-selection <str>`: ピース選択戦略（round_robin|rarest_first|sequential）
 - `--endgame-duplicates <int>`: エンドゲーム重複リクエスト
 - `--endgame-threshold <float>`: エンドゲーム閾値
 - `--streaming`: ストリーミングモードを有効化
 
-発見オプション（[ccbt/cli/main.py:_apply_discovery_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L123) を参照）:
+発見オプション（[ccbt/cli/main.py:_apply_discovery_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L123) を参照）:
 - `--enable-dht`: DHTを有効化
 - `--disable-dht`: DHTを無効化
 - `--enable-pex`: PEXを有効化
@@ -64,7 +64,7 @@ uv run btbt download <torrent_file> [options]
 - `--enable-udp-trackers`: UDPトラッカーを有効化
 - `--disable-udp-trackers`: UDPトラッカーを無効化
 
-可観測性オプション（[ccbt/cli/main.py:_apply_observability_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L217) を参照）:
+可観測性オプション（[ccbt/cli/main.py:_apply_observability_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L217) を参照）:
 - `--log-level <str>`: ログレベル（DEBUG|INFO|WARNING|ERROR|CRITICAL）
 - `--log-file <path>`: ログファイルパス
 - `--enable-metrics`: メトリクス収集を有効化
@@ -75,7 +75,7 @@ uv run btbt download <torrent_file> [options]
 
 マグネットリンクからダウンロードします。
 
-実装: [ccbt/cli/main.py:magnet](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L608)
+実装: [ccbt/cli/main.py:magnet](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L608)
 
 使用方法:
 ```bash
@@ -88,20 +88,20 @@ uv run btbt magnet <magnet_link> [options]
 
 対話型CLIモードを開始します。
 
-実装: [ccbt/cli/main.py:interactive](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L767)
+実装: [ccbt/cli/main.py:interactive](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L767)
 
 使用方法:
 ```bash
 uv run btbt interactive
 ```
 
-対話型CLI: [ccbt/cli/interactive.py:InteractiveCLI](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/interactive.py#L41)
+対話型CLI: [ccbt/cli/interactive.py:InteractiveCLI](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/interactive.py#L41)
 
 ### status
 
 現在のセッションの状態を表示します。
 
-実装: [ccbt/cli/main.py:status](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L789)
+実装: [ccbt/cli/main.py:status](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L789)
 
 使用方法:
 ```bash
@@ -110,13 +110,13 @@ uv run btbt status
 
 ## チェックポイントコマンド
 
-チェックポイント管理グループ: [ccbt/cli/main.py:checkpoints](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L849)
+チェックポイント管理グループ: [ccbt/cli/main.py:checkpoints](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L849)
 
 ### checkpoints list
 
 利用可能なすべてのチェックポイントを一覧表示します。
 
-実装: [ccbt/cli/main.py:list_checkpoints](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L863)
+実装: [ccbt/cli/main.py:list_checkpoints](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L863)
 
 使用方法:
 ```bash
@@ -127,7 +127,7 @@ uv run btbt checkpoints list [--format json|table]
 
 古いチェックポイントをクリーンアップします。
 
-実装: [ccbt/cli/main.py:clean_checkpoints](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L930)
+実装: [ccbt/cli/main.py:clean_checkpoints](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L930)
 
 使用方法:
 ```bash
@@ -138,7 +138,7 @@ uv run btbt checkpoints clean [--days <n>] [--dry-run]
 
 特定のチェックポイントを削除します。
 
-実装: [ccbt/cli/main.py:delete_checkpoint](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L978)
+実装: [ccbt/cli/main.py:delete_checkpoint](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L978)
 
 使用方法:
 ```bash
@@ -149,7 +149,7 @@ uv run btbt checkpoints delete <info_hash>
 
 チェックポイントを検証します。
 
-実装: [ccbt/cli/main.py:verify_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1016)
+実装: [ccbt/cli/main.py:verify_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1016)
 
 使用方法:
 ```bash
@@ -160,7 +160,7 @@ uv run btbt checkpoints verify <info_hash>
 
 チェックポイントをファイルにエクスポートします。
 
-実装: [ccbt/cli/main.py:export_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1058)
+実装: [ccbt/cli/main.py:export_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1058)
 
 使用方法:
 ```bash
@@ -171,7 +171,7 @@ uv run btbt checkpoints export <info_hash> [--format json|binary] [--output <pat
 
 チェックポイントを場所にバックアップします。
 
-実装: [ccbt/cli/main.py:backup_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1099)
+実装: [ccbt/cli/main.py:backup_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1099)
 
 使用方法:
 ```bash
@@ -182,7 +182,7 @@ uv run btbt checkpoints backup <info_hash> <destination> [--compress] [--encrypt
 
 バックアップからチェックポイントを復元します。
 
-実装: [ccbt/cli/main.py:restore_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1138)
+実装: [ccbt/cli/main.py:restore_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1138)
 
 使用方法:
 ```bash
@@ -193,7 +193,7 @@ uv run btbt checkpoints restore <backup_file> [--info-hash <hash>]
 
 チェックポイントをフォーマット間で移行します。
 
-実装: [ccbt/cli/main.py:migrate_checkpoint_cmd](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1173)
+実装: [ccbt/cli/main.py:migrate_checkpoint_cmd](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1173)
 
 使用方法:
 ```bash
@@ -204,7 +204,7 @@ uv run btbt checkpoints migrate <info_hash> --from <format> --to <format>
 
 チェックポイントからダウンロードを再開します。
 
-実装: [ccbt/cli/main.py:resume](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1204)
+実装: [ccbt/cli/main.py:resume](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1204)
 
 使用方法:
 ```bash
@@ -213,13 +213,13 @@ uv run btbt resume <info_hash> [--output <dir>] [--interactive]
 
 ## 監視コマンド
 
-監視コマンドグループ: [ccbt/cli/monitoring_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py)
+監視コマンドグループ: [ccbt/cli/monitoring_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py)
 
 ### dashboard
 
 ターミナル監視ダッシュボード（Bitonic）を開始します。
 
-実装: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
+実装: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
 
 使用方法:
 ```bash
@@ -232,7 +232,7 @@ uv run btbt dashboard [--refresh <seconds>] [--rules <path>]
 
 アラートルールとアクティブなアラートを管理します。
 
-実装: [ccbt/cli/monitoring_commands.py:alerts](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L48)
+実装: [ccbt/cli/monitoring_commands.py:alerts](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L48)
 
 使用方法:
 ```bash
@@ -267,7 +267,7 @@ uv run btbt alerts --save <path>
 
 メトリクスを収集してエクスポートします。
 
-実装: [ccbt/cli/monitoring_commands.py:metrics](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L229)
+実装: [ccbt/cli/monitoring_commands.py:metrics](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L229)
 
 使用方法:
 ```bash
@@ -287,7 +287,7 @@ uv run btbt metrics --format prometheus > metrics.txt
 
 ## ファイル選択コマンド
 
-ファイル選択コマンドグループ: [ccbt/cli/file_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py)
+ファイル選択コマンドグループ: [ccbt/cli/file_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py)
 
 マルチファイルトレントのファイル選択と優先度を管理します。
 
@@ -295,7 +295,7 @@ uv run btbt metrics --format prometheus > metrics.txt
 
 トレント内のすべてのファイルを、選択状態、優先度、ダウンロード進捗とともに一覧表示します。
 
-実装: [ccbt/cli/file_commands.py:files_list](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L28)
+実装: [ccbt/cli/file_commands.py:files_list](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L28)
 
 使用方法:
 ```bash
@@ -313,7 +313,7 @@ uv run btbt files list <info_hash>
 
 ダウンロードする1つ以上のファイルを選択します。
 
-実装: [ccbt/cli/file_commands.py:files_select](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L72)
+実装: [ccbt/cli/file_commands.py:files_select](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L72)
 
 使用方法:
 ```bash
@@ -333,7 +333,7 @@ uv run btbt files select abc123... 0
 
 ダウンロードから1つ以上のファイルを選択解除します。
 
-実装: [ccbt/cli/file_commands.py:files_deselect](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L108)
+実装: [ccbt/cli/file_commands.py:files_deselect](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L108)
 
 使用方法:
 ```bash
@@ -344,7 +344,7 @@ uv run btbt files deselect <info_hash> <file_index> [<file_index> ...]
 
 トレント内のすべてのファイルを選択します。
 
-実装: [ccbt/cli/file_commands.py:files_select_all](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L144)
+実装: [ccbt/cli/file_commands.py:files_select_all](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L144)
 
 使用方法:
 ```bash
@@ -355,7 +355,7 @@ uv run btbt files select-all <info_hash>
 
 トレント内のすべてのファイルを選択解除します。
 
-実装: [ccbt/cli/file_commands.py:files_deselect_all](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L161)
+実装: [ccbt/cli/file_commands.py:files_deselect_all](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L161)
 
 使用方法:
 ```bash
@@ -366,7 +366,7 @@ uv run btbt files deselect-all <info_hash>
 
 特定のファイルの優先度を設定します。
 
-実装: [ccbt/cli/file_commands.py:files_priority](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L178)
+実装: [ccbt/cli/file_commands.py:files_priority](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/file_commands.py#L178)
 
 使用方法:
 ```bash
@@ -391,32 +391,32 @@ uv run btbt files priority abc123... 2 maximum
 
 ## 設定コマンド
 
-設定コマンドグループ: [ccbt/cli/config_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/config_commands.py)
+設定コマンドグループ: [ccbt/cli/config_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/config_commands.py)
 
 ### config
 
 設定を管理します。
 
-実装: [ccbt/cli/main.py:config](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L810)
+実装: [ccbt/cli/main.py:config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L810)
 
 使用方法:
 ```bash
 uv run btbt config [subcommand]
 ```
 
-拡張設定コマンド: [ccbt/cli/config_commands_extended.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/config_commands_extended.py)
+拡張設定コマンド: [ccbt/cli/config_commands_extended.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/config_commands_extended.py)
 
 詳細な設定オプションについては [設定ガイド](configuration.md) を参照してください。
 
 ## 高度なコマンド
 
-高度なコマンドグループ: [ccbt/cli/advanced_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py)
+高度なコマンドグループ: [ccbt/cli/advanced_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py)
 
 ### performance
 
 パフォーマンス分析とベンチマーク。
 
-実装: [ccbt/cli/advanced_commands.py:performance](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L73)
+実装: [ccbt/cli/advanced_commands.py:performance](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L73)
 
 使用方法:
 ```bash
@@ -427,7 +427,7 @@ uv run btbt performance [--analyze] [--benchmark]
 
 セキュリティ分析と検証。
 
-実装: [ccbt/cli/advanced_commands.py:security](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L170)
+実装: [ccbt/cli/advanced_commands.py:security](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L170)
 
 使用方法:
 ```bash
@@ -438,7 +438,7 @@ uv run btbt security [options]
 
 回復操作。
 
-実装: [ccbt/cli/advanced_commands.py:recover](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L209)
+実装: [ccbt/cli/advanced_commands.py:recover](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L209)
 
 使用方法:
 ```bash
@@ -449,7 +449,7 @@ uv run btbt recover [options]
 
 テストと診断を実行します。
 
-実装: [ccbt/cli/advanced_commands.py:test](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L248)
+実装: [ccbt/cli/advanced_commands.py:test](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/advanced_commands.py#L248)
 
 使用方法:
 ```bash
@@ -460,7 +460,7 @@ uv run btbt test [options]
 
 ### グローバルオプション
 
-グローバルオプションの定義: [ccbt/cli/main.py:cli](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
+グローバルオプションの定義: [ccbt/cli/main.py:cli](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L243)
 
 - `--config <path>`: 設定ファイルパス
 - `--verbose`: 詳細出力
@@ -469,12 +469,12 @@ uv run btbt test [options]
 ### CLIオーバーライド
 
 すべてのCLIオプションは次の順序で設定をオーバーライドします:
-1. [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py) のデフォルト
-2. 設定ファイル（[ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)）
-3. 環境変数（[env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)）
+1. [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py) のデフォルト
+2. 設定ファイル（[ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)）
+3. 環境変数（[env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)）
 4. CLI引数
 
-オーバーライド実装: [ccbt/cli/main.py:_apply_cli_overrides](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L55)
+オーバーライド実装: [ccbt/cli/main.py:_apply_cli_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L55)
 
 ## 例
 
@@ -551,7 +551,7 @@ uv run btbt checkpoints clean --days 7
 
 トレントごとの設定オプションとレート制限を管理します。これらの設定はチェックポイントとデーモン状態に永続化されます。
 
-実装: [ccbt/cli/torrent_config_commands.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/torrent_config_commands.py)
+実装: [ccbt/cli/torrent_config_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/torrent_config_commands.py)
 
 #### トレントごとのオプションを設定
 

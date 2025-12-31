@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 یا سورس سے انسٹال کریں:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-ایٹری پوائنٹس [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81) میں تعریف کیے گئے ہیں۔
+ایٹری پوائنٹس [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81) میں تعریف کیے گئے ہیں۔
 
 ## اہم داخلہ نکات
 
@@ -42,8 +42,8 @@ ccBitTorrent تین اہم داخلہ نکات فراہم کرتا ہے:
 
 **Bitonic** اہم ٹرمینل ڈیش بورڈ انٹرفیس ہے۔ یہ تمام torrents، peers، اور سسٹم میٹرکس کا لائیو، انٹرایکٹو منظر فراہم کرتا ہے۔
 
-- داخلہ نقطہ: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- میں تعریف: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- داخلہ نقطہ: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- میں تعریف: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - لانچ: `uv run bitonic` یا `uv run ccbt dashboard`
 
 تفصیلی استعمال کے لیے [Bitonic گائیڈ](bitonic.md) دیکھیں۔
@@ -52,8 +52,8 @@ ccBitTorrent تین اہم داخلہ نکات فراہم کرتا ہے:
 
 **btbt** بہتر کمانڈ-لائن انٹرفیس ہے جس میں بھرپور خصوصیات ہیں۔
 
-- داخلہ نقطہ: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- میں تعریف: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- داخلہ نقطہ: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- میں تعریف: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - لانچ: `uv run btbt`
 
 تمام دستیاب کمانڈز کے لیے [btbt CLI حوالہ](btbt-cli.md) دیکھیں۔
@@ -62,8 +62,8 @@ ccBitTorrent تین اہم داخلہ نکات فراہم کرتا ہے:
 
 **ccbt** بنیادی کمانڈ-لائن انٹرفیس ہے۔
 
-- داخلہ نقطہ: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- میں تعریف: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- داخلہ نقطہ: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- میں تعریف: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - لانچ: `uv run ccbt`
 
 ## تیز شروع
@@ -104,9 +104,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### ccBitTorrent ترتیب دیں
 
 اپنی کام کی ڈائریکٹری میں ایک `ccbt.toml` فائل بنائیں۔ مثال کی ترتیب دیکھیں:
-- ڈیفالٹ ترتیب: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- ماحولیاتی متغیرات: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- ترتیب کا نظام: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- ڈیفالٹ ترتیب: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- ماحولیاتی متغیرات: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- ترتیب کا نظام: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 تفصیلی ترتیب کے اختیارات کے لیے [ترتیب گائیڈ](configuration.md) دیکھیں۔
 
@@ -132,7 +132,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - کمانڈ مدد کے لیے `uv run bitonic --help` یا `uv run btbt --help` استعمال کریں
 - تفصیلی اختیارات کے لیے [btbt CLI حوالہ](btbt-cli.md) چیک کریں
-- مسائل اور بحث کے لیے ہمارے [GitHub ریپوزٹری](https://github.com/yourusername/ccbittorrent) پر جائیں
+- مسائل اور بحث کے لیے ہمارے [GitHub ریپوزٹری](https://github.com/ccBitTorrent/ccbittorrent) پر جائیں
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 یا سورس سے انسٹال کریں:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-ایٹری پوائنٹس [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81) میں تعریف کیے گئے ہیں۔
+ایٹری پوائنٹس [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81) میں تعریف کیے گئے ہیں۔
 
 ## اہم داخلہ نکات
 
@@ -181,8 +181,8 @@ ccBitTorrent تین اہم داخلہ نکات فراہم کرتا ہے:
 
 **Bitonic** اہم ٹرمینل ڈیش بورڈ انٹرفیس ہے۔ یہ تمام torrents، peers، اور سسٹم میٹرکس کا لائیو، انٹرایکٹو منظر فراہم کرتا ہے۔
 
-- داخلہ نقطہ: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- میں تعریف: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- داخلہ نقطہ: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- میں تعریف: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - لانچ: `uv run bitonic` یا `uv run ccbt dashboard`
 
 تفصیلی استعمال کے لیے [Bitonic گائیڈ](bitonic.md) دیکھیں۔
@@ -191,8 +191,8 @@ ccBitTorrent تین اہم داخلہ نکات فراہم کرتا ہے:
 
 **btbt** بہتر کمانڈ-لائن انٹرفیس ہے جس میں بھرپور خصوصیات ہیں۔
 
-- داخلہ نقطہ: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- میں تعریف: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- داخلہ نقطہ: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- میں تعریف: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - لانچ: `uv run btbt`
 
 تمام دستیاب کمانڈز کے لیے [btbt CLI حوالہ](btbt-cli.md) دیکھیں۔
@@ -201,8 +201,8 @@ ccBitTorrent تین اہم داخلہ نکات فراہم کرتا ہے:
 
 **ccbt** بنیادی کمانڈ-لائن انٹرفیس ہے۔
 
-- داخلہ نقطہ: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- میں تعریف: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- داخلہ نقطہ: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- میں تعریف: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - لانچ: `uv run ccbt`
 
 ## تیز شروع
@@ -243,9 +243,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### ccBitTorrent ترتیب دیں
 
 اپنی کام کی ڈائریکٹری میں ایک `ccbt.toml` فائل بنائیں۔ مثال کی ترتیب دیکھیں:
-- ڈیفالٹ ترتیب: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- ماحولیاتی متغیرات: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- ترتیب کا نظام: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- ڈیفالٹ ترتیب: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- ماحولیاتی متغیرات: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- ترتیب کا نظام: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 تفصیلی ترتیب کے اختیارات کے لیے [ترتیب گائیڈ](configuration.md) دیکھیں۔
 
@@ -271,7 +271,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - کمانڈ مدد کے لیے `uv run bitonic --help` یا `uv run btbt --help` استعمال کریں
 - تفصیلی اختیارات کے لیے [btbt CLI حوالہ](btbt-cli.md) چیک کریں
-- مسائل اور بحث کے لیے ہمارے [GitHub ریپوزٹری](https://github.com/yourusername/ccbittorrent) پر جائیں
+- مسائل اور بحث کے لیے ہمارے [GitHub ریپوزٹری](https://github.com/ccBitTorrent/ccbittorrent) پر جائیں
 
 
 

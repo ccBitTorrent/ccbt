@@ -41,6 +41,7 @@ class TestInteractiveRunLoop:
     @pytest.fixture
     def console(self, monkeypatch):
         # Minimal console stub collecting printed data
+        import time
         outputs = []
 
         class Console:
@@ -52,6 +53,13 @@ class TestInteractiveRunLoop:
 
             def clear(self):
                 outputs.clear()
+            
+            # CRITICAL FIX: Rich Progress requires console.get_time and log methods
+            def get_time(self):
+                return time.time
+            
+            def log(self, *args, **kwargs):
+                outputs.append(("LOG", args, kwargs))
 
         return SimpleNamespace(obj=Console(), outputs=outputs)
 
@@ -101,7 +109,8 @@ class TestInteractiveRunLoop:
 
         monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
-        cli = InteractiveCLI(self.FakeSession(), console.obj)
+        from tests.conftest import create_interactive_cli
+        cli = create_interactive_cli(self.FakeSession(), console.obj)
         # Ensure no torrent and run exits immediately on KeyboardInterrupt
         await cli.run()
         assert cli.running is True or cli.running is False  # loop handled without crash
@@ -110,7 +119,8 @@ class TestInteractiveRunLoop:
     async def test_status_no_torrent_and_basic_commands(self, console, monkeypatch):
         from ccbt.cli.interactive import InteractiveCLI
 
-        cli = InteractiveCLI(self.FakeSession(), console.obj)
+        from tests.conftest import create_interactive_cli
+        cli = create_interactive_cli(self.FakeSession(), console.obj)
 
         # status with no current_torrent
         await cli.cmd_status([])
@@ -130,7 +140,8 @@ class TestInteractiveRunLoop:
         from ccbt.cli.interactive import InteractiveCLI
 
         session = self.FakeSession()
-        cli = InteractiveCLI(session, console.obj)
+        from tests.conftest import create_interactive_cli
+        cli = create_interactive_cli(session, console.obj)
 
         # Ensure layout is initialized for show_download_interface panes
         cli.setup_layout()

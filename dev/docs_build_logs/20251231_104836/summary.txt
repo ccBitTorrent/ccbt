@@ -1,0 +1,13 @@
+Documentation Build Summary - 2025-12-31 10:48:37
+================================================================================
+
+Exit Status: FAILURE
+Return Code: 1
+
+Total Warnings: 1
+Total Errors: 1
+
+Log Directory: dev\docs_build_logs\20251231_104836
+Full Output: full_output.log
+Warnings: warnings.log
+Errors: errors.log

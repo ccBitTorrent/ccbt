@@ -478,7 +478,7 @@ class TraceContext:
 
 
 def trace_function(tracing_manager: TracingManager, name: str | None = None):
-    """Decorator for tracing functions."""
+    """Provide decorator for tracing functions."""
 
     def decorator(func):
         def wrapper(*args, **kwargs):
@@ -493,7 +493,7 @@ def trace_function(tracing_manager: TracingManager, name: str | None = None):
 
 
 def trace_async_function(tracing_manager: TracingManager, name: str | None = None):
-    """Decorator for tracing async functions."""
+    """Provide decorator for tracing async functions."""
 
     def decorator(func):
         async def wrapper(*args, **kwargs):

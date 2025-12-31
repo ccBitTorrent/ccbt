@@ -384,15 +384,15 @@ class XetMessageType(IntEnum):
 ```
 
 **主要メソッド：**
-- `encode_chunk_request()`: [ccbt/extensions/xet.py:89](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L89) - リクエストID付きチャンクリクエストメッセージをエンコード
-- `decode_chunk_request()`: [ccbt/extensions/xet.py:108](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L108) - チャンクリクエストメッセージをデコード
-- `encode_chunk_response()`: [ccbt/extensions/xet.py:136](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L136) - データ付きチャンクレスポンスをエンコード
-- `handle_chunk_request()`: [ccbt/extensions/xet.py:210](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L210) - ピアからの着信チャンクリクエストを処理
-- `handle_chunk_response()`: [ccbt/extensions/xet.py:284](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L284) - ピアからのチャンクレスポンスを処理
+- `encode_chunk_request()`: [ccbt/extensions/xet.py:89](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L89) - リクエストID付きチャンクリクエストメッセージをエンコード
+- `decode_chunk_request()`: [ccbt/extensions/xet.py:108](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L108) - チャンクリクエストメッセージをデコード
+- `encode_chunk_response()`: [ccbt/extensions/xet.py:136](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L136) - データ付きチャンクレスポンスをエンコード
+- `handle_chunk_request()`: [ccbt/extensions/xet.py:210](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L210) - ピアからの着信チャンクリクエストを処理
+- `handle_chunk_response()`: [ccbt/extensions/xet.py:284](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L284) - ピアからのチャンクレスポンスを処理
 
 **拡張ハンドシェイク：**
-- `encode_handshake()`: [ccbt/extensions/xet.py:61](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L61) - Xet拡張機能をエンコード
-- `decode_handshake()`: [ccbt/extensions/xet.py:75](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L75) - ピアのXet拡張機能をデコード
+- `encode_handshake()`: [ccbt/extensions/xet.py:61](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L61) - Xet拡張機能をエンコード
+- `decode_handshake()`: [ccbt/extensions/xet.py:75](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L75) - ピアのXet拡張機能をデコード
 
 #### 2. コンテンツ定義チャンキング（`ccbt/storage/xet_chunking.py`）
 
@@ -410,15 +410,15 @@ class XetMessageType(IntEnum):
       show_submodules: false
 
 **定数：**
-- `MIN_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:21](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L21) - 最小チャンクサイズ8 KB
-- `MAX_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:22](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L22) - 最大チャンクサイズ128 KB
-- `TARGET_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:23](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L23) - デフォルトターゲットチャンクサイズ16 KB
-- `WINDOW_SIZE`: [ccbt/storage/xet_chunking.py:24](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L24) - ローリングハッシュウィンドウ48バイト
+- `MIN_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:21](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L21) - 最小チャンクサイズ8 KB
+- `MAX_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:22](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L22) - 最大チャンクサイズ128 KB
+- `TARGET_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:23](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L23) - デフォルトターゲットチャンクサイズ16 KB
+- `WINDOW_SIZE`: [ccbt/storage/xet_chunking.py:24](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L24) - ローリングハッシュウィンドウ48バイト
 
 **主要メソッド：**
-- `chunk_buffer()`: [ccbt/storage/xet_chunking.py:210](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L210) - Gearhash CDCアルゴリズムを使用してデータをチャンク化
-- `_find_chunk_boundary()`: [ccbt/storage/xet_chunking.py:242](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L242) - ローリングハッシュを使用してコンテンツ定義チャンク境界を見つける
-- `_init_gear_table()`: [ccbt/storage/xet_chunking.py:54](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L54) - ローリングハッシュのための事前計算gearテーブルを初期化
+- `chunk_buffer()`: [ccbt/storage/xet_chunking.py:210](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L210) - Gearhash CDCアルゴリズムを使用してデータをチャンク化
+- `_find_chunk_boundary()`: [ccbt/storage/xet_chunking.py:242](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L242) - ローリングハッシュを使用してコンテンツ定義チャンク境界を見つける
+- `_init_gear_table()`: [ccbt/storage/xet_chunking.py:54](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L54) - ローリングハッシュのための事前計算gearテーブルを初期化
 
 **アルゴリズム：**
 Gearhashアルゴリズムは、コンテンツ定義境界を見つけるために事前計算された256要素gearテーブルを使用するローリングハッシュを使用します。これにより、異なるファイル内の類似コンテンツが同じチャンク境界を生成し、ファイル間重複排除を可能にします。
@@ -439,14 +439,14 @@ Gearhashアルゴリズムは、コンテンツ定義境界を見つけるため
       show_submodules: false
 
 **データベーススキーマ：**
-- `chunks`テーブル: [ccbt/storage/xet_deduplication.py:65](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L65) - チャンクハッシュ、サイズ、ストレージパス、参照カウント、タイムスタンプを保存
-- インデックス: [ccbt/storage/xet_deduplication.py:75](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L75) - 効率的なクエリのためにサイズとlast_accessedに
+- `chunks`テーブル: [ccbt/storage/xet_deduplication.py:65](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L65) - チャンクハッシュ、サイズ、ストレージパス、参照カウント、タイムスタンプを保存
+- インデックス: [ccbt/storage/xet_deduplication.py:75](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L75) - 効率的なクエリのためにサイズとlast_accessedに
 
 **主要メソッド：**
-- `check_chunk_exists()`: [ccbt/storage/xet_deduplication.py:85](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L85) - チャンクがローカルに存在するか確認し、アクセス時間を更新
-- `store_chunk()`: [ccbt/storage/xet_deduplication.py:112](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L112) - 重複排除付きでチャンクを保存（存在する場合はref_countをインクリメント）
-- `get_chunk_path()`: [ccbt/storage/xet_deduplication.py:165](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L165) - チャンクのローカルストレージパスを取得
-- `cleanup_unused_chunks()`: [ccbt/storage/xet_deduplication.py:201](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L201) - max_age_days以内にアクセスされなかったチャンクを削除
+- `check_chunk_exists()`: [ccbt/storage/xet_deduplication.py:85](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L85) - チャンクがローカルに存在するか確認し、アクセス時間を更新
+- `store_chunk()`: [ccbt/storage/xet_deduplication.py:112](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L112) - 重複排除付きでチャンクを保存（存在する場合はref_countをインクリメント）
+- `get_chunk_path()`: [ccbt/storage/xet_deduplication.py:165](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L165) - チャンクのローカルストレージパスを取得
+- `cleanup_unused_chunks()`: [ccbt/storage/xet_deduplication.py:201](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L201) - max_age_days以内にアクセスされなかったチャンクを削除
 
 **機能：**
 - 参照カウント：各チャンクを参照するトレント/ファイルの数を追跡
@@ -469,13 +469,13 @@ Gearhashアルゴリズムは、コンテンツ定義境界を見つけるため
       show_submodules: false
 
 **主要メソッド：**
-- `announce_chunk()`: [ccbt/discovery/xet_cas.py:50](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L50) - チャンク可用性をDHT（BEP 44）およびトラッカーにアナウンス
-- `find_chunk_peers()`: [ccbt/discovery/xet_cas.py:112](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L112) - DHTおよびトラッカークエリ経由で特定のチャンクを持つピアを見つける
-- `request_chunk_from_peer()`: [ccbt/discovery/xet_cas.py:200](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L200) - Xet拡張プロトコルを使用して特定のピアからチャンクをリクエスト
+- `announce_chunk()`: [ccbt/discovery/xet_cas.py:50](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L50) - チャンク可用性をDHT（BEP 44）およびトラッカーにアナウンス
+- `find_chunk_peers()`: [ccbt/discovery/xet_cas.py:112](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L112) - DHTおよびトラッカークエリ経由で特定のチャンクを持つピアを見つける
+- `request_chunk_from_peer()`: [ccbt/discovery/xet_cas.py:200](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L200) - Xet拡張プロトコルを使用して特定のピアからチャンクをリクエスト
 
 **DHT統合：**
 - BEP 44（Distributed Hash Table for Mutable Items）を使用してチャンクメタデータを保存
-- チャンクメタデータ形式: [ccbt/discovery/xet_cas.py:68](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L68) - `{"type": "xet_chunk", "available": True}`
+- チャンクメタデータ形式: [ccbt/discovery/xet_cas.py:68](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L68) - `{"type": "xet_chunk", "available": True}`
 - 複数のDHTメソッドをサポート：`store()`、`store_chunk_hash()`、`get_chunk_peers()`、`get_peers()`、`find_value()`
 
 **トラッカー統合：**
@@ -500,24 +500,24 @@ Xorbは効率的なストレージと取得のために複数のチャンクを�
       show_submodules: false
 
 **形式仕様：**
-- ヘッダー: [ccbt/storage/xet_xorb.py:123](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L123) - 16バイト（magic `0x24687531`、バージョン、フラグ、予約）
-- チャンク数: [ccbt/storage/xet_xorb.py:149](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L149) - 4バイト（uint32、little-endian）
-- チャンクエントリ: [ccbt/storage/xet_xorb.py:140](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L140) - 可変（各チャンクのハッシュ、サイズ、データ）
-- メタデータ: [ccbt/storage/xet_xorb.py:119](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L119) - 8バイト（合計非圧縮サイズをuint64として）
+- ヘッダー: [ccbt/storage/xet_xorb.py:123](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L123) - 16バイト（magic `0x24687531`、バージョン、フラグ、予約）
+- チャンク数: [ccbt/storage/xet_xorb.py:149](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L149) - 4バイト（uint32、little-endian）
+- チャンクエントリ: [ccbt/storage/xet_xorb.py:140](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L140) - 可変（各チャンクのハッシュ、サイズ、データ）
+- メタデータ: [ccbt/storage/xet_xorb.py:119](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L119) - 8バイト（合計非圧縮サイズをuint64として）
 
 **定数：**
-- `MAX_XORB_SIZE`: [ccbt/storage/xet_xorb.py:35](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L35) - 最大xorbサイズ64 MiB
-- `XORB_MAGIC_INT`: [ccbt/storage/xet_xorb.py:36](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L36) - マジックナンバー`0x24687531`
-- `FLAG_COMPRESSED`: [ccbt/storage/xet_xorb.py:42](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L42) - LZ4圧縮フラグ
+- `MAX_XORB_SIZE`: [ccbt/storage/xet_xorb.py:35](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L35) - 最大xorbサイズ64 MiB
+- `XORB_MAGIC_INT`: [ccbt/storage/xet_xorb.py:36](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L36) - マジックナンバー`0x24687531`
+- `FLAG_COMPRESSED`: [ccbt/storage/xet_xorb.py:42](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L42) - LZ4圧縮フラグ
 
 **主要メソッド：**
-- `add_chunk()`: [ccbt/storage/xet_xorb.py:62](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L62) - チャンクをxorbに追加（MAX_XORB_SIZEを超えると失敗）
-- `serialize()`: [ccbt/storage/xet_xorb.py:84](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L84) - オプションのLZ4圧縮付きでxorbをバイナリ形式にシリアライズ
-- `deserialize()`: [ccbt/storage/xet_xorb.py:200](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L200) - 自動解凍付きでバイナリ形式からxorbをデシリアライズ
+- `add_chunk()`: [ccbt/storage/xet_xorb.py:62](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L62) - チャンクをxorbに追加（MAX_XORB_SIZEを超えると失敗）
+- `serialize()`: [ccbt/storage/xet_xorb.py:84](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L84) - オプションのLZ4圧縮付きでxorbをバイナリ形式にシリアライズ
+- `deserialize()`: [ccbt/storage/xet_xorb.py:200](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L200) - 自動解凍付きでバイナリ形式からxorbをデシリアライズ
 
 **圧縮：**
-- オプションLZ4圧縮: [ccbt/storage/xet_xorb.py:132](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L132) - `compress=True`でLZ4が利用可能な場合、チャンクデータを圧縮
-- 自動検出: [ccbt/storage/xet_xorb.py:22](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L22) - LZ4がインストールされていない場合、優雅にフォールバック
+- オプションLZ4圧縮: [ccbt/storage/xet_xorb.py:132](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L132) - `compress=True`でLZ4が利用可能な場合、チャンクデータを圧縮
+- 自動検出: [ccbt/storage/xet_xorb.py:22](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L22) - LZ4がインストールされていない場合、優雅にフォールバック
 
 ### Shard形式
 
@@ -535,25 +535,25 @@ Shardは効率的なファイルシステム操作のためにファイルメタ
       show_submodules: false
 
 **形式仕様：**
-- ヘッダー: [ccbt/storage/xet_shard.py:142](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L142) - 24バイト（magic `"SHAR"`、バージョン、フラグ、ファイル/xorb/チャンク数）
-- ファイル情報セクション: [ccbt/storage/xet_shard.py:145](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L145) - 可変（各ファイルのパス、ハッシュ、サイズ、xorb参照）
-- CAS情報セクション: [ccbt/storage/xet_shard.py:148](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L148) - 可変（xorbハッシュ、チャンクハッシュ）
-- HMACフッター: [ccbt/storage/xet_shard.py:150](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L150) - 32バイト（キーが提供された場合のHMAC-SHA256）
+- ヘッダー: [ccbt/storage/xet_shard.py:142](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L142) - 24バイト（magic `"SHAR"`、バージョン、フラグ、ファイル/xorb/チャンク数）
+- ファイル情報セクション: [ccbt/storage/xet_shard.py:145](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L145) - 可変（各ファイルのパス、ハッシュ、サイズ、xorb参照）
+- CAS情報セクション: [ccbt/storage/xet_shard.py:148](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L148) - 可変（xorbハッシュ、チャンクハッシュ）
+- HMACフッター: [ccbt/storage/xet_shard.py:150](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L150) - 32バイト（キーが提供された場合のHMAC-SHA256）
 
 **定数：**
-- `SHARD_MAGIC`: [ccbt/storage/xet_shard.py:19](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L19) - マジックバイト`b"SHAR"`
-- `SHARD_VERSION`: [ccbt/storage/xet_shard.py:20](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L20) - 形式バージョン1
-- `HMAC_SIZE`: [ccbt/storage/xet_shard.py:22](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L22) - HMAC-SHA256用32バイト
+- `SHARD_MAGIC`: [ccbt/storage/xet_shard.py:19](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L19) - マジックバイト`b"SHAR"`
+- `SHARD_VERSION`: [ccbt/storage/xet_shard.py:20](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L20) - 形式バージョン1
+- `HMAC_SIZE`: [ccbt/storage/xet_shard.py:22](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L22) - HMAC-SHA256用32バイト
 
 **主要メソッド：**
-- `add_file_info()`: [ccbt/storage/xet_shard.py:47](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L47) - xorb参照付きでファイルメタデータを追加
-- `add_chunk_hash()`: [ccbt/storage/xet_shard.py:80](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L80) - チャンクハッシュをshardに追加
-- `add_xorb_hash()`: [ccbt/storage/xet_shard.py:93](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L93) - xorbハッシュをshardに追加
-- `serialize()`: [ccbt/storage/xet_shard.py:106](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L106) - オプションのHMAC付きでshardをバイナリ形式にシリアライズ
-- `deserialize()`: [ccbt/storage/xet_shard.py:201](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L201) - HMAC検証付きでバイナリ形式からshardをデシリアライズ
+- `add_file_info()`: [ccbt/storage/xet_shard.py:47](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L47) - xorb参照付きでファイルメタデータを追加
+- `add_chunk_hash()`: [ccbt/storage/xet_shard.py:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L80) - チャンクハッシュをshardに追加
+- `add_xorb_hash()`: [ccbt/storage/xet_shard.py:93](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L93) - xorbハッシュをshardに追加
+- `serialize()`: [ccbt/storage/xet_shard.py:106](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L106) - オプションのHMAC付きでshardをバイナリ形式にシリアライズ
+- `deserialize()`: [ccbt/storage/xet_shard.py:201](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L201) - HMAC検証付きでバイナリ形式からshardをデシリアライズ
 
 **整合性：**
-- HMAC検証: [ccbt/storage/xet_shard.py:170](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L170) - shard整合性のためのオプションHMAC-SHA256
+- HMAC検証: [ccbt/storage/xet_shard.py:170](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L170) - shard整合性のためのオプションHMAC-SHA256
 
 ## Merkle Tree計算
 
@@ -571,13 +571,13 @@ Shardは効率的なファイルシステム操作のためにファイルメタ
       show_submodules: false
 
 **ハッシュ関数：**
-- `compute_chunk_hash()`: [ccbt/storage/xet_hashing.py:43](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L43) - チャンクのBLAKE3-256ハッシュを計算（SHA-256にフォールバック）
-- `compute_xorb_hash()`: [ccbt/storage/xet_hashing.py:63](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L63) - xorbデータのハッシュを計算
-- `verify_chunk_hash()`: [ccbt/storage/xet_hashing.py:158](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L158) - 期待されるハッシュに対してチャンクデータを検証
+- `compute_chunk_hash()`: [ccbt/storage/xet_hashing.py:43](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L43) - チャンクのBLAKE3-256ハッシュを計算（SHA-256にフォールバック）
+- `compute_xorb_hash()`: [ccbt/storage/xet_hashing.py:63](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L63) - xorbデータのハッシュを計算
+- `verify_chunk_hash()`: [ccbt/storage/xet_hashing.py:158](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L158) - 期待されるハッシュに対してチャンクデータを検証
 
 **Merkle Tree構築：**
-- `build_merkle_tree()`: [ccbt/storage/xet_hashing.py:78](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L78) - チャンクデータからMerkle treeを構築（最初にチャンクをハッシュ）
-- `build_merkle_tree_from_hashes()`: [ccbt/storage/xet_hashing.py:115](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L115) - 事前計算されたチャンクハッシュからMerkle treeを構築
+- `build_merkle_tree()`: [ccbt/storage/xet_hashing.py:78](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L78) - チャンクデータからMerkle treeを構築（最初にチャンクをハッシュ）
+- `build_merkle_tree_from_hashes()`: [ccbt/storage/xet_hashing.py:115](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L115) - 事前計算されたチャンクハッシュからMerkle treeを構築
 
 **アルゴリズム：**
 Merkle treeは、各レベルでハッシュをペアリングすることにより、下から上に構築されます：
@@ -587,13 +587,13 @@ Merkle treeは、各レベルでハッシュをペアリングすることによ
 4. 奇数：ペアリングのために最後のハッシュを複製
 
 **インクリメンタルハッシュ：**
-- `hash_file_incremental()`: [ccbt/storage/xet_hashing.py:175](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L175) - メモリ効率のためにインクリメンタルにファイルハッシュを計算
+- `hash_file_incremental()`: [ccbt/storage/xet_hashing.py:175](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L175) - メモリ効率のためにインクリメンタルにファイルハッシュを計算
 
 **ハッシュサイズ：**
-- `HASH_SIZE`: [ccbt/storage/xet_hashing.py:40](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L40) - BLAKE3-256またはSHA-256用32バイト
+- `HASH_SIZE`: [ccbt/storage/xet_hashing.py:40](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L40) - BLAKE3-256またはSHA-256用32バイト
 
 **BLAKE3サポート：**
-- 自動検出: [ccbt/storage/xet_hashing.py:21](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L21) - 利用可能な場合はBLAKE3を使用し、SHA-256にフォールバック
+- 自動検出: [ccbt/storage/xet_hashing.py:21](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L21) - 利用可能な場合はBLAKE3を使用し、SHA-256にフォールバック
 - パフォーマンス：BLAKE3は大容量ファイルに対してより優れたパフォーマンスを提供します
 
 ## 参照

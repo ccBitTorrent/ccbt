@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Any
 
 from ccbt.utils.exceptions import CCBTError
-from ccbt.utils.logging_config import LoggingContext, get_logger
+from ccbt.utils.logging_config import get_logger
 
 
 class EventPriority(Enum):
@@ -45,6 +45,11 @@ class EventType(Enum):
     PIECE_DOWNLOADED = "piece_downloaded"
     PIECE_VERIFIED = "piece_verified"
     PIECE_COMPLETED = "piece_completed"
+    # Metadata exchange events
+    METADATA_FETCH_STARTED = "metadata_fetch_started"
+    METADATA_FETCH_PROGRESS = "metadata_fetch_progress"
+    METADATA_FETCH_COMPLETED = "metadata_fetch_completed"
+    METADATA_FETCH_FAILED = "metadata_fetch_failed"
 
     # Torrent events
     TORRENT_ADDED = "torrent_added"
@@ -96,6 +101,7 @@ class EventType(Enum):
     XET_CHUNK_PROVIDED = "xet_chunk_provided"
     XET_CHUNK_NOT_FOUND = "xet_chunk_not_found"
     XET_CHUNK_ERROR = "xet_chunk_error"
+    XET_METADATA_RECEIVED = "xet_metadata_received"
 
     # XET Folder Sync events
     FOLDER_CHANGED = "folder_changed"
@@ -115,7 +121,7 @@ class EventType(Enum):
     DHT_AGGRESSIVE_MODE_ENABLED = "dht_aggressive_mode_enabled"
     DHT_AGGRESSIVE_MODE_DISABLED = "dht_aggressive_mode_disabled"
     DHT_ITERATIVE_LOOKUP_COMPLETE = "dht_iterative_lookup_complete"
-    
+
     # IMPROVEMENT: Peer quality events
     PEER_QUALITY_RANKED = "peer_quality_ranked"
     CONNECTION_POOL_QUALITY_CLEANUP = "connection_pool_quality_cleanup"
@@ -158,6 +164,7 @@ class EventType(Enum):
     PEER_ADDED = "peer_added"
     PEER_REMOVED = "peer_removed"
     PEER_CONNECTION_FAILED = "peer_connection_failed"
+    PEER_COUNT_LOW = "peer_count_low"
 
     # Tracker events
     TRACKER_ERROR = "tracker_error"
@@ -313,6 +320,30 @@ class PeerDisconnectedEvent(Event):
 
 
 @dataclass
+class PeerCountLowEvent(Event):
+    """Event emitted when peer count is low, triggering discovery."""
+
+    active_peers: int = 0
+    info_hash: bytes | None = None
+    total_peers: int = 0
+
+    def __post_init__(self):
+        """Initialize event type and data."""
+        self.event_type = EventType.PEER_COUNT_LOW.value
+        data: dict[str, Any] = {
+            "active_peers": self.active_peers,
+            "total_peers": self.total_peers,
+        }
+        if self.info_hash is not None:
+            data["info_hash"] = (
+                self.info_hash.hex()
+                if isinstance(self.info_hash, bytes)
+                else self.info_hash
+            )
+        self.data.update(data)
+
+
+@dataclass
 class PieceDownloadedEvent(Event):
     """Event emitted when a piece is downloaded."""
 
@@ -440,10 +471,10 @@ class EventBus:
             self._throttle_intervals: dict[str, float] = throttle_intervals
         else:
             self._throttle_intervals: dict[str, float] = {
-                "dht_node_found": 0.1,  
-                "dht_node_added": 0.1,  
-                "monitoring_heartbeat": 1.0,  
-                "global_metrics_update": 0.5, 
+                "dht_node_found": 0.1,
+                "dht_node_added": 0.1,
+                "monitoring_heartbeat": 1.0,
+                "global_metrics_update": 0.5,
             }
 
         # Statistics
@@ -551,9 +582,10 @@ class EventBus:
                 # Drop low-priority events when queue is very full
                 should_drop = (
                     event.priority.value < EventPriority.NORMAL.value
-                    and self.event_queue.qsize() >= self.max_queue_size * self.queue_full_threshold
+                    and self.event_queue.qsize()
+                    >= self.max_queue_size * self.queue_full_threshold
                 )
-                
+
                 if should_drop:
                     self.stats["events_dropped"] += 1
                     if event.event_type not in self._throttle_intervals:
@@ -563,7 +595,7 @@ class EventBus:
                             event.priority.name,
                         )
                     return
-                
+
                 # This gives batch processing a chance to make room
                 try:
                     await asyncio.wait_for(
@@ -582,7 +614,6 @@ class EventBus:
 
         except Exception:
             self.logger.exception("Failed to emit event")
-
 
     async def start(self) -> None:
         """Start the event bus."""
@@ -690,7 +721,7 @@ class EventBus:
 
             # Filter handlers that can actually handle this event
             processable_handlers = [h for h in all_handlers if h.can_handle(event)]
-            
+
             if not processable_handlers:
                 self.logger.debug(
                     "No processable handlers for event: %s (id=%s, registered=%d)",
@@ -710,15 +741,20 @@ class EventBus:
 
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             # Only log slow event handling or important events at INFO level
             duration = time.time() - start_time
             important_events = {
-                "torrent_completed", "torrent_added", "torrent_removed",
-                "system_start", "system_stop", "system_error",
-                "peer_connected", "peer_disconnected",
+                "torrent_completed",
+                "torrent_added",
+                "torrent_removed",
+                "system_start",
+                "system_stop",
+                "system_error",
+                "peer_connected",
+                "peer_disconnected",
             }
-            
+
             if duration > 0.1 or event.event_type in important_events:
                 # Log slow or important events at INFO level
                 self.logger.info(
@@ -804,10 +840,10 @@ def get_event_bus() -> EventBus:
         # Try to get config, but don't fail if config isn't initialized yet
         try:
             from ccbt.config.config import get_config
-            
+
             config = get_config()
             obs_config = config.observability
-            
+
             # Build throttle intervals from config
             throttle_intervals = {
                 "dht_node_found": obs_config.event_bus_throttle_dht_node_found,
@@ -815,7 +851,7 @@ def get_event_bus() -> EventBus:
                 "monitoring_heartbeat": obs_config.event_bus_throttle_monitoring_heartbeat,
                 "global_metrics_update": obs_config.event_bus_throttle_global_metrics_update,
             }
-            
+
             _event_bus = EventBus(
                 max_queue_size=obs_config.event_bus_max_queue_size,
                 batch_size=obs_config.event_bus_batch_size,
@@ -828,6 +864,21 @@ def get_event_bus() -> EventBus:
             # Fallback to defaults if config not available
             _event_bus = EventBus()
     return _event_bus
+
+
+def get_recent_events(limit: int = 100, event_type: str | None = None) -> list[Event]:
+    """Get recent events from the global event bus.
+
+    Args:
+        limit: Maximum number of events to return
+        event_type: Optional event type filter
+
+    Returns:
+        List of recent events
+
+    """
+    bus = get_event_bus()
+    return bus.get_replay_events(event_type=event_type, limit=limit)
 
 
 async def emit_event(event: Event) -> None:

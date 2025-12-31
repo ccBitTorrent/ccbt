@@ -10,19 +10,23 @@ import hashlib
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 logger = logging.getLogger(__name__)
 
 try:
-    from ccbt.security.key_manager import Ed25519KeyManager
+    from ccbt.security.key_manager import Ed25519KeyManager as _Ed25519KeyManager
 
     ED25519_AVAILABLE = True
 except ImportError:
     ED25519_AVAILABLE = False
+    _Ed25519KeyManager = None  # type: ignore[assignment, misc]
     logger.warning("Ed25519 key manager not available")
+
+if TYPE_CHECKING:
+    from ccbt.security.key_manager import Ed25519KeyManager
 
 
 class XetAllowlistError(Exception):
@@ -83,7 +87,12 @@ class XetAllowlist:
             encrypted_data = self.allowlist_path.read_bytes()
 
             if len(encrypted_data) < 12:  # Nonce (12 bytes) + at least some data
-                self.logger.warning("Invalid allowlist file, starting with empty list")
+                self.logger.warning(
+                    "Allowlist file '%s' is too short (expected at least 12 bytes for nonce, got %d bytes). "
+                    "Starting with empty allowlist.",
+                    self.allowlist_path,
+                    len(encrypted_data),
+                )
                 self._allowlist = {}
                 self._loaded = True
                 return
@@ -98,14 +107,18 @@ class XetAllowlist:
                 data = json.loads(plaintext.decode("utf-8"))
                 self._allowlist = data.get("peers", {})
             except Exception as e:
-                self.logger.warning("Failed to decrypt allowlist: %s", e)
+                self.logger.warning(
+                    "Failed to decrypt allowlist file '%s': %s. Starting with empty allowlist.",
+                    self.allowlist_path,
+                    e,
+                )
                 self._allowlist = {}
 
             self._loaded = True
             self.logger.info("Loaded allowlist with %d peers", len(self._allowlist))
 
-        except Exception as e:
-            self.logger.exception("Error loading allowlist: %s", e)
+        except Exception:
+            self.logger.exception("Error loading allowlist")
             self._allowlist = {}
             self._loaded = True
 
@@ -178,9 +191,12 @@ class XetAllowlist:
         if alias:
             if "metadata" not in peer_entry:
                 peer_entry["metadata"] = {}
-            peer_entry["metadata"]["alias"] = alias
+            # Type checker needs help here - we know metadata is a dict at this point
+            peer_entry["metadata"]["alias"] = alias  # type: ignore[index]
 
-        self._allowlist[peer_id] = peer_entry
+        if not isinstance(self._allowlist, dict):
+            self._allowlist = {}  # type: ignore[assignment]
+        self._allowlist[peer_id] = peer_entry  # type: ignore[index]
         self.logger.info("Added peer %s to allowlist", peer_id)
 
     def set_alias(self, peer_id: str, alias: str) -> bool:
@@ -333,21 +349,17 @@ class XetAllowlist:
         if expected_key_hex:
             expected_key = bytes.fromhex(expected_key_hex)
             if expected_key != public_key:
-                self.logger.warning(
-                    "Public key mismatch for peer %s", peer_id
-                )
+                self.logger.warning("Public key mismatch for peer %s", peer_id)
                 return False
 
         # Verify signature
         try:
             is_valid = self.key_manager.verify_signature(message, signature, public_key)
             if not is_valid:
-                self.logger.warning(
-                    "Invalid signature for peer %s", peer_id
-                )
+                self.logger.warning("Invalid signature for peer %s", peer_id)
             return is_valid
-        except Exception as e:
-            self.logger.exception("Error verifying peer signature: %s", e)
+        except Exception:
+            self.logger.exception("Error verifying peer signature")
             return False
 
     def get_peers(self) -> list[str]:
@@ -419,7 +431,3 @@ class XetAllowlist:
         import time
 
         return time.time()
-
-
-
-

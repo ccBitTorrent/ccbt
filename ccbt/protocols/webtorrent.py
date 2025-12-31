@@ -192,13 +192,10 @@ class WebTorrentProtocol(Protocol):
             # The shared WebSocket handler will route connections to registered protocols
             if self.websocket_server and self.session_manager:
                 # Register this protocol instance for WebSocket routing
-                if not hasattr(self.session_manager, "_webtorrent_protocols"):
-                    self.session_manager._webtorrent_protocols = []  # type: ignore[attr-defined]
-                if self not in self.session_manager._webtorrent_protocols:  # type: ignore[attr-defined]
-                    self.session_manager._webtorrent_protocols.append(self)  # type: ignore[attr-defined]
-                    logger.debug(
-                        "Registered WebTorrent protocol instance with session manager for WebSocket routing"
-                    )
+                self.session_manager.add_webtorrent_protocol(self)
+                logger.debug(
+                    "Registered WebTorrent protocol instance with session manager for WebSocket routing"
+                )
 
             # Set state to connected
             self.set_state(ProtocolState.CONNECTED)
@@ -236,14 +233,14 @@ class WebTorrentProtocol(Protocol):
             self._pending_messages.clear()
 
             # CRITICAL FIX: Unregister this protocol instance from session manager
-            if self.session_manager and hasattr(
-                self.session_manager, "_webtorrent_protocols"
+            if (
+                self.session_manager
+                and self in self.session_manager.get_webtorrent_protocols()
             ):
-                if self in self.session_manager._webtorrent_protocols:  # type: ignore[attr-defined]
-                    self.session_manager._webtorrent_protocols.remove(self)  # type: ignore[attr-defined]
-                    logger.debug(
-                        "Unregistered WebTorrent protocol instance from session manager"
-                    )
+                self.session_manager.remove_webtorrent_protocol(self)
+                logger.debug(
+                    "Unregistered WebTorrent protocol instance from session manager"
+                )
 
             # CRITICAL FIX: Don't close shared WebSocket server
             # The server is managed at daemon level, not per-protocol instance

@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 یا نصب از منبع:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-نقاط ورودی در [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81) تعریف شده‌اند.
+نقاط ورودی در [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81) تعریف شده‌اند.
 
 ## نقاط ورودی اصلی
 
@@ -42,8 +42,8 @@ ccBitTorrent سه نقطه ورودی اصلی ارائه می‌دهد:
 
 **Bitonic** رابط داشبورد ترمینال اصلی است. این یک نمای زنده و تعاملی از تمام تورنت‌ها، همتاها و معیارهای سیستم ارائه می‌دهد.
 
-- نقطه ورودی: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- تعریف شده در: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- نقطه ورودی: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- تعریف شده در: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - راه‌اندازی: `uv run bitonic` یا `uv run ccbt dashboard`
 
 برای استفاده تفصیلی، [راهنمای Bitonic](bitonic.md) را ببینید.
@@ -52,8 +52,8 @@ ccBitTorrent سه نقطه ورودی اصلی ارائه می‌دهد:
 
 **btbt** رابط خط فرمان پیشرفته با ویژگی‌های غنی است.
 
-- نقطه ورودی: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- تعریف شده در: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- نقطه ورودی: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- تعریف شده در: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - راه‌اندازی: `uv run btbt`
 
 برای تمام دستورات موجود، [مرجع btbt CLI](btbt-cli.md) را ببینید.
@@ -62,8 +62,8 @@ ccBitTorrent سه نقطه ورودی اصلی ارائه می‌دهد:
 
 **ccbt** رابط CLI پایه است.
 
-- نقطه ورودی: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- تعریف شده در: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- نقطه ورودی: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- تعریف شده در: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - راه‌اندازی: `uv run ccbt`
 
 ## شروع سریع
@@ -104,9 +104,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### پیکربندی ccBitTorrent
 
 یک فایل `ccbt.toml` در دایرکتوری کاری خود ایجاد کنید. به پیکربندی نمونه مراجعه کنید:
-- پیکربندی پیش‌فرض: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- متغیرهای محیطی: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- سیستم پیکربندی: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- پیکربندی پیش‌فرض: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- متغیرهای محیطی: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- سیستم پیکربندی: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 برای گزینه‌های پیکربندی تفصیلی، [راهنمای پیکربندی](configuration.md) را ببینید.
 
@@ -132,7 +132,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - از `uv run bitonic --help` یا `uv run btbt --help` برای کمک دستور استفاده کنید
 - [مرجع btbt CLI](btbt-cli.md) را برای گزینه‌های تفصیلی بررسی کنید
-- برای مسائل و بحث‌ها به [مخزن GitHub](https://github.com/yourusername/ccbittorrent) ما مراجعه کنید
+- برای مسائل و بحث‌ها به [مخزن GitHub](https://github.com/ccBitTorrent/ccbittorrent) ما مراجعه کنید
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 یا نصب از منبع:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-نقاط ورودی در [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81) تعریف شده‌اند.
+نقاط ورودی در [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81) تعریف شده‌اند.
 
 ## نقاط ورودی اصلی
 
@@ -181,8 +181,8 @@ ccBitTorrent سه نقطه ورودی اصلی ارائه می‌دهد:
 
 **Bitonic** رابط داشبورد ترمینال اصلی است. این یک نمای زنده و تعاملی از تمام تورنت‌ها، همتاها و معیارهای سیستم ارائه می‌دهد.
 
-- نقطه ورودی: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- تعریف شده در: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- نقطه ورودی: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- تعریف شده در: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - راه‌اندازی: `uv run bitonic` یا `uv run ccbt dashboard`
 
 برای استفاده تفصیلی، [راهنمای Bitonic](bitonic.md) را ببینید.
@@ -191,8 +191,8 @@ ccBitTorrent سه نقطه ورودی اصلی ارائه می‌دهد:
 
 **btbt** رابط خط فرمان پیشرفته با ویژگی‌های غنی است.
 
-- نقطه ورودی: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- تعریف شده در: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- نقطه ورودی: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- تعریف شده در: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - راه‌اندازی: `uv run btbt`
 
 برای تمام دستورات موجود، [مرجع btbt CLI](btbt-cli.md) را ببینید.
@@ -201,8 +201,8 @@ ccBitTorrent سه نقطه ورودی اصلی ارائه می‌دهد:
 
 **ccbt** رابط CLI پایه است.
 
-- نقطه ورودی: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- تعریف شده در: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- نقطه ورودی: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- تعریف شده در: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - راه‌اندازی: `uv run ccbt`
 
 ## شروع سریع
@@ -243,9 +243,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### پیکربندی ccBitTorrent
 
 یک فایل `ccbt.toml` در دایرکتوری کاری خود ایجاد کنید. به پیکربندی نمونه مراجعه کنید:
-- پیکربندی پیش‌فرض: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- متغیرهای محیطی: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- سیستم پیکربندی: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- پیکربندی پیش‌فرض: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- متغیرهای محیطی: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- سیستم پیکربندی: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 برای گزینه‌های پیکربندی تفصیلی، [راهنمای پیکربندی](configuration.md) را ببینید.
 
@@ -271,7 +271,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - از `uv run bitonic --help` یا `uv run btbt --help` برای کمک دستور استفاده کنید
 - [مرجع btbt CLI](btbt-cli.md) را برای گزینه‌های تفصیلی بررسی کنید
-- برای مسائل و بحث‌ها به [مخزن GitHub](https://github.com/yourusername/ccbittorrent) ما مراجعه کنید
+- برای مسائل و بحث‌ها به [مخزن GitHub](https://github.com/ccBitTorrent/ccbittorrent) ما مراجعه کنید
 
 
 

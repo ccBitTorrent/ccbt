@@ -42,9 +42,13 @@ class StatusAggregator:
                 "status": self.session.info.status,
                 "added_time": self.session.info.added_time,
                 "uptime": time.time() - self.session.info.added_time,
-                "last_error": self.session._last_error,
-                "tracker_status": self.session._tracker_connection_status,
-                "last_tracker_error": self.session._last_tracker_error,
+                "last_error": getattr(self.session, "_last_error", None),
+                "tracker_status": getattr(
+                    self.session, "_tracker_connection_status", None
+                ),
+                "last_tracker_error": getattr(
+                    self.session, "_last_tracker_error", None
+                ),
             },
         )
         return status
@@ -68,9 +72,9 @@ class StatusAggregator:
             "download_rate": 0.0,
             "upload_rate": 0.0,
             "download_complete": False,
-            "last_error": self.session._last_error,
-            "tracker_status": self.session._tracker_connection_status,
-            "last_tracker_error": self.session._last_tracker_error,
+            "last_error": getattr(self.session, "_last_error", None),
+            "tracker_status": getattr(self.session, "_tracker_connection_status", None),
+            "last_tracker_error": getattr(self.session, "_last_tracker_error", None),
         }
 
     async def _get_download_status(self) -> dict[str, Any]:

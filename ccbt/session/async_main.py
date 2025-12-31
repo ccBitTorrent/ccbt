@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import logging
 
 from ccbt.config.config import get_config, init_config
 from ccbt.session.download_manager import (
@@ -50,9 +51,12 @@ async def run_daemon(args) -> None:
                     pass
 
         # Show status if requested
+        # Note: AsyncSessionManager doesn't have get_status() method
+        # Status can be accessed via session.torrents and calling get_status() on individual sessions
         if getattr(args, "status", False):
-            with contextlib.suppress(Exception):
-                await session.get_status()
+            # Status display would require iterating through session.torrents
+            # For now, this is a no-op to maintain compatibility
+            pass
 
         # Legacy behavior: return immediately (tests expect quick exit)
     finally:
@@ -60,7 +64,7 @@ async def run_daemon(args) -> None:
 
 
 async def main() -> int:
-    """Compatibility main() that mirrors legacy async_main behavior."""
+    """Compatibility entry point that provides async_main behavior for legacy code."""
     parser = argparse.ArgumentParser(
         description="ccBitTorrent (compat) - Async entry point",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -140,17 +144,22 @@ async def main() -> int:
                         await dm.stop()
                         logger.info("Download manager stopped successfully")
                     except Exception as e:
-                        logger.warning(f"Error stopping download manager: {e}")
+                        logger.warning("Error stopping download manager: %s", e)
 
                 # Give tasks a moment to start their cancellation handlers
                 await asyncio.sleep(0.1)
 
                 # Cancel all remaining tasks in the event loop
                 current_task = asyncio.current_task()
-                all_tasks = [t for t in asyncio.all_tasks() if t != current_task and not t.done()]
+                all_tasks = [
+                    t for t in asyncio.all_tasks() if t != current_task and not t.done()
+                ]
 
                 if all_tasks:
-                    logger.info(f"Cancelling {len(all_tasks)} remaining background tasks...")
+                    logger.info(
+                        "Cancelling %d remaining background tasks...",
+                        len(all_tasks),
+                    )
                     for task in all_tasks:
                         task.cancel()
 
@@ -158,13 +167,15 @@ async def main() -> int:
                     try:
                         await asyncio.wait_for(
                             asyncio.gather(*all_tasks, return_exceptions=True),
-                            timeout=5.0
+                            timeout=5.0,
                         )
                         logger.info("All background tasks cancelled successfully")
                     except asyncio.TimeoutError:
-                        logger.warning("Some background tasks did not cancel within timeout")
+                        logger.warning(
+                            "Some background tasks did not cancel within timeout"
+                        )
                     except Exception as e:
-                        logger.warning(f"Error during task cancellation: {e}")
+                        logger.warning("Error during task cancellation: %s", e)
 
                 return 0
         # No action provided
@@ -179,14 +190,16 @@ async def main() -> int:
             try:
                 await session.stop()
             except Exception as e:
-                logging.getLogger(__name__).debug(f"Error stopping session: {e}")
+                logging.getLogger(__name__).debug("Error stopping session: %s", e)
 
         # Clean up active download managers
         for dm in active_download_managers:
             try:
                 await dm.stop()
             except Exception as e:
-                logging.getLogger(__name__).debug(f"Error stopping download manager: {e}")
+                logging.getLogger(__name__).debug(
+                    "Error stopping download manager: %s", e
+                )
 
         # Stop hot-reload if enabled in init_config
         if hasattr(config_manager.config, "_config_file") and getattr(
@@ -197,5 +210,5 @@ async def main() -> int:
 
 
 def sync_main() -> int:
-    """Synchronous wrapper for compatibility."""
+    """Provide synchronous wrapper for compatibility."""
     return asyncio.run(main())

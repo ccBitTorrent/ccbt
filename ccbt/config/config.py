@@ -14,9 +14,47 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, cast
 
 import toml
+
+# Windows workaround: Patch Pydantic plugin loader to prevent OSError [Errno 22]
+# This error occurs during plugin loading on Windows when Pydantic tries to discover
+# plugins via entry points. We patch the plugin loader to return empty list on error.
+if sys.platform == "win32":
+    try:
+        # Try to import and patch the plugin loader
+        # The import path may vary by Pydantic version, so we try multiple approaches
+        _loader_module = None
+        for import_path in [
+            "pydantic.plugin._loader",
+            "pydantic._internal.plugin._loader",
+            "pydantic.plugin._schema_validator",
+        ]:
+            try:
+                _loader_module = __import__(import_path, fromlist=["get_plugins"])
+                break
+            except (ImportError, AttributeError):
+                continue
+
+        if _loader_module and hasattr(_loader_module, "get_plugins"):
+            _original_get_plugins = _loader_module.get_plugins
+
+            def _safe_get_plugins():
+                """Safe plugin getter that handles Windows OSError."""
+                try:
+                    return cast("Callable[[], Any]", _original_get_plugins)()
+                except (OSError, ValueError):
+                    # On Windows, plugin discovery can fail with OSError [Errno 22]
+                    # Return empty list to allow models to be created without plugins
+                    return []
+
+            # Type ignore needed because we're dynamically patching a module attribute
+            _loader_module.get_plugins = _safe_get_plugins  # type: ignore[assignment]
+    except Exception:
+        # If patching fails for any reason, continue - models may still work
+        # This is a best-effort workaround, not critical for functionality
+        pass
 
 try:
     from cryptography.fernet import Fernet
@@ -29,7 +67,6 @@ from ccbt.models import (
     DiskConfig,
     NetworkConfig,
     ObservabilityConfig,
-    OptimizationConfig,
     OptimizationProfile,
     StrategyConfig,
 )
@@ -60,11 +97,11 @@ class ConfigManager:
         self._encryption_key: bytes | None = None
         self.config_file = self._find_config_file(config_file)
         self.config = self._load_config()
-        
+
         # Apply optimization profile if specified (after config is loaded)
         if self.config.optimization.profile != OptimizationProfile.CUSTOM:
             self.apply_profile()
-        
+
         self._setup_logging()
 
     def _find_config_file(
@@ -148,22 +185,27 @@ class ConfigManager:
             # Reduce connection limits on Windows to prevent socket buffer exhaustion
             if network_config.get("max_global_peers", 600) > 200:
                 network_config["max_global_peers"] = 200
-                logging.debug("Reduced max_global_peers to 200 for Windows compatibility")
+                logging.debug(
+                    "Reduced max_global_peers to 200 for Windows compatibility"
+                )
             if network_config.get("connection_pool_max_connections", 400) > 150:
                 network_config["connection_pool_max_connections"] = 150
-                logging.debug("Reduced connection_pool_max_connections to 150 for Windows compatibility")
+                logging.debug(
+                    "Reduced connection_pool_max_connections to 150 for Windows compatibility"
+                )
             if network_config.get("max_peers_per_torrent", 200) > 100:
                 network_config["max_peers_per_torrent"] = 100
-                logging.debug("Reduced max_peers_per_torrent to 100 for Windows compatibility")
+                logging.debug(
+                    "Reduced max_peers_per_torrent to 100 for Windows compatibility"
+                )
             config_data["network"] = network_config
 
         try:
             # Create Pydantic model with validation
-            config = Config(**config_data)
-            
+            return Config(**config_data)
+
             # Apply optimization profile if specified (after config is created)
             # We'll apply it in __init__ after self.config is set
-            return config
         except Exception as e:
             msg = f"Invalid configuration: {e}"
             raise ConfigurationError(msg) from e
@@ -626,6 +668,23 @@ class ConfigManager:
         msg = f"Unsupported export format: {fmt}"  # pragma: no cover
         raise ConfigurationError(msg)  # pragma: no cover
 
+    def save_config(self) -> None:
+        """Save current configuration to file.
+
+        Writes the current configuration to the config file (TOML format).
+        If no config file exists, creates one in the current directory.
+        """
+        if self.config_file is None:
+            # Create config file in current directory
+            self.config_file = Path.cwd() / "ccbt.toml"
+
+        # Ensure parent directory exists
+        self.config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Export config as TOML and write to file
+        config_str = self.export(fmt="toml", encrypt_passwords=True)
+        self.config_file.write_text(config_str, encoding="utf-8")
+
     def _get_encryption_key(self) -> bytes | None:
         """Get or create encryption key for proxy passwords.
 
@@ -916,23 +975,24 @@ class ConfigManager:
 
     def apply_profile(self, profile: OptimizationProfile | str | None = None) -> None:
         """Apply optimization profile to configuration.
-        
+
         Args:
             profile: Profile to apply. If None, uses config.optimization.profile.
                     Can be a string (will be converted to enum) or OptimizationProfile enum.
-        
+
         """
         if profile is None:
             profile = self.config.optimization.profile
         elif isinstance(profile, str):
             try:
                 profile = OptimizationProfile(profile.lower())
-            except ValueError:
-                raise ConfigurationError(
+            except ValueError as e:
+                msg = (
                     f"Invalid optimization profile: {profile}. "
                     f"Must be one of: {[p.value for p in OptimizationProfile]}"
                 )
-        
+                raise ConfigurationError(msg) from e
+
         # Profile definitions
         profiles = {
             OptimizationProfile.BALANCED: {
@@ -1019,15 +1079,16 @@ class ConfigManager:
                 # User has full control via config file
             },
         }
-        
+
         if profile == OptimizationProfile.CUSTOM:
             # Don't apply any overrides for CUSTOM profile
             return
-        
+
         profile_config = profiles.get(profile)
         if not profile_config:
-            raise ConfigurationError(f"Profile {profile} not found in profile definitions")
-        
+            msg = f"Profile {profile} not found in profile definitions"
+            raise ConfigurationError(msg)
+
         # Apply profile settings
         for section, settings in profile_config.items():
             if section == "strategy":
@@ -1046,7 +1107,7 @@ class ConfigManager:
                 for key, value in settings.items():
                     if hasattr(self.config.optimization, key):
                         setattr(self.config.optimization, key, value)
-        
+
         # Update profile field
         self.config.optimization.profile = profile
 
@@ -1100,6 +1161,16 @@ def set_config(new_config: Config) -> None:
         _config_manager = ConfigManager(None)  # pragma: no cover
     _config_manager.config = new_config
     _config_manager._setup_logging()  # noqa: SLF001
+
+
+def reset_config() -> None:
+    """Reset the global configuration manager to None.
+
+    This is primarily used for test isolation to ensure each test
+    starts with a fresh config instance.
+    """
+    global _config_manager
+    _config_manager = None
 
 
 # Backward compatibility functions

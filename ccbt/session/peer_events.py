@@ -1,15 +1,23 @@
+"""Peer event handling.
+
+This module provides event binding and handling for peer-related events,
+including connection events, message events, and state changes.
+"""
+
 from __future__ import annotations
 
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
-from ccbt.session.models import SessionContext
-from ccbt.session.types import PeerManagerProtocol, PieceManagerProtocol
+if TYPE_CHECKING:
+    from ccbt.session.models import SessionContext
+    from ccbt.session.types import PeerManagerProtocol, PieceManagerProtocol
 
 
 class PeerEventsBinder:
     """Bind/unbind peer and piece events for a session."""
 
     def __init__(self, ctx: SessionContext) -> None:
+        """Initialize the peer events binder with session context."""
         self._ctx = ctx
 
     def bind_peer_manager(
@@ -21,6 +29,16 @@ class PeerEventsBinder:
         on_piece_received: Callable[..., None] | None = None,
         on_bitfield_received: Callable[..., None] | None = None,
     ) -> None:
+        """Bind peer manager and event callbacks.
+
+        Args:
+            peer_manager: The peer manager protocol instance
+            on_peer_connected: Optional callback for peer connection events
+            on_peer_disconnected: Optional callback for peer disconnection events
+            on_piece_received: Optional callback for piece received events
+            on_bitfield_received: Optional callback for bitfield received events
+
+        """
         if on_peer_connected is not None:
             peer_manager.on_peer_connected = on_peer_connected  # type: ignore[attr-defined]
         if on_peer_disconnected is not None:
@@ -39,6 +57,15 @@ class PeerEventsBinder:
         on_piece_verified: Callable[[int], None] | None = None,
         on_download_complete: Callable[[], None] | None = None,
     ) -> None:
+        """Bind piece manager and event callbacks.
+
+        Args:
+            piece_manager: The piece manager protocol instance
+            on_piece_completed: Optional callback for piece completion events
+            on_piece_verified: Optional callback for piece verification events
+            on_download_complete: Optional callback for download completion
+
+        """
         if on_piece_completed is not None:
             piece_manager.on_piece_completed = on_piece_completed  # type: ignore[attr-defined]
         if on_piece_verified is not None:

@@ -50,11 +50,12 @@ def interactive_cli(mock_session):
     """Create InteractiveCLI instance."""
     from ccbt.cli.interactive import InteractiveCLI
     
+    from tests.conftest import create_interactive_cli
     console = Mock(spec=Console)
     console.print = Mock()
     console.clear = Mock()
     console.print_json = Mock()
-    cli = InteractiveCLI(mock_session, console)
+    cli = create_interactive_cli(mock_session, console)
     return cli
 
 
@@ -400,7 +401,9 @@ class TestInteractiveComprehensive:
         interactive_cli.session = mock_session
         
         mock_torrent_session = MagicMock()
-        mock_file_manager = AsyncMock()
+        # Import FileSelectionManager to use as spec
+        from ccbt.piece.file_selection import FileSelectionManager
+        mock_file_manager = MagicMock(spec=FileSelectionManager)
         mock_file_manager.select_file = AsyncMock()
         mock_file_manager.get_all_file_states = AsyncMock(return_value={0: MagicMock()})
         mock_torrent_session.file_selection_manager = mock_file_manager
@@ -420,7 +423,9 @@ class TestInteractiveComprehensive:
         interactive_cli.session = mock_session
         
         mock_torrent_session = MagicMock()
-        mock_file_manager = AsyncMock()
+        # Import FileSelectionManager to use as spec
+        from ccbt.piece.file_selection import FileSelectionManager
+        mock_file_manager = MagicMock(spec=FileSelectionManager)
         mock_file_manager.deselect_file = AsyncMock()
         mock_file_manager.get_all_file_states = AsyncMock(return_value={0: MagicMock()})
         mock_torrent_session.file_selection_manager = mock_file_manager
@@ -440,7 +445,9 @@ class TestInteractiveComprehensive:
         interactive_cli.session = mock_session
         
         mock_torrent_session = MagicMock()
-        mock_file_manager = AsyncMock()
+        # Import FileSelectionManager to use as spec
+        from ccbt.piece.file_selection import FileSelectionManager
+        mock_file_manager = MagicMock(spec=FileSelectionManager)
         mock_file_manager.set_file_priority = AsyncMock()
         mock_file_manager.get_all_file_states = AsyncMock(return_value={0: MagicMock()})
         mock_torrent_session.file_selection_manager = mock_file_manager

@@ -172,7 +172,8 @@ class TestXetAllowlist:
 
         peer_info = allowlist.get_peer_info("peer_1")
         assert peer_info is not None
-        assert peer_info.get("public_key") == "1" * 64  # Hex encoded
+        # public_key is hex-encoded: b"1" * 32 (0x31 bytes) -> "31" * 32 = "313131...3131" (64 hex chars)
+        assert peer_info.get("public_key") == "31" * 32  # Hex encoded
         metadata = peer_info.get("metadata", {})
         if isinstance(metadata, dict):
             assert metadata.get("alias") == "Alice"

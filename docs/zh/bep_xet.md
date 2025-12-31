@@ -384,15 +384,15 @@ class XetMessageType(IntEnum):
 ```
 
 **关键方法：**
-- `encode_chunk_request()`: [ccbt/extensions/xet.py:89](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L89) - 使用请求ID编码块请求消息
-- `decode_chunk_request()`: [ccbt/extensions/xet.py:108](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L108) - 解码块请求消息
-- `encode_chunk_response()`: [ccbt/extensions/xet.py:136](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L136) - 使用数据编码块响应
-- `handle_chunk_request()`: [ccbt/extensions/xet.py:210](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L210) - 处理来自对等节点的传入块请求
-- `handle_chunk_response()`: [ccbt/extensions/xet.py:284](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L284) - 处理来自对等节点的块响应
+- `encode_chunk_request()`: [ccbt/extensions/xet.py:89](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L89) - 使用请求ID编码块请求消息
+- `decode_chunk_request()`: [ccbt/extensions/xet.py:108](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L108) - 解码块请求消息
+- `encode_chunk_response()`: [ccbt/extensions/xet.py:136](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L136) - 使用数据编码块响应
+- `handle_chunk_request()`: [ccbt/extensions/xet.py:210](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L210) - 处理来自对等节点的传入块请求
+- `handle_chunk_response()`: [ccbt/extensions/xet.py:284](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L284) - 处理来自对等节点的块响应
 
 **扩展握手：**
-- `encode_handshake()`: [ccbt/extensions/xet.py:61](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L61) - 编码Xet扩展功能
-- `decode_handshake()`: [ccbt/extensions/xet.py:75](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/extensions/xet.py#L75) - 解码对等节点的Xet扩展功能
+- `encode_handshake()`: [ccbt/extensions/xet.py:61](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L61) - 编码Xet扩展功能
+- `decode_handshake()`: [ccbt/extensions/xet.py:75](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/extensions/xet.py#L75) - 解码对等节点的Xet扩展功能
 
 #### 2. 内容定义分块（`ccbt/storage/xet_chunking.py`）
 
@@ -410,15 +410,15 @@ class XetMessageType(IntEnum):
       show_submodules: false
 
 **常量：**
-- `MIN_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:21](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L21) - 最小块大小8 KB
-- `MAX_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:22](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L22) - 最大块大小128 KB
-- `TARGET_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:23](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L23) - 默认目标块大小16 KB
-- `WINDOW_SIZE`: [ccbt/storage/xet_chunking.py:24](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L24) - 滚动哈希窗口48字节
+- `MIN_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:21](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L21) - 最小块大小8 KB
+- `MAX_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:22](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L22) - 最大块大小128 KB
+- `TARGET_CHUNK_SIZE`: [ccbt/storage/xet_chunking.py:23](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L23) - 默认目标块大小16 KB
+- `WINDOW_SIZE`: [ccbt/storage/xet_chunking.py:24](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L24) - 滚动哈希窗口48字节
 
 **关键方法：**
-- `chunk_buffer()`: [ccbt/storage/xet_chunking.py:210](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L210) - 使用Gearhash CDC算法对数据进行分块
-- `_find_chunk_boundary()`: [ccbt/storage/xet_chunking.py:242](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L242) - 使用滚动哈希查找内容定义的块边界
-- `_init_gear_table()`: [ccbt/storage/xet_chunking.py:54](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L54) - 初始化用于滚动哈希的预计算gear表
+- `chunk_buffer()`: [ccbt/storage/xet_chunking.py:210](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L210) - 使用Gearhash CDC算法对数据进行分块
+- `_find_chunk_boundary()`: [ccbt/storage/xet_chunking.py:242](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L242) - 使用滚动哈希查找内容定义的块边界
+- `_init_gear_table()`: [ccbt/storage/xet_chunking.py:54](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_chunking.py#L54) - 初始化用于滚动哈希的预计算gear表
 
 **算法：**
 Gearhash算法使用带有预计算的256元素gear表的滚动哈希来查找内容定义的边界。这确保不同文件中的相似内容产生相同的块边界，实现跨文件去重。
@@ -439,14 +439,14 @@ Gearhash算法使用带有预计算的256元素gear表的滚动哈希来查找�
       show_submodules: false
 
 **数据库模式：**
-- `chunks`表: [ccbt/storage/xet_deduplication.py:65](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L65) - 存储块哈希、大小、存储路径、引用计数、时间戳
-- 索引: [ccbt/storage/xet_deduplication.py:75](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L75) - 在size和last_accessed上，用于高效查询
+- `chunks`表: [ccbt/storage/xet_deduplication.py:65](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L65) - 存储块哈希、大小、存储路径、引用计数、时间戳
+- 索引: [ccbt/storage/xet_deduplication.py:75](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L75) - 在size和last_accessed上，用于高效查询
 
 **关键方法：**
-- `check_chunk_exists()`: [ccbt/storage/xet_deduplication.py:85](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L85) - 检查块是否在本地存在并更新访问时间
-- `store_chunk()`: [ccbt/storage/xet_deduplication.py:112](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L112) - 使用去重存储块（如果存在则增加ref_count）
-- `get_chunk_path()`: [ccbt/storage/xet_deduplication.py:165](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L165) - 获取块的本地存储路径
-- `cleanup_unused_chunks()`: [ccbt/storage/xet_deduplication.py:201](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L201) - 删除在max_age_days内未访问的块
+- `check_chunk_exists()`: [ccbt/storage/xet_deduplication.py:85](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L85) - 检查块是否在本地存在并更新访问时间
+- `store_chunk()`: [ccbt/storage/xet_deduplication.py:112](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L112) - 使用去重存储块（如果存在则增加ref_count）
+- `get_chunk_path()`: [ccbt/storage/xet_deduplication.py:165](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L165) - 获取块的本地存储路径
+- `cleanup_unused_chunks()`: [ccbt/storage/xet_deduplication.py:201](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_deduplication.py#L201) - 删除在max_age_days内未访问的块
 
 **功能：**
 - 引用计数：跟踪有多少种子/文件引用每个块
@@ -469,13 +469,13 @@ Gearhash算法使用带有预计算的256元素gear表的滚动哈希来查找�
       show_submodules: false
 
 **关键方法：**
-- `announce_chunk()`: [ccbt/discovery/xet_cas.py:50](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L50) - 向DHT（BEP 44）和跟踪器宣布块可用性
-- `find_chunk_peers()`: [ccbt/discovery/xet_cas.py:112](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L112) - 通过DHT和跟踪器查询查找具有特定块的对等节点
-- `request_chunk_from_peer()`: [ccbt/discovery/xet_cas.py:200](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L200) - 使用Xet扩展协议从特定对等节点请求块
+- `announce_chunk()`: [ccbt/discovery/xet_cas.py:50](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L50) - 向DHT（BEP 44）和跟踪器宣布块可用性
+- `find_chunk_peers()`: [ccbt/discovery/xet_cas.py:112](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L112) - 通过DHT和跟踪器查询查找具有特定块的对等节点
+- `request_chunk_from_peer()`: [ccbt/discovery/xet_cas.py:200](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L200) - 使用Xet扩展协议从特定对等节点请求块
 
 **DHT集成：**
 - 使用BEP 44（Distributed Hash Table for Mutable Items）存储块元数据
-- 块元数据格式: [ccbt/discovery/xet_cas.py:68](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L68) - `{"type": "xet_chunk", "available": True}`
+- 块元数据格式: [ccbt/discovery/xet_cas.py:68](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/discovery/xet_cas.py#L68) - `{"type": "xet_chunk", "available": True}`
 - 支持多种DHT方法：`store()`、`store_chunk_hash()`、`get_chunk_peers()`、`get_peers()`、`find_value()`
 
 **跟踪器集成：**
@@ -500,24 +500,24 @@ Xorb将多个块分组，以实现高效的存储和检索。
       show_submodules: false
 
 **格式规范：**
-- 标头: [ccbt/storage/xet_xorb.py:123](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L123) - 16字节（magic `0x24687531`，版本，标志，保留）
-- 块计数: [ccbt/storage/xet_xorb.py:149](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L149) - 4字节（uint32，小端序）
-- 块条目: [ccbt/storage/xet_xorb.py:140](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L140) - 可变（每个块的哈希、大小、数据）
-- 元数据: [ccbt/storage/xet_xorb.py:119](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L119) - 8字节（总未压缩大小作为uint64）
+- 标头: [ccbt/storage/xet_xorb.py:123](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L123) - 16字节（magic `0x24687531`，版本，标志，保留）
+- 块计数: [ccbt/storage/xet_xorb.py:149](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L149) - 4字节（uint32，小端序）
+- 块条目: [ccbt/storage/xet_xorb.py:140](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L140) - 可变（每个块的哈希、大小、数据）
+- 元数据: [ccbt/storage/xet_xorb.py:119](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L119) - 8字节（总未压缩大小作为uint64）
 
 **常量：**
-- `MAX_XORB_SIZE`: [ccbt/storage/xet_xorb.py:35](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L35) - 最大xorb大小64 MiB
-- `XORB_MAGIC_INT`: [ccbt/storage/xet_xorb.py:36](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L36) - 魔数`0x24687531`
-- `FLAG_COMPRESSED`: [ccbt/storage/xet_xorb.py:42](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L42) - LZ4压缩标志
+- `MAX_XORB_SIZE`: [ccbt/storage/xet_xorb.py:35](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L35) - 最大xorb大小64 MiB
+- `XORB_MAGIC_INT`: [ccbt/storage/xet_xorb.py:36](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L36) - 魔数`0x24687531`
+- `FLAG_COMPRESSED`: [ccbt/storage/xet_xorb.py:42](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L42) - LZ4压缩标志
 
 **关键方法：**
-- `add_chunk()`: [ccbt/storage/xet_xorb.py:62](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L62) - 将块添加到xorb（如果超过MAX_XORB_SIZE则失败）
-- `serialize()`: [ccbt/storage/xet_xorb.py:84](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L84) - 使用可选的LZ4压缩将xorb序列化为二进制格式
-- `deserialize()`: [ccbt/storage/xet_xorb.py:200](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L200) - 从二进制格式反序列化xorb，带自动解压缩
+- `add_chunk()`: [ccbt/storage/xet_xorb.py:62](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L62) - 将块添加到xorb（如果超过MAX_XORB_SIZE则失败）
+- `serialize()`: [ccbt/storage/xet_xorb.py:84](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L84) - 使用可选的LZ4压缩将xorb序列化为二进制格式
+- `deserialize()`: [ccbt/storage/xet_xorb.py:200](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L200) - 从二进制格式反序列化xorb，带自动解压缩
 
 **压缩：**
-- 可选LZ4压缩: [ccbt/storage/xet_xorb.py:132](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L132) - 如果`compress=True`且LZ4可用，则压缩块数据
-- 自动检测: [ccbt/storage/xet_xorb.py:22](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L22) - 如果未安装LZ4，则优雅回退
+- 可选LZ4压缩: [ccbt/storage/xet_xorb.py:132](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L132) - 如果`compress=True`且LZ4可用，则压缩块数据
+- 自动检测: [ccbt/storage/xet_xorb.py:22](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_xorb.py#L22) - 如果未安装LZ4，则优雅回退
 
 ### Shard格式
 
@@ -535,25 +535,25 @@ Shard存储文件元数据和CAS信息，以实现高效的文件系统操作。
       show_submodules: false
 
 **格式规范：**
-- 标头: [ccbt/storage/xet_shard.py:142](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L142) - 24字节（magic `"SHAR"`，版本，标志，文件/xorb/块计数）
-- 文件信息部分: [ccbt/storage/xet_shard.py:145](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L145) - 可变（每个文件的路径、哈希、大小、xorb引用）
-- CAS信息部分: [ccbt/storage/xet_shard.py:148](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L148) - 可变（xorb哈希、块哈希）
-- HMAC页脚: [ccbt/storage/xet_shard.py:150](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L150) - 32字节（如果提供密钥则为HMAC-SHA256）
+- 标头: [ccbt/storage/xet_shard.py:142](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L142) - 24字节（magic `"SHAR"`，版本，标志，文件/xorb/块计数）
+- 文件信息部分: [ccbt/storage/xet_shard.py:145](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L145) - 可变（每个文件的路径、哈希、大小、xorb引用）
+- CAS信息部分: [ccbt/storage/xet_shard.py:148](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L148) - 可变（xorb哈希、块哈希）
+- HMAC页脚: [ccbt/storage/xet_shard.py:150](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L150) - 32字节（如果提供密钥则为HMAC-SHA256）
 
 **常量：**
-- `SHARD_MAGIC`: [ccbt/storage/xet_shard.py:19](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L19) - 魔数字节`b"SHAR"`
-- `SHARD_VERSION`: [ccbt/storage/xet_shard.py:20](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L20) - 格式版本1
-- `HMAC_SIZE`: [ccbt/storage/xet_shard.py:22](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L22) - HMAC-SHA256的32字节
+- `SHARD_MAGIC`: [ccbt/storage/xet_shard.py:19](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L19) - 魔数字节`b"SHAR"`
+- `SHARD_VERSION`: [ccbt/storage/xet_shard.py:20](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L20) - 格式版本1
+- `HMAC_SIZE`: [ccbt/storage/xet_shard.py:22](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L22) - HMAC-SHA256的32字节
 
 **关键方法：**
-- `add_file_info()`: [ccbt/storage/xet_shard.py:47](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L47) - 添加带xorb引用的文件元数据
-- `add_chunk_hash()`: [ccbt/storage/xet_shard.py:80](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L80) - 将块哈希添加到shard
-- `add_xorb_hash()`: [ccbt/storage/xet_shard.py:93](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L93) - 将xorb哈希添加到shard
-- `serialize()`: [ccbt/storage/xet_shard.py:106](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L106) - 使用可选的HMAC将shard序列化为二进制格式
-- `deserialize()`: [ccbt/storage/xet_shard.py:201](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L201) - 从二进制格式反序列化shard，带HMAC验证
+- `add_file_info()`: [ccbt/storage/xet_shard.py:47](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L47) - 添加带xorb引用的文件元数据
+- `add_chunk_hash()`: [ccbt/storage/xet_shard.py:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L80) - 将块哈希添加到shard
+- `add_xorb_hash()`: [ccbt/storage/xet_shard.py:93](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L93) - 将xorb哈希添加到shard
+- `serialize()`: [ccbt/storage/xet_shard.py:106](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L106) - 使用可选的HMAC将shard序列化为二进制格式
+- `deserialize()`: [ccbt/storage/xet_shard.py:201](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L201) - 从二进制格式反序列化shard，带HMAC验证
 
 **完整性：**
-- HMAC验证: [ccbt/storage/xet_shard.py:170](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L170) - 用于shard完整性的可选HMAC-SHA256
+- HMAC验证: [ccbt/storage/xet_shard.py:170](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_shard.py#L170) - 用于shard完整性的可选HMAC-SHA256
 
 ## Merkle Tree计算
 
@@ -571,13 +571,13 @@ Shard存储文件元数据和CAS信息，以实现高效的文件系统操作。
       show_submodules: false
 
 **哈希函数：**
-- `compute_chunk_hash()`: [ccbt/storage/xet_hashing.py:43](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L43) - 计算块的BLAKE3-256哈希（回退到SHA-256）
-- `compute_xorb_hash()`: [ccbt/storage/xet_hashing.py:63](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L63) - 计算xorb数据的哈希
-- `verify_chunk_hash()`: [ccbt/storage/xet_hashing.py:158](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L158) - 根据预期哈希验证块数据
+- `compute_chunk_hash()`: [ccbt/storage/xet_hashing.py:43](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L43) - 计算块的BLAKE3-256哈希（回退到SHA-256）
+- `compute_xorb_hash()`: [ccbt/storage/xet_hashing.py:63](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L63) - 计算xorb数据的哈希
+- `verify_chunk_hash()`: [ccbt/storage/xet_hashing.py:158](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L158) - 根据预期哈希验证块数据
 
 **Merkle Tree构建：**
-- `build_merkle_tree()`: [ccbt/storage/xet_hashing.py:78](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L78) - 从块数据构建Merkle tree（首先对块进行哈希）
-- `build_merkle_tree_from_hashes()`: [ccbt/storage/xet_hashing.py:115](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L115) - 从预计算的块哈希构建Merkle tree
+- `build_merkle_tree()`: [ccbt/storage/xet_hashing.py:78](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L78) - 从块数据构建Merkle tree（首先对块进行哈希）
+- `build_merkle_tree_from_hashes()`: [ccbt/storage/xet_hashing.py:115](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L115) - 从预计算的块哈希构建Merkle tree
 
 **算法：**
 Merkle tree通过在每个级别配对哈希自下而上构建：
@@ -587,13 +587,13 @@ Merkle tree通过在每个级别配对哈希自下而上构建：
 4. 奇数：复制最后一个哈希用于配对
 
 **增量哈希：**
-- `hash_file_incremental()`: [ccbt/storage/xet_hashing.py:175](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L175) - 增量计算文件哈希以提高内存效率
+- `hash_file_incremental()`: [ccbt/storage/xet_hashing.py:175](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L175) - 增量计算文件哈希以提高内存效率
 
 **哈希大小：**
-- `HASH_SIZE`: [ccbt/storage/xet_hashing.py:40](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L40) - BLAKE3-256或SHA-256的32字节
+- `HASH_SIZE`: [ccbt/storage/xet_hashing.py:40](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L40) - BLAKE3-256或SHA-256的32字节
 
 **BLAKE3支持：**
-- 自动检测: [ccbt/storage/xet_hashing.py:21](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L21) - 如果可用则使用BLAKE3，否则回退到SHA-256
+- 自动检测: [ccbt/storage/xet_hashing.py:21](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/storage/xet_hashing.py#L21) - 如果可用则使用BLAKE3，否则回退到SHA-256
 - 性能：BLAKE3为大文件提供更好的性能
 
 ## 参考文献

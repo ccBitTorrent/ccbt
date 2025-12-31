@@ -9,6 +9,7 @@ import pytest
 
 def test___main___daemon_status_quick_exit(monkeypatch):
     """Smoke-test ccbt.__main__ with --daemon --status for quick, side-effect-free exit."""
+    from unittest.mock import patch
     import ccbt.__main__ as mainmod
 
     argv = [
@@ -19,8 +20,17 @@ def test___main___daemon_status_quick_exit(monkeypatch):
     ]
     monkeypatch.setattr(sys, "argv", argv)
 
-    rc = mainmod.main()
-    assert rc == 0
+    # Mock get_config to return valid config
+    with patch("ccbt.config.config.get_config") as mock_get_config:
+        from ccbt.config.config import Config
+        config = Config()
+        config.discovery.aggressive_initial_dht_interval = 30.0
+        config.discovery.aggressive_discovery_interval_popular = 30.0
+        config.discovery.aggressive_discovery_interval_active = 30.0
+        mock_get_config.return_value = config
+        
+        rc = mainmod.main()
+        assert rc == 0
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,7 @@ import ipaddress
 import json
 import logging
 from io import StringIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
@@ -67,29 +67,31 @@ class BlacklistUpdater:
         try:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=30)
-            ) as session:
-                async with session.get(source_url) as resp:
-                    if resp.status != 200:
-                        logger.warning(
-                            "Failed to fetch blacklist from %s: HTTP %d",
-                            source_url,
-                            resp.status,
+            ) as session, session.get(source_url) as resp:
+                if resp.status != 200:
+                    logger.warning(
+                        "Failed to fetch blacklist from %s: HTTP %d",
+                        source_url,
+                        resp.status,
+                    )
+                    return 0
+
+                content = await resp.text()
+                ips = self._parse_blacklist_content(content, source_url)
+
+                added = 0
+                for ip in ips:
+                    if (
+                        self._is_valid_ip(ip)
+                        and ip not in self.security_manager.blacklist_entries
+                    ):
+                        self.security_manager.add_to_blacklist(
+                            ip, f"Auto-updated from {source_url}", source="auto"
                         )
-                        return 0
+                        added += 1
 
-                    content = await resp.text()
-                    ips = self._parse_blacklist_content(content, source_url)
-
-                    added = 0
-                    for ip in ips:
-                        if self._is_valid_ip(ip) and ip not in self.security_manager.blacklist_entries:
-                            self.security_manager.add_to_blacklist(
-                                ip, f"Auto-updated from {source_url}", source="auto"
-                            )
-                            added += 1
-
-                    logger.info("Updated %d IPs from %s", added, source_url)
-                    return added
+                logger.info("Updated %d IPs from %s", added, source_url)
+                return added
         except asyncio.TimeoutError:
             logger.warning("Timeout downloading blacklist from %s", source_url)
             return 0
@@ -107,7 +109,9 @@ class BlacklistUpdater:
             return
 
         # Initialize local source if configured
-        if self._local_source_config and getattr(self._local_source_config, "enabled", False):
+        if self._local_source_config and getattr(
+            self._local_source_config, "enabled", False
+        ):
             from ccbt.security.local_blacklist_source import LocalBlacklistSource
 
             self._local_source = LocalBlacklistSource(
@@ -160,12 +164,12 @@ class BlacklistUpdater:
         if self._update_task and not self._update_task.done():
             self._update_task.cancel()
             logger.info("Stopped blacklist auto-update task")
-        
+
         # Stop local source if running
         if self._local_source:
             self._local_source.stop_evaluation()
 
-    def _parse_blacklist_content(self, content: str, source_url: str) -> list[str]:
+    def _parse_blacklist_content(self, content: str, _source_url: str) -> list[str]:
         """Parse blacklist content and extract IP addresses.
 
         Args:
@@ -202,12 +206,14 @@ class BlacklistUpdater:
         """
         ips = []
         for line in content.splitlines():
-            line = line.strip()
+            stripped_line = line.strip()
             # Skip empty lines and comments
-            if not line or line.startswith("#"):
+            if not stripped_line or stripped_line.startswith("#"):
                 continue
             # Extract IP (may have comments after)
-            ip_part = line.split()[0] if " " in line else line
+            ip_part = (
+                stripped_line.split()[0] if " " in stripped_line else stripped_line
+            )
             if self._is_valid_ip(ip_part):
                 ips.append(ip_part)
         return ips
@@ -258,9 +264,9 @@ class BlacklistUpdater:
                     continue
                 # Try first column as IP
                 for cell in row:
-                    cell = cell.strip()
-                    if self._is_valid_ip(cell):
-                        ips.append(cell)
+                    stripped_cell = cell.strip()
+                    if self._is_valid_ip(stripped_cell):
+                        ips.append(stripped_cell)
                         break
         except Exception:
             logger.warning("Failed to parse CSV blacklist content")
@@ -281,5 +287,3 @@ class BlacklistUpdater:
             return True
         except ValueError:
             return False
-
-

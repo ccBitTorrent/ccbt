@@ -10,11 +10,14 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from ccbt.utils.events import Event, EventType, emit_event
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from watchdog.observers import Observer
 
 try:
     from watchdog.events import FileSystemEvent, FileSystemEventHandler
@@ -23,6 +26,7 @@ try:
     WATCHDOG_AVAILABLE = True
 except ImportError:
     WATCHDOG_AVAILABLE = False
+    Observer = None  # type: ignore[assignment,misc]
     logger.warning("watchdog library not available, using polling only")
 
 
@@ -71,7 +75,7 @@ class FolderChangeHandler(FileSystemEventHandler):
             # Call callback
             self.callback(event_type, file_path)
 
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error handling file system event")
 
 
@@ -96,7 +100,7 @@ class FolderWatcher:
         self.check_interval = check_interval
         self.use_watchdog = use_watchdog and WATCHDOG_AVAILABLE
 
-        self.observer: Observer | None = None
+        self.observer: Observer | None = None  # type: ignore[type-arg]
         self.polling_task: asyncio.Task | None = None
         self.is_watching = False
         self.last_check_time = time.time()
@@ -163,9 +167,7 @@ class FolderWatcher:
 
         self.logger.info("Stopped folder watcher for %s", self.folder_path)
 
-    def add_change_callback(
-        self, callback: Callable[[str, str], None]
-    ) -> None:
+    def add_change_callback(self, callback: Callable[[str, str], None]) -> None:
         """Add callback for file change events.
 
         Args:
@@ -174,9 +176,7 @@ class FolderWatcher:
         """
         self.change_callbacks.append(callback)
 
-    def remove_change_callback(
-        self, callback: Callable[[str, str], None]
-    ) -> None:
+    def remove_change_callback(self, callback: Callable[[str, str], None]) -> None:
         """Remove change callback.
 
         Args:
@@ -211,8 +211,8 @@ class FolderWatcher:
 
         """
         try:
-            # Emit event
-            asyncio.create_task(
+            # Emit event - fire-and-forget
+            asyncio.create_task(  # noqa: RUF006
                 emit_event(
                     Event(
                         event_type=EventType.FOLDER_CHANGED.value,
@@ -230,12 +230,10 @@ class FolderWatcher:
             for callback in self.change_callbacks:
                 try:
                     callback(event_type, file_path)
-                except Exception as e:
-                    self.logger.exception(
-                        "Error in change callback for %s", file_path
-                    )
+                except Exception:
+                    self.logger.exception("Error in change callback for %s", file_path)
 
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error handling file change")
 
     async def _polling_loop(self) -> None:
@@ -251,7 +249,7 @@ class FolderWatcher:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception:
                 self.logger.exception("Error in polling loop")
                 await asyncio.sleep(self.check_interval)
 
@@ -295,7 +293,7 @@ class FolderWatcher:
             self.last_file_states = current_file_states
             self.last_check_time = current_time
 
-        except Exception as e:
+        except Exception:
             self.logger.exception("Error checking folder changes")
 
     def get_last_check_time(self) -> float:
@@ -320,4 +318,3 @@ class FolderWatcher:
             return sum(1 for _ in self.folder_path.rglob("*") if _.is_file())
         except Exception:
             return 0
-

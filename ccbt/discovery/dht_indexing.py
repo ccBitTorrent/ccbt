@@ -123,7 +123,7 @@ async def store_infohash_sample(
     existing_entry = None
     seq = 0
     try:
-        existing_data = await dht_client.get_data(index_key, public_key=public_key)
+        existing_data = await dht_client.get_data(index_key, _public_key=public_key)
         if existing_data:
             # Decode bytes to dict first, then decode storage value
             from ccbt.core.bencode import BencodeDecoder
@@ -137,7 +137,9 @@ async def store_infohash_sample(
                 decoder = BencodeDecoder(existing_data)
                 value_dict = decoder.decode()
                 if isinstance(value_dict, dict):
-                    decoded = decode_storage_value(value_dict, DHTStorageKeyType.MUTABLE)
+                    decoded = decode_storage_value(
+                        value_dict, DHTStorageKeyType.MUTABLE
+                    )
                 else:
                     decoded = None
             except Exception:
@@ -247,7 +249,7 @@ async def query_index(
 
         # Wrap DHT query in timeout (10 seconds)
         existing_data = await asyncio.wait_for(
-            dht_client.get_data(index_key, public_key=public_key),
+            dht_client.get_data(index_key, _public_key=public_key),
             timeout=10.0,
         )
 

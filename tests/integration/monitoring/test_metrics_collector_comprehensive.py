@@ -408,9 +408,9 @@ async def test_cleanup_old_metrics(metrics_collector):
 @pytest.mark.asyncio
 async def test_collection_loop_runs(metrics_collector):
     """Test _collection_loop() runs collection methods."""
-    # Mock collection methods
-    with patch.object(metrics_collector, "_collect_system_metrics", new_callable=AsyncMock) as mock_sys:
-        with patch.object(metrics_collector, "_collect_performance_metrics", new_callable=AsyncMock) as mock_perf:
+    # Mock collection methods - use _impl methods that are actually called
+    with patch.object(metrics_collector, "_collect_system_metrics_impl", new_callable=AsyncMock) as mock_sys:
+        with patch.object(metrics_collector, "_collect_performance_metrics_impl", new_callable=AsyncMock) as mock_perf:
             with patch.object(metrics_collector, "_collect_custom_metrics", new_callable=AsyncMock) as mock_custom:
                 metrics_collector.running = True
                 
@@ -426,8 +426,8 @@ async def test_collection_loop_runs(metrics_collector):
 
 @pytest.mark.asyncio
 async def test_collect_system_metrics(metrics_collector):
-    """Test _collect_system_metrics() updates system metrics."""
-    await metrics_collector._collect_system_metrics()
+    """Test collect_system_metrics() updates system metrics."""
+    await metrics_collector.collect_system_metrics()
     
     # System metrics should be updated
     assert isinstance(metrics_collector.system_metrics["cpu_usage"], (int, float))
@@ -436,8 +436,8 @@ async def test_collect_system_metrics(metrics_collector):
 
 @pytest.mark.asyncio
 async def test_collect_performance_metrics(metrics_collector):
-    """Test _collect_performance_metrics() updates performance data."""
-    await metrics_collector._collect_performance_metrics()
+    """Test collect_performance_metrics() updates performance data."""
+    await metrics_collector.collect_performance_metrics()
     
     # Performance data should exist
     assert "peer_connections" in metrics_collector.performance_data
@@ -688,8 +688,8 @@ async def test_collection_loop_exception_handling(metrics_collector):
         # After first exception, stop the loop
         metrics_collector.running = False
     
-    with patch.object(metrics_collector, "_collect_system_metrics", side_effect=failing_collect_system_metrics):
-        with patch.object(metrics_collector, "_collect_performance_metrics", new_callable=AsyncMock):
+    with patch.object(metrics_collector, "_collect_system_metrics_impl", side_effect=failing_collect_system_metrics):
+        with patch.object(metrics_collector, "_collect_performance_metrics_impl", new_callable=AsyncMock):
             with patch.object(metrics_collector, "_collect_custom_metrics", new_callable=AsyncMock):
                 metrics_collector.running = True
                 
@@ -702,12 +702,12 @@ async def test_collection_loop_exception_handling(metrics_collector):
 
 @pytest.mark.asyncio
 async def test_collect_system_metrics_exception(metrics_collector):
-    """Test _collect_system_metrics() handles exceptions (lines 504-514)."""
+    """Test collect_system_metrics() handles exceptions (lines 504-514)."""
     # Mock psutil to raise exception
     with patch("ccbt.monitoring.metrics_collector.psutil") as mock_psutil:
         mock_psutil.cpu_percent.side_effect = Exception("CPU error")
         
-        await metrics_collector._collect_system_metrics()
+        await metrics_collector.collect_system_metrics()
         
         # Should handle exception gracefully
 

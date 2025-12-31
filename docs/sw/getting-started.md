@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 Au sanidi kutoka chanzo:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-Sehemu za kuingia zimefafanuliwa katika [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81).
+Sehemu za kuingia zimefafanuliwa katika [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81).
 
 ## Sehemu za Kuingia Kuu
 
@@ -42,8 +42,8 @@ ccBitTorrent hutoa sehemu tatu za kuingia:
 
 **Bitonic** ni kiolesura kuu cha dashboard ya terminal. Hutoa muonekano wa moja kwa moja, unaoendelea wa torrents zote, peers, na vipimo vya mfumo.
 
-- Sehemu ya kuingia: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- Imefafanuliwa katika: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- Sehemu ya kuingia: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- Imefafanuliwa katika: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - Anzisha: `uv run bitonic` au `uv run ccbt dashboard`
 
 Angalia [Mwongozo wa Bitonic](bitonic.md) kwa matumizi ya kina.
@@ -52,8 +52,8 @@ Angalia [Mwongozo wa Bitonic](bitonic.md) kwa matumizi ya kina.
 
 **btbt** ni kiolesura cha mstari wa amri kilichoimarishwa chenye vipengele vingi.
 
-- Sehemu ya kuingia: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- Imefafanuliwa katika: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- Sehemu ya kuingia: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- Imefafanuliwa katika: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - Anzisha: `uv run btbt`
 
 Angalia [Marejeo ya btbt CLI](btbt-cli.md) kwa amri zote zinazopatikana.
@@ -62,8 +62,8 @@ Angalia [Marejeo ya btbt CLI](btbt-cli.md) kwa amri zote zinazopatikana.
 
 **ccbt** ni kiolesura ya mstari wa amri ya msingi.
 
-- Sehemu ya kuingia: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- Imefafanuliwa katika: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- Sehemu ya kuingia: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- Imefafanuliwa katika: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - Anzisha: `uv run ccbt`
 
 ## Kuanza Haraka
@@ -104,9 +104,9 @@ Angalia [Marejeo ya btbt CLI](btbt-cli.md) kwa chaguzi zote za kupakua.
 ### Sanidi ccBitTorrent
 
 Unda faili `ccbt.toml` katika saraka yako ya kazi. Rejea usanidi wa mfano:
-- Usanidi wa kawaida: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- Vigezo vya mazingira: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- Mfumo wa usanidi: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- Usanidi wa kawaida: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- Vigezo vya mazingira: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- Mfumo wa usanidi: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 Angalia [Mwongozo wa Usanidi](configuration.md) kwa chaguzi za kina za usanidi.
 
@@ -132,7 +132,7 @@ Ripoti hizi zinaundwa na kusasishwa kiotomatiki kama sehemu ya mchakato wetu wa 
 
 - Tumia `uv run bitonic --help` au `uv run btbt --help` kwa msaada wa amri
 - Angalia [Marejeo ya btbt CLI](btbt-cli.md) kwa chaguzi za kina
-- Tembelea [hifadhi yetu ya GitHub](https://github.com/yourusername/ccbittorrent) kwa masuala na mazungumzo
+- Tembelea [hifadhi yetu ya GitHub](https://github.com/ccBitTorrent/ccbittorrent) kwa masuala na mazungumzo
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 Au sanidi kutoka chanzo:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-Sehemu za kuingia zimefafanuliwa katika [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81).
+Sehemu za kuingia zimefafanuliwa katika [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81).
 
 ## Sehemu za Kuingia Kuu
 
@@ -181,8 +181,8 @@ ccBitTorrent hutoa sehemu tatu za kuingia:
 
 **Bitonic** ni kiolesura kuu cha dashboard ya terminal. Hutoa muonekano wa moja kwa moja, unaoendelea wa torrents zote, peers, na vipimo vya mfumo.
 
-- Sehemu ya kuingia: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- Imefafanuliwa katika: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- Sehemu ya kuingia: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- Imefafanuliwa katika: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - Anzisha: `uv run bitonic` au `uv run ccbt dashboard`
 
 Angalia [Mwongozo wa Bitonic](bitonic.md) kwa matumizi ya kina.
@@ -191,8 +191,8 @@ Angalia [Mwongozo wa Bitonic](bitonic.md) kwa matumizi ya kina.
 
 **btbt** ni kiolesura cha mstari wa amri kilichoimarishwa chenye vipengele vingi.
 
-- Sehemu ya kuingia: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- Imefafanuliwa katika: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- Sehemu ya kuingia: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- Imefafanuliwa katika: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - Anzisha: `uv run btbt`
 
 Angalia [Marejeo ya btbt CLI](btbt-cli.md) kwa amri zote zinazopatikana.
@@ -201,8 +201,8 @@ Angalia [Marejeo ya btbt CLI](btbt-cli.md) kwa amri zote zinazopatikana.
 
 **ccbt** ni kiolesura ya mstari wa amri ya msingi.
 
-- Sehemu ya kuingia: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- Imefafanuliwa katika: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- Sehemu ya kuingia: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- Imefafanuliwa katika: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - Anzisha: `uv run ccbt`
 
 ## Kuanza Haraka
@@ -243,9 +243,9 @@ Angalia [Marejeo ya btbt CLI](btbt-cli.md) kwa chaguzi zote za kupakua.
 ### Sanidi ccBitTorrent
 
 Unda faili `ccbt.toml` katika saraka yako ya kazi. Rejea usanidi wa mfano:
-- Usanidi wa kawaida: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- Vigezo vya mazingira: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- Mfumo wa usanidi: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- Usanidi wa kawaida: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- Vigezo vya mazingira: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- Mfumo wa usanidi: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 Angalia [Mwongozo wa Usanidi](configuration.md) kwa chaguzi za kina za usanidi.
 
@@ -271,7 +271,7 @@ Ripoti hizi zinaundwa na kusasishwa kiotomatiki kama sehemu ya mchakato wetu wa 
 
 - Tumia `uv run bitonic --help` au `uv run btbt --help` kwa msaada wa amri
 - Angalia [Marejeo ya btbt CLI](btbt-cli.md) kwa chaguzi za kina
-- Tembelea [hifadhi yetu ya GitHub](https://github.com/yourusername/ccbittorrent) kwa masuala na mazungumzo
+- Tembelea [hifadhi yetu ya GitHub](https://github.com/ccBitTorrent/ccbittorrent) kwa masuala na mazungumzo
 
 
 

@@ -17,7 +17,7 @@ class TorrentExecutor(CommandExecutor):
     async def execute(
         self,
         command: str,
-        *args: Any,
+        *_args: Any,
         **kwargs: Any,
     ) -> CommandResult:
         """Execute torrent command.
@@ -96,6 +96,16 @@ class TorrentExecutor(CommandExecutor):
             return await self._get_per_peer_rate_limit(**kwargs)
         if command == "peer.set_all_rate_limits":
             return await self._set_all_peers_rate_limit(**kwargs)
+        if command == "torrent.set_option":
+            return await self._set_torrent_option(**kwargs)
+        if command == "torrent.get_option":
+            return await self._get_torrent_option(**kwargs)
+        if command == "torrent.get_config":
+            return await self._get_torrent_config(**kwargs)
+        if command == "torrent.reset_options":
+            return await self._reset_torrent_options(**kwargs)
+        if command == "torrent.save_checkpoint":
+            return await self._save_torrent_checkpoint(**kwargs)
         return CommandResult(
             success=False,
             error=f"Unknown torrent command: {command}",
@@ -132,7 +142,7 @@ class TorrentExecutor(CommandExecutor):
                 timeout_seconds = (
                     120.0 if path_or_magnet.startswith("magnet:") else 60.0
                 )
-                logger.error(
+                logger.exception(
                     "Timeout adding torrent/magnet '%s' (operation took >%.0fs)",
                     path_or_magnet[:100]
                     if len(path_or_magnet) > 100
@@ -145,13 +155,11 @@ class TorrentExecutor(CommandExecutor):
                 )
             except Exception as adapter_error:
                 # Log the exception with full traceback for debugging
-                logger.error(
-                    "Failed to add torrent/magnet '%s': %s",
+                logger.exception(
+                    "Failed to add torrent/magnet '%s'",
                     path_or_magnet[:100]
                     if len(path_or_magnet) > 100
                     else path_or_magnet,
-                    adapter_error,
-                    exc_info=True,
                 )
                 # Preserve exception details in error message
                 error_msg = str(adapter_error)
@@ -160,10 +168,7 @@ class TorrentExecutor(CommandExecutor):
                 return CommandResult(success=False, error=error_msg)
         except Exception as e:
             # Catch any unexpected errors in the executor itself
-            logger.exception(
-                "Unexpected error in torrent executor _add_torrent: %s",
-                e,
-            )
+            logger.exception("Unexpected error in torrent executor _add_torrent")
             return CommandResult(
                 success=False,
                 error=f"Unexpected error: {e!s}",
@@ -202,13 +207,15 @@ class TorrentExecutor(CommandExecutor):
             if success:
                 # Try to verify checkpoint exists
                 try:
-                    from ccbt.storage.checkpoint import CheckpointManager
                     from ccbt.config.config import get_config
+                    from ccbt.storage.checkpoint import CheckpointManager
 
                     config = get_config()
                     checkpoint_manager = CheckpointManager(config.disk)
                     info_hash_bytes = bytes.fromhex(info_hash)
-                    checkpoint = await checkpoint_manager.load_checkpoint(info_hash_bytes)
+                    checkpoint = await checkpoint_manager.load_checkpoint(
+                        info_hash_bytes
+                    )
                     checkpoint_saved = checkpoint is not None
                 except Exception:
                     pass  # Ignore checkpoint check errors
@@ -229,13 +236,15 @@ class TorrentExecutor(CommandExecutor):
             checkpoint_not_found = False
             if success:
                 try:
-                    from ccbt.storage.checkpoint import CheckpointManager
                     from ccbt.config.config import get_config
+                    from ccbt.storage.checkpoint import CheckpointManager
 
                     config = get_config()
                     checkpoint_manager = CheckpointManager(config.disk)
                     info_hash_bytes = bytes.fromhex(info_hash)
-                    checkpoint = await checkpoint_manager.load_checkpoint(info_hash_bytes)
+                    checkpoint = await checkpoint_manager.load_checkpoint(
+                        info_hash_bytes
+                    )
                     if checkpoint:
                         checkpoint_restored = True
                     else:
@@ -363,10 +372,10 @@ class TorrentExecutor(CommandExecutor):
             pause_result = await self._pause_torrent(info_hash)
             if not pause_result.success:
                 return pause_result
-            
+
             # Small delay
             await asyncio.sleep(0.1)
-            
+
             # Resume
             resume_result = await self._resume_torrent(info_hash)
             if resume_result.success:
@@ -384,13 +393,15 @@ class TorrentExecutor(CommandExecutor):
             if success:
                 # Try to verify checkpoint exists
                 try:
-                    from ccbt.storage.checkpoint import CheckpointManager
                     from ccbt.config.config import get_config
+                    from ccbt.storage.checkpoint import CheckpointManager
 
                     config = get_config()
                     checkpoint_manager = CheckpointManager(config.disk)
                     info_hash_bytes = bytes.fromhex(info_hash)
-                    checkpoint = await checkpoint_manager.load_checkpoint(info_hash_bytes)
+                    checkpoint = await checkpoint_manager.load_checkpoint(
+                        info_hash_bytes
+                    )
                     checkpoint_saved = checkpoint is not None
                 except Exception:
                     pass  # Ignore checkpoint check errors
@@ -439,7 +450,9 @@ class TorrentExecutor(CommandExecutor):
     ) -> CommandResult:
         """Set global rate limits."""
         try:
-            success = await self.adapter.global_set_rate_limits(download_kib, upload_kib)
+            success = await self.adapter.global_set_rate_limits(
+                download_kib, upload_kib
+            )
             return CommandResult(success=success, data={"set": success})
         except Exception as e:
             return CommandResult(success=False, error=str(e))
@@ -468,14 +481,18 @@ class TorrentExecutor(CommandExecutor):
         except Exception as e:
             return CommandResult(success=False, error=str(e))
 
-    async def _set_all_peers_rate_limit(
-        self, upload_limit_kib: int
-    ) -> CommandResult:
+    async def _set_all_peers_rate_limit(self, upload_limit_kib: int) -> CommandResult:
         """Set per-peer upload rate limit for all peers."""
         try:
-            updated_count = await self.adapter.set_all_peers_rate_limit(upload_limit_kib)
+            updated_count = await self.adapter.set_all_peers_rate_limit(
+                upload_limit_kib
+            )
             return CommandResult(
-                success=True, data={"updated_count": updated_count, "upload_limit_kib": upload_limit_kib}
+                success=True,
+                data={
+                    "updated_count": updated_count,
+                    "upload_limit_kib": upload_limit_kib,
+                },
             )
         except Exception as e:
             return CommandResult(success=False, error=str(e))
@@ -484,15 +501,19 @@ class TorrentExecutor(CommandExecutor):
         """Get metadata fetch status for magnet link."""
         try:
             # Check if adapter has get_metadata_status method
-            if hasattr(self.adapter, "get_metadata_status"):
-                status = await self.adapter.get_metadata_status(info_hash)
+            get_metadata_status = getattr(self.adapter, "get_metadata_status", None)
+            if get_metadata_status is not None:
+                status = await get_metadata_status(info_hash)
                 return CommandResult(success=True, data=status)
-            
+
             # Fallback: Check if torrent has files (indicates metadata is ready)
             status = await self.adapter.get_torrent_status(info_hash)
             if status:
                 files = await self.adapter.get_torrent_files(info_hash)
-                metadata_available = files is not None and len(files) > 0
+                # FileListResponse has a files attribute or can be checked for truthiness
+                metadata_available = files is not None and (
+                    len(files.files) > 0 if hasattr(files, "files") else bool(files)
+                )
                 return CommandResult(
                     success=True,
                     data={
@@ -501,7 +522,7 @@ class TorrentExecutor(CommandExecutor):
                         "ready": metadata_available,
                     },
                 )
-            
+
             return CommandResult(
                 success=False,
                 error="Torrent not found",
@@ -509,16 +530,15 @@ class TorrentExecutor(CommandExecutor):
         except Exception as e:
             return CommandResult(success=False, error=str(e))
 
-    async def _batch_pause_torrents(
-        self, info_hashes: list[str]
-    ) -> CommandResult:
+    async def _batch_pause_torrents(self, info_hashes: list[str]) -> CommandResult:
         """Pause multiple torrents."""
         try:
             # Check if adapter supports batch operations
-            if hasattr(self.adapter, "batch_pause_torrents"):
-                result = await self.adapter.batch_pause_torrents(info_hashes)
+            batch_pause_torrents = getattr(self.adapter, "batch_pause_torrents", None)
+            if batch_pause_torrents is not None:
+                result = await batch_pause_torrents(info_hashes)
                 return CommandResult(success=True, data=result)
-            
+
             # Fallback: Execute individually
             results = []
             for info_hash in info_hashes:
@@ -528,16 +548,15 @@ class TorrentExecutor(CommandExecutor):
         except Exception as e:
             return CommandResult(success=False, error=str(e))
 
-    async def _batch_resume_torrents(
-        self, info_hashes: list[str]
-    ) -> CommandResult:
+    async def _batch_resume_torrents(self, info_hashes: list[str]) -> CommandResult:
         """Resume multiple torrents."""
         try:
             # Check if adapter supports batch operations
-            if hasattr(self.adapter, "batch_resume_torrents"):
-                result = await self.adapter.batch_resume_torrents(info_hashes)
+            batch_resume_torrents = getattr(self.adapter, "batch_resume_torrents", None)
+            if batch_resume_torrents is not None:
+                result = await batch_resume_torrents(info_hashes)
                 return CommandResult(success=True, data=result)
-            
+
             # Fallback: Execute individually
             results = []
             for info_hash in info_hashes:
@@ -547,16 +566,17 @@ class TorrentExecutor(CommandExecutor):
         except Exception as e:
             return CommandResult(success=False, error=str(e))
 
-    async def _batch_restart_torrents(
-        self, info_hashes: list[str]
-    ) -> CommandResult:
+    async def _batch_restart_torrents(self, info_hashes: list[str]) -> CommandResult:
         """Restart multiple torrents."""
         try:
             # Check if adapter supports batch operations
-            if hasattr(self.adapter, "batch_restart_torrents"):
-                result = await self.adapter.batch_restart_torrents(info_hashes)
+            batch_restart_torrents = getattr(
+                self.adapter, "batch_restart_torrents", None
+            )
+            if batch_restart_torrents is not None:
+                result = await batch_restart_torrents(info_hashes)
                 return CommandResult(success=True, data=result)
-            
+
             # Fallback: Execute individually
             results = []
             for info_hash in info_hashes:
@@ -564,10 +584,12 @@ class TorrentExecutor(CommandExecutor):
                 pause_success = await self.adapter.pause_torrent(info_hash)
                 await asyncio.sleep(0.1)
                 resume_success = await self.adapter.resume_torrent(info_hash)
-                results.append({
-                    "info_hash": info_hash,
-                    "success": pause_success and resume_success,
-                })
+                results.append(
+                    {
+                        "info_hash": info_hash,
+                        "success": pause_success and resume_success,
+                    }
+                )
             return CommandResult(success=True, data={"results": results})
         except Exception as e:
             return CommandResult(success=False, error=str(e))
@@ -578,17 +600,171 @@ class TorrentExecutor(CommandExecutor):
         """Remove multiple torrents."""
         try:
             # Check if adapter supports batch operations
-            if hasattr(self.adapter, "batch_remove_torrents"):
-                result = await self.adapter.batch_remove_torrents(
+            batch_remove_torrents = getattr(self.adapter, "batch_remove_torrents", None)
+            if batch_remove_torrents is not None:
+                result = await batch_remove_torrents(
                     info_hashes, remove_data=remove_data
                 )
                 return CommandResult(success=True, data=result)
-            
+
             # Fallback: Execute individually
             results = []
             for info_hash in info_hashes:
                 success = await self.adapter.remove_torrent(info_hash)
                 results.append({"info_hash": info_hash, "success": success})
             return CommandResult(success=True, data={"results": results})
+        except Exception as e:
+            return CommandResult(success=False, error=str(e))
+
+    async def _set_torrent_option(
+        self,
+        info_hash: str,
+        key: str,
+        value: Any,
+    ) -> CommandResult:
+        """Set a per-torrent configuration option.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            key: Configuration option key
+            value: Configuration option value (already parsed)
+
+        Returns:
+            CommandResult with success status
+
+        """
+        try:
+            success = await self.adapter.set_torrent_option(info_hash, key, value)
+            return CommandResult(
+                success=success,
+                data={"set": success, "key": key, "value": value},
+            )
+        except Exception as e:
+            return CommandResult(success=False, error=str(e))
+
+    async def _get_torrent_option(
+        self,
+        info_hash: str,
+        key: str,
+    ) -> CommandResult:
+        """Get a per-torrent configuration option value.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            key: Configuration option key
+
+        Returns:
+            CommandResult with option value or None if not set
+
+        """
+        try:
+            # For LocalSessionAdapter, check if torrent exists directly
+            if hasattr(self.adapter, "session_manager"):
+                from ccbt.executor.session_adapter import LocalSessionAdapter
+
+                if isinstance(self.adapter, LocalSessionAdapter):
+                    info_hash_bytes = bytes.fromhex(info_hash)
+                    async with self.adapter.session_manager.lock:  # type: ignore[attr-defined]
+                        if info_hash_bytes not in self.adapter.session_manager.torrents:  # type: ignore[attr-defined]
+                            return CommandResult(
+                                success=False, error="Torrent not found"
+                            )
+            else:
+                # For DaemonSessionAdapter, check via status
+                status = await self.adapter.get_torrent_status(info_hash)
+                if status is None:
+                    return CommandResult(success=False, error="Torrent not found")
+
+            value = await self.adapter.get_torrent_option(info_hash, key)
+            return CommandResult(
+                success=True,
+                data={"key": key, "value": value},
+            )
+        except Exception as e:
+            return CommandResult(success=False, error=str(e))
+
+    async def _get_torrent_config(
+        self,
+        info_hash: str,
+    ) -> CommandResult:
+        """Get all per-torrent configuration options and rate limits.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            CommandResult with options and rate_limits dictionaries
+
+        """
+        try:
+            # For LocalSessionAdapter, check if torrent exists directly
+            if hasattr(self.adapter, "session_manager"):
+                from ccbt.executor.session_adapter import LocalSessionAdapter
+
+                if isinstance(self.adapter, LocalSessionAdapter):
+                    info_hash_bytes = bytes.fromhex(info_hash)
+                    async with self.adapter.session_manager.lock:  # type: ignore[attr-defined]
+                        if info_hash_bytes not in self.adapter.session_manager.torrents:  # type: ignore[attr-defined]
+                            return CommandResult(
+                                success=False, error="Torrent not found"
+                            )
+            else:
+                # For DaemonSessionAdapter, check via status
+                status = await self.adapter.get_torrent_status(info_hash)
+                if status is None:
+                    return CommandResult(success=False, error="Torrent not found")
+
+            # Torrent exists, get the config
+            config = await self.adapter.get_torrent_config(info_hash)
+            return CommandResult(
+                success=True,
+                data=config,
+            )
+        except Exception as e:
+            return CommandResult(success=False, error=str(e))
+
+    async def _reset_torrent_options(
+        self,
+        info_hash: str,
+        key: str | None = None,
+    ) -> CommandResult:
+        """Reset per-torrent configuration options.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+            key: Optional specific key to reset (None to reset all)
+
+        Returns:
+            CommandResult with success status
+
+        """
+        try:
+            success = await self.adapter.reset_torrent_options(info_hash, key=key)
+            return CommandResult(
+                success=success,
+                data={"reset": success, "key": key},
+            )
+        except Exception as e:
+            return CommandResult(success=False, error=str(e))
+
+    async def _save_torrent_checkpoint(
+        self,
+        info_hash: str,
+    ) -> CommandResult:
+        """Manually save checkpoint for a torrent.
+
+        Args:
+            info_hash: Torrent info hash (hex string)
+
+        Returns:
+            CommandResult with success status
+
+        """
+        try:
+            success = await self.adapter.save_torrent_checkpoint(info_hash)
+            return CommandResult(
+                success=success,
+                data={"saved": success},
+            )
         except Exception as e:
             return CommandResult(success=False, error=str(e))

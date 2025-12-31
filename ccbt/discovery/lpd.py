@@ -6,11 +6,11 @@ Provides local network peer discovery using UDP multicast.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import socket
 import struct
-import time
-from typing import Any, Callable
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class LocalPeerDiscovery:
                 self.multicast_address,
                 self.multicast_port,
             )
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to start LPD")
             await self.stop()
             raise
@@ -111,17 +111,13 @@ class LocalPeerDiscovery:
         # Cancel tasks
         if self._listen_task:
             self._listen_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._listen_task
-            except asyncio.CancelledError:
-                pass
 
         if self._announce_task:
             self._announce_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._announce_task
-            except asyncio.CancelledError:
-                pass
 
         # Close socket
         if self._socket:
@@ -167,7 +163,7 @@ class LocalPeerDiscovery:
                 f"Port: {self.listen_port}\r\n"
                 f"Infohash: {info_hash_v1.hex()}\r\n"
                 f"\r\n"
-            ).encode("utf-8")
+            ).encode()
 
             # Send to multicast group
             self._socket.sendto(

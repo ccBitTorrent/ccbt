@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 またはソースからインストール：
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-エントリーポイントは[pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81)で定義されています。
+エントリーポイントは[pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81)で定義されています。
 
 ## 主要エントリーポイント
 
@@ -42,8 +42,8 @@ ccBitTorrentは3つの主要なエントリーポイントを提供します：
 
 **Bitonic**はメインターミナルダッシュボードインターフェースです。すべてのトレント、ピア、システムメトリクスのライブでインタラクティブなビューを提供します。
 
-- エントリーポイント: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- 定義場所: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- エントリーポイント: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- 定義場所: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - 起動: `uv run bitonic` または `uv run ccbt dashboard`
 
 詳細な使用方法については[Bitonicガイド](bitonic.md)を参照してください。
@@ -52,8 +52,8 @@ ccBitTorrentは3つの主要なエントリーポイントを提供します：
 
 **btbt**は豊富な機能を備えた拡張コマンドラインインターフェースです。
 
-- エントリーポイント: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- 定義場所: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- エントリーポイント: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- 定義場所: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - 起動: `uv run btbt`
 
 利用可能なすべてのコマンドについては[btbt CLIリファレンス](btbt-cli.md)を参照してください。
@@ -62,8 +62,8 @@ ccBitTorrentは3つの主要なエントリーポイントを提供します：
 
 **ccbt**は基本的なコマンドラインインターフェースです。
 
-- エントリーポイント: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- 定義場所: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- エントリーポイント: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- 定義場所: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - 起動: `uv run ccbt`
 
 ## クイックスタート
@@ -104,9 +104,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### ccBitTorrentを設定
 
 作業ディレクトリに`ccbt.toml`ファイルを作成します。サンプル設定を参照：
-- デフォルト設定: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- 環境変数: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- 設定システム: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- デフォルト設定: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- 環境変数: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- 設定システム: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 詳細な設定オプションについては[設定ガイド](configuration.md)を参照してください。
 
@@ -132,7 +132,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - コマンドヘルプには`uv run bitonic --help`または`uv run btbt --help`を使用
 - 詳細なオプションについては[btbt CLIリファレンス](btbt-cli.md)を確認
-- 問題やディスカッションについては[GitHubリポジトリ](https://github.com/yourusername/ccbittorrent)にアクセス
+- 問題やディスカッションについては[GitHubリポジトリ](https://github.com/ccBitTorrent/ccbittorrent)にアクセス
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 またはソースからインストール：
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-エントリーポイントは[pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81)で定義されています。
+エントリーポイントは[pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81)で定義されています。
 
 ## 主要エントリーポイント
 
@@ -181,8 +181,8 @@ ccBitTorrentは3つの主要なエントリーポイントを提供します：
 
 **Bitonic**はメインターミナルダッシュボードインターフェースです。すべてのトレント、ピア、システムメトリクスのライブでインタラクティブなビューを提供します。
 
-- エントリーポイント: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- 定義場所: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- エントリーポイント: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- 定義場所: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - 起動: `uv run bitonic` または `uv run ccbt dashboard`
 
 詳細な使用方法については[Bitonicガイド](bitonic.md)を参照してください。
@@ -191,8 +191,8 @@ ccBitTorrentは3つの主要なエントリーポイントを提供します：
 
 **btbt**は豊富な機能を備えた拡張コマンドラインインターフェースです。
 
-- エントリーポイント: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- 定義場所: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- エントリーポイント: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- 定義場所: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - 起動: `uv run btbt`
 
 利用可能なすべてのコマンドについては[btbt CLIリファレンス](btbt-cli.md)を参照してください。
@@ -201,8 +201,8 @@ ccBitTorrentは3つの主要なエントリーポイントを提供します：
 
 **ccbt**は基本的なコマンドラインインターフェースです。
 
-- エントリーポイント: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- 定義場所: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- エントリーポイント: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- 定義場所: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - 起動: `uv run ccbt`
 
 ## クイックスタート
@@ -243,9 +243,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### ccBitTorrentを設定
 
 作業ディレクトリに`ccbt.toml`ファイルを作成します。サンプル設定を参照：
-- デフォルト設定: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- 環境変数: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- 設定システム: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- デフォルト設定: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- 環境変数: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- 設定システム: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 詳細な設定オプションについては[設定ガイド](configuration.md)を参照してください。
 
@@ -271,7 +271,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - コマンドヘルプには`uv run bitonic --help`または`uv run btbt --help`を使用
 - 詳細なオプションについては[btbt CLIリファレンス](btbt-cli.md)を確認
-- 問題やディスカッションについては[GitHubリポジトリ](https://github.com/yourusername/ccbittorrent)にアクセス
+- 問題やディスカッションについては[GitHubリポジトリ](https://github.com/ccBitTorrent/ccbittorrent)にアクセス
 
 
 

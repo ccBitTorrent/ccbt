@@ -73,16 +73,18 @@ class TrackerSession:
     backoff_delay: float = 1.0
     max_retries: int = 3
     is_connected: bool = False
+    last_response_time: float | None = None
 
 
 class AsyncUDPTrackerClient:
     """High-performance async UDP tracker client."""
 
-    def __init__(self, peer_id: bytes | None = None):
+    def __init__(self, peer_id: bytes | None = None, test_mode: bool = False):
         """Initialize UDP tracker client.
 
         Args:
             peer_id: Our peer ID (20 bytes)
+            test_mode: If True, bypass socket validation for testing. Defaults to False.
 
         """
         self.config = get_config()
@@ -111,11 +113,8 @@ class AsyncUDPTrackerClient:
         # Windows requires serialized access to UDP sockets to prevent WinError 10022
         self._socket_lock: asyncio.Lock = asyncio.Lock()
         self._socket_ready: bool = False
-
-        # CRITICAL FIX: Track WinError 10022 warning frequency to reduce verbosity
-        # Only log at WARNING level once per time period, then use DEBUG for subsequent occurrences
         self._last_winerror_warning_time: float = 0.0
-        self._winerror_warning_interval: float = 30.0  # Log WARNING once per 30 seconds
+        self._winerror_warning_interval: float = 60.0  # 60 seconds between warnings
 
         # CRITICAL FIX: Socket health monitoring to prevent aggressive recreation
         self._socket_error_count: int = 0
@@ -129,16 +128,62 @@ class AsyncUDPTrackerClient:
         self._max_socket_recreation_backoff: float = 60.0  # Max backoff of 60 seconds
         self._socket_recreation_count: int = 0
         self._last_socket_health_check: float = 0.0
-        
+
         # CRITICAL FIX: Immediate peer connection callback
         # This allows sessions to connect peers immediately when tracker responses arrive
         # instead of waiting for the announce loop to process them
-        self.on_peers_received: Callable[[list[dict[str, Any]], str], None] | None = None
+        self.on_peers_received: Callable[[list[dict[str, Any]], str], None] | None = (
+            None
+        )
+
+        # Test mode: bypass socket validation for testing
+        self._test_mode: bool = test_mode
 
         self.logger = logging.getLogger(__name__)
-    
-    async def _call_immediate_connection(self, peers: list[dict[str, Any]], tracker_url: str) -> None:
-        """Helper to call immediate connection callback asynchronously."""
+
+    @property
+    def socket_ready(self) -> bool:
+        """Check if socket is ready.
+
+        Returns:
+            True if socket is ready, False otherwise.
+
+        """
+        return self._socket_ready
+
+    async def announce_to_tracker_full(
+        self,
+        url: str,
+        torrent_data: dict[str, Any],
+        port: int | None = None,
+        uploaded: int = 0,
+        downloaded: int = 0,
+        left: int = 0,
+        event: TrackerEvent = TrackerEvent.STARTED,
+    ) -> tuple[list[dict[str, Any]], int | None, int | None, int | None] | None:
+        """Announce to tracker with full response (public API wrapper).
+
+        Args:
+            url: Tracker URL
+            torrent_data: Torrent data dictionary
+            port: Port number (optional)
+            uploaded: Bytes uploaded
+            downloaded: Bytes downloaded
+            left: Bytes left
+            event: Announce event
+
+        Returns:
+            Tuple of (peers, interval, seeders, leechers) or None on error
+
+        """
+        return await self._announce_to_tracker_full(
+            url, torrent_data, port, uploaded, downloaded, left, event
+        )
+
+    async def _call_immediate_connection(
+        self, peers: list[dict[str, Any]], tracker_url: str
+    ) -> None:
+        """Call immediate connection callback asynchronously."""
         if self.on_peers_received:
             try:
                 # Call the callback - it should be async-safe
@@ -188,7 +233,13 @@ class AsyncUDPTrackerClient:
 
         CRITICAL: Socket must be initialized during daemon startup via start_udp_tracker_client().
         Socket recreation is not supported as it breaks session logic.
+
+        In test mode, validation is bypassed to allow tests to mock the socket.
         """
+        # Bypass validation in test mode
+        if self._test_mode:
+            return
+
         if not self._check_socket_health():
             # CRITICAL FIX: Don't recreate socket on transient errors
             # Only raise error if socket is truly invalid
@@ -203,11 +254,12 @@ class AsyncUDPTrackerClient:
 
             # Only raise error if socket is truly invalid (not just transient error)
             if self.transport is None or self.transport.is_closing():
-                raise RuntimeError(
+                msg = (
                     "UDP tracker client socket is invalid. "
                     "Socket must be initialized during daemon startup via start_udp_tracker_client(). "
                     "Socket recreation is not supported as it breaks session logic."
                 )
+                raise RuntimeError(msg)
 
             # If socket appears invalid but might be transient, log and allow retry
             if not self._socket_ready:
@@ -254,12 +306,12 @@ class AsyncUDPTrackerClient:
                 self._socket_ready
                 and self.transport is not None
                 and not self.transport.is_closing()
+                and self._check_socket_health()
             ):
-                if self._check_socket_health():
-                    self.logger.debug(
-                        "UDP socket already ready and healthy after lock acquisition, skipping start()"
-                    )
-                    return
+                self.logger.debug(
+                    "UDP socket already ready and healthy after lock acquisition, skipping start()"
+                )
+                return
 
             # CRITICAL FIX: Apply exponential backoff to prevent aggressive socket recreation
             current_time = time.time()
@@ -299,11 +351,12 @@ class AsyncUDPTrackerClient:
                     self.transport.is_closing() if self.transport else None,
                     self._socket_error_count,
                 )
-                raise RuntimeError(
+                msg = (
                     "UDP tracker socket recreation is not allowed. "
                     "Socket must be initialized during daemon startup via start_udp_tracker_client(). "
                     "If socket is invalid, daemon must be restarted."
                 )
+                raise RuntimeError(msg)
 
             # Mark socket as not ready before closing (lock already held)
             # Only close if transport exists and is closing (cleanup scenario)
@@ -333,9 +386,8 @@ class AsyncUDPTrackerClient:
                 "CRITICAL: Attempted to create new UDP socket when existing socket is valid. "
                 "This should never happen - socket should be initialized once at daemon startup."
             )
-            raise RuntimeError(
-                "Cannot create new UDP socket - existing socket is valid"
-            )
+            msg = "Cannot create new UDP socket - existing socket is valid"
+            raise RuntimeError(msg)
 
         # Create UDP socket
         import socket as std_socket
@@ -367,8 +419,7 @@ class AsyncUDPTrackerClient:
             # Bind to configured tracker UDP port
             # Use tracker_udp_port if available, fallback to listen_port for backward compatibility
             configured_port = (
-                self.config.network.tracker_udp_port
-                or self.config.network.listen_port
+                self.config.network.tracker_udp_port or self.config.network.listen_port
             )
             sock.bind(("0.0.0.0", configured_port))  # nosec B104 - Bind to all interfaces on configured port
             self.logger.debug("Bound UDP tracker socket to port %d", configured_port)
@@ -389,7 +440,9 @@ class AsyncUDPTrackerClient:
                         f"Error: {e}\n\n"
                         f"{resolution}"
                     )
-                    self.logger.exception("UDP tracker port %d is already in use", configured_port)
+                    self.logger.exception(
+                        "UDP tracker port %d is already in use", configured_port
+                    )
                     raise RuntimeError(error_msg) from e
                 if error_code == 10013:  # WSAEACCES
                     from ccbt.utils.port_checker import get_permission_error_resolution
@@ -402,7 +455,9 @@ class AsyncUDPTrackerClient:
                         f"Error: {e}\n\n"
                         f"{resolution}"
                     )
-                    self.logger.exception("Permission denied binding to 0.0.0.0:%d", configured_port)
+                    self.logger.exception(
+                        "Permission denied binding to 0.0.0.0:%d", configured_port
+                    )
                     raise RuntimeError(error_msg) from e
             elif error_code == 98:  # EADDRINUSE
                 from ccbt.utils.port_checker import get_port_conflict_resolution
@@ -413,7 +468,9 @@ class AsyncUDPTrackerClient:
                     f"Error: {e}\n\n"
                     f"{resolution}"
                 )
-                self.logger.exception("UDP tracker port %d is already in use", configured_port)
+                self.logger.exception(
+                    "UDP tracker port %d is already in use", configured_port
+                )
                 raise RuntimeError(error_msg) from e
             elif error_code == 13:  # EACCES
                 from ccbt.utils.port_checker import get_permission_error_resolution
@@ -426,7 +483,9 @@ class AsyncUDPTrackerClient:
                     f"Error: {e}\n\n"
                     f"{resolution}"
                 )
-                self.logger.exception("Permission denied binding to 0.0.0.0:%d", configured_port)
+                self.logger.exception(
+                    "Permission denied binding to 0.0.0.0:%d", configured_port
+                )
                 raise RuntimeError(error_msg) from e
             # Re-raise other OSErrors as-is
             self.logger.exception("Failed to create UDP socket")
@@ -449,7 +508,8 @@ class AsyncUDPTrackerClient:
 
         # Verify socket is properly bound and listening
         if self.transport is None:
-            raise RuntimeError("Transport not initialized after socket creation")
+            msg = "Transport not initialized after socket creation"
+            raise RuntimeError(msg)
 
         # Log socket binding information
         try:
@@ -472,17 +532,20 @@ class AsyncUDPTrackerClient:
         try:
             # Verify transport is not closing
             if self.transport.is_closing():
-                raise RuntimeError("Transport is closing immediately after creation")
+                msg = "Transport is closing immediately after creation"
+                raise RuntimeError(msg)
 
             # Verify socket name is available (indicates socket is bound)
             sockname = self.transport.get_extra_info("sockname")
             if sockname is None:
-                raise RuntimeError("Socket name not available after creation")
+                msg = "Socket name not available after creation"
+                raise RuntimeError(msg)
 
             # CRITICAL FIX: On Windows, ensure socket is fully initialized in event loop
             # before marking as ready. ProactorEventLoop needs more time for UDP sockets.
             # Also verify we're using SelectorEventLoop (not ProactorEventLoop) for UDP support
             import sys
+
             if sys.platform == "win32":
                 loop = asyncio.get_event_loop()
                 is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
@@ -500,13 +563,17 @@ class AsyncUDPTrackerClient:
                 else:
                     # SelectorEventLoop also needs a brief moment
                     await asyncio.sleep(0.05)
-                    self.logger.debug("Using SelectorEventLoop for UDP (correct for Windows)")
+                    self.logger.debug(
+                        "Using SelectorEventLoop for UDP (correct for Windows)"
+                    )
 
             # Verify transport write buffer is ready
             try:
                 write_limits = self.transport.get_write_buffer_limits()  # type: ignore[attr-defined]
                 if write_limits is None:
-                    self.logger.debug("Transport write buffer limits not available (may be normal)")
+                    self.logger.debug(
+                        "Transport write buffer limits not available (may be normal)"
+                    )
             except Exception as e:
                 self.logger.debug("Could not get write buffer limits: %s", e)
 
@@ -524,9 +591,11 @@ class AsyncUDPTrackerClient:
                 sockname[0] if sockname else "unknown",
                 sockname[1] if sockname else 0,
             )
-        except Exception as e:
+        except Exception:
             self._socket_ready = False
-            self.logger.exception("Socket initialization verification failed. Socket may not be ready.")
+            self.logger.exception(
+                "Socket initialization verification failed. Socket may not be ready."
+            )
             raise
 
     async def stop(self) -> None:
@@ -1003,7 +1072,8 @@ class AsyncUDPTrackerClient:
 
                     # Send connect request (transport is guaranteed to be non-None after validation)
                     if self.transport is None:
-                        raise RuntimeError("Transport is None after validation")
+                        msg = "Transport is None after validation"
+                        raise RuntimeError(msg)
 
                     # CRITICAL FIX: Check socket health before send operation
                     if not self._check_socket_health():
@@ -1013,10 +1083,11 @@ class AsyncUDPTrackerClient:
 
                         # If socket is truly invalid, raise error
                         if self.transport is None or self.transport.is_closing():
-                            raise RuntimeError(
+                            msg = (
                                 "Socket is invalid (transport=None or closing). "
                                 "Socket should have been initialized during daemon startup."
                             )
+                            raise RuntimeError(msg)
 
                         # If socket just appears not ready, log and allow retry
                         self.logger.debug(
@@ -1024,11 +1095,13 @@ class AsyncUDPTrackerClient:
                             self._socket_error_count,
                         )
                         # Don't raise - let retry logic handle it
-                        raise ConnectionError("Socket health check failed")
+                        msg = "Socket health check failed"
+                        raise ConnectionError(msg)
 
                     # CRITICAL FIX: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
                     # WinError 10022 can occur if socket state is not properly synchronized
                     import sys
+
                     loop = asyncio.get_event_loop()
                     is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
                     if sys.platform == "win32" and is_proactor:
@@ -1041,11 +1114,18 @@ class AsyncUDPTrackerClient:
                             if write_limits is not None:
                                 self.logger.debug(
                                     "Transport write buffer limits: high=%s, low=%s",
-                                    write_limits[0] if isinstance(write_limits, tuple) else write_limits,
-                                    write_limits[1] if isinstance(write_limits, tuple) and len(write_limits) > 1 else None,
+                                    write_limits[0]
+                                    if isinstance(write_limits, tuple)
+                                    else write_limits,
+                                    write_limits[1]
+                                    if isinstance(write_limits, tuple)
+                                    and len(write_limits) > 1
+                                    else None,
                                 )
                         except Exception as e:
-                            self.logger.debug("Could not check write buffer limits: %s", e)
+                            self.logger.debug(
+                                "Could not check write buffer limits: %s", e
+                            )
 
                     # Wrap sendto in try/except to catch WinError 10022 and other socket errors
                     # These will be retried by the outer exception handler
@@ -1113,7 +1193,7 @@ class AsyncUDPTrackerClient:
                                 or self.transport is None
                                 or self.transport.is_closing()
                             ):
-                                self.logger.error(
+                                self.logger.exception(
                                     "Socket is invalid after WinError 10022 (ready=%s, transport=%s, closing=%s). "
                                     "Cannot retry - socket must be reinitialized.",
                                     self._socket_ready,
@@ -1122,9 +1202,8 @@ class AsyncUDPTrackerClient:
                                     if self.transport
                                     else None,
                                 )
-                                raise RuntimeError(
-                                    "Socket is invalid after WinError 10022"
-                                ) from send_error
+                                msg = "Socket is invalid after WinError 10022"
+                                raise RuntimeError(msg) from send_error
 
                             # Retry the send operation
                             try:
@@ -1167,7 +1246,9 @@ class AsyncUDPTrackerClient:
                 base_timeout = 10.0  # Reduced from 20.0s
                 if self._socket_error_count > 0:
                     # Reduce timeout when socket is having issues
-                    base_timeout = max(5.0, base_timeout - (self._socket_error_count * 2.0))
+                    base_timeout = max(
+                        5.0, base_timeout - (self._socket_error_count * 2.0)
+                    )
 
                 timeout = base_timeout + (
                     attempt * 2.0
@@ -1410,10 +1491,12 @@ class AsyncUDPTrackerClient:
             async with self._socket_lock:
                 # Send announce request (transport is guaranteed to be non-None after validation)
                 if self.transport is None:
-                    raise RuntimeError("Transport is None after validation")
+                    msg = "Transport is None after validation"
+                    raise RuntimeError(msg)
 
                 # CRITICAL FIX: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
                 import sys
+
                 loop = asyncio.get_event_loop()
                 is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
                 if sys.platform == "win32" and is_proactor:
@@ -1475,15 +1558,14 @@ class AsyncUDPTrackerClient:
                             or self.transport is None
                             or self.transport.is_closing()
                         ):
-                            self.logger.error(
+                            self.logger.exception(
                                 "Socket is invalid after WinError 10022 during announce (ready=%s, transport=%s, closing=%s)",
                                 self._socket_ready,
                                 self.transport is not None,
                                 self.transport.is_closing() if self.transport else None,
                             )
-                            raise RuntimeError(
-                                "Socket is invalid after WinError 10022"
-                            ) from send_error
+                            msg = "Socket is invalid after WinError 10022"
+                            raise RuntimeError(msg) from send_error
 
                         # Retry the send operation
                         try:
@@ -1525,7 +1607,7 @@ class AsyncUDPTrackerClient:
                 # Previous announce exists - check if it was fast
                 # If previous response was fast (< 5s), use shorter timeout (20s)
                 # If previous response was slow (> 10s), use longer timeout (40s)
-                last_response_time = getattr(session, 'last_response_time', 0.0)
+                last_response_time = getattr(session, "last_response_time", 0.0)
                 if last_response_time > 0 and last_response_time < 5.0:
                     announce_timeout = 20.0  # Faster timeout for responsive trackers
                 elif last_response_time > 10.0:
@@ -1535,7 +1617,7 @@ class AsyncUDPTrackerClient:
             else:
                 # First announce - use base timeout
                 announce_timeout = base_timeout
-            
+
             start_time = time.time()
             try:
                 response = await self._wait_for_response(
@@ -1708,10 +1790,12 @@ class AsyncUDPTrackerClient:
             async with self._socket_lock:
                 # Send announce request (transport is guaranteed to be non-None after validation)
                 if self.transport is None:
-                    raise RuntimeError("Transport is None after validation")
+                    msg = "Transport is None after validation"
+                    raise RuntimeError(msg)
 
                 # CRITICAL FIX: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
                 import sys
+
                 loop = asyncio.get_event_loop()
                 is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
                 if sys.platform == "win32" and is_proactor:
@@ -1773,15 +1857,14 @@ class AsyncUDPTrackerClient:
                             or self.transport is None
                             or self.transport.is_closing()
                         ):
-                            self.logger.error(
+                            self.logger.exception(
                                 "Socket is invalid after WinError 10022 during scrape (ready=%s, transport=%s, closing=%s)",
                                 self._socket_ready,
                                 self.transport is not None,
                                 self.transport.is_closing() if self.transport else None,
                             )
-                            raise RuntimeError(
-                                "Socket is invalid after WinError 10022"
-                            ) from send_error
+                            msg = "Socket is invalid after WinError 10022"
+                            raise RuntimeError(msg) from send_error
 
                         # Retry the send operation
                         try:
@@ -1943,7 +2026,7 @@ class AsyncUDPTrackerClient:
                     transaction_id,
                     _addr[0] if _addr else "unknown",
                     _addr[1] if _addr else 0,
-                    sorted(list(self.pending_requests.keys()))[
+                    sorted(self.pending_requests.keys())[
                         :10
                     ],  # Show first 10 for brevity
                     len(self.pending_requests),
@@ -2240,7 +2323,7 @@ class AsyncUDPTrackerClient:
                         peers=peers,
                     )
                     future.set_result(response)
-                    
+
                     # CRITICAL FIX: IMMEDIATE CONNECTION PATH - Connect peers as soon as they arrive
                     # This bypasses the announce loop and connects peers immediately
                     if peers and len(peers) > 0:
@@ -2254,7 +2337,21 @@ class AsyncUDPTrackerClient:
                             try:
                                 tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
                                 # Call callback asynchronously to avoid blocking
-                                asyncio.create_task(self._call_immediate_connection(peers, tracker_url))
+                                # Store task reference to prevent garbage collection
+                                task = asyncio.create_task(
+                                    self._call_immediate_connection(peers, tracker_url)
+                                )
+                                # Add done callback to log errors if task fails
+                                task.add_done_callback(
+                                    lambda t: self.logger.debug(
+                                        "Immediate connection callback task completed"
+                                    )
+                                    if t.exception() is None
+                                    else self.logger.warning(
+                                        "Immediate connection callback task failed: %s",
+                                        t.exception(),
+                                    )
+                                )
                             except Exception as e:
                                 self.logger.warning(
                                     "Failed to trigger immediate peer connection: %s",
@@ -2407,10 +2504,12 @@ class AsyncUDPTrackerClient:
             async with self._socket_lock:
                 # Send scrape request (transport is guaranteed to be non-None after validation)
                 if self.transport is None:
-                    raise RuntimeError("Transport is None after validation")
+                    msg = "Transport is None after validation"
+                    raise RuntimeError(msg)
 
                 # CRITICAL FIX: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
                 import sys
+
                 loop = asyncio.get_event_loop()
                 is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
                 if sys.platform == "win32" and is_proactor:
@@ -2630,8 +2729,7 @@ class UDPTrackerProtocol(asyncio.DatagramProtocol):
         # Check if this is WinError 10022
         is_winerror_10022 = (
             error_code == 10022
-            or error_code_alt == 10022
-            or error_code_alt == 22  # Some systems use errno 22
+            or error_code_alt in {10022, 22}
             or "10022" in error_msg
             or ("Invalid argument" in error_msg and sys.platform == "win32")
         )
@@ -2641,11 +2739,12 @@ class UDPTrackerProtocol(asyncio.DatagramProtocol):
             # Reduce verbosity - only log WARNING once per interval, then DEBUG
             # Don't mark socket as invalid - let send operations handle errors via exceptions
             current_time = time.time()
-            time_since_last_warning = (
-                current_time - self.client._last_winerror_warning_time
+            time_since_last_warning = current_time - getattr(
+                self.client, "_last_winerror_warning_time", 0.0
             )
 
-            if time_since_last_warning >= self.client._winerror_warning_interval:
+            warning_interval = getattr(self.client, "_winerror_warning_interval", 60.0)
+            if time_since_last_warning >= warning_interval:
                 # First warning in this interval - log at WARNING level
                 self.client.logger.warning(
                     "UDP socket error (WinError 10022) detected: %s. "
@@ -2653,83 +2752,7 @@ class UDPTrackerProtocol(asyncio.DatagramProtocol):
                     "Subsequent occurrences will be logged at DEBUG level.",
                     exc,
                 )
-                self.client._last_winerror_warning_time = current_time
-            else:
-                # Subsequent warning in same interval - log at DEBUG level
-                self.client.logger.debug(
-                    "UDP socket error (WinError 10022) detected: %s", exc
-                )
-        else:
-            # Other errors should be logged at appropriate level
-            self.client.logger.debug(
-                "UDP error: %s", exc
-            )  # pragma: no cover - Logging statement, tested via other paths
-
-
-# Global UDP tracker client instance
-# Singleton pattern removed - UDP tracker client is now managed via AsyncSessionManager.udp_tracker_client
-# This ensures proper lifecycle management and prevents socket recreation issues
-
-
-class UDPTrackerProtocol(asyncio.DatagramProtocol):
-    """UDP protocol handler for tracker communication."""
-
-    def __init__(self, client: AsyncUDPTrackerClient):
-        """Initialize UDP protocol handler."""
-        self.client = client
-
-    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        """Handle incoming UDP datagram."""
-        self.client.handle_response(
-            data, addr
-        )  # pragma: no cover - UDP datagram callback, tested via handle_response directly
-
-    def error_received(
-        self, exc: Exception
-    ) -> None:  # pragma: no cover - UDP error callback, tested separately
-        """Handle UDP error.
-
-        CRITICAL: Only log errors, don't mark socket as invalid. The actual send operations
-        will handle errors via exceptions and can retry appropriately. This callback is
-        called asynchronously and may be called for transient errors.
-
-        Behavior is consistent with DHT and uTP implementations which also only log errors.
-        """
-        import sys
-
-        error_code = (
-            getattr(exc, "winerror", None) if hasattr(exc, "winerror") else None
-        )
-        error_code_alt = getattr(exc, "errno", None) if hasattr(exc, "errno") else None
-        error_msg = str(exc)
-
-        # Check if this is WinError 10022
-        is_winerror_10022 = (
-            error_code == 10022
-            or error_code_alt == 10022
-            or error_code_alt == 22  # Some systems use errno 22
-            or "10022" in error_msg
-            or ("Invalid argument" in error_msg and sys.platform == "win32")
-        )
-
-        if is_winerror_10022:
-            # WinError 10022: Invalid argument - may be transient on Windows ProactorEventLoop
-            # Reduce verbosity - only log WARNING once per interval, then DEBUG
-            # Don't mark socket as invalid - let send operations handle errors via exceptions
-            current_time = time.time()
-            time_since_last_warning = (
-                current_time - self.client._last_winerror_warning_time
-            )
-
-            if time_since_last_warning >= self.client._winerror_warning_interval:
-                # First warning in this interval - log at WARNING level
-                self.client.logger.warning(
-                    "UDP socket error (WinError 10022) detected: %s. "
-                    "This may be transient on Windows. Send operations will retry. "
-                    "Subsequent occurrences will be logged at DEBUG level.",
-                    exc,
-                )
-                self.client._last_winerror_warning_time = current_time
+                self.client._last_winerror_warning_time = current_time  # noqa: SLF001
             else:
                 # Subsequent warning in same interval - log at DEBUG level
                 self.client.logger.debug(

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal 🔧
 - Contributing (Josephrp, ccBitTorrent contributors)
+- Session refactoring with controller-based architecture and dependency injection (Joseph Pollack, ccBitTorrent contributors)
 
 [0.0.1]: https://github.com/ccBittorrent/ccbt/releases/tag/v0.0.1
 

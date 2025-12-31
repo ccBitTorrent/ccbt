@@ -5,14 +5,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
 from rich.console import Console
 
 from ccbt.i18n import _
 from ccbt.monitoring import get_alert_manager
-from ccbt.session.session import AsyncSessionManager
+
+if TYPE_CHECKING:
+    from ccbt.session.session import AsyncSessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -40,26 +42,32 @@ SESSION_CREATION_FAILED_MSG = "Session creation failed"
     is_flag=True,
     help="Disable splash screen (useful for debugging)",
 )
-def dashboard(refresh: float, rules: str | None, no_daemon: bool, no_splash: bool) -> None:
+def dashboard(
+    refresh: float, rules: str | None, no_daemon: bool, no_splash: bool
+) -> None:
     """Start terminal monitoring dashboard (Textual)."""
     console = Console()
 
     # Import here to avoid circular imports
-    from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
-    from ccbt.interface.terminal_dashboard import run_dashboard, _ensure_daemon_running, _show_startup_splash
-    from ccbt.cli.verbosity import get_verbosity_from_ctx
     import click
+
+    from ccbt.cli.verbosity import get_verbosity_from_ctx
+    from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
+    from ccbt.interface.terminal_dashboard import (
+        _ensure_daemon_running,
+        _show_startup_splash,
+        run_dashboard,
+    )
 
     # Get verbosity from context (defaults to 0 = NORMAL)
     ctx = click.get_current_context(silent=True)
-    verbosity = get_verbosity_from_ctx(ctx.obj if ctx and hasattr(ctx, 'obj') else None)
+    verbosity = get_verbosity_from_ctx(ctx.obj if ctx and hasattr(ctx, "obj") else None)
     verbosity_count = verbosity.verbosity_count
 
     # Start splash screen if enabled (only for daemon mode)
     splash_manager = None
-    splash_thread = None
     if not no_daemon:
-        splash_manager, splash_thread = _show_startup_splash(
+        splash_manager, _splash_thread = _show_startup_splash(
             no_splash=no_splash,
             verbosity_count=verbosity_count,
             console=console,
@@ -70,17 +78,21 @@ def dashboard(refresh: float, rules: str | None, no_daemon: bool, no_splash: boo
     if no_daemon:
         # User explicitly requested local session
         console.print(
-            _("[yellow]Using local session (--no-daemon specified). "
-            "Session state will not persist.[/yellow]")
+            _(
+                "[yellow]Using local session (--no-daemon specified). "
+                "Session state will not persist.[/yellow]"
+            )
         )
         # CRITICAL FIX: Use safe local session creation helper
         from ccbt.cli.main import _ensure_local_session_safe
 
-        session = asyncio.run(_ensure_local_session_safe(force_local=True))
+        session = asyncio.run(_ensure_local_session_safe(_force_local=True))
     else:
         # ALWAYS use daemon - try to ensure it's running
         try:
-            success, ipc_client = asyncio.run(_ensure_daemon_running(splash_manager=splash_manager))
+            success, ipc_client = asyncio.run(
+                _ensure_daemon_running(splash_manager=splash_manager)
+            )
             if success and ipc_client:
                 # Create daemon interface adapter
                 session = DaemonInterfaceAdapter(ipc_client)
@@ -89,19 +101,23 @@ def dashboard(refresh: float, rules: str | None, no_daemon: bool, no_splash: boo
             else:
                 # Daemon start failed - show error and exit
                 console.print(
-                    _("[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n"
-                    "[yellow]Please check:[/yellow]\n"
-                    "  1. Daemon logs for startup errors\n"
-                    "  2. Port conflicts (check if port is already in use)\n"
-                    "  3. Permissions (ensure you have permission to start daemon)\n\n"
-                    "[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
-                    "[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]")
+                    _(
+                        "[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n"
+                        "[yellow]Please check:[/yellow]\n"
+                        "  1. Daemon logs for startup errors\n"
+                        "  2. Port conflicts (check if port is already in use)\n"
+                        "  3. Permissions (ensure you have permission to start daemon)\n\n"
+                        "[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
+                        "[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]"
+                    )
                 )
                 raise click.ClickException(DAEMON_STARTUP_FAILED_MSG)
         except click.ClickException:
             raise
         except Exception as e:
-            console.print(_("[red]Error ensuring daemon is running: {e}[/red]").format(e=e))
+            console.print(
+                _("[red]Error ensuring daemon is running: {e}[/red]").format(e=e)
+            )
             raise click.ClickException(DAEMON_STARTUP_FAILED_MSG) from e
 
     if session is None:
@@ -116,26 +132,28 @@ def dashboard(refresh: float, rules: str | None, no_daemon: bool, no_splash: boo
 
                 am = get_alert_manager()
                 am.load_rules_from_file(Path(rules))  # type: ignore[attr-defined]
-                console.print(_("[green]Loaded alert rules from {path}[/green]").format(path=rules))
+                console.print(
+                    _("[green]Loaded alert rules from {path}[/green]").format(
+                        path=rules
+                    )
+                )
             except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-                console.print(_("[red]Failed to load alert rules: {e}[/red]").format(e=e))
+                console.print(
+                    _("[red]Failed to load alert rules: {e}[/red]").format(e=e)
+                )
         # Pass splash_manager to run_dashboard so it can end when dashboard is rendered
         run_dashboard(session, refresh=refresh, splash_manager=splash_manager)
     except KeyboardInterrupt:
         # Clear splash on interrupt
         if splash_manager:
-            try:
+            with contextlib.suppress(Exception):
                 splash_manager.clear_progress_messages()
-            except Exception:
-                pass
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
         # Clear splash on error
         if splash_manager:
-            try:
+            with contextlib.suppress(Exception):
                 splash_manager.clear_progress_messages()
-            except Exception:
-                pass
         console.print(_("[red]Dashboard error: {e}[/red]").format(e=e))
         raise
     finally:
@@ -145,9 +163,11 @@ def dashboard(refresh: float, rules: str | None, no_daemon: bool, no_splash: boo
                 splash_manager.clear_progress_messages()
                 # Restore log level if it was suppressed
                 import logging
+
                 root_logger = logging.getLogger()
-                if hasattr(splash_manager, '_original_log_level'):
-                    root_logger.setLevel(splash_manager._original_log_level)
+                original_level = getattr(splash_manager, "_original_log_level", None)
+                if original_level:
+                    root_logger.setLevel(original_level)
             except Exception:
                 pass
 
@@ -233,7 +253,9 @@ def alerts(
             rules_path = Path(load or default_path)
             count = am.load_rules_from_file(rules_path)  # type: ignore[attr-defined]
             console.print(
-                _("[green]Loaded {count} alert rules from {path}[/green]").format(count=count, path=rules_path),
+                _("[green]Loaded {count} alert rules from {path}[/green]").format(
+                    count=count, path=rules_path
+                ),
             )
         except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
             console.print(_("[red]Failed to load rules: {e}[/red]").format(e=e))
@@ -244,7 +266,9 @@ def alerts(
 
             rules_path = Path(save or default_path)
             am.save_rules_to_file(rules_path)  # type: ignore[attr-defined]
-            console.print(_("[green]Saved alert rules to {path}[/green]").format(path=rules_path))
+            console.print(
+                _("[green]Saved alert rules to {path}[/green]").format(path=rules_path)
+            )
         except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
             console.print(_("[red]Failed to save rules: {e}[/red]").format(e=e))
         return
@@ -255,8 +279,13 @@ def alerts(
             return
         for rn, rule in am.alert_rules.items():
             console.print(
-                _("- {name}: metric={metric}, cond={condition}, severity={severity}").format(
-                    name=rn, metric=rule.metric_name, condition=rule.condition, severity=getattr(rule.severity, "value", rule.severity)
+                _(
+                    "- {name}: metric={metric}, cond={condition}, severity={severity}"
+                ).format(
+                    name=rn,
+                    metric=rule.metric_name,
+                    condition=rule.condition,
+                    severity=getattr(rule.severity, "value", rule.severity),
                 ),
             )
         return
@@ -267,12 +296,18 @@ def alerts(
             return
         for aid, alert in active.items():
             sev = getattr(alert.severity, "value", str(alert.severity))
-            console.print(_("- {id}: {severity} rule={rule} value={value}").format(id=aid, severity=sev, rule=alert.rule_name, value=alert.value))
+            console.print(
+                _("- {id}: {severity} rule={rule} value={value}").format(
+                    id=aid, severity=sev, rule=alert.rule_name, value=alert.value
+                )
+            )
         return
     if add_rule:
         if not all([name, metric, condition]):
             console.print(
-                _("[red]--name, --metric and --condition are required to add a rule[/red]"),
+                _(
+                    "[red]--name, --metric and --condition are required to add a rule[/red]"
+                ),
             )
             return
         from ccbt.monitoring.alert_manager import AlertRule, AlertSeverity
@@ -307,7 +342,9 @@ def alerts(
                 asyncio.run(am.resolve_alert(aid))
             console.print(_("[green]Cleared all active alerts[/green]"))
         except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-            console.print(_("[red]Failed to clear active alerts: {e}[/red]").format(e=e))
+            console.print(
+                _("[red]Failed to clear active alerts: {e}[/red]").format(e=e)
+            )
         return
     if test_rule:
         if not name:
@@ -326,12 +363,18 @@ def alerts(
             v_any = value
         try:
             asyncio.run(am.process_alert(rule.metric_name, v_any))
-            console.print(_("[green]Tested rule {name} with value {value}[/green]").format(name=name, value=v_any))
+            console.print(
+                _("[green]Tested rule {name} with value {value}[/green]").format(
+                    name=name, value=v_any
+                )
+            )
         except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
             console.print(_("[red]Failed to test rule: {e}[/red]").format(e=e))
         return
     console.print(
-        _("[yellow]Use --list/--list-active, --add, --remove, --clear-active, --test, --load or --save[/yellow]"),
+        _(
+            "[yellow]Use --list/--list-active, --add, --remove, --clear-active, --test, --load or --save[/yellow]"
+        ),
     )
 
 
@@ -456,7 +499,9 @@ def metrics(
         result = asyncio.run(_run())
         if output:
             Path(output).write_text(result, encoding="utf-8")
-            console.print(_("[green]Wrote metrics to {path}[/green]").format(path=output))
+            console.print(
+                _("[green]Wrote metrics to {path}[/green]").format(path=output)
+            )
         # Print to stdout
         elif format_ == "prometheus":
             # Avoid Rich formatting for Prometheus text exposition

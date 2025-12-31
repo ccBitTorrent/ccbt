@@ -211,13 +211,11 @@ class XetHandshakeExtension:
             if not is_valid:
                 self.logger.warning("Invalid signature from peer %s", peer_id)
             return is_valid
-        except Exception as e:
-            self.logger.exception("Error verifying peer identity: %s", e)
+        except Exception:
+            self.logger.exception("Error verifying peer identity")
             return False
 
-    def negotiate_sync_mode(
-        self, peer_id: str, peer_sync_mode: str
-    ) -> str | None:
+    def negotiate_sync_mode(self, peer_id: str, peer_sync_mode: str) -> str | None:
         """Negotiate sync mode with peer.
 
         Args:
@@ -231,7 +229,9 @@ class XetHandshakeExtension:
         valid_modes = {"designated", "best_effort", "broadcast", "consensus"}
 
         if peer_sync_mode not in valid_modes:
-            self.logger.warning("Invalid sync mode from peer %s: %s", peer_id, peer_sync_mode)
+            self.logger.warning(
+                "Invalid sync mode from peer %s: %s", peer_id, peer_sync_mode
+            )
             return None
 
         # For now, use the more restrictive mode
@@ -317,9 +317,3 @@ class XetHandshakeExtension:
         """
         if peer_id in self.peer_handshakes:
             del self.peer_handshakes[peer_id]
-
-
-
-
-
-
