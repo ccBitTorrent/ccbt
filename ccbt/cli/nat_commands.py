@@ -8,8 +8,15 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from ccbt.cli.main import _get_executor
 from ccbt.i18n import _
+
+
+def _get_executor():
+    """Lazy import to avoid circular dependency."""
+    from ccbt.cli.main import _get_executor as _get_executor_impl
+
+    return _get_executor_impl
+
 
 # Exception messages
 DAEMON_NOT_RUNNING_NAT_MSG = _(
@@ -25,14 +32,14 @@ def nat() -> None:
 
 @nat.command("status")
 @click.pass_context
-def nat_status(ctx) -> None:
+def nat_status(_ctx) -> None:
     """Show NAT traversal status and active port mappings."""
     console = Console()
 
     async def _show_status() -> None:
         """Async helper for NAT status."""
         # Get executor (NAT commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
@@ -52,15 +59,21 @@ def nat_status(ctx) -> None:
             # Protocol status
             if nat_status_response.method:
                 console.print(
-                    _("[green]Active Protocol:[/green] {method}").format(method=nat_status_response.method.upper())
+                    _("[green]Active Protocol:[/green] {method}").format(
+                        method=nat_status_response.method.upper()
+                    )
                 )
             else:
-                console.print(_("[yellow]Active Protocol:[/yellow] None (not discovered)"))
+                console.print(
+                    _("[yellow]Active Protocol:[/yellow] None (not discovered)")
+                )
 
             # External IP
             if nat_status_response.external_ip:
                 console.print(
-                    _("[green]External IP:[/green] {ip}").format(ip=nat_status_response.external_ip)
+                    _("[green]External IP:[/green] {ip}").format(
+                        ip=nat_status_response.external_ip
+                    )
                 )
             else:
                 console.print(_("[yellow]External IP:[/yellow] Not available"))
@@ -94,7 +107,10 @@ def nat_status(ctx) -> None:
                 console.print(_("[dim]No active port mappings[/dim]"))
         finally:
             # Close IPC client if using daemon adapter
-            if hasattr(executor.adapter, "ipc_client"):
+            if (
+                hasattr(executor.adapter, "ipc_client")
+                and executor.adapter.ipc_client is not None
+            ):
                 await executor.adapter.ipc_client.close()
 
     try:
@@ -109,14 +125,14 @@ def nat_status(ctx) -> None:
 
 @nat.command("discover")
 @click.pass_context
-def nat_discover(ctx) -> None:
+def nat_discover(_ctx) -> None:
     """Manually discover NAT devices (NAT-PMP or UPnP)."""
     console = Console()
 
     async def _discover() -> None:
         """Async helper for NAT discovery."""
         # Get executor (NAT commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
@@ -141,15 +157,26 @@ def nat_discover(ctx) -> None:
                 if status_result.success:
                     nat_status = status_result.data["status"]
                     if nat_status.method:
-                        console.print(_("  Protocol: {method}").format(method=nat_status.method.upper()))
+                        console.print(
+                            _("  Protocol: {method}").format(
+                                method=nat_status.method.upper()
+                            )
+                        )
                     if nat_status.external_ip:
-                        console.print(_("  External IP: {ip}").format(ip=nat_status.external_ip))
+                        console.print(
+                            _("  External IP: {ip}").format(ip=nat_status.external_ip)
+                        )
             else:
                 console.print(_("\n[yellow]✗ No NAT devices discovered[/yellow]"))
-                console.print(_("  Make sure NAT-PMP or UPnP is enabled on your router"))
+                console.print(
+                    _("  Make sure NAT-PMP or UPnP is enabled on your router")
+                )
         finally:
             # Close IPC client if using daemon adapter
-            if hasattr(executor.adapter, "ipc_client"):
+            if (
+                hasattr(executor.adapter, "ipc_client")
+                and executor.adapter.ipc_client is not None
+            ):
                 await executor.adapter.ipc_client.close()
 
     try:
@@ -174,21 +201,25 @@ def nat_discover(ctx) -> None:
     "--external-port", type=int, default=0, help="External port (0 for automatic)"
 )
 @click.pass_context
-def nat_map(ctx, port: int, protocol: str, external_port: int) -> None:
+def nat_map(_ctx, port: int, protocol: str, external_port: int) -> None:
     """Manually map a port using NAT-PMP or UPnP."""
     console = Console()
 
     async def _map_port() -> None:
         """Async helper for port mapping."""
         # Get executor (NAT commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
 
         try:
             # Execute command via executor
-            console.print(_("[bold]Mapping {protocol} port {port}...[/bold]").format(protocol=protocol.upper(), port=port))
+            console.print(
+                _("[bold]Mapping {protocol} port {port}...[/bold]").format(
+                    protocol=protocol.upper(), port=port
+                )
+            )
             result = await executor.execute(
                 "nat.map",
                 internal_port=port,
@@ -207,17 +238,26 @@ def nat_map(ctx, port: int, protocol: str, external_port: int) -> None:
                 mapping_result = map_result.get("result", {})
                 if isinstance(mapping_result, dict):
                     console.print(
-                        _("  Internal: {port}").format(port=mapping_result.get("internal_port", port))
+                        _("  Internal: {port}").format(
+                            port=mapping_result.get("internal_port", port)
+                        )
                     )
                     console.print(
-                        _("  External: {port}").format(port=mapping_result.get("external_port", "auto"))
+                        _("  External: {port}").format(
+                            port=mapping_result.get("external_port", "auto")
+                        )
                     )
-                    console.print(_("  Protocol: {protocol}").format(protocol=protocol.upper()))
+                    console.print(
+                        _("  Protocol: {protocol}").format(protocol=protocol.upper())
+                    )
             else:
                 console.print(_("[red]✗ Port mapping failed[/red]"))
         finally:
             # Close IPC client if using daemon adapter
-            if hasattr(executor.adapter, "ipc_client"):
+            if (
+                hasattr(executor.adapter, "ipc_client")
+                and executor.adapter.ipc_client is not None
+            ):
                 await executor.adapter.ipc_client.close()
 
     try:
@@ -239,14 +279,14 @@ def nat_map(ctx, port: int, protocol: str, external_port: int) -> None:
     help="Protocol (tcp or udp)",
 )
 @click.pass_context
-def nat_unmap(ctx, port: int, protocol: str) -> None:
+def nat_unmap(_ctx, port: int, protocol: str) -> None:
     """Remove a port mapping."""
     console = Console()
 
     async def _unmap_port() -> None:
         """Async helper for port unmapping."""
         # Get executor (NAT commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
@@ -254,7 +294,9 @@ def nat_unmap(ctx, port: int, protocol: str) -> None:
         try:
             # Execute command via executor
             console.print(
-                _("[bold]Removing {protocol} port mapping for port {port}...[/bold]").format(protocol=protocol.upper(), port=port)
+                _(
+                    "[bold]Removing {protocol} port mapping for port {port}...[/bold]"
+                ).format(protocol=protocol.upper(), port=port)
             )
             result = await executor.execute("nat.unmap", port=port, protocol=protocol)
 
@@ -270,7 +312,10 @@ def nat_unmap(ctx, port: int, protocol: str) -> None:
                 console.print(_("[red]✗ Failed to remove port mapping[/red]"))
         finally:
             # Close IPC client if using daemon adapter
-            if hasattr(executor.adapter, "ipc_client"):
+            if (
+                hasattr(executor.adapter, "ipc_client")
+                and executor.adapter.ipc_client is not None
+            ):
                 await executor.adapter.ipc_client.close()
 
     try:
@@ -285,14 +330,14 @@ def nat_unmap(ctx, port: int, protocol: str) -> None:
 
 @nat.command("external-ip")
 @click.pass_context
-def nat_external_ip(ctx) -> None:
+def nat_external_ip(_ctx) -> None:
     """Show external IP address from NAT gateway."""
     console = Console()
 
     async def _get_external_ip() -> None:
         """Async helper for getting external IP."""
         # Get executor (NAT commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
@@ -308,9 +353,17 @@ def nat_external_ip(ctx) -> None:
             nat_status = result.data["status"]
 
             if nat_status.external_ip:
-                console.print(_("[green]External IP:[/green] {ip}").format(ip=nat_status.external_ip))
+                console.print(
+                    _("[green]External IP:[/green] {ip}").format(
+                        ip=nat_status.external_ip
+                    )
+                )
                 if nat_status.method:
-                    console.print(_("[dim]Protocol: {method}[/dim]").format(method=nat_status.method.upper()))
+                    console.print(
+                        _("[dim]Protocol: {method}[/dim]").format(
+                            method=nat_status.method.upper()
+                        )
+                    )
             else:
                 console.print(_("[yellow]External IP not available[/yellow]"))
                 console.print(
@@ -318,7 +371,10 @@ def nat_external_ip(ctx) -> None:
                 )
         finally:
             # Close IPC client if using daemon adapter
-            if hasattr(executor.adapter, "ipc_client"):
+            if (
+                hasattr(executor.adapter, "ipc_client")
+                and executor.adapter.ipc_client is not None
+            ):
                 await executor.adapter.ipc_client.close()
 
     try:
@@ -333,14 +389,14 @@ def nat_external_ip(ctx) -> None:
 
 @nat.command("refresh")
 @click.pass_context
-def nat_refresh(ctx) -> None:
+def nat_refresh(_ctx) -> None:
     """Refresh NAT port mappings."""
     console = Console()
 
     async def _refresh_mappings() -> None:
         """Async helper for refreshing mappings."""
         # Get executor (NAT commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(DAEMON_NOT_RUNNING_NAT_MSG)
@@ -361,7 +417,10 @@ def nat_refresh(ctx) -> None:
                 console.print(_("[yellow]Refresh completed with warnings[/yellow]"))
         finally:
             # Close IPC client if using daemon adapter
-            if hasattr(executor.adapter, "ipc_client"):
+            if (
+                hasattr(executor.adapter, "ipc_client")
+                and executor.adapter.ipc_client is not None
+            ):
                 await executor.adapter.ipc_client.close()
 
     try:

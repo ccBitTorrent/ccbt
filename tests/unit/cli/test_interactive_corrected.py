@@ -28,13 +28,17 @@ class TestInteractiveModule:
     def test_interactive_cli_instantiation(self):
         """Test that InteractiveCLI can be instantiated."""
         import ccbt.cli.interactive as interactive
+        from ccbt.executor.executor import UnifiedCommandExecutor
+        from ccbt.executor.session_adapter import LocalSessionAdapter
         from unittest.mock import MagicMock
         
         # Test basic instantiation with required arguments
         try:
             mock_session = MagicMock()
             mock_console = MagicMock()
-            cli = interactive.InteractiveCLI(mock_session, mock_console)
+            adapter = LocalSessionAdapter(mock_session)
+            executor = UnifiedCommandExecutor(adapter)
+            cli = interactive.InteractiveCLI(executor, adapter, mock_console, session=mock_session)
             assert cli is not None
         except Exception as e:
             pytest.fail(f"Failed to instantiate InteractiveCLI: {e}")
@@ -42,11 +46,15 @@ class TestInteractiveModule:
     def test_interactive_cli_methods_exist(self):
         """Test that InteractiveCLI has expected methods."""
         import ccbt.cli.interactive as interactive
+        from ccbt.executor.executor import UnifiedCommandExecutor
+        from ccbt.executor.session_adapter import LocalSessionAdapter
         from unittest.mock import MagicMock
         
         mock_session = MagicMock()
         mock_console = MagicMock()
-        cli = interactive.InteractiveCLI(mock_session, mock_console)
+        adapter = LocalSessionAdapter(mock_session)
+        executor = UnifiedCommandExecutor(adapter)
+        cli = interactive.InteractiveCLI(executor, adapter, mock_console, session=mock_session)
         
         # Check for common methods
         expected_methods = [
@@ -79,13 +87,17 @@ class TestInteractiveModule:
     def test_interactive_cli_async_methods(self):
         """Test that InteractiveCLI async methods are async."""
         import ccbt.cli.interactive as interactive
+        from ccbt.executor.executor import UnifiedCommandExecutor
+        from ccbt.executor.session_adapter import LocalSessionAdapter
         import asyncio
         import inspect
         from unittest.mock import MagicMock
         
         mock_session = MagicMock()
         mock_console = MagicMock()
-        cli = interactive.InteractiveCLI(mock_session, mock_console)
+        adapter = LocalSessionAdapter(mock_session)
+        executor = UnifiedCommandExecutor(adapter)
+        cli = interactive.InteractiveCLI(executor, adapter, mock_console, session=mock_session)
         
         # Check if main methods are async
         async_methods = ['start', 'stop', 'run']
@@ -123,11 +135,15 @@ class TestInteractiveModule:
     def test_interactive_cli_methods_have_docstrings(self):
         """Test that InteractiveCLI methods have docstrings."""
         import ccbt.cli.interactive as interactive
+        from ccbt.executor.executor import UnifiedCommandExecutor
+        from ccbt.executor.session_adapter import LocalSessionAdapter
         from unittest.mock import MagicMock
         
         mock_session = MagicMock()
         mock_console = MagicMock()
-        cli = interactive.InteractiveCLI(mock_session, mock_console)
+        adapter = LocalSessionAdapter(mock_session)
+        executor = UnifiedCommandExecutor(adapter)
+        cli = interactive.InteractiveCLI(executor, adapter, mock_console, session=mock_session)
         
         # Check that main methods have docstrings
         main_methods = ['start', 'stop', 'run']
@@ -142,17 +158,21 @@ class TestInteractiveModule:
     def test_interactive_cli_initialization(self):
         """Test InteractiveCLI initialization with different parameters."""
         import ccbt.cli.interactive as interactive
+        from ccbt.executor.executor import UnifiedCommandExecutor
+        from ccbt.executor.session_adapter import LocalSessionAdapter
         from unittest.mock import MagicMock
         
         # Test basic initialization
         mock_session = MagicMock()
         mock_console = MagicMock()
-        cli1 = interactive.InteractiveCLI(mock_session, mock_console)
+        adapter = LocalSessionAdapter(mock_session)
+        executor = UnifiedCommandExecutor(adapter)
+        cli1 = interactive.InteractiveCLI(executor, adapter, mock_console, session=mock_session)
         assert cli1 is not None
         
         # Test with different console
         try:
-            cli2 = interactive.InteractiveCLI(mock_session, None)
+            cli2 = interactive.InteractiveCLI(executor, adapter, None, session=mock_session)
             assert cli2 is not None
         except TypeError:
             # If it doesn't accept None console, that's fine
@@ -161,11 +181,15 @@ class TestInteractiveModule:
     def test_interactive_cli_context_manager(self):
         """Test InteractiveCLI as context manager if supported."""
         import ccbt.cli.interactive as interactive
+        from ccbt.executor.executor import UnifiedCommandExecutor
+        from ccbt.executor.session_adapter import LocalSessionAdapter
         from unittest.mock import MagicMock
         
         mock_session = MagicMock()
         mock_console = MagicMock()
-        cli = interactive.InteractiveCLI(mock_session, mock_console)
+        adapter = LocalSessionAdapter(mock_session)
+        executor = UnifiedCommandExecutor(adapter)
+        cli = interactive.InteractiveCLI(executor, adapter, mock_console, session=mock_session)
         
         # Check if it has context manager methods
         has_enter = hasattr(cli, '__aenter__')

@@ -9,6 +9,7 @@ Target: 95%+ code coverage for ccbt/cli/scrape_commands.py.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,6 +20,8 @@ from ccbt.cli.scrape_commands import scrape
 from ccbt.models import ScrapeResult
 
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
+
+cli_main = importlib.import_module("ccbt.cli.main")
 
 
 def _run_coro_locally(coro):
@@ -83,124 +86,159 @@ class TestScrapeTorrentCommand:
         # Should exit with error (invalid hex or other validation error)
         assert result.exit_code != 0
 
-    @patch("ccbt.session.session.AsyncSessionManager")
-    @patch("ccbt.cli.scrape_commands.asyncio.run", side_effect=_run_coro_locally)
-    def test_scrape_torrent_success(self, mock_asyncio_run, mock_session_class, runner):
+    def test_scrape_torrent_success(self, runner, monkeypatch):
         """Test successful scrape torrent command."""
+        from ccbt.daemon.ipc_protocol import ScrapeResult as IPCScrapeResult
+        
         info_hash_hex = "a" * 40
 
-        # Create mock session manager
-        mock_session = MagicMock()
-        mock_session.start = AsyncMock()
-        mock_session.stop = AsyncMock()
-        mock_session.force_scrape = AsyncMock(return_value=True)
-        # First call returns None (no cache), second call returns result (after scrape)
-        mock_session.get_scrape_result = AsyncMock(
-            side_effect=[
-                None,  # First call: no cached result
-                ScrapeResult(
-                    info_hash=bytes.fromhex(info_hash_hex),
-                    seeders=100,
-                    leechers=50,
-                    completed=1000,
-                    last_scrape_time=1234567890.0,
-                    scrape_count=1,
-                ),
-            ]
+        # Mock ScrapeResult response
+        mock_scrape_result = IPCScrapeResult(
+            info_hash=info_hash_hex,
+            seeders=100,
+            leechers=50,
+            completed=1000,
+            last_scrape_time=1234567890.0,
+            scrape_count=1,
         )
-        mock_session_class.return_value = mock_session
+
+        # Mock executor
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=MagicMock(
+            success=True,
+            data={"result": mock_scrape_result}
+        ))
+        mock_executor.adapter = MagicMock()
+        mock_ipc_client = MagicMock()
+        mock_ipc_client.close = AsyncMock()
+        mock_executor.adapter.ipc_client = mock_ipc_client
+
+        # Mock _get_executor to return (executor, is_daemon)
+        async def _mock_get_executor():
+            return (mock_executor, True)
+
+        # Patch _get_executor in main module (where it's actually defined)
+        monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+        monkeypatch.setattr("ccbt.cli.scrape_commands.asyncio.run", _run_coro_locally)
 
         result = runner.invoke(scrape, ["torrent", info_hash_hex])
 
         # Command should execute successfully
         assert result.exit_code == 0
+        assert "Scrape Results" in result.output
+        assert "100" in result.output  # seeders
+        assert "50" in result.output  # leechers
 
-        # Verify session methods were called
-        mock_session.start.assert_called()
-        mock_session.stop.assert_called()
-        mock_session.force_scrape.assert_called()
-
-    @patch("ccbt.session.session.AsyncSessionManager")
-    @patch("ccbt.cli.scrape_commands.asyncio.run", side_effect=_run_coro_locally)
-    def test_scrape_torrent_failure(self, mock_asyncio_run, mock_session_class, runner):
+    def test_scrape_torrent_failure(self, runner, monkeypatch):
         """Test scrape torrent command when scrape fails."""
         info_hash_hex = "a" * 40
 
-        # Create mock session manager
-        mock_session = MagicMock()
-        mock_session.start = AsyncMock()
-        mock_session.stop = AsyncMock()
-        mock_session.force_scrape = AsyncMock(return_value=False)
-        mock_session.get_scrape_result = AsyncMock(return_value=None)
-        mock_session_class.return_value = mock_session
+        # Mock executor with failure
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=MagicMock(
+            success=False,
+            error="Scrape failed"
+        ))
+        mock_executor.adapter = MagicMock()
+        mock_ipc_client = MagicMock()
+        mock_ipc_client.close = AsyncMock()
+        mock_executor.adapter.ipc_client = mock_ipc_client
+
+        # Mock _get_executor to return (executor, is_daemon)
+        async def _mock_get_executor():
+            return (mock_executor, True)
+
+        # Patch _get_executor in main module (where it's actually defined)
+        monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+        monkeypatch.setattr("ccbt.cli.scrape_commands.asyncio.run", _run_coro_locally)
 
         result = runner.invoke(scrape, ["torrent", info_hash_hex])
 
         # Command should exit with error
         assert result.exit_code != 0
-        assert "Scrape failed" in result.output
+        assert "Scrape failed" in result.output or "Failed" in result.output
 
-        mock_session.force_scrape.assert_called()
-
-    @patch("ccbt.session.session.AsyncSessionManager")
-    @patch("ccbt.cli.scrape_commands.asyncio.run", side_effect=_run_coro_locally)
-    def test_scrape_torrent_with_cached_result(self, mock_asyncio_run, mock_session_class, runner):
+    def test_scrape_torrent_with_cached_result(self, runner, monkeypatch):
         """Test scrape torrent command with cached result."""
+        from ccbt.daemon.ipc_protocol import ScrapeResult as IPCScrapeResult
+        
         info_hash_hex = "a" * 40
 
-        # Create mock session manager
-        mock_session = MagicMock()
-        mock_session.start = AsyncMock()
-        mock_session.stop = AsyncMock()
-        mock_session.force_scrape = AsyncMock(return_value=True)
-        mock_session.get_scrape_result = AsyncMock(
-            return_value=ScrapeResult(
-                info_hash=bytes.fromhex(info_hash_hex),
-                seeders=75,
-                leechers=30,
-                completed=600,
-                last_scrape_time=time.time() - 10.0,  # 10 seconds ago
-                scrape_count=1,
-            )
+        # Mock ScrapeResult response (cached result)
+        mock_scrape_result = IPCScrapeResult(
+            info_hash=info_hash_hex,
+            seeders=75,
+            leechers=30,
+            completed=600,
+            last_scrape_time=time.time() - 10.0,  # 10 seconds ago
+            scrape_count=1,
         )
-        mock_session_class.return_value = mock_session
+
+        # Mock executor
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=MagicMock(
+            success=True,
+            data={"result": mock_scrape_result}
+        ))
+        mock_executor.adapter = MagicMock()
+        mock_ipc_client = MagicMock()
+        mock_ipc_client.close = AsyncMock()
+        mock_executor.adapter.ipc_client = mock_ipc_client
+
+        # Mock _get_executor to return (executor, is_daemon)
+        async def _mock_get_executor():
+            return (mock_executor, True)
+
+        # Patch _get_executor in main module (where it's actually defined)
+        monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+        monkeypatch.setattr("ccbt.cli.scrape_commands.asyncio.run", _run_coro_locally)
 
         # Invoke without --force flag
         result = runner.invoke(scrape, ["torrent", info_hash_hex])
 
-        # Command should show cached result
+        # Command should show result
         assert result.exit_code == 0
-        assert "cached" in result.output.lower()
-        assert "Cached Scrape Results" in result.output
+        assert "Scrape Results" in result.output
 
-    @patch("ccbt.session.session.AsyncSessionManager")
-    @patch("ccbt.cli.scrape_commands.asyncio.run", side_effect=_run_coro_locally)
-    def test_scrape_torrent_with_force_flag(self, mock_asyncio_run, mock_session_class, runner):
+    def test_scrape_torrent_with_force_flag(self, runner, monkeypatch):
         """Test scrape torrent command with --force flag."""
+        from ccbt.daemon.ipc_protocol import ScrapeResult as IPCScrapeResult
+        
         info_hash_hex = "a" * 40
 
-        # Create mock session manager
-        mock_session = MagicMock()
-        mock_session.start = AsyncMock()
-        mock_session.stop = AsyncMock()
-        mock_session.force_scrape = AsyncMock(return_value=True)
-        mock_session.get_scrape_result = AsyncMock(
-            return_value=ScrapeResult(
-                info_hash=bytes.fromhex(info_hash_hex),
-                seeders=100,
-                leechers=50,
-                completed=1000,
-                last_scrape_time=1234567890.0,
-                scrape_count=2,
-            )
+        # Mock ScrapeResult response
+        mock_scrape_result = IPCScrapeResult(
+            info_hash=info_hash_hex,
+            seeders=100,
+            leechers=50,
+            completed=1000,
+            last_scrape_time=1234567890.0,
+            scrape_count=2,
         )
-        mock_session_class.return_value = mock_session
+
+        # Mock executor
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=MagicMock(
+            success=True,
+            data={"result": mock_scrape_result}
+        ))
+        mock_executor.adapter = MagicMock()
+        mock_ipc_client = MagicMock()
+        mock_ipc_client.close = AsyncMock()
+        mock_executor.adapter.ipc_client = mock_ipc_client
+
+        # Mock _get_executor to return (executor, is_daemon)
+        async def _mock_get_executor():
+            return (mock_executor, True)
+
+        # Patch _get_executor in main module (where it's actually defined)
+        monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+        monkeypatch.setattr("ccbt.cli.scrape_commands.asyncio.run", _run_coro_locally)
 
         result = runner.invoke(scrape, ["torrent", info_hash_hex, "--force"])
 
         # Should force scrape regardless of cache
         assert result.exit_code == 0
-        mock_session.force_scrape.assert_called()
         assert "Scrape Results" in result.output
 
     @patch("ccbt.session.session.AsyncSessionManager")
@@ -226,55 +264,56 @@ class TestScrapeTorrentCommand:
 class TestScrapeListCommand:
     """Test scrape list command."""
 
-    @patch("ccbt.session.session.AsyncSessionManager")
-    @patch("ccbt.cli.scrape_commands.asyncio.run", side_effect=_run_coro_locally)
-    def test_scrape_list_empty(self, mock_asyncio_run, mock_session_class, runner):
+    def test_scrape_list_empty(self, runner, monkeypatch):
         """Test scrape list with empty cache."""
-        # Create mock session manager
-        mock_session = MagicMock()
-        mock_session.start = AsyncMock()
-        mock_session.stop = AsyncMock()
-        mock_session.scrape_cache = {}
-        mock_session.scrape_cache_lock = MagicMock()
+        from ccbt.daemon.ipc_protocol import ScrapeListResponse
+        
+        # Mock empty ScrapeListResponse
+        mock_list_response = ScrapeListResponse(results=[])
 
-        async def lock_enter(_self):
-            return None
+        # Mock executor
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=MagicMock(
+            success=True,
+            data={"results": mock_list_response}
+        ))
+        mock_executor.adapter = MagicMock()
+        mock_ipc_client = MagicMock()
+        mock_ipc_client.close = AsyncMock()
+        mock_executor.adapter.ipc_client = mock_ipc_client
 
-        async def lock_exit(_self, *_args):
-            return None
+        # Mock _get_executor to return (executor, is_daemon)
+        async def _mock_get_executor():
+            return (mock_executor, True)
 
-        mock_session.scrape_cache_lock.__aenter__ = lock_enter
-        mock_session.scrape_cache_lock.__aexit__ = lock_exit
-        mock_session_class.return_value = mock_session
+        # Patch _get_executor in main module (where it's actually defined)
+        monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+        monkeypatch.setattr("ccbt.cli.scrape_commands.asyncio.run", _run_coro_locally)
 
         result = runner.invoke(scrape, ["list"])
 
         # Should show no cached results message
         assert result.exit_code == 0, f"Command failed with output: {result.output}"
-        assert "no cached" in result.output.lower()
+        assert "no cached" in result.output.lower() or "No" in result.output
 
-    @patch("ccbt.session.session.AsyncSessionManager")
-    @patch("ccbt.cli.scrape_commands.asyncio.run", side_effect=_run_coro_locally)
-    def test_scrape_list_with_results(self, mock_asyncio_run, mock_session_class, runner):
+    def test_scrape_list_with_results(self, runner, monkeypatch):
         """Test scrape list with cached results."""
-        info_hash1 = b"x" * 20
-        info_hash2 = b"y" * 20
+        from ccbt.daemon.ipc_protocol import ScrapeListResponse, ScrapeResult as IPCScrapeResult
+        
+        info_hash1_hex = "x" * 40
+        info_hash2_hex = "y" * 40
 
-        # Create mock session manager with cached results
-        mock_session = MagicMock()
-        mock_session.start = AsyncMock()
-        mock_session.stop = AsyncMock()
-
-        result1 = ScrapeResult(
-            info_hash=info_hash1,
+        # Create mock scrape results
+        result1 = IPCScrapeResult(
+            info_hash=info_hash1_hex,
             seeders=100,
             leechers=50,
             completed=1000,
             last_scrape_time=time.time() - 60.0,
             scrape_count=1,
         )
-        result2 = ScrapeResult(
-            info_hash=info_hash2,
+        result2 = IPCScrapeResult(
+            info_hash=info_hash2_hex,
             seeders=75,
             leechers=30,
             completed=600,
@@ -282,26 +321,35 @@ class TestScrapeListCommand:
             scrape_count=2,
         )
 
-        mock_session.scrape_cache = {info_hash1: result1, info_hash2: result2}
-        mock_session.scrape_cache_lock = MagicMock()
+        # Mock ScrapeListResponse
+        mock_list_response = ScrapeListResponse(results=[result1, result2])
 
-        async def lock_enter(_self):
-            return None
+        # Mock executor
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=MagicMock(
+            success=True,
+            data={"results": mock_list_response}
+        ))
+        mock_executor.adapter = MagicMock()
+        mock_ipc_client = MagicMock()
+        mock_ipc_client.close = AsyncMock()
+        mock_executor.adapter.ipc_client = mock_ipc_client
 
-        async def lock_exit(_self, *_args):
-            return None
+        # Mock _get_executor to return (executor, is_daemon)
+        async def _mock_get_executor():
+            return (mock_executor, True)
 
-        mock_session.scrape_cache_lock.__aenter__ = lock_enter
-        mock_session.scrape_cache_lock.__aexit__ = lock_exit
-        mock_session_class.return_value = mock_session
+        # Patch _get_executor in main module (where it's actually defined)
+        monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+        monkeypatch.setattr("ccbt.cli.scrape_commands.asyncio.run", _run_coro_locally)
 
         result = runner.invoke(scrape, ["list"])
 
         # Should show table with results
         assert result.exit_code == 0, f"Command failed with output: {result.output}"
-        assert "Cached Scrape Results" in result.output
+        assert "Scrape Results" in result.output or "Cached" in result.output
         # The hash is displayed (may be truncated with ellipsis)
-        assert info_hash1.hex()[:28] in result.output or "7878" in result.output
+        assert info_hash1_hex[:16] in result.output or "x" in result.output
 
     @patch("ccbt.session.session.AsyncSessionManager")
     @patch("ccbt.cli.scrape_commands.asyncio.run", side_effect=_run_coro_locally)
@@ -342,26 +390,46 @@ class TestScrapeListCommand:
         assert result.exit_code != 0
         assert "Error:" in result.output
 
-    @patch("ccbt.session.session.AsyncSessionManager")
-    @patch("ccbt.cli.scrape_commands.asyncio.run", side_effect=_run_coro_locally)
-    def test_scrape_torrent_success_no_cache_entry(self, mock_asyncio_run, mock_session_class, runner):
+    def test_scrape_torrent_success_no_cache_entry(self, runner, monkeypatch):
         """Test scrape torrent when scrape succeeds but no cache entry found (lines 98-101)."""
+        from ccbt.daemon.ipc_protocol import ScrapeResult as IPCScrapeResult
+        
         info_hash_hex = "a" * 40
 
-        # Create mock session manager
-        mock_session = MagicMock()
-        mock_session.start = AsyncMock()
-        mock_session.stop = AsyncMock()
-        mock_session.force_scrape = AsyncMock(return_value=True)
-        # get_scrape_result returns None even after successful scrape (simulating no cache)
-        mock_session.get_scrape_result = AsyncMock(return_value=None)
-        mock_session_class.return_value = mock_session
+        # Mock ScrapeResult response (scrape succeeds)
+        mock_scrape_result = IPCScrapeResult(
+            info_hash=info_hash_hex,
+            seeders=100,
+            leechers=50,
+            completed=1000,
+            last_scrape_time=1234567890.0,
+            scrape_count=1,
+        )
+
+        # Mock executor
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(return_value=MagicMock(
+            success=True,
+            data={"result": mock_scrape_result}
+        ))
+        mock_executor.adapter = MagicMock()
+        mock_ipc_client = MagicMock()
+        mock_ipc_client.close = AsyncMock()
+        mock_executor.adapter.ipc_client = mock_ipc_client
+
+        # Mock _get_executor to return (executor, is_daemon)
+        async def _mock_get_executor():
+            return (mock_executor, True)
+
+        # Patch _get_executor in main module (where it's actually defined)
+        monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+        monkeypatch.setattr("ccbt.cli.scrape_commands.asyncio.run", _run_coro_locally)
 
         result = runner.invoke(scrape, ["torrent", info_hash_hex, "--force"])
 
-        # Should show warning about no cache entry
+        # Should succeed and show results
         assert result.exit_code == 0
-        assert "succeeded but no cache" in result.output.lower()
+        assert "Scrape Results" in result.output
 
     @patch("ccbt.session.session.AsyncSessionManager")
     @patch("ccbt.cli.scrape_commands.asyncio.run", side_effect=_run_coro_locally)

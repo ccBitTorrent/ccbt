@@ -115,7 +115,22 @@ async def test_on_piece_verified_saves_checkpoint_when_configured(monkeypatch, t
         async def save_checkpoint(self, cp):
             checkpoint_saved.append(cp)
 
+    class _MockPiece:
+        """Mock piece for testing."""
+        def __init__(self):
+            from ccbt.piece.async_piece_manager import PieceState
+            self.state = PieceState.VERIFIED
+        
+        def is_complete(self):
+            return True
+        
+        def get_data(self):
+            return b"x" * 16384
+    
     class _PM:
+        def __init__(self):
+            self.pieces = [_MockPiece()]  # Mock pieces list for length check
+        
         async def get_checkpoint_state(self, name, ih, path):
             return TorrentCheckpoint(
                 info_hash=b"1" * 20,
@@ -140,6 +155,9 @@ async def test_on_piece_verified_saves_checkpoint_when_configured(monkeypatch, t
     session = AsyncTorrentSession(td, str(tmp_path))
     session.checkpoint_manager = _CPM()
     session.piece_manager = _PM()
+    # CRITICAL FIX: Update ctx.piece_manager to match session.piece_manager
+    # The CheckpointController uses ctx.piece_manager, not session.piece_manager
+    session.ctx.piece_manager = session.piece_manager
     session.config.disk.checkpoint_enabled = True
     session.config.disk.checkpoint_on_piece = True
 
@@ -153,7 +171,22 @@ async def test_on_piece_verified_handles_save_error(monkeypatch, tmp_path):
     """Test _on_piece_verified handles checkpoint save errors gracefully."""
     from ccbt.session.session import AsyncTorrentSession
 
+    class _MockPiece:
+        """Mock piece for testing."""
+        def __init__(self):
+            from ccbt.piece.async_piece_manager import PieceState
+            self.state = PieceState.VERIFIED
+        
+        def is_complete(self):
+            return True
+        
+        def get_data(self):
+            return b"x" * 16384
+    
     class _PM:
+        def __init__(self):
+            self.pieces = [_MockPiece()]  # Mock pieces list for length check
+        
         async def get_checkpoint_state(self, name, ih, path):
             raise RuntimeError("save failed")
 

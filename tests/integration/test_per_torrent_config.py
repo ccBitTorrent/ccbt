@@ -13,10 +13,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from ccbt.cli.torrent_config_commands import (
-    torrent_config_get,
-    torrent_config_list,
-    torrent_config_reset,
-    torrent_config_set,
+    _get_torrent_option,
+    _list_torrent_options,
+    _reset_torrent_options,
+    _set_torrent_option,
 )
 
 
@@ -68,24 +68,52 @@ async def test_torrent_config_set_with_daemon(mock_daemon_running, mock_ipc_clie
     value = "sequential"
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
-        ctx = MagicMock()
-        ctx.obj = {}
+        from ccbt.executor.base import CommandResult
+        from ccbt.daemon.ipc_protocol import TorrentStatusResponse
+        
+        # Mock executor manager and executor
+        mock_executor = AsyncMock()
+        # Mock adapter.get_torrent_status (used to check if torrent exists)
+        mock_adapter = AsyncMock()
+        mock_status = TorrentStatusResponse(
+            info_hash=info_hash,
+            name="test",
+            status="active",
+            progress=0.0,
+            download_rate=0.0,
+            upload_rate=0.0,
+            num_peers=0,
+            num_seeds=0,
+            total_size=0,
+            downloaded=0,
+            uploaded=0,
+            is_private=False,
+        )
+        mock_adapter.get_torrent_status = AsyncMock(return_value=mock_status)
+        mock_executor.adapter = mock_adapter
+        
+        # Mock set_option
+        set_option_result = CommandResult(success=True, data={"set": True, "key": key, "value": value})
+        mock_executor.execute = AsyncMock(return_value=set_option_result)
+        
+        # Mock ExecutorManager.get_instance and get_executor
+        # ExecutorManager is imported inside the function, so patch it there
+        with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
+            mock_manager = MagicMock()
+            mock_manager.get_executor = MagicMock(return_value=mock_executor)
+            mock_get_instance.return_value = mock_manager
+            
+            await _set_torrent_option(info_hash, key, value, save_checkpoint=False)
 
-        # Mock successful execution
-        result = MagicMock()
-        result.success = True
-        result.data = {"status": "ok"}
-        mock_ipc_client.execute = AsyncMock(return_value=result)
-
-        await torrent_config_set(ctx, info_hash, key, value, save_checkpoint=False)
-
-        # Verify IPC call was made
-        mock_ipc_client.execute.assert_called_once()
-        call_args = mock_ipc_client.execute.call_args
-        assert call_args[0][0] == "torrent.set_config"
-        assert call_args[1]["info_hash"] == info_hash
-        assert call_args[1]["key"] == key
-        assert call_args[1]["value"] == value
+            # Verify adapter.get_torrent_status was called
+            mock_adapter.get_torrent_status.assert_called_once_with(info_hash)
+            # Verify executor.execute was called for set_option
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            assert call_args[0][0] == "torrent.set_option"
+            assert call_args[1]["info_hash"] == info_hash
+            assert call_args[1]["key"] == key
+            assert call_args[1]["value"] == value
 
 
 @pytest.mark.asyncio
@@ -96,21 +124,50 @@ async def test_torrent_config_set_with_checkpoint(mock_daemon_running, mock_ipc_
     value = "true"
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
-        ctx = MagicMock()
-        ctx.obj = {}
+        from ccbt.executor.base import CommandResult
+        from ccbt.daemon.ipc_protocol import TorrentStatusResponse
+        
+        # Mock executor manager and executor
+        mock_executor = AsyncMock()
+        # Mock adapter.get_torrent_status (used to check if torrent exists)
+        mock_adapter = AsyncMock()
+        mock_status = TorrentStatusResponse(
+            info_hash=info_hash,
+            name="test",
+            status="active",
+            progress=0.0,
+            download_rate=0.0,
+            upload_rate=0.0,
+            num_peers=0,
+            num_seeds=0,
+            total_size=0,
+            downloaded=0,
+            uploaded=0,
+            is_private=False,
+        )
+        mock_adapter.get_torrent_status = AsyncMock(return_value=mock_status)
+        mock_executor.adapter = mock_adapter
+        
+        # Mock set_option and save_checkpoint
+        set_option_result = CommandResult(success=True, data={"set": True, "key": key, "value": value})
+        save_checkpoint_result = CommandResult(success=True, data={"saved": True})
+        mock_executor.execute = AsyncMock(side_effect=[set_option_result, save_checkpoint_result])
+        
+        # Mock ExecutorManager.get_instance and get_executor
+        # ExecutorManager is imported inside the function, so patch it there
+        with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
+            mock_manager = MagicMock()
+            mock_manager.get_executor = MagicMock(return_value=mock_executor)
+            mock_get_instance.return_value = mock_manager
+            
+            await _set_torrent_option(info_hash, key, value, save_checkpoint=True)
 
-        result = MagicMock()
-        result.success = True
-        result.data = {"status": "ok"}
-        mock_ipc_client.execute = AsyncMock(return_value=result)
-
-        await torrent_config_set(ctx, info_hash, key, value, save_checkpoint=True)
-
-        # Verify both set_config and save_checkpoint were called
-        assert mock_ipc_client.execute.call_count >= 2
-        calls = [call[0][0] for call in mock_ipc_client.execute.call_args_list]
-        assert "torrent.set_config" in calls
-        assert "torrent.save_checkpoint" in calls
+            # Verify adapter.get_torrent_status was called
+            mock_adapter.get_torrent_status.assert_called_once_with(info_hash)
+            # Verify all executor.execute calls were made
+            calls = [call[0][0] for call in mock_executor.execute.call_args_list]
+            assert "torrent.set_option" in calls
+            assert "torrent.save_checkpoint" in calls
 
 
 @pytest.mark.asyncio
@@ -120,22 +177,28 @@ async def test_torrent_config_get_with_daemon(mock_daemon_running, mock_ipc_clie
     key = "piece_selection"
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
-        ctx = MagicMock()
-        ctx.obj = {}
+        from ccbt.executor.base import CommandResult
+        
+        # Mock executor manager and executor
+        mock_executor = AsyncMock()
+        result = CommandResult(success=True, data={"key": key, "value": "sequential"})
+        mock_executor.execute = AsyncMock(return_value=result)
+        
+        # Mock ExecutorManager.get_instance and get_executor
+        # ExecutorManager is imported inside the function, so patch it there
+        with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
+            mock_manager = MagicMock()
+            mock_manager.get_executor = MagicMock(return_value=mock_executor)
+            mock_get_instance.return_value = mock_manager
 
-        result = MagicMock()
-        result.success = True
-        result.data = {"value": "sequential"}
-        mock_ipc_client.execute = AsyncMock(return_value=result)
+            await _get_torrent_option(info_hash, key)
 
-        await torrent_config_get(ctx, info_hash, key)
-
-        # Verify IPC call was made
-        mock_ipc_client.execute.assert_called_once()
-        call_args = mock_ipc_client.execute.call_args
-        assert call_args[0][0] == "torrent.get_config"
-        assert call_args[1]["info_hash"] == info_hash
-        assert call_args[1]["key"] == key
+            # Verify executor.execute was called
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            assert call_args[0][0] == "torrent.get_option"
+            assert call_args[1]["info_hash"] == info_hash
+            assert call_args[1]["key"] == key
 
 
 @pytest.mark.asyncio
@@ -144,30 +207,39 @@ async def test_torrent_config_list_with_daemon(mock_daemon_running, mock_ipc_cli
     info_hash = "a" * 40
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
-        ctx = MagicMock()
-        ctx.obj = {}
-
-        result = MagicMock()
-        result.success = True
-        result.data = {
-            "options": {
-                "piece_selection": "sequential",
-                "streaming_mode": True,
+        from ccbt.executor.base import CommandResult
+        
+        # Mock executor manager and executor
+        mock_executor = AsyncMock()
+        result = CommandResult(
+            success=True,
+            data={
+                "options": {
+                    "piece_selection": "sequential",
+                    "streaming_mode": True,
+                },
+                "rate_limits": {
+                    "down_kib": 100,
+                    "up_kib": 50,
+                },
             },
-            "rate_limits": {
-                "down_kib": 100,
-                "up_kib": 50,
-            },
-        }
-        mock_ipc_client.execute = AsyncMock(return_value=result)
+        )
+        mock_executor.execute = AsyncMock(return_value=result)
+        
+        # Mock ExecutorManager.get_instance and get_executor
+        # ExecutorManager is imported inside the function, so patch it there
+        with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
+            mock_manager = MagicMock()
+            mock_manager.get_executor = MagicMock(return_value=mock_executor)
+            mock_get_instance.return_value = mock_manager
 
-        await torrent_config_list(ctx, info_hash)
+            await _list_torrent_options(info_hash)
 
-        # Verify IPC call was made
-        mock_ipc_client.execute.assert_called_once()
-        call_args = mock_ipc_client.execute.call_args
-        assert call_args[0][0] == "torrent.get_config"
-        assert call_args[1]["info_hash"] == info_hash
+            # Verify executor.execute was called
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            assert call_args[0][0] == "torrent.get_config"
+            assert call_args[1]["info_hash"] == info_hash
 
 
 @pytest.mark.asyncio
@@ -176,22 +248,28 @@ async def test_torrent_config_reset_all(mock_daemon_running, mock_ipc_client):
     info_hash = "a" * 40
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
-        ctx = MagicMock()
-        ctx.obj = {}
+        from ccbt.executor.base import CommandResult
+        
+        # Mock executor manager and executor
+        mock_executor = AsyncMock()
+        result = CommandResult(success=True, data={"reset": True, "key": None})
+        mock_executor.execute = AsyncMock(return_value=result)
+        
+        # Mock ExecutorManager.get_instance and get_executor
+        # ExecutorManager is imported inside the function, so patch it there
+        with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
+            mock_manager = MagicMock()
+            mock_manager.get_executor = MagicMock(return_value=mock_executor)
+            mock_get_instance.return_value = mock_manager
 
-        result = MagicMock()
-        result.success = True
-        result.data = {"status": "ok"}
-        mock_ipc_client.execute = AsyncMock(return_value=result)
+            await _reset_torrent_options(info_hash, key=None, save_checkpoint=False)
 
-        await torrent_config_reset(ctx, info_hash, key=None)
-
-        # Verify IPC call was made
-        mock_ipc_client.execute.assert_called_once()
-        call_args = mock_ipc_client.execute.call_args
-        assert call_args[0][0] == "torrent.reset_config"
-        assert call_args[1]["info_hash"] == info_hash
-        assert call_args[1].get("key") is None
+            # Verify executor.execute was called
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            assert call_args[0][0] == "torrent.reset_options"
+            assert call_args[1]["info_hash"] == info_hash
+            assert call_args[1].get("key") is None
 
 
 @pytest.mark.asyncio
@@ -201,22 +279,28 @@ async def test_torrent_config_reset_key(mock_daemon_running, mock_ipc_client):
     key = "piece_selection"
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
-        ctx = MagicMock()
-        ctx.obj = {}
+        from ccbt.executor.base import CommandResult
+        
+        # Mock executor manager and executor
+        mock_executor = AsyncMock()
+        result = CommandResult(success=True, data={"reset": True, "key": key})
+        mock_executor.execute = AsyncMock(return_value=result)
+        
+        # Mock ExecutorManager.get_instance and get_executor
+        # ExecutorManager is imported inside the function, so patch it there
+        with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
+            mock_manager = MagicMock()
+            mock_manager.get_executor = MagicMock(return_value=mock_executor)
+            mock_get_instance.return_value = mock_manager
 
-        result = MagicMock()
-        result.success = True
-        result.data = {"status": "ok"}
-        mock_ipc_client.execute = AsyncMock(return_value=result)
+            await _reset_torrent_options(info_hash, key=key, save_checkpoint=False)
 
-        await torrent_config_reset(ctx, info_hash, key=key)
-
-        # Verify IPC call was made
-        mock_ipc_client.execute.assert_called_once()
-        call_args = mock_ipc_client.execute.call_args
-        assert call_args[0][0] == "torrent.reset_config"
-        assert call_args[1]["info_hash"] == info_hash
-        assert call_args[1]["key"] == key
+            # Verify executor.execute was called
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            assert call_args[0][0] == "torrent.reset_options"
+            assert call_args[1]["info_hash"] == info_hash
+            assert call_args[1]["key"] == key
 
 
 @pytest.mark.asyncio
@@ -233,16 +317,17 @@ async def test_torrent_config_set_direct_mode(mock_daemon_not_running, mock_sess
     fake_session = MagicMock()
     fake_session.options = {}
     fake_session.info = SimpleNamespace(info_hash=info_hash_bytes, name="test")
+    fake_session._apply_per_torrent_options = MagicMock()
     mock_session_manager.torrents[info_hash_bytes] = fake_session
 
     with patch(
-        "ccbt.cli.torrent_config_commands.get_session_manager",
+        "ccbt.cli.torrent_config_commands._get_torrent_session",
+        return_value=fake_session,
+    ), patch(
+        "ccbt.cli.torrent_config_commands.AsyncSessionManager",
         return_value=mock_session_manager,
     ):
-        ctx = MagicMock()
-        ctx.obj = {}
-
-        await torrent_config_set(ctx, info_hash, key, value, save_checkpoint=False)
+        await _set_torrent_option(info_hash, key, value, save_checkpoint=False)
 
         # Verify option was set
         assert fake_session.options[key] == value
@@ -264,13 +349,13 @@ async def test_torrent_config_get_direct_mode(mock_daemon_not_running, mock_sess
     mock_session_manager.torrents[info_hash_bytes] = fake_session
 
     with patch(
-        "ccbt.cli.torrent_config_commands.get_session_manager",
+        "ccbt.cli.torrent_config_commands._get_torrent_session",
+        return_value=fake_session,
+    ), patch(
+        "ccbt.cli.torrent_config_commands.AsyncSessionManager",
         return_value=mock_session_manager,
     ):
-        ctx = MagicMock()
-        ctx.obj = {}
-
-        await torrent_config_get(ctx, info_hash, key)
+        await _get_torrent_option(info_hash, key)
 
         # Test passes if no exception is raised
         assert True
@@ -298,13 +383,13 @@ async def test_torrent_config_list_direct_mode(mock_daemon_not_running, mock_ses
     }
 
     with patch(
-        "ccbt.cli.torrent_config_commands.get_session_manager",
+        "ccbt.cli.torrent_config_commands._get_torrent_session",
+        return_value=fake_session,
+    ), patch(
+        "ccbt.cli.torrent_config_commands.AsyncSessionManager",
         return_value=mock_session_manager,
     ):
-        ctx = MagicMock()
-        ctx.obj = {}
-
-        await torrent_config_list(ctx, info_hash)
+        await _list_torrent_options(info_hash)
 
         # Test passes if no exception is raised
         assert True
@@ -323,16 +408,17 @@ async def test_torrent_config_reset_direct_mode(mock_daemon_not_running, mock_se
     fake_session = MagicMock()
     fake_session.options = {key: "sequential", "streaming_mode": True}
     fake_session.info = SimpleNamespace(info_hash=info_hash_bytes, name="test")
+    fake_session._apply_per_torrent_options = MagicMock()
     mock_session_manager.torrents[info_hash_bytes] = fake_session
 
     with patch(
-        "ccbt.cli.torrent_config_commands.get_session_manager",
+        "ccbt.cli.torrent_config_commands._get_torrent_session",
+        return_value=fake_session,
+    ), patch(
+        "ccbt.cli.torrent_config_commands.AsyncSessionManager",
         return_value=mock_session_manager,
     ):
-        ctx = MagicMock()
-        ctx.obj = {}
-
-        await torrent_config_reset(ctx, info_hash, key=key)
+        await _reset_torrent_options(info_hash, key=key, save_checkpoint=False)
 
         # Verify option was removed
         assert key not in fake_session.options

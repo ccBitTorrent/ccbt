@@ -5,6 +5,7 @@ Handles XET folder synchronization commands (tonic.create, tonic.sync, etc.).
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from ccbt.executor.base import CommandExecutor, CommandResult
@@ -182,7 +183,10 @@ class XetExecutor(CommandExecutor):
                 # Full implementation would fetch .tonic file and start sync
                 return CommandResult(
                     success=True,
-                    data={"status": "sync_started", "link_info": link_info.model_dump()},
+                    data={
+                        "status": "sync_started",
+                        "link_info": asdict(link_info),
+                    },
                 )
             from ccbt.core.tonic import TonicFile
 
@@ -275,7 +279,9 @@ class XetExecutor(CommandExecutor):
             removed = allowlist.remove_peer(peer_id)
             if removed:
                 await allowlist.save()
-                return CommandResult(success=True, data={"peer_id": peer_id, "removed": True})
+                return CommandResult(
+                    success=True, data={"peer_id": peer_id, "removed": True}
+                )
             return CommandResult(
                 success=True,
                 data={"peer_id": peer_id, "removed": False},
@@ -480,11 +486,15 @@ class XetExecutor(CommandExecutor):
     async def _enable_xet(self) -> CommandResult:
         """Enable XET globally."""
         try:
-            from ccbt.config.config import get_config_manager
+            from ccbt.config.config import _config_manager, init_config
 
-            config_manager = get_config_manager()
+            # Get or initialize config manager
+            if _config_manager is None:
+                config_manager = init_config()
+            else:
+                config_manager = _config_manager
             config_manager.config.xet_sync.enable_xet = True
-            config_manager.save()
+            config_manager.save_config()
             return CommandResult(
                 success=True,
                 data={"enabled": True},
@@ -498,11 +508,15 @@ class XetExecutor(CommandExecutor):
     async def _disable_xet(self) -> CommandResult:
         """Disable XET globally."""
         try:
-            from ccbt.config.config import get_config_manager
+            from ccbt.config.config import _config_manager, init_config
 
-            config_manager = get_config_manager()
+            # Get or initialize config manager
+            if _config_manager is None:
+                config_manager = init_config()
+            else:
+                config_manager = _config_manager
             config_manager.config.xet_sync.enable_xet = False
-            config_manager.save()
+            config_manager.save_config()
             return CommandResult(
                 success=True,
                 data={"enabled": False},
@@ -516,11 +530,15 @@ class XetExecutor(CommandExecutor):
     async def _set_port(self, port: int) -> CommandResult:
         """Set XET port."""
         try:
-            from ccbt.config.config import get_config_manager
+            from ccbt.config.config import _config_manager, init_config
 
-            config_manager = get_config_manager()
+            # Get or initialize config manager
+            if _config_manager is None:
+                config_manager = init_config()
+            else:
+                config_manager = _config_manager
             config_manager.config.network.xet_port = port
-            config_manager.save()
+            config_manager.save_config()
             return CommandResult(
                 success=True,
                 data={"port": port},
@@ -634,4 +652,3 @@ class XetExecutor(CommandExecutor):
                 success=False,
                 error=f"Failed to get XET folder status: {e}",
             )
-

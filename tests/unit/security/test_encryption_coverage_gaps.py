@@ -188,21 +188,23 @@ class TestEncryptionManagerCoverageGaps:
         )
 
         # Test with peer capabilities that match
-        # Preferred order is [RC4, AES], so RC4 should be selected first
+        # Preferred order is [CHACHA20, AES, RC4], so when filtering by allowed_ciphers=[RC4, AES],
+        # available_ciphers = [AES, RC4] (CHACHA20 not in allowed)
         selected = manager._select_encryption_type(
             peer_capabilities=[EncryptionType.RC4],  # Peer supports RC4
         )
 
-        # Should select RC4 (first in preferred order that matches)
+        # Should select RC4 (only matching cipher from available_ciphers)
         assert selected == EncryptionType.RC4
 
-        # Test with peer capabilities that include preferred
+        # Test with peer capabilities that include both AES and RC4
         selected2 = manager._select_encryption_type(
             peer_capabilities=[EncryptionType.AES, EncryptionType.RC4],
         )
 
-        # Should return first from preferred order (RC4) that matches peer capabilities
-        assert selected2 == EncryptionType.RC4
+        # Should return first from preferred order (AES) that matches peer capabilities
+        # available_ciphers = [AES, RC4], matching_ciphers = [AES, RC4], returns matching_ciphers[0] = AES
+        assert selected2 == EncryptionType.AES
 
         # Test with peer only supporting AES
         selected3 = manager._select_encryption_type(

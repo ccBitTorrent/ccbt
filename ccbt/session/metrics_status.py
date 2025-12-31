@@ -1,12 +1,16 @@
+"""Metrics and status monitoring for torrent sessions."""
+
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ccbt.session.models import SessionContext
 from ccbt.session.tasks import TaskSupervisor
+
+if TYPE_CHECKING:
+    from ccbt.session.models import SessionContext
 
 
 class MetricsAndStatus:
@@ -15,6 +19,7 @@ class MetricsAndStatus:
     def __init__(
         self, ctx: SessionContext, tasks: TaskSupervisor | None = None
     ) -> None:
+        """Initialize the metrics and status helper with session context and optional task supervisor."""
         self._ctx = ctx
         self._tasks = tasks or TaskSupervisor()
 
@@ -75,12 +80,14 @@ class StatusLoop:
     """Periodic status monitor loop extracted from session."""
 
     def __init__(self, session: Any) -> None:
+        """Initialize the status loop with an AsyncTorrentSession instance."""
         self.s = session  # AsyncTorrentSession instance
 
     async def run(self) -> None:
+        """Run the status monitoring loop."""
         consecutive_errors = 0
         max_consecutive_errors = 10
-        while not self.s._stop_event.is_set():
+        while not self.s.is_stopped():
             try:
                 if not self.s.download_manager:
                     self.s.logger.debug(
@@ -175,17 +182,20 @@ class StatusLoop:
                                 if hasattr(self.s.piece_manager, "num_pieces")
                                 else 0
                             )
-                            if verified_count == total_pieces and total_pieces > 0:
-                                if (
+                            if (
+                                verified_count == total_pieces
+                                and total_pieces > 0
+                                and (
                                     download_rate > 0
                                     or connected_peers > 0
                                     or hasattr(self.s, "_download_start_time")
-                                ):
-                                    self.s.info.status = "seeding"
-                                    self.s.logger.info(
-                                        "Download progress 100%%, status changed to seeding: %s",
-                                        self.s.info.name,
-                                    )
+                                )
+                            ):
+                                self.s.info.status = "seeding"
+                                self.s.logger.info(
+                                    "Download progress 100%%, status changed to seeding: %s",
+                                    self.s.info.name,
+                                )
                         else:
                             self.s.logger.warning(
                                 "Progress reports 100%% but piece_manager not available for %s. Not switching to seeding.",
@@ -216,7 +226,8 @@ class StatusLoop:
                     )
 
                 # Update cached status
-                self.s._cached_status = {
+                # Use setattr to avoid SLF001 for internal cache
+                cached_status = {
                     "downloaded": 0,
                     "uploaded": 0,
                     "left": 0,
@@ -226,6 +237,44 @@ class StatusLoop:
                     "progress": progress,
                     "download_complete": download_complete,
                 }
+                self.s._cached_status = cached_status  # noqa: SLF001
+
+                # CRITICAL FIX: Safety check - if download is complete but files aren't finalized
+                # This catches cases where completion was detected but finalization failed or was missed
+                if (
+                    self.s.piece_manager
+                    and len(self.s.piece_manager.verified_pieces)
+                    == self.s.piece_manager.num_pieces
+                    and hasattr(self.s.download_manager, "file_assembler")
+                    and self.s.download_manager.file_assembler is not None
+                ):
+                    file_assembler = self.s.download_manager.file_assembler
+                    written_count = len(file_assembler.written_pieces)
+                    total_pieces = file_assembler.num_pieces
+
+                    # If all pieces are verified and written, but status is still downloading, finalize
+                    if written_count == total_pieces and self.s.info.status not in {
+                        "seeding",
+                        "completed",
+                    }:
+                        self.s.logger.info(
+                            "Safety check: All pieces verified and written, but status is '%s'. "
+                            "Finalizing files now.",
+                            self.s.info.status,
+                        )
+                        try:
+                            await file_assembler.finalize_files()
+                            self.s.info.status = "seeding"
+                            self.s.logger.info(
+                                "Files finalized via safety check for: %s",
+                                self.s.info.name,
+                            )
+                        except Exception as e:
+                            self.s.logger.warning(
+                                "Safety check finalization failed: %s",
+                                e,
+                                exc_info=True,
+                            )
 
                 if self.s.on_status_update:
                     with contextlib.suppress(Exception):

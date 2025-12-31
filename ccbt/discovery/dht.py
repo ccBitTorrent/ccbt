@@ -48,14 +48,22 @@ class DHTNode:
     port6: int | None = None
     has_ipv6: bool = False
     additional_addresses: list[tuple[str, int]] = field(default_factory=list)
-    
+
     # Quality metrics for optimization
-    response_times: list[float] = field(default_factory=list)  # List of recent response times
+    response_times: list[float] = field(
+        default_factory=list
+    )  # List of recent response times
     average_response_time: float = 0.0  # Average response time in seconds
     success_rate: float = 1.0  # Success rate (0.0-1.0)
     quality_score: float = 1.0  # Overall quality score (0.0-1.0)
     last_response_time: float = 0.0  # Last measured response time
     query_count: int = 0  # Total queries made to this node
+
+    def __post_init__(self) -> None:
+        """Post-initialization: auto-set has_ipv6 flag when IPv6 data is provided."""
+        # Auto-set has_ipv6=True when both ipv6 and port6 are provided
+        if self.ipv6 is not None and self.port6 is not None:
+            self.has_ipv6 = True
 
     def __hash__(self):
         """Return hash of the node."""
@@ -73,7 +81,7 @@ class DHTNode:
 
     def get_all_addresses(self) -> list[tuple[str, int]]:
         """Get all addresses (IPv4 and IPv6) for this node.
-        
+
         Returns:
             List of (ip, port) tuples
 
@@ -86,7 +94,7 @@ class DHTNode:
 
     def add_address(self, ip: str, port: int) -> None:
         """Add an additional address to this node.
-        
+
         Args:
             ip: IP address
             port: Port number
@@ -125,8 +133,17 @@ class KademliaRoutingTable:
         self.buckets: list[list[DHTNode]] = [[] for _ in range(160)]  # 160-bit keyspace
         self.nodes: dict[bytes, DHTNode] = {}
 
-    def _distance(self, node_id1: bytes, node_id2: bytes) -> int:
-        """Calculate XOR distance between two node IDs."""
+    def distance(self, node_id1: bytes, node_id2: bytes) -> int:
+        """Calculate XOR distance between two node IDs (public API).
+
+        Args:
+            node_id1: First node ID
+            node_id2: Second node ID
+
+        Returns:
+            XOR distance between the two node IDs
+
+        """
         if len(node_id1) != len(node_id2):
             return 0
 
@@ -140,6 +157,10 @@ class KademliaRoutingTable:
                 break
 
         return distance
+
+    def _distance(self, node_id1: bytes, node_id2: bytes) -> int:
+        """Calculate XOR distance between two node IDs (private, use distance() instead)."""
+        return self.distance(node_id1, node_id2)
 
     def _bucket_index(self, node_id: bytes) -> int:
         """Get bucket index for a node ID."""
@@ -181,30 +202,32 @@ class KademliaRoutingTable:
 
     def _assess_node_reachability(self, node: DHTNode) -> float:
         """Assess node reachability using socket address validation.
-        
+
         Args:
             node: DHT node to assess
-            
+
         Returns:
             Reachability score (0.0-1.0), higher = more reachable
+
         """
         try:
             # Validate IP address format
             import ipaddress
+
             try:
                 ipaddress.ip_address(node.ip)
             except ValueError:
                 # Invalid IP address
                 return 0.0
-            
+
             # Validate port range
             if not (1 <= node.port <= 65535):
                 return 0.0
-            
+
             # Check if node has been seen recently (more recent = more reachable)
             current_time = time.time()
             time_since_seen = current_time - node.last_seen
-            
+
             # Nodes seen in last hour = 1.0, older = decreasing
             if time_since_seen < 3600:
                 recency_score = 1.0
@@ -214,18 +237,17 @@ class KademliaRoutingTable:
                 recency_score = 0.4
             else:
                 recency_score = 0.1
-            
+
             # Combine with quality score
-            reachability_score = (recency_score * 0.6) + (node.quality_score * 0.4)
-            
-            return reachability_score
+            return (recency_score * 0.6) + (node.quality_score * 0.4)
+
         except Exception:
             # On any error, assume moderate reachability
             return 0.5
 
     def get_closest_nodes(self, target_id: bytes, count: int = 8) -> list[DHTNode]:
         """Get closest nodes to target ID, prioritizing high-quality and reachable nodes.
-        
+
         Nodes are sorted by:
         1. Distance to target (closer is better)
         2. Reachability score (higher is better)
@@ -233,17 +255,17 @@ class KademliaRoutingTable:
         4. Good status (good nodes preferred)
         """
         all_nodes = list(self.nodes.values())
-        
+
         # Calculate reachability for each node
         for node in all_nodes:
-            if not hasattr(node, 'reachability_score'):
+            if not hasattr(node, "reachability_score"):
                 node.reachability_score = self._assess_node_reachability(node)  # type: ignore[attr-defined]
-        
+
         # Sort by distance first, then by reachability (descending), then by quality score (descending), then by good status
         all_nodes.sort(
             key=lambda n: (
-                self._distance(n.node_id, target_id),
-                -getattr(n, 'reachability_score', 0.5),  # Negative for descending order
+                self.distance(n.node_id, target_id),
+                -getattr(n, "reachability_score", 0.5),  # Negative for descending order
                 -n.quality_score,  # Negative for descending order
                 not n.is_good,  # Good nodes first (False < True)
             )
@@ -263,35 +285,49 @@ class KademliaRoutingTable:
 
     def mark_node_bad(self, node_id: bytes, response_time: float | None = None) -> None:
         """Mark a node as bad and update quality metrics.
-        
+
         Args:
             node_id: Node ID to mark as bad
             response_time: Optional response time for this failed query
+
         """
         if node_id in self.nodes:
             node = self.nodes[node_id]
             node.is_good = False
             node.failed_queries += 1
             node.query_count += 1
-            
+
             # Update quality metrics if enabled
-            if hasattr(self, 'config') and self.config.discovery.dht_quality_tracking_enabled:
+            if (
+                hasattr(self, "config")
+                and self.config.discovery.dht_quality_tracking_enabled  # type: ignore[union-attr]
+            ):
                 # Update success rate
                 if node.query_count > 0:
                     node.success_rate = node.successful_queries / node.query_count
-                
+
                 # Update quality score (weighted by success rate and response time)
                 if response_time is not None:
                     node.last_response_time = response_time
                     # Add to response times list (keep configured window size)
-                    max_window = getattr(self.config.discovery, 'dht_quality_response_time_window', 10)
+                    discovery_config = getattr(self.config, "discovery", None)
+                    if discovery_config is not None:
+                        max_window = getattr(
+                            discovery_config,
+                            "dht_quality_response_time_window",
+                            10,
+                        )
+                    else:
+                        max_window = 10
                     node.response_times.append(response_time)
                     if len(node.response_times) > max_window:
                         node.response_times.pop(0)
                     # Update average
                     if node.response_times:
-                        node.average_response_time = sum(node.response_times) / len(node.response_times)
-                
+                        node.average_response_time = sum(node.response_times) / len(
+                            node.response_times
+                        )
+
                 # Quality score: success_rate * (1.0 / (1.0 + avg_response_time))
                 # Faster nodes with higher success rates get better scores
                 if node.average_response_time > 0:
@@ -300,37 +336,53 @@ class KademliaRoutingTable:
                     time_factor = 1.0
                 node.quality_score = node.success_rate * time_factor
 
-    def mark_node_good(self, node_id: bytes, response_time: float | None = None) -> None:
+    def mark_node_good(
+        self, node_id: bytes, response_time: float | None = None
+    ) -> None:
         """Mark a node as good and update quality metrics.
-        
+
         Args:
             node_id: Node ID to mark as good
             response_time: Optional response time for this successful query
+
         """
         if node_id in self.nodes:
             node = self.nodes[node_id]
             node.is_good = True
             node.successful_queries += 1
             node.query_count += 1
-            
+
             # Update quality metrics if enabled
-            if hasattr(self, 'config') and self.config.discovery.dht_quality_tracking_enabled:
+            if (
+                hasattr(self, "config")
+                and self.config.discovery.dht_quality_tracking_enabled  # type: ignore[union-attr]
+            ):
                 # Update success rate
                 if node.query_count > 0:
                     node.success_rate = node.successful_queries / node.query_count
-                
+
                 # Update quality score (weighted by success rate and response time)
                 if response_time is not None:
                     node.last_response_time = response_time
                     # Add to response times list (keep configured window size)
-                    max_window = getattr(self.config.discovery, 'dht_quality_response_time_window', 10)
+                    discovery_config = getattr(self.config, "discovery", None)
+                    if discovery_config is not None:
+                        max_window = getattr(
+                            discovery_config,
+                            "dht_quality_response_time_window",
+                            10,
+                        )
+                    else:
+                        max_window = 10
                     node.response_times.append(response_time)
                     if len(node.response_times) > max_window:
                         node.response_times.pop(0)
                     # Update average
                     if node.response_times:
-                        node.average_response_time = sum(node.response_times) / len(node.response_times)
-                
+                        node.average_response_time = sum(node.response_times) / len(
+                            node.response_times
+                        )
+
                 # Quality score: success_rate * (1.0 / (1.0 + avg_response_time))
                 # Faster nodes with higher success rates get better scores
                 if node.average_response_time > 0:
@@ -344,16 +396,30 @@ class KademliaRoutingTable:
         total_nodes = len(self.nodes)
         good_nodes = sum(1 for n in self.nodes.values() if n.is_good)
         non_empty_buckets = sum(1 for bucket in self.buckets if bucket)
-        
+
         # Calculate quality metrics
-        quality_scores = [n.quality_score for n in self.nodes.values() if n.query_count > 0]
-        avg_quality_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
-        
-        response_times = [n.average_response_time for n in self.nodes.values() if n.average_response_time > 0]
-        avg_response_time = sum(response_times) / len(response_times) if response_times else 0.0
-        
-        success_rates = [n.success_rate for n in self.nodes.values() if n.query_count > 0]
-        avg_success_rate = sum(success_rates) / len(success_rates) if success_rates else 0.0
+        quality_scores = [
+            n.quality_score for n in self.nodes.values() if n.query_count > 0
+        ]
+        avg_quality_score = (
+            sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+        )
+
+        response_times = [
+            n.average_response_time
+            for n in self.nodes.values()
+            if n.average_response_time > 0
+        ]
+        avg_response_time = (
+            sum(response_times) / len(response_times) if response_times else 0.0
+        )
+
+        success_rates = [
+            n.success_rate for n in self.nodes.values() if n.query_count > 0
+        ]
+        avg_success_rate = (
+            sum(success_rates) / len(success_rates) if success_rates else 0.0
+        )
 
         return {
             "total_nodes": total_nodes,
@@ -370,9 +436,22 @@ class KademliaRoutingTable:
 class AsyncDHTClient:
     """High-performance async DHT client with full Kademlia support."""
 
-    def __init__(self, bind_ip: str = "0.0.0.0", bind_port: int = 0):  # nosec B104
-        """Initialize DHT client."""
+    def __init__(
+        self,
+        bind_ip: str = "0.0.0.0",
+        bind_port: int = 0,
+        read_only: bool = False,  # nosec B104
+    ):
+        """Initialize DHT client.
+
+        Args:
+            bind_ip: IP address to bind to
+            bind_port: Port to bind to (0 for auto-assign)
+            read_only: If True, node operates in read-only mode (BEP 43)
+
+        """
         self.config = get_config()
+        self.read_only = read_only
 
         # Node identity
         self.node_id = self._generate_node_id()
@@ -390,8 +469,12 @@ class AsyncDHTClient:
         # Parse bootstrap nodes from config (format: "host:port")
         # Initialize logger first for error reporting
         self.logger = logging.getLogger(__name__)
-        
-        config_bootstrap = self.config.discovery.dht_bootstrap_nodes if hasattr(self.config, 'discovery') else []
+
+        config_bootstrap = (
+            self.config.discovery.dht_bootstrap_nodes
+            if hasattr(self.config, "discovery")
+            else []
+        )
         if config_bootstrap:
             self.bootstrap_nodes = []
             for node_str in config_bootstrap:
@@ -401,17 +484,25 @@ class AsyncDHTClient:
                         port = int(port_str)
                         self.bootstrap_nodes.append((host, port))
                     except (ValueError, IndexError):
-                        self.logger.warning("Invalid bootstrap node format: %s (expected host:port)", node_str)
+                        self.logger.warning(
+                            "Invalid bootstrap node format: %s (expected host:port)",
+                            node_str,
+                        )
                 else:
-                    self.logger.warning("Invalid bootstrap node format: %s (expected host:port)", node_str)
+                    self.logger.warning(
+                        "Invalid bootstrap node format: %s (expected host:port)",
+                        node_str,
+                    )
             if not self.bootstrap_nodes:
                 # Fallback to defaults if all config nodes are invalid
-                self.logger.warning("No valid bootstrap nodes in config, using defaults")
+                self.logger.warning(
+                    "No valid bootstrap nodes in config, using defaults"
+                )
                 self.bootstrap_nodes = DEFAULT_BOOTSTRAP.copy()
         else:
             # No bootstrap nodes in config, use defaults
             self.bootstrap_nodes = DEFAULT_BOOTSTRAP.copy()
-        
+
         # Bootstrap node performance tracking
         # Maps (host, port) -> performance metrics
         self.bootstrap_performance: dict[tuple[str, int], dict[str, Any]] = {}
@@ -420,10 +511,10 @@ class AsyncDHTClient:
         self.pending_queries: dict[bytes, asyncio.Future] = {}
         # Initialize query_timeout from config (default from network.dht_timeout)
         self.query_timeout = self.config.network.dht_timeout
-        
+
         # Peer manager reference for health tracking (optional)
         self.peer_manager: Any | None = None
-        
+
         # Adaptive timeout calculator (lazy initialization)
         self._timeout_calculator: Any | None = None
 
@@ -438,7 +529,9 @@ class AsyncDHTClient:
         # Callbacks with info_hash filtering
         # Maps info_hash -> list of callbacks, or None for global callbacks
         self.peer_callbacks: list[Callable[[list[tuple[str, int]]], None]] = []
-        self.peer_callbacks_by_hash: dict[bytes, list[Callable[[list[tuple[str, int]]], None]]] = {}
+        self.peer_callbacks_by_hash: dict[
+            bytes, list[Callable[[list[tuple[str, int]]], None]]
+        ] = {}
 
         # BEP 27: Callback to check if a torrent is private
         self.is_private_torrent: Callable[[bytes], bool] | None = None
@@ -476,7 +569,9 @@ class AsyncDHTClient:
                         f"Error: {e}\n\n"
                         f"{resolution}"
                     )
-                    self.logger.exception("DHT UDP port %d is already in use", self.bind_port)
+                    self.logger.exception(
+                        "DHT UDP port %d is already in use", self.bind_port
+                    )
                     raise RuntimeError(error_msg) from e
                 if error_code == 10013:  # WSAEACCES
                     error_msg = (
@@ -484,7 +579,11 @@ class AsyncDHTClient:
                         f"Error: {e}\n\n"
                         f"Resolution: Run with administrator privileges or change the port."
                     )
-                    self.logger.exception("Permission denied binding to %s:%d", self.bind_ip, self.bind_port)
+                    self.logger.exception(
+                        "Permission denied binding to %s:%d",
+                        self.bind_ip,
+                        self.bind_port,
+                    )
                     raise RuntimeError(error_msg) from e
             elif error_code == 98:  # EADDRINUSE
                 from ccbt.utils.port_checker import get_port_conflict_resolution
@@ -495,7 +594,9 @@ class AsyncDHTClient:
                     f"Error: {e}\n\n"
                     f"{resolution}"
                 )
-                self.logger.exception("DHT UDP port %d is already in use", self.bind_port)
+                self.logger.exception(
+                    "DHT UDP port %d is already in use", self.bind_port
+                )
                 raise RuntimeError(error_msg) from e
             elif error_code == 13:  # EACCES
                 error_msg = (
@@ -503,7 +604,9 @@ class AsyncDHTClient:
                     f"Error: {e}\n\n"
                     f"Resolution: Run with root privileges or change the port to >= 1024."
                 )
-                self.logger.exception("Permission denied binding to %s:%d", self.bind_ip, self.bind_port)
+                self.logger.exception(
+                    "Permission denied binding to %s:%d", self.bind_ip, self.bind_port
+                )
                 raise RuntimeError(error_msg) from e
             # Re-raise other OSErrors as-is
             raise
@@ -518,7 +621,15 @@ class AsyncDHTClient:
         self.logger.info("DHT client started on %s:%s", self.bind_ip, self.bind_port)
 
     async def stop(self) -> None:
-        """Stop the DHT client."""
+        """Stop the DHT client.
+
+        Ensures proper cleanup order to prevent port conflicts on Windows:
+        1. Cancel background tasks
+        2. Close transport
+        3. Wait for transport to fully close (Windows timing issue)
+        4. Clear socket reference
+        5. Clear transport reference
+        """
         if self._refresh_task:
             self._refresh_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -529,17 +640,33 @@ class AsyncDHTClient:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
 
+        # Proper cleanup order: close transport first, then handle socket
         if self.transport:
             self.transport.close()
+            # CRITICAL FIX: Wait for transport to fully close (Windows timing issue)
+            # On Windows, UDP sockets may not be immediately released after close()
+            # This prevents "WinError 10048: Only one usage of each socket address" errors
+            import sys
+
+            if sys.platform == "win32":
+                await asyncio.sleep(0.2)  # Longer wait on Windows
+            else:
+                await asyncio.sleep(0.1)  # Shorter wait on Unix
+
+        # Clear references to ensure garbage collection
+        # The socket is a DatagramProtocol instance managed by the transport
+        # The transport.close() should handle it, but we clear references
+        self.transport = None
+        self.socket = None
 
         self.logger.info("DHT client stopped")
 
     async def wait_for_bootstrap(self, timeout: float = 10.0) -> bool:
         """Wait for DHT bootstrap to complete.
-        
+
         Args:
             timeout: Maximum time to wait for bootstrap in seconds
-            
+
         Returns:
             True if bootstrap completed, False if timeout
 
@@ -561,27 +688,108 @@ class AsyncDHTClient:
         """Bootstrap the DHT by finding initial nodes."""
         self.logger.info("Bootstrapping DHT...")
 
+        # CRITICAL FIX: Add overall timeout to bootstrap process (30 seconds max)
+        # This prevents hanging indefinitely if all bootstrap nodes are unreachable
+        bootstrap_timeout = 30.0
+        start_time = time.time()
+
         # Try to find nodes from bootstrap servers
         for host, port in self.bootstrap_nodes:
+            # Check if we've exceeded overall timeout
+            if time.time() - start_time > bootstrap_timeout:
+                self.logger.warning(
+                    "Bootstrap timeout (%.1fs) - continuing with %d nodes",
+                    bootstrap_timeout,
+                    len(self.routing_table.nodes),
+                )
+                break
+
             if not await self._bootstrap_step(host, port):
                 continue
 
-        # If we still don't have enough nodes, try to find more
-        if len(self.routing_table.nodes) < 8:
-            await self._refresh_routing_table()
+            # If we have enough nodes, we can stop early
+            if len(self.routing_table.nodes) >= 8:
+                self.logger.info(
+                    "Bootstrap complete: found %d nodes", len(self.routing_table.nodes)
+                )
+                return
+
+        # If we still don't have enough nodes, try to find more (with timeout check)
+        if (
+            len(self.routing_table.nodes) < 8
+            and time.time() - start_time < bootstrap_timeout
+        ):
+            try:
+                await asyncio.wait_for(
+                    self._refresh_routing_table(),
+                    timeout=max(1.0, bootstrap_timeout - (time.time() - start_time)),
+                )
+            except asyncio.TimeoutError:
+                self.logger.debug("Refresh routing table timeout during bootstrap")
+
+        self.logger.info(
+            "Bootstrap completed with %d nodes", len(self.routing_table.nodes)
+        )
 
     async def _bootstrap_step(self, host: str, port: int) -> bool:
         """Attempt to bootstrap from a single host:port. Returns False on error.
-        
+
         Tracks performance for dynamic bootstrap node selection.
         """
         bootstrap_key = (host, port)
         start_time = time.time()
-        
+
         try:
-            addr = (socket.gethostbyname(host), port)
+            # CRITICAL FIX: Use async DNS resolution with timeout to prevent hanging
+            # socket.gethostbyname() is blocking and can hang indefinitely
+            try:
+                # Use asyncio.to_thread() to run blocking DNS resolution in thread pool
+                # This prevents blocking the event loop and allows timeout
+                if hasattr(asyncio, "to_thread"):
+                    # Python 3.9+
+                    addr_info = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            socket.getaddrinfo,
+                            host,
+                            port,
+                            family=socket.AF_INET,
+                            type=socket.SOCK_DGRAM,
+                        ),
+                        timeout=5.0,
+                    )
+                else:
+                    # Python 3.7-3.8: use run_in_executor
+                    loop = asyncio.get_event_loop()
+                    addr_info = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            socket.getaddrinfo,
+                            host,
+                            port,
+                            socket.AF_INET,
+                            socket.SOCK_DGRAM,
+                        ),
+                        timeout=5.0,
+                    )
+                # Extract IPv4 address from first result
+                addr = (addr_info[0][4][0], port)
+            except asyncio.TimeoutError:
+                self.logger.debug(
+                    "DNS resolution timeout for bootstrap node %s:%s", host, port
+                )
+                return False
+            except Exception as dns_error:
+                self.logger.debug(
+                    "DNS resolution failed for bootstrap node %s:%s: %s",
+                    host,
+                    port,
+                    dns_error,
+                )
+                return False
+
+            # Use query_timeout for _find_nodes (already has timeout via asyncio.wait_for)
             await self._find_nodes(addr, self.node_id)
-            
+
             # Track successful bootstrap
             response_time = time.time() - start_time
             if bootstrap_key not in self.bootstrap_performance:
@@ -592,18 +800,18 @@ class AsyncDHTClient:
                     "last_success": 0.0,
                     "last_failure": 0.0,
                 }
-            
+
             perf = self.bootstrap_performance[bootstrap_key]
             perf["success_count"] += 1
             perf["last_success"] = time.time()
             perf["response_times"].append(response_time)
             if len(perf["response_times"]) > 10:
                 perf["response_times"].pop(0)
-            
+
             return True
         except Exception as e:
             self.logger.debug("Bootstrap failed for %s:%s: %s", host, port, e)
-            
+
             # Track failed bootstrap
             response_time = time.time() - start_time
             if bootstrap_key not in self.bootstrap_performance:
@@ -614,44 +822,44 @@ class AsyncDHTClient:
                     "last_success": 0.0,
                     "last_failure": 0.0,
                 }
-            
+
             perf = self.bootstrap_performance[bootstrap_key]
             perf["failure_count"] += 1
             perf["last_failure"] = time.time()
             perf["response_times"].append(response_time)
             if len(perf["response_times"]) > 10:
                 perf["response_times"].pop(0)
-            
+
             return False
-    
+
     def _rank_bootstrap_nodes(
         self,
         bootstrap_nodes: list[tuple[str, int]],
     ) -> list[tuple[str, int]]:
         """Rank bootstrap nodes by performance.
-        
+
         Args:
             bootstrap_nodes: List of (host, port) tuples
-            
+
         Returns:
             List of bootstrap nodes sorted by performance (best first)
+
         """
         node_scores = []
-        
+
         for host, port in bootstrap_nodes:
             bootstrap_key = (host, port)
             perf = self.bootstrap_performance.get(bootstrap_key, {})
-            
+
             # Calculate performance score
             success_count = perf.get("success_count", 0)
             failure_count = perf.get("failure_count", 0)
             total_attempts = success_count + failure_count
-            
-            if total_attempts > 0:
-                success_rate = success_count / total_attempts
-            else:
-                success_rate = 0.5  # Unknown = neutral
-            
+
+            success_rate = (
+                success_count / total_attempts if total_attempts > 0 else 0.5
+            )  # Unknown = neutral
+
             # Average response time (lower is better)
             response_times = perf.get("response_times", [])
             if response_times:
@@ -660,7 +868,7 @@ class AsyncDHTClient:
                 time_score = max(0.0, 1.0 - (avg_response_time - 0.1) / 4.9)
             else:
                 time_score = 0.5  # Unknown = neutral
-            
+
             # Recency (more recent success = better)
             last_success = perf.get("last_success", 0.0)
             current_time = time.time()
@@ -669,15 +877,17 @@ class AsyncDHTClient:
                 recency_score = max(0.0, 1.0 - (age / 3600.0))  # Decay over 1 hour
             else:
                 recency_score = 0.0  # Never succeeded = 0
-            
+
             # Combined score
-            performance_score = (success_rate * 0.5) + (time_score * 0.3) + (recency_score * 0.2)
-            
+            performance_score = (
+                (success_rate * 0.5) + (time_score * 0.3) + (recency_score * 0.2)
+            )
+
             node_scores.append((performance_score, (host, port)))
-        
+
         # Sort by performance score (descending)
         node_scores.sort(reverse=True, key=lambda x: x[0])
-        
+
         # Return ranked nodes
         return [node for _, node in node_scores]
 
@@ -698,7 +908,7 @@ class AsyncDHTClient:
                     b"target": target_id,
                 },
             )
-            
+
             response_time = time.time() - start_time
 
             if not response or response.get(b"y") != b"r":
@@ -754,13 +964,14 @@ class AsyncDHTClient:
         info_hash: bytes,
     ) -> dict[bytes, Any] | None:
         """Query a single node for peers.
-        
+
         Args:
             node: DHT node to query
             info_hash: Torrent info hash
-            
+
         Returns:
             Response dict or None on failure
+
         """
         try:
             response = await self._send_query(
@@ -771,13 +982,12 @@ class AsyncDHTClient:
                     b"info_hash": info_hash,
                 },
             )
-            
+
             if response and response.get(b"y") == b"r":
                 self.routing_table.mark_node_good(node.node_id)
                 return response
-            else:
-                self.routing_table.mark_node_bad(node.node_id)
-                return None
+            self.routing_table.mark_node_bad(node.node_id)
+            return None
         except Exception as e:
             self.logger.debug(
                 "get_peers query failed for %s:%s: %s",
@@ -795,17 +1005,18 @@ class AsyncDHTClient:
         target_id: bytes,
     ) -> bool:
         """Check if node_id1 is closer to target than node_id2.
-        
+
         Args:
             node_id1: First node ID
             node_id2: Second node ID
             target_id: Target ID (info_hash)
-            
+
         Returns:
             True if node_id1 is closer to target than node_id2
+
         """
-        dist1 = self.routing_table._distance(node_id1, target_id)
-        dist2 = self.routing_table._distance(node_id2, target_id)
+        dist1 = self.routing_table.distance(node_id1, target_id)
+        dist2 = self.routing_table.distance(node_id2, target_id)
         return dist1 < dist2
 
     async def get_peers(
@@ -813,13 +1024,13 @@ class AsyncDHTClient:
         info_hash: bytes,
         max_peers: int = 50,
         alpha: int = 3,  # Parallel queries (BEP 5)
-        k: int = 8,      # Bucket size
+        k: int = 8,  # Bucket size
         max_depth: int | None = None,  # Override max depth (default: 10)
     ) -> list[tuple[str, int]]:
         """Get peers for an info hash using proper Kademlia iterative lookup (BEP 5).
 
         Implements iterative lookup algorithm:
-        1. Query α closest unqueried nodes in parallel
+        1. Query alpha closest unqueried nodes in parallel
         2. Collect peers from responses
         3. Update closest nodes set with returned nodes
         4. Continue until k nodes queried or no closer nodes found
@@ -829,6 +1040,7 @@ class AsyncDHTClient:
             max_peers: Maximum number of peers to return
             alpha: Number of parallel queries (default 3, BEP 5)
             k: Bucket size (default 8, BEP 5)
+            max_depth: Maximum recursion depth (default 10, None for unlimited)
 
         Returns:
             List of (ip, port) tuples
@@ -845,20 +1057,20 @@ class AsyncDHTClient:
         # Use a set to track unique peers (deduplication)
         peers_set: set[tuple[str, int]] = set()
         queried_nodes: set[bytes] = set()
-        
+
         # Get initial k closest nodes
         closest_nodes = self.routing_table.get_closest_nodes(info_hash, k)
         closest_set: set[DHTNode] = set(closest_nodes)
-        
+
         # Track query depth for logging
         query_depth = 0
         # Use provided max_depth or default to 10 (safety limit to prevent infinite loops)
         effective_max_depth = max_depth if max_depth is not None else 10
         nodes_queried_count = 0  # Track total nodes queried
-        
+
         # Store query start time for metrics
         self._query_start_time = time.time()
-        
+
         self.logger.debug(
             "Starting DHT iterative lookup for %s (initial closest nodes: %d, alpha=%d, k=%d, max_depth=%d)",
             info_hash.hex()[:8],
@@ -870,24 +1082,32 @@ class AsyncDHTClient:
 
         # Iterative lookup loop
         # Continue until we've queried enough nodes OR found enough peers OR reached max depth
-        max_nodes_to_query = max(k * 2, 50)  # Query at least k*2 nodes, up to 50 for better coverage
-        while len(queried_nodes) < max_nodes_to_query and closest_set and query_depth < effective_max_depth:
+        max_nodes_to_query = max(
+            k * 2, 50
+        )  # Query at least k*2 nodes, up to 50 for better coverage
+        while (
+            len(queried_nodes) < max_nodes_to_query
+            and closest_set
+            and query_depth < effective_max_depth
+        ):
             query_depth += 1
-            
-            # Get α closest unqueried nodes
-            unqueried = [
-                n for n in closest_set
-                if n.node_id not in queried_nodes
-            ]
-            
+
+            # Get alpha closest unqueried nodes
+            unqueried = [n for n in closest_set if n.node_id not in queried_nodes]
+
             if not unqueried:
                 # Try to get more nodes from routing table
-                additional_nodes = self.routing_table.get_closest_nodes(info_hash, k * 3)
+                additional_nodes = self.routing_table.get_closest_nodes(
+                    info_hash, k * 3
+                )
                 for new_node in additional_nodes:
-                    if new_node.node_id not in queried_nodes and new_node not in closest_set:
+                    if (
+                        new_node.node_id not in queried_nodes
+                        and new_node not in closest_set
+                    ):
                         closest_set.add(new_node)
                         unqueried.append(new_node)
-                
+
                 if not unqueried:
                     self.logger.debug(
                         "No unqueried nodes remaining for %s (queried: %d, closest: %d, routing table: %d)",
@@ -897,10 +1117,10 @@ class AsyncDHTClient:
                         len(self.routing_table.nodes),
                     )
                     break
-            
-            # Select α nodes for parallel query
+
+            # Select alpha nodes for parallel query
             query_nodes = unqueried[:alpha]
-            
+
             self.logger.debug(
                 "DHT query depth %d for %s: querying %d nodes in parallel (total queried: %d, peers found: %d)",
                 query_depth,
@@ -909,22 +1129,21 @@ class AsyncDHTClient:
                 len(queried_nodes),
                 len(peers_set),
             )
-            
+
             # Query nodes in parallel
             nodes_queried_count += len(query_nodes)
             tasks = [
-                self._query_node_for_peers(node, info_hash)
-                for node in query_nodes
+                self._query_node_for_peers(node, info_hash) for node in query_nodes
             ]
             responses = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             # Track if we found closer nodes in this iteration
             found_closer_nodes = False
-            
+
             # Process responses
             for node, response in zip(query_nodes, responses):
                 queried_nodes.add(node.node_id)
-                
+
                 if isinstance(response, Exception):
                     self.logger.debug(
                         "DHT query exception for %s:%s: %s",
@@ -933,12 +1152,12 @@ class AsyncDHTClient:
                         response,
                     )
                     continue
-                
+
                 if not response:
                     continue
-                
+
                 r = response.get(b"r", {})
-                
+
                 # Collect peers (values field)
                 values = r.get(b"values", [])
                 if isinstance(values, list):
@@ -947,11 +1166,11 @@ class AsyncDHTClient:
                             ip = ".".join(str(b) for b in value[:4])
                             port = int.from_bytes(value[4:6], "big")
                             peer_addr = (ip, port)
-                            
-                                # Only add if not already seen (deduplication)
+
+                            # Only add if not already seen (deduplication)
                             if peer_addr not in peers_set:
                                 peers_set.add(peer_addr)
-                                
+
                                 # CRITICAL FIX: Invoke callbacks immediately when peers are found
                                 # This ensures peers are connected as soon as they're discovered
                                 # rather than waiting until the entire query completes
@@ -971,17 +1190,20 @@ class AsyncDHTClient:
                                         port,
                                         e,
                                     )
-                                
+
                                 # Emit DHT peer found event
                                 try:
                                     from ccbt.utils.events import Event, emit_event
+
                                     await emit_event(
                                         Event(
                                             event_type="dht_peer_found",
                                             data={
                                                 "ip": ip,
                                                 "port": port,
-                                                "info_hash": info_hash.hex() if isinstance(info_hash, bytes) else str(info_hash),
+                                                "info_hash": info_hash.hex()
+                                                if isinstance(info_hash, bytes)
+                                                else str(info_hash),
                                                 "node_ip": node.ip,
                                                 "node_port": node.port,
                                                 "query_depth": query_depth,
@@ -989,11 +1211,13 @@ class AsyncDHTClient:
                                         )
                                     )
                                 except Exception as e:
-                                    self.logger.debug("Failed to emit DHT peer_found event: %s", e)
-                                
+                                    self.logger.debug(
+                                        "Failed to emit DHT peer_found event: %s", e
+                                    )
+
                                 if len(peers_set) >= max_peers:
                                     break
-                
+
                 # Process returned nodes (nodes field)
                 nodes_data = r.get(b"nodes", b"")
                 if nodes_data:
@@ -1004,14 +1228,16 @@ class AsyncDHTClient:
                             node_id = node_data[:20]
                             ip = ".".join(str(b) for b in node_data[20:24])
                             port = int.from_bytes(node_data[24:26], "big")
-                            
+
                             new_node = DHTNode(node_id, ip, port)
                             was_added = self.routing_table.add_node(new_node)
-                            
+
                             # Check if this node should be added to closest_set
                             # Add if closest_set has fewer than k nodes, or if this node is closer than the farthest
-                            new_distance = self.routing_table._distance(node_id, info_hash)
-                            
+                            new_distance = self.routing_table.distance(
+                                node_id, info_hash
+                            )
+
                             if len(closest_set) < k:
                                 # Always add if we haven't reached k nodes yet
                                 closest_set.add(new_node)
@@ -1021,32 +1247,38 @@ class AsyncDHTClient:
                                 # CRITICAL FIX: Use list() to avoid set modification during iteration
                                 farthest_node = max(
                                     list(closest_set),
-                                    key=lambda n: self.routing_table._distance(n.node_id, info_hash),
+                                    key=lambda n: self.routing_table.distance(
+                                        n.node_id, info_hash
+                                    ),
                                 )
-                                farthest_distance = self.routing_table._distance(
+                                farthest_distance = self.routing_table.distance(
                                     farthest_node.node_id, info_hash
                                 )
-                                
+
                                 if new_distance < farthest_distance:
                                     # Replace farthest with this closer node
                                     # CRITICAL FIX: Check if node still exists before removing (race condition fix)
-                                    if farthest_node in closest_set:
-                                        closest_set.remove(farthest_node)
+                                    closest_set.discard(farthest_node)
                                     closest_set.add(new_node)
                                     found_closer_nodes = True
-                            
+
                             # Emit DHT node found/added event
                             if was_added:
                                 try:
                                     from ccbt.utils.events import Event, emit_event
+
                                     await emit_event(
                                         Event(
                                             event_type="dht_node_found",
                                             data={
-                                                "node_id": node_id.hex() if isinstance(node_id, bytes) else str(node_id),
+                                                "node_id": node_id.hex()
+                                                if isinstance(node_id, bytes)
+                                                else str(node_id),
                                                 "ip": ip,
                                                 "port": port,
-                                                "info_hash": info_hash.hex() if isinstance(info_hash, bytes) else str(info_hash),
+                                                "info_hash": info_hash.hex()
+                                                if isinstance(info_hash, bytes)
+                                                else str(info_hash),
                                             },
                                         )
                                     )
@@ -1054,20 +1286,24 @@ class AsyncDHTClient:
                                         Event(
                                             event_type="dht_node_added",
                                             data={
-                                                "node_id": node_id.hex() if isinstance(node_id, bytes) else str(node_id),
+                                                "node_id": node_id.hex()
+                                                if isinstance(node_id, bytes)
+                                                else str(node_id),
                                                 "ip": ip,
                                                 "port": port,
                                             },
                                         )
                                     )
                                 except Exception as e:
-                                    self.logger.debug("Failed to emit DHT node event: %s", e)
-                
+                                    self.logger.debug(
+                                        "Failed to emit DHT node event: %s", e
+                                    )
+
                 # Store token for announce_peer
                 token = r.get(b"token")
                 if token:
                     self.tokens[info_hash] = DHTToken(token, info_hash)
-            
+
             # Stop if we have enough peers
             if len(peers_set) >= max_peers:
                 self.logger.debug(
@@ -1076,49 +1312,62 @@ class AsyncDHTClient:
                     len(peers_set),
                 )
                 break
-            
+
             # Continue searching even if no closer nodes found
             # This helps find peers in sparse DHT networks
             if not found_closer_nodes and len(queried_nodes) >= k:
                 # Try to get more nodes from routing table to continue search
                 # This is important because the initial closest nodes might not have peers
-                additional_nodes = self.routing_table.get_closest_nodes(info_hash, k * 3)
+                additional_nodes = self.routing_table.get_closest_nodes(
+                    info_hash, k * 3
+                )
                 added_new_nodes = False
                 for new_node in additional_nodes:
-                    if new_node.node_id not in queried_nodes and new_node not in closest_set:
+                    if (
+                        new_node.node_id not in queried_nodes
+                        and new_node not in closest_set
+                    ):
                         closest_set.add(new_node)
                         found_closer_nodes = True
                         added_new_nodes = True
-                
+
                 if not added_new_nodes:
                     # No more unqueried nodes available, but continue if we haven't queried enough yet
-                    if len(queried_nodes) < max_nodes_to_query and query_depth < effective_max_depth:
+                    if (
+                        len(queried_nodes) < max_nodes_to_query
+                        and query_depth < effective_max_depth
+                    ):
                         # Try to expand search by getting nodes from different buckets
                         all_routing_nodes = list(self.routing_table.nodes.values())
                         for node in all_routing_nodes:
-                            if node.node_id not in queried_nodes and node not in closest_set:
+                            if (
+                                node.node_id not in queried_nodes
+                                and node not in closest_set
+                            ):
                                 closest_set.add(node)
                                 found_closer_nodes = True
                                 break
-                    
-                    if not found_closer_nodes:
-                        # Only stop if we've queried enough nodes OR reached max depth
-                        if len(queried_nodes) >= max_nodes_to_query or query_depth >= effective_max_depth:
-                            self.logger.debug(
-                                "DHT iterative lookup for %s converged (no closer nodes, queried: %d/%d, depth: %d/%d, peers: %d)",
-                                info_hash.hex()[:8],
-                                len(queried_nodes),
-                                max_nodes_to_query,
-                                query_depth,
-                                effective_max_depth,
-                                len(peers_set),
-                            )
-                            break
+
+                    # Only stop if we've queried enough nodes OR reached max depth
+                    if not found_closer_nodes and (
+                        len(queried_nodes) >= max_nodes_to_query
+                        or query_depth >= effective_max_depth
+                    ):
+                        self.logger.debug(
+                            "DHT iterative lookup for %s converged (no closer nodes, queried: %d/%d, depth: %d/%d, peers: %d)",
+                            info_hash.hex()[:8],
+                            len(queried_nodes),
+                            max_nodes_to_query,
+                            query_depth,
+                            effective_max_depth,
+                            len(peers_set),
+                        )
+                        break
 
         # Convert set back to list for return value
         peers = list(peers_set)
-        
-        # Notify callbacks with info_hash filtering (even if peers list is empty, 
+
+        # Notify callbacks with info_hash filtering (even if peers list is empty,
         # callbacks might have been invoked during the query via incoming messages)
         # CRITICAL FIX: Always invoke callbacks with final peer list, even if empty
         # This ensures callbacks are notified when query completes
@@ -1135,15 +1384,18 @@ class AsyncDHTClient:
                 "DHT get_peers query completed: no peers found for info_hash %s (callbacks may have been invoked during query)",
                 info_hash.hex()[:16],
             )
-        
+
         # Emit DHT query complete event
         try:
             from ccbt.utils.events import Event, emit_event
+
             await emit_event(
                 Event(
                     event_type="dht_query_complete",
                     data={
-                        "info_hash": info_hash.hex() if isinstance(info_hash, bytes) else str(info_hash),
+                        "info_hash": info_hash.hex()
+                        if isinstance(info_hash, bytes)
+                        else str(info_hash),
                         "peers_found": len(peers),
                         "nodes_queried": len(queried_nodes),
                         "query_depth": query_depth,
@@ -1164,11 +1416,11 @@ class AsyncDHTClient:
             k,
             effective_max_depth,
         )
-        
+
         # Store query metrics for external access
-        if not hasattr(self, '_last_query_metrics'):
+        if not hasattr(self, "_last_query_metrics"):
             self._last_query_metrics = {}
-        query_duration = time.time() - getattr(self, '_query_start_time', time.time())
+        query_duration = time.time() - getattr(self, "_query_start_time", time.time())
         self._last_query_metrics = {
             "duration": query_duration,
             "peers_found": len(peers),
@@ -1181,7 +1433,7 @@ class AsyncDHTClient:
 
         return peers
 
-    async def announce_peer(self, info_hash: bytes, port: int) -> bool:
+    async def announce_peer(self, info_hash: bytes, port: int) -> int:
         """Announce our peer to the DHT.
 
         Args:
@@ -1189,16 +1441,23 @@ class AsyncDHTClient:
             port: Our port
 
         Returns:
-            True if announcement was successful
+            Number of peers announced (0 if failed or read-only, 1 if successful)
 
         """
+        # BEP 43: Read-only nodes skip announce_peer
+        if self.read_only:
+            self.logger.debug(
+                "Skipping DHT announce_peer for read-only node (BEP 43)",
+            )
+            return 0
+
         # BEP 27: Private torrents must not use DHT for peer announcements
         if self.is_private_torrent and self.is_private_torrent(info_hash):
             self.logger.debug(
                 "Skipping DHT announce_peer for private torrent %s (BEP 27)",
                 info_hash.hex()[:8],
             )
-            return False
+            return 0
 
         # Get token for this info hash
         if info_hash not in self.tokens:
@@ -1207,14 +1466,14 @@ class AsyncDHTClient:
 
         if info_hash not in self.tokens:
             self.logger.debug("No token available for %s", info_hash.hex())
-            return False
+            return 0
 
         token = self.tokens[info_hash]
 
         # Check if token is still valid
         if time.time() > token.expires_time:
             del self.tokens[info_hash]
-            return False
+            return 0
 
         # Find closest nodes to announce to
         closest_nodes = self.routing_table.get_closest_nodes(info_hash, 8)
@@ -1248,19 +1507,19 @@ class AsyncDHTClient:
                 )
                 self.routing_table.mark_node_bad(node.node_id)
 
-        return success_count > 0
+        return success_count
 
     async def get_data(
         self,
         key: bytes,
-        public_key: bytes | None = None,
+        _public_key: bytes | None = None,
     ) -> bytes | None:
         """Get data from DHT using BEP 44 get_mutable query.
-        
+
         Args:
             key: Data key (20 bytes)
-            public_key: Optional public key for mutable data verification
-            
+            _public_key: Optional public key for mutable data verification (unused in stub)
+
         Returns:
             Retrieved data bytes, or None if not found
 
@@ -1275,47 +1534,121 @@ class AsyncDHTClient:
     async def put_data(
         self,
         key: bytes,
-        value: bytes,
+        value: bytes | dict[bytes, bytes],
     ) -> int:
         """Put data to DHT using BEP 44 put_mutable query.
-        
+
         Args:
             key: Data key (20 bytes)
-            value: Data value to store
-            
+            value: Data value to store (bytes or dict for BEP 44 format)
+
         Returns:
-            Number of successful storage operations (0 if failed)
+            Number of successful storage operations (0 if failed or read-only)
 
         """
+        # BEP 43: Read-only nodes skip put_data
+        if self.read_only:
+            self.logger.debug(
+                "Skipping DHT put_data for read-only node (BEP 43)",
+            )
+            return 0
+
         # TODO: Implement BEP 44 put_mutable query
         # This is a stub implementation - should be properly implemented
         # using BEP 44 protocol for mutable data storage
-        self.logger.debug("put_data called for key: %s, value size: %d", key.hex()[:16], len(value))
+        self.logger.debug(
+            "put_data called for key: %s, value size: %d",
+            key.hex()[:16],
+            len(value) if isinstance(value, bytes) else len(str(value)),
+        )
         # For now, return 0 (not implemented)
         return 0
 
+    async def index_infohash(
+        self,
+        info_hash: bytes,
+        name: str,
+        size: int,
+        public_key: bytes,
+        private_key: bytes,
+        salt: bytes = b"",
+    ) -> bytes:
+        """Index an infohash in the DHT (BEP 51).
+
+        Args:
+            info_hash: Torrent info hash (20 bytes)
+            name: Torrent name
+            size: Torrent size in bytes
+            public_key: Public key for signing
+            private_key: Private key for signing
+            salt: Optional salt
+
+        Returns:
+            Index key (20 bytes)
+
+        """
+        from ccbt.discovery.dht_indexing import store_infohash_sample
+
+        return await store_infohash_sample(
+            info_hash=info_hash,
+            name=name,
+            size=size,
+            public_key=public_key,
+            private_key=private_key,
+            salt=salt,
+            dht_client=self,
+        )
+
+    async def query_infohash_index(
+        self,
+        query: str,
+        max_results: int = 50,
+        public_key: bytes | None = None,
+    ) -> list:
+        """Query the infohash index (BEP 51).
+
+        Args:
+            query: Query string (e.g., torrent name)
+            max_results: Maximum number of results to return
+            public_key: Optional public key for querying mutable items
+
+        Returns:
+            List of matching infohash samples
+
+        """
+        from ccbt.discovery.dht_indexing import query_index
+
+        return await query_index(
+            query=query,
+            max_results=max_results,
+            dht_client=self,
+            public_key=public_key,
+        )
+
     def _calculate_adaptive_query_timeout(self) -> float:
         """Calculate adaptive DHT query timeout based on peer health.
-        
+
         Returns:
             Timeout in seconds
+
         """
         # Lazy initialization of timeout calculator
         if self._timeout_calculator is None:
             from ccbt.utils.timeout_adapter import AdaptiveTimeoutCalculator
-            
+
             self._timeout_calculator = AdaptiveTimeoutCalculator(
                 config=self.config,
                 peer_manager=self.peer_manager,
             )
-        
+
         return self._timeout_calculator.calculate_dht_timeout()
 
     def set_peer_manager(self, peer_manager: Any) -> None:
         """Set peer manager reference for health tracking.
-        
+
         Args:
             peer_manager: Peer manager instance for health metrics
+
         """
         self.peer_manager = peer_manager
         # Reset timeout calculator to pick up new peer_manager
@@ -1330,7 +1663,7 @@ class AsyncDHTClient:
         """Send a DHT query and wait for response, tracking response time for quality metrics."""
         # Calculate adaptive timeout based on peer health
         query_timeout = self._calculate_adaptive_query_timeout()
-        
+
         # Generate transaction ID
         tid = os.urandom(2)
 
@@ -1365,7 +1698,9 @@ class AsyncDHTClient:
             self.logger.debug(
                 "Query timeout for %s (timeout=%.1fs)", addr, query_timeout
             )
-            response_time = query_timeout  # Use timeout as response time for failed queries
+            response_time = (
+                query_timeout  # Use timeout as response time for failed queries
+            )
             return None
         finally:
             # Update node quality metrics if we can identify the node
@@ -1378,14 +1713,19 @@ class AsyncDHTClient:
                         node_id = nid
                         break
                     # Also check IPv6 and additional addresses
-                    if node.has_ipv6 and node.ipv6 and node.port6 and (node.ipv6, node.port6) == addr:
+                    if (
+                        node.has_ipv6
+                        and node.ipv6
+                        and node.port6
+                        and (node.ipv6, node.port6) == addr
+                    ):
                         node_id = nid
                         break
                     for add_addr in node.additional_addresses:
                         if add_addr == addr:
                             node_id = nid
                             break
-                
+
                 # Update quality metrics if node found
                 if node_id is not None:
                     # Determine if query was successful based on whether we got a response
@@ -1429,30 +1769,31 @@ class AsyncDHTClient:
 
     def _calculate_adaptive_interval(self) -> float:
         """Calculate adaptive lookup interval based on peer count and swarm health.
-        
+
         Returns:
             Interval in seconds (from config min/max bounds)
+
         """
         # Check if adaptive intervals are enabled
         if not self.config.discovery.dht_adaptive_interval_enabled:
             return self.config.discovery.dht_base_refresh_interval
-        
+
         # Base interval from config
         base_interval = self.config.discovery.dht_base_refresh_interval
-        
+
         # Get current peer count from routing table
         total_nodes = len(self.routing_table.nodes)
         good_nodes = sum(1 for n in self.routing_table.nodes.values() if n.is_good)
-        
+
         # Calculate swarm health (ratio of good nodes)
         swarm_health = good_nodes / total_nodes if total_nodes > 0 else 0.0
-        
+
         # Adaptive calculation:
         # - More peers (>= 50) = longer interval (less frequent lookups)
         # - Fewer peers (< 20) = shorter interval (more frequent lookups)
         # - Poor swarm health (< 0.5) = shorter interval (more frequent lookups)
         # - Good swarm health (>= 0.8) = longer interval (less frequent lookups)
-        
+
         if total_nodes >= 50 and swarm_health >= 0.8:
             # Healthy swarm with many peers - reduce lookup frequency
             multiplier = 1.5
@@ -1462,15 +1803,13 @@ class AsyncDHTClient:
         else:
             # Moderate state - use base interval
             multiplier = 1.0
-        
+
         adaptive_interval = base_interval * multiplier
-        
+
         # Clamp to config bounds
         min_interval = self.config.discovery.dht_adaptive_interval_min
         max_interval = self.config.discovery.dht_adaptive_interval_max
-        adaptive_interval = max(min_interval, min(max_interval, adaptive_interval))
-        
-        return adaptive_interval
+        return max(min_interval, min(max_interval, adaptive_interval))
 
     async def _refresh_loop(self) -> None:
         """Background task to refresh routing table with adaptive intervals."""
@@ -1531,11 +1870,14 @@ class AsyncDHTClient:
                 # Emit DHT node removed event before removal
                 try:
                     from ccbt.utils.events import Event, emit_event
+
                     await emit_event(
                         Event(
                             event_type="dht_node_removed",
                             data={
-                                "node_id": node_id.hex() if isinstance(node_id, bytes) else str(node_id),
+                                "node_id": node_id.hex()
+                                if isinstance(node_id, bytes)
+                                else str(node_id),
                                 "ip": node.ip,
                                 "port": node.port,
                                 "reason": "bad_node",
@@ -1553,15 +1895,16 @@ class AsyncDHTClient:
         info_hash: bytes,
     ) -> None:
         """Invoke peer callbacks with info_hash filtering.
-        
+
         Args:
             peers: List of discovered peers
             info_hash: Info hash to filter callbacks
+
         """
         # CRITICAL FIX: Add logging to verify callback invocations
         global_callback_count = len(self.peer_callbacks)
         hash_specific_count = len(self.peer_callbacks_by_hash.get(info_hash, []))
-        
+
         if global_callback_count > 0 or hash_specific_count > 0:
             self.logger.info(
                 "Invoking DHT peer callbacks: %d peer(s), info_hash=%s, "
@@ -1578,7 +1921,7 @@ class AsyncDHTClient:
                 info_hash.hex()[:16] + "...",
                 len(peers),
             )
-        
+
         # Invoke global callbacks (no info_hash filtering)
         for idx, callback in enumerate(self.peer_callbacks):
             try:
@@ -1589,14 +1932,13 @@ class AsyncDHTClient:
                     info_hash.hex()[:16] + "...",
                     len(peers),
                 )
-            except Exception as e:
+            except Exception:
                 self.logger.exception(
-                    "Peer callback error (global callback #%d, info_hash=%s): %s",
+                    "Peer callback error (global callback #%d, info_hash=%s)",
                     idx + 1,
                     info_hash.hex()[:16] + "...",
-                    e,
                 )
-        
+
         # Invoke info_hash-specific callbacks
         if info_hash in self.peer_callbacks_by_hash:
             for idx, callback in enumerate(self.peer_callbacks_by_hash[info_hash]):
@@ -1608,12 +1950,11 @@ class AsyncDHTClient:
                         info_hash.hex()[:16] + "...",
                         len(peers),
                     )
-                except Exception as e:
+                except Exception:
                     self.logger.exception(
-                        "Peer callback error (info_hash=%s, callback #%d): %s",
+                        "Peer callback error (info_hash=%s, callback #%d)",
                         info_hash.hex()[:8],
                         idx + 1,
-                        e,
                     )
 
     def add_peer_callback(
@@ -1622,12 +1963,13 @@ class AsyncDHTClient:
         info_hash: bytes | None = None,
     ) -> None:
         """Add callback for new peers.
-        
+
         Args:
             callback: Callback function to invoke when peers are discovered
             info_hash: Optional info hash to filter callbacks. If provided, callback
                       is only invoked for peers matching this info_hash. If None,
                       callback is invoked for all peer discoveries (global callback).
+
         """
         if info_hash is not None:
             if info_hash not in self.peer_callbacks_by_hash:
@@ -1651,21 +1993,23 @@ class AsyncDHTClient:
         info_hash: bytes | None = None,
     ) -> None:
         """Remove peer callback.
-        
+
         Args:
             callback: Callback function to remove
             info_hash: Optional info hash. If provided, removes callback from
                       info_hash-specific list. If None, removes from global list.
+
         """
-        if info_hash is not None:
-            if info_hash in self.peer_callbacks_by_hash:
-                if callback in self.peer_callbacks_by_hash[info_hash]:
-                    self.peer_callbacks_by_hash[info_hash].remove(callback)
-                    if not self.peer_callbacks_by_hash[info_hash]:
-                        del self.peer_callbacks_by_hash[info_hash]
-        else:
-            if callback in self.peer_callbacks:
-                self.peer_callbacks.remove(callback)
+        if (
+            info_hash is not None
+            and info_hash in self.peer_callbacks_by_hash
+            and callback in self.peer_callbacks_by_hash[info_hash]
+        ):
+            self.peer_callbacks_by_hash[info_hash].remove(callback)
+            if not self.peer_callbacks_by_hash[info_hash]:
+                del self.peer_callbacks_by_hash[info_hash]
+        elif callback in self.peer_callbacks:
+            self.peer_callbacks.remove(callback)
 
     def get_stats(self) -> dict[str, Any]:
         """Get DHT statistics."""

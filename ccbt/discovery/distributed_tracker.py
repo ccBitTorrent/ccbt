@@ -5,9 +5,7 @@ Provides distributed tracker functionality using DHT for synchronization.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import json
 import logging
 import time
 from typing import Any
@@ -150,7 +148,11 @@ class DistributedTracker:
                 "timestamp": current_time,
                 "torrents": {
                     info_hash.hex(): [
-                        {"ip": ip, "port": port, "peer_id": peer_id.hex() if peer_id else None}
+                        {
+                            "ip": ip,
+                            "port": port,
+                            "peer_id": peer_id.hex() if peer_id else None,
+                        }
                         for ip, port, peer_id in peers
                     ]
                     for info_hash, peers in self.tracker_data.items()
@@ -196,6 +198,3 @@ class DistributedTracker:
 
         except Exception as e:
             logger.warning("Failed to sync distributed tracker: %s", e)
-
-
-

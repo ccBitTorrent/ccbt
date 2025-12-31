@@ -219,12 +219,12 @@ class BencodeEncoder:
 
 
 def decode(data: bytes) -> Any:
-    """Convenience function to decode bencoded data."""
+    """Decode bencoded data."""
     decoder = BencodeDecoder(data)
     return decoder.decode()
 
 
 def encode(obj: Any) -> bytes:
-    """Convenience function to encode Python object to bencoded data."""
+    """Encode Python object to bencoded data."""
     encoder = BencodeEncoder()
     return encoder.encode(obj)

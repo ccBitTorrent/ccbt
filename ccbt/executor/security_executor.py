@@ -16,7 +16,7 @@ class SecurityExecutor(CommandExecutor):
     async def execute(
         self,
         command: str,
-        *args: Any,
+        *_args: Any,
         **kwargs: Any,
     ) -> CommandResult:
         """Execute security command.
@@ -259,13 +259,14 @@ class SecurityExecutor(CommandExecutor):
 
     async def _ban_peer(self, ip: str, reason: str = "") -> CommandResult:
         """Ban a peer by IP address.
-        
+
         Args:
             ip: IP address to ban
             reason: Reason for banning (optional)
-            
+
         Returns:
             CommandResult with execution result
+
         """
         try:
             from ccbt.executor.session_adapter import LocalSessionAdapter
@@ -287,7 +288,7 @@ class SecurityExecutor(CommandExecutor):
             # Add to blacklist with reason
             ban_reason = reason or f"Manually banned peer: {ip}"
             security_manager.add_to_blacklist(ip, ban_reason, source="manual")
-            
+
             # Also disconnect the peer if connected
             # Get all torrent sessions and disconnect peers with this IP
             if hasattr(session, "torrent_sessions"):
@@ -306,7 +307,7 @@ class SecurityExecutor(CommandExecutor):
                                             await peer.disconnect()
                                         elif hasattr(peer, "close"):
                                             await peer.close()
-            
+
             return CommandResult(
                 success=True,
                 data={"banned": True, "ip": ip, "reason": ban_reason},

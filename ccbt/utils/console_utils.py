@@ -167,7 +167,7 @@ def print_info(
         console = create_console()
 
     translated = _(message)
-    console.print(f"[cyan]ℹ[/cyan] {translated}", **kwargs)
+    console.print(f"[cyan]i[/cyan] {translated}", **kwargs)
 
 
 def print_table(
@@ -336,7 +336,7 @@ def live_display(
 
 def create_progress(
     console: Console | None = None,
-    description: str | None = None,
+    _description: str | None = None,
 ) -> Progress:
     """Create a Rich Progress bar with i18n support.
 

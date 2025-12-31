@@ -247,7 +247,7 @@ class TestUPnPSOAPAction:
 
         mock_response = MagicMock()
         mock_response.status = 500
-        mock_response.text = AsyncMock()  # Won't be called but needs to exist
+        mock_response.text = AsyncMock(return_value="<xml>Error</xml>")  # Return string for XML parsing
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
         
@@ -479,8 +479,9 @@ class TestUPnPClient:
         client.control_url = "http://example.com/control"
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
         
-        with patch("ccbt.nat.upnp.send_soap_action", return_value={"errorCode": "402"}):
-            with pytest.raises(UPnPError, match="AddPortMapping failed"):
+        # Mock delete_port_mapping to return error code (called before add_port_mapping)
+        with patch.object(client, "delete_port_mapping", side_effect=UPnPError("DeletePortMapping failed: error code 402")):
+            with pytest.raises(UPnPError, match="DeletePortMapping failed"):
                 await client.add_port_mapping(6881, 6881, "tcp")
 
     @pytest.mark.asyncio
@@ -490,8 +491,9 @@ class TestUPnPClient:
         client.control_url = "http://example.com/control"
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
         
-        with patch("ccbt.nat.upnp.send_soap_action", side_effect=ValueError("Test error")):
-            with pytest.raises(UPnPError, match="Error adding port mapping"):
+        # Mock delete_port_mapping to raise exception (called before add_port_mapping)
+        with patch.object(client, "delete_port_mapping", side_effect=UPnPError("Error deleting port mapping: Test error")):
+            with pytest.raises(UPnPError, match="Error deleting port mapping"):
                 await client.add_port_mapping(6881, 6881, "tcp")
 
     @pytest.mark.asyncio

@@ -5,9 +5,7 @@ Provides signature verification and weighted voting for Byzantine consensus.
 
 from __future__ import annotations
 
-import hashlib
 import logging
-from collections import defaultdict
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -69,13 +67,11 @@ class ByzantineConsensus:
             Proposal with metadata
 
         """
-        proposal_data = {
+        return {
             "proposal": proposal,
             "proposer": self.node_id,
             "signature": signature,
         }
-
-        return proposal_data
 
     def vote(
         self,
@@ -94,18 +90,16 @@ class ByzantineConsensus:
             Vote with metadata
 
         """
-        vote_data = {
+        return {
             "proposal": proposal,
             "voter": self.node_id,
             "vote": vote,
             "signature": signature,
         }
 
-        return vote_data
-
     def verify_signature(
         self,
-        data: bytes,
+        _data: bytes,
         signature: bytes,
         public_key: bytes,
         node_id: str,
@@ -127,16 +121,13 @@ class ByzantineConsensus:
 
         # Simplified verification (would use Ed25519 in production)
         # For now, just check that signature exists and has correct length
-        if len(signature) != 64:  # Ed25519 signature length
-            return False
-
         # In production, would verify using cryptography library:
         # from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         # public_key_obj = Ed25519PublicKey.from_public_bytes(public_key)
         # public_key_obj.verify(signature, data)
 
-        # For now, accept if signature format is correct
-        return True
+        # For now, accept if signature format is correct (Ed25519 signature length)
+        return len(signature) == 64
 
     def check_byzantine_threshold(
         self,
@@ -211,6 +202,3 @@ class ByzantineConsensus:
         )
 
         return consensus_reached, agreement_ratio, vote_dict
-
-
-

@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 Tàbí fi sílẹ̀ láti orísun:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-Àwọn ibẹ̀rẹ̀ ìwọlé wà ní [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81).
+Àwọn ibẹ̀rẹ̀ ìwọlé wà ní [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81).
 
 ## Àwọn Ibẹ̀rẹ̀ Ìwọlé Pàtàkì
 
@@ -42,8 +42,8 @@ ccBitTorrent pèsè àwọn ibẹ̀rẹ̀ ìwọlé mẹ́ta:
 
 **Bitonic** jẹ́ àwọn ìfọ̀rọ̀wérẹ́ dashboard tẹ́ẹ̀mínà àkọ́kọ́. Ó pèsè ìwòye tí ó ṣe dáadáa, tí ó ṣe ìbáṣepọ̀ fún gbogbo torrents, peers, àti àwọn ìwọ̀n ìgbàkọlé.
 
-- Ibẹ̀rẹ̀ ìwọlé: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- A ṣàlàyé ní: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- Ibẹ̀rẹ̀ ìwọlé: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- A ṣàlàyé ní: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - Bẹ̀rẹ̀: `uv run bitonic` tàbí `uv run ccbt dashboard`
 
 Wo [Ìtọ́sọ́nà Bitonic](bitonic.md) fún lilo tí ó ṣe dáadáa.
@@ -52,8 +52,8 @@ Wo [Ìtọ́sọ́nà Bitonic](bitonic.md) fún lilo tí ó ṣe dáadáa.
 
 **btbt** jẹ́ àwọn ìfọ̀rọ̀wérẹ́ ìlànà àṣẹ tí ó ṣe dáadáa tí ó ní ọ̀pọ̀lọpọ̀ àwọn ẹ̀yà.
 
-- Ibẹ̀rẹ̀ ìwọlé: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- A ṣàlàyé ní: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- Ibẹ̀rẹ̀ ìwọlé: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- A ṣàlàyé ní: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - Bẹ̀rẹ̀: `uv run btbt`
 
 Wo [Àtẹ̀jáde btbt CLI](btbt-cli.md) fún gbogbo àwọn àṣẹ tí ó wà.
@@ -62,8 +62,8 @@ Wo [Àtẹ̀jáde btbt CLI](btbt-cli.md) fún gbogbo àwọn àṣẹ tí ó wà
 
 **ccbt** jẹ́ àwọn ìfọ̀rọ̀wérẹ́ ìlànà àṣẹ àkọ́kọ́.
 
-- Ibẹ̀rẹ̀ ìwọlé: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- A ṣàlàyé ní: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- Ibẹ̀rẹ̀ ìwọlé: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- A ṣàlàyé ní: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - Bẹ̀rẹ̀: `uv run ccbt`
 
 ## Bíbẹ̀rẹ̀ Kíákíá
@@ -104,9 +104,9 @@ Wo [Àtẹ̀jáde btbt CLI](btbt-cli.md) fún gbogbo àwọn àṣàyàn ìgbàs
 ### Ṣètò ccBitTorrent
 
 Ṣẹ̀dá fàìlì `ccbt.toml` ní àwọn fóldà iṣẹ́ rẹ. Wo àpẹrẹ ṣètò:
-- Ṣètò àkọ́kọ́: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- Àwọn onírúurú ayé: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- Ìgbàkọlé ṣètò: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- Ṣètò àkọ́kọ́: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- Àwọn onírúurú ayé: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- Ìgbàkọlé ṣètò: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 Wo [Ìtọ́sọ́nà Ṣètò](configuration.md) fún àwọn àṣàyàn ṣètò tí ó ṣe dáadáa.
 
@@ -132,7 +132,7 @@ A ṣẹ̀dá àwọn ìròyìn yìí àti a túnṣe wọn ní àìdánilójú 
 
 - Lo `uv run bitonic --help` tàbí `uv run btbt --help` fún ìrànlọ́wọ́ àṣẹ
 - Ṣayẹ̀wò [Àtẹ̀jáde btbt CLI](btbt-cli.md) fún àwọn àṣàyàn tí ó ṣe dáadáa
-- Wọ àwọn àpótí wa GitHub](https://github.com/yourusername/ccbittorrent) fún àwọn ìṣòro àti àwọn ìjíròrò
+- Wọ àwọn àpótí wa GitHub](https://github.com/ccBitTorrent/ccbittorrent) fún àwọn ìṣòro àti àwọn ìjíròrò
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 Tàbí fi sílẹ̀ láti orísun:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-Àwọn ibẹ̀rẹ̀ ìwọlé wà ní [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81).
+Àwọn ibẹ̀rẹ̀ ìwọlé wà ní [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81).
 
 ## Àwọn Ibẹ̀rẹ̀ Ìwọlé Pàtàkì
 
@@ -181,8 +181,8 @@ ccBitTorrent pèsè àwọn ibẹ̀rẹ̀ ìwọlé mẹ́ta:
 
 **Bitonic** jẹ́ àwọn ìfọ̀rọ̀wérẹ́ dashboard tẹ́ẹ̀mínà àkọ́kọ́. Ó pèsè ìwòye tí ó ṣe dáadáa, tí ó ṣe ìbáṣepọ̀ fún gbogbo torrents, peers, àti àwọn ìwọ̀n ìgbàkọlé.
 
-- Ibẹ̀rẹ̀ ìwọlé: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- A ṣàlàyé ní: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- Ibẹ̀rẹ̀ ìwọlé: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- A ṣàlàyé ní: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - Bẹ̀rẹ̀: `uv run bitonic` tàbí `uv run ccbt dashboard`
 
 Wo [Ìtọ́sọ́nà Bitonic](bitonic.md) fún lilo tí ó ṣe dáadáa.
@@ -191,8 +191,8 @@ Wo [Ìtọ́sọ́nà Bitonic](bitonic.md) fún lilo tí ó ṣe dáadáa.
 
 **btbt** jẹ́ àwọn ìfọ̀rọ̀wérẹ́ ìlànà àṣẹ tí ó ṣe dáadáa tí ó ní ọ̀pọ̀lọpọ̀ àwọn ẹ̀yà.
 
-- Ibẹ̀rẹ̀ ìwọlé: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- A ṣàlàyé ní: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- Ibẹ̀rẹ̀ ìwọlé: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- A ṣàlàyé ní: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - Bẹ̀rẹ̀: `uv run btbt`
 
 Wo [Àtẹ̀jáde btbt CLI](btbt-cli.md) fún gbogbo àwọn àṣẹ tí ó wà.
@@ -201,8 +201,8 @@ Wo [Àtẹ̀jáde btbt CLI](btbt-cli.md) fún gbogbo àwọn àṣẹ tí ó wà
 
 **ccbt** jẹ́ àwọn ìfọ̀rọ̀wérẹ́ ìlànà àṣẹ àkọ́kọ́.
 
-- Ibẹ̀rẹ̀ ìwọlé: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- A ṣàlàyé ní: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- Ibẹ̀rẹ̀ ìwọlé: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- A ṣàlàyé ní: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - Bẹ̀rẹ̀: `uv run ccbt`
 
 ## Bíbẹ̀rẹ̀ Kíákíá
@@ -243,9 +243,9 @@ Wo [Àtẹ̀jáde btbt CLI](btbt-cli.md) fún gbogbo àwọn àṣàyàn ìgbàs
 ### Ṣètò ccBitTorrent
 
 Ṣẹ̀dá fàìlì `ccbt.toml` ní àwọn fóldà iṣẹ́ rẹ. Wo àpẹrẹ ṣètò:
-- Ṣètò àkọ́kọ́: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- Àwọn onírúurú ayé: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- Ìgbàkọlé ṣètò: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- Ṣètò àkọ́kọ́: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- Àwọn onírúurú ayé: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- Ìgbàkọlé ṣètò: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 Wo [Ìtọ́sọ́nà Ṣètò](configuration.md) fún àwọn àṣàyàn ṣètò tí ó ṣe dáadáa.
 
@@ -271,7 +271,7 @@ A ṣẹ̀dá àwọn ìròyìn yìí àti a túnṣe wọn ní àìdánilójú 
 
 - Lo `uv run bitonic --help` tàbí `uv run btbt --help` fún ìrànlọ́wọ́ àṣẹ
 - Ṣayẹ̀wò [Àtẹ̀jáde btbt CLI](btbt-cli.md) fún àwọn àṣàyàn tí ó ṣe dáadáa
-- Wọ àwọn àpótí wa GitHub](https://github.com/yourusername/ccbittorrent) fún àwọn ìṣòro àti àwọn ìjíròrò
+- Wọ àwọn àpótí wa GitHub](https://github.com/ccBitTorrent/ccbittorrent) fún àwọn ìṣòro àti àwọn ìjíròrò
 
 
 

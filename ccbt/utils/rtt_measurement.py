@@ -41,6 +41,7 @@ class RTTMeasurer:
             alpha: EWMA smoothing factor for RTT (default 0.125, RFC 6298)
             beta: EWMA smoothing factor for RTT variance (default 0.25, RFC 6298)
             max_samples: Maximum number of samples to keep
+
         """
         self.alpha = alpha
         self.beta = beta
@@ -70,6 +71,7 @@ class RTTMeasurer:
         Args:
             sequence: Sequence number or identifier
             timestamp: Send timestamp (defaults to current time)
+
         """
         if timestamp is None:
             timestamp = time.time()
@@ -87,6 +89,7 @@ class RTTMeasurer:
 
         Returns:
             Measured RTT in seconds, or None if measurement invalid
+
         """
         if timestamp is None:
             timestamp = time.time()
@@ -132,6 +135,7 @@ class RTTMeasurer:
 
         Args:
             sequence: Sequence number that was retransmitted
+
         """
         self.retransmitted.add(sequence)
         self.retransmission_count += 1
@@ -148,6 +152,7 @@ class RTTMeasurer:
 
         Returns:
             RTT estimate in seconds
+
         """
         return self.rtt
 
@@ -156,6 +161,7 @@ class RTTMeasurer:
 
         Returns:
             RTT estimate in milliseconds
+
         """
         return self.rtt * 1000.0
 
@@ -164,6 +170,7 @@ class RTTMeasurer:
 
         Returns:
             RTO in seconds
+
         """
         return self.rto
 
@@ -172,6 +179,7 @@ class RTTMeasurer:
 
         Returns:
             Dictionary with RTT statistics
+
         """
         if not self.samples:
             return {
@@ -208,42 +216,3 @@ class RTTMeasurer:
         self.retransmitted.clear()
         self.total_samples = 0
         self.retransmission_count = 0
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

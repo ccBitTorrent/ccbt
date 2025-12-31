@@ -18,7 +18,7 @@ class DHTDiscoverySetup:
         """
         self.session = session
         self.logger = session.logger
-        
+
         # IMPROVEMENT: Track DHT query metrics
         self._dht_query_metrics = {
             "total_queries": 0,
@@ -37,7 +37,9 @@ class DHTDiscoverySetup:
         # CRITICAL FIX: Track last DHT query time to enforce minimum delay between queries
         # This prevents overwhelming the DHT network and getting blacklisted
         self._last_dht_query_time = 0.0
-        self._min_dht_query_interval = 15.0  # Minimum 15 seconds between DHT queries (prevents peer blacklisting)
+        self._min_dht_query_interval = (
+            15.0  # Minimum 15 seconds between DHT queries (prevents peer blacklisting)
+        )
 
     async def setup_dht_discovery(self) -> None:
         """Set up DHT peer discovery if enabled and torrent is not private."""
@@ -77,16 +79,18 @@ class DHTDiscoverySetup:
 
             # Set up DHT discovery
             await self._setup_dht_callbacks_and_discovery()
-            
+
             # CRITICAL FIX: Set peer_manager reference on DHT client for adaptive timeout calculation
             # This allows DHT queries to use longer timeouts in desperation mode (few peers)
             dht_client = self.session.session_manager.dht_client
             if dht_client and hasattr(dht_client, "set_peer_manager"):
                 # Get peer_manager from download_manager if available
                 peer_manager = None
-                if hasattr(self.session, "download_manager") and self.session.download_manager:
-                    peer_manager = getattr(self.session.download_manager, "peer_manager", None)
-                
+                if self.session.is_ready():
+                    peer_manager = getattr(
+                        self.session.download_manager, "peer_manager", None
+                    )
+
                 if peer_manager:
                     dht_client.set_peer_manager(peer_manager)
                     self.logger.debug(
@@ -154,14 +158,15 @@ class DHTDiscoverySetup:
             try:
                 # CRITICAL FIX: Add defensive checks for session readiness before processing peers
                 # Check if session is stopped/not ready
-                if hasattr(self.session, "info") and self.session.info:
-                    if hasattr(self.session.info, "status") and self.session.info.status == "stopped":
-                        self.logger.debug(
-                            "DHT callback received %d peer(s) for %s but session is stopped, ignoring",
-                            len(peers),
-                            self.session.info.name,
-                        )
-                        return
+                if not self.session.is_ready():
+                    return
+                if self.session.info.status == "stopped":
+                    self.logger.debug(
+                        "DHT callback received %d peer(s) for %s but session is stopped, ignoring",
+                        len(peers),
+                        self.session.info.name,
+                    )
+                    return
 
                 # CRITICAL FIX: Add detailed logging for DHT peer discovery
                 self.logger.info(
@@ -181,12 +186,12 @@ class DHTDiscoverySetup:
                 # CRITICAL FIX: Check download_manager exists with retry logic
                 if not self.session.download_manager:
                     self.logger.warning(
-                        "DHT peers discovered but download_manager is None for %s (session may not be ready yet)",
+                        "DHT peers discovered but session not ready for %s (session may not be ready yet)",
                         self.session.info.name,
                     )
                     # Retry logic: wait a bit and check again (for timing issues)
                     await asyncio.sleep(0.5)
-                    if not self.session.download_manager:
+                    if not self.session.is_ready():
                         self.logger.warning(
                             "DHT peers discovered but download_manager still None after retry for %s, giving up",
                             self.session.info.name,
@@ -204,7 +209,10 @@ class DHTDiscoverySetup:
                 ]
 
                 if not peer_list:
-                    self.logger.debug("DHT peer list is empty after conversion for %s", self.session.info.name)
+                    self.logger.debug(
+                        "DHT peer list is empty after conversion for %s",
+                        self.session.info.name,
+                    )
                     return
 
                 # CRITICAL FIX: Log peer conversion details
@@ -247,34 +255,30 @@ class DHTDiscoverySetup:
 
                     helper = PeerConnectionHelper(self.session)
                     try:
-                        # CRITICAL FIX: Verify peer_manager exists before attempting connection
-                        # Add retry logic for timing issues where peer_manager may not be ready yet
-                        peer_manager = getattr(self.session.download_manager, "peer_manager", None)
-                        if not peer_manager:
+                        # CRITICAL FIX: Verify session is ready before attempting connection
+                        # Add retry logic for timing issues where session may not be ready yet
+                        if not self.session.is_ready():
                             self.logger.warning(
-                                "peer_manager not ready for %s, waiting up to 2 seconds...",
+                                "Session not ready for %s, waiting up to 2 seconds...",
                                 self.session.info.name,
                             )
                             for retry in range(4):  # 4 retries * 0.5s = 2 seconds total
                                 await asyncio.sleep(0.5)
-                                peer_manager = getattr(self.session.download_manager, "peer_manager", None)
-                                if peer_manager:
+                                if self.session.is_ready():
                                     self.logger.info(
-                                        "peer_manager ready for %s after %.1fs",
+                                        "Session ready for %s after %.1fs",
                                         self.session.info.name,
                                         (retry + 1) * 0.5,
                                     )
                                     break
-                            if not peer_manager:
+                            if not self.session.is_ready():
                                 self.logger.warning(
                                     "peer_manager still not ready for %s after retries, queuing %d peers",
                                     self.session.info.name,
                                     len(peer_list),
                                 )
                                 # Queue peers for later connection
-                                if not hasattr(self.session, "_queued_dht_peers"):
-                                    self.session._queued_dht_peers = []  # type: ignore[attr-defined]
-                                self.session._queued_dht_peers.extend(peer_list)  # type: ignore[attr-defined]
+                                self.session.add_queued_dht_peers(peer_list)
                                 return
 
                         self.logger.info(
@@ -321,20 +325,18 @@ class DHTDiscoverySetup:
                         )
                         # CRITICAL FIX: Retry connection with exponential backoff
                         # Store peers for retry if connection fails
-                        if not hasattr(self.session, "_pending_dht_peers"):
-                            self.session._pending_dht_peers = []  # type: ignore[attr-defined]
-                        self.session._pending_dht_peers.extend(peer_list)  # type: ignore[attr-defined]
+                        for peer in peer_list:
+                            self.session.add_pending_dht_peer(peer)
+                        pending_count = len(self.session.get_pending_dht_peers())
                         self.logger.debug(
                             "Queued %d peers for retry connection (total queued: %d)",
                             len(peer_list),
-                            len(self.session._pending_dht_peers),  # type: ignore[attr-defined]
+                            pending_count,
                         )
-            except Exception as e:
-                self.logger.error(
-                    "Critical error in DHT peer discovery handler for %s: %s",
+            except Exception:
+                self.logger.exception(
+                    "Critical error in DHT peer discovery handler for %s",
                     self.session.info.name,
-                    e,
-                    exc_info=True,
                 )
                 # CRITICAL FIX: Don't let errors stop peer discovery - log and continue
                 # The discovery loop will retry on next iteration
@@ -399,13 +401,16 @@ class DHTDiscoverySetup:
                             self.session.info.name,
                         )
                         # Update torrent_data with metadata
+                        from typing import cast
+
                         from ccbt.core.magnet import (
                             build_torrent_data_from_metadata,
                         )
 
+                        # Type cast: metadata is dict[bytes, Any] but function accepts dict[bytes | str, Any]
                         updated_torrent_data = build_torrent_data_from_metadata(
                             self.session.info.info_hash,
-                            metadata,
+                            cast("dict[bytes | str, Any]", metadata),
                         )
                         # Merge with existing torrent_data
                         if isinstance(self.session.torrent_data, dict):
@@ -415,11 +420,12 @@ class DHTDiscoverySetup:
                                 self.session.download_manager.torrent_data = (
                                     self.session.torrent_data
                                 )
-                            
+
                             # CRITICAL FIX: Update file assembler if it exists (rebuild file segments)
                             if (
                                 hasattr(self.session.download_manager, "file_assembler")
-                                and self.session.download_manager.file_assembler is not None
+                                and self.session.download_manager.file_assembler
+                                is not None
                             ):
                                 try:
                                     self.session.download_manager.file_assembler.update_from_metadata(
@@ -473,7 +479,7 @@ class DHTDiscoverySetup:
                                 if not piece_manager.is_downloading:
                                     self.logger.info(
                                         "Restarting piece manager download now that metadata is available (num_pieces=%d)",
-                                        piece_manager.num_pieces
+                                        piece_manager.num_pieces,
                                     )
                                     # Get peer_manager from download_manager if available
                                     peer_manager_for_restart = None
@@ -491,7 +497,7 @@ class DHTDiscoverySetup:
                                             )
                                             self.logger.info(
                                                 "Successfully restarted piece manager download after metadata fetch (num_pieces=%d)",
-                                                piece_manager.num_pieces
+                                                piece_manager.num_pieces,
                                             )
                                         except Exception as e:
                                             self.logger.warning(
@@ -609,11 +615,7 @@ class DHTDiscoverySetup:
         """
         # CRITICAL FIX: Prevent duplicate calls to _start_download_with_dht_peers
         # This prevents infinite loops when DHT callback is triggered multiple times
-        if not hasattr(self.session, "_dht_download_start_lock"):
-            self.session._dht_download_start_lock = asyncio.Lock()  # type: ignore[attr-defined]
-            self.session._dht_download_starting = False  # type: ignore[attr-defined]
-        
-        async with self.session._dht_download_start_lock:  # type: ignore[attr-defined]
+        async with self.session.dht_download_start_lock:
             # Check if download is already started
             download_started = getattr(
                 self.session.download_manager, "_download_started", False
@@ -624,7 +626,7 @@ class DHTDiscoverySetup:
                     len(peer_list),
                 )
                 return
-            
+
             # Check if we're already starting download (prevent concurrent calls)
             if getattr(self.session, "_dht_download_starting", False):  # type: ignore[attr-defined]
                 self.logger.debug(
@@ -632,18 +634,18 @@ class DHTDiscoverySetup:
                     len(peer_list),
                 )
                 return
-            
+
             # Mark as starting to prevent concurrent calls
-            self.session._dht_download_starting = True  # type: ignore[attr-defined]
-        
+            self.session.dht_download_starting = True
+
         # CRITICAL FIX: Validate torrent_data is not a list before calling start_download
         if isinstance(self.session.torrent_data, list):
             self.logger.error(
                 "Cannot start download: torrent_data is a list, not dict or TorrentInfo."
             )
             # Clear the starting flag before returning
-            async with self.session._dht_download_start_lock:  # type: ignore[attr-defined]
-                self.session._dht_download_starting = False  # type: ignore[attr-defined]
+            async with self.session.dht_download_start_lock:
+                self.session.dht_download_starting = False
             return
 
         self.logger.info(
@@ -680,31 +682,34 @@ class DHTDiscoverySetup:
             # This allows DHT queries to use longer timeouts in desperation mode (few peers)
             dht_client = self.session.session_manager.dht_client
             if dht_client and hasattr(dht_client, "set_peer_manager"):
-                peer_manager = getattr(self.session.download_manager, "peer_manager", None)
+                peer_manager = getattr(
+                    self.session.download_manager, "peer_manager", None
+                )
                 if peer_manager:
                     dht_client.set_peer_manager(peer_manager)
                     self.logger.debug(
                         "Set peer_manager on DHT client for adaptive timeout calculation (during download start)"
                     )
-            
+
             # Set up session callbacks on peer_manager
             if self.session.download_manager.peer_manager:
                 # Use download_manager callbacks (they exist there, not on session)
+                # Access download_manager callbacks (same pattern as peers.py)
                 if hasattr(self.session.download_manager, "_on_peer_connected"):
                     self.session.download_manager.peer_manager.on_peer_connected = (
-                        self.session.download_manager._on_peer_connected
+                        self.session.download_manager._on_peer_connected  # noqa: SLF001
                     )
                 if hasattr(self.session.download_manager, "_on_peer_disconnected"):
                     self.session.download_manager.peer_manager.on_peer_disconnected = (
-                        self.session.download_manager._on_peer_disconnected
+                        self.session.download_manager._on_peer_disconnected  # noqa: SLF001
                     )
                 if hasattr(self.session.download_manager, "_on_piece_received"):
                     self.session.download_manager.peer_manager.on_piece_received = (
-                        self.session.download_manager._on_piece_received
+                        self.session.download_manager._on_piece_received  # noqa: SLF001
                     )
                 if hasattr(self.session.download_manager, "_on_bitfield_received"):
                     self.session.download_manager.peer_manager.on_bitfield_received = (
-                        self.session.download_manager._on_bitfield_received
+                        self.session.download_manager._on_bitfield_received  # noqa: SLF001
                     )
 
                 # Update session-level references
@@ -724,8 +729,8 @@ class DHTDiscoverySetup:
         finally:
             # CRITICAL FIX: Clear the starting flag even if exception occurs
             # This allows retry if download start fails
-            async with self.session._dht_download_start_lock:  # type: ignore[attr-defined]
-                self.session._dht_download_starting = False  # type: ignore[attr-defined]
+            async with self.session.dht_download_start_lock:
+                self.session.dht_download_starting = False
 
     def _create_dedup_wrapper(self, on_dht_peers_discovered: Any) -> Any:
         """Create deduplication wrapper for peer discovery.
@@ -737,11 +742,8 @@ class DHTDiscoverySetup:
             Wrapped handler with deduplication
 
         """
-        # Track recently processed peers to avoid duplicate connection attempts
-        if not hasattr(self.session, "_recently_processed_peers"):
-            self.session._recently_processed_peers: set[tuple[str, int]] = set()  # type: ignore[attr-defined]
-            self.session._recently_processed_peers_lock = asyncio.Lock()  # type: ignore[attr-defined]
 
+        # Track recently processed peers to avoid duplicate connection attempts
         async def on_dht_peers_discovered_with_dedup(
             peers: list[tuple[str, int]],
         ) -> None:
@@ -750,25 +752,21 @@ class DHTDiscoverySetup:
                 return
 
             # Filter out recently processed peers
-            async with self.session._recently_processed_peers_lock:  # type: ignore[attr-defined]
+            async with self.session.get_recently_processed_peers_lock():
                 # Clean up old entries (older than 5 minutes)
                 # Keep set size manageable by removing entries periodically
-                if len(self.session._recently_processed_peers) > 1000:  # type: ignore[attr-defined]
-                    # Clear half of the set (simple cleanup strategy)
-                    self.session._recently_processed_peers = set(  # type: ignore[attr-defined]
-                        list(self.session._recently_processed_peers)[500:]  # type: ignore[attr-defined]
-                    )
+                self.session.cleanup_recently_processed_peers(keep_count=500)
 
                 # Filter out already processed peers
                 new_peers = [
                     peer
                     for peer in peers
-                    if peer not in self.session._recently_processed_peers  # type: ignore[attr-defined]
+                    if not self.session.is_peer_recently_processed(peer)
                 ]
 
                 # Mark new peers as processed
                 for peer in new_peers:
-                    self.session._recently_processed_peers.add(peer)  # type: ignore[attr-defined]
+                    self.session.add_recently_processed_peer(peer)
 
             if not new_peers:
                 self.logger.debug(
@@ -801,13 +799,13 @@ class DHTDiscoverySetup:
         """
         # CRITICAL FIX: Add callback invocation counter to verify callbacks are called
         if not hasattr(self.session, "_dht_callback_invocation_count"):
-            self.session._dht_callback_invocation_count = 0  # type: ignore[attr-defined]
+            self.session.dht_callback_invocation_count = 0
 
         # Register DHT callback (DHT expects sync callback, wrap it)
         def dht_callback_wrapper(peers: list[tuple[str, int]]) -> None:
             """Convert sync DHT callback to an async task."""
             # CRITICAL FIX: Increment callback invocation counter
-            self.session._dht_callback_invocation_count += 1  # type: ignore[attr-defined]
+            self.session.increment_dht_callback_count()
 
             # CRITICAL FIX: Add logging to verify callback is being called
             self.logger.info(
@@ -815,8 +813,9 @@ class DHTDiscoverySetup:
                 self.session.info.name,
                 len(peers),
                 self.session.info.info_hash.hex()[:16] + "...",
-                self.session._dht_callback_invocation_count,  # type: ignore[attr-defined]
+                self.session.dht_callback_invocation_count,
             )
+
             # CRITICAL FIX: Add error handling for task creation and execution
             def task_done_callback(task: asyncio.Task) -> None:
                 """Handle task completion and log errors."""
@@ -830,14 +829,12 @@ class DHTDiscoverySetup:
                             task.exception(),
                             exc_info=task.exception(),
                         )
-                except Exception as e:
-                    self.logger.error(
-                        "Failed to handle DHT callback task completion for %s: %s",
+                except Exception:
+                    self.logger.exception(
+                        "Failed to handle DHT callback task completion for %s",
                         self.session.info.name,
-                        e,
-                        exc_info=True,
                     )
-            
+
             if not peers:
                 # CRITICAL FIX: Still process empty peer list - this indicates query completed
                 # The discovery loop needs to know the query finished even if no peers found
@@ -848,18 +845,16 @@ class DHTDiscoverySetup:
                 # Still create task to notify discovery loop that query completed
                 # This allows the discovery loop to continue and retry
                 try:
-                    task = asyncio.create_task(on_dht_peers_discovered_with_dedup(peers))
-                    if not hasattr(self.session, "_dht_peer_tasks"):
-                        self.session._dht_peer_tasks: set[asyncio.Task] = set()  # type: ignore[attr-defined]
-                    self.session._dht_peer_tasks.add(task)  # type: ignore[attr-defined]
-                    task.add_done_callback(self.session._dht_peer_tasks.discard)  # type: ignore[attr-defined]
+                    task = asyncio.create_task(
+                        on_dht_peers_discovered_with_dedup(peers)
+                    )
+                    self.session.add_dht_peer_task(task)
+                    task.add_done_callback(self.session.remove_dht_peer_task)
                     task.add_done_callback(task_done_callback)
-                except Exception as e:
-                    self.logger.error(
-                        "Failed to create DHT peer callback task for empty peer list for %s: %s",
+                except Exception:
+                    self.logger.exception(
+                        "Failed to create DHT peer callback task for empty peer list for %s",
                         self.session.info.name,
-                        e,
-                        exc_info=True,
                     )
                 return
 
@@ -891,22 +886,18 @@ class DHTDiscoverySetup:
             try:
                 task = asyncio.create_task(on_dht_peers_discovered_with_dedup(peers))
                 # Store task reference to avoid garbage collection
-                if not hasattr(self.session, "_dht_peer_tasks"):
-                    self.session._dht_peer_tasks: set[asyncio.Task] = set()  # type: ignore[attr-defined]
-                self.session._dht_peer_tasks.add(task)  # type: ignore[attr-defined]
-                task.add_done_callback(self.session._dht_peer_tasks.discard)  # type: ignore[attr-defined]
+                self.session.add_dht_peer_task(task)
+                task.add_done_callback(self.session.remove_dht_peer_task)
                 task.add_done_callback(task_done_callback)
                 self.logger.debug(
                     "Created async task to process DHT peers for %s (task count: %d)",
                     self.session.info.name,
-                    len(self.session._dht_peer_tasks),  # type: ignore[attr-defined]
+                    len(self.session.get_dht_peer_tasks()),
                 )
-            except Exception as e:
-                self.logger.error(
-                    "Failed to create DHT peer callback task for %s: %s",
+            except Exception:
+                self.logger.exception(
+                    "Failed to create DHT peer callback task for %s",
                     self.session.info.name,
-                    e,
-                    exc_info=True,
                 )
 
         # Register callback with DHT client via DiscoveryController (with info_hash filter)
@@ -915,50 +906,52 @@ class DHTDiscoverySetup:
             from ccbt.session.models import SessionContext
             from ccbt.session.tasks import TaskSupervisor
         except Exception:
-            DiscoveryController = None  # type: ignore[assignment]
+            discovery_controller = None  # type: ignore[assignment]
 
         if (
-            DiscoveryController
+            discovery_controller
             and self.session.session_manager
             and self.session.session_manager.dht_client
         ):
-            # Ensure context exists
-            if (
-                not hasattr(self.session, "_task_supervisor")
-                or self.session._task_supervisor is None
-            ):
-                self.session._task_supervisor = TaskSupervisor()
-            if (
-                not hasattr(self.session, "_session_ctx")
-                or self.session._session_ctx is None
-            ):
-                td = (
-                    self.session.torrent_data
-                    if isinstance(self.session.torrent_data, dict)
-                    else {
-                        "info_hash": self.session.info.info_hash,
-                        "name": self.session.info.name,
-                    }
-                )
-                self.session._session_ctx = SessionContext(
-                    config=self.session.config,
-                    torrent_data=td,
-                    output_dir=self.session.output_dir,
-                    info=self.session.info,
-                    session_manager=self.session.session_manager,
-                    logger=self.session.logger,
-                    piece_manager=self.session.piece_manager,
-                    checkpoint_manager=self.session.checkpoint_manager,
-                )
+            # Use session's ctx and task_supervisor if available
+            session_ctx = getattr(self.session, "ctx", None)
+            task_supervisor = getattr(self.session, "_task_supervisor", None)
+
+            if not session_ctx or not task_supervisor:
+                # Fallback: create new ones if session doesn't have them
+                if not task_supervisor:
+                    task_supervisor = TaskSupervisor()
+                if not session_ctx:
+                    td = (
+                        self.session.torrent_data
+                        if isinstance(self.session.torrent_data, dict)
+                        else {
+                            "info_hash": self.session.info.info_hash,
+                            "name": self.session.info.name,
+                        }
+                    )
+                    session_ctx = SessionContext(
+                        config=self.session.config,
+                        torrent_data=td,
+                        output_dir=self.session.output_dir,
+                        info=self.session.info,
+                        session_manager=self.session.session_manager,
+                        logger=self.session.logger,
+                        piece_manager=self.session.piece_manager,
+                        checkpoint_manager=self.session.checkpoint_manager,
+                    )
+
+            # Type guard: session_ctx is guaranteed to be SessionContext here
+            if not isinstance(session_ctx, SessionContext):
+                msg = "session_ctx should be SessionContext after fallback creation"
+                raise TypeError(msg)
+
             # Lazily create discovery controller
-            if (
-                not hasattr(self.session, "_discovery_controller")
-                or self.session._discovery_controller is None
-            ):
-                self.session._discovery_controller = DiscoveryController(
-                    self.session._session_ctx, self.session._task_supervisor
+            if self.session.discovery_controller is None:
+                self.session.discovery_controller = DiscoveryController(
+                    session_ctx, task_supervisor
                 )
-            self.session._discovery_controller.register_dht_callback(
+            self.session.discovery_controller.register_dht_callback(
                 self.session.session_manager.dht_client,  # type: ignore[arg-type]
                 on_dht_peers_discovered_with_dedup,
                 info_hash=self.session.info.info_hash,
@@ -1000,7 +993,10 @@ class DHTDiscoverySetup:
                             )
                             break
                     # Also check global callbacks as fallback (for backward compatibility)
-                    if hasattr(dht_client, "peer_callbacks") and len(dht_client.peer_callbacks) > 0:
+                    if (
+                        hasattr(dht_client, "peer_callbacks")
+                        and len(dht_client.peer_callbacks) > 0
+                    ):
                         # If callback is in global list, it might still work but is less efficient
                         self.logger.debug(
                             "DHT callback found in global peer_callbacks (not info_hash-specific, %d callbacks)",
@@ -1008,7 +1004,8 @@ class DHTDiscoverySetup:
                         )
                 except Exception as verify_error:
                     self.logger.debug(
-                        "Error verifying callback in peer_callbacks_by_hash: %s", verify_error
+                        "Error verifying callback in peer_callbacks_by_hash: %s",
+                        verify_error,
                     )
 
             if callback_registered:
@@ -1039,11 +1036,15 @@ class DHTDiscoverySetup:
             callback_structure_info = "unknown"
             if dht_client:
                 if hasattr(dht_client, "peer_callbacks_by_hash"):
-                    hash_callbacks = dht_client.peer_callbacks_by_hash.get(info_hash, [])
+                    hash_callbacks = dht_client.peer_callbacks_by_hash.get(
+                        info_hash, []
+                    )
                     callback_structure_info = f"peer_callbacks_by_hash[{info_hash.hex()[:8]}...]={len(hash_callbacks)} callbacks"
                 if hasattr(dht_client, "peer_callbacks"):
                     global_count = len(dht_client.peer_callbacks)
-                    callback_structure_info += f", peer_callbacks={global_count} callbacks"
+                    callback_structure_info += (
+                        f", peer_callbacks={global_count} callbacks"
+                    )
 
             self.logger.warning(
                 "DHT callback registration may have failed for %s (not found in peer_callbacks_by_hash after %d attempts, info_hash: %s). "
@@ -1149,10 +1150,10 @@ class DHTDiscoverySetup:
                                     self._handle_magnet_metadata_exchange(peer_list)
                                 )
                                 # Store task reference
-                                if not hasattr(self.session, "_metadata_tasks"):
-                                    self.session._metadata_tasks: set[asyncio.Task] = set()  # type: ignore[attr-defined]
-                                self.session._metadata_tasks.add(metadata_task)  # type: ignore[attr-defined]
-                                metadata_task.add_done_callback(self.session._metadata_tasks.discard)  # type: ignore[attr-defined]
+                                self.session.add_metadata_task(metadata_task)
+                                metadata_task.add_done_callback(
+                                    self.session.remove_metadata_task
+                                )
                         else:
                             self.logger.debug(
                                 "Initial DHT query returned no peers for %s (will retry in periodic loop)",
@@ -1193,15 +1194,16 @@ class DHTDiscoverySetup:
 
         # CRITICAL FIX: Ensure DHT discovery task is started
         self.logger.info(
-            "🔍 DHT DISCOVERY: Creating discovery background task for %s", self.session.info.name
+            "🔍 DHT DISCOVERY: Creating discovery background task for %s",
+            self.session.info.name,
         )
-        self.session._dht_discovery_task = asyncio.create_task(  # type: ignore[attr-defined]
+        self.session.dht_discovery_task = asyncio.create_task(
             self._run_discovery_loop(dht_client)
         )
         self.logger.info(
             "✅ DHT DISCOVERY: Discovery task started for %s (task=%s, callbacks=%d, initial interval: 15s, aggressive mode: enabled when peers < 5 or < 50%% of max)",
             self.session.info.name,
-            self.session._dht_discovery_task,
+            self.session.dht_discovery_task,
             len(dht_client.peer_callbacks),
         )
 
@@ -1215,18 +1217,22 @@ class DHTDiscoverySetup:
         # IMPROVEMENT: Aggressive peer discovery for popular torrents
         # Adaptive retry logic based on torrent popularity and download activity
         # Standard exponential backoff: 60s → 120s → 240s → 480s → 960s → 1920s (32min max)
-        initial_retry_interval = 60.0  # Start with 60 seconds (1 minute, standard DHT interval)
-        max_retry_interval = 1920.0  # Cap at 32 minutes (standard exponential backoff maximum)
-        base_backoff_multiplier = 2.0  # Standard exponential backoff multiplier (doubles each time)
+        initial_retry_interval = (
+            60.0  # Start with 60 seconds (1 minute, standard DHT interval)
+        )
+        max_retry_interval = (
+            1920.0  # Cap at 32 minutes (standard exponential backoff maximum)
+        )
+        base_backoff_multiplier = (
+            2.0  # Standard exponential backoff multiplier (doubles each time)
+        )
         dht_retry_interval = initial_retry_interval
         max_peers_per_query = 50
         consecutive_failures = 0
         max_consecutive_failures = 10  # Increased from 5 to 10
         attempt_count = 0
-        
+
         # Track torrent popularity and activity
-        last_peer_count = 0
-        last_download_rate = 0.0
         aggressive_mode = False
 
         # CRITICAL FIX: Wait for DHT bootstrap to complete (max 120 seconds for slow networks)
@@ -1268,29 +1274,39 @@ class DHTDiscoverySetup:
         # This prevents aggressive DHT queries that can cause blacklisting
         min_peers_before_dht = 50
         dht_started = False
-        
-        while not self.session._stopped:
+
+        while not self.session.stopped:
             try:
                 # CRITICAL FIX: Wait for connection batches to complete before starting DHT
                 # User requirement: "peer count low checks should only start basically after the first batches of connections are exhausted"
                 # Check if connection batches are currently in progress
-                if self.session.download_manager and hasattr(self.session.download_manager, "peer_manager"):
+                if self.session.download_manager and hasattr(
+                    self.session.download_manager, "peer_manager"
+                ):
                     peer_manager = self.session.download_manager.peer_manager
                     if peer_manager:
-                        connection_batches_in_progress = getattr(peer_manager, "_connection_batches_in_progress", False)
+                        connection_batches_in_progress = getattr(
+                            peer_manager, "_connection_batches_in_progress", False
+                        )
                         if connection_batches_in_progress:
                             self.logger.info(
                                 "⏸️ DHT DISCOVERY: Connection batches are in progress. Waiting for batches to complete before starting DHT query..."
                             )
                             # CRITICAL FIX: Always wait for batches to complete - don't proceed immediately
                             # This ensures DHT starts only after batches are fully processed
-                            max_wait = 60.0  # Increased wait time to ensure batches complete
+                            max_wait = (
+                                60.0  # Increased wait time to ensure batches complete
+                            )
                             check_interval = 1.0  # Check every 1 second
                             waited = 0.0
                             while waited < max_wait:
                                 await asyncio.sleep(check_interval)
                                 waited += check_interval
-                                connection_batches_in_progress = getattr(peer_manager, "_connection_batches_in_progress", False)
+                                connection_batches_in_progress = getattr(
+                                    peer_manager,
+                                    "_connection_batches_in_progress",
+                                    False,
+                                )
                                 if not connection_batches_in_progress:
                                     self.logger.info(
                                         "✅ DHT DISCOVERY: Connection batches completed after %.1fs. Checking peer count before starting DHT...",
@@ -1304,24 +1320,32 @@ class DHTDiscoverySetup:
                                 )
                                 # Continue waiting - don't proceed until batches complete
                                 continue
-                
+
                 # CRITICAL FIX: Also check tracker peer connection timestamp (secondary check)
                 # This ensures we wait for tracker responses to be processed
                 import time as time_module
-                tracker_peers_connecting_until = getattr(self.session, "_tracker_peers_connecting_until", None)
-                if tracker_peers_connecting_until and time_module.time() < tracker_peers_connecting_until:
+
+                tracker_peers_connecting_until = getattr(
+                    self.session, "_tracker_peers_connecting_until", None
+                )
+                if (
+                    tracker_peers_connecting_until
+                    and time_module.time() < tracker_peers_connecting_until
+                ):
                     wait_time = tracker_peers_connecting_until - time_module.time()
                     self.logger.info(
                         "⏸️ DHT DISCOVERY: Tracker peers are currently being connected. Waiting %.1fs before starting DHT query to allow tracker connections to complete...",
                         wait_time,
                     )
-                    await asyncio.sleep(min(wait_time, 5.0))  # Wait up to 5 seconds or until timestamp expires
-                
+                    await asyncio.sleep(
+                        min(wait_time, 5.0)
+                    )  # Wait up to 5 seconds or until timestamp expires
+
                 # CRITICAL FIX: Wait until we have minimum peers before starting DHT
                 # This prevents aggressive DHT queries that can cause blacklisting
                 current_peer_count = 0
                 current_download_rate = 0.0
-                
+
                 # Get current peer count and download rate
                 if self.session.download_manager and hasattr(
                     self.session.download_manager, "peer_manager"
@@ -1332,7 +1356,7 @@ class DHTDiscoverySetup:
                             current_peer_count = len(peer_manager.get_active_peers())
                         elif hasattr(peer_manager, "connections"):
                             current_peer_count = len(peer_manager.connections)
-                    
+
                     # Get download rate from piece manager
                     if hasattr(self.session, "piece_manager"):
                         piece_manager = self.session.piece_manager
@@ -1340,7 +1364,7 @@ class DHTDiscoverySetup:
                             stats = piece_manager.stats
                             if hasattr(stats, "download_rate"):
                                 current_download_rate = stats.download_rate
-                
+
                 # CRITICAL FIX: Don't start DHT until we have minimum peers
                 # This prevents aggressive DHT queries that can cause blacklisting
                 if not dht_started and current_peer_count < min_peers_before_dht:
@@ -1353,7 +1377,7 @@ class DHTDiscoverySetup:
                     )
                     await asyncio.sleep(30.0)  # Wait 30 seconds before checking again
                     continue  # Skip DHT query for this iteration
-                
+
                 # Mark DHT as started once we reach minimum peer count
                 if not dht_started and current_peer_count >= min_peers_before_dht:
                     dht_started = True
@@ -1362,31 +1386,48 @@ class DHTDiscoverySetup:
                         current_peer_count,
                         min_peers_before_dht,
                     )
-                
+
                 # CRITICAL FIX: Use conservative DHT settings to avoid blacklisting
                 # Reduced query frequency and parameters
-                max_peers_per_torrent = self.session.config.network.max_peers_per_torrent
-                peer_count_ratio = current_peer_count / max_peers_per_torrent if max_peers_per_torrent > 0 else 0.0
-                
+                max_peers_per_torrent = (
+                    self.session.config.network.max_peers_per_torrent
+                )
+                peer_count_ratio = (
+                    current_peer_count / max_peers_per_torrent
+                    if max_peers_per_torrent > 0
+                    else 0.0
+                )
+
                 # Determine if torrent is popular (many peers) or active (downloading)
                 is_popular = current_peer_count >= 50  # 50+ peers = popular
                 is_active = current_download_rate > 1024  # >1KB/s = active
                 is_below_limit = peer_count_ratio < 0.7  # <70% of max = below limit
-                
+                is_critically_low = (
+                    current_peer_count < max_peers_per_torrent * 0.2
+                    if max_peers_per_torrent > 0
+                    else current_peer_count < 5
+                )  # <20% of max or <5 peers = critically low
+                is_ultra_low = (
+                    current_peer_count < max_peers_per_torrent * 0.1
+                    if max_peers_per_torrent > 0
+                    else current_peer_count < 3
+                )  # <10% of max or <3 peers = ultra low
+
                 # CRITICAL FIX: Use conservative aggressive mode - only for popular/active torrents
                 # Don't enable aggressive mode for low peer counts to avoid blacklisting
                 new_aggressive_mode = (is_popular or is_active) and is_below_limit
-                
+
                 # CRITICAL FIX: Use conservative DHT query intervals to avoid blacklisting
                 # Minimum 60 seconds between queries (standard DHT interval)
-                dht_retry_interval = max(60.0, initial_retry_interval)  # Minimum 60 seconds
+                dht_retry_interval = max(
+                    60.0, initial_retry_interval
+                )  # Minimum 60 seconds
                 max_peers_per_query = 50  # Reduced from 100 to avoid overwhelming
-                
+
                 if new_aggressive_mode != aggressive_mode:
-                    old_mode = aggressive_mode
                     aggressive_mode = new_aggressive_mode
                     self._aggressive_mode = aggressive_mode  # Store for metrics
-                    
+
                     if aggressive_mode:
                         self.logger.info(
                             "🔍 DHT DISCOVERY: Conservative aggressive mode enabled for %s (peer_count: %d, download_rate: %.1f KB/s). "
@@ -1406,39 +1447,49 @@ class DHTDiscoverySetup:
                             max_peers_per_query,
                         )
                 if new_aggressive_mode != aggressive_mode:
-                    old_mode = aggressive_mode
                     aggressive_mode = new_aggressive_mode
                     self._aggressive_mode = aggressive_mode  # Store for metrics
-                    
+
                     # IMPROVEMENT: Emit event for aggressive mode change
                     try:
-                        from ccbt.utils.events import emit_event, EventType, Event
-                        reason = "popular" if is_popular else ("active" if is_active else "normal")
+                        from ccbt.utils.events import Event, EventType, emit_event
+
+                        reason = (
+                            "popular"
+                            if is_popular
+                            else ("active" if is_active else "normal")
+                        )
                         if aggressive_mode:
-                            await emit_event(Event(
-                                event_type=EventType.DHT_AGGRESSIVE_MODE_ENABLED.value,
-                                data={
-                                    "info_hash": self.session.info.info_hash.hex(),
-                                    "torrent_name": self.session.info.name,
-                                    "reason": reason,
-                                    "peer_count": current_peer_count,
-                                    "download_rate_kib": current_download_rate / 1024.0,
-                                },
-                            ))
+                            await emit_event(
+                                Event(
+                                    event_type=EventType.DHT_AGGRESSIVE_MODE_ENABLED.value,
+                                    data={
+                                        "info_hash": self.session.info.info_hash.hex(),
+                                        "torrent_name": self.session.info.name,
+                                        "reason": reason,
+                                        "peer_count": current_peer_count,
+                                        "download_rate_kib": current_download_rate
+                                        / 1024.0,
+                                    },
+                                )
+                            )
                         else:
-                            await emit_event(Event(
-                                event_type=EventType.DHT_AGGRESSIVE_MODE_DISABLED.value,
-                                data={
-                                    "info_hash": self.session.info.info_hash.hex(),
-                                    "torrent_name": self.session.info.name,
-                                    "reason": reason,
-                                    "peer_count": current_peer_count,
-                                    "download_rate_kib": current_download_rate / 1024.0,
-                                },
-                            ))
+                            await emit_event(
+                                Event(
+                                    event_type=EventType.DHT_AGGRESSIVE_MODE_DISABLED.value,
+                                    data={
+                                        "info_hash": self.session.info.info_hash.hex(),
+                                        "torrent_name": self.session.info.name,
+                                        "reason": reason,
+                                        "peer_count": current_peer_count,
+                                        "download_rate_kib": current_download_rate
+                                        / 1024.0,
+                                    },
+                                )
+                            )
                     except Exception as e:
                         self.logger.debug("Failed to emit aggressive mode event: %s", e)
-                    
+
                     if aggressive_mode:
                         self.logger.info(
                             "Enabling aggressive DHT discovery for %s (peers: %d, download: %.1f KB/s)",
@@ -1453,7 +1504,7 @@ class DHTDiscoverySetup:
                             current_peer_count,
                             current_download_rate / 1024.0,
                         )
-                
+
                 # Adjust retry interval based on mode
                 if aggressive_mode:
                     # More frequent queries for popular/active torrents (but still reasonable to prevent blacklisting)
@@ -1472,10 +1523,9 @@ class DHTDiscoverySetup:
                         # CRITICAL FIX: Aggressive discovery when below connection limit
                         # Scale interval based on how far we are from the limit
                         # All intervals use 30s minimum to prevent peer blacklisting
-                        if peer_count_ratio < 0.1:  # <10% of limit
-                            base_interval = 30.0  # Minimum 30s to prevent blacklisting
-                            max_peers_per_query = 100
-                        elif peer_count_ratio < 0.25:  # <25% of limit
+                        if (
+                            peer_count_ratio < 0.1 or peer_count_ratio < 0.25
+                        ):  # <10% of limit
                             base_interval = 30.0  # Minimum 30s to prevent blacklisting
                             max_peers_per_query = 100
                         else:  # 25-50% of limit
@@ -1499,22 +1549,23 @@ class DHTDiscoverySetup:
                     dht_retry_interval = min(
                         base_interval, dht_retry_interval
                     )  # Don't increase if already low
+                # Normal mode - use exponential backoff: 60s → 120s → 240s → 480s → 960s → 1920s
+                elif consecutive_failures == 0:
+                    dht_retry_interval = initial_retry_interval  # Start at 60s
                 else:
-                    # Normal mode - use exponential backoff: 60s → 120s → 240s → 480s → 960s → 1920s
-                    if consecutive_failures == 0:
-                        dht_retry_interval = initial_retry_interval  # Start at 60s
-                    else:
-                        # Exponential backoff: multiply by 2.0 for each consecutive failure
-                        calculated_interval = initial_retry_interval * (base_backoff_multiplier ** consecutive_failures)
-                        dht_retry_interval = min(calculated_interval, max_retry_interval)
-                        self.logger.debug(
-                            "DHT exponential backoff: interval=%.1fs (failures=%d, multiplier=%.1f, calculated=%.1fs)",
-                            dht_retry_interval,
-                            consecutive_failures,
-                            base_backoff_multiplier,
-                            calculated_interval,
-                        )
-                
+                    # Exponential backoff: multiply by 2.0 for each consecutive failure
+                    calculated_interval = initial_retry_interval * (
+                        base_backoff_multiplier**consecutive_failures
+                    )
+                    dht_retry_interval = min(calculated_interval, max_retry_interval)
+                    self.logger.debug(
+                        "DHT exponential backoff: interval=%.1fs (failures=%d, multiplier=%.1f, calculated=%.1fs)",
+                        dht_retry_interval,
+                        consecutive_failures,
+                        base_backoff_multiplier,
+                        calculated_interval,
+                    )
+
                 # Trigger DHT get_peers query
                 # CRITICAL FIX: Add detailed logging for DHT queries
                 mode_str = "AGGRESSIVE" if aggressive_mode else "NORMAL"
@@ -1556,6 +1607,7 @@ class DHTDiscoverySetup:
                     # CRITICAL FIX: Enforce minimum delay between DHT queries to prevent overwhelming the network
                     # This prevents peers from blacklisting us due to too frequent queries
                     import time as time_module
+
                     current_time = time_module.time()
                     time_since_last_query = current_time - self._last_dht_query_time
                     if time_since_last_query < self._min_dht_query_interval:
@@ -1568,17 +1620,19 @@ class DHTDiscoverySetup:
                         )
                         # CRITICAL FIX: Use interruptible sleep that checks _stopped frequently
                         # This ensures the loop exits quickly when shutdown is requested
-                        sleep_interval = min(wait_time, 1.0)  # Check at least every second
+                        sleep_interval = min(
+                            wait_time, 1.0
+                        )  # Check at least every second
                         elapsed = 0.0
-                        while elapsed < wait_time and not self.session._stopped:
+                        while elapsed < wait_time and not self.session.stopped:
                             await asyncio.sleep(sleep_interval)
                             elapsed += sleep_interval
-                        
+
                         # Check _stopped after sleep
-                        if self.session._stopped:
+                        if self.session.stopped:
                             break
                     self._last_dht_query_time = time_module.time()
-                    
+
                     # IMPROVEMENT: Adaptive DHT query parameters for better discovery
                     # Use configuration values instead of hardcoded values
                     if aggressive_mode:
@@ -1588,23 +1642,37 @@ class DHTDiscoverySetup:
                             # Ultra-aggressive parameters (alpha=16, k=64, max_depth=20) were causing peers to blacklist us
                             # Use BEP 5 compliant values: alpha=4, k=8, max_depth=10 for better peer acceptance
                             # Slightly increase from normal but stay within reasonable bounds
-                            alpha = min(self.session.config.discovery.dht_aggressive_alpha, 6)  # Max 6 parallel queries (was 20)
-                            k = min(self.session.config.discovery.dht_aggressive_k, 16)  # Max 16 bucket size (was 64)
-                            max_depth_override = min(self.session.config.discovery.dht_aggressive_max_depth, 12)  # Max 12 depth (was 25)
+                            alpha = min(
+                                self.session.config.discovery.dht_aggressive_alpha, 6
+                            )  # Max 6 parallel queries (was 20)
+                            k = min(
+                                self.session.config.discovery.dht_aggressive_k, 16
+                            )  # Max 16 bucket size (was 64)
+                            max_depth_override = min(
+                                self.session.config.discovery.dht_aggressive_max_depth,
+                                12,
+                            )  # Max 12 depth (was 25)
                             self.logger.info(
                                 "🔍 DHT DISCOVERY: Ultra-low peer count mode for %s: alpha=%d, k=%d, max_depth=%d (reduced from ultra-aggressive to prevent peer blacklisting)",
-                                self.session.info.name, alpha, k, max_depth_override,
+                                self.session.info.name,
+                                alpha,
+                                k,
+                                max_depth_override,
                             )
                         else:
                             alpha = self.session.config.discovery.dht_aggressive_alpha
                             k = self.session.config.discovery.dht_aggressive_k
-                            max_depth_override = self.session.config.discovery.dht_aggressive_max_depth
+                            max_depth_override = (
+                                self.session.config.discovery.dht_aggressive_max_depth
+                            )
                     else:
                         # Normal mode: use normal configuration values
                         alpha = self.session.config.discovery.dht_normal_alpha
                         k = self.session.config.discovery.dht_normal_k
-                        max_depth_override = self.session.config.discovery.dht_normal_max_depth
-                    
+                        max_depth_override = (
+                            self.session.config.discovery.dht_normal_max_depth
+                        )
+
                     # CRITICAL FIX: get_peers() will invoke callbacks automatically when peers are found
                     # We still call it to trigger the query, but callbacks handle peer connection
                     # Use asyncio.wait_for with timeout to ensure query completes
@@ -1620,29 +1688,46 @@ class DHTDiscoverySetup:
                     )
                     query_duration = asyncio.get_event_loop().time() - query_start_time
                     peer_count = len(peers) if peers else 0
-                    
+
                     # IMPROVEMENT: Track DHT query metrics
-                    self._dht_query_metrics["total_queries"] += 1
-                    self._dht_query_metrics["total_peers_found"] += peer_count
-                    self._dht_query_metrics["query_durations"].append(query_duration)
-                    if len(self._dht_query_metrics["query_durations"]) > 100:
+                    # Type assertions for metrics dict access
+                    from typing import cast
+
+                    query_metrics = cast("dict[str, Any]", self._dht_query_metrics)
+                    query_metrics["total_queries"] = (
+                        int(query_metrics.get("total_queries", 0) or 0) + 1
+                    )
+                    query_metrics["total_peers_found"] = (
+                        int(query_metrics.get("total_peers_found", 0) or 0) + peer_count
+                    )
+                    query_durations = cast(
+                        "list[float]", query_metrics.get("query_durations", [])
+                    )
+                    query_durations.append(query_duration)
+                    if len(query_durations) > 100:  # type: ignore[arg-type]
                         # Keep only last 100 queries
-                        self._dht_query_metrics["query_durations"] = self._dht_query_metrics["query_durations"][-100:]
-                    
+                        query_metrics["query_durations"] = query_durations[-100:]
+
                     # Get query depth and nodes queried from DHT client if available
                     query_depth = 0
                     nodes_queried = 0
-                    if hasattr(dht_client, "_last_query_metrics"):
-                        last_metrics = dht_client._last_query_metrics
+                    last_metrics = getattr(dht_client, "_last_query_metrics", None)
+                    if last_metrics:
                         query_depth = last_metrics.get("depth", 0)
                         nodes_queried = last_metrics.get("nodes_queried", 0)
-                        self._dht_query_metrics["query_depths"].append(query_depth)
-                        self._dht_query_metrics["nodes_queried"].append(nodes_queried)
-                        if len(self._dht_query_metrics["query_depths"]) > 100:
-                            self._dht_query_metrics["query_depths"] = self._dht_query_metrics["query_depths"][-100:]
-                        if len(self._dht_query_metrics["nodes_queried"]) > 100:
-                            self._dht_query_metrics["nodes_queried"] = self._dht_query_metrics["nodes_queried"][-100:]
-                    
+                        query_depths_list = cast(
+                            "list[int]", query_metrics.get("query_depths", [])
+                        )
+                        nodes_queried_list = cast(
+                            "list[int]", query_metrics.get("nodes_queried", [])
+                        )
+                        query_depths_list.append(query_depth)
+                        nodes_queried_list.append(nodes_queried)
+                        if len(query_depths_list) > 100:  # type: ignore[arg-type]
+                            query_metrics["query_depths"] = query_depths_list[-100:]
+                        if len(nodes_queried_list) > 100:  # type: ignore[arg-type]
+                            query_metrics["nodes_queried"] = nodes_queried_list[-100:]
+
                     # Update last query metrics
                     self._dht_query_metrics["last_query"] = {
                         "duration": query_duration,
@@ -1650,25 +1735,30 @@ class DHTDiscoverySetup:
                         "depth": query_depth,
                         "nodes_queried": nodes_queried,
                     }
-                    
+
                     # IMPROVEMENT: Emit event for iterative lookup completion
                     try:
-                        from ccbt.utils.events import emit_event, EventType, Event
-                        await emit_event(Event(
-                            event_type=EventType.DHT_ITERATIVE_LOOKUP_COMPLETE.value,
-                            data={
-                                "info_hash": self.session.info.info_hash.hex(),
-                                "torrent_name": self.session.info.name,
-                                "peers_found": peer_count,
-                                "query_duration": query_duration,
-                                "query_depth": query_depth,
-                                "nodes_queried": nodes_queried,
-                                "aggressive_mode": aggressive_mode,
-                            },
-                        ))
+                        from ccbt.utils.events import Event, EventType, emit_event
+
+                        await emit_event(
+                            Event(
+                                event_type=EventType.DHT_ITERATIVE_LOOKUP_COMPLETE.value,
+                                data={
+                                    "info_hash": self.session.info.info_hash.hex(),
+                                    "torrent_name": self.session.info.name,
+                                    "peers_found": peer_count,
+                                    "query_duration": query_duration,
+                                    "query_depth": query_depth,
+                                    "nodes_queried": nodes_queried,
+                                    "aggressive_mode": aggressive_mode,
+                                },
+                            )
+                        )
                     except Exception as e:
-                        self.logger.debug("Failed to emit DHT query complete event: %s", e)
-                    
+                        self.logger.debug(
+                            "Failed to emit DHT query complete event: %s", e
+                        )
+
                     self.logger.debug(
                         "DHT get_peers query completed for %s in %.2fs (returned %d peers, callbacks should have been invoked)",
                         self.session.info.name,
@@ -1766,16 +1856,15 @@ class DHTDiscoverySetup:
                                     len(closest_nodes),
                                 )
                                 # Convert nodes to peer list format (use their IP:port)
-                                node_peers = []
-                                for node in closest_nodes:
-                                    if node.ip and node.port:
-                                        node_peers.append(
-                                            {
-                                                "ip": node.ip,
-                                                "port": node.port,
-                                                "peer_source": "dht_node",
-                                            }
-                                        )
+                                node_peers = [
+                                    {
+                                        "ip": node.ip,
+                                        "port": node.port,
+                                        "peer_source": "dht_node",
+                                    }
+                                    for node in closest_nodes
+                                    if node.ip and node.port
+                                ]
 
                                 if node_peers:
                                     try:
@@ -1801,11 +1890,11 @@ class DHTDiscoverySetup:
                     # CRITICAL FIX: Even on timeout, callbacks may have been invoked with partial results
                     # The query may have found some peers before timing out
                     query_duration = asyncio.get_event_loop().time() - query_start_time
-                    
+
                     # CRITICAL FIX: Progressive timeout increase for retries
                     # Timeout already increases with attempt_count, but log the progression
                     timeout_progression = f"{base_timeout:.1f}s → {timeout:.1f}s (attempt {attempt_count})"
-                    
+
                     self.logger.warning(
                         "DHT get_peers query timed out for %s after %.2fs (timeout: %.1fs, progression: %s, routing table: %d nodes). "
                         "This may indicate: (1) DHT responses not being received (check firewall/NAT on port %d), "
@@ -1890,19 +1979,23 @@ class DHTDiscoverySetup:
                             # CRITICAL FIX: Improved exponential backoff with jitter to prevent thundering herd
                             # For first few failures, use reasonable retry (30s minimum to prevent blacklisting)
                             import random
-                            
+
                             if consecutive_failures <= 3:
                                 # Reasonable interval for first 3 failures (30s minimum)
                                 base_interval = 30.0
                             else:
                                 # Exponential backoff: increase retry interval with jitter
                                 # Formula: base_interval * (2^failures) + random_jitter
-                                exponential_interval = dht_retry_interval * base_backoff_multiplier
-                                jitter = random.uniform(0, exponential_interval * 0.1)  # 0-10% jitter
+                                exponential_interval = (
+                                    dht_retry_interval * base_backoff_multiplier
+                                )
+                                jitter = random.uniform(
+                                    0, exponential_interval * 0.1
+                                )  # 0-10% jitter
                                 base_interval = exponential_interval + jitter
-                            
+
                             dht_retry_interval = min(base_interval, max_retry_interval)
-                            
+
                             self.logger.info(
                                 "DHT get_peers returned no peers (attempt %d/%d) for %s (routing table: %d nodes). "
                                 "Retrying in %.1fs (exponential backoff with jitter). "
@@ -1936,7 +2029,7 @@ class DHTDiscoverySetup:
                             self.session.info.name,
                         )
                         consecutive_failures = 0
-                        
+
                         # IMPROVEMENT: In aggressive mode, keep retry interval low even after success
                         if aggressive_mode:
                             dht_retry_interval = min(
@@ -1958,13 +2051,21 @@ class DHTDiscoverySetup:
                     if peer_manager and hasattr(peer_manager, "get_active_peers"):
                         try:
                             active_peers = peer_manager.get_active_peers()
-                            current_peer_count = len(active_peers) if active_peers else 0
+                            current_peer_count = (
+                                len(active_peers) if active_peers else 0
+                            )
                         except Exception:
                             pass
-                
-                max_peers_per_torrent = self.session.config.network.max_peers_per_torrent
-                peer_count_ratio = current_peer_count / max_peers_per_torrent if max_peers_per_torrent > 0 else 0.0
-                
+
+                max_peers_per_torrent = (
+                    self.session.config.network.max_peers_per_torrent
+                )
+                peer_count_ratio = (
+                    current_peer_count / max_peers_per_torrent
+                    if max_peers_per_torrent > 0
+                    else 0.0
+                )
+
                 # CRITICAL FIX: Use reasonable wait time when peer count is low
                 # Respect minimum query interval (30s) to prevent peer blacklisting
                 if current_peer_count < 5:
@@ -1992,7 +2093,7 @@ class DHTDiscoverySetup:
                 else:
                     # Normal wait time
                     wait_time = dht_retry_interval
-                
+
                 self.logger.debug(
                     "DHT query retry: waiting %.1fs before next attempt (peers: %d/%d, consecutive failures: %d, attempt: %d)",
                     wait_time,
@@ -2005,12 +2106,12 @@ class DHTDiscoverySetup:
                 # This ensures the loop exits quickly when shutdown is requested
                 sleep_interval = min(wait_time, 1.0)  # Check at least every second
                 elapsed = 0.0
-                while elapsed < wait_time and not self.session._stopped:
+                while elapsed < wait_time and not self.session.stopped:
                     await asyncio.sleep(sleep_interval)
                     elapsed += sleep_interval
-                
+
                 # Check _stopped after sleep
-                if self.session._stopped:
+                if self.session.stopped:
                     break
             except asyncio.CancelledError:
                 self.logger.debug(
@@ -2043,10 +2144,10 @@ class DHTDiscoverySetup:
                 # This ensures the loop exits quickly when shutdown is requested
                 sleep_interval = min(wait_time, 1.0)  # Check at least every second
                 elapsed = 0.0
-                while elapsed < wait_time and not self.session._stopped:
+                while elapsed < wait_time and not self.session.stopped:
                     await asyncio.sleep(sleep_interval)
                     elapsed += sleep_interval
-                
+
                 # Check _stopped after sleep
-                if self.session._stopped:
+                if self.session.stopped:
                     break

@@ -1,3 +1,9 @@
+"""Incoming connection handling.
+
+This module handles incoming peer connections, including connection acceptance,
+handshake processing, and initial peer setup.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +14,7 @@ class IncomingPeerHandler:
     """Handle incoming peer acceptance and queued processing for a session."""
 
     def __init__(self, session: Any) -> None:
+        """Initialize the incoming peer handler with an AsyncTorrentSession instance."""
         self.s = session  # AsyncTorrentSession instance
 
     async def accept_incoming_peer(
@@ -18,6 +25,16 @@ class IncomingPeerHandler:
         peer_ip: str,
         peer_port: int,
     ) -> None:
+        """Accept an incoming peer connection.
+
+        Args:
+            reader: Stream reader for the connection
+            writer: Stream writer for the connection
+            handshake: Handshake data
+            peer_ip: Peer IP address
+            peer_port: Peer port number
+
+        """
         # CRITICAL FIX: Access peer_manager via download_manager (it's stored there)
         # Fallback to direct peer_manager attribute if it exists (set by some setup code)
         peer_manager = getattr(self.s, "download_manager", None)
@@ -33,14 +50,13 @@ class IncomingPeerHandler:
                 peer_port,
             )
             try:
-                await self.s._incoming_peer_queue.put(
-                    (reader, writer, handshake, peer_ip, peer_port)
-                )
+                queue = self.s.get_incoming_peer_queue()
+                await queue.put((reader, writer, handshake, peer_ip, peer_port))
                 self.s.logger.debug(
                     "Queued incoming peer %s:%d (queue size: %d)",
                     peer_ip,
                     peer_port,
-                    self.s._incoming_peer_queue.qsize(),
+                    queue.qsize(),
                 )
             except Exception as e:
                 self.s.logger.warning(
@@ -99,10 +115,15 @@ class IncomingPeerHandler:
             await writer.wait_closed()
 
     async def run_queue_processor(self) -> None:
+        """Process queued incoming peer connections.
+
+        This method continuously processes peers that were queued when
+        the peer manager was not yet ready.
+        """
         self.s.logger.debug(
             "Starting incoming peer queue processor for %s", self.s.info.name
         )
-        while not self.s._stopped:
+        while not self.s.stopped:
             try:
                 try:
                     (
@@ -112,7 +133,7 @@ class IncomingPeerHandler:
                         peer_ip,
                         peer_port,
                     ) = await asyncio.wait_for(
-                        self.s._incoming_peer_queue.get(), timeout=1.0
+                        self.s.get_incoming_peer_queue().get(), timeout=1.0
                     )
                 except asyncio.TimeoutError:
                     continue
@@ -122,13 +143,12 @@ class IncomingPeerHandler:
                 waited = 0.0
                 # CRITICAL FIX: Check peer_manager via download_manager
                 peer_manager = None
-                while (
-                    waited < max_wait
-                    and not self.s._stopped
-                ):
+                while waited < max_wait and not self.s.stopped:
                     # Try to get peer_manager from download_manager
                     if hasattr(self.s, "download_manager") and self.s.download_manager:
-                        peer_manager = getattr(self.s.download_manager, "peer_manager", None)
+                        peer_manager = getattr(
+                            self.s.download_manager, "peer_manager", None
+                        )
                     if not peer_manager:
                         peer_manager = getattr(self.s, "peer_manager", None)
                     if peer_manager:
@@ -136,7 +156,7 @@ class IncomingPeerHandler:
                     await asyncio.sleep(wait_interval)
                     waited += wait_interval
 
-                if self.s._stopped:
+                if self.s.stopped:
                     try:
                         writer.close()
                         await writer.wait_closed()

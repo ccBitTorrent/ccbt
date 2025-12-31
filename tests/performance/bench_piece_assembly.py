@@ -12,6 +12,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 import argparse
+import asyncio
 import hashlib
 import json
 import os
@@ -77,10 +78,13 @@ def run_case(piece_size: int, block_size: int) -> Result:
 	with tempfile.TemporaryDirectory() as td:
 		assembler = AsyncFileAssembler(torrent_data, td)
 		async def _go() -> None:
-			async with assembler:
-				await assembler.write_piece_to_file(0, view)
-		import asyncio as _asyncio
-		_asyncio.run(_go())
+			try:
+				async with assembler:
+					await assembler.write_piece_to_file(0, view)
+			except asyncio.CancelledError:
+				# Suppress CancelledError during cleanup - this is expected when DiskIOManager stops
+				pass
+		asyncio.run(_go())
 
 	elapsed = time.perf_counter() - start
 	tput = piece_size / max(elapsed, 1e-9)

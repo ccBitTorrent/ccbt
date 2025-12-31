@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "benchmark": "loopback_throughput",
+    "config": "default",
+    "timestamp": "2025-12-31T13:27:39.646862+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "11",
+      "python": "3.13.3"
+    },
+    "git": {
+      "commit_hash": "d64e2d89e8b4e68d40759691c3f206e4febd5170",
+      "commit_hash_short": "d64e2d8",
+      "branch": "addssessionrefactor",
+      "author": "Joseph Pollack",
+      "is_dirty": true
+    }
+  },
+  "results": [
+    {
+      "payload_bytes": 16384,
+      "pipeline_depth": 8,
+      "duration_s": 1.000023599997803,
+      "bytes_transferred": 4149755904,
+      "throughput_bytes_per_s": 4149657972.080975,
+      "stall_percent": 11.111033122530198
+    }
+  ]
+}

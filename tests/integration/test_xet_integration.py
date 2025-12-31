@@ -186,14 +186,34 @@ class TestXetIntegration:
         mock_peer.ip = "192.168.1.1"
         mock_peer.port = 6881
         mock_cas.find_chunk_peers = AsyncMock(return_value=[mock_peer])
+        # CRITICAL FIX: Mock find_chunks_peers_batch to return peers for chunks
+        # The code checks for this method first, so we need to return peers in batch format
+        from ccbt.models import PeerInfo
+        mock_batch_peer = PeerInfo(ip="192.168.1.1", port=6881)
+        # Return a dict mapping chunk hashes to peer lists
+        mock_cas.find_chunks_peers_batch = AsyncMock(return_value={
+            b"A" * 32: [mock_batch_peer],
+            b"B" * 32: [mock_batch_peer],
+            b"C" * 32: [mock_batch_peer],
+        })
+        
+        # CRITICAL FIX: Mock catalog to return a dict, not a coroutine
+        # The code tries to iterate over catalog_results.items(), so it must be a dict
+        mock_catalog = AsyncMock()
+        mock_catalog.get_peers_by_chunks = AsyncMock(return_value={})  # Empty dict, will fall back to find_chunk_peers
+        mock_cas.catalog = mock_catalog
 
         with patch.object(protocol, "cas_client", mock_cas):
-            peers = await protocol.announce_torrent(torrent_info)
+            with patch.object(protocol, "catalog", None):  # Disable protocol's catalog to use cas_client.catalog
+                peers = await protocol.announce_torrent(torrent_info)
 
-            # Should find peers for chunks
-            assert isinstance(peers, list)
-            # Should have called find_chunk_peers for each chunk
-            assert mock_cas.find_chunk_peers.call_count >= 1
+                # Should find peers for chunks
+                assert isinstance(peers, list)
+                # Should have called find_chunks_peers_batch (preferred) or find_chunk_peers (fallback)
+                # The code prefers batch method if available
+                assert mock_cas.find_chunks_peers_batch.call_count >= 1 or mock_cas.find_chunk_peers.call_count >= 1
+                # Verify peers were found
+                assert len(peers) > 0
 
     @pytest.mark.asyncio
     @pytest.mark.slow
@@ -778,8 +798,10 @@ class TestXetIntegration:
         config.disk.xet_enabled = True
         config.disk.download_dir = str(temp_dir)
 
-        # Create DiskIOManager
-        disk_io = DiskIOManager(config=config)
+        # Create DiskIOManager (it gets config internally via get_config())
+        # CRITICAL FIX: DiskIOManager.__init__() doesn't accept config parameter
+        with patch("ccbt.storage.disk_io.get_config", return_value=config):
+            disk_io = DiskIOManager()
 
         # Get deduplication manager
         dedup = disk_io._get_xet_deduplication()
@@ -810,6 +832,18 @@ class TestXetIntegration:
         # Verify data matches
         assert read_data is not None
         assert read_data == file_data
+
+        # CRITICAL FIX: Close database before teardown to prevent Windows file locking issues
+        # The dedup instance is obtained from disk_io, so we need to close it explicitly
+        if dedup:
+            dedup.close()
+        
+        # Also stop disk_io manager if it was started (cleanup)
+        if hasattr(disk_io, "stop"):
+            try:
+                await disk_io.stop()
+            except Exception:
+                pass  # Ignore errors during cleanup
 
     @pytest.mark.asyncio
     @pytest.mark.slow

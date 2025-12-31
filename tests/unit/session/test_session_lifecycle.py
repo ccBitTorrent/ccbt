@@ -20,6 +20,10 @@ class TestSessionManagerLifecycle:
     async def test_start_stop(self, tmp_path):
         """Test starting and stopping session manager."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         assert manager._cleanup_task is not None
         assert manager._metrics_task is not None
@@ -32,26 +36,42 @@ class TestSessionManagerLifecycle:
     async def test_start_with_dht_disabled(self, tmp_path):
         """Test starting session manager with DHT disabled."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
-        with patch.object(manager.config.discovery, "enable_dht", False):
-            await manager.start()
-            assert manager.dht_client is None
-            await manager.stop()
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
+        await manager.start()
+        assert manager.dht_client is None
+        await manager.stop()
 
     @pytest.mark.asyncio
     async def test_start_peer_service_error(self, tmp_path):
         """Test starting session manager when peer service fails."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable components that might hang
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
+        
         if manager.peer_service:
             manager.peer_service.start = AsyncMock(side_effect=Exception("Service error"))
         
-        # Should not raise
-        await manager.start()
+        # Should not raise - add timeout to prevent hanging
+        try:
+            await asyncio.wait_for(manager.start(), timeout=10.0)
+        except asyncio.TimeoutError:
+            pytest.fail("Manager start timed out after 10 seconds")
+        
         await manager.stop()
 
     @pytest.mark.asyncio
     async def test_stop_peer_service_error(self, tmp_path):
         """Test stopping session manager when peer service fails."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         if manager.peer_service:
@@ -68,6 +88,10 @@ class TestSessionManagerAddTorrent:
     async def test_add_torrent_dict(self, tmp_path):
         """Test adding torrent from dictionary."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         torrent_data = {
@@ -87,6 +111,10 @@ class TestSessionManagerAddTorrent:
     async def test_add_torrent_dict_no_info_hash(self, tmp_path):
         """Test adding torrent without info_hash."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         torrent_data = {"name": "Test Torrent"}
@@ -98,22 +126,25 @@ class TestSessionManagerAddTorrent:
 
     @pytest.mark.asyncio
     async def test_add_torrent_dict_string_info_hash_raises_error(self, tmp_path):
-        """Test adding torrent with string info_hash raises error (current implementation)."""
+        """Test adding torrent with string info_hash is converted to bytes."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        # Current implementation doesn't convert string info_hash in dict path
-        # This will fail when trying to call .hex() on a string
+        # String info_hash should be converted to bytes
         torrent_data = {
-            "info_hash": "00" * 20,  # String - not converted
+            "info_hash": "00" * 20,  # String - should be converted
             "name": "Test Torrent",
             "file_info": {"total_length": 1000},
             "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
         }
         
-        # This will raise AttributeError when trying to call .hex() on string
-        with pytest.raises(AttributeError):
-            await manager.add_torrent(torrent_data)
+        # Should work - string is converted to bytes
+        info_hash_hex = await manager.add_torrent(torrent_data)
+        assert info_hash_hex == "00" * 20
         
         await manager.stop()
 
@@ -121,6 +152,10 @@ class TestSessionManagerAddTorrent:
     async def test_add_torrent_dict_invalid_info_hash(self, tmp_path):
         """Test adding torrent with invalid info_hash type."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         # Invalid info_hash type - when passed as dict, it passes initial validation
@@ -142,6 +177,10 @@ class TestSessionManagerAddTorrent:
     async def test_add_torrent_duplicate(self, tmp_path):
         """Test adding duplicate torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         torrent_data = {
@@ -162,6 +201,11 @@ class TestSessionManagerAddTorrent:
     async def test_add_torrent_from_file(self, tmp_path):
         """Test adding torrent from file path."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
+        
         await manager.start()
         
         torrent_data = {
@@ -171,7 +215,8 @@ class TestSessionManagerAddTorrent:
             "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
         }
         
-        with patch("ccbt.session.session.TorrentParser") as mock_parser:
+        # Patch TorrentParser where it's imported in add_torrent method
+        with patch("ccbt.core.torrent.TorrentParser") as mock_parser:
             mock_parser_instance = MagicMock()
             mock_parser.return_value = mock_parser_instance
             mock_parser_instance.parse.return_value = torrent_data
@@ -185,6 +230,11 @@ class TestSessionManagerAddTorrent:
     async def test_add_torrent_from_file_model(self, tmp_path):
         """Test adding torrent from file path returning TorrentInfo model."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
+        
         await manager.start()
         
         from ccbt.models import TorrentInfo
@@ -199,7 +249,8 @@ class TestSessionManagerAddTorrent:
             total_length=1000,
         )
         
-        with patch("ccbt.session.session.TorrentParser") as mock_parser:
+        # Patch TorrentParser where it's imported in add_torrent method
+        with patch("ccbt.core.torrent.TorrentParser") as mock_parser:
             mock_parser_instance = MagicMock()
             mock_parser.return_value = mock_parser_instance
             mock_parser_instance.parse.return_value = torrent_model
@@ -213,28 +264,37 @@ class TestSessionManagerAddTorrent:
     async def test_add_torrent_on_torrent_added_callback(self, tmp_path):
         """Test on_torrent_added callback."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        callback_called = []
-        
-        async def on_added(info_hash, name):
-            callback_called.append((info_hash, name))
-        
-        manager.on_torrent_added = on_added
-        
-        torrent_data = {
-            "info_hash": b"\x00" * 20,
-            "name": "Test Torrent",
-            "file_info": {"total_length": 1000},
-            "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
-        }
-        
-        await manager.add_torrent(torrent_data)
-        
-        assert len(callback_called) == 1
-        assert callback_called[0][1] == "Test Torrent"
-        
-        await manager.stop()
+        try:
+            callback_called = []
+            
+            async def on_added(info_hash, name):
+                callback_called.append((info_hash, name))
+            
+            manager.on_torrent_added = on_added
+            
+            torrent_data = {
+                "info_hash": b"\x00" * 20,
+                "name": "Test Torrent",
+                "file_info": {"total_length": 1000},
+                "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
+            }
+            
+            await manager.add_torrent(torrent_data)
+            
+            assert len(callback_called) == 1
+            assert callback_called[0][1] == "Test Torrent"
+        finally:
+            # CRITICAL: Always stop manager to clean up resources (prevents "Unclosed client session" warnings)
+            try:
+                await manager.stop()
+            except Exception:
+                pass  # Best effort cleanup
 
 
 class TestSessionManagerAddMagnet:
@@ -244,6 +304,10 @@ class TestSessionManagerAddMagnet:
     async def test_add_magnet(self, tmp_path):
         """Test adding magnet link."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         info_hash = b"\x00" * 20
@@ -276,6 +340,10 @@ class TestSessionManagerAddMagnet:
     async def test_add_magnet_string_info_hash(self, tmp_path):
         """Test adding magnet with string info_hash."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         info_hash = b"\x00" * 20
@@ -308,73 +376,85 @@ class TestSessionManagerAddMagnet:
     async def test_add_magnet_duplicate(self, tmp_path):
         """Test adding duplicate magnet."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        info_hash = b"\x00" * 20
-        magnet_uri = f"magnet:?xt=urn:btih:{info_hash.hex()}&dn=Test+Torrent"
-        
-        with patch("ccbt.session.parse_magnet") as mock_parse, patch(
-            "ccbt.session.build_minimal_torrent_data"
-        ) as mock_build:
-            from ccbt.core.magnet import MagnetInfo
+        try:
+            info_hash = b"\x00" * 20
+            magnet_uri = f"magnet:?xt=urn:btih:{info_hash.hex()}&dn=Test+Torrent"
             
-            mock_parse.return_value = MagnetInfo(
-                info_hash=info_hash,
-                display_name="Test Torrent",
-                trackers=[],
-                web_seeds=[],
-            )
-            mock_build.return_value = {
-                "info_hash": info_hash,
-                "name": "Test Torrent",
-                "file_info": {"total_length": 0},
-                "pieces_info": {"piece_length": 0, "num_pieces": 0, "piece_hashes": []},
-            }
-            
-            await manager.add_magnet(magnet_uri)
-            
-            with pytest.raises(ValueError, match="already exists"):
+            with patch("ccbt.session.parse_magnet") as mock_parse, patch(
+                "ccbt.session.build_minimal_torrent_data"
+            ) as mock_build:
+                from ccbt.core.magnet import MagnetInfo
+                
+                mock_parse.return_value = MagnetInfo(
+                    info_hash=info_hash,
+                    display_name="Test Torrent",
+                    trackers=[],
+                    web_seeds=[],
+                )
+                mock_build.return_value = {
+                    "info_hash": info_hash,
+                    "name": "Test Torrent",
+                    "file_info": {"total_length": 0},
+                    "pieces_info": {"piece_length": 0, "num_pieces": 0, "piece_hashes": []},
+                }
+                
                 await manager.add_magnet(magnet_uri)
-        
-        await manager.stop()
+                
+                with pytest.raises(ValueError, match="already exists"):
+                    await manager.add_magnet(magnet_uri)
+        finally:
+            await manager.stop()
 
     @pytest.mark.asyncio
     async def test_add_magnet_on_torrent_added_callback(self, tmp_path):
         """Test on_torrent_added callback for magnet."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        callback_called = []
-        
-        async def on_added(info_hash, name):
-            callback_called.append((info_hash, name))
-        
-        manager.on_torrent_added = on_added
-        
-        info_hash = b"\x00" * 20
-        magnet_uri = f"magnet:?xt=urn:btih:{info_hash.hex()}&dn=Test+Torrent"
-        
-        with patch("ccbt.session.parse_magnet") as mock_parse, patch(
-            "ccbt.session.build_minimal_torrent_data"
-        ) as mock_build:
-            from ccbt.core.magnet import MagnetInfo
+        try:
+            callback_called = []
             
-            mock_parse.return_value = MagnetInfo(
-                info_hash=info_hash,
-                display_name="Test Torrent",
-                trackers=[],
-                web_seeds=[],
-            )
-            mock_build.return_value = {
-                "info_hash": info_hash,
-                "name": "Test Torrent",
-                "file_info": {"total_length": 0},
-                "pieces_info": {"piece_length": 0, "num_pieces": 0, "piece_hashes": []},
-            }
+            async def on_added(info_hash, name):
+                callback_called.append((info_hash, name))
             
-            await manager.add_magnet(magnet_uri)
+            manager.on_torrent_added = on_added
             
-            assert len(callback_called) == 1
+            info_hash = b"\x00" * 20
+            magnet_uri = f"magnet:?xt=urn:btih:{info_hash.hex()}&dn=Test+Torrent"
+            
+            with patch("ccbt.session.parse_magnet") as mock_parse, patch(
+                "ccbt.session.build_minimal_torrent_data"
+            ) as mock_build:
+                from ccbt.core.magnet import MagnetInfo
+                
+                mock_parse.return_value = MagnetInfo(
+                    info_hash=info_hash,
+                    display_name="Test Torrent",
+                    trackers=[],
+                    web_seeds=[],
+                )
+                mock_build.return_value = {
+                    "info_hash": info_hash,
+                    "name": "Test Torrent",
+                    "file_info": {"total_length": 0},
+                    "pieces_info": {"piece_length": 0, "num_pieces": 0, "piece_hashes": []},
+                }
+                
+                await manager.add_magnet(magnet_uri)
+                
+                assert len(callback_called) == 1
+        finally:
+            await manager.stop()
 
 
 class TestSessionManagerRemove:
@@ -384,6 +464,10 @@ class TestSessionManagerRemove:
     async def test_remove_torrent(self, tmp_path):
         """Test removing torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         torrent_data = {
@@ -405,6 +489,10 @@ class TestSessionManagerRemove:
     async def test_remove_nonexistent(self, tmp_path):
         """Test removing non-existent torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         result = await manager.remove("00" * 20)
@@ -416,6 +504,10 @@ class TestSessionManagerRemove:
     async def test_remove_invalid_hash(self, tmp_path):
         """Test removing with invalid hash."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         result = await manager.remove("invalid")
@@ -427,29 +519,34 @@ class TestSessionManagerRemove:
     async def test_remove_on_torrent_removed_callback(self, tmp_path):
         """Test on_torrent_removed callback."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        callback_called = []
-        
-        async def on_removed(info_hash):
-            callback_called.append(info_hash)
-        
-        manager.on_torrent_removed = on_removed
-        
-        torrent_data = {
-            "info_hash": b"\x00" * 20,
-            "name": "Test Torrent",
-            "file_info": {"total_length": 1000},
-            "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
-        }
-        
-        info_hash_hex = await manager.add_torrent(torrent_data)
-        await manager.remove(info_hash_hex)
-        
-        assert len(callback_called) == 1
-        assert callback_called[0] == b"\x00" * 20
-        
-        await manager.stop()
+        try:
+            callback_called = []
+            
+            async def on_removed(info_hash):
+                callback_called.append(info_hash)
+            
+            manager.on_torrent_removed = on_removed
+            
+            torrent_data = {
+                "info_hash": b"\x00" * 20,
+                "name": "Test Torrent",
+                "file_info": {"total_length": 1000},
+                "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
+            }
+            
+            info_hash_hex = await manager.add_torrent(torrent_data)
+            await manager.remove(info_hash_hex)
+            
+            assert len(callback_called) == 1
+            assert callback_called[0] == b"\x00" * 20
+        finally:
+            await manager.stop()
 
 
 class TestSessionManagerPauseResume:
@@ -459,75 +556,101 @@ class TestSessionManagerPauseResume:
     async def test_pause_torrent(self, tmp_path):
         """Test pausing torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        torrent_data = {
-            "info_hash": b"\x00" * 20,
-            "name": "Test Torrent",
-            "file_info": {"total_length": 1000},
-            "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
-        }
-        
-        info_hash_hex = await manager.add_torrent(torrent_data)
-        
-        result = await manager.pause_torrent(info_hash_hex)
-        assert result is True
-        
-        await manager.stop()
+        try:
+            torrent_data = {
+                "info_hash": b"\x00" * 20,
+                "name": "Test Torrent",
+                "file_info": {"total_length": 1000},
+                "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
+            }
+            
+            info_hash_hex = await manager.add_torrent(torrent_data)
+            
+            result = await manager.pause_torrent(info_hash_hex)
+            assert result is True
+        finally:
+            await manager.stop()
 
     @pytest.mark.asyncio
     async def test_pause_nonexistent(self, tmp_path):
         """Test pausing non-existent torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        result = await manager.pause_torrent("00" * 20)
-        assert result is False
-        
-        await manager.stop()
+        try:
+            result = await manager.pause_torrent("00" * 20)
+            assert result is False
+        finally:
+            await manager.stop()
 
     @pytest.mark.asyncio
     async def test_pause_invalid_hash(self, tmp_path):
         """Test pausing with invalid hash."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        result = await manager.pause_torrent("invalid")
-        assert result is False
-        
-        await manager.stop()
+        try:
+            result = await manager.pause_torrent("invalid")
+            assert result is False
+        finally:
+            await manager.stop()
 
     @pytest.mark.asyncio
     async def test_resume_torrent(self, tmp_path):
         """Test resuming torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        torrent_data = {
-            "info_hash": b"\x00" * 20,
-            "name": "Test Torrent",
-            "file_info": {"total_length": 1000},
-            "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
-        }
-        
-        info_hash_hex = await manager.add_torrent(torrent_data)
-        await manager.pause_torrent(info_hash_hex)
-        
-        result = await manager.resume_torrent(info_hash_hex)
-        assert result is True
-        
-        await manager.stop()
+        try:
+            torrent_data = {
+                "info_hash": b"\x00" * 20,
+                "name": "Test Torrent",
+                "file_info": {"total_length": 1000},
+                "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
+                "announce": "http://tracker.example.com/announce",
+            }
+            
+            info_hash_hex = await manager.add_torrent(torrent_data)
+            await manager.pause_torrent(info_hash_hex)
+            
+            result = await manager.resume_torrent(info_hash_hex)
+            assert result is True
+        finally:
+            await manager.stop()
 
     @pytest.mark.asyncio
     async def test_resume_nonexistent(self, tmp_path):
         """Test resuming non-existent torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        result = await manager.resume_torrent("00" * 20)
-        assert result is False
-        
-        await manager.stop()
+        try:
+            result = await manager.resume_torrent("00" * 20)
+            assert result is False
+        finally:
+            await manager.stop()
 
 
 class TestSessionManagerRateLimits:
@@ -537,28 +660,41 @@ class TestSessionManagerRateLimits:
     async def test_set_rate_limits(self, tmp_path):
         """Test setting rate limits."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        torrent_data = {
-            "info_hash": b"\x00" * 20,
-            "name": "Test Torrent",
-            "file_info": {"total_length": 1000},
-            "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
-        }
-        
-        info_hash_hex = await manager.add_torrent(torrent_data)
-        
-        result = await manager.set_rate_limits(info_hash_hex, download_kib=100, upload_kib=50)
-        assert result is True
-        
-        assert manager._per_torrent_limits[b"\x00" * 20]["down_kib"] == 100
-        
-        await manager.stop()
+        try:
+            torrent_data = {
+                "info_hash": b"\x00" * 20,
+                "name": "Test Torrent",
+                "file_info": {"total_length": 1000},
+                "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
+            }
+            
+            info_hash_hex = await manager.add_torrent(torrent_data)
+            
+            result = await manager.set_rate_limits(info_hash_hex, download_kib=100, upload_kib=50)
+            assert result is True
+            
+            assert manager._per_torrent_limits[b"\x00" * 20]["down_kib"] == 100
+        finally:
+            # CRITICAL: Always stop manager to clean up resources (prevents "Unclosed client session" warnings)
+            try:
+                await manager.stop()
+            except Exception:
+                pass  # Best effort cleanup
 
     @pytest.mark.asyncio
     async def test_set_rate_limits_nonexistent(self, tmp_path):
         """Test setting rate limits for non-existent torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         result = await manager.set_rate_limits("00" * 20, download_kib=100, upload_kib=50)
@@ -570,6 +706,10 @@ class TestSessionManagerRateLimits:
     async def test_set_rate_limits_invalid_hash(self, tmp_path):
         """Test setting rate limits with invalid hash."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         result = await manager.set_rate_limits("invalid", download_kib=100, upload_kib=50)
@@ -581,24 +721,29 @@ class TestSessionManagerRateLimits:
     async def test_set_rate_limits_negative(self, tmp_path):
         """Test setting negative rate limits."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        torrent_data = {
-            "info_hash": b"\x00" * 20,
-            "name": "Test Torrent",
-            "file_info": {"total_length": 1000},
-            "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
-        }
-        
-        info_hash_hex = await manager.add_torrent(torrent_data)
-        
-        result = await manager.set_rate_limits(info_hash_hex, download_kib=-10, upload_kib=-5)
-        assert result is True
-        
-        # Should be clamped to 0
-        assert manager._per_torrent_limits[b"\x00" * 20]["down_kib"] == 0
-        
-        await manager.stop()
+        try:
+            torrent_data = {
+                "info_hash": b"\x00" * 20,
+                "name": "Test Torrent",
+                "file_info": {"total_length": 1000},
+                "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
+            }
+            
+            info_hash_hex = await manager.add_torrent(torrent_data)
+            
+            result = await manager.set_rate_limits(info_hash_hex, download_kib=-10, upload_kib=-5)
+            assert result is False  # Negative values should be rejected
+            
+            # Negative values should NOT be stored - limits should not be set
+            assert b"\x00" * 20 not in manager._per_torrent_limits
+        finally:
+            await manager.stop()
 
 
 class TestSessionManagerStatus:
@@ -608,50 +753,70 @@ class TestSessionManagerStatus:
     async def test_get_status(self, tmp_path):
         """Test getting global status."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        status = await manager.get_status()
-        assert isinstance(status, dict)
-        # get_status returns a dict with torrent statuses, structure may vary
-        # Just check it's a dict and doesn't crash
-        
-        await manager.stop()
+        try:
+            status = await manager.get_status()
+            assert isinstance(status, dict)
+            # get_status returns a dict with torrent statuses, structure may vary
+            # Just check it's a dict and doesn't crash
+        finally:
+            await manager.stop()
 
     @pytest.mark.asyncio
     async def test_get_torrent_status(self, tmp_path):
         """Test getting torrent status."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        torrent_data = {
-            "info_hash": b"\x00" * 20,
-            "name": "Test Torrent",
-            "file_info": {"total_length": 1000},
-            "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
-        }
-        
-        info_hash_hex = await manager.add_torrent(torrent_data)
-        
-        status = await manager.get_torrent_status(info_hash_hex)
-        assert isinstance(status, dict)
-        
-        await manager.stop()
+        try:
+            torrent_data = {
+                "info_hash": b"\x00" * 20,
+                "name": "Test Torrent",
+                "file_info": {"total_length": 1000},
+                "pieces_info": {"piece_length": 512, "num_pieces": 2, "piece_hashes": [b"\x11" * 20]},
+                "announce": "http://tracker.example.com/announce",
+            }
+            
+            info_hash_hex = await manager.add_torrent(torrent_data)
+            
+            status = await manager.get_torrent_status(info_hash_hex)
+            assert isinstance(status, dict)
+        finally:
+            await manager.stop()
 
     @pytest.mark.asyncio
     async def test_get_torrent_status_nonexistent(self, tmp_path):
         """Test getting status for non-existent torrent."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT and DHT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
-        status = await manager.get_torrent_status("00" * 20)
-        assert status is None
-        
-        await manager.stop()
+        try:
+            status = await manager.get_torrent_status("00" * 20)
+            assert status is None
+        finally:
+            await manager.stop()
 
     @pytest.mark.asyncio
     async def test_get_global_stats(self, tmp_path):
         """Test getting global stats."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         stats = await manager.get_global_stats()
@@ -665,6 +830,10 @@ class TestSessionManagerStatus:
     async def test_get_global_stats_with_torrents(self, tmp_path):
         """Test getting global stats with active torrents."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
+        # Disable NAT to prevent hanging during start
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
         await manager.start()
         
         torrent_data = {

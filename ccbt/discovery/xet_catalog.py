@@ -104,22 +104,22 @@ class XetChunkCatalog:
                         del self.peer_to_chunks[peer_info]
 
                 # Clean up empty chunk entries
-                if chunk_hash in self.chunk_to_peers and not self.chunk_to_peers[chunk_hash]:
+                if (
+                    chunk_hash in self.chunk_to_peers
+                    and not self.chunk_to_peers[chunk_hash]
+                ):
                     del self.chunk_to_peers[chunk_hash]
-            else:
-                # Remove all peers for this chunk
-                if chunk_hash in self.chunk_to_peers:
-                    peers = self.chunk_to_peers[chunk_hash].copy()
-                    for peer in peers:
-                        if peer in self.peer_to_chunks:
-                            self.peer_to_chunks[peer].discard(chunk_hash)
-                            if not self.peer_to_chunks[peer]:
-                                del self.peer_to_chunks[peer]
-                    del self.chunk_to_peers[chunk_hash]
+            # Remove all peers for this chunk
+            elif chunk_hash in self.chunk_to_peers:
+                peers = self.chunk_to_peers[chunk_hash].copy()
+                for peer in peers:
+                    if peer in self.peer_to_chunks:
+                        self.peer_to_chunks[peer].discard(chunk_hash)
+                        if not self.peer_to_chunks[peer]:
+                            del self.peer_to_chunks[peer]
+                del self.chunk_to_peers[chunk_hash]
 
-    async def get_chunks_by_peer(
-        self, peer_info: tuple[str, int]
-    ) -> set[bytes]:
+    async def get_chunks_by_peer(self, peer_info: tuple[str, int]) -> set[bytes]:
         """Get all chunks available from a peer.
 
         Args:
@@ -300,6 +300,3 @@ class XetChunkCatalog:
     def __repr__(self) -> str:
         """Return string representation."""
         return f"XetChunkCatalog(chunks={len(self)}, peers={len(self.peer_to_chunks)})"
-
-
-

@@ -27,12 +27,12 @@ uv pip install ccbittorrent
 
 또는 소스에서 설치:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-진입점은 [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81)에 정의되어 있습니다.
+진입점은 [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81)에 정의되어 있습니다.
 
 ## 주요 진입점
 
@@ -42,8 +42,8 @@ ccBitTorrent는 세 가지 주요 진입점을 제공합니다:
 
 **Bitonic**은 메인 터미널 대시보드 인터페이스입니다. 모든 토렌트, 피어 및 시스템 메트릭의 라이브 인터랙티브 뷰를 제공합니다.
 
-- 진입점: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- 정의 위치: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- 진입점: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- 정의 위치: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - 시작: `uv run bitonic` 또는 `uv run ccbt dashboard`
 
 자세한 사용법은 [Bitonic 가이드](bitonic.md)를 참조하세요.
@@ -52,8 +52,8 @@ ccBitTorrent는 세 가지 주요 진입점을 제공합니다:
 
 **btbt**는 풍부한 기능을 갖춘 향상된 명령줄 인터페이스입니다.
 
-- 진입점: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- 정의 위치: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- 진입점: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- 정의 위치: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - 시작: `uv run btbt`
 
 사용 가능한 모든 명령은 [btbt CLI 참조](btbt-cli.md)를 참조하세요.
@@ -62,8 +62,8 @@ ccBitTorrent는 세 가지 주요 진입점을 제공합니다:
 
 **ccbt**는 기본 명령줄 인터페이스입니다.
 
-- 진입점: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- 정의 위치: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- 진입점: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- 정의 위치: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - 시작: `uv run ccbt`
 
 ## 빠른 시작
@@ -104,9 +104,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### ccBitTorrent 구성
 
 작업 디렉토리에 `ccbt.toml` 파일을 만듭니다. 예제 구성을 참조하세요:
-- 기본 구성: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- 환경 변수: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- 구성 시스템: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- 기본 구성: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- 환경 변수: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- 구성 시스템: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 자세한 구성 옵션은 [구성 가이드](configuration.md)를 참조하세요.
 
@@ -132,7 +132,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - 명령 도움말에는 `uv run bitonic --help` 또는 `uv run btbt --help` 사용
 - 자세한 옵션은 [btbt CLI 참조](btbt-cli.md) 확인
-- 문제 및 토론은 [GitHub 저장소](https://github.com/yourusername/ccbittorrent) 방문
+- 문제 및 토론은 [GitHub 저장소](https://github.com/ccBitTorrent/ccbittorrent) 방문
 
 
 
@@ -166,12 +166,12 @@ uv pip install ccbittorrent
 
 또는 소스에서 설치:
 ```bash
-git clone https://github.com/yourusername/ccbittorrent.git
+git clone https://github.com/ccBitTorrent/ccbittorrent.git
 cd ccbittorrent
 uv pip install -e .
 ```
 
-진입점은 [pyproject.toml:79-81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79-L81)에 정의되어 있습니다.
+진입점은 [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81)에 정의되어 있습니다.
 
 ## 주요 진입점
 
@@ -181,8 +181,8 @@ ccBitTorrent는 세 가지 주요 진입점을 제공합니다:
 
 **Bitonic**은 메인 터미널 대시보드 인터페이스입니다. 모든 토렌트, 피어 및 시스템 메트릭의 라이브 인터랙티브 뷰를 제공합니다.
 
-- 진입점: [ccbt/interface/terminal_dashboard.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- 정의 위치: [pyproject.toml:81](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L81)
+- 진입점: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
+- 정의 위치: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
 - 시작: `uv run bitonic` 또는 `uv run ccbt dashboard`
 
 자세한 사용법은 [Bitonic 가이드](bitonic.md)를 참조하세요.
@@ -191,8 +191,8 @@ ccBitTorrent는 세 가지 주요 진입점을 제공합니다:
 
 **btbt**는 풍부한 기능을 갖춘 향상된 명령줄 인터페이스입니다.
 
-- 진입점: [ccbt/cli/main.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- 정의 위치: [pyproject.toml:80](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L80)
+- 진입점: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
+- 정의 위치: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
 - 시작: `uv run btbt`
 
 사용 가능한 모든 명령은 [btbt CLI 참조](btbt-cli.md)를 참조하세요.
@@ -201,8 +201,8 @@ ccBitTorrent는 세 가지 주요 진입점을 제공합니다:
 
 **ccbt**는 기본 명령줄 인터페이스입니다.
 
-- 진입점: [ccbt/__main__.py:main](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- 정의 위치: [pyproject.toml:79](https://github.com/yourusername/ccbittorrent/blob/main/pyproject.toml#L79)
+- 진입점: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
+- 정의 위치: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
 - 시작: `uv run ccbt`
 
 ## 빠른 시작
@@ -243,9 +243,9 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 ### ccBitTorrent 구성
 
 작업 디렉토리에 `ccbt.toml` 파일을 만듭니다. 예제 구성을 참조하세요:
-- 기본 구성: [ccbt.toml](https://github.com/yourusername/ccbittorrent/blob/main/ccbt.toml)
-- 환경 변수: [env.example](https://github.com/yourusername/ccbittorrent/blob/main/env.example)
-- 구성 시스템: [ccbt/config/config.py](https://github.com/yourusername/ccbittorrent/blob/main/ccbt/config/config.py)
+- 기본 구성: [ccbt.toml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt.toml)
+- 환경 변수: [env.example](https://github.com/ccBitTorrent/ccbittorrent/blob/main/env.example)
+- 구성 시스템: [ccbt/config/config.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/config/config.py)
 
 자세한 구성 옵션은 [구성 가이드](configuration.md)를 참조하세요.
 
@@ -271,7 +271,7 @@ uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
 - 명령 도움말에는 `uv run bitonic --help` 또는 `uv run btbt --help` 사용
 - 자세한 옵션은 [btbt CLI 참조](btbt-cli.md) 확인
-- 문제 및 토론은 [GitHub 저장소](https://github.com/yourusername/ccbittorrent) 방문
+- 문제 및 토론은 [GitHub 저장소](https://github.com/ccBitTorrent/ccbittorrent) 방문
 
 
 

@@ -10,6 +10,7 @@ This module manages different synchronization modes for XET folders:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -97,6 +98,7 @@ class XetSyncManager:
         # Consensus components
         self.raft_node: Any | None = None  # RaftNode
         self.byzantine_consensus: Any | None = None  # ByzantineConsensus
+        self.conflict_resolver: Any | None = None  # ConflictResolver
 
         # Source peer election
         self.source_election_interval = 300.0  # 5 minutes
@@ -110,14 +112,16 @@ class XetSyncManager:
         self.peer_states: dict[str, PeerSyncState] = {}
 
         # Consensus tracking
-        self.consensus_votes: dict[bytes, dict[str, bool]] = {}  # chunk_hash -> {peer_id: vote}
-        
+        self.consensus_votes: dict[
+            bytes, dict[str, bool]
+        ] = {}  # chunk_hash -> {peer_id: vote}
+
         # State persistence paths
         self._state_dir: Path | None = None
         if folder_path:
             self._state_dir = Path(folder_path) / ".xet"
             self._state_dir.mkdir(parents=True, exist_ok=True)
-            
+
         # Load persisted state
         self._load_consensus_state()
 
@@ -149,7 +153,9 @@ class XetSyncManager:
 
         # Start source peer election task if in designated mode
         if self.sync_mode == SyncMode.DESIGNATED:
-            self._source_election_task = asyncio.create_task(self._source_election_loop())
+            self._source_election_task = asyncio.create_task(
+                self._source_election_loop()
+            )
 
         self.logger.info("XET sync manager started")
 
@@ -163,10 +169,8 @@ class XetSyncManager:
         # Stop source election task
         if self._source_election_task:
             self._source_election_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._source_election_task
-            except asyncio.CancelledError:
-                pass
             self._source_election_task = None
 
         # Stop consensus components
@@ -326,7 +330,8 @@ class XetSyncManager:
             return True
 
     async def process_updates(
-        self, update_handler: Any  # Callable that processes updates
+        self,
+        update_handler: Any,  # Callable that processes updates
     ) -> int:
         """Process queued updates based on sync mode.
 
@@ -376,19 +381,17 @@ class XetSyncManager:
             return processed
 
         except asyncio.TimeoutError:
-            self.logger.error(
+            self.logger.exception(
                 "Timeout processing updates in %s mode", self.sync_mode.value
             )
             return 0
-        except Exception as e:
+        except Exception:
             self.logger.exception(
-                "Error processing updates in %s mode: %s", self.sync_mode.value, e
+                "Error processing updates in %s mode", self.sync_mode.value
             )
             return 0
 
-    async def _process_designated_updates(
-        self, update_handler: Any
-    ) -> int:
+    async def _process_designated_updates(self, update_handler: Any) -> int:
         """Process updates in designated source mode.
 
         Only updates from designated source peers are processed.
@@ -410,7 +413,7 @@ class XetSyncManager:
                     await update_handler(entry)
                     to_remove.append(entry)
                     processed += 1
-                except Exception as e:
+                except Exception:
                     self.logger.exception("Error processing update")
                     entry.retry_count += 1
                     if entry.retry_count >= entry.max_retries:
@@ -427,9 +430,7 @@ class XetSyncManager:
 
         return processed
 
-    async def _process_best_effort_updates(
-        self, update_handler: Any
-    ) -> int:
+    async def _process_best_effort_updates(self, update_handler: Any) -> int:
         """Process updates in best-effort queued mode.
 
         All nodes attempt updates, processed by priority.
@@ -496,8 +497,8 @@ class XetSyncManager:
                     await update_handler(resolved_entry)
                     to_remove.extend(entries)  # Remove all conflicting entries
                     processed += 1
-                except Exception as e:
-                    self.logger.error("Error processing resolved update: %s", e)
+                except Exception:
+                    self.logger.exception("Error processing resolved update")
                     for entry in entries:
                         entry.retry_count += 1
                         if entry.retry_count >= entry.max_retries:
@@ -509,8 +510,8 @@ class XetSyncManager:
                         await update_handler(entry)
                         to_remove.append(entry)
                         processed += 1
-                    except Exception as e:
-                        self.logger.error("Error processing update: %s", e)
+                    except Exception:
+                        self.logger.exception("Error processing update")
                         entry.retry_count += 1
                         if entry.retry_count >= entry.max_retries:
                             to_remove.append(entry)
@@ -523,9 +524,7 @@ class XetSyncManager:
 
         return processed
 
-    async def _process_broadcast_updates(
-        self, update_handler: Any
-    ) -> int:
+    async def _process_broadcast_updates(self, update_handler: Any) -> int:
         """Process updates in broadcast queued mode.
 
         Updates are broadcast to all peers with queuing.
@@ -549,14 +548,14 @@ class XetSyncManager:
             updates_by_source[source].append(entry)
 
         # Process updates from each source
-        for source, entries in updates_by_source.items():
+        for entries in updates_by_source.values():
             for entry in entries:
                 try:
                     # Broadcast to all peers
                     await update_handler(entry)
                     to_remove.append(entry)
                     processed += 1
-                except Exception as e:
+                except Exception:
                     self.logger.exception("Error broadcasting update")
                     entry.retry_count += 1
                     if entry.retry_count >= entry.max_retries:
@@ -570,9 +569,7 @@ class XetSyncManager:
 
         return processed
 
-    async def _process_consensus_updates(
-        self, update_handler: Any
-    ) -> int:
+    async def _process_consensus_updates(self, update_handler: Any) -> int:
         """Process updates in consensus mode.
 
         Updates require majority vote before processing.
@@ -609,7 +606,7 @@ class XetSyncManager:
                     await update_handler(entry)
                     to_remove.append(entry)
                     processed += 1
-                except Exception as e:
+                except Exception:
                     self.logger.exception("Error processing update")
                     entry.retry_count += 1
                     if entry.retry_count >= entry.max_retries:
@@ -628,7 +625,7 @@ class XetSyncManager:
                     to_remove.append(entry)
                     processed += 1
                     self.stats["consensus_reached"] += 1
-                except Exception as e:
+                except Exception:
                     self.logger.exception("Error processing update")
                     entry.retry_count += 1
                     if entry.retry_count >= entry.max_retries:
@@ -708,9 +705,13 @@ class XetSyncManager:
             # Determine node ID (use folder path hash or generate)
             if self.folder_path:
                 import hashlib
-                node_id = hashlib.sha256(str(self.folder_path).encode()).hexdigest()[:16]
+
+                node_id = hashlib.sha256(str(self.folder_path).encode()).hexdigest()[
+                    :16
+                ]
             else:
                 import uuid
+
                 node_id = uuid.uuid4().hex[:16]
 
             # Try to initialize Raft first (preferred for strong consistency)
@@ -785,8 +786,8 @@ class XetSyncManager:
                 "Falling back to simple consensus."
             )
 
-        except Exception as e:
-            self.logger.exception("Error initializing consensus: %s", e)
+        except Exception:
+            self.logger.exception("Error initializing consensus")
 
     def _apply_raft_command(self, command: dict[str, Any]) -> None:
         """Apply a committed Raft command.
@@ -795,6 +796,7 @@ class XetSyncManager:
 
         Args:
             command: Command to apply
+
         """
         try:
             if command.get("type") == "update":
@@ -813,8 +815,10 @@ class XetSyncManager:
                             # Apply update using stored handler
                             update_handler = getattr(entry, "_update_handler", None)
                             if update_handler:
-                                # Schedule async application
-                                asyncio.create_task(self._apply_update_entry(entry, update_handler))
+                                # Schedule async application - fire-and-forget
+                                asyncio.create_task(  # noqa: RUF006
+                                    self._apply_update_entry(entry, update_handler)
+                                )
                             else:
                                 self.logger.warning(
                                     "No update handler for Raft-committed update: %s",
@@ -822,15 +826,18 @@ class XetSyncManager:
                                 )
                             break
 
-        except Exception as e:
-            self.logger.exception("Error applying Raft command: %s", e)
+        except Exception:
+            self.logger.exception("Error applying Raft command")
 
-    async def _apply_update_entry(self, entry: UpdateEntry, update_handler: Any) -> None:
+    async def _apply_update_entry(
+        self, entry: UpdateEntry, update_handler: Any
+    ) -> None:
         """Apply an update entry using the provided handler.
 
         Args:
             entry: Update entry to apply
             update_handler: Handler function
+
         """
         try:
             await update_handler(entry)
@@ -840,8 +847,8 @@ class XetSyncManager:
                     self.update_queue.remove(entry)
             self.stats["updates_processed"] += 1
             self.stats["consensus_reached"] += 1
-        except Exception as e:
-            self.logger.exception("Error applying update entry: %s", e)
+        except Exception:
+            self.logger.exception("Error applying update entry")
             entry.retry_count += 1
             if entry.retry_count >= entry.max_retries:
                 async with self.queue_lock:
@@ -850,7 +857,7 @@ class XetSyncManager:
                 self.stats["updates_failed"] += 1
 
     async def _send_raft_vote_request(
-        self, peer_id: str, request: dict[str, Any]
+        self, peer_id: str, _request: dict[str, Any]
     ) -> dict[str, Any] | None:
         """Send Raft vote request to peer (simplified - would use network in production).
 
@@ -860,6 +867,7 @@ class XetSyncManager:
 
         Returns:
             Vote response or None
+
         """
         # In production, this would send a network RPC
         # For now, return None (would be handled by network layer)
@@ -867,7 +875,7 @@ class XetSyncManager:
         return None
 
     async def _send_raft_append_entries(
-        self, peer_id: str, request: dict[str, Any]
+        self, peer_id: str, _request: dict[str, Any]
     ) -> dict[str, Any] | None:
         """Send Raft append entries to peer (simplified - would use network in production).
 
@@ -877,6 +885,7 @@ class XetSyncManager:
 
         Returns:
             Append entries response or None
+
         """
         # In production, this would send a network RPC
         # For now, return None (would be handled by network layer)
@@ -914,7 +923,7 @@ class XetSyncManager:
                     if success:
                         # Entry will be applied when committed via _apply_raft_command
                         # Store update handler for later use
-                        entry._update_handler = update_handler
+                        entry._update_handler = update_handler  # noqa: SLF001  # type: ignore[attr-defined]
                         # Don't remove yet - wait for commit
                         # Entry will be removed when committed and applied
                         processed += 1
@@ -924,8 +933,8 @@ class XetSyncManager:
                         if entry.retry_count >= entry.max_retries:
                             to_remove.append(entry)
                             self.stats["updates_failed"] += 1
-                except Exception as e:
-                    self.logger.error("Error in Raft consensus: %s", e)
+                except Exception:
+                    self.logger.exception("Error in Raft consensus")
                     entry.retry_count += 1
                     if entry.retry_count >= entry.max_retries:
                         to_remove.append(entry)
@@ -974,22 +983,28 @@ class XetSyncManager:
 
                     if chunk_hash in self.consensus_votes:
                         # Convert consensus_votes to format expected by aggregate_votes
-                        for peer_id, vote_value in self.consensus_votes[chunk_hash].items():
-                            votes.append({
-                                "voter": peer_id,
-                                "vote": vote_value,
-                                "proposal": proposal_data,
-                            })
+                        for peer_id, vote_value in self.consensus_votes[
+                            chunk_hash
+                        ].items():
+                            votes.append(
+                                {
+                                    "voter": peer_id,
+                                    "vote": vote_value,
+                                    "proposal": proposal_data,
+                                }
+                            )
 
                     # Add our own vote (we vote yes for our own proposals)
-                    votes.append({
-                        "voter": self.byzantine_consensus.node_id,
-                        "vote": True,
-                        "proposal": proposal_data,
-                    })
+                    votes.append(
+                        {
+                            "voter": self.byzantine_consensus.node_id,
+                            "vote": True,
+                            "proposal": proposal_data,
+                        }
+                    )
 
                     # Check consensus
-                    consensus_reached, agreement_ratio, vote_dict = (
+                    consensus_reached, _agreement_ratio, _vote_dict = (
                         self.byzantine_consensus.aggregate_votes(votes)
                     )
 
@@ -1011,8 +1026,8 @@ class XetSyncManager:
                             if chunk_hash in self.consensus_votes:
                                 del self.consensus_votes[chunk_hash]
 
-                except Exception as e:
-                    self.logger.error("Error in Byzantine consensus: %s", e)
+                except Exception:
+                    self.logger.exception("Error in Byzantine consensus")
                     entry.retry_count += 1
                     if entry.retry_count >= entry.max_retries:
                         to_remove.append(entry)
@@ -1028,9 +1043,7 @@ class XetSyncManager:
 
         return processed
 
-    async def vote_on_update(
-        self, chunk_hash: bytes, peer_id: str, vote: bool
-    ) -> bool:
+    async def vote_on_update(self, chunk_hash: bytes, peer_id: str, vote: bool) -> bool:
         """Vote on an update in consensus mode.
 
         Args:
@@ -1092,17 +1105,19 @@ class XetSyncManager:
 
         """
         synced_peers = sum(
-            1
-            for state in self.peer_states.values()
-            if state.sync_progress >= 1.0
+            1 for state in self.peer_states.values() if state.sync_progress >= 1.0
         )
 
         return XetSyncStatus(
-            folder_path=self.folder_path,
+            folder_path=self.folder_path or "",  # type: ignore[arg-type]
             sync_mode=self.sync_mode.value,
             is_syncing=len(self.update_queue) > 0,
             last_sync_time=max(
-                (s.last_sync_time for s in self.peer_states.values() if s.last_sync_time),
+                (
+                    s.last_sync_time
+                    for s in self.peer_states.values()
+                    if s.last_sync_time
+                ),
                 default=None,
             ),
             current_git_ref=None,  # Will be set by caller
@@ -1110,9 +1125,7 @@ class XetSyncManager:
             connected_peers=len(self.peer_states),
             synced_peers=synced_peers,
             sync_progress=(
-                synced_peers / len(self.peer_states)
-                if self.peer_states
-                else 0.0
+                synced_peers / len(self.peer_states) if self.peer_states else 0.0
             ),
             error=None,
             last_check_time=time.time(),
@@ -1134,24 +1147,22 @@ class XetSyncManager:
 
         try:
             state_file = self._state_dir / "consensus_state.json"
-            
+
             # Convert consensus_votes to serializable format
             votes_serializable = {
-                chunk_hash.hex(): {
-                    peer_id: vote for peer_id, vote in votes.items()
-                }
+                chunk_hash.hex(): dict(votes.items())
                 for chunk_hash, votes in self.consensus_votes.items()
             }
-            
+
             state_data = {
                 "consensus_votes": votes_serializable,
                 "sync_mode": self.sync_mode.value,
                 "consensus_threshold": self.consensus_threshold,
             }
-            
+
             with open(state_file, "w") as f:
                 json.dump(state_data, f, indent=2)
-                
+
             self.logger.debug("Saved consensus state to %s", state_file)
         except Exception as e:
             self.logger.warning("Failed to save consensus state: %s", e)
@@ -1172,9 +1183,7 @@ class XetSyncManager:
             # Restore consensus_votes
             votes_serializable = state_data.get("consensus_votes", {})
             self.consensus_votes = {
-                bytes.fromhex(chunk_hash_hex): {
-                    peer_id: vote for peer_id, vote in votes.items()
-                }
+                bytes.fromhex(chunk_hash_hex): dict(votes.items())
                 for chunk_hash_hex, votes in votes_serializable.items()
             }
 
@@ -1186,4 +1195,3 @@ class XetSyncManager:
         """Clear the update queue."""
         async with self.queue_lock:
             self.update_queue.clear()
-

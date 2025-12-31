@@ -15,6 +15,15 @@ with open(po_file, encoding="utf-8") as f:
 
 # Replace empty msgstr with msgid value
 def replace_empty_msgstr(match):
+    """Replace empty msgstr with msgid value in .po files.
+
+    Args:
+        match: Regex match object containing the msgid
+
+    Returns:
+        Formatted string with msgid and msgstr set to the same value
+
+    """
     msgid = match.group(1)
     return f'msgid "{msgid}"\nmsgstr "{msgid}"'
 

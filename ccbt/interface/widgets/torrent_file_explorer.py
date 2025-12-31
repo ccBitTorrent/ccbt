@@ -529,11 +529,13 @@ class TorrentFileExplorerWidget(Container):  # type: ignore[misc]
                 if file_path:
                     path_obj = Path(file_path)
                     if path_obj.exists():
+                        import os
                         import platform
                         import subprocess
                         system = platform.system()
                         if system == "Windows":
-                            subprocess.Popen(["start", "", str(path_obj)], shell=True)
+                            # Use os.startfile instead of shell=True for security
+                            os.startfile(str(path_obj))  # nosec B606
                         elif system == "Darwin":
                             subprocess.Popen(["open", str(path_obj)])
                         else:

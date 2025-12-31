@@ -130,6 +130,10 @@ class TestPerformanceCommandExpanded:
         # Mock asyncio.run to raise exception
         mock_asyncio_run.side_effect = Exception("Benchmark failed")
 
+        # Import the real __import__ before patching to avoid recursion
+        import builtins
+        real_import = builtins.__import__
+        
         # Patch cProfile inside the function context where it's imported
         with patch("builtins.__import__") as mock_import:
             def side_effect(name, *args, **kwargs):
@@ -148,7 +152,7 @@ class TestPerformanceCommandExpanded:
                     mock_pstats_module.Stats = mock_stats
                     return mock_pstats_module
                 # For other imports, use real import
-                return __import__(name, *args, **kwargs)
+                return real_import(name, *args, **kwargs)
             
             mock_import.side_effect = side_effect
             

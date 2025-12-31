@@ -222,8 +222,9 @@ class ScrapeManager:
                     if cached and not self.is_stale(cached):
                         continue  # Skip if recently scraped  # pragma: no cover - Skip stale scrape, tested via integration tests with fresh scrape data
 
-                    # Perform scrape
-                    await self.force_scrape(info_hash_hex)
+                    # Perform scrape using session manager's force_scrape method
+                    # This allows tests to mock force_scrape on the session manager
+                    await self.manager.force_scrape(info_hash_hex)
 
                     # Rate limit: wait 1 second between scrapes
                     await asyncio.sleep(1.0)

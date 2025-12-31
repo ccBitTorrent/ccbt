@@ -88,13 +88,32 @@ class TestFileCommandsCoverage:
         ctx = MagicMock()
         ctx.obj = {"config": MagicMock()}
 
-        monkeypatch.setattr(
-            cli_file_commands,
-            "AsyncSessionManager",
-            MagicMock(return_value=mock_session_obj),
+        # Mock the executor pattern used by file_commands
+        mock_executor = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_file_info = SimpleNamespace(
+            index=0,
+            name=".hidden_file",
+            size=512,
+            attributes="H",
+            priority="NORMAL",
+            selected=True,
+            progress=0.0,
         )
+        mock_result.data = {
+            "files": SimpleNamespace(files=[mock_file_info])
+        }
+        mock_executor.execute = AsyncMock(return_value=mock_result)
+        mock_executor.adapter = MagicMock()
+        mock_executor.adapter.ipc_client = AsyncMock()
+        mock_executor.adapter.ipc_client.close = AsyncMock()
+        
+        async def mock_get_executor():
+            return (mock_executor, True)  # (executor, is_daemon)
+        
         monkeypatch.setattr(
-            cli_file_commands, "ConfigManager", MagicMock(return_value=MagicMock())
+            cli_file_commands, "_get_executor", lambda: mock_get_executor
         )
         monkeypatch.setattr(cli_file_commands.asyncio, "run", _run_coro_locally)
 
@@ -121,13 +140,32 @@ class TestFileCommandsCoverage:
         ctx = MagicMock()
         ctx.obj = {"config": MagicMock()}
 
-        monkeypatch.setattr(
-            cli_file_commands,
-            "AsyncSessionManager",
-            MagicMock(return_value=mock_session_obj),
+        # Mock the executor pattern used by file_commands
+        mock_executor = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_file_info = SimpleNamespace(
+            index=0,
+            name=".hidden_file",
+            size=512,
+            attributes="H",
+            priority="NORMAL",
+            selected=True,
+            progress=0.0,
         )
+        mock_result.data = {
+            "files": SimpleNamespace(files=[mock_file_info])
+        }
+        mock_executor.execute = AsyncMock(return_value=mock_result)
+        mock_executor.adapter = MagicMock()
+        mock_executor.adapter.ipc_client = AsyncMock()
+        mock_executor.adapter.ipc_client.close = AsyncMock()
+        
+        async def mock_get_executor():
+            return (mock_executor, True)  # (executor, is_daemon)
+        
         monkeypatch.setattr(
-            cli_file_commands, "ConfigManager", MagicMock(return_value=MagicMock())
+            cli_file_commands, "_get_executor", lambda: mock_get_executor
         )
         monkeypatch.setattr(cli_file_commands.asyncio, "run", _run_coro_locally)
 
@@ -156,13 +194,32 @@ class TestFileCommandsCoverage:
         ctx = MagicMock()
         ctx.obj = {"config": MagicMock()}
 
-        monkeypatch.setattr(
-            cli_file_commands,
-            "AsyncSessionManager",
-            MagicMock(return_value=mock_session_obj),
+        # Mock the executor pattern used by file_commands
+        mock_executor = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_file_info = SimpleNamespace(
+            index=0,
+            name=".hidden_file",
+            size=512,
+            attributes="H",
+            priority="NORMAL",
+            selected=True,
+            progress=0.0,
         )
+        mock_result.data = {
+            "files": SimpleNamespace(files=[mock_file_info])
+        }
+        mock_executor.execute = AsyncMock(return_value=mock_result)
+        mock_executor.adapter = MagicMock()
+        mock_executor.adapter.ipc_client = AsyncMock()
+        mock_executor.adapter.ipc_client.close = AsyncMock()
+        
+        async def mock_get_executor():
+            return (mock_executor, True)  # (executor, is_daemon)
+        
         monkeypatch.setattr(
-            cli_file_commands, "ConfigManager", MagicMock(return_value=MagicMock())
+            cli_file_commands, "_get_executor", lambda: mock_get_executor
         )
         monkeypatch.setattr(cli_file_commands.asyncio, "run", _run_coro_locally)
 
@@ -193,13 +250,32 @@ class TestFileCommandsCoverage:
         ctx = MagicMock()
         ctx.obj = {"config": MagicMock()}
 
-        monkeypatch.setattr(
-            cli_file_commands,
-            "AsyncSessionManager",
-            MagicMock(return_value=mock_session_obj),
+        # Mock the executor pattern used by file_commands
+        mock_executor = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_file_info = SimpleNamespace(
+            index=0,
+            name=".hidden_file",
+            size=512,
+            attributes="H",
+            priority="NORMAL",
+            selected=True,
+            progress=0.0,
         )
+        mock_result.data = {
+            "files": SimpleNamespace(files=[mock_file_info])
+        }
+        mock_executor.execute = AsyncMock(return_value=mock_result)
+        mock_executor.adapter = MagicMock()
+        mock_executor.adapter.ipc_client = AsyncMock()
+        mock_executor.adapter.ipc_client.close = AsyncMock()
+        
+        async def mock_get_executor():
+            return (mock_executor, True)  # (executor, is_daemon)
+        
         monkeypatch.setattr(
-            cli_file_commands, "ConfigManager", MagicMock(return_value=MagicMock())
+            cli_file_commands, "_get_executor", lambda: mock_get_executor
         )
         monkeypatch.setattr(cli_file_commands.asyncio, "run", _run_coro_locally)
 
@@ -230,13 +306,32 @@ class TestFileCommandsCoverage:
         ctx = MagicMock()
         ctx.obj = {"config": MagicMock()}
 
-        monkeypatch.setattr(
-            cli_file_commands,
-            "AsyncSessionManager",
-            MagicMock(return_value=mock_session_obj),
+        # Mock the executor pattern used by file_commands
+        mock_executor = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_file_info = SimpleNamespace(
+            index=0,
+            name=".hidden_file",
+            size=512,
+            attributes="H",
+            priority="NORMAL",
+            selected=True,
+            progress=0.0,
         )
+        mock_result.data = {
+            "files": SimpleNamespace(files=[mock_file_info])
+        }
+        mock_executor.execute = AsyncMock(return_value=mock_result)
+        mock_executor.adapter = MagicMock()
+        mock_executor.adapter.ipc_client = AsyncMock()
+        mock_executor.adapter.ipc_client.close = AsyncMock()
+        
+        async def mock_get_executor():
+            return (mock_executor, True)  # (executor, is_daemon)
+        
         monkeypatch.setattr(
-            cli_file_commands, "ConfigManager", MagicMock(return_value=MagicMock())
+            cli_file_commands, "_get_executor", lambda: mock_get_executor
         )
         monkeypatch.setattr(cli_file_commands.asyncio, "run", _run_coro_locally)
 

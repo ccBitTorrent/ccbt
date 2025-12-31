@@ -112,7 +112,7 @@ def _should_skip_project_local_write(target_path: Path) -> bool:
 
 @click.group(name="config-extended")
 def config_extended():
-    """Extended configuration management commands."""
+    """Provide extended configuration management commands."""
 
 
 @config_extended.command("schema")
@@ -219,7 +219,11 @@ def template_cmd(
         # Validate template
         is_valid, errors = ConfigTemplates.validate_template(template_name)
         if not is_valid:
-            click.echo(_("Invalid template '{name}': {errors}").format(name=template_name, errors=", ".join(errors)))
+            click.echo(
+                _("Invalid template '{name}': {errors}").format(
+                    name=template_name, errors=", ".join(errors)
+                )
+            )
             return
 
         # Get template info
@@ -234,7 +238,9 @@ def template_cmd(
         template_metadata = ConfigTemplates.TEMPLATES.get(template_name)
         if template_metadata:
             click.echo(_("Template: {name}").format(name=template_metadata["name"]))
-            click.echo(_("Description: {desc}").format(desc=template_metadata["description"]))
+            click.echo(
+                _("Description: {desc}").format(desc=template_metadata["description"])
+            )
         else:
             click.echo(_("Template: {name}").format(name=template_name))
 
@@ -337,7 +343,11 @@ def profile_cmd(
         # Validate profile
         is_valid, errors = ConfigProfiles.validate_profile(profile_name)
         if not is_valid:
-            click.echo(_("Invalid profile '{name}': {errors}").format(name=profile_name, errors=", ".join(errors)))
+            click.echo(
+                _("Invalid profile '{name}': {errors}").format(
+                    name=profile_name, errors=", ".join(errors)
+                )
+            )
             return
 
         # Get profile info
@@ -352,8 +362,14 @@ def profile_cmd(
         profile_metadata = ConfigProfiles.PROFILES.get(profile_name)
         if profile_metadata:
             click.echo(_("Profile: {name}").format(name=profile_metadata["name"]))
-            click.echo(_("Description: {desc}").format(desc=profile_metadata["description"]))
-            click.echo(_("Templates: {templates}").format(templates=", ".join(profile_metadata["templates"])))
+            click.echo(
+                _("Description: {desc}").format(desc=profile_metadata["description"])
+            )
+            click.echo(
+                _("Templates: {templates}").format(
+                    templates=", ".join(profile_metadata["templates"])
+                )
+            )
         else:
             click.echo(_("Profile: {name}").format(name=profile_name))
 
@@ -716,7 +732,9 @@ def auto_tune_cmd(
             config_data = tuned_config.model_dump(mode="json")
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_text(toml.dumps(config_data), encoding="utf-8")
-            click.echo(_("Auto-tuned configuration saved to {path}").format(path=target_path))
+            click.echo(
+                _("Auto-tuned configuration saved to {path}").format(path=target_path)
+            )
 
             # Check if restart is needed (only if writing to the active config file)
             if target_path.name == "ccbt.toml" or (
@@ -801,7 +819,9 @@ def export_cmd(format_: str, output: str, config_file: str | None):
         click.echo(_("Configuration exported to {path}").format(path=output))
 
     except Exception as e:  # pragma: no cover - File I/O error handling
-        click.echo(_("Error exporting configuration: {e}").format(e=e))  # pragma: no cover
+        click.echo(
+            _("Error exporting configuration: {e}").format(e=e)
+        )  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -934,7 +954,9 @@ def import_cmd(
     except (
         Exception
     ) as e:  # pragma: no cover - Error handling for import file I/O failures
-        click.echo(_("Error importing configuration: {e}").format(e=e))  # pragma: no cover
+        click.echo(
+            _("Error importing configuration: {e}").format(e=e)
+        )  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -967,7 +989,9 @@ def validate_cmd(config_file: str | None, detailed: bool):
                 click.echo(_("✓ No system compatibility warnings"))
 
     except Exception as e:  # pragma: no cover - Error handling for validation failures
-        click.echo(_("✗ Configuration validation failed: {e}").format(e=e))  # pragma: no cover
+        click.echo(
+            _("✗ Configuration validation failed: {e}").format(e=e)
+        )  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
@@ -1037,4 +1061,3 @@ def list_profiles_cmd(format_: str):
     ) as e:  # pragma: no cover - Error handling for list-profiles failures
         click.echo(_("Error listing profiles: {e}").format(e=e))  # pragma: no cover
         raise click.ClickException(str(e)) from e  # pragma: no cover
-

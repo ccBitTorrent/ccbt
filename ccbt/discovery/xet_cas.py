@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from ccbt.models import PeerInfo
@@ -206,20 +207,18 @@ class P2PCASClient:
                     chunk_hash.hex()[:16],
                 )
                 return cached_peers.copy()
-            else:
-                # Cache expired, remove it
-                del self._discovery_cache[chunk_hash]
+            # Cache expired, remove it
+            del self._discovery_cache[chunk_hash]
 
         # Pre-filter using bloom filter if available
         # Note: Bloom filter can have false positives, so we still query
         # but we can skip peers that definitely don't have the chunk
-        if self.bloom_filter:
-            if not self.bloom_filter.has_chunk(chunk_hash):
-                self.logger.debug(
-                    "Chunk %s not in bloom filter, skipping discovery",
-                    chunk_hash.hex()[:16],
-                )
-                return []  # Definitely not available (no false negatives)
+        if self.bloom_filter and not self.bloom_filter.has_chunk(chunk_hash):
+            self.logger.debug(
+                "Chunk %s not in bloom filter, skipping discovery",
+                chunk_hash.hex()[:16],
+            )
+            return []  # Definitely not available (no false negatives)
 
         # Check catalog first for fast lookup
         peers = []
@@ -229,8 +228,6 @@ class P2PCASClient:
                 if chunk_hash in catalog_results:
                     catalog_peers = catalog_results[chunk_hash]
                     # Convert to PeerInfo objects
-                    from ccbt.models import PeerInfo
-
                     for ip, port in catalog_peers:
                         peers.append(PeerInfo(ip=ip, port=port))
                     self.logger.debug(
@@ -401,16 +398,15 @@ class P2PCASClient:
         async def on_pex_chunks(chunk_hashes: list[bytes]) -> None:
             """Handle chunks received via PEX."""
             for chunk_hash in chunk_hashes:
-                if len(chunk_hash) == 32:
-                    # Update catalog if available
-                    if self.catalog:
-                        try:
-                            # Get peer info from PEX if available
-                            # This is a simplified version - in practice, we'd track
-                            # which peer sent which chunks
-                            await self.catalog.add_chunk(chunk_hash, None)
-                        except Exception as e:
-                            self.logger.warning("Error updating catalog from PEX: %s", e)
+                # Update catalog if available
+                if len(chunk_hash) == 32 and self.catalog:
+                    try:
+                        # Get peer info from PEX if available
+                        # This is a simplified version - in practice, we'd track
+                        # which peer sent which chunks
+                        await self.catalog.add_chunk(chunk_hash, None)
+                    except Exception as e:
+                        self.logger.warning("Error updating catalog from PEX: %s", e)
 
         # Add callback to PEX manager
         if hasattr(pex_manager, "chunk_callbacks"):

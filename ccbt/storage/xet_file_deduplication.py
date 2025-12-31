@@ -7,11 +7,12 @@ of chunk-level deduplication to identify and deduplicate entire files.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ccbt.models import XetFileMetadata
-from ccbt.storage.xet_deduplication import XetDeduplication
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from ccbt.storage.xet_deduplication import XetDeduplication
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,7 @@ class XetFileDeduplication:
         self.dedup = dedup
         self.logger = logging.getLogger(__name__)
 
-    async def deduplicate_file(
-        self, file_path: Path
-    ) -> dict[str, Any]:
+    async def deduplicate_file(self, file_path: Path) -> dict[str, Any]:
         """Deduplicate a file at the file level.
 
         Computes the file hash (Merkle root of chunks) and checks if
@@ -127,8 +126,8 @@ class XetFileDeduplication:
         try:
             # Query database for files with matching hash
             cursor = self.dedup.db.execute(
-                """SELECT file_path FROM file_metadata 
-                   WHERE file_hash = ? AND file_path != ? 
+                """SELECT file_path FROM file_metadata
+                   WHERE file_hash = ? AND file_path != ?
                    LIMIT 1""",
                 (file_hash, exclude_path),
             )
@@ -155,7 +154,7 @@ class XetFileDeduplication:
         """
         try:
             cursor = self.dedup.db.execute(
-                """SELECT 
+                """SELECT
                     COUNT(*) as total_files,
                     COUNT(DISTINCT file_hash) as unique_files,
                     SUM(total_size) as total_storage
@@ -178,9 +177,9 @@ class XetFileDeduplication:
 
             # Calculate deduplicated storage (sum of unique file sizes)
             cursor = self.dedup.db.execute(
-                """SELECT SUM(total_size) 
+                """SELECT SUM(total_size)
                    FROM (
-                       SELECT DISTINCT file_hash, total_size 
+                       SELECT DISTINCT file_hash, total_size
                        FROM file_metadata
                    )"""
             )
@@ -232,8 +231,8 @@ class XetFileDeduplication:
             if file_hash:
                 # Find duplicates for specific hash
                 cursor = self.dedup.db.execute(
-                    """SELECT file_path FROM file_metadata 
-                       WHERE file_hash = ? 
+                    """SELECT file_path FROM file_metadata
+                       WHERE file_hash = ?
                        ORDER BY file_path""",
                     (file_hash,),
                 )
@@ -241,23 +240,19 @@ class XetFileDeduplication:
                 if len(rows) > 1:
                     return [[row[0] for row in rows]]
                 return []
-            else:
-                # Find all duplicate groups
-                cursor = self.dedup.db.execute(
-                    """SELECT file_hash, GROUP_CONCAT(file_path, ',') as paths
+            # Find all duplicate groups
+            cursor = self.dedup.db.execute(
+                """SELECT file_hash, GROUP_CONCAT(file_path, ',') as paths
                        FROM file_metadata
                        GROUP BY file_hash
                        HAVING COUNT(*) > 1"""
-                )
-                groups = []
-                for row in cursor.fetchall():
-                    paths = row[1].split(",") if row[1] else []
-                    if len(paths) > 1:
-                        groups.append(paths)
-                return groups
-        except Exception as e:
-            self.logger.warning(
-                "Failed to find duplicate files: %s", e, exc_info=True
             )
+            groups = []
+            for row in cursor.fetchall():
+                paths = row[1].split(",") if row[1] else []
+                if len(paths) > 1:
+                    groups.append(paths)
+            return groups
+        except Exception as e:
+            self.logger.warning("Failed to find duplicate files: %s", e, exc_info=True)
             return []
-

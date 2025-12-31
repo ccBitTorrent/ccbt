@@ -46,12 +46,12 @@ def mock_session():
 @pytest.fixture
 def interactive_cli(mock_session):
     """Create InteractiveCLI instance."""
-    from ccbt.cli.interactive import InteractiveCLI
+    from tests.conftest import create_interactive_cli
     
     console = Mock(spec=Console)
     console.print = Mock()
     console.clear = Mock()
-    cli = InteractiveCLI(mock_session, console)
+    cli = create_interactive_cli(mock_session, console)
     return cli
 
 
@@ -298,9 +298,61 @@ async def test_cmd_disk(interactive_cli):
 @pytest.mark.asyncio
 async def test_cmd_network(interactive_cli):
     """Test cmd_network (lines 685-694)."""
-    await interactive_cli.cmd_network([])
+    from unittest.mock import MagicMock, patch
     
-    assert interactive_cli.console.print.called
+    # Create a comprehensive mock config with all network settings
+    mock_config = MagicMock()
+    mock_config.network = MagicMock()
+    # Set all network config attributes that might be accessed
+    mock_config.network.listen_port = 6881
+    mock_config.network.listen_port_tcp = None
+    mock_config.network.listen_port_udp = None
+    mock_config.network.max_global_peers = 200
+    mock_config.network.max_peers_per_torrent = 50
+    mock_config.network.max_connections_per_peer = 1
+    mock_config.network.pipeline_depth = 5
+    mock_config.network.pipeline_adaptive_depth = True
+    mock_config.network.block_size_kib = 16
+    mock_config.network.min_block_size_kib = 4
+    mock_config.network.max_block_size_kib = 64
+    mock_config.network.connection_timeout = 30
+    mock_config.network.handshake_timeout = 10
+    mock_config.network.peer_timeout = 60
+    mock_config.network.timeout_adaptive = True
+    mock_config.network.keepalive_interval = 60
+    mock_config.network.max_idle_time = 120
+    mock_config.network.enable_utp = True
+    mock_config.network.enable_tcp = True
+    mock_config.network.enable_ipv6 = False
+    mock_config.network.enable_encryption = True
+    mock_config.network.prefer_encryption = True
+    mock_config.network.global_down_kib = 0
+    mock_config.network.global_up_kib = 0
+    mock_config.network.connection_pool_max_connections = 100
+    mock_config.network.connection_pool_warmup_enabled = False
+    mock_config.network.socket_rcvbuf_kib = 256
+    mock_config.network.socket_sndbuf_kib = 256
+    mock_config.network.socket_adaptive_buffers = True
+    mock_config.network.tcp_nodelay = True
+    
+    # Mock get_network_optimizer to avoid import/initialization issues
+    mock_optimizer = MagicMock()
+    mock_optimizer.get_stats.return_value = {
+        "connection_pool": {
+            "total_connections": 0,
+            "active_connections": 0,
+            "failed_connections": 0,
+            "bytes_sent": 0,
+            "bytes_received": 0,
+        },
+        "socket_configs": {},
+    }
+    
+    with patch("ccbt.cli.interactive.get_config", return_value=mock_config), \
+         patch("ccbt.utils.network_optimizer.get_network_optimizer", return_value=mock_optimizer):
+        await interactive_cli.cmd_network([])
+        
+        assert interactive_cli.console.print.called
 
 
 @pytest.mark.asyncio

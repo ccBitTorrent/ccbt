@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ccbt.core.magnet import build_minimal_torrent_data, parse_magnet
 from ccbt.core.torrent import TorrentParser
 from ccbt.models import TorrentInfo as TorrentInfoModel
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def get_torrent_info(

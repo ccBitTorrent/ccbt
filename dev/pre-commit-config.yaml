@@ -101,7 +101,7 @@ repos:
         stages: [pre-commit]
       - id: mkdocs-build
         name: mkdocs-build
-        entry: uv run mkdocs build -f dev/mkdocs.yml
+        entry: uv run python dev/build_docs_patched_clean.py
         language: system
         types: [markdown]
         files: ^(docs/.*\.md|docs/blog/.*\.md|README\.md|dev/mkdocs\.yml)$

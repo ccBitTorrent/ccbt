@@ -25,7 +25,8 @@ class TestSessionManagerIntegration:
         """Test session manager initialization."""
         assert self.session_manager.output_dir == "."
         assert isinstance(self.session_manager.torrents, dict)
-        assert isinstance(self.session_manager.metrics, Metrics)
+        # Metrics are lazy-initialized in start(), not __init__()
+        assert self.session_manager.metrics is None
 
     @pytest.mark.asyncio
     async def test_add_peers_to_download_manager(self):

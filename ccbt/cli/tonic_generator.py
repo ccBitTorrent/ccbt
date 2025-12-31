@@ -78,7 +78,9 @@ async def generate_tonic_from_folder(
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task(_("Scanning folder and calculating chunks..."), total=None)
+        task = progress.add_task(
+            _("Scanning folder and calculating chunks..."), total=None
+        )
 
         # Scan folder
         for file_path in folder.rglob("*"):
@@ -92,7 +94,7 @@ async def generate_tonic_from_folder(
 
                     # Chunk file
                     chunk_hashes: list[bytes] = []
-                    for chunk_data in chunker.chunk(file_data):
+                    for chunk_data in chunker.chunk_buffer(file_data):
                         chunk_hash = hasher.compute_chunk_hash(chunk_data)
                         chunk_hashes.append(chunk_hash)
                         all_chunk_hashes.add(chunk_hash)
@@ -177,7 +179,9 @@ async def generate_tonic_from_folder(
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_bytes(tonic_data)
-        console.print(_("[green]✓[/green] Generated .tonic file: {file}").format(file=output_file))
+        console.print(
+            _("[green]✓[/green] Generated .tonic file: {file}").format(file=output_file)
+        )
 
     # Generate link if requested
     tonic_link: str | None = None
@@ -198,7 +202,9 @@ async def generate_tonic_from_folder(
 
 
 @click.command("generate")
-@click.argument("folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.argument(
+    "folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
+)
 @click.option(
     "--output",
     "-o",
@@ -237,7 +243,7 @@ async def generate_tonic_from_folder(
 )
 @click.pass_context
 def tonic_generate(
-    ctx,
+    _ctx,
     folder_path: str,
     output_path: str | None,
     sync_mode: str,
@@ -278,6 +284,4 @@ def tonic_generate(
     except Exception as e:
         console.print(_("[red]Error generating .tonic file: {e}[/red]").format(e=e))
         logger.exception(_("Failed to generate .tonic file"))
-        raise click.Abort() from e
-
-
+        raise click.Abort from e

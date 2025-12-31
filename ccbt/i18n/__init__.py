@@ -70,7 +70,8 @@ def get_locale() -> str:
             return locale_code
         # Log warning but continue with fallback
         logger.warning(
-            f"Invalid locale '{locale_code}' from environment, falling back to system/default"
+            "Invalid locale '%s' from environment, falling back to system/default",
+            locale_code,
         )
 
     # Fall back to system locale
@@ -100,14 +101,17 @@ def set_locale(locale_code: str) -> None:
 
     # Normalize locale code
     if not locale_code or not isinstance(locale_code, str):
-        raise ValueError(f"Invalid locale code: {locale_code}")
+        msg = f"Invalid locale code: {locale_code}"
+        raise ValueError(msg)
 
     locale_code = locale_code.split("_")[0].lower()
 
     # Validate locale availability
     if not _is_valid_locale(locale_code):
         logger.warning(
-            f"Locale '{locale_code}' is not available, falling back to '{DEFAULT_LOCALE}'"
+            "Locale '%s' is not available, falling back to '%s'",
+            locale_code,
+            DEFAULT_LOCALE,
         )
         locale_code = DEFAULT_LOCALE
 
@@ -133,7 +137,8 @@ def _get_translation() -> gettext.NullTranslations:
         # Validate locale before attempting to load
         if not _is_valid_locale(locale_code):
             logger.warning(
-                f"Locale '{locale_code}' is not available, using fallback translations"
+                "Locale '%s' is not available, using fallback translations",
+                locale_code,
             )
             locale_code = DEFAULT_LOCALE
 
@@ -148,8 +153,9 @@ def _get_translation() -> gettext.NullTranslations:
         except Exception as e:
             # Fallback to NullTranslations (returns original strings)
             logger.warning(
-                f"Failed to load translations for locale '{locale_code}': {e}. "
-                "Using fallback translations."
+                "Failed to load translations for locale '%s': %s. Using fallback translations.",
+                locale_code,
+                e,
             )
             _translation = gettext.NullTranslations()
 

@@ -7,7 +7,6 @@ version vectors, and 3-way merge.
 from __future__ import annotations
 
 import logging
-import time
 from enum import Enum
 from typing import Any
 
@@ -42,12 +41,14 @@ class ConflictResolver:
 
         """
         self.strategy = ConflictStrategy(strategy)
-        self.version_vectors: dict[str, dict[str, int]] = {}  # file_path -> {peer_id: version}
+        self.version_vectors: dict[
+            str, dict[str, int]
+        ] = {}  # file_path -> {peer_id: version}
 
     def detect_conflict(
         self,
-        file_path: str,
-        peer_id: str,
+        _file_path: str,
+        _peer_id: str,
         timestamp: float,
         existing_timestamp: float | None = None,
     ) -> bool:
@@ -68,10 +69,7 @@ class ConflictResolver:
 
         # Conflict if timestamps are very close (within 1 second)
         # and from different peers
-        if abs(timestamp - existing_timestamp) < 1.0:
-            return True
-
-        return False
+        return abs(timestamp - existing_timestamp) < 1.0
 
     def resolve_conflict(
         self,
@@ -94,15 +92,14 @@ class ConflictResolver:
         """
         if self.strategy == ConflictStrategy.LAST_WRITE_WINS:
             return self._last_write_wins(our_version, their_version)
-        elif self.strategy == ConflictStrategy.VERSION_VECTOR:
+        if self.strategy == ConflictStrategy.VERSION_VECTOR:
             return self._version_vector_merge(file_path, our_version, their_version)
-        elif self.strategy == ConflictStrategy.THREE_WAY_MERGE:
+        if self.strategy == ConflictStrategy.THREE_WAY_MERGE:
             return self._three_way_merge(our_version, their_version, base_version)
-        elif self.strategy == ConflictStrategy.TIMESTAMP:
+        if self.strategy == ConflictStrategy.TIMESTAMP:
             return self._timestamp_merge(our_version, their_version)
-        else:
-            # Default to last write wins
-            return self._last_write_wins(our_version, their_version)
+        # Default to last write wins
+        return self._last_write_wins(our_version, their_version)
 
     def _last_write_wins(
         self, our_version: dict[str, Any], their_version: dict[str, Any]
@@ -163,11 +160,10 @@ class ConflictResolver:
         # If one version vector dominates, use that version
         if self._version_vector_dominates(our_vv, their_vv):
             return our_version
-        elif self._version_vector_dominates(their_vv, our_vv):
+        if self._version_vector_dominates(their_vv, our_vv):
             return their_version
-        else:
-            # Concurrent changes - use later timestamp
-            return self._last_write_wins(our_version, their_version)
+        # Concurrent changes - use later timestamp
+        return self._last_write_wins(our_version, their_version)
 
     def _version_vector_dominates(
         self, vv1: dict[str, int], vv2: dict[str, int]
@@ -229,13 +225,12 @@ class ConflictResolver:
 
         if our_changed and not their_changed:
             return our_version
-        elif their_changed and not our_changed:
+        if their_changed and not our_changed:
             return their_version
-        elif our_changed and their_changed:
+        if our_changed and their_changed:
             # Both changed - use our version (could be improved with proper merge)
             return our_version
-        else:
-            return base_version
+        return base_version
 
     def _timestamp_merge(
         self, our_version: dict[str, Any], their_version: dict[str, Any]
@@ -254,7 +249,7 @@ class ConflictResolver:
 
     def merge_files(
         self,
-        file_path: str,
+        _file_path: str,
         our_content: bytes,
         their_content: bytes,
         base_content: bytes | None = None,
@@ -273,30 +268,26 @@ class ConflictResolver:
         """
         if self.strategy == ConflictStrategy.THREE_WAY_MERGE and base_content:
             # Simple 3-way merge: if both changed, prefer our content
-            if our_content != base_content and their_content != base_content:
+            if base_content not in (our_content, their_content):
                 # Both changed - use our content (could be improved)
                 return our_content
-            elif our_content != base_content:
+            if our_content != base_content:
                 return our_content
-            elif their_content != base_content:
+            if their_content != base_content:
                 return their_content
-            else:
-                return base_content
-        else:
-            # For other strategies, use timestamp-based resolution
-            # (In practice, would compare actual file timestamps)
-            if len(their_content) > len(our_content):
-                return their_content
-            return our_content
+            return base_content
+        # For other strategies, use timestamp-based resolution
+        # (In practice, would compare actual file timestamps)
+        if len(their_content) > len(our_content):
+            return their_content
+        return our_content
 
 
 class ThreeWayMerge:
     """Three-way merge implementation."""
 
     @staticmethod
-    def merge(
-        base: bytes, ours: bytes, theirs: bytes
-    ) -> bytes:
+    def merge(base: bytes, ours: bytes, theirs: bytes) -> bytes:
         """Perform 3-way merge.
 
         Args:
@@ -311,13 +302,10 @@ class ThreeWayMerge:
         # Simplified merge - in production would use proper diff algorithm
         if ours == base:
             return theirs
-        elif theirs == base:
+        if theirs in (base, ours):
             return ours
-        elif ours == theirs:
-            return ours
-        else:
-            # Both changed - prefer ours (could be improved)
-            return ours
+        # Both changed - prefer ours (could be improved)
+        return ours
 
 
 class VersionVectorMerge:
@@ -351,9 +339,7 @@ class VersionVectorMerge:
         our_peer = our_version.get("peer_id", "us")
         their_peer = their_version.get("peer_id", "them")
 
-        self.vectors[file_path][our_peer] = (
-            self.vectors[file_path].get(our_peer, 0) + 1
-        )
+        self.vectors[file_path][our_peer] = self.vectors[file_path].get(our_peer, 0) + 1
         self.vectors[file_path][their_peer] = (
             self.vectors[file_path].get(their_peer, 0) + 1
         )
@@ -390,6 +376,3 @@ class TimestampMerge:
         if their_ts > our_ts:
             return their_version
         return our_version
-
-
-

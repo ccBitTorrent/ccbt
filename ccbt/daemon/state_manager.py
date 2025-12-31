@@ -46,6 +46,7 @@ class StateManager:
         if state_dir is None:
             # CRITICAL FIX: Use consistent path resolution helper to match daemon
             from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+
             home_dir = _get_daemon_home_dir()
             state_dir = home_dir / ".ccbt" / "daemon"
         elif isinstance(state_dir, str):
@@ -192,8 +193,8 @@ class StateManager:
                 logger.debug("State loaded from %s", self.state_file)
                 return state
 
-            except Exception as e:
-                logger.exception("Error loading state: %s", e)
+            except Exception:
+                logger.exception("Error loading state")
                 # Try backup
                 if self.backup_file.exists():
                     try:
@@ -234,22 +235,26 @@ class StateManager:
                 info_hash_bytes = bytes.fromhex(info_hash_hex)
                 async with session_manager.lock:
                     torrent_session = session_manager.torrents.get(info_hash_bytes)
-                    if torrent_session and hasattr(torrent_session, "options"):
-                        if torrent_session.options:
-                            per_torrent_options = dict(torrent_session.options)
+                    if (
+                        torrent_session
+                        and hasattr(torrent_session, "options")
+                        and torrent_session.options
+                    ):
+                        per_torrent_options = dict(torrent_session.options)
 
                 # Get rate limits from session manager
-                if (
-                    hasattr(session_manager, "_per_torrent_limits")
-                    and info_hash_bytes in session_manager._per_torrent_limits
-                ):
-                    limits = session_manager._per_torrent_limits[info_hash_bytes]
+                limits = session_manager.get_per_torrent_limits(info_hash_bytes)
+                if limits:
                     rate_limits = {
                         "down_kib": limits.get("down_kib", 0),
                         "up_kib": limits.get("up_kib", 0),
                     }
             except Exception as e:
-                logger.debug("Failed to extract per-torrent config for %s: %s", info_hash_hex[:12], e)
+                logger.debug(
+                    "Failed to extract per-torrent config for %s: %s",
+                    info_hash_hex[:12],
+                    e,
+                )
 
             torrents[info_hash_hex] = TorrentState(
                 info_hash=info_hash_hex,
@@ -405,8 +410,8 @@ class StateManager:
             #     # Add new fields, transform data, etc.
 
             return state
-        except Exception as e:
-            logger.exception("Error migrating state: %s", e)
+        except Exception:
+            logger.exception("Error migrating state")
             return None
 
     async def export_to_json(self) -> Path:

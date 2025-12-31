@@ -14,7 +14,7 @@ import socket
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -63,9 +63,9 @@ class ConnectionStats:
     connection_time: float = 0.0
     last_activity: float = 0.0
     # RTT and bandwidth measurements
-    rtt_ms: float = 0.0  
-    bandwidth_bps: float = 0.0 
-    rtt_measurer: Any = None  
+    rtt_ms: float = 0.0
+    bandwidth_bps: float = 0.0
+    rtt_measurer: Any = None
 
 
 class SocketOptimizer:
@@ -394,10 +394,12 @@ class ConnectionPool:
 
         # Bandwidth measurement tracking
         # Track bytes sent/received over time windows for bandwidth calculation
-        self._bandwidth_windows: dict[socket.socket, deque[tuple[float, int, int]]] = (
-            {}
-        )  # sock -> deque of (timestamp, bytes_sent, bytes_received)
-        self._bandwidth_window_size: float = 5.0  # 5 second window for bandwidth calculation
+        self._bandwidth_windows: dict[
+            socket.socket, deque[tuple[float, int, int]]
+        ] = {}  # sock -> deque of (timestamp, bytes_sent, bytes_received)
+        self._bandwidth_window_size: float = (
+            5.0  # 5 second window for bandwidth calculation
+        )
 
         # Start cleanup task
         self._cleanup_task = threading.Thread(
@@ -555,9 +557,13 @@ class ConnectionPool:
 
     def stop(self) -> None:
         """Stop the cleanup thread."""
-        if self._cleanup_task and self._cleanup_task.is_alive():
-            # Set shutdown event first to signal thread to stop
-            self._shutdown_event.set()
+        # CRITICAL FIX: Always set shutdown event, even if thread is not alive
+        # This ensures the event is set for any waiting threads
+        self._shutdown_event.set()
+        # CRITICAL FIX: Add defensive check for None _cleanup_task
+        if self._cleanup_task is None:
+            return
+        if self._cleanup_task.is_alive():
             # Wait for thread to finish with timeout
             self._cleanup_task.join(timeout=5.0)
             # If thread is still alive after timeout, log warning
@@ -576,6 +582,7 @@ class ConnectionPool:
             sock: Socket connection
             bytes_sent: Bytes sent since last update
             bytes_received: Bytes received since last update
+
         """
         with self.lock:
             current_time = time.time()
@@ -604,12 +611,13 @@ class ConnectionPool:
                     bandwidth_bps = (total_bytes * 8) / time_span
                     self.stats.bandwidth_bps = bandwidth_bps
 
-    def update_rtt(self, sock: socket.socket, rtt_ms: float) -> None:
+    def update_rtt(self, _sock: socket.socket, rtt_ms: float) -> None:
         """Update RTT measurement for a connection.
 
         Args:
             sock: Socket connection
             rtt_ms: RTT measurement in milliseconds
+
         """
         with self.lock:
             # Initialize RTT measurer if needed
@@ -635,13 +643,14 @@ class ConnectionPool:
 
         Returns:
             ConnectionStats for the connection, or None if not found
+
         """
         with self.lock:
             if sock not in self.connection_times:
                 return None
 
             # Create connection-specific stats
-            stats = ConnectionStats(
+            return ConnectionStats(
                 total_connections=1,
                 active_connections=1 if sock in self.last_activity else 0,
                 bytes_sent=self.stats.bytes_sent,  # Aggregate for now
@@ -652,8 +661,6 @@ class ConnectionPool:
                 bandwidth_bps=self.stats.bandwidth_bps,
                 rtt_measurer=self.stats.rtt_measurer,
             )
-
-            return stats
 
     def get_stats(self) -> ConnectionStats:
         """Get connection pool statistics."""
@@ -702,6 +709,22 @@ class NetworkOptimizer:
         self.socket_optimizer = SocketOptimizer()
         self.connection_pool = ConnectionPool()
         self.logger = get_logger(__name__)
+
+    def optimize_socket(
+        self,
+        sock: socket.socket,
+        socket_type: SocketType,
+        connection_stats: ConnectionStats | None = None,
+    ) -> None:
+        """Optimize socket settings for the given type.
+
+        Args:
+            sock: Socket to optimize
+            socket_type: Type of socket for optimization
+            connection_stats: Optional connection statistics with RTT/bandwidth measurements
+
+        """
+        self.socket_optimizer.optimize_socket(sock, socket_type, connection_stats)
 
     def optimize_peer_socket(self, sock: socket.socket) -> None:
         """Optimize socket for peer connections."""

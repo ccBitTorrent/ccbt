@@ -1,17 +1,25 @@
+"""Download management commands for the CLI.
+
+This module provides commands for managing torrent downloads, including
+starting downloads, handling magnet links, and managing download queues.
+"""
+
 from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import Any
-
-from rich.console import Console
+from typing import TYPE_CHECKING, Any
 
 from ccbt.cli.interactive import InteractiveCLI
 from ccbt.cli.progress import ProgressManager
 from ccbt.executor.executor import UnifiedCommandExecutor
 from ccbt.executor.session_adapter import LocalSessionAdapter
 from ccbt.i18n import _
-from ccbt.session.session import AsyncSessionManager
+
+if TYPE_CHECKING:
+    from rich.console import Console
+
+    from ccbt.session.session import AsyncSessionManager
 
 
 async def start_interactive_download(
@@ -23,6 +31,18 @@ async def start_interactive_download(
     files_selection: tuple[int, ...] | None = None,
     file_priorities: tuple[str, ...] | None = None,
 ) -> None:
+    """Start an interactive download session with user prompts.
+
+    Args:
+        session: The session manager instance
+        torrent_data: Torrent metadata dictionary
+        console: Rich console for output
+        resume: Whether to resume from checkpoint
+        queue_priority: Optional queue priority
+        files_selection: Optional tuple of file indices to download
+        file_priorities: Optional tuple of file priority strings
+
+    """
     cleanup_task = getattr(session, "_cleanup_task", None)
     if cleanup_task is None:
         await session.start()
@@ -113,6 +133,18 @@ async def start_basic_download(
     files_selection: tuple[int, ...] | None = None,
     file_priorities: tuple[str, ...] | None = None,
 ) -> None:
+    """Start a basic download session without interactive prompts.
+
+    Args:
+        session: The session manager instance
+        torrent_data: Torrent metadata dictionary
+        console: Rich console for output
+        resume: Whether to resume from checkpoint
+        queue_priority: Optional queue priority
+        files_selection: Optional tuple of file indices to download
+        file_priorities: Optional tuple of file priority strings
+
+    """
     cleanup_task = getattr(session, "_cleanup_task", None)
     if cleanup_task is None:
         await session.start()
@@ -288,6 +320,15 @@ async def start_basic_magnet_download(
     console: Console,
     resume: bool = False,
 ) -> None:
+    """Start a basic magnet link download without interactive prompts.
+
+    Args:
+        session: The session manager instance
+        magnet_link: Magnet URI string
+        console: Rich console for output
+        resume: Whether to resume from checkpoint
+
+    """
     cleanup_task = getattr(session, "_cleanup_task", None)
     if cleanup_task is None:
         console.print(_("[cyan]Initializing session components...[/cyan]"))
@@ -470,10 +511,15 @@ async def start_basic_magnet_download(
             console.print(_("\n[yellow]Download interrupted by user[/yellow]"))
             # CRITICAL: Save checkpoints before stopping
             try:
-                if hasattr(session, "config") and session.config.disk.checkpoint_enabled:
+                if (
+                    hasattr(session, "config")
+                    and session.config.disk.checkpoint_enabled
+                ):
                     # Save checkpoint for the torrent if it exists
                     async with session.lock:
-                        for info_hash, torrent_session in list(session.torrents.items()):
+                        for _info_hash, torrent_session in list(
+                            session.torrents.items()
+                        ):
                             try:
                                 if (
                                     hasattr(torrent_session, "checkpoint_controller")
@@ -497,7 +543,7 @@ async def start_basic_magnet_download(
                         "[yellow]Warning: Error saving checkpoint: {error}[/yellow]"
                     ).format(error=e)
                 )
-            
+
             # CRITICAL FIX: Ensure session is properly stopped on KeyboardInterrupt
             # This prevents "Unclosed client session" warnings
             try:
@@ -554,40 +600,15 @@ async def start_interactive_magnet_download(
     console: Console,
     resume: bool = False,
 ) -> None:
-    cleanup_task = getattr(session, "_cleanup_task", None)
-    if cleanup_task is None:
-        console.print(_("[cyan]Initializing session components...[/cyan]"))
-        await session.start()
+    """Start an interactive magnet link download with user prompts.
 
-    # Wait for session to be ready (best effort)
-    # Note: is_ready method may not exist on all session implementations
+    Args:
+        session: The session manager instance
+        magnet_link: Magnet URI string
+        console: Rich console for output
+        resume: Whether to resume from checkpoint
 
-    # Create executor with local adapter
-    adapter = LocalSessionAdapter(session)
-    executor = UnifiedCommandExecutor(adapter)
-
-    result = await executor.execute(
-        "torrent.add",
-        path_or_magnet=magnet_link,
-        resume=resume,
-    )
-    if not result.success:
-        raise RuntimeError(result.error or "Failed to add magnet link")
-
-    from ccbt.interface.terminal_dashboard import TerminalDashboard
-
-    app = TerminalDashboard(session)
-    try:
-        app.run()  # type: ignore[attr-defined]
-    except KeyboardInterrupt:
-        console.print(_("[yellow]Download interrupted by user[/yellow]"))
-
-async def start_interactive_magnet_download(
-    session: AsyncSessionManager,
-    magnet_link: str,
-    console: Console,
-    resume: bool = False,
-) -> None:
+    """
     cleanup_task = getattr(session, "_cleanup_task", None)
     if cleanup_task is None:
         console.print(_("[cyan]Initializing session components...[/cyan]"))

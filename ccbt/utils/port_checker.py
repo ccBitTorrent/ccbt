@@ -5,12 +5,11 @@ from __future__ import annotations
 import contextlib
 import socket
 import sys
-from typing import Tuple
 
 
 def is_port_available(
     host: str, port: int, protocol: str = "tcp"
-) -> Tuple[bool, str | None]:
+) -> tuple[bool, str | None]:
     """Check if a port is available for binding.
 
     Args:
@@ -38,7 +37,9 @@ def is_port_available(
         # On Windows, SO_REUSEPORT may not be available
         if hasattr(socket, "SO_REUSEPORT") and sys.platform != "win32":
             with contextlib.suppress(OSError, AttributeError):
-                test_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)  # SO_REUSEPORT not available on this system
+                test_sock.setsockopt(
+                    socket.SOL_SOCKET, socket.SO_REUSEPORT, 1
+                )  # SO_REUSEPORT not available on this system
 
         test_sock.settimeout(0.1)
 
@@ -67,7 +68,7 @@ def is_port_available(
         return (False, f"Error checking port availability: {e}")
 
 
-def get_port_conflict_resolution(port: int, protocol: str = "tcp") -> str:
+def get_port_conflict_resolution(port: int, _protocol: str = "tcp") -> str:
     """Get resolution steps for port conflicts.
 
     CRITICAL FIX: Enhanced to check for daemon usage and provide better error messages.
@@ -85,6 +86,7 @@ def get_port_conflict_resolution(port: int, protocol: str = "tcp") -> str:
     # Path.home() can resolve differently in different processes, especially with spaces in usernames
     import os
     from pathlib import Path
+
     home_dir = Path(os.path.expanduser("~"))
     daemon_pid_file = home_dir / ".ccbt" / "daemon" / "daemon.pid"
     daemon_might_be_running = daemon_pid_file.exists()

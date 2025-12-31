@@ -14,22 +14,103 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
+import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from rich.console import Console, Group
-from rich.layout import Layout
-from rich.live import Live
-from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
-from rich.table import Table
-from rich.text import Text
-
-from ccbt.cli.progress import ProgressManager
-from ccbt.config.config import ConfigManager, get_config, reload_config
-from ccbt.executor.executor import UnifiedCommandExecutor
-from ccbt.executor.session_adapter import LocalSessionAdapter, SessionAdapter
 from ccbt.i18n import _
+
+# region agent log
+_DEBUG_LOG_PATH = Path(__file__).resolve().parents[2] / ".cursor" / "debug.log"
+
+
+def _agent_debug_log(
+    hypothesis_id: str,
+    message: str,
+    data: dict[str, Any] | None = None,
+) -> None:
+    payload = {
+        "sessionId": "debug-session",
+        "runId": "pre-fix",
+        "hypothesisId": hypothesis_id,
+        "location": "ccbt/cli/interactive.py",
+        "message": message,
+        "data": data or {},
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        _DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _DEBUG_LOG_PATH.open("a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+
+
+# endregion
+try:
+    from rich.console import Console, Group
+    from rich.layout import Layout
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.prompt import Confirm, Prompt
+    from rich.table import Table
+    from rich.text import Text
+
+    _agent_debug_log(
+        "H1",
+        "Rich UI components imported",
+        {
+            "components": [
+                "Console",
+                "Group",
+                "Layout",
+                "Live",
+                "Panel",
+                "Prompt",
+                "Table",
+                "Text",
+            ]
+        },
+    )
+except Exception as import_error:  # pragma: no cover - instrumentation
+    _agent_debug_log("H1", "Rich UI import failure", {"error": repr(import_error)})
+    raise
+
+try:
+    from ccbt.cli.progress import ProgressManager
+
+    _agent_debug_log("H2", "ProgressManager import completed")
+except Exception as progress_error:  # pragma: no cover - instrumentation
+    _agent_debug_log(
+        "H2", "ProgressManager import failure", {"error": repr(progress_error)}
+    )
+    raise
+
+try:
+    from ccbt.config.config import ConfigManager, get_config, reload_config
+
+    _agent_debug_log("H3", "ConfigManager import completed")
+except Exception as config_error:  # pragma: no cover - instrumentation
+    _agent_debug_log(
+        "H3", "ConfigManager import failure", {"error": repr(config_error)}
+    )
+    raise
+
+try:
+    from ccbt.executor.session_adapter import LocalSessionAdapter
+
+    _agent_debug_log("H2", "LocalSessionAdapter import completed")
+except Exception as adapter_error:  # pragma: no cover - instrumentation
+    _agent_debug_log(
+        "H2", "LocalSessionAdapter import failure", {"error": repr(adapter_error)}
+    )
+    raise
+
+if TYPE_CHECKING:
+    from ccbt.executor.executor import UnifiedCommandExecutor
+    from ccbt.executor.session_adapter import SessionAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +267,9 @@ class InteractiveCLI:
         else:
             # Fallback to session method for dict data (not a file path)
             if not self.session:
-                session_error_msg = _("Direct session access not available in daemon mode")
+                session_error_msg = _(
+                    "Direct session access not available in daemon mode"
+                )
                 raise RuntimeError(session_error_msg)
             info_hash_hex = await self.session.add_torrent(torrent_data, resume=resume)
         self.current_info_hash_hex = info_hash_hex
@@ -245,7 +328,7 @@ class InteractiveCLI:
             )  # pragma: no cover - download loop sleep, requires full download simulation
 
     def setup_layout(self) -> None:
-        """Setup the layout."""
+        """Set up the layout."""
         self.layout.split_column(
             Layout(name="header", size=3),
             Layout(name="main", ratio=1),
@@ -503,7 +586,14 @@ class InteractiveCLI:
                     self._download_progress is not None
                     and self._download_task is not None
                 ):
-                    prog_frac = float(st.get("progress", 0.0))
+                    progress = (
+                        getattr(st, "progress", 0.0)
+                        if hasattr(st, "progress")
+                        else st.get("progress", 0.0)
+                        if isinstance(st, dict)
+                        else 0.0
+                    )
+                    prog_frac = float(progress)
                     completed = max(0, min(100, int(prog_frac * 100)))
 
                     def _fmt_bytes(n: float) -> str:
@@ -514,10 +604,19 @@ class InteractiveCLI:
                             i += 1
                         return f"{n:.1f} {units[i]}"
 
+                    # Handle both "downloaded" (Pydantic model) and "downloaded_bytes" (dict)
+                    downloaded_bytes = (
+                        getattr(st, "downloaded", 0.0)
+                        if hasattr(st, "downloaded")
+                        else st.get("downloaded_bytes", st.get("downloaded", 0.0))
+                        if isinstance(st, dict)
+                        else 0.0
+                    )
+
                     self._download_progress.update(
                         self._download_task,
                         completed=completed,
-                        downloaded=_fmt_bytes(float(st.get("downloaded_bytes", 0.0))),
+                        downloaded=_fmt_bytes(float(downloaded_bytes)),
                         speed=f"{self.stats['download_speed'] / 1024:.1f} KB/s",
                         refresh=True,
                     )
@@ -1148,14 +1247,16 @@ Available Commands:
                     _("[red]Failed to pause: {error}[/red]").format(error=result.error)
                 )
                 return
-            
+
             # Show checkpoint status
             checkpoint_info = ""
             if result.data and result.data.get("checkpoint_saved"):
                 checkpoint_info = _(" (checkpoint saved)")
-            
+
             self.console.print(
-                _("Download paused{checkpoint_info}").format(checkpoint_info=checkpoint_info)
+                _("Download paused{checkpoint_info}").format(
+                    checkpoint_info=checkpoint_info
+                )
             )
 
     async def cmd_resume(self, _args: list[str]) -> None:
@@ -1173,7 +1274,7 @@ Available Commands:
                     _("[red]Failed to resume: {error}[/red]").format(error=result.error)
                 )
                 return
-            
+
             # Show checkpoint restoration status
             checkpoint_info = ""
             if result.data:
@@ -1181,9 +1282,11 @@ Available Commands:
                     checkpoint_info = _(" (checkpoint restored)")
                 elif result.data.get("checkpoint_not_found"):
                     checkpoint_info = _(" (no checkpoint found)")
-            
+
             self.console.print(
-                _("Download resumed{checkpoint_info}").format(checkpoint_info=checkpoint_info)
+                _("Download resumed{checkpoint_info}").format(
+                    checkpoint_info=checkpoint_info
+                )
             )
 
     async def cmd_stop(self, _args: list[str]) -> None:
@@ -1221,14 +1324,16 @@ Available Commands:
                     _("[red]Failed to cancel: {error}[/red]").format(error=result.error)
                 )
                 return
-            
+
             # Show checkpoint status
             checkpoint_info = ""
             if result.data and result.data.get("checkpoint_saved"):
                 checkpoint_info = _(" (checkpoint saved)")
-            
+
             self.console.print(
-                _("Download cancelled{checkpoint_info}").format(checkpoint_info=checkpoint_info)
+                _("Download cancelled{checkpoint_info}").format(
+                    checkpoint_info=checkpoint_info
+                )
             )
 
     async def cmd_force_start(self, _args: list[str]) -> None:
@@ -1243,7 +1348,9 @@ Available Commands:
             )
             if not result.success:
                 self.console.print(
-                    _("[red]Failed to force start: {error}[/red]").format(error=result.error)
+                    _("[red]Failed to force start: {error}[/red]").format(
+                        error=result.error
+                    )
                 )
                 return
         self.console.print(_("Download force started"))
@@ -1336,10 +1443,14 @@ Available Commands:
             return
         if args[0] == "dht":
             cfg.discovery.enable_dht = not cfg.discovery.enable_dht
-            self.console.print(_("enable_dht={value}").format(value=cfg.discovery.enable_dht))
+            self.console.print(
+                _("enable_dht={value}").format(value=cfg.discovery.enable_dht)
+            )
         elif args[0] == "pex":
             cfg.discovery.enable_pex = not cfg.discovery.enable_pex
-            self.console.print(_("enable_pex={value}").format(value=cfg.discovery.enable_pex))
+            self.console.print(
+                _("enable_pex={value}").format(value=cfg.discovery.enable_pex)
+            )
 
     async def cmd_disk(self, args: list[str]) -> None:
         """Show or configure disk I/O settings.
@@ -1372,7 +1483,9 @@ Available Commands:
                 _("[yellow]Real-time monitoring not yet implemented[/yellow]")
             )
         else:
-            self.console.print(_("Usage: disk [show|stats|config <key> <value>|monitor]"))
+            self.console.print(
+                _("Usage: disk [show|stats|config <key> <value>|monitor]")
+            )
 
     async def _show_disk_config(self) -> None:
         """Display comprehensive disk configuration."""
@@ -1506,7 +1619,9 @@ Available Commands:
 
             if not disk_io or not getattr(disk_io, "_running", False):
                 self.console.print(
-                    _("[yellow]Disk I/O manager not running. Statistics unavailable.[/yellow]")
+                    _(
+                        "[yellow]Disk I/O manager not running. Statistics unavailable.[/yellow]"
+                    )
                 )
                 return
 
@@ -1526,9 +1641,7 @@ Available Commands:
             io_table.add_row(
                 "Queue Full Errors", f"{stats.get('queue_full_errors', 0):,}"
             )
-            io_table.add_row(
-                "Preallocations", f"{stats.get('preallocations', 0):,}"
-            )
+            io_table.add_row("Preallocations", f"{stats.get('preallocations', 0):,}")
             io_table.add_row(
                 "Worker Adjustments",
                 f"{stats.get('worker_adjustments', 0):,}",
@@ -1547,16 +1660,12 @@ Available Commands:
             cache_table.add_column("Metric", style="cyan")
             cache_table.add_column("Value", style="green")
 
-            cache_table.add_row(
-                "Cache Entries", f"{cache_stats.get('entries', 0):,}"
-            )
+            cache_table.add_row("Cache Entries", f"{cache_stats.get('entries', 0):,}")
             cache_table.add_row(
                 "Cache Size",
                 f"{cache_stats.get('total_size', 0) / (1024 * 1024):.2f} MB",
             )
-            cache_table.add_row(
-                "Cache Hits", f"{cache_stats.get('cache_hits', 0):,}"
-            )
+            cache_table.add_row("Cache Hits", f"{cache_stats.get('cache_hits', 0):,}")
             cache_table.add_row(
                 "Cache Misses", f"{cache_stats.get('cache_misses', 0):,}"
             )
@@ -1588,6 +1697,7 @@ Available Commands:
         Args:
             key: Configuration key to update
             value: New value
+
         """
         cfg = get_config()
         disk_config = cfg.disk
@@ -1650,7 +1760,9 @@ Available Commands:
 
         except ValueError as e:
             self.console.print(
-                _("[red]Invalid value for {key}: {error}[/red]").format(key=key, error=e)
+                _("[red]Invalid value for {key}: {error}[/red]").format(
+                    key=key, error=e
+                )
             )
         except Exception as e:
             self.console.print(
@@ -1701,15 +1813,29 @@ Available Commands:
         from rich.table import Table
 
         cfg = get_config()
+        # Defensive check: ensure config is available
+        if cfg is None:
+            self.console.print(_("[red]Error: Configuration not available[/red]"))
+            logger.error("Configuration is None in _show_network_config")
+            return
+
+        # Defensive check: ensure network config is available
+        if not hasattr(cfg, "network") or cfg.network is None:
+            self.console.print(
+                _("[red]Error: Network configuration not available[/red]")
+            )
+            logger.error("Network configuration is None in _show_network_config")
+            return
+
         table = Table(title=_("Network Configuration"), show_header=True)
         table.add_column("Setting", style="cyan")
         table.add_column("Value", style="green")
         table.add_column("Description", style="dim")
 
-        # Connection settings
+        # Connection settings - use getattr with defaults for safety
         table.add_row(
             "Listen Port",
-            str(cfg.network.listen_port),
+            str(getattr(cfg.network, "listen_port", "N/A")),
             "TCP listen port",
         )
         table.add_row(
@@ -1741,117 +1867,121 @@ Available Commands:
         # Pipeline and block settings
         table.add_row(
             "Pipeline Depth",
-            str(cfg.network.pipeline_depth),
+            str(getattr(cfg.network, "pipeline_depth", "N/A")),
             "Request pipeline depth",
         )
         table.add_row(
             "Pipeline Adaptive Depth",
-            "Yes" if cfg.network.pipeline_adaptive_depth else "No",
+            "Yes" if getattr(cfg.network, "pipeline_adaptive_depth", False) else "No",
             "Adaptive pipeline depth",
         )
         table.add_row(
             "Block Size",
-            f"{cfg.network.block_size_kib} KiB",
+            f"{getattr(cfg.network, 'block_size_kib', 0)} KiB",
             "Block size for requests",
         )
         table.add_row(
             "Min Block Size",
-            f"{cfg.network.min_block_size_kib} KiB",
+            f"{getattr(cfg.network, 'min_block_size_kib', 0)} KiB",
             "Minimum block size",
         )
         table.add_row(
             "Max Block Size",
-            f"{cfg.network.max_block_size_kib} KiB",
+            f"{getattr(cfg.network, 'max_block_size_kib', 0)} KiB",
             "Maximum block size",
         )
 
         # Socket settings
         table.add_row(
             "Socket RCV Buffer",
-            f"{cfg.network.socket_rcvbuf_kib} KiB",
+            f"{getattr(cfg.network, 'socket_rcvbuf_kib', 0)} KiB",
             "Socket receive buffer",
         )
         table.add_row(
             "Socket SND Buffer",
-            f"{cfg.network.socket_sndbuf_kib} KiB",
+            f"{getattr(cfg.network, 'socket_sndbuf_kib', 0)} KiB",
             "Socket send buffer",
         )
         table.add_row(
             "Socket Adaptive Buffers",
-            "Yes" if cfg.network.socket_adaptive_buffers else "No",
+            "Yes" if getattr(cfg.network, "socket_adaptive_buffers", False) else "No",
             "Adaptive buffer sizing",
         )
         table.add_row(
             "TCP NoDelay",
-            "Yes" if cfg.network.tcp_nodelay else "No",
+            "Yes" if getattr(cfg.network, "tcp_nodelay", False) else "No",
             "Disable Nagle's algorithm",
         )
 
         # Timeouts
         table.add_row(
             "Connection Timeout",
-            f"{cfg.network.connection_timeout} s",
+            f"{getattr(cfg.network, 'connection_timeout', 0)} s",
             "Connection timeout",
         )
         table.add_row(
             "Handshake Timeout",
-            f"{cfg.network.handshake_timeout} s",
+            f"{getattr(cfg.network, 'handshake_timeout', 0)} s",
             "Handshake timeout",
         )
         table.add_row(
             "Peer Timeout",
-            f"{cfg.network.peer_timeout} s",
+            f"{getattr(cfg.network, 'peer_timeout', 0)} s",
             "Peer inactivity timeout",
         )
         table.add_row(
             "Timeout Adaptive",
-            "Yes" if cfg.network.timeout_adaptive else "No",
+            "Yes" if getattr(cfg.network, "timeout_adaptive", False) else "No",
             "Adaptive timeout calculation",
         )
 
         # Rate limiting
+        global_down_kib = getattr(cfg.network, "global_down_kib", 0)
         table.add_row(
             "Global Download Limit",
-            f"{cfg.network.global_down_kib} KiB/s" if cfg.network.global_down_kib > 0 else "Unlimited",
+            f"{global_down_kib} KiB/s" if global_down_kib > 0 else "Unlimited",
             "Global download rate limit",
         )
+        global_up_kib = getattr(cfg.network, "global_up_kib", 0)
         table.add_row(
             "Global Upload Limit",
-            f"{cfg.network.global_up_kib} KiB/s" if cfg.network.global_up_kib > 0 else "Unlimited",
+            f"{global_up_kib} KiB/s" if global_up_kib > 0 else "Unlimited",
             "Global upload rate limit",
         )
 
         # Connection pool
         table.add_row(
             "Connection Pool Max",
-            str(cfg.network.connection_pool_max_connections),
+            str(getattr(cfg.network, "connection_pool_max_connections", "N/A")),
             "Maximum connections in pool",
         )
         table.add_row(
             "Connection Pool Warmup",
-            "Yes" if cfg.network.connection_pool_warmup_enabled else "No",
+            "Yes"
+            if getattr(cfg.network, "connection_pool_warmup_enabled", False)
+            else "No",
             "Enable connection warmup",
         )
 
         # Protocols
         table.add_row(
             "Enable TCP",
-            "Yes" if cfg.network.enable_tcp else "No",
+            "Yes" if getattr(cfg.network, "enable_tcp", False) else "No",
             "Enable TCP transport",
         )
         table.add_row(
             "Enable uTP",
-            "Yes" if cfg.network.enable_utp else "No",
+            "Yes" if getattr(cfg.network, "enable_utp", False) else "No",
             "Enable uTP transport",
         )
         table.add_row(
             "Enable IPv6",
-            "Yes" if cfg.network.enable_ipv6 else "No",
+            "Yes" if getattr(cfg.network, "enable_ipv6", False) else "No",
             "Enable IPv6 support",
         )
         table.add_row(
             "Enable Encryption",
-            "Yes" if cfg.network.enable_encryption else "No",
+            "Yes" if getattr(cfg.network, "enable_encryption", False) else "No",
             "Enable protocol encryption",
         )
 
@@ -1866,7 +1996,22 @@ Available Commands:
             from ccbt.utils.network_optimizer import get_network_optimizer
 
             optimizer = get_network_optimizer()
+            # Defensive check: ensure optimizer is available
+            if optimizer is None:
+                self.console.print(
+                    _("[yellow]Network optimizer not available[/yellow]")
+                )
+                logger.warning("Network optimizer is None in _show_network_stats")
+                return
+
             stats = optimizer.get_stats()
+            # Defensive check: ensure stats is available
+            if stats is None:
+                self.console.print(
+                    _("[yellow]Network statistics not available[/yellow]")
+                )
+                logger.warning("Network statistics is None in _show_network_stats")
+                return
 
             # Connection Pool Statistics
             pool_table = Table(title=_("Connection Pool Statistics"))
@@ -1895,7 +2040,9 @@ Available Commands:
                 )
                 pool_table.add_row(
                     "Bytes Received",
-                    f"{bytes_received / (1024 * 1024):.2f} MB" if bytes_received > 0 else "0 B",
+                    f"{bytes_received / (1024 * 1024):.2f} MB"
+                    if bytes_received > 0
+                    else "0 B",
                 )
 
             # Socket Configuration
@@ -1986,9 +2133,7 @@ Available Commands:
         if table.rows:
             self.console.print(table)
         else:
-            self.console.print(
-                _("[green]Network configuration looks optimal![/green]")
-            )
+            self.console.print(_("[green]Network configuration looks optimal![/green]"))
 
     async def _update_network_config(self, key: str, value: str) -> None:
         """Update network configuration value (temporary, session-only).
@@ -1996,6 +2141,7 @@ Available Commands:
         Args:
             key: Configuration key to update
             value: New value
+
         """
         cfg = get_config()
         network_config = cfg.network
@@ -2061,7 +2207,9 @@ Available Commands:
 
         except ValueError as e:
             self.console.print(
-                _("[red]Invalid value for {key}: {error}[/red]").format(key=key, error=e)
+                _("[red]Invalid value for {key}: {error}[/red]").format(
+                    key=key, error=e
+                )
             )
         except Exception as e:
             self.console.print(
@@ -2810,4 +2958,3 @@ Available Commands:
                 )
         else:
             self.console.print(_("Unknown subcommand: {sub}").format(sub=sub))
-

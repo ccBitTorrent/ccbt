@@ -55,14 +55,33 @@ class TestPerformanceCommand:
         assert result.exit_code == 0
         mock_asyncio_run.assert_called_once()
 
-    def test_performance_optimize(self):
+    @patch("ccbt.cli.advanced_commands.get_config")
+    def test_performance_optimize(self, mock_get_config):
         """Test performance --optimize."""
+        config = MagicMock()
+        config.disk.download_path = "."
+        config.disk.disk_workers = 4
+        config.disk.write_buffer_kib = 64
+        config.disk.write_batch_kib = 32
+        config.disk.use_mmap = True
+        config.disk.direct_io = False
+        config.disk.enable_io_uring = False
+        # Ensure discovery config has valid values (>= 30)
+        config.discovery.aggressive_initial_dht_interval = 30.0
+        config.discovery.aggressive_discovery_interval_popular = 30.0
+        config.discovery.aggressive_discovery_interval_active = 30.0
+        mock_get_config.return_value = config
+        
         runner = CliRunner()
         result = runner.invoke(performance, ["--optimize"])
         
         assert result.exit_code == 0
-        assert "Suggested optimizations" in result.output
-        assert "Increase --write-buffer-kib" in result.output
+        assert "Applied Optimizations" in result.output
+        # CRITICAL FIX: The command now applies optimizations directly instead of just suggesting them
+        # Check that optimizations were actually applied by verifying the table shows changes
+        assert "Old Value" in result.output
+        assert "New Value" in result.output
+        assert "Optimizations applied successfully" in result.output
 
     @patch("ccbt.cli.advanced_commands.asyncio.run")
     @patch("ccbt.cli.advanced_commands.get_config")
@@ -100,8 +119,16 @@ class TestPerformanceCommand:
         assert result.exit_code == 0
         mock_asyncio_run.assert_called_once()
 
-    def test_performance_no_flags(self):
+    @patch("ccbt.cli.advanced_commands.get_config")
+    def test_performance_no_flags(self, mock_get_config):
         """Test performance with no flags."""
+        config = MagicMock()
+        config.disk.download_path = "."
+        config.discovery.aggressive_initial_dht_interval = 30.0
+        config.discovery.aggressive_discovery_interval_popular = 30.0
+        config.discovery.aggressive_discovery_interval_active = 30.0
+        mock_get_config.return_value = config
+        
         runner = CliRunner()
         result = runner.invoke(performance, [])
         
@@ -130,24 +157,45 @@ class TestSecurityCommand:
         assert "Performing basic configuration scan" in result.output
         assert "Found 3 potential issues" in result.output
 
-    def test_security_validate(self):
+    @patch("ccbt.cli.advanced_commands.get_config")
+    def test_security_validate(self, mock_get_config):
         """Test security --validate."""
+        config = MagicMock()
+        config.discovery.aggressive_initial_dht_interval = 30.0
+        config.discovery.aggressive_discovery_interval_popular = 30.0
+        config.discovery.aggressive_discovery_interval_active = 30.0
+        mock_get_config.return_value = config
+        
         runner = CliRunner()
         result = runner.invoke(security, ["--validate"])
         
         assert result.exit_code == 0
         assert "Peer validation hooks are enabled" in result.output
 
-    def test_security_encrypt(self):
+    @patch("ccbt.cli.advanced_commands.get_config")
+    def test_security_encrypt(self, mock_get_config):
         """Test security --encrypt."""
+        config = MagicMock()
+        config.discovery.aggressive_initial_dht_interval = 30.0
+        config.discovery.aggressive_discovery_interval_popular = 30.0
+        config.discovery.aggressive_discovery_interval_active = 30.0
+        mock_get_config.return_value = config
+        
         runner = CliRunner()
         result = runner.invoke(security, ["--encrypt"])
         
         assert result.exit_code == 0
         assert "Toggle encryption via" in result.output
 
-    def test_security_rate_limit(self):
+    @patch("ccbt.cli.advanced_commands.get_config")
+    def test_security_rate_limit(self, mock_get_config):
         """Test security --rate-limit."""
+        config = MagicMock()
+        config.discovery.aggressive_initial_dht_interval = 30.0
+        config.discovery.aggressive_discovery_interval_popular = 30.0
+        config.discovery.aggressive_discovery_interval_active = 30.0
+        mock_get_config.return_value = config
+        
         runner = CliRunner()
         result = runner.invoke(security, ["--rate-limit"])
         

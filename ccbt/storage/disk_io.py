@@ -177,7 +177,9 @@ class DiskIOManager:
         self._executor_recreation_lock = threading.Lock()
         # Tracking for worker adjustments
         self._last_worker_adjustment_time: float = 0.0
-        self._worker_adjustment_cooldown: float = 10.0  # Minimum seconds between adjustments
+        self._worker_adjustment_cooldown: float = (
+            10.0  # Minimum seconds between adjustments
+        )
         self._worker_recreation_count: int = 0
 
         # Write batching
@@ -239,7 +241,9 @@ class DiskIOManager:
 
         # Direct I/O alignment requirements
         self.direct_io_alignment: int = 0  # Will be set by _check_direct_io_support()
-        self.direct_io_supported: bool = False  # Will be set by _check_direct_io_support()
+        self.direct_io_supported: bool = (
+            False  # Will be set by _check_direct_io_support()
+        )
 
         # io_uring wrapper (lazy initialization)
         self._io_uring_wrapper: Any | None = None
@@ -285,7 +289,7 @@ class DiskIOManager:
             "worker_adjustments": 0,
         }
         self._cache_stats_start_time = time.time()
-        
+
         # Timing metrics for throughput calculation
         self._write_timings: list[tuple[float, int]] = []  # (timestamp, bytes)
         self._read_timings: list[tuple[float, int]] = []  # (timestamp, bytes)
@@ -442,12 +446,12 @@ class DiskIOManager:
 
         # Check if O_DIRECT is available
         try:
-            O_DIRECT = getattr(os, "O_DIRECT", None)
+            O_DIRECT = getattr(os, "O_DIRECT", None)  # noqa: N806  # OS constant
             if O_DIRECT is None:
                 # Try to get it from the os module constants
-                import fcntl  # noqa: F401
+                import fcntl
 
-                O_DIRECT = getattr(fcntl, "O_DIRECT", None)
+                O_DIRECT = getattr(fcntl, "O_DIRECT", None)  # noqa: N806  # OS constant
                 if O_DIRECT is None:
                     # On some systems, O_DIRECT might not be available
                     if self.direct_io_enabled:
@@ -460,8 +464,7 @@ class DiskIOManager:
             # fcntl not available (Windows)
             if self.direct_io_enabled:
                 self.logger.warning(
-                    "Direct I/O not available on this platform. "
-                    "fcntl module required."
+                    "Direct I/O not available on this platform. fcntl module required."
                 )
             return
 
@@ -528,6 +531,7 @@ class DiskIOManager:
 
         Returns:
             Aligned value (rounded down)
+
         """
         if not self.direct_io_supported or self.direct_io_alignment == 0:
             return value
@@ -541,16 +545,20 @@ class DiskIOManager:
 
         Returns:
             Aligned value (rounded up)
+
         """
         if not self.direct_io_supported or self.direct_io_alignment == 0:
             return value
-        return ((value + self.direct_io_alignment - 1) // self.direct_io_alignment) * self.direct_io_alignment
+        return (
+            (value + self.direct_io_alignment - 1) // self.direct_io_alignment
+        ) * self.direct_io_alignment
 
     def _use_io_uring(self) -> bool:
         """Check if io_uring should be used for I/O operations.
 
         Returns:
             True if io_uring is enabled and available
+
         """
         return (
             self.io_uring_enabled
@@ -727,6 +735,17 @@ class DiskIOManager:
         if sys.platform == "win32":
             await self._windows_cleanup_delay()
 
+        # CRITICAL FIX: Close Xet deduplication database to prevent Windows file locking issues
+        # This ensures the database file is properly closed before teardown
+        if self._xet_deduplication:
+            try:
+                self._xet_deduplication.close()
+                self.logger.debug("Closed Xet deduplication database")
+            except Exception as e:
+                self.logger.warning("Error closing Xet deduplication database: %s", e)
+            finally:
+                self._xet_deduplication = None
+
         # Shutdown executor with timeout to prevent hanging
         await self._shutdown_executor_safely()
         self.logger.info("Disk I/O manager stopped")
@@ -768,8 +787,10 @@ class DiskIOManager:
             # 1. Prevent new tasks from being submitted
             # 2. Wait for all currently executing tasks to complete
             # 3. Clean up threads
-            self.logger.debug("Shutting down disk I/O executor (waiting for all tasks to complete)...")
-            
+            self.logger.debug(
+                "Shutting down disk I/O executor (waiting for all tasks to complete)..."
+            )
+
             # Use asyncio.to_thread to run shutdown in a separate thread to avoid blocking
             # This allows cancellation to work if needed
             try:
@@ -783,13 +804,11 @@ class DiskIOManager:
                     "Timeout waiting for disk I/O executor shutdown (waited 10s) - forcing shutdown"
                 )
                 # Force shutdown if timeout
-                try:
-                    await asyncio.to_thread(self.executor.shutdown, wait=False)
-                except Exception:
-                    pass  # Ignore errors during forced shutdown
-        except (
-            Exception
-        ) as e:  # pragma: no cover - Executor shutdown error handling, defensive fallback
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(
+                        self.executor.shutdown, wait=False
+                    )  # Ignore errors during forced shutdown
+        except Exception as e:  # pragma: no cover - Executor shutdown error handling, defensive fallback
             self.logger.warning(
                 "Error during executor shutdown: %s (forcing shutdown)",
                 e,
@@ -798,10 +817,9 @@ class DiskIOManager:
             with contextlib.suppress(
                 Exception
             ):  # pragma: no cover - Force shutdown fallback, defensive
-                try:
-                    await asyncio.to_thread(self.executor.shutdown, wait=False)
-                except Exception:
-                    pass  # Ignore errors during forced shutdown
+                await asyncio.to_thread(
+                    self.executor.shutdown, wait=False
+                )  # Ignore errors during forced shutdown
 
     async def preallocate_file(self, file_path: Path, size: int) -> None:
         """Preallocate file space.
@@ -837,7 +855,7 @@ class DiskIOManager:
         size: int,
         strategy: PreallocationStrategy,
     ) -> None:
-        """Synchronous file preallocation."""
+        """Preallocate file synchronously."""
         # Ensure parent directory exists
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -937,6 +955,7 @@ class DiskIOManager:
 
         Args:
             file_path: Path to the file to sync
+
         """
         if not file_path.exists():
             self.logger.debug("Cannot sync non-existent file: %s", file_path)
@@ -956,7 +975,7 @@ class DiskIOManager:
             )
 
     def _sync_file_sync(self, file_path: Path) -> None:
-        """Synchronously sync a file to disk."""
+        """Sync file to disk synchronously."""
         try:
             import os
 
@@ -969,7 +988,8 @@ class DiskIOManager:
         except OSError as e:
             # On some systems (e.g., network filesystems), fsync may fail
             # This is non-fatal - data is still in OS buffers
-            raise DiskIOError(f"Failed to sync file {file_path}: {e}") from e
+            msg = f"Failed to sync file {file_path}: {e}"
+            raise DiskIOError(msg) from e
 
     async def sync_all_written_files(self) -> None:
         """Sync all files that have been written to disk.
@@ -987,10 +1007,11 @@ class DiskIOManager:
         self.logger.info("Syncing %d files to disk", len(files_to_sync))
 
         # Sync files in parallel (but limit concurrency)
-        sync_tasks = []
-        for file_path in files_to_sync:
-            if file_path.exists():
-                sync_tasks.append(self.sync_file(file_path))
+        sync_tasks = [
+            self.sync_file(file_path)
+            for file_path in files_to_sync
+            if file_path.exists()
+        ]
 
         if sync_tasks:
             await asyncio.gather(*sync_tasks, return_exceptions=True)
@@ -1023,10 +1044,8 @@ class DiskIOManager:
             # Random access - use smaller read-ahead
             return self.config.disk.read_ahead_kib * 1024
 
-    def _read_direct_io_sync(
-        self, file_path: Path, offset: int, length: int
-    ) -> bytes:
-        """Synchronously read using direct I/O (O_DIRECT).
+    def _read_direct_io_sync(self, file_path: Path, offset: int, length: int) -> bytes:
+        """Read using direct I/O (O_DIRECT) synchronously.
 
         Args:
             file_path: Path to file
@@ -1045,7 +1064,7 @@ class DiskIOManager:
             import fcntl
 
             # Get O_DIRECT flag
-            O_DIRECT = getattr(os, "O_DIRECT", None) or getattr(fcntl, "O_DIRECT", None)
+            O_DIRECT = getattr(os, "O_DIRECT", None) or getattr(fcntl, "O_DIRECT", None)  # noqa: N806  # OS constant
             if O_DIRECT is None:
                 # Fallback to regular read
                 return self._read_block_sync(file_path, offset, length)
@@ -1075,7 +1094,7 @@ class DiskIOManager:
                 return result
             finally:
                 os.close(fd)
-        except (OSError, IOError) as e:
+        except OSError as e:
             # Direct I/O failed (e.g., alignment issue), fallback to regular read
             self.logger.debug(
                 "Direct I/O read failed for %s at offset %d: %s. Falling back to regular I/O.",
@@ -1133,16 +1152,18 @@ class DiskIOManager:
         # Use io_uring if enabled and available
         if self._use_io_uring():
             try:
-                data = await self._io_uring_wrapper.read(file_path, offset, length)
+                if self._io_uring_wrapper is not None:
+                    data = await self._io_uring_wrapper.read(file_path, offset, length)  # type: ignore[attr-defined]
+                else:
+                    msg = "io_uring wrapper not initialized"
+                    raise RuntimeError(msg)
                 self.stats["io_uring_operations"] = (
                     self.stats.get("io_uring_operations", 0) + 1
                 )
                 self._record_read_timing(len(data))
                 return data
             except Exception as e:
-                self.logger.debug(
-                    "io_uring read failed, falling back: %s", e
-                )
+                self.logger.debug("io_uring read failed, falling back: %s", e)
                 # Fall through to direct I/O or regular read
 
         # Use direct I/O if enabled, otherwise use adaptive read-ahead
@@ -1260,7 +1281,7 @@ class DiskIOManager:
             }
 
     def _read_block_sync(self, file_path: Path, offset: int, length: int) -> bytes:
-        """Synchronous file read."""
+        """Read file synchronously."""
         try:
             with open(file_path, "rb") as f:
                 f.seek(offset)
@@ -1437,7 +1458,7 @@ class DiskIOManager:
                         if not req.future.done():
                             req.future.set_exception(asyncio.CancelledError())
             return
-        
+
         writes_to_process: list[WriteRequest] = []
         with self.write_lock:
             if file_path in self.write_requests:
@@ -1577,7 +1598,7 @@ class DiskIOManager:
         file_path: Path,
         combined_writes: list[tuple[int, bytes]],
     ) -> None:
-        """Synchronously write using direct I/O (O_DIRECT).
+        """Write using direct I/O (O_DIRECT) synchronously.
 
         Args:
             file_path: Path to file
@@ -1593,7 +1614,7 @@ class DiskIOManager:
             import fcntl
 
             # Get O_DIRECT flag
-            O_DIRECT = getattr(os, "O_DIRECT", None) or getattr(fcntl, "O_DIRECT", None)
+            O_DIRECT = getattr(os, "O_DIRECT", None) or getattr(fcntl, "O_DIRECT", None)  # noqa: N806  # OS constant
             if O_DIRECT is None:
                 # Fallback to regular write
                 self._write_combined_sync_regular(file_path, combined_writes)
@@ -1620,7 +1641,9 @@ class DiskIOManager:
                     # Align offset and length for direct I/O
                     aligned_offset = self._align_for_direct_io(offset)
                     offset_diff = offset - aligned_offset
-                    aligned_length = self._align_up_for_direct_io(data_len + offset_diff)
+                    aligned_length = self._align_up_for_direct_io(
+                        data_len + offset_diff
+                    )
 
                     # Prepare aligned buffer
                     # Need to allocate aligned memory for direct I/O
@@ -1663,7 +1686,7 @@ class DiskIOManager:
                     self._record_write_timing(data_len)
             finally:
                 os.close(fd)
-        except (OSError, IOError) as e:
+        except OSError as e:
             # Direct I/O failed (e.g., alignment issue), fallback to regular write
             self.logger.debug(
                 "Direct I/O write failed for %s: %s. Falling back to regular I/O.",
@@ -1677,7 +1700,7 @@ class DiskIOManager:
         file_path: Path,
         combined_writes: list[tuple[int, bytes]],
     ) -> None:
-        """Synchronously write combined blocks to disk."""
+        """Write combined blocks to disk synchronously."""
         # Use direct I/O if enabled and supported
         if self.direct_io_enabled and self.direct_io_supported:
             try:
@@ -1697,7 +1720,7 @@ class DiskIOManager:
         file_path: Path,
         combined_writes: list[tuple[int, bytes]],
     ) -> None:
-        """Synchronously write combined blocks to disk using regular I/O (non-direct)."""
+        """Write combined blocks to disk using regular I/O (non-direct) synchronously."""
         try:
             # Ensure parent directory exists
             file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2040,6 +2063,7 @@ class DiskIOManager:
 
         Returns:
             True if recreation succeeded, False otherwise
+
         """
         # Prevent concurrent recreation attempts
         if not self._executor_recreation_lock.acquire(blocking=False):
@@ -2076,15 +2100,11 @@ class DiskIOManager:
                     timeout=2.0,
                 )
             except asyncio.TimeoutError:
-                self.logger.warning(
-                    "Old executor shutdown timed out, forcing shutdown"
-                )
+                self.logger.warning("Old executor shutdown timed out, forcing shutdown")
                 # Force shutdown without waiting
                 old_executor.shutdown(wait=False)
             except Exception as e:
-                self.logger.warning(
-                    "Error during old executor shutdown: %s", e
-                )
+                self.logger.warning("Error during old executor shutdown: %s", e)
                 # Force shutdown on error
                 old_executor.shutdown(wait=False)
 
@@ -2115,11 +2135,8 @@ class DiskIOManager:
 
             return True
 
-        except Exception as e:
-            self.logger.exception(
-                "Failed to recreate executor: %s. Keeping old executor.",
-                e,
-            )
+        except Exception:
+            self.logger.exception("Failed to recreate executor. Keeping old executor.")
             return False
         finally:
             self._executor_recreation_lock.release()
@@ -2130,7 +2147,7 @@ class DiskIOManager:
         # This prevents unnecessary recreation at startup when queue is empty
         # Wait 30 seconds to allow system to stabilize and accumulate some work
         await asyncio.sleep(30.0)
-        
+
         while self._running:
             try:
                 await asyncio.sleep(5.0)  # Check every 5 seconds
@@ -2187,7 +2204,10 @@ class DiskIOManager:
                             current_time - self._last_worker_adjustment_time
                         )
 
-                        if time_since_last_adjustment < self._worker_adjustment_cooldown:
+                        if (
+                            time_since_last_adjustment
+                            < self._worker_adjustment_cooldown
+                        ):
                             self.logger.debug(
                                 "Worker adjustment on cooldown (%.1fs remaining)",
                                 self._worker_adjustment_cooldown
@@ -2243,14 +2263,14 @@ class DiskIOManager:
 
                 self._xet_deduplication = XetDeduplication(cache_db_path)
                 self.logger.debug("Initialized Xet deduplication manager")
-                
+
                 # Initialize file deduplication if enabled
                 if getattr(self.config.disk, "enable_file_deduplication", True):
                     try:
                         from ccbt.storage.xet_file_deduplication import (
                             XetFileDeduplication,
                         )
-                        
+
                         self._xet_file_deduplication = XetFileDeduplication(
                             self._xet_deduplication
                         )
@@ -2259,17 +2279,15 @@ class DiskIOManager:
                         self.logger.warning(
                             "Failed to initialize Xet file deduplication: %s", e
                         )
-                
+
                 # Initialize data aggregator if enabled
                 if getattr(self.config.disk, "enable_data_aggregation", True):
                     try:
                         from ccbt.storage.xet_data_aggregator import (
                             XetDataAggregator,
                         )
-                        
-                        batch_size = getattr(
-                            self.config.disk, "xet_batch_size", 100
-                        )
+
+                        batch_size = getattr(self.config.disk, "xet_batch_size", 100)
                         self._xet_data_aggregator = XetDataAggregator(
                             self._xet_deduplication, batch_size=batch_size
                         )
@@ -2278,14 +2296,14 @@ class DiskIOManager:
                         self.logger.warning(
                             "Failed to initialize Xet data aggregator: %s", e
                         )
-                
+
                 # Initialize defrag prevention if enabled
                 if getattr(self.config.disk, "enable_defrag_prevention", True):
                     try:
                         from ccbt.storage.xet_defrag_prevention import (
                             XetDefragPrevention,
                         )
-                        
+
                         self._xet_defrag_prevention = XetDefragPrevention(
                             self._xet_deduplication
                         )
@@ -2294,7 +2312,7 @@ class DiskIOManager:
                         self.logger.warning(
                             "Failed to initialize Xet defrag prevention: %s", e
                         )
-                        
+
             except Exception as e:
                 self.logger.warning("Failed to initialize Xet deduplication: %s", e)
                 return None
@@ -2461,13 +2479,11 @@ class DiskIOManager:
 
                 return file_data
 
-            except Exception as e:
+            except Exception:
                 # Clean up temporary file on error
                 if tmp_path.exists():
-                    try:
+                    with contextlib.suppress(Exception):
                         tmp_path.unlink()
-                    except Exception:
-                        pass
                 raise
 
         except FileNotFoundError:
@@ -2619,46 +2635,67 @@ class DiskIOManager:
 
     def get_disk_io_metrics(self) -> dict[str, Any]:
         """Get disk I/O metrics for graph series.
-        
+
         Returns:
             Dictionary with disk I/O metrics:
             - read_throughput: Read throughput in KiB/s
             - write_throughput: Write throughput in KiB/s
             - cache_hit_rate: Cache hit rate as percentage (0-100)
             - timing_ms: Average disk operation timing in milliseconds
+
         """
         current_time = time.time()
         cutoff_time = current_time - self._timing_window
-        
+
         with self._timing_lock:
             # Calculate read throughput
             read_bytes = sum(
-                bytes_count for ts, bytes_count in self._read_timings
+                bytes_count
+                for ts, bytes_count in self._read_timings
                 if ts >= cutoff_time
             )
-            read_throughput_kib = (read_bytes / 1024) / self._timing_window if self._timing_window > 0 else 0.0
-            
+            read_throughput_kib = (
+                (read_bytes / 1024) / self._timing_window
+                if self._timing_window > 0
+                else 0.0
+            )
+
             # Calculate write throughput
             write_bytes = sum(
-                bytes_count for ts, bytes_count in self._write_timings
+                bytes_count
+                for ts, bytes_count in self._write_timings
                 if ts >= cutoff_time
             )
-            write_throughput_kib = (write_bytes / 1024) / self._timing_window if self._timing_window > 0 else 0.0
-            
+            write_throughput_kib = (
+                (write_bytes / 1024) / self._timing_window
+                if self._timing_window > 0
+                else 0.0
+            )
+
             # Clean old timings
-            self._read_timings = [(ts, b) for ts, b in self._read_timings if ts >= cutoff_time]
-            self._write_timings = [(ts, b) for ts, b in self._write_timings if ts >= cutoff_time]
-        
+            self._read_timings = [
+                (ts, b) for ts, b in self._read_timings if ts >= cutoff_time
+            ]
+            self._write_timings = [
+                (ts, b) for ts, b in self._write_timings if ts >= cutoff_time
+            ]
+
         # Calculate cache hit rate
         total_accesses = self.stats.get("cache_total_accesses", 0)
         cache_hits = self.stats.get("cache_hits", 0)
-        cache_hit_rate = (cache_hits / total_accesses * 100.0) if total_accesses > 0 else 0.0
-        
+        cache_hit_rate = (
+            (cache_hits / total_accesses * 100.0) if total_accesses > 0 else 0.0
+        )
+
         # Estimate timing (simplified - would need actual operation timings)
         # Use queue depth and worker count as proxy
-        queue_size = len(self.write_queue) if hasattr(self, "write_queue") and self.write_queue else 0
+        queue_size = (
+            self.write_queue.qsize()
+            if hasattr(self, "write_queue") and self.write_queue
+            else 0
+        )
         avg_timing_ms = queue_size * 10.0  # Rough estimate: 10ms per queued operation
-        
+
         return {
             "read_throughput": read_throughput_kib,  # KiB/s
             "write_throughput": write_throughput_kib,  # KiB/s
@@ -2672,7 +2709,9 @@ class DiskIOManager:
             self._write_timings.append((time.time(), bytes_count))
             # Keep only recent timings
             cutoff_time = time.time() - self._timing_window
-            self._write_timings = [(ts, b) for ts, b in self._write_timings if ts >= cutoff_time]
+            self._write_timings = [
+                (ts, b) for ts, b in self._write_timings if ts >= cutoff_time
+            ]
 
     def _record_read_timing(self, bytes_count: int) -> None:
         """Record read operation for throughput calculation."""
@@ -2680,7 +2719,9 @@ class DiskIOManager:
             self._read_timings.append((time.time(), bytes_count))
             # Keep only recent timings
             cutoff_time = time.time() - self._timing_window
-            self._read_timings = [(ts, b) for ts, b in self._read_timings if ts >= cutoff_time]
+            self._read_timings = [
+                (ts, b) for ts, b in self._read_timings if ts >= cutoff_time
+            ]
 
 
 # Convenience functions for direct use - these are simple wrappers

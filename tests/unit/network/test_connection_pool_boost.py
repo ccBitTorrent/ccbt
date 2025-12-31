@@ -269,7 +269,9 @@ async def test_perform_health_checks_error_threshold():
         pool.pool[peer_id] = mock_connection
         
         # Set errors above threshold (10)
-        metrics = ConnectionMetrics(errors=11)
+        # Set created_at to be older than grace period (60s) so connection is considered established
+        import time
+        metrics = ConnectionMetrics(errors=11, created_at=time.time() - 120.0)
         pool.metrics[peer_id] = metrics
         
         await pool._perform_health_checks()

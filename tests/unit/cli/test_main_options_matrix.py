@@ -85,16 +85,37 @@ def test_download_with_override_flags_matrix(monkeypatch):
     cfg = _cfg()
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    # Mock _get_executor to return (None, False) indicating no daemon
+    async def _mock_get_executor():
+        return (None, False)
+
     class _Mgr:
-        def load_torrent(self, _path):
-            return {"info_hash": b"\x00" * 20, "name": "t"}
+        async def start(self):
+            pass
 
     async def _basic(session, torrent_data, console, resume=False):
         return None
 
+    def _load_torrent(path):
+        return {"info_hash": b"\x00" * 20, "name": "t"}
+
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
     monkeypatch.setattr(cli_main, "start_basic_download", _basic)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
+    # Mock load_torrent from ccbt.session.torrent_utils
+    import ccbt.session.torrent_utils
+    monkeypatch.setattr(ccbt.session.torrent_utils, "load_torrent", _load_torrent)
 
     args = [
         "download",
@@ -145,15 +166,33 @@ def test_magnet_with_override_flags_matrix(monkeypatch):
     cfg = _cfg()
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
 
+    # Mock DaemonManager to prevent PID file check from failing
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    # Mock _get_executor to return (None, False) indicating no daemon
+    async def _mock_get_executor():
+        return (None, False)
+
     class _Mgr:
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
+        
+        async def start(self):
+            pass
 
     async def _basic(session, torrent_data, console, resume=False):
         return None
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_basic_download", _basic)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+    monkeypatch.setattr(cli_main, "start_basic_magnet_download", _basic)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     args = [

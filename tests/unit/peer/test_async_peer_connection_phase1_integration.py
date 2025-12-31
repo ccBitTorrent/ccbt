@@ -126,15 +126,19 @@ async def test_request_prioritization_used(mock_torrent_data, mock_piece_manager
         piece_manager=mock_piece_manager
     )
     
-    # Mock piece manager with availability
-    def mock_get_piece_availability(piece_index):
+    # Mock piece manager with availability (async function)
+    async def mock_get_piece_availability(piece_index):
         return 5 if piece_index < 10 else 20
     
     mock_piece_manager.get_piece_availability = mock_get_piece_availability
     
-    # Calculate priority
-    priority_rarest = manager._calculate_request_priority(0, mock_piece_manager)
-    priority_common = manager._calculate_request_priority(50, mock_piece_manager)
+    # Calculate priority (await async function)
+    priority_rarest_tuple = await manager._calculate_request_priority(0, mock_piece_manager)
+    priority_common_tuple = await manager._calculate_request_priority(50, mock_piece_manager)
+    
+    # Extract priority score (first element of tuple)
+    priority_rarest = priority_rarest_tuple[0]
+    priority_common = priority_common_tuple[0]
     
     # Rarest should have higher priority
     assert priority_rarest > priority_common

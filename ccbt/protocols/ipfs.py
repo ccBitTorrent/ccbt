@@ -745,7 +745,7 @@ class IPFSProtocol(Protocol):
             return {"payload": b"", "want_list": [], "blocks": {}}
 
     async def _setup_message_listener(self, peer_id: str) -> None:
-        """Setup pubsub subscription for receiving messages from a peer."""
+        """Set up pubsub subscription for receiving messages from a peer."""
         if not self._ipfs_connected or self._ipfs_client is None:
             return
 

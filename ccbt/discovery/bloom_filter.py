@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import struct
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -281,9 +280,8 @@ class BloomFilter:
 
         """
         # Format: <size (4 bytes)><hash_count (1 byte)><count (4 bytes)><bit_array>
-        return (
-            struct.pack("!IBI", self.size, self.hash_count, self.count)
-            + bytes(self.bit_array)
+        return struct.pack("!IBI", self.size, self.hash_count, self.count) + bytes(
+            self.bit_array
         )
 
     @classmethod
@@ -311,7 +309,9 @@ class BloomFilter:
             msg = f"Invalid bloom filter data: size mismatch (expected {size} bits, got {len(bit_array_data) * 8})"
             raise ValueError(msg)
 
-        filter_obj = cls(size=size, hash_count=hash_count, bit_array=bytearray(bit_array_data))
+        filter_obj = cls(
+            size=size, hash_count=hash_count, bit_array=bytearray(bit_array_data)
+        )
         filter_obj.count = count
 
         return filter_obj
@@ -323,6 +323,3 @@ class BloomFilter:
     def __repr__(self) -> str:
         """Return string representation."""
         return f"BloomFilter(size={self.size}, hash_count={self.hash_count}, count={self.count})"
-
-
-

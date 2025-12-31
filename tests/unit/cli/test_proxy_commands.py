@@ -6,6 +6,7 @@ Target: 95%+ code coverage for ccbt/cli/proxy_commands.py.
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -46,84 +47,120 @@ class TestProxyCommands:
             config_file.write_text(toml.dumps(config_data), encoding="utf-8")
             yield config_file
 
-    def test_proxy_set_command(self, runner, temp_config_file):
+    def test_proxy_set_command(self, runner, temp_config_file, monkeypatch):
         """Test proxy set command."""
-        with patch("ccbt.cli.proxy_commands.ConfigManager") as mock_cm:
-            mock_manager = MagicMock()
-            mock_manager.config_file = temp_config_file
-            mock_manager.config.proxy.enable_proxy = False
-            mock_manager.config.proxy.proxy_host = None
-            mock_manager.config.proxy.proxy_port = None
-            mock_manager.export.return_value = "[proxy]\nenable_proxy = true\n"
-            mock_cm.return_value = mock_manager
-            
-            result = runner.invoke(
-                proxy,
-                [
-                    "set",
-                    "--host",
-                    "proxy.example.com",
-                    "--port",
-                    "8080",
-                    "--type",
-                    "http",
-                ],
-            )
-            
-            assert result.exit_code == 0
-            assert "Proxy configuration updated" in result.output
+        mock_manager = MagicMock()
+        mock_manager.config_file = temp_config_file
+        mock_manager.config.proxy.enable_proxy = False
+        mock_manager.config.proxy.proxy_host = None
+        mock_manager.config.proxy.proxy_port = None
+        mock_manager.export.return_value = "[proxy]\nenable_proxy = true\n"
+        
+        # Mock _get_config_from_context and init_config using sys.modules
+        # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
+        # we need to patch it in the ccbt.cli.main module namespace
+        main_module = sys.modules['ccbt.cli.main']
+        monkeypatch.setattr(
+            main_module, "_get_config_from_context", lambda ctx: mock_manager
+        )
+        # Also patch init_config in the config module
+        config_module = sys.modules.get('ccbt.config.config')
+        if config_module is None:
+            import ccbt.config.config
+            config_module = sys.modules['ccbt.config.config']
+        monkeypatch.setattr(
+            config_module, "init_config", lambda: mock_manager
+        )
+        
+        result = runner.invoke(
+            proxy,
+            [
+                "set",
+                "--host",
+                "proxy.example.com",
+                "--port",
+                "8080",
+                "--type",
+                "http",
+            ],
+        )
+        
+        assert result.exit_code == 0
+        assert "Proxy configuration updated" in result.output
 
-    def test_proxy_set_with_auth(self, runner, temp_config_file):
+    def test_proxy_set_with_auth(self, runner, temp_config_file, monkeypatch):
         """Test proxy set command with authentication."""
-        with patch("ccbt.cli.proxy_commands.ConfigManager") as mock_cm:
-            mock_manager = MagicMock()
-            mock_manager.config_file = temp_config_file
-            mock_manager.config.proxy.enable_proxy = False
-            mock_manager.export.return_value = "[proxy]\nenable_proxy = true\n"
-            mock_cm.return_value = mock_manager
-            
-            result = runner.invoke(
-                proxy,
-                [
-                    "set",
-                    "--host",
-                    "proxy.example.com",
-                    "--port",
-                    "8080",
-                    "--user",
-                    "testuser",
-                    "--pass",
-                    "testpass",
-                ],
-            )
-            
-            assert result.exit_code == 0
-            mock_manager.config.proxy.proxy_username = "testuser"
-            mock_manager.config.proxy.proxy_password = "testpass"
+        mock_manager = MagicMock()
+        mock_manager.config_file = temp_config_file
+        mock_manager.config.proxy.enable_proxy = False
+        mock_manager.export.return_value = "[proxy]\nenable_proxy = true\n"
+        
+        # Mock _get_config_from_context and init_config using sys.modules
+        main_module = sys.modules['ccbt.cli.main']
+        monkeypatch.setattr(
+            main_module, "_get_config_from_context", lambda ctx: mock_manager
+        )
+        config_module = sys.modules.get('ccbt.config.config')
+        if config_module is None:
+            import ccbt.config.config
+            config_module = sys.modules['ccbt.config.config']
+        monkeypatch.setattr(
+            config_module, "init_config", lambda: mock_manager
+        )
+        
+        result = runner.invoke(
+            proxy,
+            [
+                "set",
+                "--host",
+                "proxy.example.com",
+                "--port",
+                "8080",
+                "--user",
+                "testuser",
+                "--pass",
+                "testpass",
+            ],
+        )
+        
+        assert result.exit_code == 0
+        assert mock_manager.config.proxy.proxy_username == "testuser"
+        assert mock_manager.config.proxy.proxy_password == "testpass"
 
-    def test_proxy_set_with_bypass_list(self, runner, temp_config_file):
+    def test_proxy_set_with_bypass_list(self, runner, temp_config_file, monkeypatch):
         """Test proxy set command with bypass list."""
-        with patch("ccbt.cli.proxy_commands.ConfigManager") as mock_cm:
-            mock_manager = MagicMock()
-            mock_manager.config_file = temp_config_file
-            mock_manager.config.proxy.enable_proxy = False
-            mock_manager.export.return_value = "[proxy]\nenable_proxy = true\n"
-            mock_cm.return_value = mock_manager
-            
-            result = runner.invoke(
-                proxy,
-                [
-                    "set",
-                    "--host",
-                    "proxy.example.com",
-                    "--port",
-                    "8080",
-                    "--bypass-list",
-                    "localhost,127.0.0.1",
-                ],
-            )
-            
-            assert result.exit_code == 0
+        mock_manager = MagicMock()
+        mock_manager.config_file = temp_config_file
+        mock_manager.config.proxy.enable_proxy = False
+        mock_manager.export.return_value = "[proxy]\nenable_proxy = true\n"
+        
+        # Mock _get_config_from_context and init_config using sys.modules
+        main_module = sys.modules['ccbt.cli.main']
+        monkeypatch.setattr(
+            main_module, "_get_config_from_context", lambda ctx: mock_manager
+        )
+        config_module = sys.modules.get('ccbt.config.config')
+        if config_module is None:
+            import ccbt.config.config
+            config_module = sys.modules['ccbt.config.config']
+        monkeypatch.setattr(
+            config_module, "init_config", lambda: mock_manager
+        )
+        
+        result = runner.invoke(
+            proxy,
+            [
+                "set",
+                "--host",
+                "proxy.example.com",
+                "--port",
+                "8080",
+                "--bypass-list",
+                "localhost,127.0.0.1",
+            ],
+        )
+        
+        assert result.exit_code == 0
 
     def test_proxy_status_command(self, runner):
         """Test proxy status command."""
@@ -159,20 +196,31 @@ class TestProxyCommands:
             # Should handle None gracefully
             assert result.exit_code == 0
 
-    def test_proxy_disable_command(self, runner, temp_config_file):
+    def test_proxy_disable_command(self, runner, temp_config_file, monkeypatch):
         """Test proxy disable command."""
-        with patch("ccbt.cli.proxy_commands.ConfigManager") as mock_cm:
-            mock_manager = MagicMock()
-            mock_manager.config_file = temp_config_file
-            mock_manager.config.proxy.enable_proxy = True
-            mock_manager.export.return_value = "[proxy]\nenable_proxy = false\n"
-            mock_cm.return_value = mock_manager
-            
-            result = runner.invoke(proxy, ["disable"])
-            
-            assert result.exit_code == 0
-            assert "Proxy has been disabled" in result.output
-            assert mock_manager.config.proxy.enable_proxy is False
+        mock_manager = MagicMock()
+        mock_manager.config_file = temp_config_file
+        mock_manager.config.proxy.enable_proxy = True
+        mock_manager.export.return_value = "[proxy]\nenable_proxy = false\n"
+        
+        # Mock _get_config_from_context and init_config using sys.modules
+        main_module = sys.modules['ccbt.cli.main']
+        monkeypatch.setattr(
+            main_module, "_get_config_from_context", lambda ctx: mock_manager
+        )
+        config_module = sys.modules.get('ccbt.config.config')
+        if config_module is None:
+            import ccbt.config.config
+            config_module = sys.modules['ccbt.config.config']
+        monkeypatch.setattr(
+            config_module, "init_config", lambda: mock_manager
+        )
+        
+        result = runner.invoke(proxy, ["disable"])
+        
+        assert result.exit_code == 0
+        assert "Proxy has been disabled" in result.output
+        assert mock_manager.config.proxy.enable_proxy is False
 
     def test_proxy_test_command_success(self, runner):
         """Test proxy test command with successful connection."""

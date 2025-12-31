@@ -50,15 +50,18 @@ def mock_console():
     console = MagicMock(spec=Console)
     console.print = Mock()
     console.clear = Mock()
+    console.print_json = Mock()
+    # Rich Progress requires get_time method
+    console.get_time = Mock(return_value=0.0)
     return console
 
 
 @pytest.fixture
 def interactive_cli(mock_session, mock_console):
     """Create an InteractiveCLI instance."""
-    from ccbt.cli.interactive import InteractiveCLI
+    from tests.conftest import create_interactive_cli
     
-    cli = InteractiveCLI(mock_session, mock_console)
+    cli = create_interactive_cli(mock_session, mock_console)
     return cli
 
 
@@ -576,9 +579,27 @@ async def test_cmd_disk(interactive_cli):
     """Test cmd_disk command (lines 674-683)."""
     with patch('ccbt.cli.interactive.get_config') as mock_get_config:
         mock_config = Mock()
-        mock_config.disk.preallocate = True
-        mock_config.disk.write_batch_kib = 1024
-        mock_config.disk.use_mmap = False
+        mock_disk = Mock()
+        # CRITICAL FIX: Set all disk config attributes to real values (not Mock) to support arithmetic operations
+        mock_disk.preallocate = True
+        mock_disk.write_batch_kib = 1024
+        mock_disk.write_buffer_kib = 512
+        mock_disk.write_batch_timeout_ms = 100
+        mock_disk.write_batch_timeout_adaptive = False
+        mock_disk.write_queue_priority = False
+        mock_disk.use_mmap = False
+        mock_disk.mmap_cache_mb = 64
+        mock_disk.mmap_cache_adaptive = False
+        mock_disk.disk_workers = 4
+        mock_disk.disk_workers_adaptive = False
+        mock_disk.disk_workers_min = 1
+        mock_disk.disk_workers_max = 8
+        mock_disk.direct_io = False
+        mock_disk.enable_io_uring = False
+        mock_disk.sync_writes = False
+        mock_disk.hash_workers = 2
+        mock_disk.hash_chunk_size = 16384  # Real int for // operation
+        mock_config.disk = mock_disk
         mock_get_config.return_value = mock_config
         
         await interactive_cli.cmd_disk([])
@@ -591,9 +612,36 @@ async def test_cmd_network(interactive_cli):
     """Test cmd_network command (lines 685-694)."""
     with patch('ccbt.cli.interactive.get_config') as mock_get_config:
         mock_config = Mock()
-        mock_config.network.listen_port = 6881
-        mock_config.network.pipeline_depth = 10
-        mock_config.network.block_size_kib = 16
+        mock_network = Mock()
+        # CRITICAL FIX: Set all network config attributes to real values (not Mock) to support comparisons and arithmetic
+        mock_network.listen_port = 6881
+        mock_network.listen_port_tcp = 6881
+        mock_network.listen_port_udp = 6881
+        mock_network.max_global_peers = 100
+        mock_network.max_peers_per_torrent = 50
+        mock_network.max_connections_per_peer = 1
+        mock_network.pipeline_depth = 10
+        mock_network.pipeline_adaptive_depth = False
+        mock_network.block_size_kib = 16
+        mock_network.min_block_size_kib = 4
+        mock_network.max_block_size_kib = 64
+        mock_network.socket_rcvbuf_kib = 64
+        mock_network.socket_sndbuf_kib = 64
+        mock_network.socket_adaptive_buffers = False
+        mock_network.tcp_nodelay = True
+        mock_network.connection_timeout = 30.0
+        mock_network.handshake_timeout = 10.0
+        mock_network.peer_timeout = 60.0
+        mock_network.timeout_adaptive = False
+        mock_network.global_down_kib = 0  # Real int for > comparison
+        mock_network.global_up_kib = 0  # Real int for > comparison
+        mock_network.connection_pool_max_connections = 100
+        mock_network.connection_pool_warmup_enabled = False
+        mock_network.enable_tcp = True
+        mock_network.enable_utp = False
+        mock_network.enable_ipv6 = True
+        mock_network.enable_encryption = False
+        mock_config.network = mock_network
         mock_get_config.return_value = mock_config
         
         await interactive_cli.cmd_network([])
@@ -1473,19 +1521,44 @@ async def test_download_torrent_no_status(interactive_cli):
 @pytest.mark.asyncio
 async def test_update_download_stats(interactive_cli):
     """Test update_download_stats method (lines 328-379)."""
+    from ccbt.executor.base import CommandResult
+    
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
-    interactive_cli.session.get_torrent_status = AsyncMock(return_value={
-        "download_rate": 1000.0,
-        "upload_rate": 500.0,
-        "pieces_completed": 10,
-        "pieces_total": 100,
-        "progress": 0.1,
-        "downloaded_bytes": 1048576,
-    })
-    interactive_cli.session.get_peers_for_torrent = AsyncMock(return_value=[
-        {"ip": "1.2.3.4", "port": 6881}
-    ])
+    
+    # CRITICAL FIX: update_download_stats uses executor.execute(), not session.get_torrent_status()
+    # Mock the executor to return proper CommandResult
+    status_result = CommandResult(
+        success=True,
+        data={
+            "status": {
+                "download_rate": 1000.0,
+                "upload_rate": 500.0,
+                "pieces_completed": 10,
+                "pieces_total": 100,
+                "progress": 0.1,
+                "downloaded_bytes": 1048576,
+            }
+        }
+    )
+    peers_result = CommandResult(
+        success=True,
+        data={
+            "peers": [
+                {"ip": "1.2.3.4", "port": 6881}
+            ]
+        }
+    )
+    
+    # Mock executor.execute to return different results based on command
+    async def executor_execute_side_effect(command, **kwargs):
+        if command == "torrent.status":
+            return status_result
+        elif command == "torrent.get_peers":
+            return peers_result
+        return CommandResult(success=False, data={})
+    
+    interactive_cli.executor.execute = AsyncMock(side_effect=executor_execute_side_effect)
     
     await interactive_cli.update_download_stats()
     

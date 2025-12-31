@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "benchmark": "piece_assembly",
+    "config": "default",
+    "timestamp": "2025-12-31T02:05:56.857697+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "11",
+      "python": "3.13.3"
+    },
+    "git": {
+      "commit_hash": "d64e2d89e8b4e68d40759691c3f206e4febd5170",
+      "commit_hash_short": "d64e2d8",
+      "branch": "addssessionrefactor",
+      "author": "Joseph Pollack",
+      "is_dirty": false
+    }
+  },
+  "results": [
+    {
+      "piece_size_bytes": 1048576,
+      "block_size_bytes": 16384,
+      "blocks": 64,
+      "elapsed_s": 0.33404130000053556,
+      "throughput_bytes_per_s": 3139060.948446551
+    }
+  ]
+}

@@ -62,6 +62,7 @@ class XetExtension:
 
         Args:
             folder_sync_handshake: Optional XetHandshakeExtension for folder sync
+
         """
         self.pending_requests: dict[
             tuple[str, int], XetChunkRequest
@@ -97,8 +98,11 @@ class XetExtension:
         }
 
         # Merge with folder sync handshake if available
-        if hasattr(self, "folder_sync_handshake"):
-            folder_handshake = self.folder_sync_handshake.encode_handshake()
+        if (
+            hasattr(self, "folder_sync_handshake")
+            and self.folder_sync_handshake is not None
+        ):
+            folder_handshake = self.folder_sync_handshake.encode_handshake()  # type: ignore[attr-defined]
             handshake.update(folder_handshake)
 
         return handshake
@@ -151,16 +155,15 @@ class XetExtension:
                             peer_id,
                         )
 
-                    logger.debug(
-                        "Peer %s passed allowlist verification", peer_id
-                    )
+                    logger.debug("Peer %s passed allowlist verification", peer_id)
             except Exception as e:
-                logger.warning(
-                    "Error verifying peer %s handshake: %s", peer_id, e
-                )
+                logger.warning("Error verifying peer %s handshake: %s", peer_id, e)
                 # If folder sync is required, reject on error
                 # Otherwise, allow basic Xet extension
-                if self.folder_sync_handshake and self.folder_sync_handshake.allowlist_hash:
+                if (
+                    self.folder_sync_handshake
+                    and self.folder_sync_handshake.allowlist_hash
+                ):
                     return False
 
         return True
@@ -434,7 +437,11 @@ class XetExtension:
         # Pack: <message_type><has_ref><ref_length><ref_data>
         if git_ref:
             ref_bytes = git_ref.encode("utf-8")
-            return struct.pack("!BB", XetMessageType.FOLDER_VERSION_RESPONSE, 1) + struct.pack("!I", len(ref_bytes)) + ref_bytes
+            return (
+                struct.pack("!BB", XetMessageType.FOLDER_VERSION_RESPONSE, 1)
+                + struct.pack("!I", len(ref_bytes))
+                + ref_bytes
+            )
         return struct.pack("!BB", XetMessageType.FOLDER_VERSION_RESPONSE, 0)
 
     def decode_version_response(self, data: bytes) -> str | None:
@@ -632,5 +639,4 @@ class XetExtension:
             msg = "Incomplete bloom filter data in response"
             raise ValueError(msg)
 
-        bloom_data = data[5 : 5 + bloom_size]
-        return bloom_data
+        return data[5 : 5 + bloom_size]

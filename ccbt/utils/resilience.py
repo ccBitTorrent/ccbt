@@ -36,7 +36,7 @@ def with_retry(
     exceptions: tuple[type[Exception], ...] = (Exception,),
     max_delay: float = 60.0,
 ) -> Callable[[Func[T]], Func[T]]:
-    """Decorator for retry logic with exponential backoff.
+    """Provide decorator for retry logic with exponential backoff.
 
     Args:
         retries: Number of retry attempts
@@ -118,7 +118,7 @@ def with_retry(
 
 
 def with_timeout(seconds: float) -> Callable[[Func[T]], Func[T]]:
-    """Decorator for timeout handling.
+    """Provide decorator for timeout handling.
 
     Args:
         seconds: Timeout in seconds
@@ -401,7 +401,7 @@ class RateLimiter:
 def with_rate_limit(
     max_requests: int, time_window: float
 ) -> Callable[[Func[T]], Func[T]]:
-    """Decorator for rate limiting.
+    """Provide decorator for rate limiting.
 
     Args:
         max_requests: Maximum requests allowed in time window
