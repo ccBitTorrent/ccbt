@@ -155,7 +155,7 @@ class TestAsyncSessionManagerMetricsEdgeCases:
         await session.stop()
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock

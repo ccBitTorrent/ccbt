@@ -44,7 +44,7 @@ def mock_torrent_session():
     return mock_session
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_session_manager(mock_torrent_session):
     """Create a mock session manager."""
     info_hash_bytes = b"\x00" * 20

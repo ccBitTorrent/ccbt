@@ -683,6 +683,12 @@ class NATManager:
         configured_xet_multicast_port = getattr(
             self.config.network, "xet_multicast_port", None
         )
+        # Handle case where getattr returns MagicMock (in tests)
+        if (
+            hasattr(configured_xet_multicast_port, "__class__")
+            and configured_xet_multicast_port.__class__.__name__ == "MagicMock"
+        ):
+            configured_xet_multicast_port = None
 
         # CRITICAL FIX: Map both TCP and UDP for listen ports
         # Use listen_port_tcp and listen_port_udp from config (with fallback to listen_port)

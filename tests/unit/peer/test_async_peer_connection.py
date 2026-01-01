@@ -42,7 +42,7 @@ def peer_info():
     return PeerInfo(ip="127.0.0.1", port=6881)
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="function")
 async def peer_manager(mock_torrent_data, mock_piece_manager):
     """Create async peer connection manager with proper setup and teardown."""
     manager = AsyncPeerConnectionManager(

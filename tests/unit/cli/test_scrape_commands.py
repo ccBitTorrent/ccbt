@@ -39,7 +39,7 @@ def runner():
     return CliRunner()
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_session_manager():
     """Create mock AsyncSessionManager."""
     session = MagicMock()

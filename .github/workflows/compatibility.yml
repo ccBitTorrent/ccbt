@@ -2,12 +2,11 @@ name: Compatibility
 
 on:
   push:
-    branches: [main, dev]
-  pull_request:
-    branches: [main, dev]
+    branches: [main]
   schedule:
     # Run weekly on Sundays at 02:00 UTC
     - cron: '0 2 * * 0'
+  workflow_dispatch:
 
 jobs:
   docker-test:
@@ -93,6 +92,7 @@ jobs:
     if: |
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' && github.ref == 'refs/heads/main' ||
       contains(github.event.head_commit.message, '[compat]') ||
       contains(join(github.event.commits.*.message, ' '), '[compat]')
     
@@ -132,4 +132,3 @@ jobs:
             site/reports/junit.xml
             site/reports/pytest.log
           retention-days: 30
-

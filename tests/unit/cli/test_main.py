@@ -884,7 +884,7 @@ def test_apply_network_overrides_exercises_paths():
 
 
     @patch("ccbt.cli.main.ConfigManager")
-    def test_checkpoint_backup_invalid_info_hash(self, mock_config_manager):
+    def test_checkpoint_backup_invalid_info_hash(self, mock_config_manager, tmp_path):
         """Test checkpoint backup with invalid info_hash format (lines 1155-1158)."""
         from click.testing import CliRunner
         from ccbt.cli.main import cli
@@ -894,10 +894,11 @@ def test_apply_network_overrides_exercises_paths():
         mock_cfg.config.disk = MagicMock()
         mock_config_manager.return_value = mock_cfg
 
+        backup_path = str(tmp_path / "backup")
         runner = CliRunner()
         result = runner.invoke(
             cli,
-            ["checkpoints", "backup", "invalid_hex_string", "--destination", "/tmp/backup"],
+            ["checkpoints", "backup", "invalid_hex_string", "--destination", backup_path],
             catch_exceptions=False,
         )
 
@@ -907,7 +908,7 @@ def test_apply_network_overrides_exercises_paths():
     @patch("ccbt.cli.main.ConfigManager")
 
     @patch("ccbt.cli.main.ConfigManager")
-    def test_checkpoint_export_invalid_info_hash(self, mock_config_manager):
+    def test_checkpoint_export_invalid_info_hash(self, mock_config_manager, tmp_path):
         """Test checkpoint export with invalid info_hash format (lines 1112-1115)."""
         from click.testing import CliRunner
         from ccbt.cli.main import cli
@@ -917,10 +918,11 @@ def test_apply_network_overrides_exercises_paths():
         mock_cfg.config.disk = MagicMock()
         mock_config_manager.return_value = mock_cfg
 
+        output_path = str(tmp_path / "output")
         runner = CliRunner()
         result = runner.invoke(
             cli,
-            ["checkpoints", "export", "invalid_hex_string", "--format", "json", "--output", "/tmp/output"],
+            ["checkpoints", "export", "invalid_hex_string", "--format", "json", "--output", output_path],
             catch_exceptions=False,
         )
 
@@ -2909,13 +2911,14 @@ def test_proxy_host_port_parsing():
 
 
 def test_proxy_invalid_port():
-    """Test ValueError when port is not numeric (lines 338-342)."""
+    """Test click.Abort when port is not numeric (lines 338-342)."""
     from ccbt.cli.main import _apply_proxy_overrides
+    import click
 
     cfg = _make_cfg()
     opts = {"proxy": "proxy.example.com:invalid"}
     
-    with pytest.raises(ValueError):
+    with pytest.raises(click.Abort):
         _apply_proxy_overrides(cfg, opts)
 
 

@@ -180,7 +180,7 @@ class TestMetricsCollectorHTTPErrorHandling:
             await asyncio.sleep(0.2)
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock

@@ -32,7 +32,7 @@ jobs:
       - name: Extract current version from pyproject.toml
         id: current_version
         run: |
-          VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Current version: $VERSION"
       
@@ -83,7 +83,7 @@ jobs:
       
       - name: Verify version consistency
         run: |
-          PYPROJECT_VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          PYPROJECT_VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           INIT_VERSION=$(grep -E '__version__' ccbt/__init__.py | sed "s/.*['\"]\(.*\)['\"].*/\1/")
           
           if [ "$PYPROJECT_VERSION" != "$INIT_VERSION" ]; then

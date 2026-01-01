@@ -627,6 +627,32 @@ class AsyncUDPTrackerClient:
             except Exception as e:
                 self.logger.debug("Error closing transport: %s", e)
             finally:
+                # ENHANCEMENT: Explicitly close socket if it exists to ensure immediate port release
+                if self.socket:
+                    try:
+                        # If socket is a protocol instance, it may have a close method
+                        if hasattr(self.socket, "close") and callable(
+                            self.socket.close
+                        ):
+                            self.socket.close()
+                        # If socket has _closed attribute, check it
+                        elif (
+                            hasattr(self.socket, "_closed")
+                            and not getattr(self.socket, "_closed", True)
+                            and self.transport
+                            and hasattr(self.transport, "get_extra_info")
+                        ):
+                            # Try to close via transport if available
+                            sock = self.transport.get_extra_info("socket")
+                            if (
+                                sock
+                                and hasattr(sock, "close")
+                                and not getattr(sock, "_closed", True)
+                            ):
+                                sock.close()
+                    except Exception as e:
+                        self.logger.debug("Error closing socket during stop: %s", e)
+
                 self.transport = None
                 self.socket = None
 

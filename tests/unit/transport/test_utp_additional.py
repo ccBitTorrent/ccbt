@@ -15,7 +15,7 @@ from ccbt.transport.utp import (
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create a mock config."""
     config = MagicMock()

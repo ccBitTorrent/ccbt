@@ -1,8 +1,8 @@
-name: Documentation
+name: Build Documentation
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - 'docs/**'
       - 'dev/mkdocs.yml'
@@ -10,12 +10,13 @@ on:
       - 'dev/requirements-rtd.txt'
       - 'ccbt/**'
   pull_request:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - 'docs/**'
       - 'dev/mkdocs.yml'
       - '.readthedocs.yaml'
       - 'dev/requirements-rtd.txt'
+  workflow_dispatch:
 
 jobs:
   build-docs:
@@ -37,9 +38,64 @@ jobs:
         with:
           python-version: '3.11'
       
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/uv
+            .venv
+          key: ubuntu-python-3.11-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ubuntu-python-3.11-
+      
+      - name: Cache MkDocs cache
+        uses: actions/cache@v3
+        with:
+          path: .cache
+          key: mkdocs-${{ github.sha }}
+          restore-keys: |
+            mkdocs-
+      
+      - name: Cache pytest cache (for coverage report)
+        uses: actions/cache@v3
+        with:
+          path: .pytest_cache
+          key: pytest-docs-${{ github.sha }}
+          restore-keys: |
+            pytest-docs-
+      
       - name: Install dependencies
         run: |
           uv sync --dev
+      
+      - name: Check for port conflicts
+        run: |
+          # Check for common test ports that might be in use
+          # This helps detect lingering processes from previous test runs
+          echo "Checking for port conflicts..."
+          if command -v lsof &> /dev/null; then
+            # Unix-like systems (Linux, macOS)
+            PORTS=(6881 6882 6883 5001 8080 8081 8082)
+            for port in "${PORTS[@]}"; do
+              if lsof -i :$port &> /dev/null; then
+                echo "⚠️  Warning: Port $port is in use"
+                lsof -i :$port || true
+              fi
+            done
+          elif command -v netstat &> /dev/null; then
+            # Windows or older Unix systems
+            PORTS=(6881 6882 6883 5001 8080 8081 8082)
+            for port in "${PORTS[@]}"; do
+              if netstat -an | grep -q ":$port "; then
+                echo "⚠️  Warning: Port $port is in use"
+                netstat -an | grep ":$port " || true
+              fi
+            done
+          else
+            echo "⚠️  Port conflict detection tools not available, skipping check"
+          fi
+          echo "Port conflict check complete"
+        continue-on-error: true
       
       - name: Generate coverage report
         run: |

@@ -2,12 +2,13 @@ name: Security
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
-    branches: [main, dev]
+    branches: [main]
   schedule:
     # Run weekly on Mondays at 00:00 UTC
     - cron: '0 0 * * 1'
+  workflow_dispatch:
 
 jobs:
   bandit:
@@ -70,4 +71,3 @@ jobs:
         run: |
           uv run safety check --json
         continue-on-error: true
-

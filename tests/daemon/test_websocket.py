@@ -18,10 +18,13 @@ from ccbt.daemon.ipc_server import IPCServer
 from ccbt.session.session import AsyncSessionManager
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(scope="function")
 async def mock_session_manager():
     """Create a mock session manager."""
     session = AsyncSessionManager()
+    # Disable NAT to prevent hanging during start
+    session.config.nat.auto_map_ports = False
+    session.config.discovery.enable_dht = False
     await session.start()
     yield session
     await session.stop()
@@ -111,7 +114,7 @@ async def test_websocket_event_delivery(ipc_server):
 
             # Emit a test event (this would normally be done by the server)
             # For testing, we'll manually trigger an event
-            await server._emit_websocket_event(
+            await server.emit_websocket_event(
                 EventType.TORRENT_ADDED,
                 {"info_hash": "abc123", "name": "test"},
             )

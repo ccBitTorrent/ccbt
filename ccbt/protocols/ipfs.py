@@ -874,34 +874,29 @@ class IPFSProtocol(Protocol):
             # For now, we create metadata structure and reference piece hashes
 
             # Create blocks list from piece hashes (for reference)
-            # These are placeholders until actual piece data is available
-            # Note: blocks list is reserved for future implementation when piece data is available
-            # For now, blocks are not used - DAG creation happens when pieces are converted
-            _blocks = [
-                {
-                    "hash": piece.hex(),
-                    "index": i,
-                    "size": min(
-                        torrent_info.piece_length,
-                        torrent_info.total_length - i * torrent_info.piece_length,
-                    ),
-                }
-                for i, piece in enumerate(torrent_info.pieces)
-            ]
-
-            # Links will be populated when pieces are converted to blocks
+            # These are placeholder CIDs until actual piece data is available
+            # Note: blocks list contains placeholder CIDs derived from piece hashes
             # For full DAG creation with piece data, use:
             # 1. Convert pieces to blocks: piece_blocks = [await _piece_to_block(piece_data, i, piece_length) for i, piece_data in enumerate(pieces)]
             # 2. Create DAG: root_cid = await _create_ipfs_dag_from_pieces(piece_blocks)
+            blocks: list[str] = []
+            for _i, piece in enumerate(torrent_info.pieces):
+                # Create placeholder CID from piece hash
+                # Format: Qm + first 44 chars of SHA256 hash of piece hash
+                piece_hash = hashlib.sha256(piece).hexdigest()
+                placeholder_cid = f"Qm{piece_hash[:44]}"
+                blocks.append(placeholder_cid)
+
+            # Links will be populated when pieces are converted to blocks
             links: list[dict[str, Any]] = []
 
             # Create IPFS content record
-            # Note: blocks will be updated with actual CIDs when pieces are converted
-            # For now, use empty list since blocks contains dicts, not CIDs (strings)
+            # Note: blocks contain placeholder CIDs derived from piece hashes
+            # These will be updated with actual CIDs when pieces are converted to IPFS blocks
             ipfs_content = IPFSContent(
                 cid=cid,
                 size=torrent_info.total_length,
-                blocks=[],  # Will be updated with actual CIDs when pieces are converted
+                blocks=blocks,  # Placeholder CIDs for each piece
                 links=links,  # Will be populated from DAG structure
             )
 

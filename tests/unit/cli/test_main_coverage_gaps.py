@@ -19,7 +19,7 @@ from click.testing import CliRunner
 from rich.console import Console
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Fixture for mock config."""
     cfg = MagicMock()
