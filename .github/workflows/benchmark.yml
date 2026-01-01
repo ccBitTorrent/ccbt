@@ -13,6 +13,10 @@ jobs:
     name: benchmark
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write  # Required to commit benchmark results
+      actions: read
+      pull-requests: read
     
     steps:
       - uses: actions/checkout@v4

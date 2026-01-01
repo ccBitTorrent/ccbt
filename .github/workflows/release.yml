@@ -15,7 +15,10 @@ jobs:
   pre-release-checks:
     name: pre-release-checks
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -119,7 +122,8 @@ jobs:
     needs: pre-release-checks
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
-      contents: write
+      contents: write  # Required to create GitHub releases
+      actions: read
     
     steps:
       - uses: actions/checkout@v4
