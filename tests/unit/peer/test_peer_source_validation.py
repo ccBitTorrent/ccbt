@@ -14,15 +14,17 @@ from ccbt.peer.async_peer_connection import (
 )
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="function")
 async def peer_manager():
-    """Create peer connection manager."""
+    """Create peer connection manager with proper isolation."""
     from unittest.mock import MagicMock, patch
+    import asyncio
+    import logging
     
     piece_manager = MagicMock()
     torrent_data = {"info_hash": b"\x00" * 20}
     
-    # Mock config
+    # Mock config to disable network components
     with patch("ccbt.peer.async_peer_connection.get_config") as mock_get_config:
         mock_config = MagicMock()
         mock_config.network.max_peers_per_torrent = 50
@@ -36,24 +38,47 @@ async def peer_manager():
         mock_config.network.circuit_breaker_recovery_timeout = 60.0
         mock_config.network.connection_timeout = 10.0
         mock_config.network.pipeline_depth = 5
-        mock_config.network.enable_utp = True
+        mock_config.network.enable_utp = False  # Disable UTP to avoid port binding
         mock_config.network.enable_webtorrent = False
+        mock_config.network.max_concurrent_connection_attempts = 20  # Required for semaphore
         mock_config.security.enable_encryption = False
         mock_config.security.encryption_mode = "disabled"
+        # Add limits config (required for per-peer rate limiting)
+        mock_config.limits = MagicMock()
+        mock_config.limits.per_peer_up_kib = 0  # Unlimited
+        mock_config.limits.per_peer_down_kib = 0  # Unlimited
         mock_get_config.return_value = mock_config
         
-        # Patch _setup_utp_incoming_handler to avoid creating task during init
-        with patch("ccbt.peer.async_peer_connection.AsyncPeerConnectionManager._setup_utp_incoming_handler"):
+        # Patch all network-related components
+        with patch("ccbt.peer.async_peer_connection.AsyncPeerConnectionManager._setup_utp_incoming_handler"), \
+             patch("asyncio.open_connection") as mock_open_conn:  # Mock socket creation
+            mock_open_conn.side_effect = ConnectionError("Mocked connection")
+            
             manager = AsyncPeerConnectionManager(
                 piece_manager=piece_manager,
                 torrent_data=torrent_data,
             )
+            
+            # Don't start manager - tests only need _connect_to_peer which doesn't require start()
+            # Starting would launch background loops that need real config values
+            # But we need _running = True to prevent early return in _connect_to_peer
+            manager._running = True
+            
             yield manager
-            # Cleanup
+            
+            # Enhanced cleanup with timeout
             try:
-                await manager.stop()
-            except Exception:
-                pass
+                await asyncio.wait_for(manager.stop(), timeout=2.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                # Force cleanup if stop() times out
+                manager._running = False
+                # Cancel any remaining tasks
+                if hasattr(manager, "_connection_tasks"):
+                    for task in list(manager._connection_tasks.values()):
+                        if not task.done():
+                            task.cancel()
+                # Wait briefly for cleanup
+                await asyncio.sleep(0.1)
 
 
 @pytest.mark.asyncio

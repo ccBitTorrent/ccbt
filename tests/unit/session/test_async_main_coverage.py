@@ -23,22 +23,23 @@ from tests.conftest import create_test_torrent_dict
 
 @pytest.mark.asyncio
 async def test_start_download_error_paths(tmp_path: Path):
-    """Task 3.1: Test download start error paths (Lines 140-141).
+    """Task 3.1: Test download start error paths (Lines 135-140).
 
-    Verifies error handling when torrent_data extraction or peer manager init fails.
+    Verifies error handling when piece manager initialization fails.
     """
     # Create a torrent_data that will cause issues
     invalid_torrent_data = {}
 
-    # Mock AsyncPeerConnectionManager to raise exception during initialization
+    # Mock AsyncPieceManager to raise exception during initialization
+    # This will be caught in __init__ and stored in _init_error
     with patch(
-        "ccbt.session.download_manager.AsyncPeerConnectionManager", side_effect=RuntimeError("Init failed")
+        "ccbt.session.download_manager.AsyncPieceManager", side_effect=KeyError("Missing required field")
     ):
         manager = AsyncDownloadManager(invalid_torrent_data, str(tmp_path))
 
-        # Start should handle the error
-        # Lines 140-141 check is_private attribute access which may fail
-        with pytest.raises((RuntimeError, AttributeError, KeyError)):
+        # Start should raise RuntimeError from _init_error (line 135-137)
+        # or RuntimeError if piece_manager is None (line 138-140)
+        with pytest.raises(RuntimeError):
             await manager.start()
 
 

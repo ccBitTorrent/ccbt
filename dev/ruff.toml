@@ -132,6 +132,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "ccbt/session/factories.py" = [
     "SLF001",  # Private member access used for dependency injection pattern
 ]
+"ccbt/__main__.py" = [
+    "EXE001",  # Shebang present but file not executable - valid on Unix, Windows doesn't use executable bits
+]
 
 "**/__init__.py" = ["TID252"]
 "**/scripts/**/*.py" = ["T20"]

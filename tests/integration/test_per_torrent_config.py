@@ -20,7 +20,7 @@ from ccbt.cli.torrent_config_commands import (
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_daemon_running():
     """Mock daemon manager that reports daemon as running."""
     with patch("ccbt.cli.torrent_config_commands.DaemonManager") as mock_dm:
@@ -30,7 +30,7 @@ def mock_daemon_running():
         yield instance
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_daemon_not_running():
     """Mock daemon manager that reports daemon as not running."""
     with patch("ccbt.cli.torrent_config_commands.DaemonManager") as mock_dm:
@@ -51,7 +51,7 @@ def mock_ipc_client():
     return client
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_session_manager():
     """Mock session manager for direct mode."""
     manager = AsyncMock()

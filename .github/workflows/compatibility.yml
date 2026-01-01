@@ -2,17 +2,16 @@ name: Compatibility
 
 on:
   push:
-    branches: [main, dev]
-  pull_request:
-    branches: [main, dev]
-  schedule:
-    # Run weekly on Sundays at 02:00 UTC
-    - cron: '0 2 * * 0'
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   docker-test:
     name: docker-test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     strategy:
       matrix:
         python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
@@ -50,7 +49,9 @@ jobs:
     name: live-deployment-test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       
@@ -89,13 +90,13 @@ jobs:
   compatibility-tests:
     name: compatibility-tests
     runs-on: ubuntu-latest
-    # Run on schedule, manual trigger, or when compatibility tests change
+    # Run on push to main or manual trigger
     if: |
-      github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
-      contains(github.event.head_commit.message, '[compat]') ||
-      contains(join(github.event.commits.*.message, ' '), '[compat]')
-    
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       
@@ -132,4 +133,3 @@ jobs:
             site/reports/junit.xml
             site/reports/pytest.log
           retention-days: 30
-

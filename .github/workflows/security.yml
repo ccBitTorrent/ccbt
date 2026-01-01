@@ -2,16 +2,21 @@ name: Security
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
-    branches: [main, dev]
+    branches: [main]
   schedule:
     # Run weekly on Mondays at 00:00 UTC
     - cron: '0 0 * * 1'
+  workflow_dispatch:
 
 jobs:
   bandit:
     name: bandit
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +54,10 @@ jobs:
   safety:
     name: safety
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
       
@@ -70,4 +79,3 @@ jobs:
         run: |
           uv run safety check --json
         continue-on-error: true
-

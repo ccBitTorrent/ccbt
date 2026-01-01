@@ -124,8 +124,8 @@ class TestGetMetricsCollector:
             mock_disk_io.write_queue = mock_queue
             mock_get_disk_io.return_value = mock_disk_io
             
-            # Call _collect_performance_metrics
-            await collector._collect_performance_metrics()
+            # Call collect_performance_metrics
+            await collector.collect_performance_metrics()
             
             # Verify metrics were collected
             assert collector.performance_data["dht_nodes_discovered"] == 150
@@ -138,7 +138,7 @@ class TestGetMetricsCollector:
 
     @pytest.mark.asyncio
     async def test_collect_performance_metrics_queue_no_wait_times(self):
-        """Test _collect_performance_metrics with queue manager but no queued entries."""
+        """Test collect_performance_metrics with queue manager but no queued entries."""
         collector = MetricsCollector()
         mock_session = MagicMock()
         
@@ -155,7 +155,7 @@ class TestGetMetricsCollector:
         
         collector.set_session(mock_session)
         
-        await collector._collect_performance_metrics()
+        await collector.collect_performance_metrics()
         
         # queue_wait_time should be 0.0 when no wait_times
         assert collector.performance_data["queue_wait_time"] == 0.0
@@ -661,7 +661,7 @@ class TestShutdownMetrics:
             assert result is None
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock
@@ -684,7 +684,7 @@ def mock_config_enabled(monkeypatch):
     return mock_config
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
     from unittest.mock import Mock

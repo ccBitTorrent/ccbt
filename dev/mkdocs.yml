@@ -109,6 +109,9 @@ plugins:
         - locale: arc
           name: ܐܪܡܝܐ (Aramaic)
           build: true  # Custom language template in docs/overrides/partials/languages/arc.html (RTL)
+          # Note: 'arc' is ISO-639-2 (three-letter), not ISO-639-1. The build script patches
+          # Locale.run_validation to allow 'arc' as a special case. Also patches
+          # git-revision-date-localized plugin to fall back to 'en' for date formatting.
   - mkdocstrings:
       handlers:
         python:

@@ -2,7 +2,7 @@ name: Benchmark
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
     paths:
       - 'ccbt/**'
       - 'tests/performance/**'
@@ -13,6 +13,10 @@ jobs:
     name: benchmark
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write  # Required to commit benchmark results
+      actions: read
+      pull-requests: read
     
     steps:
       - uses: actions/checkout@v4
@@ -71,4 +75,3 @@ jobs:
           git add docs/reports/benchmarks/
           git diff --staged --quiet || git commit -m "ci: record benchmark results [skip ci]"
           git push
-

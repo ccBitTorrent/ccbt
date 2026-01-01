@@ -15,7 +15,7 @@ from ccbt.models import BandwidthAllocationMode, QueueConfig, QueueEntry, Torren
 from ccbt.queue.bandwidth import BandwidthAllocator
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_session_manager():
     """Create a mock AsyncSessionManager."""
     manager = MagicMock()

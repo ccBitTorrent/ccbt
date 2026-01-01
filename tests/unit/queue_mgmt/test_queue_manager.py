@@ -17,7 +17,7 @@ from ccbt.models import QueueConfig, QueueEntry, TorrentPriority
 from ccbt.queue.manager import QueueStatistics, TorrentQueueManager
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_session_manager():
     """Create a mock AsyncSessionManager."""
     manager = MagicMock()

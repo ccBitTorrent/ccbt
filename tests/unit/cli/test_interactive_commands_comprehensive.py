@@ -771,7 +771,7 @@ async def test_cmd_metrics_export_prometheus(interactive_cli):
 
 
 @pytest.mark.asyncio
-async def test_cmd_metrics_export_with_output_file(interactive_cli):
+async def test_cmd_metrics_export_with_output_file(interactive_cli, tmp_path):
     """Test cmd_metrics export with output file (lines 759-763)."""
     with patch('ccbt.monitoring.MetricsCollector') as mock_mc_class, \
          patch('pathlib.Path') as mock_path:
@@ -782,7 +782,8 @@ async def test_cmd_metrics_export_with_output_file(interactive_cli):
         mock_path_instance = Mock()
         mock_path.return_value = mock_path_instance
         
-        await interactive_cli.cmd_metrics(["export", "json", "/tmp/metrics.json"])
+        metrics_path = str(tmp_path / "metrics.json")
+        await interactive_cli.cmd_metrics(["export", "json", metrics_path])
         
         mock_path_instance.write_text.assert_called_once()
         assert interactive_cli.console.print.called
@@ -906,11 +907,12 @@ async def test_cmd_alerts_clear(interactive_cli):
 
 
 @pytest.mark.asyncio
-async def test_cmd_export(interactive_cli):
+async def test_cmd_export(interactive_cli, tmp_path):
     """Test cmd_export command (lines 881-893)."""
     interactive_cli.session.export_session_state = AsyncMock()
     
-    await interactive_cli.cmd_export(["/tmp/export.json"])
+    export_path = str(tmp_path / "export.json")
+    await interactive_cli.cmd_export([export_path])
     
     interactive_cli.session.export_session_state.assert_called_once()
     assert interactive_cli.console.print.called
@@ -925,13 +927,14 @@ async def test_cmd_export_usage_error(interactive_cli):
 
 
 @pytest.mark.asyncio
-async def test_cmd_import(interactive_cli):
+async def test_cmd_import(interactive_cli, tmp_path):
     """Test cmd_import command (lines 895-907)."""
     interactive_cli.session.import_session_state = AsyncMock(return_value={
         "torrents": {"hash1": {}, "hash2": {}}
     })
     
-    await interactive_cli.cmd_import(["/tmp/import.json"])
+    import_path = str(tmp_path / "import.json")
+    await interactive_cli.cmd_import([import_path])
     
     interactive_cli.session.import_session_state.assert_called_once()
     assert interactive_cli.console.print.called
@@ -946,7 +949,7 @@ async def test_cmd_import_usage_error(interactive_cli):
 
 
 @pytest.mark.asyncio
-async def test_cmd_backup(interactive_cli):
+async def test_cmd_backup(interactive_cli, tmp_path):
     """Test cmd_backup command (lines 909-925)."""
     with patch('ccbt.cli.interactive.get_config') as mock_get_config, \
          patch('ccbt.storage.checkpoint.CheckpointManager') as mock_cm:
@@ -957,7 +960,8 @@ async def test_cmd_backup(interactive_cli):
         mock_cm_instance = AsyncMock()
         mock_cm.return_value = mock_cm_instance
         
-        await interactive_cli.cmd_backup(["abcd1234", "/tmp/backup"])
+        backup_path = str(tmp_path / "backup")
+        await interactive_cli.cmd_backup(["abcd1234", backup_path])
         
         mock_cm_instance.backup_checkpoint.assert_called_once()
         assert interactive_cli.console.print.called
@@ -972,7 +976,7 @@ async def test_cmd_backup_usage_error(interactive_cli):
 
 
 @pytest.mark.asyncio
-async def test_cmd_restore(interactive_cli):
+async def test_cmd_restore(interactive_cli, tmp_path):
     """Test cmd_restore command (lines 927-945)."""
     with patch('ccbt.cli.interactive.get_config') as mock_get_config, \
          patch('ccbt.storage.checkpoint.CheckpointManager') as mock_cm:
@@ -987,7 +991,8 @@ async def test_cmd_restore(interactive_cli):
         mock_cm_instance.restore_checkpoint.return_value = mock_checkpoint
         mock_cm.return_value = mock_cm_instance
         
-        await interactive_cli.cmd_restore(["/tmp/backup"])
+        backup_path = str(tmp_path / "backup")
+        await interactive_cli.cmd_restore([backup_path])
         
         mock_cm_instance.restore_checkpoint.assert_called_once()
         assert interactive_cli.console.print.called
@@ -1002,27 +1007,30 @@ async def test_cmd_restore_usage_error(interactive_cli):
 
 
 @pytest.mark.asyncio
-async def test_cmd_config_diff(interactive_cli):
+async def test_cmd_config_diff(interactive_cli, tmp_path):
     """Test cmd_config_diff command (lines 1151-1167)."""
     with patch('ccbt.config.config_diff.ConfigDiff') as mock_diff:
         mock_diff.compare_files.return_value = {"diff": "data"}
         
-        await interactive_cli.cmd_config_diff(["/tmp/config1.toml", "/tmp/config2.toml"])
+        config1_path = str(tmp_path / "config1.toml")
+        config2_path = str(tmp_path / "config2.toml")
+        await interactive_cli.cmd_config_diff([config1_path, config2_path])
         
         mock_diff.compare_files.assert_called_once()
         assert interactive_cli.console.print.called
 
 
 @pytest.mark.asyncio
-async def test_cmd_config_diff_usage_error(interactive_cli):
+async def test_cmd_config_diff_usage_error(interactive_cli, tmp_path):
     """Test cmd_config_diff with insufficient arguments (lines 1157-1159)."""
-    await interactive_cli.cmd_config_diff(["/tmp/config1.toml"])
+    config1_path = str(tmp_path / "config1.toml")
+    await interactive_cli.cmd_config_diff([config1_path])
     
     assert interactive_cli.console.print.called
 
 
 @pytest.mark.asyncio
-async def test_cmd_config_export_json(interactive_cli):
+async def test_cmd_config_export_json(interactive_cli, tmp_path):
     """Test cmd_config_export json format (lines 1169-1199)."""
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm, \
          patch('pathlib.Path') as mock_path:
@@ -1033,7 +1041,8 @@ async def test_cmd_config_export_json(interactive_cli):
         mock_path_instance = Mock()
         mock_path.return_value = mock_path_instance
         
-        await interactive_cli.cmd_config_export(["json", "/tmp/config.json"])
+        config_path = str(tmp_path / "config.json")
+        await interactive_cli.cmd_config_export(["json", config_path])
         
         mock_path_instance.write_text.assert_called_once()
         assert interactive_cli.console.print.called
@@ -1096,7 +1105,7 @@ async def test_cmd_config_export_yaml(interactive_cli):
 
 
 @pytest.mark.asyncio
-async def test_cmd_config_export_yaml_not_installed(interactive_cli):
+async def test_cmd_config_export_yaml_not_installed(interactive_cli, tmp_path):
     """Test cmd_config_export yaml when PyYAML not installed (lines 1187-1190)."""
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm:
         mock_config = Mock()
@@ -1109,8 +1118,9 @@ async def test_cmd_config_export_yaml_not_installed(interactive_cli):
             if 'yaml' in sys.modules:
                 del sys.modules['yaml']
         
+        config_path = str(tmp_path / "config.yaml")
         with patch('builtins.__import__', side_effect=ImportError("No module named yaml")):
-            await interactive_cli.cmd_config_export(["yaml", "/tmp/config.yaml"])
+            await interactive_cli.cmd_config_export(["yaml", config_path])
         
         assert interactive_cli.console.print.called
 
@@ -1124,7 +1134,7 @@ async def test_cmd_config_export_usage_error(interactive_cli):
 
 
 @pytest.mark.asyncio
-async def test_cmd_config_import_json(interactive_cli):
+async def test_cmd_config_import_json(interactive_cli, tmp_path):
     """Test cmd_config_import json format (lines 1201-1242)."""
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm, \
          patch('pathlib.Path') as mock_path, \
@@ -1143,7 +1153,8 @@ async def test_cmd_config_import_json(interactive_cli):
         mock_templates._deep_merge.return_value = {"merged": "config"}
         mock_config_model.model_validate.return_value = Mock()
         
-        await interactive_cli.cmd_config_import(["json", "/tmp/config.json"])
+        config_path = str(tmp_path / "config.json")
+        await interactive_cli.cmd_config_import(["json", config_path])
         
         mock_set.assert_called_once()
         assert interactive_cli.console.print.called
@@ -1384,7 +1395,7 @@ async def test_cmd_config_unknown_subcommand(interactive_cli):
 
 
 @pytest.mark.asyncio
-async def test_cmd_alerts_load(interactive_cli):
+async def test_cmd_alerts_load(interactive_cli, tmp_path):
     """Test cmd_alerts load subcommand (lines 850-855)."""
     with patch('ccbt.monitoring.get_alert_manager') as mock_get_am, \
          patch('pathlib.Path') as mock_path:
@@ -1392,21 +1403,23 @@ async def test_cmd_alerts_load(interactive_cli):
         mock_am.load_rules_from_file.return_value = 5
         mock_get_am.return_value = mock_am
         
-        await interactive_cli.cmd_alerts(["load", "/tmp/rules.json"])
+        rules_path = str(tmp_path / "rules.json")
+        await interactive_cli.cmd_alerts(["load", rules_path])
         
         mock_am.load_rules_from_file.assert_called_once()
         assert interactive_cli.console.print.called
 
 
 @pytest.mark.asyncio
-async def test_cmd_alerts_save(interactive_cli):
+async def test_cmd_alerts_save(interactive_cli, tmp_path):
     """Test cmd_alerts save subcommand (lines 856-861)."""
     with patch('ccbt.monitoring.get_alert_manager') as mock_get_am, \
          patch('pathlib.Path') as mock_path:
         mock_am = Mock()
         mock_get_am.return_value = mock_am
         
-        await interactive_cli.cmd_alerts(["save", "/tmp/rules.json"])
+        rules_path = str(tmp_path / "rules.json")
+        await interactive_cli.cmd_alerts(["save", rules_path])
         
         mock_am.save_rules_to_file.assert_called_once()
         assert interactive_cli.console.print.called
@@ -1677,7 +1690,7 @@ async def test_create_peers_panel_dict_peers(interactive_cli):
 
 
 @pytest.mark.asyncio
-async def test_cmd_config_import_yaml_not_installed(interactive_cli):
+async def test_cmd_config_import_yaml_not_installed(interactive_cli, tmp_path):
     """Test cmd_config_import yaml when PyYAML not installed (lines 1219-1223)."""
     import sys
     original_modules = sys.modules.copy()
@@ -1705,8 +1718,9 @@ async def test_cmd_config_import_yaml_not_installed(interactive_cli):
                     raise ImportError("No module named yaml")
                 return original_import(name, *args, **kwargs)
             
+            config_path = str(tmp_path / "config.yaml")
             with patch('builtins.__import__', side_effect=mock_import):
-                await interactive_cli.cmd_config_import(["yaml", "/tmp/config.yaml"])
+                await interactive_cli.cmd_config_import(["yaml", config_path])
             
             assert interactive_cli.console.print.called
     finally:

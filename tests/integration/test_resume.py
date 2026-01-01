@@ -185,6 +185,9 @@ class TestResumeIntegration:
         checkpoint_manager = Mock()
         checkpoint_manager.save_checkpoint = AsyncMock()
         session.checkpoint_manager = checkpoint_manager
+        # Update checkpoint_controller to use the mocked manager
+        if session.checkpoint_controller:
+            session.checkpoint_controller._manager = checkpoint_manager
 
         # Mock piece manager - return a valid checkpoint state
         from ccbt.models import TorrentCheckpoint
@@ -275,31 +278,24 @@ class TestResumeIntegration:
         session = AsyncTorrentSession(sample_torrent_data, str(temp_dir))
         session.config.disk = config
 
-        # Mock file assembler with async methods
-        file_assembler = Mock()
-        validation_results = {
-            "valid": True,
-            "missing_files": [],
-            "size_mismatches": [],
-            "existing_pieces": {0},
-            "warnings": [],
-        }
-        file_assembler.verify_existing_pieces = AsyncMock(
-            return_value=validation_results,
-        )
-        session.download_manager.file_assembler = file_assembler
-
         # Mock piece manager on session (not download_manager)
+        # The new implementation uses piece_manager for validation, not file_assembler
         piece_manager = Mock()
         piece_manager.restore_from_checkpoint = AsyncMock(return_value=None)
+        piece_manager.num_pieces = 1
+        piece_manager.get_completed_pieces = Mock(return_value=[])  # Return empty list for get_completed_pieces
         session.piece_manager = piece_manager
+        # Also set on download_manager for compatibility
+        session.download_manager.piece_manager = piece_manager
+        # Update context piece_manager (used by checkpoint_controller)
+        if session.checkpoint_controller and hasattr(session.checkpoint_controller, "_ctx"):
+            session.checkpoint_controller._ctx.piece_manager = piece_manager
 
         # Test resume from checkpoint
         await session._resume_from_checkpoint(sample_checkpoint)
 
-        # Verify validation was called
-        file_assembler.verify_existing_pieces.assert_called_once_with(sample_checkpoint)
-        # skip_preallocation_if_exists is no longer called in the new implementation
+        # Verify restore_from_checkpoint was called
+        # Note: verify_existing_pieces is no longer called in the new implementation
         piece_manager.restore_from_checkpoint.assert_called_once_with(sample_checkpoint)
 
     @pytest.mark.asyncio
@@ -323,36 +319,24 @@ class TestResumeIntegration:
         session = AsyncTorrentSession(sample_torrent_data, str(temp_dir))
         session.config.disk = config
 
-        # Mock file assembler with async methods
-        file_assembler = Mock()
-        validation_results = {
-            "valid": False,
-            "missing_files": [],
-            "size_mismatches": [
-                {
-                    "path": str(test_file),
-                    "expected": 16384,
-                    "actual": 1000,
-                },
-            ],
-            "existing_pieces": set(),
-            "warnings": ["Size mismatch for test file"],
-        }
-        file_assembler.verify_existing_pieces = AsyncMock(
-            return_value=validation_results,
-        )
-        session.download_manager.file_assembler = file_assembler
-
         # Mock piece manager on session (not download_manager)
+        # The new implementation uses piece_manager for validation, not file_assembler
         piece_manager = Mock()
         piece_manager.restore_from_checkpoint = AsyncMock(return_value=None)
+        piece_manager.num_pieces = 1
+        piece_manager.get_completed_pieces = Mock(return_value=[])  # Return empty list for get_completed_pieces
         session.piece_manager = piece_manager
+        # Also set on download_manager for compatibility
+        session.download_manager.piece_manager = piece_manager
+        # Update context piece_manager (used by checkpoint_controller)
+        if session.checkpoint_controller and hasattr(session.checkpoint_controller, "_ctx"):
+            session.checkpoint_controller._ctx.piece_manager = piece_manager
 
         # Test resume from checkpoint
         await session._resume_from_checkpoint(sample_checkpoint)
 
-        # Verify validation was called and warnings were logged
-        file_assembler.verify_existing_pieces.assert_called_once_with(sample_checkpoint)
+        # Verify restore_from_checkpoint was called
+        # Note: verify_existing_pieces is no longer called in the new implementation
         # Resume should still proceed despite validation warnings
         piece_manager.restore_from_checkpoint.assert_called_once_with(sample_checkpoint)
 

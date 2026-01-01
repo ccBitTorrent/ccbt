@@ -29,13 +29,25 @@ class TestBlacklistUpdater:
         """Test updating from plain text source."""
         content = "192.168.1.1\n192.168.1.2\n# Comment\n192.168.1.3\n"
 
-        with patch("aiohttp.ClientSession") as mock_session:
+        with patch("ccbt.security.blacklist_updater.aiohttp.ClientSession") as mock_session_class:
+            # Create mock response
             mock_resp = AsyncMock()
             mock_resp.status = 200
             mock_resp.text = AsyncMock(return_value=content)
-            mock_session.return_value.__aenter__.return_value.get.return_value.__aenter__.return_value = (
-                mock_resp
-            )
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=None)
+            
+            # Create mock session with get method that returns async context manager
+            mock_session = AsyncMock()
+            mock_get = MagicMock(return_value=mock_resp)
+            mock_get.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_get.__aexit__ = AsyncMock(return_value=None)
+            mock_session.get = MagicMock(return_value=mock_get)
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            
+            # Make ClientSession() return the mock session
+            mock_session_class.return_value = mock_session
 
             added = await updater.update_from_source("http://example.com/list")
 
@@ -49,13 +61,25 @@ class TestBlacklistUpdater:
         """Test updating from JSON source."""
         content = '{"ips": ["192.168.1.1", "192.168.1.2"]}'
 
-        with patch("aiohttp.ClientSession") as mock_session:
+        with patch("ccbt.security.blacklist_updater.aiohttp.ClientSession") as mock_session_class:
+            # Create mock response
             mock_resp = AsyncMock()
             mock_resp.status = 200
             mock_resp.text = AsyncMock(return_value=content)
-            mock_session.return_value.__aenter__.return_value.get.return_value.__aenter__.return_value = (
-                mock_resp
-            )
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=None)
+            
+            # Create mock session with get method that returns async context manager
+            mock_session = AsyncMock()
+            mock_get = MagicMock(return_value=mock_resp)
+            mock_get.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_get.__aexit__ = AsyncMock(return_value=None)
+            mock_session.get = MagicMock(return_value=mock_get)
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            
+            # Make ClientSession() return the mock session
+            mock_session_class.return_value = mock_session
 
             added = await updater.update_from_source("http://example.com/list")
 
@@ -68,13 +92,25 @@ class TestBlacklistUpdater:
         """Test updating from CSV source."""
         content = "ip,reason\n192.168.1.1,Test1\n192.168.1.2,Test2\n"
 
-        with patch("aiohttp.ClientSession") as mock_session:
+        with patch("ccbt.security.blacklist_updater.aiohttp.ClientSession") as mock_session_class:
+            # Create mock response
             mock_resp = AsyncMock()
             mock_resp.status = 200
             mock_resp.text = AsyncMock(return_value=content)
-            mock_session.return_value.__aenter__.return_value.get.return_value.__aenter__.return_value = (
-                mock_resp
-            )
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=None)
+            
+            # Create mock session with get method that returns async context manager
+            mock_session = AsyncMock()
+            mock_get = MagicMock(return_value=mock_resp)
+            mock_get.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_get.__aexit__ = AsyncMock(return_value=None)
+            mock_session.get = MagicMock(return_value=mock_get)
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            
+            # Make ClientSession() return the mock session
+            mock_session_class.return_value = mock_session
 
             added = await updater.update_from_source("http://example.com/list")
 
@@ -121,7 +157,8 @@ class TestBlacklistUpdater:
             updater.stop_auto_update()
             await asyncio.sleep(0.1)  # Allow cancellation to propagate
 
-    def test_stop_auto_update(self, updater):
+    @pytest.mark.asyncio
+    async def test_stop_auto_update(self, updater):
         """Test stopping auto-update task."""
         # Create a dummy task
         async def dummy_task():
@@ -130,6 +167,9 @@ class TestBlacklistUpdater:
         updater._update_task = asyncio.create_task(dummy_task())
 
         updater.stop_auto_update()
+        
+        # Wait a bit for cancellation to complete
+        await asyncio.sleep(0.1)
 
         assert updater._update_task.cancelled()
 

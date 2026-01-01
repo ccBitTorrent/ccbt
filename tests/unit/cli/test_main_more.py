@@ -25,7 +25,9 @@ def test_status_command_basic(monkeypatch):
     async def _noop_basic(session, td, console, resume=False):  # noqa: ARG001
         return None
     monkeypatch.setattr(cli_main, "start_basic_download", _noop_basic)
-    monkeypatch.setattr(cli_main, "show_status", show_status)
+    # show_status is imported from ccbt.cli.status inside the function, so patch it there
+    from ccbt.cli import status as status_module
+    monkeypatch.setattr(status_module, "show_status", show_status)
 
     runner = CliRunner()
     result = runner.invoke(cli_main.cli, ["status"]) 

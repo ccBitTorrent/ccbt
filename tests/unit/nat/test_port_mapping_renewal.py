@@ -14,7 +14,7 @@ from ccbt.nat.natpmp import NATPMPPortMapping
 from ccbt.nat.port_mapping import PortMapping, PortMappingManager
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock configuration."""
     config = MagicMock()

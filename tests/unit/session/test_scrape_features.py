@@ -21,7 +21,7 @@ import pytest_asyncio
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock configuration."""
     config = MagicMock()

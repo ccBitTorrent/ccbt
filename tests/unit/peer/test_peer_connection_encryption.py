@@ -32,7 +32,7 @@ def mock_torrent_data():
     }
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock config with encryption enabled."""
     config = SimpleNamespace()

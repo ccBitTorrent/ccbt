@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import aiohttp
 import pytest
+import pytest_asyncio
 
 from ccbt.daemon.ipc_protocol import API_BASE_PATH, API_KEY_HEADER
 from ccbt.daemon.ipc_server import IPCServer
@@ -21,7 +22,7 @@ from ccbt.session.session import AsyncSessionManager
 pytestmark = [pytest.mark.integration, pytest.mark.daemon]
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(scope="function")
 async def mock_session_manager(monkeypatch):
     """Create a mock session manager with lightweight initialization."""
     from unittest.mock import AsyncMock, patch
