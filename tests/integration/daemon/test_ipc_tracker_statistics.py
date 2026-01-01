@@ -23,7 +23,7 @@ from ccbt.models import ScrapeResult
 from ccbt.session.session import AsyncSessionManager, AsyncTorrentSession
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(scope="function")
 async def mock_session_manager(monkeypatch):
     """Create a mock session manager with lightweight initialization."""
     # Disable NAT auto port mapping to prevent 60s wait

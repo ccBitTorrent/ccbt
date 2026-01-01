@@ -18,14 +18,17 @@ jobs:
   check-version-consistency:
     name: check-version-consistency
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
       
       - name: Extract version from pyproject.toml
         id: pyproject_version
         run: |
-          VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version in pyproject.toml: $VERSION"
       

@@ -60,7 +60,7 @@ def mock_piece_manager():
     return manager
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock config."""
     config = SimpleNamespace()

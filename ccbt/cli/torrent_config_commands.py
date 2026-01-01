@@ -8,7 +8,7 @@ Provides commands to set, get, list, and reset per-torrent configuration options
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 import click
 from rich.console import Console
@@ -117,10 +117,19 @@ async def _set_torrent_option(
                 return
 
             parsed_value = _parse_value(value)
-            success = await adapter.set_torrent_option(
+            # Use executor.execute for consistency with executor pattern
+            result = await executor.execute(
+                "torrent.set_option",
                 info_hash=info_hash,
                 key=key,
                 value=parsed_value,
+            )
+            success = (
+                result.success
+                if hasattr(result, "success")
+                else result.get("success", False)
+                if isinstance(result, dict)
+                else False
             )
             if success:
                 console.print(
@@ -129,8 +138,17 @@ async def _set_torrent_option(
                     )
                 )
                 if save_checkpoint:
-                    checkpoint_success = await adapter.save_torrent_checkpoint(
-                        info_hash=info_hash
+                    # Use executor.execute for consistency
+                    checkpoint_result = await executor.execute(
+                        "torrent.save_checkpoint",
+                        info_hash=info_hash,
+                    )
+                    checkpoint_success = (
+                        checkpoint_result.success
+                        if hasattr(checkpoint_result, "success")
+                        else checkpoint_result.get("success", False)
+                        if isinstance(checkpoint_result, dict)
+                        else False
                     )
                     if checkpoint_success:
                         console.print(_("[green]Checkpoint saved[/green]"))
@@ -218,8 +236,15 @@ async def _get_torrent_option(info_hash: str, key: str) -> None:
         try:
             executor_manager = ExecutorManager.get_instance()
             executor = executor_manager.get_executor(ipc_client=client)
-            adapter = executor.adapter
-            value = await adapter.get_torrent_option(info_hash=info_hash, key=key)
+            # Use executor.execute for consistency
+            result = await executor.execute(
+                "torrent.get_option",
+                info_hash=info_hash,
+                key=key,
+            )
+            value = None
+            if hasattr(result, "data") and isinstance(result.data, dict):
+                value = result.data.get("value")
             if value is not None:
                 console.print(_("{key} = {value}").format(key=key, value=value))
             else:
@@ -282,10 +307,20 @@ async def _list_torrent_options(info_hash: str) -> None:
         try:
             executor_manager = ExecutorManager.get_instance()
             executor = executor_manager.get_executor(ipc_client=client)
-            adapter = executor.adapter
-            data = await adapter.get_torrent_config(info_hash=info_hash)
-            options = data.get("options", {})
-            rate_limits = data.get("rate_limits", {})
+            # Use executor.execute for consistency
+            result = await executor.execute(
+                "torrent.get_config",
+                info_hash=info_hash,
+            )
+            data = (
+                result.data
+                if hasattr(result, "data")
+                else result
+                if isinstance(result, dict)
+                else {}
+            )
+            options = data.get("options", {}) if isinstance(data, dict) else {}
+            rate_limits = data.get("rate_limits", {}) if isinstance(data, dict) else {}
 
             table = Table(
                 title=_("Per-Torrent Config: {hash}...").format(hash=info_hash[:12])
@@ -335,6 +370,9 @@ async def _list_torrent_options(info_hash: str) -> None:
         if session_manager:
             info_hash_bytes = bytes.fromhex(info_hash)
             limits = session_manager.get_per_torrent_limits(info_hash_bytes)
+            # Handle both sync and async return values
+            if asyncio.iscoroutine(limits):
+                limits = await limits
             if limits:
                 rate_limits = limits
 
@@ -351,18 +389,24 @@ async def _list_torrent_options(info_hash: str) -> None:
             table.add_row(_("(no options set)"), "-")
 
         if rate_limits:
+            # Ensure rate_limits is a dict, not a coroutine
+            if asyncio.iscoroutine(rate_limits):
+                rate_limits = await rate_limits
+            if not isinstance(rate_limits, dict):
+                rate_limits = {}
             table.add_row("", "")  # Separator
+            # rate_limits is guaranteed to be a dict after the check above
+            # Cast to help type checker understand the type
+            rate_limits_dict = cast("dict[str, Any]", rate_limits)
+            down_kib = rate_limits_dict.get("down_kib", 0)
+            up_kib = rate_limits_dict.get("up_kib", 0)
             table.add_row(
                 _("Download Limit"),
-                f"{rate_limits.get('down_kib', 0)} KiB/s"
-                if rate_limits.get("down_kib", 0) > 0
-                else _("Unlimited"),
+                f"{down_kib} KiB/s" if down_kib > 0 else _("Unlimited"),
             )
             table.add_row(
                 _("Upload Limit"),
-                f"{rate_limits.get('up_kib', 0)} KiB/s"
-                if rate_limits.get("up_kib", 0) > 0
-                else _("Unlimited"),
+                f"{up_kib} KiB/s" if up_kib > 0 else _("Unlimited"),
             )
 
         console.print(table)
@@ -406,10 +450,18 @@ async def _reset_torrent_options(
         try:
             executor_manager = ExecutorManager.get_instance()
             executor = executor_manager.get_executor(ipc_client=client)
-            adapter = executor.adapter
-            success = await adapter.reset_torrent_options(
+            # Use executor.execute for consistency
+            result = await executor.execute(
+                "torrent.reset_options",
                 info_hash=info_hash,
                 key=key,
+            )
+            success = (
+                result.success
+                if hasattr(result, "success")
+                else result.get("success", False)
+                if isinstance(result, dict)
+                else False
             )
             if success:
                 if key:
@@ -425,8 +477,17 @@ async def _reset_torrent_options(
                         )
                     )
                 if save_checkpoint:
-                    checkpoint_success = await adapter.save_torrent_checkpoint(
-                        info_hash=info_hash
+                    # Use executor.execute for consistency
+                    checkpoint_result = await executor.execute(
+                        "torrent.save_checkpoint",
+                        info_hash=info_hash,
+                    )
+                    checkpoint_success = (
+                        checkpoint_result.success
+                        if hasattr(checkpoint_result, "success")
+                        else checkpoint_result.get("success", False)
+                        if isinstance(checkpoint_result, dict)
+                        else False
                     )
                     if checkpoint_success:
                         console.print(_("[green]Checkpoint saved[/green]"))

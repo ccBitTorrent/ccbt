@@ -1142,7 +1142,11 @@ def _apply_proxy_overrides(cfg: Config, options: dict[str, Any]) -> None:
         if len(proxy_parts) == 2:
             cfg.proxy.enable_proxy = True
             cfg.proxy.proxy_host = proxy_parts[0]
-            cfg.proxy.proxy_port = int(proxy_parts[1])
+            try:
+                cfg.proxy.proxy_port = int(proxy_parts[1])
+            except ValueError as err:
+                error_msg = f"Invalid proxy port: {proxy_parts[1]}"
+                raise click.Abort(error_msg) from err
     if options.get("proxy_user"):
         cfg.proxy.proxy_username = options["proxy_user"]
         cfg.proxy.enable_proxy = True

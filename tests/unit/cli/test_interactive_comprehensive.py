@@ -943,7 +943,7 @@ class TestInteractiveComprehensive:
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
-    async def test_cmd_config_backup_create(self, interactive_cli):
+    async def test_cmd_config_backup_create(self, interactive_cli, tmp_path):
         """Test cmd_config_backup create (lines 1474-1482)."""
         with patch("ccbt.config.config_backup.ConfigBackup") as mock_cb_class:
             mock_cb = MagicMock()
@@ -955,7 +955,7 @@ class TestInteractiveComprehensive:
                 mock_cm.config = MagicMock()
                 mock_cm.config.disk = MagicMock()
                 mock_cm.config.disk.backup_dir = "/tmp"
-                mock_cm.config_file = "/tmp/config.toml"
+                mock_cm.config_file = str(tmp_path / "config.toml")
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_config_backup(["create", "test"])
@@ -963,7 +963,7 @@ class TestInteractiveComprehensive:
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
-    async def test_cmd_config_backup_create_failure(self, interactive_cli):
+    async def test_cmd_config_backup_create_failure(self, interactive_cli, tmp_path):
         """Test cmd_config_backup create failure (lines 1499-1500)."""
         with patch("ccbt.config.config_backup.ConfigBackup") as mock_cb_class:
             mock_cb = MagicMock()
@@ -975,7 +975,7 @@ class TestInteractiveComprehensive:
                 mock_cm.config = MagicMock()
                 mock_cm.config.disk = MagicMock()
                 mock_cm.config.disk.backup_dir = "/tmp"
-                mock_cm.config_file = "/tmp/config.toml"
+                mock_cm.config_file = str(tmp_path / "config.toml")
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_config_backup(["create", "test"])
@@ -997,7 +997,7 @@ class TestInteractiveComprehensive:
                 mock_cm.config = MagicMock()
                 mock_cm.config.disk = MagicMock()
                 mock_cm.config.disk.backup_dir = "/tmp"
-                mock_cm.config_file = "/tmp/config.toml"
+                mock_cm.config_file = str(tmp_path / "config.toml")
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_config_backup(["restore", str(backup_file)])
@@ -1019,7 +1019,7 @@ class TestInteractiveComprehensive:
                 mock_cm.config = MagicMock()
                 mock_cm.config.disk = MagicMock()
                 mock_cm.config.disk.backup_dir = "/tmp"
-                mock_cm.config_file = "/tmp/config.toml"
+                mock_cm.config_file = str(tmp_path / "config.toml")
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_config_backup(["restore", str(backup_file)])
