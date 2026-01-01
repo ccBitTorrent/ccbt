@@ -4,19 +4,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  # Note: This workflow does NOT trigger on pull requests - compatibility tests only run on push to main or manual trigger
-
 jobs:
   docker-test:
     name: docker-test
     runs-on: ubuntu-latest
-    # Only run on push to main or manual trigger (not on PRs)
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    permissions:
-      contents: read
-      actions: read
     strategy:
       matrix:
         python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
@@ -98,10 +89,9 @@ jobs:
     # Run on push to main or manual trigger
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    permissions:
-      contents: read
-      actions: read
+      contains(github.event.head_commit.message, '[compat]') ||
+      contains(join(github.event.commits.*.message, ' '), '[compat]')
+    
     steps:
       - uses: actions/checkout@v4
       
