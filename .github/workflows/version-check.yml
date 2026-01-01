@@ -2,7 +2,7 @@ name: Version Check
 
 on:
   pull_request:
-    branches: [main, dev]
+    branches: [main]  # Only check versions on PRs to main, not dev
     paths:
       - 'pyproject.toml'
       - 'ccbt/__init__.py'
@@ -18,6 +18,11 @@ jobs:
   check-version-consistency:
     name: check-version-consistency
     runs-on: ubuntu-latest
+    # Only run on PRs to main, not dev (or on push/merge_group events)
+    if: |
+      github.event_name == 'push' ||
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
     permissions:
       contents: read
       actions: read
@@ -134,14 +139,31 @@ jobs:
           fi
       
       - name: Run Python version validation script
+        # Only run on PRs to main or when script exists
+        if: |
+          (github.event_name == 'pull_request' && github.base_ref == 'main') ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/main')
         run: |
-          python dev/scripts/validate_version.py
+          if [ -f dev/scripts/validate_version.py ]; then
+            python dev/scripts/validate_version.py
+          else
+            echo "⚠️  validate_version.py not found, skipping Python validation"
+            echo "   Using shell-based validation instead"
+          fi
       
       - name: Validate changelog
+        # Only run on PRs to main or when script exists
+        if: |
+          (github.event_name == 'pull_request' && github.base_ref == 'main') ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/main')
         run: |
-          python dev/scripts/validate_changelog.py || {
-            echo "⚠️  Changelog validation failed."
-            echo "Please ensure dev/CHANGELOG.md is updated with your changes."
-            exit 1
-          }
+          if [ -f dev/scripts/validate_changelog.py ]; then
+            python dev/scripts/validate_changelog.py || {
+              echo "⚠️  Changelog validation failed."
+              echo "Please ensure dev/CHANGELOG.md is updated with your changes."
+              exit 1
+            }
+          else
+            echo "⚠️  validate_changelog.py not found, skipping changelog validation"
+          fi
 

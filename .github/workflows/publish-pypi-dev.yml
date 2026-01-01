@@ -71,9 +71,9 @@ jobs:
       
       - name: Publish to PyPI (Nightly)
         env:
-          UV_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          if [ -z "$UV_PYPI_TOKEN" ]; then
+          if [ -z "$UV_PUBLISH_TOKEN" ]; then
             echo "❌ Error: PYPI_API_TOKEN secret is not set"
             echo "Please add your PyPI API token as a GitHub secret named 'PYPI_API_TOKEN'"
             exit 1
@@ -81,7 +81,8 @@ jobs:
           
           VERSION="${{ steps.get_version.outputs.version }}"
           echo "🚀 Publishing dev branch version $VERSION to PyPI as nightly build..."
-          uv publish
+          # Use --trusted-publishing never to skip OIDC and use token directly
+          uv publish --trusted-publishing never
           
           echo "✅ Successfully published to PyPI!"
           echo "📦 Package: https://pypi.org/project/ccbt/"

@@ -130,8 +130,8 @@ This document provides a comprehensive overview of all GitHub Actions workflows 
   - Reminds maintainers of release checklist items
 
 ### Version Check Workflow (version-check.yml)
-- **Triggers**:
-  - Pull request to `main` or `dev` branches (when version files change)
+- **Triggers**: 
+  - Pull request to `main` branch only (when version files change) - **NOT on PRs to dev**
   - Push to `main` or `dev` branches (when version files change)
   - Merge group events on `dev` branch
 - **Purpose**: Continuous version consistency validation
