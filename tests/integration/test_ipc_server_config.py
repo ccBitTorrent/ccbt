@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import aiohttp
 import pytest
+import pytest_asyncio
 
 from ccbt.daemon.ipc_protocol import API_BASE_PATH, API_KEY_HEADER
 from ccbt.daemon.ipc_server import IPCServer

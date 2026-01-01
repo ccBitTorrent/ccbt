@@ -1227,6 +1227,7 @@ dependencies = [
     { name = "click", version = "8.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "cryptography" },
     { name = "defusedxml" },
+    { name = "eval-type-backport", marker = "python_full_version < '3.10'" },
     { name = "ipfshttpclient" },
     { name = "liburing", marker = "sys_platform == 'linux'" },
     { name = "lz4", version = "4.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
@@ -1372,6 +1373,7 @@ requires-dist = [
     { name = "commitizen", marker = "extra == 'dev'", specifier = ">=3.0.0" },
     { name = "cryptography", specifier = ">=46.0.3" },
     { name = "defusedxml", specifier = ">=0.7.1" },
+    { name = "eval-type-backport", marker = "python_full_version < '3.10'", specifier = ">=0.3.1" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.113.0" },
     { name = "ipfshttpclient", specifier = ">=0.8.0a2" },
     { name = "liburing", marker = "sys_platform == 'linux'", specifier = ">=0.0.1" },
@@ -2410,6 +2412,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/12/8b/68fb02aeb01d56a605dfb84446a7268462ddf4a28100dfdab98039832efc/dynamic_import-2024.5.2.tar.gz", hash = "sha256:76d58ee6f4065a793b0aabb79c0b26243f3c6b45d17616eebe27dfef3a0d9194", size = 27715, upload-time = "2024-05-02T16:27:16.043Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fd/38/2f5fc544f62837156834a147be8fd3a3de1c7d9a17826632e64af646cf81/dynamic_import-2024.5.2-py3-none-any.whl", hash = "sha256:61d7c7900faad12a5df3c1939155c609e966357285f7bd85efe43e0c4ef74387", size = 19129, upload-time = "2024-05-02T16:27:14.163Z" },
+]
+
+[[package]]
+name = "eval-type-backport"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fb/a3/cafafb4558fd638aadfe4121dc6cefb8d743368c085acb2f521df0f3d9d7/eval_type_backport-0.3.1.tar.gz", hash = "sha256:57e993f7b5b69d271e37482e62f74e76a0276c82490cf8e4f0dffeb6b332d5ed", size = 9445, upload-time = "2025-12-02T11:51:42.987Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/22/fdc2e30d43ff853720042fa15baa3e6122722be1a7950a98233ebb55cd71/eval_type_backport-0.3.1-py3-none-any.whl", hash = "sha256:279ab641905e9f11129f56a8a78f493518515b83402b860f6f06dd7c011fdfa8", size = 6063, upload-time = "2025-12-02T11:51:41.665Z" },
 ]
 
 [[package]]

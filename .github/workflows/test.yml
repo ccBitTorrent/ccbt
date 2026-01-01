@@ -11,6 +11,10 @@ jobs:
   test:
     name: test
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     strategy:
       fail-fast: false
       matrix:
@@ -92,6 +96,7 @@ jobs:
         continue-on-error: true
       
       - name: Run tests with coverage
+        shell: bash
         run: |
           # Exclude compatibility tests from main test run (they run separately)
           uv run pytest -c dev/pytest.ini tests/ \

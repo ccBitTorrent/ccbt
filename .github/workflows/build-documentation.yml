@@ -1,28 +1,17 @@
 name: Build Documentation
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'docs/**'
-      - 'dev/mkdocs.yml'
-      - '.readthedocs.yaml'
-      - 'dev/requirements-rtd.txt'
-      - 'ccbt/**'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'docs/**'
-      - 'dev/mkdocs.yml'
-      - '.readthedocs.yaml'
-      - 'dev/requirements-rtd.txt'
   workflow_dispatch:
+    # Can be triggered manually from any branch for testing
+    # Documentation is automatically published to Read the Docs when changes are pushed
 
 jobs:
   build-docs:
     name: build-docs
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,11 +113,6 @@ jobs:
           path: site/
           retention-days: 7
       
-      - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
-          cname: ccbittorrent.readthedocs.io
+      # Note: Documentation is automatically published to Read the Docs
+      # when changes are pushed to the repository. No GitHub Pages deployment needed.
 
