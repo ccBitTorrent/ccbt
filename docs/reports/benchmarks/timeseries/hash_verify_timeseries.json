@@ -118,11 +118,19 @@
       ]
     },
     {
+<<<<<<< Updated upstream
       "timestamp": "2026-01-01T21:26:22.427564+00:00",
       "git": {
         "commit_hash": "a180ff317e02fa68b6ba45ac4bb8e80ee20116ec",
         "commit_hash_short": "a180ff3",
         "branch": "addssessionrefactor",
+=======
+      "timestamp": "2026-01-01T21:33:24.328887+00:00",
+      "git": {
+        "commit_hash": "43a2215f6b9d7344d5a477b34370e0c1de833bbf",
+        "commit_hash_short": "43a2215",
+        "branch": "HEAD",
+>>>>>>> Stashed changes
         "author": "Joseph Pollack",
         "is_dirty": false
       },
@@ -136,23 +144,41 @@
         {
           "size_bytes": 1048576,
           "iterations": 64,
+<<<<<<< Updated upstream
           "elapsed_s": 9.810000119614415e-05,
           "bytes_processed": 67108864,
           "throughput_bytes_per_s": 684086270965.6902
+=======
+          "elapsed_s": 0.0003040999981749337,
+          "bytes_processed": 67108864,
+          "throughput_bytes_per_s": 220680251242.21008
+>>>>>>> Stashed changes
         },
         {
           "size_bytes": 4194304,
           "iterations": 64,
+<<<<<<< Updated upstream
           "elapsed_s": 9.230000068782829e-05,
           "bytes_processed": 268435456,
           "throughput_bytes_per_s": 2908293109421.384
+=======
+          "elapsed_s": 0.00012789999891538173,
+          "bytes_processed": 268435456,
+          "throughput_bytes_per_s": 2098791698798.9666
+>>>>>>> Stashed changes
         },
         {
           "size_bytes": 16777216,
           "iterations": 64,
+<<<<<<< Updated upstream
           "elapsed_s": 9.109999882639386e-05,
           "bytes_processed": 1073741824,
           "throughput_bytes_per_s": 11786408757767.307
+=======
+          "elapsed_s": 9.259999933419749e-05,
+          "bytes_processed": 1073741824,
+          "throughput_bytes_per_s": 11595484143847.758
+>>>>>>> Stashed changes
         }
       ]
     }
