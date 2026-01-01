@@ -168,7 +168,7 @@ class TestMetricsCollectorHTTPComprehensive:
 # Import Mock here to avoid issues
 from unittest.mock import Mock
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock
@@ -187,7 +187,7 @@ def mock_config_enabled(monkeypatch):
     return mock_config
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
     from unittest.mock import Mock

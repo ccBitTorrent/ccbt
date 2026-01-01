@@ -17,7 +17,7 @@ from ccbt.daemon.ipc_server import IPCServer
 from ccbt.session.session import AsyncSessionManager
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(scope="function")
 async def mock_session_manager(monkeypatch):
     """Create a mock session manager with lightweight initialization.
     

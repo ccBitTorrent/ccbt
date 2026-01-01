@@ -3993,7 +3993,7 @@ class AsyncPeerConnectionManager:
                             f"Private torrents only accept tracker-provided peers, "
                             f"rejecting peer from {peer_source}"
                         )
-                    raise PeerConnectionError(error_msg)
+                        raise PeerConnectionError(error_msg)
                 if self.circuit_breaker_manager:
                     breaker = self.circuit_breaker_manager.get_breaker(peer_id)
                     if breaker.state == "open":

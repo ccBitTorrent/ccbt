@@ -12,7 +12,7 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.protocols]
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_session_manager():
     """Create mock session manager."""
     return Mock()

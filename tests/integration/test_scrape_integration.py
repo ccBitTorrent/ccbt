@@ -23,7 +23,7 @@ from tests.conftest import create_test_torrent_dict
 pytestmark = [pytest.mark.integration, pytest.mark.session]
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock configuration."""
     config = MagicMock()

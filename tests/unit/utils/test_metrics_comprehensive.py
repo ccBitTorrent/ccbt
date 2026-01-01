@@ -33,7 +33,7 @@ from ccbt.utils.metrics import (
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock config for testing."""
     config = MagicMock()

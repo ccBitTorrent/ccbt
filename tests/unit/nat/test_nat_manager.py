@@ -11,21 +11,37 @@ from ccbt.nat.exceptions import NATPMPError, UPnPError
 from ccbt.nat.manager import NATManager
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock configuration."""
     config = MagicMock()
     config.nat.enable_nat_pmp = True
     config.nat.enable_upnp = True
-    config.nat.auto_map_ports = True
+    config.nat.auto_map_ports = False  # Disable auto-mapping for tests to prevent port conflicts
     config.nat.nat_discovery_interval = 300.0
+    config.nat.nat_discovery_timeout = 0.1  # Fast timeout for tests
     config.nat.port_mapping_lease_time = 3600
     config.nat.map_tcp_port = True
     config.nat.map_udp_port = True
     config.nat.map_dht_port = True
+    # Use actual integers, not MagicMock objects
     config.network.listen_port = 6881
+    config.network.listen_port_tcp = None  # Will fallback to listen_port
+    config.network.listen_port_udp = None  # Will fallback to listen_port
+    config.network.tracker_udp_port = None  # Will fallback to listen_port
+    config.network.xet_port = None
+    # Use getattr to handle xet_multicast_port which may not exist
+    if not hasattr(config.network, "xet_multicast_port"):
+        config.network.xet_multicast_port = None
     config.discovery.dht_port = 6882
     return config
+
+
+@pytest.fixture(autouse=True)
+def disable_nat(monkeypatch):
+    """Disable NAT auto-mapping for all NAT tests."""
+    monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
+    monkeypatch.setenv("CCBT_NAT_DISCOVERY_TIMEOUT", "0.1")
 
 
 @pytest.fixture
@@ -142,6 +158,7 @@ async def test_start_with_auto_map_disabled(nat_manager, mock_config):
 @pytest.mark.asyncio
 async def test_start_with_discovery_interval(nat_manager, mock_config):
     """Test start() with discovery interval."""
+    mock_config.nat.auto_map_ports = True  # Enable auto-mapping for this test
     mock_config.nat.nat_discovery_interval = 60.0
 
     with patch.object(nat_manager, "discover", new_callable=AsyncMock) as mock_discover:
@@ -166,7 +183,7 @@ async def test_discovery_loop_re_discovers(nat_manager, mock_config):
 
     discover_calls = []
 
-    async def mock_discover():
+    async def mock_discover(force=False):  # Accept force parameter
         discover_calls.append(1)
         return False  # No protocol found
 
@@ -293,26 +310,40 @@ async def test_map_port_no_active_protocol_discovers(nat_manager, mock_config):
 async def test_map_port_handles_error(nat_manager, mock_config):
     """Test map_port handles mapping errors."""
     nat_manager.active_protocol = "natpmp"
-
-    with patch.object(nat_manager, "natpmp_client") as mock_client:
-        mock_client.add_port_mapping = AsyncMock(side_effect=NATPMPError("Port conflict"))
-
+    # Create a proper mock client that always raises error
+    mock_client = MagicMock()
+    mock_client.add_port_mapping = AsyncMock(side_effect=NATPMPError("Port conflict"))
+    nat_manager.natpmp_client = mock_client
+    
+    # Patch asyncio.sleep to speed up retries for testing
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        # Call map_port - it will retry 3 times with delays, but we'll speed up delays
         result = await nat_manager.map_port(6881, 6881, "tcp")
-
+        
+        # Should return None after all retries fail
         assert result is None
+        # Should have attempted mapping (3 retries)
+        assert mock_client.add_port_mapping.call_count == 3
 
 
 @pytest.mark.asyncio
 async def test_map_port_handles_unexpected_error(nat_manager, mock_config):
     """Test map_port handles unexpected errors."""
     nat_manager.active_protocol = "upnp"
-
-    with patch.object(nat_manager, "upnp_client") as mock_client:
-        mock_client.add_port_mapping = AsyncMock(side_effect=RuntimeError("Unexpected"))
-
+    # Create a proper mock client that always raises error
+    mock_client = MagicMock()
+    mock_client.add_port_mapping = AsyncMock(side_effect=RuntimeError("Unexpected"))
+    nat_manager.upnp_client = mock_client
+    
+    # Patch asyncio.sleep to speed up retries for testing
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        # Call map_port - it will retry 3 times with delays, but we'll speed up delays
         result = await nat_manager.map_port(6881, 6881, "tcp")
-
+        
+        # Should return None after all retries fail
         assert result is None
+        # Should have attempted mapping (3 retries)
+        assert mock_client.add_port_mapping.call_count == 3
 
 
 @pytest.mark.asyncio
@@ -558,10 +589,13 @@ async def test_map_port_natpmp_client_none(nat_manager, mock_config):
     """Test map_port when NAT-PMP client is None."""
     nat_manager.active_protocol = "natpmp"
     nat_manager.natpmp_client = None
-
-    result = await nat_manager.map_port(6881, 6881, "tcp")
-
-    assert result is None
+    
+    # Patch asyncio.sleep to speed up retries for testing
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        # Should return None after retries (3 attempts with client=None)
+        result = await nat_manager.map_port(6881, 6881, "tcp")
+        
+        assert result is None
 
 
 @pytest.mark.asyncio
@@ -569,20 +603,26 @@ async def test_map_port_upnp_client_none(nat_manager, mock_config):
     """Test map_port when UPnP client is None."""
     nat_manager.active_protocol = "upnp"
     nat_manager.upnp_client = None
-
-    result = await nat_manager.map_port(6881, 6881, "tcp")
-
-    assert result is None
+    
+    # Patch asyncio.sleep to speed up retries for testing
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        # Should return None after retries (3 attempts with client=None)
+        result = await nat_manager.map_port(6881, 6881, "tcp")
+        
+        assert result is None
 
 
 @pytest.mark.asyncio
 async def test_map_port_unknown_protocol(nat_manager, mock_config):
     """Test map_port with unknown protocol."""
     nat_manager.active_protocol = "unknown"
-
-    result = await nat_manager.map_port(6881, 6881, "tcp")
-
-    assert result is None
+    
+    # Patch asyncio.sleep to speed up retries for testing
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        # Should return None after retries (3 attempts with unknown protocol)
+        result = await nat_manager.map_port(6881, 6881, "tcp")
+        
+        assert result is None
 
 
 @pytest.mark.asyncio

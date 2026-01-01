@@ -277,7 +277,7 @@ skips = ["B101", "B601"]
 # Commitizen configuration
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.0"
+version = "0.0.1"
 tag_format = "v$version"
 version_scheme = "pep440"
 

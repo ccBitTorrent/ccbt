@@ -2457,7 +2457,35 @@ class DaemonSessionAdapter(SessionAdapter):
 
     async def get_scrape_result(self, info_hash: str) -> Any | None:
         """Get cached scrape result for a torrent."""
-        return await self.ipc_client.get_scrape_result(info_hash)
+        try:
+            return await self.ipc_client.get_scrape_result(info_hash)
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.exception(
+                "Cannot connect to daemon IPC server to get scrape result. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            )
+            error_msg = f"Cannot connect to daemon IPC server: {_safe_error_str(e)}. Is the daemon running? Try 'btbt daemon start'"
+            raise RuntimeError(error_msg) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Torrent not found - return None instead of raising
+                return None
+            self.logger.exception(
+                "Daemon returned error %d when getting scrape result: %s",
+                e.status,
+                e.message,
+            )
+            msg = (
+                f"Daemon error when getting scrape result: HTTP {e.status}: {e.message}"
+            )
+            raise RuntimeError(msg) from e
+        except Exception as e:
+            # Other errors
+            self.logger.exception("Error getting scrape result")
+            msg = f"Error communicating with daemon: {e}"
+            raise RuntimeError(msg) from e
 
     async def get_config(self) -> dict[str, Any]:
         """Get current config."""
@@ -2477,8 +2505,34 @@ class DaemonSessionAdapter(SessionAdapter):
 
     async def get_peers_for_torrent(self, info_hash: str) -> list[dict[str, Any]]:
         """Get list of peers for a torrent."""
-        peer_list_response = await self.ipc_client.get_peers_for_torrent(info_hash)
-        return self._convert_peer_list_response(peer_list_response)
+        try:
+            peer_list_response = await self.ipc_client.get_peers_for_torrent(info_hash)
+            return self._convert_peer_list_response(peer_list_response)
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.exception(
+                "Cannot connect to daemon IPC server to get peers. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            )
+            error_msg = f"Cannot connect to daemon IPC server: {_safe_error_str(e)}. Is the daemon running? Try 'btbt daemon start'"
+            raise RuntimeError(error_msg) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            if e.status == 404:
+                # Torrent not found - return empty list instead of raising
+                return []
+            self.logger.exception(
+                "Daemon returned error %d when getting peers: %s",
+                e.status,
+                e.message,
+            )
+            msg = f"Daemon error when getting peers: HTTP {e.status}: {e.message}"
+            raise RuntimeError(msg) from e
+        except Exception as e:
+            # Other errors
+            self.logger.exception("Error getting peers for torrent")
+            msg = f"Error communicating with daemon: {e}"
+            raise RuntimeError(msg) from e
 
     async def add_xet_folder(
         self,
@@ -2562,9 +2616,32 @@ class DaemonSessionAdapter(SessionAdapter):
 
     async def force_announce(self, info_hash: str) -> bool:
         """Force a tracker announce for a torrent."""
-        result = await self.ipc_client.force_announce(info_hash)
-        # IPC client returns dict with success status
-        return result.get("success", False) if isinstance(result, dict) else result
+        try:
+            result = await self.ipc_client.force_announce(info_hash)
+            # IPC client returns dict with success status
+            return result.get("success", False) if isinstance(result, dict) else result
+        except aiohttp.ClientConnectorError as e:
+            # Connection refused - daemon not running or IPC server not accessible
+            self.logger.exception(
+                "Cannot connect to daemon IPC server to force announce. "
+                "Is the daemon running? Try 'btbt daemon start'"
+            )
+            error_msg = f"Cannot connect to daemon IPC server: {_safe_error_str(e)}. Is the daemon running? Try 'btbt daemon start'"
+            raise RuntimeError(error_msg) from e
+        except aiohttp.ClientResponseError as e:
+            # HTTP error response from daemon
+            self.logger.exception(
+                "Daemon returned error %d when forcing announce: %s",
+                e.status,
+                e.message,
+            )
+            msg = f"Daemon error when forcing announce: HTTP {e.status}: {e.message}"
+            raise RuntimeError(msg) from e
+        except Exception as e:
+            # Other errors
+            self.logger.exception("Error forcing announce")
+            msg = f"Error communicating with daemon: {e}"
+            raise RuntimeError(msg) from e
 
     async def export_session_state(self, path: str) -> None:
         """Export session state to a file."""

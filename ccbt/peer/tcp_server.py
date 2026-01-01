@@ -170,6 +170,7 @@ class IncomingPeerServer:
         """Stop the TCP server gracefully.
 
         CRITICAL FIX: Add delays on Windows to prevent socket buffer exhaustion (WinError 10055).
+        ENHANCEMENT: Explicitly close all sockets to ensure immediate port release.
         """
         if not self._running:
             return
@@ -177,6 +178,18 @@ class IncomingPeerServer:
         self._running = False
 
         if self.server:
+            # CRITICAL: Explicitly close all sockets before closing server to ensure immediate port release
+            if self.server.sockets:
+                for sock in self.server.sockets:
+                    try:
+                        # Close socket explicitly to release port immediately
+                        if hasattr(sock, "_closed") and not getattr(
+                            sock, "_closed", True
+                        ):
+                            sock.close()
+                    except Exception as e:
+                        self.logger.debug("Error closing socket: %s", e)
+
             self.server.close()
             try:
                 await asyncio.wait_for(self.server.wait_closed(), timeout=5.0)
@@ -211,6 +224,24 @@ class IncomingPeerServer:
 
         """
         return self._running and self.server is not None and self.server.is_serving()
+
+    @property
+    def port(self) -> int | None:
+        """Get the port the server is bound to.
+
+        Returns:
+            Port number if server is running, None otherwise
+
+        """
+        if not self.server or not self.server.sockets:
+            return None
+        try:
+            # Return the port from the first socket
+            sock = self.server.sockets[0]
+            sockname = sock.getsockname()
+            return sockname[1]
+        except (IndexError, OSError):
+            return None
 
     def get_server_addresses(self) -> list[str]:
         """Get list of addresses the server is bound to.

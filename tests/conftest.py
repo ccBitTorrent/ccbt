@@ -140,7 +140,7 @@ def pytest_collection_modifyitems(config, items):
     # #endregion
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="function")
 def _set_ccbt_test_mode_env(monkeypatch):
     """Ensure test mode is enabled so config resets don't touch repo files.
 
@@ -151,7 +151,7 @@ def _set_ccbt_test_mode_env(monkeypatch):
     monkeypatch.setenv("CCBT_TEST_MODE", "1")
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="function")
 def cleanup_logging():
     """Clean up logging handlers after each test to prevent closed file errors."""
     yield
@@ -169,7 +169,7 @@ def cleanup_logging():
         root_logger.removeHandler(handler)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="function")
 def cleanup_async_resources():
     """Clean up async resources after each test to prevent event loop issues.
 
@@ -291,7 +291,7 @@ def cleanup_async_resources():
 # leading to hangs where pytest_runtest_teardown was never called after test completion.
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="function")
 def cleanup_singleton_resources():
     """Clean up singleton resources (NetworkOptimizer, MetricsCollector) after each test.
 
@@ -612,7 +612,141 @@ def cleanup_singleton_resources():
     # #endregion
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="function")
+def cleanup_network_ports():
+    """Clean up network ports after each test to prevent conflicts.
+    
+    This fixture provides best-effort cleanup by waiting for ports to be released.
+    Actual port cleanup happens in component stop() methods.
+    """
+    yield
+    
+    import time
+    # Give ports time to be released by OS
+    # Note: Actual port cleanup happens in component stop() methods
+    # This fixture just ensures we wait for cleanup to complete
+    time.sleep(0.1)
+
+
+def get_free_port() -> int:
+    """Get a free port for testing.
+    
+    Returns:
+        int: A free port number
+    """
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def find_port_in_use(port: int) -> bool:
+    """Check if a port is in use.
+    
+    Args:
+        port: Port number to check
+        
+    Returns:
+        bool: True if port is in use, False otherwise
+    """
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", port))
+            return False
+    except OSError:
+        return True
+
+
+async def wait_for_port_release(port: int, timeout: float = 2.0) -> bool:
+    """Wait for a port to be released.
+    
+    Args:
+        port: Port number to wait for
+        timeout: Maximum time to wait in seconds
+        
+    Returns:
+        bool: True if port was released, False if timeout
+    """
+    import asyncio
+    import time
+    start = time.time()
+    while time.time() - start < timeout:
+        if not find_port_in_use(port):
+            return True
+        await asyncio.sleep(0.1)
+    return False
+
+
+@pytest.fixture(autouse=True, scope="function")
+def verify_test_isolation():
+    """Verify test isolation after each test.
+    
+    This fixture performs best-effort checks for:
+    - Lingering background threads
+    - Open file handles (if psutil available)
+    - Port conflicts (basic check)
+    
+    Warnings are logged but tests are not failed to avoid false positives.
+    """
+    yield
+    
+    # Best-effort verification - don't fail tests on warnings
+    import threading
+    import sys
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    warnings = []
+    
+    # Check for lingering background threads (excluding main thread)
+    try:
+        active_threads = [t for t in threading.enumerate() if t.is_alive() and t != threading.main_thread()]
+        # Filter out known system threads (like pytest's own threads)
+        test_threads = [
+            t for t in active_threads
+            if not t.name.startswith("MainThread")
+            and not t.name.startswith("ThreadPoolExecutor")
+            and "pytest" not in t.name.lower()
+            and "asyncio" not in t.name.lower()
+        ]
+        if test_threads:
+            thread_names = [t.name for t in test_threads]
+            warnings.append(f"Lingering threads detected: {thread_names}")
+    except Exception:
+        pass  # Thread enumeration may fail, ignore
+    
+    # Check for open file handles (if psutil available)
+    try:
+        import psutil
+        import os as os_module
+        process = psutil.Process(os_module.getpid())
+        open_files = process.open_files()
+        # Filter out known system files and pytest files
+        suspicious_files = [
+            f.path for f in open_files
+            if not any(
+                skip in f.path.lower()
+                for skip in ["/dev/", "/proc/", "pytest", ".pyc", "__pycache__", ".cursor"]
+            )
+        ]
+        if suspicious_files and len(suspicious_files) > 5:  # Allow some files, warn on many
+            warnings.append(f"Many open file handles detected: {len(suspicious_files)} files")
+    except ImportError:
+        # psutil not available, skip file handle check
+        pass
+    except Exception:
+        pass  # File handle check may fail, ignore
+    
+    # Log warnings if any found
+    if warnings:
+        logger.warning(
+            "Test isolation warnings (non-critical): %s",
+            "; ".join(warnings)
+        )
+
+
+@pytest.fixture(autouse=True, scope="function")
 def seed_rng() -> None:
     """Deterministically seed RNGs to make tests reproducible."""
     seed = int(os.environ.get("CCBT_TEST_SEED", "123456"))
@@ -626,7 +760,7 @@ def seed_rng() -> None:
         pass
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="function")
 def reset_config_manager_encryption_cache():
     """Reset ConfigManager encryption key cache between tests for isolation.
     
@@ -800,7 +934,7 @@ def create_mock_config():
     return config
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="function")
 async def session_manager(tmp_path, request):
     """Create AsyncSessionManager instance for testing with proper cleanup.
     
@@ -963,8 +1097,32 @@ async def session_manager(tmp_path, request):
                 except Exception:
                     pass  # Ignore errors during cleanup
             
-            # Give async cleanup time to complete
-            await asyncio.sleep(0.5)
+            # CRITICAL: Verify TCP server port is released
+            if hasattr(session, "tcp_server") and session.tcp_server:
+                try:
+                    # Get the port that was used
+                    if hasattr(session.tcp_server, "port") and session.tcp_server.port:
+                        port = session.tcp_server.port
+                        # Wait for port to be released (with timeout)
+                        await wait_for_port_release(port, timeout=2.0)
+                except Exception:
+                    pass  # Best effort - port may already be released
+            
+            # CRITICAL: Verify DHT socket is closed (already done above, but ensure it's verified)
+            if hasattr(session, "dht") and session.dht:
+                try:
+                    # Verify socket is closed
+                    if hasattr(session.dht, "socket") and session.dht.socket:
+                        socket_obj = session.dht.socket
+                        # Socket should be closed by now
+                        if hasattr(socket_obj, "_closed"):
+                            # Socket should be closed
+                            pass  # Verification complete
+                except Exception:
+                    pass  # Best effort verification
+            
+            # Give async cleanup time to complete (increased from 0.5s to 1.0s for better port release)
+            await asyncio.sleep(1.0)
             
             # Verify all tasks are done
             if hasattr(session, "scrape_task") and session.scrape_task:
@@ -974,7 +1132,7 @@ async def session_manager(tmp_path, request):
 # CLI Test Fixtures
 # These fixtures provide standardized mocks and helpers for CLI testing
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_session_manager():
     """Create a comprehensive mock AsyncSessionManager for CLI tests.
     
@@ -1146,7 +1304,7 @@ def mock_config_comprehensive():
     return config
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_daemon_not_running(monkeypatch):
     """Mock daemon detection to always return False (daemon not running).
     

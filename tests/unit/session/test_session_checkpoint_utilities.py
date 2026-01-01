@@ -87,11 +87,13 @@ async def test_list_resumable_checkpoints_filters_by_source(monkeypatch, tmp_pat
 
     import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.session.checkpoint_operations as cp_ops
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    resumable = await mgr.list_resumable_checkpoints()
+    resumable = await mgr.checkpoint_ops.list_resumable()
 
     assert len(resumable) == 2
     assert any(cp.info_hash == b"1" * 20 for cp in resumable)
@@ -144,11 +146,13 @@ async def test_list_resumable_checkpoints_handles_load_errors(monkeypatch, tmp_p
 
     import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.session.checkpoint_operations as cp_ops
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    resumable = await mgr.list_resumable_checkpoints()
+    resumable = await mgr.checkpoint_ops.list_resumable()
 
     assert len(resumable) == 1
     assert resumable[0].info_hash == b"1" * 20
@@ -210,11 +214,13 @@ async def test_find_checkpoint_by_name_returns_match(monkeypatch, tmp_path):
 
     import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.session.checkpoint_operations as cp_ops
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    cp = await mgr.find_checkpoint_by_name("test-torrent")
+    cp = await mgr.checkpoint_ops.find_by_name("test-torrent")
 
     assert cp is not None
     assert cp.torrent_name == "test-torrent"
@@ -234,11 +240,13 @@ async def test_find_checkpoint_by_name_returns_none_when_not_found(monkeypatch, 
 
     import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.session.checkpoint_operations as cp_ops
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    cp = await mgr.find_checkpoint_by_name("nonexistent")
+    cp = await mgr.checkpoint_ops.find_by_name("nonexistent")
 
     assert cp is None
 
@@ -266,11 +274,13 @@ async def test_get_checkpoint_info_returns_summary(monkeypatch, tmp_path):
 
     import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.session.checkpoint_operations as cp_ops
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    info = await mgr.get_checkpoint_info(b"1" * 20)
+    info = await mgr.checkpoint_ops.get_info(b"1" * 20)
 
     assert info is not None
     assert info["info_hash"] == (b"1" * 20).hex()
@@ -294,11 +304,13 @@ async def test_get_checkpoint_info_returns_none_when_missing(monkeypatch):
 
     import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.session.checkpoint_operations as cp_ops
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(".")
-    info = await mgr.get_checkpoint_info(b"1" * 20)
+    info = await mgr.checkpoint_ops.get_info(b"1" * 20)
 
     assert info is None
 
@@ -325,11 +337,13 @@ async def test_get_checkpoint_info_handles_zero_pieces(monkeypatch, tmp_path):
 
     import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.session.checkpoint_operations as cp_ops
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    info = await mgr.get_checkpoint_info(b"1" * 20)
+    info = await mgr.checkpoint_ops.get_info(b"1" * 20)
 
     assert info is not None
     assert info["progress"] == 0
@@ -398,8 +412,10 @@ async def test_cleanup_completed_checkpoints_removes_completed(monkeypatch, tmp_
 
     import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.session.checkpoint_operations as cp_ops
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
     cleaned = await mgr.cleanup_completed_checkpoints()
@@ -457,8 +473,10 @@ async def test_cleanup_completed_checkpoints_handles_errors(monkeypatch, tmp_pat
 
     import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.session.checkpoint_operations as cp_ops
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
     cleaned = await mgr.cleanup_completed_checkpoints()
