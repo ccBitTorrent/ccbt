@@ -112,6 +112,10 @@ plugins:
           # Note: 'arc' is ISO-639-2 (three-letter), not ISO-639-1. The build script patches
           # Locale.run_validation to allow 'arc' as a special case. Also patches
           # git-revision-date-localized plugin to fall back to 'en' for date formatting.
+  - autorefs:
+      # Note: Multiple primary URLs warnings are expected with i18n plugin
+      # The same Python objects are documented in multiple languages (en, es, etc.)
+      # Warnings are suppressed via logger filter in build_docs_patched_clean.py
   - mkdocstrings:
       handlers:
         python:

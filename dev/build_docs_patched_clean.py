@@ -138,11 +138,31 @@ I18n.reconfigure_files = patched_reconfigure_files
 # Now import and run mkdocs in the same process
 if __name__ == '__main__':
     import sys
+    import os
+    import logging
     from mkdocs.__main__ import cli
+    
+    # Patch mkdocs logger to filter out autorefs warnings about multiple primary URLs
+    # These are expected with i18n plugin when same objects are documented in multiple languages
+    class AutorefsWarningFilter(logging.Filter):
+        """Filter out autorefs warnings about multiple primary URLs (expected with i18n)."""
+        def filter(self, record):
+            # Filter out warnings about multiple primary URLs from mkdocs-autorefs
+            if 'Multiple primary URLs found' in record.getMessage():
+                return False
+            return True
+    
+    # Apply filter to mkdocs logger
+    mkdocs_logger = logging.getLogger('mkdocs')
+    autorefs_filter = AutorefsWarningFilter()
+    mkdocs_logger.addFilter(autorefs_filter)
+    
+    # Also filter mkdocs_autorefs logger if it exists
+    autorefs_logger = logging.getLogger('mkdocs_autorefs')
+    autorefs_logger.addFilter(autorefs_filter)
     
     # Use --strict only if explicitly requested via environment variable
     # Otherwise, respect strict: false in mkdocs.yml
-    import os
     strict_flag = ['--strict'] if os.getenv('MKDOCS_STRICT', '').lower() == 'true' else []
     sys.argv = ['mkdocs', 'build'] + strict_flag + ['-f', 'dev/mkdocs.yml']
     cli()
