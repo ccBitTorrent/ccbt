@@ -28,7 +28,7 @@ We follow security best practices including:
 - Encryption support for sensitive data
 - IP filtering via security manager
 
-For more information about our security practices, see the [Security Documentation](../../../en/security-ml-features.md).
+For more information about our security practices, see the [Security Features section](../../architecture.md#security-features) in the Architecture documentation.
 
 ## Report Generation
 
