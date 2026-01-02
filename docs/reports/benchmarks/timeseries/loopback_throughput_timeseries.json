@@ -1,61 +1,11 @@
 {
   "entries": [
     {
-      "timestamp": "2025-12-09T13:52:30.586439+00:00",
+      "timestamp": "2026-01-02T05:14:11.144981+00:00",
       "git": {
-        "commit_hash": "862dc936e28b5c54448b586719c41c05e5a3a37f",
-        "commit_hash_short": "862dc93",
-        "branch": "dev",
-        "author": "Joseph Pollack",
-        "is_dirty": false
-      },
-      "platform": {
-        "system": "Windows",
-        "release": "11",
-        "python": "3.13.3"
-      },
-      "config": "performance",
-      "results": [
-        {
-          "payload_bytes": 16384,
-          "pipeline_depth": 8,
-          "duration_s": 3.000016300000425,
-          "bytes_transferred": 28182183936,
-          "throughput_bytes_per_s": 9394010271.20953,
-          "stall_percent": 11.111105369284974
-        },
-        {
-          "payload_bytes": 16384,
-          "pipeline_depth": 128,
-          "duration_s": 3.000051999999414,
-          "bytes_transferred": 52992933888,
-          "throughput_bytes_per_s": 17664005119.914707,
-          "stall_percent": 0.7751935606383651
-        },
-        {
-          "payload_bytes": 65536,
-          "pipeline_depth": 8,
-          "duration_s": 3.0000094000024546,
-          "bytes_transferred": 114890899456,
-          "throughput_bytes_per_s": 38296846488.516335,
-          "stall_percent": 11.111105477341939
-        },
-        {
-          "payload_bytes": 65536,
-          "pipeline_depth": 128,
-          "duration_s": 3.000038599999243,
-          "bytes_transferred": 221845127168,
-          "throughput_bytes_per_s": 73947424265.82643,
-          "stall_percent": 0.7751935712223383
-        }
-      ]
-    },
-    {
-      "timestamp": "2025-12-31T15:56:32.306398+00:00",
-      "git": {
-        "commit_hash": "32b1ca9a87bb5fa5a113702986b04317e335c719",
-        "commit_hash_short": "32b1ca9",
-        "branch": "addssessionrefactor",
+        "commit_hash": "ea3cad3c4d3f1d60b727f8878caa72c5584bb532",
+        "commit_hash_short": "ea3cad3",
+        "branch": "addscom",
         "author": "Joseph Pollack",
         "is_dirty": true
       },
@@ -69,170 +19,34 @@
         {
           "payload_bytes": 16384,
           "pipeline_depth": 8,
-          "duration_s": 3.00001759999941,
-          "bytes_transferred": 31751536640,
-          "throughput_bytes_per_s": 10583783455.139145,
-          "stall_percent": 11.111106014752735
+          "duration_s": 3.000012800002878,
+          "bytes_transferred": 28100132864,
+          "throughput_bytes_per_s": 9366670990.19479,
+          "stall_percent": 11.11110535251912
         },
         {
           "payload_bytes": 16384,
           "pipeline_depth": 128,
-          "duration_s": 3.0000309999995807,
-          "bytes_transferred": 62571364352,
-          "throughput_bytes_per_s": 20856905929.30831,
-          "stall_percent": 0.7751845337227097
+          "duration_s": 3.000014799996279,
+          "bytes_transferred": 61922738176,
+          "throughput_bytes_per_s": 20640810897.358505,
+          "stall_percent": 0.7751919667985651
         },
         {
           "payload_bytes": 65536,
           "pipeline_depth": 8,
           "duration_s": 3.0000116000010166,
-          "bytes_transferred": 126129930240,
-          "throughput_bytes_per_s": 42043147513.148705,
-          "stall_percent": 11.111075188761681
+          "bytes_transferred": 121204899840,
+          "throughput_bytes_per_s": 40401477060.94167,
+          "stall_percent": 11.111105770825153
         },
         {
           "payload_bytes": 65536,
           "pipeline_depth": 128,
-          "duration_s": 3.000052200000937,
-          "bytes_transferred": 247966007296,
-          "throughput_bytes_per_s": 82653897587.4895,
-          "stall_percent": 0.7751714364313005
-        }
-      ]
-    },
-    {
-      "timestamp": "2025-12-31T16:11:25.026493+00:00",
-      "git": {
-        "commit_hash": "ec4b34907b7d84bc411c3189fea26669e50d98e4",
-        "commit_hash_short": "ec4b349",
-        "branch": "addssessionrefactor",
-        "author": "Joseph Pollack",
-        "is_dirty": true
-      },
-      "platform": {
-        "system": "Windows",
-        "release": "11",
-        "python": "3.13.3"
-      },
-      "config": "performance",
-      "results": [
-        {
-          "payload_bytes": 16384,
-          "pipeline_depth": 8,
-          "duration_s": 3.000020299998141,
-          "bytes_transferred": 27435073536,
-          "throughput_bytes_per_s": 9144962631.091864,
-          "stall_percent": 11.111105212923967
-        },
-        {
-          "payload_bytes": 16384,
-          "pipeline_depth": 128,
-          "duration_s": 3.0000699999982317,
-          "bytes_transferred": 41624010752,
-          "throughput_bytes_per_s": 13874346515.922806,
-          "stall_percent": 0.7751595859358157
-        },
-        {
-          "payload_bytes": 65536,
-          "pipeline_depth": 8,
-          "duration_s": 3.0000199999994948,
-          "bytes_transferred": 104454946816,
-          "throughput_bytes_per_s": 34818083484.78263,
-          "stall_percent": 11.111104914479984
-        },
-        {
-          "payload_bytes": 65536,
-          "pipeline_depth": 128,
-          "duration_s": 3.0001693999984127,
-          "bytes_transferred": 205192364032,
-          "throughput_bytes_per_s": 68393592719.16731,
-          "stall_percent": 0.7751672662645684
-        }
-      ]
-    },
-    {
-<<<<<<< Updated upstream
-      "timestamp": "2026-01-01T21:26:34.928266+00:00",
-      "git": {
-        "commit_hash": "a180ff317e02fa68b6ba45ac4bb8e80ee20116ec",
-        "commit_hash_short": "a180ff3",
-        "branch": "addssessionrefactor",
-=======
-      "timestamp": "2026-01-01T21:33:36.877184+00:00",
-      "git": {
-        "commit_hash": "43a2215f6b9d7344d5a477b34370e0c1de833bbf",
-        "commit_hash_short": "43a2215",
-        "branch": "HEAD",
->>>>>>> Stashed changes
-        "author": "Joseph Pollack",
-        "is_dirty": true
-      },
-      "platform": {
-        "system": "Windows",
-        "release": "11",
-        "python": "3.13.3"
-      },
-      "config": "performance",
-      "results": [
-        {
-          "payload_bytes": 16384,
-          "pipeline_depth": 8,
-<<<<<<< Updated upstream
-          "duration_s": 3.000015899997379,
-          "bytes_transferred": 22009610240,
-          "throughput_bytes_per_s": 7336497863.234401,
-          "stall_percent": 11.111103758996506
-=======
-          "duration_s": 3.000017399997887,
-          "bytes_transferred": 28786163712,
-          "throughput_bytes_per_s": 9595332251.079702,
-          "stall_percent": 11.111105489757612
->>>>>>> Stashed changes
-        },
-        {
-          "payload_bytes": 16384,
-          "pipeline_depth": 128,
-<<<<<<< Updated upstream
-          "duration_s": 3.000031100000342,
-          "bytes_transferred": 50079989760,
-          "throughput_bytes_per_s": 16693156867.605236,
-          "stall_percent": 0.7751935468058812
-=======
-          "duration_s": 3.0000443999997515,
-          "bytes_transferred": 48896245760,
-          "throughput_bytes_per_s": 16298507368.758959,
-          "stall_percent": 0.7751754992010522
->>>>>>> Stashed changes
-        },
-        {
-          "payload_bytes": 65536,
-          "pipeline_depth": 8,
-<<<<<<< Updated upstream
-          "duration_s": 3.000010800002201,
-          "bytes_transferred": 112558080000,
-          "throughput_bytes_per_s": 37519224930.762726,
-          "stall_percent": 11.11108235844545
-=======
-          "duration_s": 3.0000132999994094,
-          "bytes_transferred": 119485759488,
-          "throughput_bytes_per_s": 39828409923.39052,
-          "stall_percent": 11.111105693990083
->>>>>>> Stashed changes
-        },
-        {
-          "payload_bytes": 65536,
-          "pipeline_depth": 128,
-<<<<<<< Updated upstream
-          "duration_s": 3.000025099998311,
-          "bytes_transferred": 245232566272,
-          "throughput_bytes_per_s": 81743504836.72223,
-          "stall_percent": 0.7751935928926357
-=======
-          "duration_s": 3.0000153000000864,
-          "bytes_transferred": 228808589312,
-          "throughput_bytes_per_s": 76269140798.0464,
-          "stall_percent": 0.7751904937704253
->>>>>>> Stashed changes
+          "duration_s": 3.000033099997381,
+          "bytes_transferred": 151123525632,
+          "throughput_bytes_per_s": 50373952751.431946,
+          "stall_percent": 0.775179455227201
         }
       ]
     }

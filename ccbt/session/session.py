@@ -4091,6 +4091,10 @@ class AsyncSessionManager:
             session = AsyncTorrentSession(torrent_data, session_output_dir, self)
             self.torrents[info_hash] = session
 
+        # Add to private_torrents set if torrent is private (BEP 27)
+        if session.is_private:
+            self.private_torrents.add(info_hash)
+
         # Get torrent name for callback
         if isinstance(torrent_data, dict):
             torrent_name = torrent_data.get("name", "Unknown")

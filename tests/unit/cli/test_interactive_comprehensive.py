@@ -15,6 +15,29 @@ from rich.console import Console
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
 
 
+def _create_mock_config_manager(mock_config=None, config_file=None):
+    """Helper function to create a properly structured mock ConfigManager.
+    
+    Args:
+        mock_config: Optional mock config object. If None, creates a default one.
+        config_file: Optional config file path. Defaults to None.
+    
+    Returns:
+        Mock ConfigManager instance with config and config_file attributes.
+    """
+    from unittest.mock import Mock
+    
+    if mock_config is None:
+        mock_config = Mock()
+        mock_config.model_dump.return_value = {"network": {"port": 6881}}
+        mock_config.disk.backup_dir = "/tmp/backups"
+    
+    mock_cm = Mock()
+    mock_cm.config = mock_config
+    mock_cm.config_file = config_file
+    return mock_cm
+
+
 @pytest.fixture
 def mock_session():
     """Create a mock AsyncSessionManager."""
@@ -46,8 +69,12 @@ def mock_session():
 
 
 @pytest.fixture
-def interactive_cli(mock_session):
-    """Create InteractiveCLI instance."""
+def interactive_cli(mock_session, mock_config_manager):
+    """Create InteractiveCLI instance.
+    
+    Uses mock_config_manager fixture to ensure ConfigManager is patched
+    at module level for all commands that create ConfigManager(None) instances.
+    """
     from ccbt.cli.interactive import InteractiveCLI
     
     from tests.conftest import create_interactive_cli
@@ -795,8 +822,8 @@ class TestInteractiveComprehensive:
         
         with patch("ccbt.config.config_conditional.ConditionalConfig", return_value=mock_cc):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-                mock_cm = MagicMock()
-                mock_cm.config = MagicMock()
+                mock_config = MagicMock()
+                mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_auto_tune(["preview"])
@@ -814,8 +841,8 @@ class TestInteractiveComprehensive:
         with patch("ccbt.config.config_conditional.ConditionalConfig", return_value=mock_cc):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 with patch("ccbt.config.config.set_config") as mock_set_config:
-                    mock_cm = MagicMock()
-                    mock_cm.config = MagicMock()
+                    mock_config = MagicMock()
+                    mock_cm = _create_mock_config_manager(mock_config)
                     mock_cm_class.return_value = mock_cm
                     
                     await interactive_cli.cmd_auto_tune(["apply"])
@@ -856,9 +883,9 @@ class TestInteractiveComprehensive:
         
         with patch.object(ConfigTemplates, "apply_template", return_value=mock_new_dict):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-                mock_cm = MagicMock()
-                mock_cm.config = MagicMock()
-                mock_cm.config.model_dump = Mock(return_value={})
+                mock_config = MagicMock()
+                mock_config.model_dump = Mock(return_value={})
+                mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_template(["apply", "test"])
@@ -905,9 +932,9 @@ class TestInteractiveComprehensive:
         
         with patch.object(ConfigProfiles, "apply_profile", return_value=mock_new_dict):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-                mock_cm = MagicMock()
-                mock_cm.config = MagicMock()
-                mock_cm.config.model_dump = Mock(return_value={})
+                mock_config = MagicMock()
+                mock_config.model_dump = Mock(return_value={})
+                mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_profile(["apply", "test"])
@@ -932,10 +959,10 @@ class TestInteractiveComprehensive:
             mock_cb_class.return_value = mock_cb
             
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-                mock_cm = MagicMock()
-                mock_cm.config = MagicMock()
-                mock_cm.config.disk = MagicMock()
-                mock_cm.config.disk.backup_dir = "/tmp"
+                mock_config = MagicMock()
+                mock_config.disk = MagicMock()
+                mock_config.disk.backup_dir = "/tmp"
+                mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_config_backup(["list"])
@@ -1041,9 +1068,9 @@ class TestInteractiveComprehensive:
         
         with patch("ccbt.config.config_diff.ConfigDiff", return_value=mock_diff):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-                mock_cm = MagicMock()
-                mock_cm.config = MagicMock()
-                mock_cm.config.model_dump = Mock(return_value={})
+                mock_config = MagicMock()
+                mock_config.model_dump = Mock(return_value={})
+                mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_config_diff([])
@@ -1056,9 +1083,9 @@ class TestInteractiveComprehensive:
         output_file = tmp_path / "config.json"
         
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
-            mock_cm.config = MagicMock()
-            mock_cm.config.model_dump = Mock(return_value={"test": "value"})  # Must be JSON-serializable
+            mock_config = MagicMock()
+            mock_config.model_dump = Mock(return_value={"test": "value"})  # Must be JSON-serializable
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
             
             await interactive_cli.cmd_config_export(["json", str(output_file)])
@@ -1070,7 +1097,8 @@ class TestInteractiveComprehensive:
     async def test_cmd_config_export_no_file(self, interactive_cli):
         """Test cmd_config_export without file (lines 1531-1561)."""
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
+            mock_config = MagicMock()
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm.export = Mock(return_value='{"test": "value"}')
             mock_cm_class.return_value = mock_cm
             
@@ -1085,7 +1113,8 @@ class TestInteractiveComprehensive:
         import_file.write_text('{"network": {"listen_port": 6881}}')
         
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
+            mock_config = MagicMock()
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm.import_config = Mock()
             mock_cm_class.return_value = mock_cm
             
@@ -1129,9 +1158,9 @@ class TestInteractiveComprehensive:
     async def test_cmd_config_show_section(self, interactive_cli):
         """Test cmd_config show section (lines 1626-1655)."""
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
-            mock_cm.config = MagicMock()
-            mock_cm.config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
+            mock_config = MagicMock()
+            mock_config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
             
             await interactive_cli.cmd_config(["show", "network"])
@@ -1142,9 +1171,9 @@ class TestInteractiveComprehensive:
     async def test_cmd_config_show_key_not_found(self, interactive_cli):
         """Test cmd_config show with key not found (lines 1646-1651)."""
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
-            mock_cm.config = MagicMock()
-            mock_cm.config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
+            mock_config = MagicMock()
+            mock_config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
             
             await interactive_cli.cmd_config(["show", "nonexistent.key"])
@@ -1155,9 +1184,9 @@ class TestInteractiveComprehensive:
     async def test_cmd_config_get(self, interactive_cli):
         """Test cmd_config get (lines 1656-1667)."""
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
-            mock_cm.config = MagicMock()
-            mock_cm.config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
+            mock_config = MagicMock()
+            mock_config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
             
             await interactive_cli.cmd_config(["get", "network.listen_port"])
@@ -1168,9 +1197,9 @@ class TestInteractiveComprehensive:
     async def test_cmd_config_get_not_found(self, interactive_cli):
         """Test cmd_config get with key not found (lines 1656-1667)."""
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
-            mock_cm.config = MagicMock()
-            mock_cm.config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
+            mock_config = MagicMock()
+            mock_config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
             
             await interactive_cli.cmd_config(["get", "nonexistent.key"])
@@ -1188,9 +1217,9 @@ class TestInteractiveComprehensive:
     async def test_cmd_config_set_bool(self, interactive_cli):
         """Test cmd_config set with bool value (lines 1668-1707)."""
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
-            mock_cm.config = MagicMock()
-            mock_cm.config.model_dump = Mock(return_value={"network": {}})
+            mock_config = MagicMock()
+            mock_config.model_dump = Mock(return_value={"network": {}})
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
             
             with patch("ccbt.models.Config") as mock_model_class:
@@ -1205,9 +1234,9 @@ class TestInteractiveComprehensive:
     async def test_cmd_config_set_int(self, interactive_cli):
         """Test cmd_config set with int value (lines 1668-1707)."""
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
-            mock_cm.config = MagicMock()
-            mock_cm.config.model_dump = Mock(return_value={"network": {}})
+            mock_config = MagicMock()
+            mock_config.model_dump = Mock(return_value={"network": {}})
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
             
             with patch("ccbt.models.Config") as mock_model_class:
@@ -1222,9 +1251,9 @@ class TestInteractiveComprehensive:
     async def test_cmd_config_set_float(self, interactive_cli):
         """Test cmd_config set with float value (lines 1668-1707)."""
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
-            mock_cm.config = MagicMock()
-            mock_cm.config.model_dump = Mock(return_value={"network": {}})
+            mock_config = MagicMock()
+            mock_config.model_dump = Mock(return_value={"network": {}})
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
             
             with patch("ccbt.models.Config") as mock_model_class:
@@ -1239,9 +1268,9 @@ class TestInteractiveComprehensive:
     async def test_cmd_config_set_string(self, interactive_cli):
         """Test cmd_config set with string value (lines 1668-1707)."""
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
-            mock_cm.config = MagicMock()
-            mock_cm.config.model_dump = Mock(return_value={"network": {}})
+            mock_config = MagicMock()
+            mock_config.model_dump = Mock(return_value={"network": {}})
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
             
             with patch("ccbt.models.Config") as mock_model_class:
@@ -1256,9 +1285,9 @@ class TestInteractiveComprehensive:
     async def test_cmd_config_set_error(self, interactive_cli):
         """Test cmd_config set with error (lines 1706-1707)."""
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-            mock_cm = MagicMock()
-            mock_cm.config = MagicMock()
-            mock_cm.config.model_dump = Mock(return_value={"network": {}})
+            mock_config = MagicMock()
+            mock_config.model_dump = Mock(return_value={"network": {}})
+            mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
             
             with patch("ccbt.models.Config", side_effect=Exception("Validation error")):
