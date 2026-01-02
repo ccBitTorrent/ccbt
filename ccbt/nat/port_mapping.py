@@ -5,9 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Awaitable, Callable, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

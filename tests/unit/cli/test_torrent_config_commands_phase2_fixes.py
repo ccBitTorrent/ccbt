@@ -37,7 +37,7 @@ class TestTorrentConfigCommandsSIM102Fix:
     """Test that SIM102 fixes (nested ifs combination) work correctly."""
 
     def test_set_torrent_option_sim102_fix_source_verification(self):
-        """Test that source code has SIM102 fix at line 169 (combined if statements)."""
+        """Test that source code has SIM102 fix (combined if statements)."""
         # Read source file to verify fix
         import ccbt.cli.torrent_config_commands as mod
         from pathlib import Path
@@ -45,24 +45,27 @@ class TestTorrentConfigCommandsSIM102Fix:
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
         
-        # Find the SIM102 fix around line 169
+        # CRITICAL FIX: The SIM102 fix is at line 186, not 169
+        # Find the SIM102 fix around line 186
         lines = source.splitlines()
         found_combined_if = False
         for i, line in enumerate(lines):
-            if i > 160 and i < 180:  # Around line 169
+            if i > 180 and i < 195:  # Around line 186
                 # Look for combined if statement: "if save_checkpoint and hasattr"
                 if "if save_checkpoint and hasattr" in line:
                     found_combined_if = True
                     # Verify it's not nested (should be single if)
-                    assert "if save_checkpoint:" not in lines[i-1] or "if save_checkpoint:" not in lines[i], \
-                        "Should use combined if statement, not nested ifs (SIM102 fix)"
+                    # Check previous line is not a nested if
+                    if i > 0:
+                        assert "if save_checkpoint:" not in lines[i-1], \
+                            "Should use combined if statement, not nested ifs (SIM102 fix)"
                     break
         
         assert found_combined_if, \
-            "Should find combined if statement (SIM102 fix) around line 169 in _set_torrent_option"
+            "Should find combined if statement (SIM102 fix) around line 186 in _set_torrent_option"
 
     def test_reset_torrent_options_sim102_fix_source_verification(self):
-        """Test that source code has SIM102 fix at line 474 (combined if statements)."""
+        """Test that source code has SIM102 fix (combined if statements)."""
         # Read source file to verify fix
         import ccbt.cli.torrent_config_commands as mod
         from pathlib import Path
@@ -70,21 +73,24 @@ class TestTorrentConfigCommandsSIM102Fix:
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
         
-        # Find the SIM102 fix around line 474
+        # CRITICAL FIX: The SIM102 fix is at line 533, not 474
+        # Find the SIM102 fix around line 533
         lines = source.splitlines()
         found_combined_if = False
         for i, line in enumerate(lines):
-            if i > 465 and i < 480:  # Around line 474
+            if i > 525 and i < 540:  # Around line 533
                 # Look for combined if statement: "if save_checkpoint and hasattr"
                 if "if save_checkpoint and hasattr" in line:
                     found_combined_if = True
                     # Verify it's not nested (should be single if)
-                    assert "if save_checkpoint:" not in lines[i-1] or "if save_checkpoint:" not in lines[i], \
-                        "Should use combined if statement, not nested ifs (SIM102 fix)"
+                    # Check previous line is not a nested if
+                    if i > 0:
+                        assert "if save_checkpoint:" not in lines[i-1], \
+                            "Should use combined if statement, not nested ifs (SIM102 fix)"
                     break
         
         assert found_combined_if, \
-            "Should find combined if statement (SIM102 fix) around line 474 in _reset_torrent_options"
+            "Should find combined if statement (SIM102 fix) around line 533 in _reset_torrent_options"
 
     @patch("ccbt.cli.torrent_config_commands.DaemonManager")
     @patch("ccbt.cli.torrent_config_commands.AsyncSessionManager")

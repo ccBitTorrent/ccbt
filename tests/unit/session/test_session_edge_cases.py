@@ -130,7 +130,8 @@ async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
         async def stop(self):
             pass
 
-        async def announce(self, td):
+        # CRITICAL FIX: Mock announce() method with correct signature
+        async def announce(self, td, port=None, event=""):
             announce_called.append(1)
             announce_data.append(td)
 
@@ -140,6 +141,7 @@ async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
             self.info_hash = b"1" * 20
             self.name = "model-torrent"
             self.announce = "http://tracker.example.com/announce"
+            self.total_length = 0  # Add total_length for file_info mapping
 
     td_model = _TorrentInfoModel()
 
@@ -148,11 +150,20 @@ async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
     session.tracker = _Tracker()
     session._stop_event = asyncio.Event()
     session.config.network.announce_interval = 0.01
+    
+    # CRITICAL FIX: Ensure session.info exists for announce loop
+    if not hasattr(session, 'info') or session.info is None:
+        from ccbt.session.session import TorrentSessionInfo
+        session.info = TorrentSessionInfo(
+            info_hash=b"1" * 20,
+            name="model-torrent",
+            status="downloading"
+        )
 
     task = asyncio.create_task(session._announce_loop())
-    await asyncio.sleep(0.02)
+    await asyncio.sleep(0.1)  # Allow more time for loop to run
+    session._stop_event.set()  # Stop the loop
     task.cancel()
-    session._stop_event.set()
 
     try:
         await task

@@ -1134,9 +1134,7 @@ class CheckpointController:
             if hasattr(session_manager, "set_rate_limits"):
                 down_kib = checkpoint.rate_limits.get("down_kib", 0)
                 up_kib = checkpoint.rate_limits.get("up_kib", 0)
-                await session_manager.set_rate_limits(
-                    info_hash_hex, down_kib, up_kib
-                )
+                await session_manager.set_rate_limits(info_hash_hex, down_kib, up_kib)
                 if self._ctx.logger:
                     self._ctx.logger.debug(
                         "Restored rate limits: down=%d KiB/s, up=%d KiB/s",

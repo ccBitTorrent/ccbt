@@ -53,6 +53,7 @@ class TestAsyncSessionManagerMetricsCoverage:
         is covered - the if condition evaluates to False, so line 398 does NOT execute.
         """
         from ccbt.monitoring import shutdown_metrics
+        from unittest.mock import AsyncMock, MagicMock, patch
         
         # Ensure clean state
         await shutdown_metrics()
@@ -61,24 +62,35 @@ class TestAsyncSessionManagerMetricsCoverage:
         caplog.set_level(logging.INFO)
         
         session = AsyncSessionManager()
+        session.config = mock_config_disabled
+        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking
+        session.config.discovery.enable_dht = False  # Disable DHT to prevent port conflicts
 
-        await session.start()
+        # CRITICAL FIX: Mock NAT manager to prevent blocking discovery
+        mock_nat = MagicMock()
+        mock_nat.start = AsyncMock()
+        mock_nat.stop = AsyncMock()
+        mock_nat.map_listen_ports = AsyncMock()
+        mock_nat.wait_for_mapping = AsyncMock()
         
-        # When metrics are disabled, self.metrics should be None
-        assert session.metrics is None
-        
-        # Line 396 executed (self.metrics = await init_metrics() returns None)
-        # Line 397 evaluated to False (if self.metrics: ...)
-        # Line 398 did NOT execute (skipped because if condition is False)
-        
-        # Verify the log message was NOT emitted
-        log_messages = [record.message for record in caplog.records]
-        assert not any("Metrics collection initialized" in msg for msg in log_messages)
+        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
+            await session.start()
+            
+            # When metrics are disabled, self.metrics should be None
+            assert session.metrics is None
+            
+            # Line 396 executed (self.metrics = await init_metrics() returns None)
+            # Line 397 evaluated to False (if self.metrics: ...)
+            # Line 398 did NOT execute (skipped because if condition is False)
+            
+            # Verify the log message was NOT emitted
+            log_messages = [record.message for record in caplog.records]
+            assert not any("Metrics collection initialized" in msg for msg in log_messages)
 
-        await session.stop()
-        
-        # Verify metrics still None after stop
-        assert session.metrics is None
+            await session.stop()
+            
+            # Verify metrics still None after stop
+            assert session.metrics is None
 
     @pytest.mark.asyncio
     async def test_stop_with_metrics_shutdown_sets_to_none(self, mock_config_enabled):
@@ -112,23 +124,35 @@ class TestAsyncSessionManagerMetricsCoverage:
         is covered, so shutdown_metrics() is not called.
         """
         from ccbt.monitoring import shutdown_metrics
+        from unittest.mock import AsyncMock, MagicMock, patch
         
         # Ensure clean state
         await shutdown_metrics()
         
         session = AsyncSessionManager()
+        session.config = mock_config_disabled
+        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking
+        session.config.discovery.enable_dht = False  # Disable DHT to prevent port conflicts
 
-        await session.start()
+        # CRITICAL FIX: Mock NAT manager to prevent blocking discovery
+        mock_nat = MagicMock()
+        mock_nat.start = AsyncMock()
+        mock_nat.stop = AsyncMock()
+        mock_nat.map_listen_ports = AsyncMock()
+        mock_nat.wait_for_mapping = AsyncMock()
         
-        # Metrics should be None when disabled
-        assert session.metrics is None
-        
-        # Stop should complete without calling shutdown_metrics
-        # (because the if condition at line 457 is False)
-        await session.stop()
-        
-        # Metrics should still be None
-        assert session.metrics is None
+        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
+            await session.start()
+            
+            # Metrics should be None when disabled
+            assert session.metrics is None
+            
+            # Stop should complete without calling shutdown_metrics
+            # (because the if condition at line 457 is False)
+            await session.stop()
+            
+            # Metrics should still be None
+            assert session.metrics is None
 
 
 @pytest.fixture(scope="function")
