@@ -14,6 +14,17 @@ from typing import Any, Optional
 import pytest
 import pytest_asyncio
 
+# Import network mock fixtures for convenience
+# Tests can import these directly: from tests.fixtures.network_mocks import mock_nat_manager
+
+# Import timeout hooks for per-test timeout management
+# This applies timeout markers based on test categories
+try:
+    from tests.conftest_timeout import pytest_collection_modifyitems
+except ImportError:
+    # If timeout hooks module doesn't exist, continue without it
+    pass
+
 # #region agent log
 # Debug logging helper
 _DEBUG_LOG_PATH = Path(__file__).parent.parent / ".cursor" / "debug.log"
@@ -647,26 +658,40 @@ def cleanup_network_ports():
     
     This fixture provides best-effort cleanup by waiting for ports to be released.
     Actual port cleanup happens in component stop() methods.
+    
+    CRITICAL FIX: Increased wait time from 0.1s to 2.0s to ensure ports are released
+    before next test starts. This prevents "Address already in use" errors.
+    
+    Also releases ports from port pool manager to prevent pool exhaustion.
     """
     yield
     
     import time
-    # Give ports time to be released by OS
+    # CRITICAL FIX: Increased from 0.1s to 2.0s to ensure ports are fully released
+    # Ports can take time to be released by the OS, especially on CI/CD systems
     # Note: Actual port cleanup happens in component stop() methods
     # This fixture just ensures we wait for cleanup to complete
-    time.sleep(0.1)
+    time.sleep(2.0)
+    
+    # Release all ports from port pool after each test
+    # This ensures the pool doesn't get exhausted over many tests
+    try:
+        from tests.utils.port_pool import PortPool
+        pool = PortPool.get_instance()
+        pool.release_all_ports()
+    except Exception:
+        # If port pool cleanup fails, continue - not critical
+        pass
 
 
 def get_free_port() -> int:
-    """Get a free port for testing.
+    """Get a free port for testing using port pool manager.
     
     Returns:
-        int: A free port number
+        int: A free port number from the port pool
     """
-    import socket
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    from tests.utils.port_pool import get_free_port as pool_get_free_port
+    return pool_get_free_port()
 
 
 def find_port_in_use(port: int) -> bool:
@@ -1163,32 +1188,56 @@ async def session_manager(tmp_path, request):
                 except Exception:
                     pass  # Ignore errors during cleanup
             
-            # CRITICAL: Verify TCP server port is released
+            # CRITICAL FIX: Stop TCP server explicitly before checking port release
             if hasattr(session, "tcp_server") and session.tcp_server:
                 try:
-                    # Get the port that was used
+                    # Stop TCP server if it has a stop method
+                    if hasattr(session.tcp_server, "stop"):
+                        try:
+                            await asyncio.wait_for(session.tcp_server.stop(), timeout=2.0)
+                        except (asyncio.TimeoutError, Exception):
+                            pass  # Best effort cleanup
+                    
+                    # Close server socket if it exists
+                    if hasattr(session.tcp_server, "server") and session.tcp_server.server:
+                        try:
+                            server = session.tcp_server.server
+                            if hasattr(server, "close"):
+                                server.close()
+                            if hasattr(server, "wait_closed"):
+                                await asyncio.wait_for(server.wait_closed(), timeout=1.0)
+                        except (asyncio.TimeoutError, Exception):
+                            pass  # Best effort cleanup
+                    
+                    # Get the port that was used and verify it's released
                     if hasattr(session.tcp_server, "port") and session.tcp_server.port:
                         port = session.tcp_server.port
-                        # Wait for port to be released (with timeout)
-                        await wait_for_port_release(port, timeout=2.0)
+                        # Wait up to 3.0s for port to be released (increased from 2.0s)
+                        port_released = await wait_for_port_release(port, timeout=3.0)
+                        if not port_released:
+                            # Log warning but don't fail test - port may be released by OS later
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(f"TCP server port {port} not released within timeout, may cause conflicts")
                 except Exception:
                     pass  # Best effort - port may already be released
             
-            # CRITICAL: Verify DHT socket is closed (already done above, but ensure it's verified)
-            if hasattr(session, "dht") and session.dht:
+            # CRITICAL FIX: Verify DHT port is released
+            if hasattr(session, "dht_client") and session.dht_client:
                 try:
-                    # Verify socket is closed
-                    if hasattr(session.dht, "socket") and session.dht.socket:
-                        socket_obj = session.dht.socket
-                        # Socket should be closed by now
-                        if hasattr(socket_obj, "_closed"):
-                            # Socket should be closed
-                            pass  # Verification complete
+                    # Check if DHT client has a port attribute
+                    if hasattr(session.dht_client, "port") and session.dht_client.port:
+                        dht_port = session.dht_client.port
+                        port_released = await wait_for_port_release(dht_port, timeout=3.0)
+                        if not port_released:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(f"DHT port {dht_port} not released within timeout")
                 except Exception:
-                    pass  # Best effort verification
+                    pass  # Best effort
             
-            # Give async cleanup time to complete (increased from 0.5s to 1.0s for better port release)
-            await asyncio.sleep(1.0)
+            # Give async cleanup time to complete (increased from 1.0s to 2.0s for better port release)
+            await asyncio.sleep(2.0)
             
             # Verify all tasks are done
             if hasattr(session, "scrape_task") and session.scrape_task:

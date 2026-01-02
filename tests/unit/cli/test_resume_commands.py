@@ -60,12 +60,13 @@ class TestResumeCLI:
         session_manager = AsyncSessionManager(str(self.temp_path))
         
         try:
+            # CRITICAL FIX: resume_from_checkpoint is on checkpoint_ops, not session_manager directly
             # Mock the resume operation
-            with patch.object(session_manager, "resume_from_checkpoint") as mock_resume:
+            with patch.object(session_manager.checkpoint_ops, "resume_from_checkpoint") as mock_resume:
                 mock_resume.return_value = "test_hash_1234567890"
 
                 # Test the resume functionality
-                result = await session_manager.resume_from_checkpoint(
+                result = await session_manager.checkpoint_ops.resume_from_checkpoint(
                     b"test_hash_1234567890",
                     checkpoint,
                 )
@@ -109,9 +110,14 @@ class TestResumeCLI:
         session_manager = AsyncSessionManager(str(self.temp_path))
         
         try:
-            # Test torrent loading
-            session_manager.load_torrent(str(test_torrent_path))
-            # This will fail with real torrent parsing, but we're testing the method exists
+            # CRITICAL FIX: load_torrent is a function in torrent_utils, not a method
+            from ccbt.session import torrent_utils
+            
+            # Test torrent loading function exists and can be called
+            # This will fail with real torrent parsing, but we're testing the function exists
+            result = torrent_utils.load_torrent(str(test_torrent_path))
+            # Result may be None if parsing fails, which is expected for dummy content
+            assert result is None or isinstance(result, dict)
         finally:
             # Properly clean up the session manager
             await session_manager.stop()
@@ -151,9 +157,10 @@ class TestResumeCLI:
         session_manager = AsyncSessionManager(str(self.temp_path))
         
         try:
+            # CRITICAL FIX: resume_from_checkpoint is on checkpoint_ops, not session_manager directly
             # Test resume with missing source
             try:
-                await session_manager.resume_from_checkpoint(
+                await session_manager.checkpoint_ops.resume_from_checkpoint(
                     b"test_hash_1234567890",
                     checkpoint,
                 )
@@ -171,8 +178,9 @@ class TestResumeCLI:
         session_manager = AsyncSessionManager(str(self.temp_path))
         
         try:
+            # CRITICAL FIX: list_resumable is on checkpoint_ops, not session_manager directly
             # Test checkpoint listing functionality
-            checkpoints = await session_manager.list_resumable_checkpoints()
+            checkpoints = await session_manager.checkpoint_ops.list_resumable()
             assert isinstance(checkpoints, list)
         finally:
             # Properly clean up the session manager
