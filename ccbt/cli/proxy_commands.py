@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path  # noqa: TC003 - Used at runtime for path operations
+from typing import Optional
 
 import click
 from rich.console import Console
@@ -17,7 +18,7 @@ from ccbt.proxy.client import ProxyClient
 from ccbt.proxy.exceptions import ProxyError
 
 
-def _should_skip_project_local_write(config_file: Path | None) -> bool:
+def _should_skip_project_local_write(config_file: Optional[Path]) -> bool:
     """Check if we should skip writing to project-local ccbt.toml during tests.
 
     Args:
@@ -95,12 +96,12 @@ def proxy_set(
     host: str,
     port: int,
     proxy_type: str,
-    username: str | None,
-    password: str | None,
+    username: Optional[str],
+    password: Optional[str],
     for_trackers: bool,
     for_peers: bool,
     for_webseeds: bool,
-    bypass_list: str | None,
+    bypass_list: Optional[str],
 ) -> None:
     """Set proxy configuration."""
     console = Console()

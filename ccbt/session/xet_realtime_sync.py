@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -26,7 +26,7 @@ class XetRealtimeSync:
         self,
         folder: XetFolder,
         check_interval: float = 5.0,
-        session_manager: Any | None = None,  # AsyncSessionManager
+        session_manager: Optional[Any] = None,  # AsyncSessionManager
     ) -> None:
         """Initialize real-time sync.
 
@@ -40,10 +40,10 @@ class XetRealtimeSync:
         self.check_interval = check_interval
         self.session_manager = session_manager
 
-        self._sync_task: asyncio.Task | None = None
+        self._sync_task: Optional[asyncio.Task] = None
         self._is_running = False
         self._last_chunk_hashes: dict[str, bytes] = {}  # file_path -> chunk_hash
-        self._last_git_ref: str | None = None
+        self._last_git_ref: Optional[str] = None
 
         self.logger = logging.getLogger(__name__)
 

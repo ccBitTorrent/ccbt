@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 from rich.console import Console
+from typing import Optional
 
 from ccbt.cli.interactive import InteractiveCLI
 
@@ -19,7 +20,7 @@ class DummySession:
     async def add_torrent(self, td: dict, resume: bool = False) -> str:
         return "00" * 20
 
-    async def get_torrent_status(self, ih: str) -> dict | None:
+    async def get_torrent_status(self, ih: str) -> Optional[dict]:
         return self._status
 
     async def pause_torrent(self, ih: str) -> bool:

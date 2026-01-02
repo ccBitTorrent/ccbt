@@ -14,7 +14,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.core import bencode
 from ccbt.models import PeerInfo
@@ -65,7 +65,7 @@ class DHTNode:
 class DHTExtension:
     """DHT (Distributed Hash Table) implementation."""
 
-    def __init__(self, node_id: bytes | None = None):
+    def __init__(self, node_id: Optional[bytes] = None):
         """Initialize DHT implementation."""
         self.node_id = node_id or self._generate_node_id()
         self.nodes: dict[bytes, DHTNode] = {}
@@ -335,7 +335,7 @@ class DHTExtension:
         peer_ip: str,
         peer_port: int,
         data: bytes,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Handle incoming DHT message."""
         try:
             message = self._decode_dht_message(data)
@@ -441,7 +441,7 @@ class DHTExtension:
             # Announcement was successful
             token = message["a"]["token"]
             info_hash = message.get("a", {}).get("info_hash")
-            info_hash_bytes: bytes | None = None
+            info_hash_bytes: Optional[bytes] = None
 
             # Store token for this info_hash if available
             if info_hash:

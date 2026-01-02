@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.i18n import _is_valid_locale, get_locale, set_locale
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class TranslationManager:
     """Manages translations with config integration."""
 
-    def __init__(self, config: Any | None = None) -> None:
+    def __init__(self, config: Optional[Any] = None) -> None:
         """Initialize translation manager.
 
         Args:

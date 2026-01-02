@@ -5,7 +5,7 @@ Provides a common base for all table widgets with consistent behavior.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from textual.widgets import DataTable
@@ -79,7 +79,7 @@ class ReusableDataTable(DataTable):  # type: ignore[misc]
         """
         return f"{value * 100:.{decimals}f}%"
 
-    def get_selected_key(self) -> str | None:
+    def get_selected_key(self) -> Optional[str]:
         """Get the key of the currently selected row.
 
         Returns:
@@ -93,7 +93,7 @@ class ReusableDataTable(DataTable):  # type: ignore[misc]
             pass
         return None
 
-    def clear_and_populate(self, rows: list[list[Any]], keys: list[str] | None = None) -> None:  # pragma: no cover
+    def clear_and_populate(self, rows: list[list[Any]], keys: Optional[list[str]] = None) -> None:  # pragma: no cover
         """Clear table and populate with new rows.
 
         Args:

@@ -9,7 +9,7 @@ in BEP 3. Provides key derivation using SHA-1 hash function.
 from __future__ import annotations
 
 import hashlib
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import dh
@@ -109,7 +109,7 @@ class DHPeerExchange:
         self,
         shared_secret: bytes,
         info_hash: bytes,
-        pad: bytes | None = None,
+        pad: Optional[bytes] = None,
     ) -> bytes:
         """Derive encryption key from shared secret.
 

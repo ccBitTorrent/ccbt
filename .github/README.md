@@ -2,7 +2,10 @@
 
 [![codecov](https://codecov.io/gh/ccBittorrent/ccbt/branch/main/graph/badge.svg)](https://codecov.io/gh/ccBittorrent/ccbt)
 [![🥷 Bandit](https://img.shields.io/badge/🥷-security-yellow.svg)](https://ccbittorrent.readthedocs.io/en/reports/bandit/)
-[![🐍 Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](../pyproject.toml)
+[![🐍python 🟰](https://github.com/ccBitTorrent/ccbt/actions/workflows/test.yml/badge.svg)](https://github.com/ccBitTorrent/ccbt/actions/workflows/test.yml)
+[![🐧Linux](https://github.com/ccBitTorrent/ccbt/actions/workflows/test.yml/badge.svg)](https://github.com/ccBitTorrent/ccbt/actions/workflows/test.yml)
+[![🪟Windows](https://github.com/ccBitTorrent/ccbt/actions/workflows/test.yml/badge.svg)](https://github.com/ccBitTorrent/ccbt/actions/workflows/test.yml)
+
 [![📜License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://ccbittorrent.readthedocs.io/en/license/)
 [![🤝Contributing](https://img.shields.io/badge/🤝-open-brightgreen?logo=pre-commit&logoColor=white)](https://ccbittorrent.readthedocs.io/en/contributing/)
 [![🎁UV](https://img.shields.io/badge/🎁-uv-orange.svg)](https://ccbittorrent.readthedocs.io/en/getting-started/)

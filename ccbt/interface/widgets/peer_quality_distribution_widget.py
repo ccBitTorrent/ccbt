@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -53,14 +53,14 @@ class PeerQualityDistributionWidget(Static):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: Any | None,
+        data_provider: Optional[Any],
         refresh_interval: float = 3.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._data_provider = data_provider
         self._refresh_interval = refresh_interval
-        self._update_task: Any | None = None
+        self._update_task: Optional[Any] = None
 
     def compose(self) -> ComposeResult:  # pragma: no cover
         """Compose widget layout."""

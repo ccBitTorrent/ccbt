@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Union
 
 from ccbt.config.config_schema import ConfigSchema
 
@@ -28,10 +28,10 @@ def create_config_widget(
     option_key: str,
     current_value: Any,
     section_name: str,
-    option_metadata: dict[str, Any] | None = None,
+    option_metadata: Optional[dict[str, Any]] = None,
     *args: Any,
     **kwargs: Any,
-) -> Checkbox | Select | ConfigValueEditor:
+) -> Union[Checkbox, Select, ConfigValueEditor]:
     """Create appropriate widget for a configuration option.
     
     Args:

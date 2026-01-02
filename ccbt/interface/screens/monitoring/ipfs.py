@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -306,7 +306,7 @@ class IPFSManagementScreen(MonitoringScreen):  # type: ignore[misc]
             )
 
     async def _refresh_ipfs_performance_metrics(
-        self, widget: Static, protocol: Any | None
+        self, widget: Static, protocol: Optional[Any]
     ) -> None:  # pragma: no cover
         """Refresh IPFS performance metrics."""
         try:
@@ -355,7 +355,7 @@ class IPFSManagementScreen(MonitoringScreen):  # type: ignore[misc]
         except Exception:
             widget.update("")
 
-    async def _get_ipfs_protocol(self) -> Any | None:  # pragma: no cover
+    async def _get_ipfs_protocol(self) -> Optional[Any]:  # pragma: no cover
         """Get IPFS protocol instance from session."""
         try:
             from ccbt.protocols.base import ProtocolType

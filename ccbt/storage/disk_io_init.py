@@ -12,7 +12,7 @@ Provides:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.config.config import get_config
 from ccbt.storage.disk_io import DiskIOManager
@@ -20,7 +20,7 @@ from ccbt.storage.disk_io import DiskIOManager
 # Singleton pattern removed - DiskIOManager is now managed via AsyncSessionManager.disk_io_manager
 # This ensures proper lifecycle management and prevents conflicts between multiple session managers
 # Deprecated singleton kept for backward compatibility
-_GLOBAL_DISK_IO_MANAGER: DiskIOManager | None = (
+_GLOBAL_DISK_IO_MANAGER: Optional[DiskIOManager] = (
     None  # Deprecated - use session_manager.disk_io_manager
 )
 
@@ -74,7 +74,7 @@ def get_disk_io_manager() -> DiskIOManager:
     return _GLOBAL_DISK_IO_MANAGER
 
 
-async def init_disk_io(manager: Any | None = None) -> DiskIOManager | None:
+async def init_disk_io(manager: Optional[Any] = None) -> Optional[DiskIOManager]:
     """Initialize and start disk I/O manager.
 
     CRITICAL FIX: Singleton pattern removed. This function now accepts an optional
@@ -91,7 +91,7 @@ async def init_disk_io(manager: Any | None = None) -> DiskIOManager | None:
     - Returns None on failure instead of raising exceptions
 
     Returns:
-        DiskIOManager | None: DiskIOManager instance if successfully started,
+        Optional[DiskIOManager]: DiskIOManager instance if successfully started,
             None if initialization failed.
 
     Note:

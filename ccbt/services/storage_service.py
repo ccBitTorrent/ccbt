@@ -12,7 +12,7 @@ import asyncio
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.config.config import get_config
 from ccbt.services.base import HealthCheck, Service
@@ -30,7 +30,7 @@ class StorageOperation:
     timestamp: float
     duration: float
     success: bool
-    data: bytes | None = None  # Actual data bytes for write operations
+    data: Optional[bytes] = None  # Actual data bytes for write operations
 
 
 @dataclass
@@ -88,7 +88,7 @@ class StorageService(Service):
         )
 
         # Disk I/O manager for chunked writes
-        self.disk_io: DiskIOManager | None = None
+        self.disk_io: Optional[DiskIOManager] = None
 
         # Flag to mark queue as closed
         self._queue_closed = False
@@ -501,7 +501,7 @@ class StorageService(Service):
 
         return True
 
-    async def read_file(self, file_path: str, size: int) -> bytes | None:
+    async def read_file(self, file_path: str, size: int) -> Optional[bytes]:
         """Read data from a file.
 
         Args:
@@ -569,7 +569,7 @@ class StorageService(Service):
 
         return True
 
-    async def get_file_info(self, file_path: str) -> FileInfo | None:
+    async def get_file_info(self, file_path: str) -> Optional[FileInfo]:
         """Get file information."""
         return self.files.get(file_path)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ccbt.i18n import _
 
@@ -123,9 +123,9 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
         self._data_provider = data_provider
         self._command_executor = command_executor
         self._selected_hash_callback = selected_hash_callback
-        self._selected_info_hash: str | None = None
-        self._torrent_selector: Select | None = None
-        self._refresh_task: Any | None = None
+        self._selected_info_hash: Optional[str] = None
+        self._torrent_selector: Optional[Select] = None
+        self._refresh_task: Optional[Any] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the torrent controls."""

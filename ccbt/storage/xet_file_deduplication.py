@@ -7,7 +7,7 @@ of chunk-level deduplication to identify and deduplicate entire files.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -53,7 +53,7 @@ class XetFileDeduplication:
         Returns:
             Dictionary with deduplication statistics:
             - duplicate_found: bool
-            - duplicate_path: str | None
+            - duplicate_path: Optional[str]
             - file_hash: bytes
             - chunks_skipped: int
             - storage_saved: int (bytes)
@@ -112,7 +112,7 @@ class XetFileDeduplication:
 
     async def _find_file_by_hash(
         self, file_hash: bytes, exclude_path: str
-    ) -> str | None:
+    ) -> Optional[str]:
         """Find a file with the given hash, excluding the specified path.
 
         Args:
@@ -215,7 +215,7 @@ class XetFileDeduplication:
             }
 
     async def find_duplicate_files(
-        self, file_hash: bytes | None = None
+        self, file_hash: Optional[bytes] = None
     ) -> list[list[str]]:
         """Find groups of duplicate files.
 

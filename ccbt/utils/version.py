@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import re
-from typing import Final
+from typing import Final, Optional
 
 # Client names
 NETWORK_CLIENT_NAME: Final[str] = "btonic"
@@ -69,7 +69,7 @@ def parse_version(version: str) -> tuple[int, int, int]:
     return (major, minor, patch)
 
 
-def get_peer_id_prefix(version: str | None = None) -> bytes:
+def get_peer_id_prefix(version: Optional[str] = None) -> bytes:
     """Generate peer_id prefix from version.
 
     Pattern: -BT{major:02d}{minor:02d}-
@@ -125,7 +125,7 @@ def get_ui_client_name() -> str:
     return UI_CLIENT_NAME
 
 
-def get_user_agent(version: str | None = None) -> str:
+def get_user_agent(version: Optional[str] = None) -> str:
     """Format user-agent string for HTTP requests.
 
     Format: "btonic/{version}"
@@ -143,7 +143,7 @@ def get_user_agent(version: str | None = None) -> str:
     return f"{NETWORK_CLIENT_NAME}/{version}"
 
 
-def get_full_peer_id(version: str | None = None) -> bytes:
+def get_full_peer_id(version: Optional[str] = None) -> bytes:
     """Generate a complete 20-byte peer_id.
 
     Format: {prefix}{random_bytes}

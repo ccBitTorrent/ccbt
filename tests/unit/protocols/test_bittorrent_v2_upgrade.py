@@ -200,7 +200,7 @@ class TestCheckExtensionProtocolSupport:
         connection.extension_protocol = None
         connection.extension_manager = None
         reserved_bytes = bytearray(RESERVED_BYTES_LEN)
-        reserved_bytes[0] |= 0x10  # Set bit 5 for extension protocol
+        reserved_bytes[5] |= 0x10  # Set bit 4 in byte 5 for extension protocol
         connection.reserved_bytes = bytes(reserved_bytes)
 
         result = _check_extension_protocol_support(connection)

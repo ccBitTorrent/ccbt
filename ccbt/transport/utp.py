@@ -20,7 +20,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable
+from typing import Callable, Optional
 
 from ccbt.config.config import get_config
 
@@ -256,7 +256,7 @@ class UTPConnection:
     def __init__(
         self,
         remote_addr: tuple[str, int],
-        connection_id: int | None = None,
+        connection_id: Optional[int] = None,
         _send_window_size: int = 65535,
         recv_window_size: int = 65535,
     ):
@@ -332,7 +332,7 @@ class UTPConnection:
 
         # Delayed ACK support
         self.pending_acks: list[UTPPacket] = []  # Queue of packets waiting for ACK
-        self.ack_timer: asyncio.Task | None = None  # Delayed ACK timer task
+        self.ack_timer: Optional[asyncio.Task] = None  # Delayed ACK timer task
         self.ack_delay: float = (
             self.config.network.utp.ack_interval
             if hasattr(self.config, "network")
@@ -340,20 +340,22 @@ class UTPConnection:
             and hasattr(self.config.network.utp, "ack_interval")
             else 0.04
         )  # ACK delay in seconds (default 40ms)
-        self.last_ack_packet: UTPPacket | None = None  # Last packet that triggered ACK
+        self.last_ack_packet: Optional[UTPPacket] = (
+            None  # Last packet that triggered ACK
+        )
         self.ack_packet_count: int = 0  # Count of packets received since last ACK
 
         # Transport (UDP socket) - set via set_transport()
-        self.transport: asyncio.DatagramTransport | None = None
+        self.transport: Optional[asyncio.DatagramTransport] = None
 
         # Background tasks
-        self._retransmission_task: asyncio.Task | None = None
-        self._send_task: asyncio.Task | None = None
-        self._receive_task: asyncio.Task | None = None
+        self._retransmission_task: Optional[asyncio.Task] = None
+        self._send_task: Optional[asyncio.Task] = None
+        self._receive_task: Optional[asyncio.Task] = None
 
         # Connection timeout
         self.connection_timeout: float = 30.0
-        self._connection_timeout_task: asyncio.Task | None = None
+        self._connection_timeout_task: Optional[asyncio.Task] = None
 
         # Congestion control
         self.target_send_rate: float = 1500.0  # bytes/second
@@ -368,7 +370,7 @@ class UTPConnection:
         self.packets_retransmitted: int = 0
 
         # Connection callbacks
-        self.on_connected: Callable[[], None] | None = None
+        self.on_connected: Optional[Callable[[], None]] = None
 
         # Extension support
         from ccbt.transport.utp_extensions import UTPExtensionType
@@ -522,7 +524,7 @@ class UTPConnection:
             len(packet_bytes),
         )
 
-    async def connect(self, timeout: float | None = None) -> None:
+    async def connect(self, timeout: Optional[float] = None) -> None:
         """Establish uTP connection (initiate connection).
 
         Args:
@@ -1126,7 +1128,7 @@ class UTPConnection:
             ) % 0x10000
 
     def _send_ack(
-        self, packet: UTPPacket | None = None, immediate: bool = False
+        self, packet: Optional[UTPPacket] = None, immediate: bool = False
     ) -> None:
         """Send acknowledgment (ST_STATE) packet.
 

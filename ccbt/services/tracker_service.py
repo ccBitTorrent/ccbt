@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.services.base import HealthCheck, Service
 from ccbt.utils.logging_config import LoggingContext
@@ -410,6 +410,6 @@ class TrackerService(Service):
         """Get list of healthy trackers."""
         return [url for url, conn in self.trackers.items() if conn.is_healthy]
 
-    async def get_tracker_info(self, url: str) -> TrackerConnection | None:
+    async def get_tracker_info(self, url: str) -> Optional[TrackerConnection]:
         """Get tracker connection info."""
         return self.trackers.get(url)

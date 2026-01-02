@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.plugins.base import Plugin
 from ccbt.utils.events import Event, EventHandler, EventType
@@ -140,8 +140,8 @@ class MetricsCollector(EventHandler):
 
     def get_metrics(
         self,
-        name: str | None = None,
-        tags: dict[str, str] | None = None,
+        name: Optional[str] = None,
+        tags: Optional[dict[str, str]] = None,
         limit: int = 100,
     ) -> list[Metric]:
         """Get metrics with optional filtering."""
@@ -157,7 +157,7 @@ class MetricsCollector(EventHandler):
 
         return metrics[-limit:] if limit > 0 else metrics
 
-    def get_aggregates(self, name: str | None = None) -> list[MetricAggregate]:
+    def get_aggregates(self, name: Optional[str] = None) -> list[MetricAggregate]:
         """Get metric aggregates."""
         aggregates = list(self.aggregates.values())
 
@@ -178,7 +178,7 @@ class MetricsPlugin(Plugin):
             description="Performance metrics collection plugin",
         )
         self.max_metrics = max_metrics
-        self.collector: MetricsCollector | None = None
+        self.collector: Optional[MetricsCollector] = None
 
     async def initialize(self) -> None:
         """Initialize the metrics plugin."""
@@ -231,8 +231,8 @@ class MetricsPlugin(Plugin):
 
     def get_metrics(
         self,
-        name: str | None = None,
-        tags: dict[str, str] | None = None,
+        name: Optional[str] = None,
+        tags: Optional[dict[str, str]] = None,
         limit: int = 100,
     ) -> list[Metric]:
         """Get collected metrics."""
@@ -240,7 +240,7 @@ class MetricsPlugin(Plugin):
             return self.collector.get_metrics(name, tags, limit)
         return []
 
-    def get_aggregates(self, name: str | None = None) -> list[MetricAggregate]:
+    def get_aggregates(self, name: Optional[str] = None) -> list[MetricAggregate]:
         """Get metric aggregates."""
         if self.collector:
             return self.collector.get_aggregates(name)

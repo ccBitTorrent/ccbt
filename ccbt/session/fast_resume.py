@@ -7,7 +7,7 @@ for fast resume data.
 from __future__ import annotations
 
 import random
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from ccbt.storage.checkpoint import TorrentCheckpoint
@@ -35,7 +35,7 @@ class FastResumeLoader:
     def validate_resume_data(
         self,
         resume_data: FastResumeData,
-        torrent_info: TorrentInfoModel | dict[str, Any],
+        torrent_info: Union[TorrentInfoModel, dict[str, Any]],
     ) -> tuple[bool, list[str]]:
         """Validate resume data against torrent metadata.
 
@@ -141,8 +141,8 @@ class FastResumeLoader:
     async def verify_integrity(
         self,
         resume_data: FastResumeData,
-        torrent_info: TorrentInfoModel | dict[str, Any],
-        file_assembler: Any | None,
+        torrent_info: Union[TorrentInfoModel, dict[str, Any]],
+        file_assembler: Optional[Any],
         num_pieces_to_verify: int = 10,
     ) -> dict[str, Any]:
         """Verify integrity of critical pieces.
@@ -239,9 +239,9 @@ class FastResumeLoader:
 
     async def handle_corrupted_resume(
         self,
-        _resume_data: FastResumeData | None,
+        _resume_data: Optional[FastResumeData],
         error: Exception,
-        checkpoint: TorrentCheckpoint | None,
+        checkpoint: Optional[TorrentCheckpoint],
     ) -> dict[str, Any]:
         """Handle corrupted resume data gracefully.
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Optional
 
 import pytest
 
@@ -57,8 +57,8 @@ class FakeSession:
     def __init__(
         self,
         info_hash: bytes,
-        options: dict[str, Any] | None = None,
-        session_manager: Any | None = None,
+        options: Optional[dict[str, Any]] = None,
+        session_manager: Optional[Any] = None,
     ) -> None:
         self.info = SimpleNamespace(info_hash=info_hash, name="test_torrent")
         self.options = options or {}

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import struct
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ class BloomFilter:
         self,
         size: int = 1024 * 8,  # 1KB default
         hash_count: int = 3,
-        bit_array: bytearray | None = None,
+        bit_array: Optional[bytearray] = None,
     ):
         """Initialize bloom filter.
 
@@ -249,7 +250,7 @@ class BloomFilter:
 
         return result
 
-    def false_positive_rate(self, expected_items: int | None = None) -> float:
+    def false_positive_rate(self, expected_items: Optional[int] = None) -> float:
         """Calculate false positive rate.
 
         Args:

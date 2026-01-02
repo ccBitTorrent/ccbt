@@ -16,7 +16,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -266,7 +266,7 @@ class PeerSelector:
         # Return top N peers
         return [peer for peer, _ in ranked_peers[:count]]
 
-    def get_peer_features(self, peer_id: str) -> PeerFeatures | None:
+    def get_peer_features(self, peer_id: str) -> Optional[PeerFeatures]:
         """Get features for a specific peer."""
         return self.peer_features.get(peer_id)
 

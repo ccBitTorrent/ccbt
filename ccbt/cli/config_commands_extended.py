@@ -49,6 +49,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import click
 import toml
@@ -130,7 +131,7 @@ def config_extended():
     help="Specific model to generate schema for (e.g., Config, NetworkConfig)",
 )
 @click.option("--output", "-o", type=click.Path(), help="Output file path")
-def schema_cmd(format_: str, model: str | None, output: str | None):
+def schema_cmd(format_: str, model: Optional[str], output: Optional[str]):
     """Generate JSON schema for configuration models."""
     try:
         if model:
@@ -209,10 +210,10 @@ def schema_cmd(format_: str, model: str | None, output: str | None):
 def template_cmd(
     template_name: str,
     apply: bool,
-    output: str | None,
-    config_file: str | None,
-    restart_daemon_flag: bool | None,
-    no_restart_daemon_flag: bool | None,
+    output: Optional[str],
+    config_file: Optional[str],
+    restart_daemon_flag: Optional[bool],
+    no_restart_daemon_flag: Optional[bool],
 ):
     """Manage configuration templates."""
     try:
@@ -333,10 +334,10 @@ def template_cmd(
 def profile_cmd(
     profile_name: str,
     apply: bool,
-    output: str | None,
-    config_file: str | None,
-    restart_daemon_flag: bool | None,
-    no_restart_daemon_flag: bool | None,
+    output: Optional[str],
+    config_file: Optional[str],
+    restart_daemon_flag: Optional[bool],
+    no_restart_daemon_flag: Optional[bool],
 ):
     """Manage configuration profiles."""
     try:
@@ -448,7 +449,7 @@ def profile_cmd(
     help="Compress backup",
 )
 @click.option("--config", "config_file", type=click.Path(exists=True), default=None)
-def backup_cmd(description: str, compress: bool, config_file: str | None):
+def backup_cmd(description: str, compress: bool, config_file: Optional[str]):
     """Create configuration backup."""
     try:
         cm = ConfigManager(config_file)
@@ -488,7 +489,7 @@ def backup_cmd(description: str, compress: bool, config_file: str | None):
     help="Skip confirmation prompt",
 )
 @click.option("--config", "config_file", type=click.Path(), default=None)
-def restore_cmd(backup_file: str, confirm: bool, config_file: str | None):
+def restore_cmd(backup_file: str, confirm: bool, config_file: Optional[str]):
     """Restore configuration from backup."""
     try:
         if not confirm:
@@ -578,7 +579,7 @@ def list_backups_cmd(format_: str):
     type=click.Path(),
     help="Output file path",
 )
-def diff_cmd(config1: str, config2: str, format_: str, output: str | None):
+def diff_cmd(config1: str, config2: str, format_: str, output: Optional[str]):
     """Compare two configuration files."""
     try:
         # ConfigDiff instance is not required; use classmethod compare_files
@@ -696,10 +697,10 @@ def capabilities_summary_cmd():
 )
 def auto_tune_cmd(
     apply: bool,
-    output: str | None,
-    config_file: str | None,
-    restart_daemon_flag: bool | None,
-    no_restart_daemon_flag: bool | None,
+    output: Optional[str],
+    config_file: Optional[str],
+    restart_daemon_flag: Optional[bool],
+    no_restart_daemon_flag: Optional[bool],
 ):
     """Auto-tune configuration based on system capabilities."""
     try:
@@ -792,7 +793,7 @@ def auto_tune_cmd(
     help="Output file path",
 )
 @click.option("--config", "config_file", type=click.Path(exists=True), default=None)
-def export_cmd(format_: str, output: str, config_file: str | None):
+def export_cmd(format_: str, output: str, config_file: Optional[str]):
     """Export configuration to file."""
     try:
         cm = ConfigManager(config_file)
@@ -857,11 +858,11 @@ def export_cmd(format_: str, output: str, config_file: str | None):
 )
 def import_cmd(
     import_file: str,
-    format_: str | None,
-    output: str | None,
-    config_file: str | None,
-    restart_daemon_flag: bool | None,
-    no_restart_daemon_flag: bool | None,
+    format_: Optional[str],
+    output: Optional[str],
+    config_file: Optional[str],
+    restart_daemon_flag: Optional[bool],
+    no_restart_daemon_flag: Optional[bool],
 ):
     """Import configuration from file."""
     try:
@@ -967,7 +968,7 @@ def import_cmd(
     is_flag=True,
     help="Show detailed validation results",
 )
-def validate_cmd(config_file: str | None, detailed: bool):
+def validate_cmd(config_file: Optional[str], detailed: bool):
     """Validate configuration file."""
     try:
         cm = ConfigManager(config_file)

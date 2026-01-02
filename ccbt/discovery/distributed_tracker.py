@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.models import PeerInfo
 
@@ -46,7 +46,7 @@ class DistributedTracker:
         self.sync_interval = sync_interval
 
         # Tracker data: info_hash -> list of (ip, port, peer_id)
-        self.tracker_data: dict[bytes, list[tuple[str, int, bytes | None]]] = {}
+        self.tracker_data: dict[bytes, list[tuple[str, int, Optional[bytes]]]] = {}
         self.last_sync = 0.0
 
     async def announce(
@@ -54,7 +54,7 @@ class DistributedTracker:
         info_hash: bytes,
         peer_ip: str,
         peer_port: int,
-        peer_id: bytes | None = None,
+        peer_id: Optional[bytes] = None,
     ) -> None:
         """Announce peer for torrent.
 

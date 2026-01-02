@@ -17,6 +17,14 @@ repos:
         files: ^ccbt/.*\.py$
         exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: false
+      - id: compatibility-linter
+        name: compatibility-linter
+        entry: uv run python dev/compatibility_linter.py ccbt/
+        language: system
+        types: [python]
+        files: ^ccbt/.*\.py$
+        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        pass_filenames: false
       - id: ty
         name: ty
         entry: uv run ty check --config-file=dev/ty.toml --output-format=concise

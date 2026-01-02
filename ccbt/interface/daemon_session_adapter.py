@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 if TYPE_CHECKING:
     from ccbt.daemon.ipc_client import IPCClient
@@ -50,7 +50,7 @@ class DaemonInterfaceAdapter:
         self._cache_lock = asyncio.Lock()
         
         # WebSocket subscription
-        self._websocket_task: asyncio.Task | None = None
+        self._websocket_task: Optional[asyncio.Task] = None
         self._event_callbacks: dict[EventType, list[Callable[[dict[str, Any]], None]]] = {}
         self._websocket_connected = False
         
@@ -58,29 +58,29 @@ class DaemonInterfaceAdapter:
         self._widget_callbacks: list[Any] = []  # List of widget instances with event handler methods
         
         # Callbacks (matching AsyncSessionManager interface)
-        self.on_torrent_added: Callable[[bytes, str], None] | None = None
-        self.on_torrent_removed: Callable[[bytes], None] | None = None
-        self.on_torrent_complete: Callable[[bytes, str], None] | None = None
+        self.on_torrent_added: Optional[Callable[[bytes, str], None]] = None
+        self.on_torrent_removed: Optional[Callable[[bytes], None]] = None
+        self.on_torrent_complete: Optional[Callable[[bytes, str], None]] = None
         # New async hooks for WebSocket-driven UI updates
-        self.on_global_stats: Callable[[dict[str, Any]], None] | None = None
-        self.on_torrent_list_delta: Callable[[dict[str, Any]], None] | None = None
-        self.on_peer_metrics: Callable[[dict[str, Any]], None] | None = None
-        self.on_tracker_event: Callable[[dict[str, Any]], None] | None = None
-        self.on_metadata_event: Callable[[dict[str, Any]], None] | None = None
+        self.on_global_stats: Optional[Callable[[dict[str, Any]], None]] = None
+        self.on_torrent_list_delta: Optional[Callable[[dict[str, Any]], None]] = None
+        self.on_peer_metrics: Optional[Callable[[dict[str, Any]], None]] = None
+        self.on_tracker_event: Optional[Callable[[dict[str, Any]], None]] = None
+        self.on_metadata_event: Optional[Callable[[dict[str, Any]], None]] = None
         # XET folder callbacks
-        self.on_xet_folder_added: Callable[[str, str], None] | None = None
-        self.on_xet_folder_removed: Callable[[str], None] | None = None
+        self.on_xet_folder_added: Optional[Callable[[str, str], None]] = None
+        self.on_xet_folder_removed: Optional[Callable[[str], None]] = None
         
         # Properties matching AsyncSessionManager
         self.torrents: dict[bytes, Any] = {}  # Will be populated from cached status
         self.xet_folders: dict[str, Any] = {}  # Will be populated from cached status
         self.lock = asyncio.Lock()  # Compatibility with AsyncSessionManager
-        self.dht_client: Any | None = None  # Not available via IPC
-        self.metrics: Any | None = None  # Not directly available
-        self.peer_service: Any | None = None  # Not directly available
-        self.security_manager: Any | None = None  # Not directly available
-        self.nat_manager: Any | None = None  # Not directly available
-        self.tcp_server: Any | None = None  # Not directly available
+        self.dht_client: Optional[Any] = None  # Not available via IPC
+        self.metrics: Optional[Any] = None  # Not directly available
+        self.peer_service: Optional[Any] = None  # Not directly available
+        self.security_manager: Optional[Any] = None  # Not directly available
+        self.nat_manager: Optional[Any] = None  # Not directly available
+        self.tcp_server: Optional[Any] = None  # Not directly available
         
         self.logger = logger
 
@@ -299,7 +299,7 @@ class DaemonInterfaceAdapter:
     async def _handle_websocket_event(self, event: WebSocketEvent) -> None:
         """Handle WebSocket event and update cache."""
         try:
-            async def _dispatch(callback: Callable[..., Any] | None, *args: Any) -> None:
+            async def _dispatch(callback: Optional[Callable[..., Any]], *args: Any) -> None:
                 """Invoke optional callback, awaiting if it returns coroutine."""
                 if not callback:
                     return
@@ -629,7 +629,7 @@ class DaemonInterfaceAdapter:
         async with self._cache_lock:
             return dict(self._cached_torrents)
 
-    async def get_torrent_status(self, info_hash_hex: str) -> dict[str, Any] | None:
+    async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:
         """Get status of a specific torrent."""
         try:
             # CRITICAL: Use executor adapter (consistent with CLI)
@@ -656,7 +656,7 @@ class DaemonInterfaceAdapter:
 
     async def add_torrent(
         self,
-        path: str | dict[str, Any],
+        path: Union[str, dict[str, Any]],
         resume: bool = False,
     ) -> str:
         """Add a torrent file or torrent data to the session."""
@@ -806,11 +806,11 @@ class DaemonInterfaceAdapter:
     async def add_xet_folder(
         self,
         folder_path: str,
-        tonic_file: str | None = None,
-        tonic_link: str | None = None,
-        sync_mode: str | None = None,
-        source_peers: list[str] | None = None,
-        check_interval: float | None = None,
+        tonic_file: Optional[str] = None,
+        tonic_link: Optional[str] = None,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        check_interval: Optional[float] = None,
     ) -> str:
         """Add XET folder for synchronization."""
         try:
@@ -877,7 +877,7 @@ class DaemonInterfaceAdapter:
             self.logger.debug("Error removing XET folder: %s", e)
             return False
 
-    async def get_xet_folder(self, folder_key: str) -> Any | None:
+    async def get_xet_folder(self, folder_key: str) -> Optional[Any]:
         """Get XET folder by key."""
         await self._refresh_xet_folders_cache()
         async with self._cache_lock:
@@ -889,7 +889,7 @@ class DaemonInterfaceAdapter:
         async with self._cache_lock:
             return list(self.xet_folders.values())
 
-    async def get_xet_folder_status(self, folder_key: str) -> dict[str, Any] | None:
+    async def get_xet_folder_status(self, folder_key: str) -> Optional[dict[str, Any]]:
         """Get XET folder status."""
         try:
             # Get adapter from executor
@@ -1026,11 +1026,11 @@ class DaemonInterfaceAdapter:
                 await asyncio.sleep(3.0)
 
     @property
-    def dht(self) -> Any | None:
+    def dht(self) -> Optional[Any]:
         """Get DHT instance (not available via IPC)."""
         return None
 
-    def parse_magnet_link(self, magnet_uri: str) -> dict[str, Any] | None:
+    def parse_magnet_link(self, magnet_uri: str) -> Optional[dict[str, Any]]:
         """Parse magnet link and return torrent data.
         
         Args:

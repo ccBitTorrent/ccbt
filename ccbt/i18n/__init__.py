@@ -10,12 +10,13 @@ import locale
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 # Default locale
 DEFAULT_LOCALE = "en"
 
 # Translation instance (lazy-loaded)
-_translation: gettext.NullTranslations | None = None
+_translation: Optional[gettext.NullTranslations] = None
 
 logger = logging.getLogger(__name__)
 

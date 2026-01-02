@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import random
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional, Union
 
 from ccbt.interface.splash.color_matching import (
     generate_random_duration,
@@ -23,7 +23,7 @@ class Transition(ABC):
     
     def __init__(
         self,
-        duration: float | None = None,
+        duration: Optional[float] = None,
         min_duration: float = 1.5,
         max_duration: float = 2.5,
     ) -> None:
@@ -70,12 +70,12 @@ class ColorTransition(Transition):
     
     def __init__(
         self,
-        logo_color_start: str | list[str],
-        logo_color_finish: str | list[str],
-        bg_color_start: str | list[str] | None = None,
-        bg_color_finish: str | list[str] | None = None,
-        bg_config: BackgroundConfig | None = None,
-        duration: float | None = None,
+        logo_color_start: Union[str, list[str]],
+        logo_color_finish: Union[str, list[str]],
+        bg_color_start: Optional[Union[str, list[str]]] = None,
+        bg_color_finish: Optional[Union[str, list[str]]] = None,
+        bg_config: Optional[BackgroundConfig] = None,
+        duration: Optional[float] = None,
         min_duration: float = 1.5,
         max_duration: float = 2.5,
         ensure_smooth: bool = True,
@@ -128,7 +128,7 @@ class ColorTransition(Transition):
         self,
         controller: Any,
         text: str,
-        update_callback: Any | None = None,
+        update_callback: Optional[Any] = None,
     ) -> None:
         """Execute color transition with precise timing.
         
@@ -156,7 +156,7 @@ class FadeTransition(Transition):
     def __init__(
         self,
         fade_type: str = "in",  # "in", "out", "in_out"
-        duration: float | None = None,
+        duration: Optional[float] = None,
         min_duration: float = 1.5,
         max_duration: float = 2.5,
     ) -> None:
@@ -205,7 +205,7 @@ class SlideTransition(Transition):
         self,
         direction: str = "left",
         slide_type: str = "in",
-        duration: float | None = None,
+        duration: Optional[float] = None,
         min_duration: float = 1.5,
         max_duration: float = 2.5,
     ) -> None:
@@ -267,7 +267,7 @@ class CrossfadeTransition(Transition):
         text2: str,
         color1: str = "white",
         color2: str = "white",
-        duration: float | None = None,
+        duration: Optional[float] = None,
         min_duration: float = 1.5,
         max_duration: float = 2.5,
     ) -> None:

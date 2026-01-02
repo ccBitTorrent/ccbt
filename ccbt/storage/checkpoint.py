@@ -18,7 +18,7 @@ import struct
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 try:
     import zstandard as zstd  # type: ignore[unresolved-import]
@@ -81,7 +81,7 @@ class CheckpointManager:
     MAGIC_BYTES = b"CCBT"
     VERSION = 1
 
-    def __init__(self, config: DiskConfig | None = None):
+    def __init__(self, config: Optional[DiskConfig] = None):
         """Initialize checkpoint manager.
 
         Args:
@@ -102,8 +102,8 @@ class CheckpointManager:
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         # Track last checkpoint state for incremental saves and deduplication
-        self._last_checkpoint_hash: bytes | None = None
-        self._last_checkpoint: TorrentCheckpoint | None = None
+        self._last_checkpoint_hash: Optional[bytes] = None
+        self._last_checkpoint: Optional[TorrentCheckpoint] = None
 
         self.logger.info(
             "Checkpoint manager initialized with directory: %s",
@@ -163,7 +163,7 @@ class CheckpointManager:
     async def save_checkpoint(
         self,
         checkpoint: TorrentCheckpoint,
-        checkpoint_format: CheckpointFormat | None = None,
+        checkpoint_format: Optional[CheckpointFormat] = None,
     ) -> Path:
         """Save checkpoint to disk.
 
@@ -540,8 +540,8 @@ class CheckpointManager:
     async def load_checkpoint(
         self,
         info_hash: bytes,
-        checkpoint_format: CheckpointFormat | None = None,
-    ) -> TorrentCheckpoint | None:
+        checkpoint_format: Optional[CheckpointFormat] = None,
+    ) -> Optional[TorrentCheckpoint]:
         """Load checkpoint from disk.
 
         Args:
@@ -584,7 +584,7 @@ class CheckpointManager:
     async def _load_json_checkpoint(
         self,
         info_hash: bytes,
-    ) -> TorrentCheckpoint | None:
+    ) -> Optional[TorrentCheckpoint]:
         """Load checkpoint from JSON checkpoint_format."""
         path = self._get_checkpoint_path(info_hash, CheckpointFormat.JSON)
 
@@ -664,7 +664,7 @@ class CheckpointManager:
     async def _load_binary_checkpoint(
         self,
         info_hash: bytes,
-    ) -> TorrentCheckpoint | None:
+    ) -> Optional[TorrentCheckpoint]:
         """Load checkpoint from binary checkpoint_format."""
         if not HAS_MSGPACK:
             msg = "msgpack is required for binary checkpoint checkpoint_format"
@@ -969,7 +969,7 @@ class CheckpointManager:
         self,
         backup_file: Path,
         *,
-        info_hash: bytes | None = None,
+        info_hash: Optional[bytes] = None,
     ) -> TorrentCheckpoint:
         """Restore a checkpoint from a backup file. Returns the restored checkpoint model."""
         data = backup_file.read_bytes()
@@ -1142,7 +1142,7 @@ class CheckpointManager:
 class GlobalCheckpointManager:
     """Manages global session manager checkpoints."""
 
-    def __init__(self, config: DiskConfig | None = None):
+    def __init__(self, config: Optional[DiskConfig] = None):
         """Initialize global checkpoint manager.
 
         Args:
@@ -1231,7 +1231,7 @@ class GlobalCheckpointManager:
             msg = f"Failed to save global checkpoint: {e}"
             raise CheckpointError(msg) from e
 
-    async def load_global_checkpoint(self) -> GlobalCheckpoint | None:
+    async def load_global_checkpoint(self) -> Optional[GlobalCheckpoint]:
         """Load global checkpoint from disk.
 
         Returns:
@@ -1348,8 +1348,8 @@ class GlobalCheckpointManager:
     async def load_incremental_checkpoint(
         self,
         info_hash: bytes,
-        base_checkpoint: TorrentCheckpoint | None = None,
-    ) -> TorrentCheckpoint | None:
+        base_checkpoint: Optional[TorrentCheckpoint] = None,
+    ) -> Optional[TorrentCheckpoint]:
         """Load incremental checkpoint and merge with base.
 
         Args:

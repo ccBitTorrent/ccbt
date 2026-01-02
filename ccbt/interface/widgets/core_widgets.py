@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.i18n import _
 
@@ -148,7 +148,7 @@ class TorrentsTable(DataTable):  # type: ignore[misc]
                 key=ih,
             )
 
-    def get_selected_info_hash(self) -> str | None:  # pragma: no cover
+    def get_selected_info_hash(self) -> Optional[str]:  # pragma: no cover
         """Get the info hash of the currently selected torrent."""
         if hasattr(self, "cursor_row_key"):
             with contextlib.suppress(Exception):
@@ -439,7 +439,7 @@ class GlobalTorrentMetricsPanel(Static):  # type: ignore[misc]
 
     def update_metrics(
         self,
-        stats: dict[str, Any] | None,
+        stats: Optional[dict[str, Any]],
         swarm_samples: list[dict[str, Any]] | None = None,
     ) -> None:  # pragma: no cover
         """Render aggregated torrent metrics."""
@@ -648,8 +648,8 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         """
         super().__init__(*args, **kwargs)
         self._data_provider = data_provider
-        self._graph_selector: Any | None = None  # ButtonSelector
-        self._active_graph_tab_id: str | None = None
+        self._graph_selector: Optional[Any] = None  # ButtonSelector
+        self._active_graph_tab_id: Optional[str] = None
         self._registered_widgets: list[Any] = []  # Track registered widgets for cleanup
 
     def compose(self) -> Any:  # pragma: no cover

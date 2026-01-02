@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import urlparse
 
 import aiohttp
@@ -29,7 +29,7 @@ class WebSeedInfo:
     """WebSeed information."""
 
     url: str
-    name: str | None = None
+    name: Optional[str] = None
     is_active: bool = True
     last_accessed: float = 0.0
     bytes_downloaded: int = 0
@@ -45,7 +45,7 @@ class WebSeedExtension:
         import logging
 
         self.webseeds: dict[str, WebSeedInfo] = {}
-        self.session: aiohttp.ClientSession | None = None
+        self.session: Optional[aiohttp.ClientSession] = None
         self.timeout = aiohttp.ClientTimeout(total=30.0)
         self.logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class WebSeedExtension:
                 timeout=self.timeout, connector=connector
             )
 
-    def _create_connector(self) -> aiohttp.BaseConnector | None:
+    def _create_connector(self) -> Optional[aiohttp.BaseConnector]:
         """Create appropriate connector (proxy or direct).
 
         Returns:
@@ -138,7 +138,7 @@ class WebSeedExtension:
             finally:
                 self.session = None
 
-    def add_webseed(self, url: str, name: str | None = None) -> str:
+    def add_webseed(self, url: str, name: Optional[str] = None) -> str:
         """Add WebSeed URL."""
         webseed_id = url
         self.webseeds[webseed_id] = WebSeedInfo(
@@ -195,7 +195,7 @@ class WebSeedExtension:
                 # No event loop running, skip event emission
                 pass
 
-    def get_webseed(self, webseed_id: str) -> WebSeedInfo | None:
+    def get_webseed(self, webseed_id: str) -> Optional[WebSeedInfo]:
         """Get WebSeed information."""
         return self.webseeds.get(webseed_id)
 
@@ -208,7 +208,7 @@ class WebSeedExtension:
         webseed_id: str,
         piece_info: PieceInfo,
         _piece_data: bytes,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Download piece from WebSeed."""
         if webseed_id not in self.webseeds:
             return None
@@ -327,7 +327,7 @@ class WebSeedExtension:
         webseed_id: str,
         start_byte: int,
         length: int,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Download specific byte range from WebSeed."""
         if webseed_id not in self.webseeds:
             return None
@@ -401,7 +401,7 @@ class WebSeedExtension:
 
             return None
 
-    def get_best_webseed(self) -> str | None:
+    def get_best_webseed(self) -> Optional[str]:
         """Get best WebSeed based on success rate and activity."""
         if not self.webseeds:
             return None
@@ -427,7 +427,7 @@ class WebSeedExtension:
 
         return best_webseed_id
 
-    def get_webseed_statistics(self, webseed_id: str) -> dict[str, Any] | None:
+    def get_webseed_statistics(self, webseed_id: str) -> Optional[dict[str, Any]]:
         """Get WebSeed statistics."""
         webseed = self.webseeds.get(webseed_id)
         if not webseed:

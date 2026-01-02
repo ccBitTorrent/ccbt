@@ -7,6 +7,7 @@ peer bloom exchange and merging.
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from ccbt.discovery.bloom_filter import BloomFilter
 
@@ -29,7 +30,7 @@ class XetChunkBloomFilter:
         size: int = 1024 * 8,  # 1KB default
         hash_count: int = 3,
         chunk_size: int = 1000,
-        bloom_filter: BloomFilter | None = None,
+        bloom_filter: Optional[BloomFilter] = None,
     ):
         """Initialize XET chunk bloom filter.
 

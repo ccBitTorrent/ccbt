@@ -8,7 +8,7 @@ based on swarm health.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class AdaptiveTimeoutCalculator:
     def __init__(
         self,
         config: Any,
-        peer_manager: Any | None = None,
+        peer_manager: Optional[Any] = None,
     ) -> None:
         """Initialize adaptive timeout calculator.
 

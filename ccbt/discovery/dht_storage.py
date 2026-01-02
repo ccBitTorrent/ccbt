@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Optional, Union
 
 try:
     from cryptography.hazmat.primitives import hashes as crypto_hashes
@@ -276,7 +276,7 @@ def verify_mutable_data_signature(
 
 
 def encode_storage_value(
-    data: DHTImmutableData | DHTMutableData,
+    data: Union[DHTImmutableData, DHTMutableData],
 ) -> dict[bytes, Any]:
     """Encode storage value for DHT message (BEP 44).
 
@@ -325,7 +325,7 @@ def encode_storage_value(
 def decode_storage_value(
     value_dict: dict[bytes, Any],
     key_type: DHTStorageKeyType,
-) -> DHTImmutableData | DHTMutableData:
+) -> Union[DHTImmutableData, DHTMutableData]:
     """Decode storage value from DHT message (BEP 44).
 
     Args:
@@ -389,7 +389,7 @@ class DHTStorageCacheEntry:
     """Cache entry for stored DHT data."""
 
     key: bytes
-    value: DHTImmutableData | DHTMutableData
+    value: Union[DHTImmutableData, DHTMutableData]
     stored_at: float = field(default_factory=time.time)
     expires_at: float = field(default_factory=lambda: time.time() + 3600.0)
 
@@ -407,7 +407,7 @@ class DHTStorageCache:
         self.cache: dict[bytes, DHTStorageCacheEntry] = {}
         self.default_ttl = default_ttl
 
-    def get(self, key: bytes) -> DHTImmutableData | DHTMutableData | None:
+    def get(self, key: bytes) -> Optional[Union[DHTImmutableData, DHTMutableData]]:
         """Get cached value.
 
         Args:
@@ -431,8 +431,8 @@ class DHTStorageCache:
     def put(
         self,
         key: bytes,
-        value: DHTImmutableData | DHTMutableData,
-        ttl: int | None = None,
+        value: Union[DHTImmutableData, DHTMutableData],
+        ttl: Optional[int] = None,
     ) -> None:
         """Store value in cache.
 

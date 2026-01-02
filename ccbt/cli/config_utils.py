@@ -6,7 +6,7 @@ and handle daemon restart logic.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from rich.console import Console
 from rich.prompt import Confirm
@@ -249,7 +249,7 @@ async def _restart_daemon_async(force: bool = False) -> bool:
 def restart_daemon_if_needed(
     _config_manager: ConfigManager,
     requires_restart: bool,
-    auto_restart: bool | None = None,
+    auto_restart: Optional[bool] = None,
     force: bool = False,
 ) -> bool:
     """Restart daemon if needed and running.

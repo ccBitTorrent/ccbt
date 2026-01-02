@@ -10,7 +10,7 @@ import contextlib
 import sys
 import time
 import warnings
-from typing import Any
+from typing import Any, Optional
 
 import click
 from rich.console import Console
@@ -139,8 +139,8 @@ def daemon():
 )
 def start(
     foreground: bool,
-    config: str | None,
-    port: int | None,
+    config: Optional[str],
+    port: Optional[int],
     regenerate_api_key: bool,
     verbose: int,
     vv: bool,
@@ -553,7 +553,7 @@ def start(
 
 
 async def _run_daemon_foreground(
-    _daemon_config: DaemonConfig, config_file: str | None
+    _daemon_config: DaemonConfig, config_file: Optional[str]
 ) -> None:
     """Run daemon in foreground mode."""
     from ccbt.daemon.main import DaemonMain
@@ -569,7 +569,7 @@ async def _run_daemon_foreground(
 def _wait_for_daemon(
     daemon_config: DaemonConfig,
     timeout: float = 15.0,
-    splash_manager: Any | None = None,
+    splash_manager: Optional[Any] = None,
 ) -> bool:
     """Wait for daemon to be ready.
 
@@ -635,11 +635,11 @@ def _wait_for_daemon(
 def _wait_for_daemon_with_progress(
     daemon_config: DaemonConfig,
     timeout: float = 15.0,
-    progress: Progress | None = None,
-    task: int | None = None,
-    verbosity: Any | None = None,
-    daemon_pid: int | None = None,
-    splash_manager: Any | None = None,
+    progress: Optional[Any] = None,  # Optional[Progress]
+    task: Optional[int] = None,
+    verbosity: Optional[Any] = None,
+    daemon_pid: Optional[int] = None,
+    splash_manager: Optional[Any] = None,
 ) -> bool:
     """Wait for daemon to be ready with progress indicator.
 
@@ -723,7 +723,7 @@ def _wait_for_daemon_with_progress(
         # Fallback: try to get PID from file (may not exist yet)
         initial_pid = daemon_manager.get_pid()
 
-    def _is_process_alive(pid: int | None) -> bool:
+    def _is_process_alive(pid: Optional[int]) -> bool:
         """Check if process is actually running.
 
         Args:

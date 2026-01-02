@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from typing import Optional, Union
 
 import click
 from rich.console import Console
@@ -27,17 +28,17 @@ logger = logging.getLogger(__name__)
 
 
 async def generate_tonic_from_folder(
-    folder_path: str | Path,
-    output_path: str | Path | None = None,
+    folder_path: Union[str, Path],
+    output_path: Optional[Union[str, Path]] = None,
     sync_mode: str = "best_effort",
-    source_peers: list[str] | None = None,
-    allowlist_path: str | Path | None = None,
-    git_ref: str | None = None,
-    announce: str | None = None,
-    announce_list: list[list[str]] | None = None,
-    comment: str | None = None,
+    source_peers: Optional[list[str]] = None,
+    allowlist_path: Optional[Union[str, Path]] = None,
+    git_ref: Optional[str] = None,
+    announce: Optional[str] = None,
+    announce_list: Optional[list[list[str]]] = None,
+    comment: Optional[str] = None,
     generate_link: bool = False,
-) -> tuple[bytes, str | None]:
+) -> tuple[bytes, Optional[str]]:
     """Generate .tonic file from folder.
 
     Args:
@@ -118,7 +119,7 @@ async def generate_tonic_from_folder(
         progress.update(task, completed=True)
 
     # Get git refs if git versioning enabled
-    git_refs: list[str] | None = None
+    git_refs: Optional[list[str]] = None
     git_versioning = GitVersioning(folder_path=folder)
     if git_versioning.is_git_repo():
         if git_ref:
@@ -133,7 +134,7 @@ async def generate_tonic_from_folder(
                     git_refs = recent_refs
 
     # Get allowlist hash if allowlist provided
-    allowlist_hash: bytes | None = None
+    allowlist_hash: Optional[bytes] = None
     if allowlist_path:
         allowlist = XetAllowlist(allowlist_path=allowlist_path)
         await allowlist.load()
@@ -184,7 +185,7 @@ async def generate_tonic_from_folder(
         )
 
     # Generate link if requested
-    tonic_link: str | None = None
+    tonic_link: Optional[str] = None
     if generate_link:
         tonic_link = generate_tonic_link(
             info_hash=info_hash,
@@ -245,19 +246,19 @@ async def generate_tonic_from_folder(
 def tonic_generate(
     _ctx,
     folder_path: str,
-    output_path: str | None,
+    output_path: Optional[str],
     sync_mode: str,
-    source_peers: str | None,
-    allowlist_path: str | None,
-    git_ref: str | None,
-    announce: str | None,
+    source_peers: Optional[str],
+    allowlist_path: Optional[str],
+    git_ref: Optional[str],
+    announce: Optional[str],
     generate_link: bool,
 ) -> None:
     """Generate .tonic file from folder."""
     console = Console()
 
     # Parse source peers
-    source_peers_list: list[str] | None = None
+    source_peers_list: Optional[list[str]] = None
     if source_peers:
         source_peers_list = [p.strip() for p in source_peers.split(",") if p.strip()]
 

@@ -13,7 +13,7 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from ccbt.security.security_manager import SecurityManager
@@ -59,8 +59,8 @@ class LocalBlacklistSource:
         security_manager: SecurityManager,
         evaluation_interval: float = 300.0,  # 5 minutes
         metric_window: float = 3600.0,  # 1 hour
-        thresholds: dict[str, Any] | None = None,
-        expiration_hours: float | None = 24.0,
+        thresholds: Optional[dict[str, Any]] = None,
+        expiration_hours: Optional[float] = 24.0,
         min_observations: int = 3,
     ):
         """Initialize local blacklist source.
@@ -96,7 +96,7 @@ class LocalBlacklistSource:
         self.metric_entries: deque[PeerMetricEntry] = deque(maxlen=100000)
 
         # Background task
-        self._evaluation_task: asyncio.Task | None = None
+        self._evaluation_task: Optional[asyncio.Task] = None
         self._running = False
 
     async def start_evaluation(self) -> None:
@@ -150,7 +150,7 @@ class LocalBlacklistSource:
         ip: str,
         metric_type: str,
         value: float,
-        metadata: dict[str, Any] | None = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """Record a metric for an IP.
 

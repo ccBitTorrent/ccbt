@@ -7,7 +7,7 @@ that can be chained together with transitions.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional, Union
 
 
 @dataclass
@@ -18,19 +18,19 @@ class BackgroundConfig:
     bg_type: str = "none"  # none, solid, gradient, pattern, stars, waves, particles, flower
 
     # Color configuration
-    bg_color_start: str | list[str] | None = None  # Single color or gradient start
-    bg_color_finish: str | list[str] | None = None  # Single color or gradient end
-    bg_color_palette: list[str] | None = None  # Full color palette for animated backgrounds
+    bg_color_start: Optional[Union[str, list[str]]] = None  # Single color or gradient start
+    bg_color_finish: Optional[Union[str, list[str]]] = None  # Single color or gradient end
+    bg_color_palette: Optional[list[str]] = None  # Full color palette for animated backgrounds
     
     # Text color (separate from background)
-    text_color: str | list[str] | None = None  # Text color (overrides main color_start for text)
+    text_color: Optional[Union[str, list[str]]] = None  # Text color (overrides main color_start for text)
 
     # Animation
     bg_animate: bool = False  # Whether background should animate
     bg_direction: str = "left_to_right"  # Animation direction
     bg_speed: float = 2.0  # Background animation speed (for pattern movement)
     bg_animation_speed: float = 1.0  # Background color animation speed (for palette cycling)
-    bg_duration: float | None = None  # Background animation duration (None = match logo)
+    bg_duration: Optional[float] = None  # Background animation duration (None = match logo)
 
     # Pattern-specific options
     bg_pattern_char: str = "·"  # Character for pattern backgrounds
@@ -77,9 +77,9 @@ class AnimationConfig:
     logo_text: str = ""
 
     # Color configuration
-    color_start: str | list[str] | None = None  # Single color or palette start
-    color_finish: str | list[str] | None = None  # Single color or palette end
-    color_palette: list[str] | None = None  # Full color palette
+    color_start: Optional[Union[str, list[str]]] = None  # Single color or palette start
+    color_finish: Optional[Union[str, list[str]]] = None  # Single color or palette end
+    color_palette: Optional[list[str]] = None  # Full color palette
 
     # Direction/flow
     direction: str = "left_to_right"  # left_to_right, right_to_left, top_to_bottom, 
@@ -89,7 +89,7 @@ class AnimationConfig:
     duration: float = 3.0
     speed: float = 8.0
     steps: int = 30
-    sequence_total_duration: float | None = None  # Total duration of entire sequence for adaptive timing
+    sequence_total_duration: Optional[float] = None  # Total duration of entire sequence for adaptive timing
 
     # Style-specific options
     reveal_char: str = "█"
@@ -102,8 +102,8 @@ class AnimationConfig:
     # New animation options
     snake_length: int = 10
     snake_thickness: int = 1  # Thickness of snake perpendicular to direction
-    arc_center_x: int | None = None
-    arc_center_y: int | None = None
+    arc_center_x: Optional[int] = None
+    arc_center_y: Optional[int] = None
     whitespace_pattern: str = "|/—\\"
     slide_direction: str = "left"  # For letter_slide_in
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import math
 import random
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
     from rich.console import Group
@@ -69,7 +69,7 @@ class ColorPalette:
 class FrameRenderer:
     """Renders ASCII art frames with Rich styling."""
 
-    def __init__(self, console: Console | None = None, splash_screen: Any = None) -> None:
+    def __init__(self, console: Optional[Console] = None, splash_screen: Any = None) -> None:
         """Initialize frame renderer.
         
         Args:
@@ -179,7 +179,7 @@ class FrameRenderer:
 class BackgroundRenderer:
     """Renders animated backgrounds for splash screens."""
 
-    def __init__(self, console: Console | None = None) -> None:
+    def __init__(self, console: Optional[Console] = None) -> None:
         """Initialize background renderer.
         
         Args:
@@ -199,7 +199,7 @@ class BackgroundRenderer:
         width: int,
         height: int,
         bg_type: str = "none",
-        bg_color: str | list[str] | None = None,
+        bg_color: Optional[Union[str, list[str]]] = None,
         bg_pattern_char: str = "·",
         bg_pattern_density: float = 0.1,
         bg_star_count: int = 50,
@@ -489,7 +489,7 @@ class BackgroundRenderer:
         width: int,
         height: int,
         density: float,
-        vanishing_point: int | None,
+        vanishing_point: Optional[int],
         time_offset: float,
     ) -> list[str]:
         """Generate a faux 3D perspective grid background."""
@@ -576,7 +576,7 @@ class AnimationController:
 
     def __init__(
         self,
-        frame_renderer: FrameRenderer | None = None,
+        frame_renderer: Optional[FrameRenderer] = None,
         default_frame_duration: float = 0.016,  # 60 FPS for ultra-smooth animations
     ) -> None:
         """Initialize animation controller.
@@ -590,7 +590,7 @@ class AnimationController:
         self.background_renderer = BackgroundRenderer(self.renderer.console)
         self.default_duration = default_frame_duration
     
-    def _calculate_frame_duration(self, total_duration: float, num_frames: int | None = None) -> float:
+    def _calculate_frame_duration(self, total_duration: float, num_frames: Optional[int] = None) -> float:
         """Calculate frame duration based on total animation duration.
         
         Args:
@@ -611,7 +611,7 @@ class AnimationController:
         # Clamp between 0.008 (120 FPS max) and 0.033 (30 FPS min) for ultra-fluid animations
         return max(0.008, min(0.033, frame_duration))
     
-    def _adapt_speed_to_duration(self, base_speed: float, duration: float, sequence_duration: float | None = None) -> float:
+    def _adapt_speed_to_duration(self, base_speed: float, duration: float, sequence_duration: Optional[float] = None) -> float:
         """Adapt animation speed based on duration.
         
         Args:
@@ -695,7 +695,7 @@ class AnimationController:
         logo_lines: list[Text],
         bg_config: Any,
         time_offset: float = 0.0,
-        text_color: str | list[str] | None = None,
+        text_color: Optional[Union[str, list[str]]] = None,
     ) -> Group:
         """Render logo lines with background.
         
@@ -856,7 +856,7 @@ class AnimationController:
         color: str = "white",
         steps: int = 30,
         column_groups: int = 1,
-        duration: float | None = None,
+        duration: Optional[float] = None,
     ) -> None:
         """Reveal text column by column or in column groups.
         
@@ -948,7 +948,7 @@ class AnimationController:
         self,
         text: str,
         direction: str = "left_to_right",
-        color_palette: list[str] | None = None,
+        color_palette: Optional[list[str]] = None,
         speed: float = 8.0,
         duration: float = 3.0,
         column_groups: int = 1,
@@ -1380,7 +1380,7 @@ class AnimationController:
         self,
         text: str,
         direction: str = "left_to_right",
-        color_palette: list[str] | None = None,
+        color_palette: Optional[list[str]] = None,
         speed: float = 8.0,
         duration: float = 3.0,
         group_by: str = "spaces",
@@ -1848,7 +1848,7 @@ class AnimationController:
     async def play_frames(
         self,
         frames: list[str],
-        frame_duration: float | None = None,
+        frame_duration: Optional[float] = None,
         color: str = "white",
         clear_between: bool = True,
     ) -> None:
@@ -1874,7 +1874,7 @@ class AnimationController:
     async def play_multi_color_frames(
         self,
         frames: list[list[tuple[str, str]]],
-        frame_duration: float | None = None,
+        frame_duration: Optional[float] = None,
         clear_between: bool = True,
     ) -> None:
         """Play a sequence of multi-color frames.
@@ -2077,7 +2077,7 @@ class AnimationController:
         self,
         text: str,
         direction: str = "left",
-        color_palette: list[str] | None = None,
+        color_palette: Optional[list[str]] = None,
         speed: float = 8.0,
         duration: float = 3.0,
     ) -> None:
@@ -2182,7 +2182,7 @@ class AnimationController:
         color: str = "white",
         steps: int = 30,
         reveal_char: str = "█",
-        duration: float | None = None,
+        duration: Optional[float] = None,
     ) -> None:
         """Reveal text animation from different directions.
         
@@ -2395,7 +2395,7 @@ class AnimationController:
     async def flag_effect(
         self,
         text: str,
-        color_palette: list[str] | None = None,
+        color_palette: Optional[list[str]] = None,
         wave_speed: float = 2.0,
         wave_amplitude: float = 2.0,
         duration: float = 3.0,
@@ -2622,7 +2622,7 @@ class AnimationController:
 
     def _get_color_from_palette(
         self,
-        color_input: str | list[str] | None,
+        color_input: Optional[Union[str, list[str]]],
         position: int = 0,
         total_positions: int = 1,
         default: str = "white",
@@ -2657,7 +2657,7 @@ class AnimationController:
 
     def _get_color_at_position(
         self,
-        color_input: str | list[str] | None,
+        color_input: Optional[Union[str, list[str]]],
         char_idx: int,
         line_idx: int,
         max_width: int,
@@ -2697,8 +2697,8 @@ class AnimationController:
     async def rainbow_to_color(
         self,
         text: str,
-        target_color: str | list[str],
-        color_palette: list[str] | None = None,
+        target_color: Union[str, list[str]],
+        color_palette: Optional[list[str]] = None,
         duration: float = 3.0,
     ) -> None:
         """Transition from rainbow colors to a single target color.
@@ -2787,8 +2787,8 @@ class AnimationController:
         self,
         text: str,
         direction: str = "left_to_right",
-        color_start: str | list[str] = "white",
-        color_finish: str | list[str] = "cyan",
+        color_start: Union[str, list[str]] = "white",
+        color_finish: Union[str, list[str]] = "cyan",
         duration: float = 3.0,
     ) -> None:
         """Swipe color across columns.
@@ -2878,8 +2878,8 @@ class AnimationController:
         direction: str = "top_down",
         color: str = "white",
         steps: int = 30,
-        arc_center_x: int | None = None,
-        arc_center_y: int | None = None,
+        arc_center_x: Optional[int] = None,
+        arc_center_y: Optional[int] = None,
     ) -> None:
         """Reveal text in an arc pattern.
         
@@ -3618,8 +3618,8 @@ class AnimationController:
 
     def _get_background_color(
         self,
-        bg_color_input: str | list[str] | None,
-        position: tuple[int, int] | None = None,
+        bg_color_input: Optional[Union[str, list[str]]],
+        position: Optional[tuple[int, int]] = None,
         time_offset: float = 0.0,
         animation_speed: float = 1.0,
         default: str = "dim white",
@@ -3662,7 +3662,7 @@ class AnimationController:
         self,
         text: str,
         pattern: str = "|/—\\",
-        bg_color: str | list[str] = "dim white",
+        bg_color: Union[str, list[str]] = "dim white",
         text_color: str = "white",
         duration: float = 3.0,
         animation_speed: float = 2.0,
@@ -3775,8 +3775,8 @@ class AnimationController:
         text: str,
         bg_config: BackgroundConfig,
         logo_animation_style: str = "rainbow",
-        logo_color_start: str | list[str] | None = None,
-        logo_color_finish: str | list[str] | None = None,
+        logo_color_start: Optional[Union[str, list[str]]] = None,
+        logo_color_finish: Optional[Union[str, list[str]]] = None,
         duration: float = 5.0,
     ) -> None:
         """Animate background with logo using specified animation style.
@@ -3935,10 +3935,10 @@ class AnimationController:
         self,
         text: str,
         bg_config: BackgroundConfig,
-        logo_color_start: str | list[str],
-        logo_color_finish: str | list[str],
-        bg_color_start: str | list[str] | None = None,
-        bg_color_finish: str | list[str] | None = None,
+        logo_color_start: Union[str, list[str]],
+        logo_color_finish: Union[str, list[str]],
+        bg_color_start: Optional[Union[str, list[str]]] = None,
+        bg_color_finish: Optional[Union[str, list[str]]] = None,
         duration: float = 6.0,
     ) -> None:
         """Animate color transition for both background and logo.
@@ -4158,10 +4158,10 @@ class AnimationController:
 
     def _interpolate_color_palette(
         self,
-        color_start: str | list[str],
-        color_finish: str | list[str],
+        color_start: Union[str, list[str]],
+        color_finish: Union[str, list[str]],
         progress: float,
-    ) -> str | list[str]:
+    ) -> Union[str, list[str]]:
         """Interpolate between two color palettes.
         
         Args:
@@ -4260,11 +4260,11 @@ class AnimationController:
         self,
         text: str,
         bg_config: BackgroundConfig,
-        logo_color: str | list[str] = "white",
+        logo_color: Union[str, list[str]] = "white",
         direction: str = "top_down",
         reveal_type: str = "reveal",  # "reveal" or "disappear"
         duration: float = 4.0,
-        update_callback: Any | None = None,
+        update_callback: Optional[Any] = None,
     ) -> None:
         """Animate background with logo reveal/disappear effect.
         
@@ -4311,7 +4311,7 @@ class AnimationController:
         steps = max(1, int(duration * adaptive_fps))
         frame_duration = self._calculate_frame_duration(duration, num_frames=steps)
 
-        static_bg_lines: list[str] | None = None
+        static_bg_lines: Optional[list[str]] = None
         if not bg_config.bg_animate:
             bg_color_base = (
                 bg_config.bg_color_palette
@@ -4509,10 +4509,10 @@ class AnimationController:
         self,
         text: str,
         bg_config: BackgroundConfig,
-        logo_color: str | list[str] = "white",
+        logo_color: Union[str, list[str]] = "white",
         fade_type: str = "fade_in",  # "fade_in" or "fade_out"
         duration: float = 3.0,
-        update_callback: Any | None = None,
+        update_callback: Optional[Any] = None,
     ) -> None:
         """Animate background with logo fade in/out effect.
         
@@ -4690,10 +4690,10 @@ class AnimationController:
         self,
         text: str,
         bg_config: BackgroundConfig,
-        logo_color: str | list[str] = "white",
+        logo_color: Union[str, list[str]] = "white",
         glitch_intensity: float = 0.15,
         duration: float = 3.0,
-        update_callback: Any | None = None,
+        update_callback: Optional[Any] = None,
     ) -> None:
         """Animate background with logo glitch effect.
         
@@ -4847,10 +4847,10 @@ class AnimationController:
         text: str,
         bg_config: BackgroundConfig,
         logo_color_palette: list[str],
-        bg_color_palette: list[str] | None = None,
+        bg_color_palette: Optional[list[str]] = None,
         direction: str = "left_to_right",
         duration: float = 4.0,
-        update_callback: Any | None = None,
+        update_callback: Optional[Any] = None,
     ) -> None:
         """Animate background with rainbow logo effect.
         

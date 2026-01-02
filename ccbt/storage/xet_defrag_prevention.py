@@ -7,7 +7,7 @@ to maintain optimal chunk storage layout and access patterns.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.storage.xet_deduplication import XetDeduplication
@@ -175,7 +175,7 @@ class XetDefragPrevention:
             }
 
     async def optimize_chunk_layout(
-        self, chunk_hashes: list[bytes] | None = None
+        self, chunk_hashes: Optional[list[bytes]] = None
     ) -> dict[str, Any]:
         """Optimize layout for specific chunks.
 

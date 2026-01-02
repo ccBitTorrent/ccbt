@@ -11,7 +11,7 @@ import logging
 import time
 import typing
 from collections import deque
-from typing import Any, Callable
+from typing import Any, Callable, Optional, Union
 
 from ccbt.config.config import get_config
 from ccbt.core.magnet import (
@@ -29,10 +29,10 @@ class AsyncDownloadManager:
 
     def __init__(
         self,
-        torrent_data: dict[str, Any] | Any,
+        torrent_data: Union[dict[str, Any], Any],
         output_dir: str = ".",
-        peer_id: bytes | None = None,
-        security_manager: Any | None = None,
+        peer_id: Optional[bytes] = None,
+        security_manager: Optional[Any] = None,
     ):
         """Initialize async download manager."""
         # Normalize torrent_data to dict shape expected by piece manager
@@ -102,11 +102,11 @@ class AsyncDownloadManager:
             self.piece_manager = None
         else:
             self._init_error = None
-        self.peer_manager: Any | None = None
+        self.peer_manager: Optional[Any] = None
 
         # State
         self.download_complete = False
-        self.start_time: float | None = None
+        self.start_time: Optional[float] = None
         self._background_tasks: set[asyncio.Task] = set()
         self._piece_verified_background_tasks: set[asyncio.Task[None]] = set()
 
@@ -123,10 +123,10 @@ class AsyncDownloadManager:
         self._upload_rate: float = 0.0
 
         # Callbacks
-        self.on_peer_connected: Callable | None = None
-        self.on_peer_disconnected: Callable | None = None
-        self.on_piece_completed: Callable | None = None
-        self.on_download_complete: Callable | None = None
+        self.on_peer_connected: Optional[Callable] = None
+        self.on_peer_disconnected: Optional[Callable] = None
+        self.on_piece_completed: Optional[Callable] = None
+        self.on_download_complete: Optional[Callable] = None
 
         self.logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ class AsyncDownloadManager:
         self.logger.info("Async download manager stopped")
 
     async def start_download(
-        self, peers: list[dict[str, Any]], max_peers_per_torrent: int | None = None
+        self, peers: list[dict[str, Any]], max_peers_per_torrent: Optional[int] = None
     ) -> None:
         """Start the download process.
 
@@ -663,7 +663,7 @@ async def _announce_to_trackers(
 
 async def download_torrent(
     torrent_path: str, output_dir: str = "."
-) -> AsyncDownloadManager | None:
+) -> Optional[AsyncDownloadManager]:
     """Download a single torrent file (compat helper for tests)."""
     import contextlib
 
@@ -711,7 +711,7 @@ async def download_torrent(
 
 async def download_magnet(
     magnet_uri: str, output_dir: str = "."
-) -> AsyncDownloadManager | None:
+) -> Optional[AsyncDownloadManager]:
     """Download from a magnet link (compat helper for tests)."""
     download_manager = None
     tracker_clients = []

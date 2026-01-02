@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from textual.widgets import DataTable, Sparkline, Static
@@ -109,7 +109,7 @@ class SparklineGroup(Static):  # type: ignore[misc]
         # Will be populated by add_sparkline calls
 
     def add_sparkline(
-        self, name: str, data: list[float] | None = None
+        self, name: str, data: Optional[list[float]] = None
     ) -> None:  # pragma: no cover
         """Add or update a sparkline.
 

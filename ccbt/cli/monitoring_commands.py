@@ -5,16 +5,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any, Optional
 
 import click
 from rich.console import Console
 
 from ccbt.i18n import _
 from ccbt.monitoring import get_alert_manager
-
-if TYPE_CHECKING:
-    from ccbt.session.session import AsyncSessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +40,7 @@ SESSION_CREATION_FAILED_MSG = "Session creation failed"
     help="Disable splash screen (useful for debugging)",
 )
 def dashboard(
-    refresh: float, rules: str | None, no_daemon: bool, no_splash: bool
+    refresh: float, rules: Optional[str], no_daemon: bool, no_splash: bool
 ) -> None:
     """Start terminal monitoring dashboard (Textual)."""
     console = Console()
@@ -73,7 +70,9 @@ def dashboard(
             console=console,
         )
 
-    session: AsyncSessionManager | DaemonInterfaceAdapter | None = None
+    session: Optional[Any] = (
+        None  # Optional[AsyncSessionManager | DaemonInterfaceAdapter]
+    )
 
     if no_daemon:
         # User explicitly requested local session
@@ -222,13 +221,13 @@ def alerts(
     remove_rule: bool,
     clear_active: bool,
     test_rule: bool,
-    load: str | None,
-    save: str | None,
-    name: str | None,
-    metric: str | None,
-    condition: str | None,
+    load: Optional[str],
+    save: Optional[str],
+    name: Optional[str],
+    metric: Optional[str],
+    condition: Optional[str],
     severity: str,
-    value: str | None,
+    value: Optional[str],
 ) -> None:
     """Manage alert rules (add/list/remove/test/clear)."""
     console = Console()
@@ -416,9 +415,9 @@ def alerts(
 )
 def metrics(
     format_: str,
-    output: str | None,
+    output: Optional[str],
     duration: float,
-    interval: float | None,
+    interval: Optional[float],
     include_system: bool,
     include_performance: bool,
 ) -> None:

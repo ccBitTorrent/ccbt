@@ -6,7 +6,7 @@ Compatible with both Rich Console (CLI) and Textual widgets (interface).
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -59,9 +59,9 @@ class SplashScreen:
     
     def __init__(
         self,
-        console: Console | None = None,
-        textual_widget: Static | None = None,
-        logo_text: str | None = None,
+        console: Optional[Console] = None,
+        textual_widget: Optional[Static] = None,
+        logo_text: Optional[str] = None,
         duration: float = 90.0,
         use_random_sequence: bool = True,
     ) -> None:
@@ -919,7 +919,7 @@ class SplashScreen:
         
         return sequence
 
-    def _resolve_template(self, template_key: str | None) -> list[str] | None:
+    def _resolve_template(self, template_key: Optional[str]) -> Optional[list[str]]:
         """Return a copy of the requested color template, if available."""
         if not template_key:
             return None
@@ -1070,8 +1070,8 @@ class SplashScreen:
 
 
 async def run_splash_screen(
-    console: Console | None = None,
-    textual_widget: Static | None = None,
+    console: Optional[Console] = None,
+    textual_widget: Optional[Static] = None,
     duration: float = 90.0,
 ) -> None:
     """Run splash screen animation.

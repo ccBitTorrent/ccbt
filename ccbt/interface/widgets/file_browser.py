@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.i18n import _
 
@@ -124,8 +124,8 @@ class FileBrowserWidget(Container):  # type: ignore[misc]
         self._data_provider = data_provider
         self._command_executor = command_executor
         self._current_path = Path.home()
-        self._file_table: DataTable | None = None
-        self._path_input: Input | None = None
+        self._file_table: Optional[DataTable] = None
+        self._path_input: Optional[Input] = None
         self._selected_files: list[Path] = []
 
     def compose(self) -> Any:  # pragma: no cover

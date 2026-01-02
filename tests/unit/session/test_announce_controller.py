@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from typing import Any, List
+from typing import Any, List, Optional
 
 from ccbt.config.config import get_config
 from ccbt.session.announce import AnnounceController
@@ -29,7 +29,7 @@ class FakeTracker:
         port: int = 6881,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: int | None = None,
+        left: Optional[int] = None,
         event: str = "started",
     ) -> List[Any]:
         # Return two peers across two responses

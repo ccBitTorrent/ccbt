@@ -6,7 +6,7 @@ Displays tracker information for a selected torrent.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from ccbt.interface.commands.executor import CommandExecutor
@@ -94,7 +94,7 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
         self._data_provider = data_provider
         self._command_executor = command_executor
         self._info_hash = info_hash
-        self._trackers_table: DataTable | None = None
+        self._trackers_table: Optional[DataTable] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the trackers screen."""

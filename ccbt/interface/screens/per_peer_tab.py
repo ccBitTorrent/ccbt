@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.i18n import _
 
@@ -102,11 +102,11 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self._data_provider = data_provider
         self._command_executor = command_executor
-        self._global_peers_table: DataTable | None = None
-        self._peer_detail_table: DataTable | None = None
-        self._summary_widget: Static | None = None
-        self._selected_peer_key: str | None = None
-        self._update_task: Any | None = None
+        self._global_peers_table: Optional[DataTable] = None
+        self._peer_detail_table: Optional[DataTable] = None
+        self._summary_widget: Optional[Static] = None
+        self._selected_peer_key: Optional[str] = None
+        self._update_task: Optional[Any] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the per-peer tab content."""

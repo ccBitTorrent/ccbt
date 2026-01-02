@@ -11,7 +11,7 @@ import contextlib
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if (
     TYPE_CHECKING
@@ -461,7 +461,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
     """
 
     def __init__(
-        self, session: Any, refresh_interval: float = 1.0, splash_manager: Any | None = None
+        self, session: Any, refresh_interval: float = 1.0, splash_manager: Optional[Any] = None
     ):  # pragma: no cover
         """Initialize terminal dashboard.
         
@@ -501,8 +501,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
         
         self.alert_manager = get_alert_manager()
         self.metrics_collector = get_metrics_collector()
-        self._poll_task: asyncio.Task | None = None
-        self._filter_input: Input | None = None
+        self._poll_task: Optional[asyncio.Task] = None
+        self._filter_input: Optional[Input] = None
         self._filter_text: str = ""
         self._last_status: dict[str, dict[str, Any]] = {}
         self._compact = False
@@ -519,19 +519,19 @@ class TerminalDashboard(App):  # type: ignore[misc]
         else:
             logger.warning("TerminalDashboard: Data provider does not have IPC client!")
         # Reactive update manager for WebSocket events
-        self._reactive_manager: Any | None = None
+        self._reactive_manager: Optional[Any] = None
         # Widget references will be set in on_mount after compose
-        self.overview: Overview | None = None
-        self.overview_footer: Overview | None = None
-        self.speeds: SpeedSparklines | None = None
-        self.torrents: TorrentsTable | None = None
-        self.peers: PeersTable | None = None
-        self.details: Static | None = None
-        self.statusbar: Static | None = None
-        self.alerts: Static | None = None
-        self.logs: RichLog | None = None
+        self.overview: Optional[Overview] = None
+        self.overview_footer: Optional[Overview] = None
+        self.speeds: Optional[SpeedSparklines] = None
+        self.torrents: Optional[TorrentsTable] = None
+        self.peers: Optional[PeersTable] = None
+        self.details: Optional[Static] = None
+        self.statusbar: Optional[Static] = None
+        self.alerts: Optional[Static] = None
+        self.logs: Optional[RichLog] = None
         # New tabbed interface widgets
-        self.graphs_section: GraphsSectionContainer | None = None
+        self.graphs_section: Optional[GraphsSectionContainer] = None
 
     def _format_bindings_display(self) -> Any:  # pragma: no cover
         """Format all key bindings grouped by category for display."""
@@ -1014,7 +1014,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         self._reactive_manager.subscribe_to_adapter(adapter)
                     
                     # Helper to refresh per-torrent tab when a specific info hash is impacted
-                    async def _refresh_per_torrent_tab(info_hash: str | None) -> None:
+                    async def _refresh_per_torrent_tab(info_hash: Optional[str]) -> None:
                         if not info_hash:
                             return
                         try:
@@ -4008,7 +4008,7 @@ async def _scan_for_daemon_port(
     api_key: str,
     ports_to_try: list[int],
     timeout_per_port: float = 1.0,
-) -> tuple[int | None, Any | None]:
+) -> tuple[Optional[int], Optional[Any]]:
     """Scan multiple ports to find where the daemon is actually listening.
     
     Args:
@@ -4053,8 +4053,8 @@ async def _scan_for_daemon_port(
 def _show_startup_splash(
     no_splash: bool = False,
     verbosity_count: int = 0,
-    console: Any | None = None,
-) -> tuple[Any | None, Any | None]:
+    console: Optional[Any] = None,
+) -> tuple[Optional[Any], Optional[Any]]:
     """Show splash screen for terminal interface startup.
     
     Args:
@@ -4136,8 +4136,8 @@ def _show_startup_splash(
 
 
 async def _ensure_daemon_running(
-    splash_manager: Any | None = None,
-) -> tuple[bool, Any | None]:
+    splash_manager: Optional[Any] = None,
+) -> tuple[bool, Optional[Any]]:
     """Ensure daemon is running, start if needed.
     
     CRITICAL: This function ONLY uses IPC client health checks (is_daemon_running)
@@ -4146,7 +4146,7 @@ async def _ensure_daemon_running(
     connections, not just when the process is running.
     
     Returns:
-        Tuple of (success: bool, ipc_client: IPCClient | None)
+        Tuple of (success: bool, ipc_client: Optional[IPCClient])
         If daemon is running or successfully started, returns (True, IPCClient)
         If daemon start fails, returns (False, None)
     """
@@ -4495,9 +4495,9 @@ async def _ensure_daemon_running(
 
 def run_dashboard(  # pragma: no cover
     session: Any,  # DaemonInterfaceAdapter required
-    refresh: float | None = None,
+    refresh: Optional[float] = None,
     dev_mode: bool = False,  # Enable Textual development mode
-    splash_manager: Any | None = None,  # Splash manager to end when dashboard is rendered
+    splash_manager: Optional[Any] = None,  # Splash manager to end when dashboard is rendered
 ) -> None:
     """Run the Textual dashboard App for the provided daemon session.
     
@@ -4579,7 +4579,7 @@ def main() -> (
         return 1  # pragma: no cover - Same context
 
     # CRITICAL: Dashboard ONLY works with daemon - no local sessions allowed
-    session: DaemonInterfaceAdapter | None = None
+    session: Optional[DaemonInterfaceAdapter] = None
     
     if args.no_daemon:
         # User requested --no-daemon but dashboard requires daemon

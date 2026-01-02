@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+from typing import Any, Optional
 
 import click
 from rich.console import Console
@@ -24,7 +25,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-async def _get_ipfs_protocol() -> IPFSProtocol | None:
+async def _get_ipfs_protocol() -> Optional[Any]:  # Optional[IPFSProtocol]
     """Get IPFS protocol instance from session manager.
 
     Note: If daemon is running, this will check via IPC but cannot return
@@ -147,7 +148,7 @@ def ipfs_add(path: Path, pin: bool, json_output: bool) -> None:
     "--output", "-o", type=click.Path(path_type=Path), help="Output file path"
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
-def ipfs_get(cid: str, output: Path | None, json_output: bool) -> None:
+def ipfs_get(cid: str, output: Optional[Path], json_output: bool) -> None:
     """Get content from IPFS by CID."""
     console = Console()
 
@@ -240,7 +241,7 @@ def ipfs_unpin(cid: str, json_output: bool) -> None:
 @click.argument("cid", type=str, required=False)
 @click.option("--all", "all_stats", is_flag=True, help="Show stats for all content")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
-def ipfs_stats(cid: str | None, all_stats: bool, json_output: bool) -> None:
+def ipfs_stats(cid: Optional[str], all_stats: bool, json_output: bool) -> None:
     """Show IPFS content statistics."""
     console = Console()
 

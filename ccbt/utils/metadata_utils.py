@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.core.bencode import BencodeEncoder
 
@@ -16,7 +16,7 @@ def calculate_info_hash(info_dict: dict[bytes, Any]) -> bytes:
 
 
 def validate_info_dict(
-    info_dict: dict[bytes, Any], expected_info_hash: bytes | None
+    info_dict: dict[bytes, Any], expected_info_hash: Optional[bytes]
 ) -> bool:
     """Validate info dict matches expected v1 info hash if provided."""
     if expected_info_hash is None:

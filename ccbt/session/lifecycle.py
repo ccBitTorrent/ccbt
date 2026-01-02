@@ -6,7 +6,7 @@ resume, and stop sequences of torrent sessions.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.session.tasks import TaskSupervisor
 
@@ -18,7 +18,7 @@ class LifecycleController:
     """Owns high-level start/pause/resume/stop sequencing for a torrent session."""
 
     def __init__(
-        self, ctx: SessionContext, tasks: TaskSupervisor | None = None
+        self, ctx: SessionContext, tasks: Optional[TaskSupervisor] = None
     ) -> None:
         """Initialize the lifecycle controller with session context and optional task supervisor."""
         self._ctx = ctx

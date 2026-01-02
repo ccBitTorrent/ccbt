@@ -19,6 +19,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
 
 try:
@@ -80,9 +81,9 @@ class WebRTCBenchmarkResults:
     platform: str
     python_version: str
     timestamp: str
-    connection_establishment: ConnectionEstablishmentResult | None = None
-    data_channel_throughput: DataChannelThroughputResult | None = None
-    memory_usage: MemoryUsageResult | None = None
+    connection_establishment: Optional[ConnectionEstablishmentResult] = None
+    data_channel_throughput: Optional[DataChannelThroughputResult] = None
+    memory_usage: Optional[MemoryUsageResult] = None
 
 
 def get_memory_usage_mb() -> float:

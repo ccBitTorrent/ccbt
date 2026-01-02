@@ -12,7 +12,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 try:
     import msgpack
@@ -36,7 +36,7 @@ logger = get_logger(__name__)
 class StateManager:
     """Manages daemon state persistence using msgpack format."""
 
-    def __init__(self, state_dir: str | Path | None = None):
+    def __init__(self, state_dir: Optional[str | Path] = None):
         """Initialize state manager.
 
         Args:
@@ -109,7 +109,7 @@ class StateManager:
                 logger.exception("Error saving state")
                 raise
 
-    async def load_state(self) -> DaemonState | None:
+    async def load_state(self) -> Optional[DaemonState]:
         """Load state from msgpack file.
 
         Returns:
@@ -380,7 +380,7 @@ class StateManager:
 
     async def _migrate_state(
         self, state: DaemonState, from_version: str
-    ) -> DaemonState | None:
+    ) -> Optional[DaemonState]:
         """Migrate state from an older version to current version.
 
         Args:

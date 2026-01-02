@@ -10,7 +10,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -38,9 +38,9 @@ class XetAllowlist:
 
     def __init__(
         self,
-        allowlist_path: str | Path,
-        encryption_key: bytes | None = None,
-        key_manager: Ed25519KeyManager | None = None,
+        allowlist_path: Union[str, Path],
+        encryption_key: Optional[bytes] = None,
+        key_manager: Optional[Ed25519KeyManager] = None,
     ) -> None:
         """Initialize allowlist manager.
 
@@ -153,9 +153,9 @@ class XetAllowlist:
     def add_peer(
         self,
         peer_id: str,
-        public_key: bytes | None = None,
-        metadata: dict[str, Any] | None = None,
-        alias: str | None = None,
+        public_key: Optional[bytes] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        alias: Optional[str] = None,
     ) -> None:
         """Add peer to allowlist.
 
@@ -226,7 +226,7 @@ class XetAllowlist:
         self.logger.info("Set alias '%s' for peer %s", alias, peer_id)
         return True
 
-    def get_alias(self, peer_id: str) -> str | None:
+    def get_alias(self, peer_id: str) -> Optional[str]:
         """Get alias for a peer.
 
         Args:
@@ -376,7 +376,7 @@ class XetAllowlist:
 
         return list(self._allowlist.keys())
 
-    def get_peer_info(self, peer_id: str) -> dict[str, Any] | None:
+    def get_peer_info(self, peer_id: str) -> Optional[dict[str, Any]]:
         """Get information about a peer.
 
         Args:

@@ -12,7 +12,8 @@ MagicMock
 .coverage_html 
 .cursor
 scripts
-compatibility_tests/   
+compatibility_tests/
+lint_outputs/   
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

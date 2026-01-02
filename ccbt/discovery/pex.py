@@ -14,7 +14,7 @@ import logging
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Optional
 
 from ccbt.config import get_config
 
@@ -25,7 +25,7 @@ class PexPeer:
 
     ip: str
     port: int
-    peer_id: bytes | None = None
+    peer_id: Optional[bytes] = None
     added_time: float = field(default_factory=time.time)
     source: str = "pex"  # Source of this peer (pex, tracker, dht, etc.)
     reliability_score: float = 1.0
@@ -36,7 +36,7 @@ class PexSession:
     """PEX session with a single peer."""
 
     peer_key: str
-    ut_pex_id: int | None = None
+    ut_pex_id: Optional[int] = None
     last_pex_time: float = 0.0
     pex_interval: float = 30.0
     is_supported: bool = False
@@ -67,19 +67,19 @@ class AsyncPexManager:
         self.throttle_interval = 10.0
 
         # Background tasks
-        self._pex_task: asyncio.Task | None = None
-        self._cleanup_task: asyncio.Task | None = None
+        self._pex_task: Optional[asyncio.Task] = None
+        self._cleanup_task: Optional[asyncio.Task] = None
 
         # Callback for sending PEX messages via extension protocol
         # Signature: (peer_key: str, peer_data: bytes, is_added: bool) -> bool
-        self.send_pex_callback: Callable[[str, bytes, bool], Awaitable[bool]] | None = (
-            None
-        )
+        self.send_pex_callback: Optional[
+            Callable[[str, bytes, bool], Awaitable[bool]]
+        ] = None
 
         # Callback to get connected peers for PEX messages
-        self.get_connected_peers_callback: (
-            Callable[[], Awaitable[list[tuple[str, int]]]] | None
-        ) = None
+        self.get_connected_peers_callback: Optional[
+            Callable[[], Awaitable[list[tuple[str, int]]]]
+        ] = None
 
         # Track peers we've already sent to each session (to avoid duplicates)
         self.peers_sent_to_session: dict[str, set[tuple[str, int]]] = defaultdict(set)

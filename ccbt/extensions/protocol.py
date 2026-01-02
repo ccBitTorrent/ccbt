@@ -12,7 +12,7 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -30,7 +30,7 @@ class ExtensionInfo:
     name: str
     version: str
     message_id: int
-    handler: Callable | None = None
+    handler: Optional[Callable] = None
 
 
 class ExtensionProtocol:
@@ -47,7 +47,7 @@ class ExtensionProtocol:
         self,
         name: str,
         version: str,
-        handler: Callable | None = None,
+        handler: Optional[Callable] = None,
     ) -> int:
         """Register a new extension."""
         if name in self.extensions:
@@ -82,7 +82,7 @@ class ExtensionProtocol:
 
         del self.extensions[name]
 
-    def get_extension_info(self, name: str) -> ExtensionInfo | None:
+    def get_extension_info(self, name: str) -> Optional[ExtensionInfo]:
         """Get extension information."""
         return self.extensions.get(name)
 
@@ -315,7 +315,7 @@ class ExtensionProtocol:
         self,
         peer_id: str,
         extension_name: str,
-    ) -> dict[str, Any] | None:
+    ) -> Optional[dict[str, Any]]:
         """Get peer extension information."""
         peer_extensions = self.peer_extensions.get(peer_id, {})
         return peer_extensions.get(extension_name)

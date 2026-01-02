@@ -11,7 +11,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 from ccbt.config.config_migration import ConfigMigrator
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class ConfigBackup:
     """Configuration backup and restore system."""
 
-    def __init__(self, backup_dir: Path | str | None = None):
+    def __init__(self, backup_dir: Optional[Union[Path, str]] = None):
         """Initialize backup system.
 
         Args:
@@ -36,10 +36,10 @@ class ConfigBackup:
 
     def create_backup(
         self,
-        config_file: Path | str,
-        description: str | None = None,
+        config_file: Union[Path, str],
+        description: Optional[str] = None,
         compress: bool = True,
-    ) -> tuple[bool, Path | None, list[str]]:
+    ) -> tuple[bool, Optional[Path], list[str]]:
         """Create a configuration backup.
 
         Args:
@@ -110,8 +110,8 @@ class ConfigBackup:
 
     def restore_backup(
         self,
-        backup_file: Path | str,
-        target_file: Path | str | None = None,
+        backup_file: Union[Path, str],
+        target_file: Optional[Union[Path, str]] = None,
         create_backup: bool = True,
     ) -> tuple[bool, list[str]]:
         """Restore configuration from backup.
@@ -209,9 +209,9 @@ class ConfigBackup:
 
     def auto_backup(
         self,
-        config_file: Path | str,
+        config_file: Union[Path, str],
         max_backups: int = 10,
-    ) -> tuple[bool, Path | None, list[str]]:
+    ) -> tuple[bool, Optional[Path], list[str]]:
         """Create automatic backup before configuration changes.
 
         Args:
@@ -276,7 +276,7 @@ class ConfigBackup:
         except Exception as e:
             logger.warning("Failed to cleanup auto backups: %s", e)
 
-    def validate_backup(self, backup_file: Path | str) -> tuple[bool, list[str]]:
+    def validate_backup(self, backup_file: Union[Path, str]) -> tuple[bool, list[str]]:
         """Validate a backup file.
 
         Args:

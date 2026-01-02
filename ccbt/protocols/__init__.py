@@ -18,9 +18,11 @@ from ccbt.protocols.base import (
 from ccbt.protocols.bittorrent import BitTorrentProtocol
 
 try:
+    from typing import Optional
+
     from ccbt.protocols.ipfs import IPFSProtocol as _IPFSProtocol
 
-    IPFSProtocol: type[Protocol] | None = _IPFSProtocol  # type: ignore[assignment]
+    IPFSProtocol: Optional[type[Protocol]] = _IPFSProtocol  # type: ignore[assignment]
 except ImportError:
     IPFSProtocol = None  # type: ignore[assignment]  # IPFS support optional
 

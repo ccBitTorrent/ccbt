@@ -12,7 +12,7 @@ import random
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional, Union
 
 from ccbt.consensus.raft_state import RaftState
 
@@ -45,10 +45,10 @@ class RaftNode:
     def __init__(
         self,
         node_id: str,
-        state_path: Path | str | None = None,
+        state_path: Optional[Union[Path, str]] = None,
         election_timeout: float = 1.0,
         heartbeat_interval: float = 0.1,
-        apply_command_callback: Callable[[dict[str, Any]], None] | None = None,
+        apply_command_callback: Optional[Callable[[dict[str, Any]], None]] = None,
     ):
         """Initialize Raft node.
 
@@ -70,7 +70,7 @@ class RaftNode:
             self.state = RaftState()
 
         self.role = RaftRole.FOLLOWER
-        self.leader_id: str | None = None
+        self.leader_id: Optional[str] = None
         self.peers: set[str] = set()
 
         self.election_timeout = election_timeout
@@ -79,17 +79,17 @@ class RaftNode:
 
         # Timers
         self.last_heartbeat = time.time()
-        self.election_deadline: float | None = None
+        self.election_deadline: Optional[float] = None
 
         # Running state
         self.running = False
-        self._election_task: asyncio.Task | None = None
-        self._heartbeat_task: asyncio.Task | None = None
-        self._apply_task: asyncio.Task | None = None
+        self._election_task: Optional[asyncio.Task] = None
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._apply_task: Optional[asyncio.Task] = None
 
         # RPC handlers (would be network calls in production)
-        self.send_vote_request: Callable[[str, dict[str, Any]], Any] | None = None
-        self.send_append_entries: Callable[[str, dict[str, Any]], Any] | None = None
+        self.send_vote_request: Optional[Callable[[str, dict[str, Any]], Any]] = None
+        self.send_append_entries: Optional[Callable[[str, dict[str, Any]], Any]] = None
 
     async def start(self) -> None:
         """Start Raft node."""

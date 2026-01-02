@@ -3,6 +3,8 @@
 Target: 95%+ coverage for ccbt/__main__.py.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import importlib

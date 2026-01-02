@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional, Union
 
 from ccbt.models import Config
 
@@ -915,7 +915,7 @@ class ConfigTemplates:
         ]
 
     @staticmethod
-    def get_template(template_name: str) -> dict[str, Any] | None:
+    def get_template(template_name: str) -> Optional[dict[str, Any]]:
         """Get a specific configuration template.
 
         Args:
@@ -1167,7 +1167,7 @@ class ConfigProfiles:
         ]
 
     @staticmethod
-    def get_profile(profile_name: str) -> dict[str, Any] | None:
+    def get_profile(profile_name: str) -> Optional[dict[str, Any]]:
         """Get a specific configuration profile.
 
         Args:
@@ -1236,7 +1236,7 @@ class ConfigProfiles:
         description: str,
         templates: list[str],
         overrides: dict[str, Any],
-        profile_file: Path | str | None = None,
+        profile_file: Optional[Union[Path, str]] = None,
     ) -> dict[str, Any]:
         """Create a custom configuration profile.
 
@@ -1278,7 +1278,7 @@ class ConfigProfiles:
         return profile
 
     @staticmethod
-    def load_custom_profile(profile_file: Path | str) -> dict[str, Any]:
+    def load_custom_profile(profile_file: Union[Path, str]) -> dict[str, Any]:
         """Load a custom profile from file.
 
         Args:

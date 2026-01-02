@@ -10,7 +10,7 @@ import hashlib
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from ccbt.discovery.dht_storage import (
     DHTMutableData,
@@ -69,7 +69,7 @@ async def store_infohash_sample(
     public_key: bytes,
     private_key: bytes,
     salt: bytes = b"",
-    dht_client: AsyncDHTClient | None = None,
+    dht_client: Optional[AsyncDHTClient] = None,
 ) -> bytes:
     """Store an infohash sample in the index (BEP 51) using BEP 44.
 
@@ -201,8 +201,8 @@ async def store_infohash_sample(
 async def query_index(
     query: str,
     max_results: int = 50,
-    dht_client: AsyncDHTClient | None = None,
-    public_key: bytes | None = None,
+    dht_client: Optional[AsyncDHTClient] = None,
+    public_key: Optional[bytes] = None,
 ) -> list[DHTInfohashSample]:
     """Query the index for matching infohash samples (BEP 51) using BEP 44.
 
@@ -317,7 +317,7 @@ async def query_index(
 def update_index_entry(
     key: bytes,  # noqa: ARG001
     sample: DHTInfohashSample,
-    existing_entry: DHTIndexEntry | None = None,
+    existing_entry: Optional[DHTIndexEntry] = None,
     max_samples: int = 8,
 ) -> DHTIndexEntry:
     """Update an index entry with a new sample (BEP 51).

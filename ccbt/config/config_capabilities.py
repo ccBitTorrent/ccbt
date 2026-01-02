@@ -11,7 +11,7 @@ import platform
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, Optional
 
 import psutil
 
@@ -30,7 +30,7 @@ class SystemCapabilities:
         self._cache: dict[str, tuple[Any, float]] = {}
         self._platform = platform.system().lower()
 
-    def _get_cached(self, key: str) -> Any | None:
+    def _get_cached(self, key: str) -> Optional[Any]:
         """Get cached value if not expired.
 
         Args:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.extensions.xet import XetExtension, XetMessageType
 
@@ -36,9 +36,11 @@ class XetMetadataExchange:
         self.metadata_state: dict[str, dict[str, Any]] = {}
 
         # Metadata provider callback
-        self.metadata_provider: Callable[[bytes], bytes | None] | None = None
+        self.metadata_provider: Optional[Callable[[bytes], Optional[bytes]]] = None
 
-    def set_metadata_provider(self, provider: Callable[[bytes], bytes | None]) -> None:
+    def set_metadata_provider(
+        self, provider: Callable[[bytes], Optional[bytes]]
+    ) -> None:
         """Set function to provide metadata by info_hash.
 
         Args:
