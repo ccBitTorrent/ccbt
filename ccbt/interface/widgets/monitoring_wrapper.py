@@ -7,7 +7,7 @@ tabbed interface graphs section without requiring full screen push.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
@@ -70,8 +70,8 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self._screen_type = screen_type
         self._data_provider = data_provider
-        self._content_widget: Static | None = None
-        self._monitoring_screen: Any | None = None
+        self._content_widget: Optional[Static] = None
+        self._monitoring_screen: Optional[Any] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the monitoring wrapper."""
@@ -166,7 +166,7 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
             if self._content_widget:
                 self._content_widget.update(f"Error loading {self._screen_type}: {e}")
 
-    async def _get_monitoring_content(self) -> str | None:  # pragma: no cover
+    async def _get_monitoring_content(self) -> Optional[str]:  # pragma: no cover
         """Get monitoring content based on screen type.
 
         Returns:

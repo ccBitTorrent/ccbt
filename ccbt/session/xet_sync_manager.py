@@ -18,7 +18,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.models import PeerInfo, XetSyncStatus
 
@@ -40,10 +40,10 @@ class UpdateEntry:
 
     file_path: str
     chunk_hash: bytes
-    git_ref: str | None
+    git_ref: Optional[str]
     timestamp: float
     priority: int = 0  # Higher priority = processed first
-    source_peer: str | None = None
+    source_peer: Optional[str] = None
     retry_count: int = 0
     max_retries: int = 3
 
@@ -54,8 +54,8 @@ class PeerSyncState:
 
     peer_id: str
     peer_info: PeerInfo
-    last_sync_time: float | None = None
-    current_git_ref: str | None = None
+    last_sync_time: Optional[float] = None
+    current_git_ref: Optional[str] = None
     chunk_hashes: set[bytes] = field(default_factory=set)
     is_source: bool = False  # For designated mode
     sync_progress: float = 0.0
@@ -67,10 +67,10 @@ class XetSyncManager:
 
     def __init__(
         self,
-        session_manager: Any | None = None,
-        folder_path: str | None = None,
+        session_manager: Optional[Any] = None,
+        folder_path: Optional[str] = None,
         sync_mode: str = "best_effort",
-        source_peers: list[str] | None = None,
+        source_peers: Optional[list[str]] = None,
         consensus_threshold: float = 0.5,
         max_queue_size: int = 100,
         check_interval: float = 5.0,
@@ -96,13 +96,13 @@ class XetSyncManager:
         self.check_interval = check_interval
 
         # Consensus components
-        self.raft_node: Any | None = None  # RaftNode
-        self.byzantine_consensus: Any | None = None  # ByzantineConsensus
-        self.conflict_resolver: Any | None = None  # ConflictResolver
+        self.raft_node: Optional[Any] = None  # RaftNode
+        self.byzantine_consensus: Optional[Any] = None  # ByzantineConsensus
+        self.conflict_resolver: Optional[Any] = None  # ConflictResolver
 
         # Source peer election
         self.source_election_interval = 300.0  # 5 minutes
-        self._source_election_task: asyncio.Task | None = None
+        self._source_election_task: Optional[asyncio.Task] = None
 
         # Update queue
         self.update_queue: deque[UpdateEntry] = deque(maxlen=max_queue_size)
@@ -117,7 +117,7 @@ class XetSyncManager:
         ] = {}  # chunk_hash -> {peer_id: vote}
 
         # State persistence paths
-        self._state_dir: Path | None = None
+        self._state_dir: Optional[Path] = None
         if folder_path:
             self._state_dir = Path(folder_path) / ".xet"
             self._state_dir.mkdir(parents=True, exist_ok=True)
@@ -134,8 +134,8 @@ class XetSyncManager:
         }
 
         # Allowlist and git tracking
-        self.allowlist_hash: bytes | None = None
-        self.current_git_ref: str | None = None
+        self.allowlist_hash: Optional[bytes] = None
+        self.current_git_ref: Optional[str] = None
         self._running = False
 
         self.logger = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ class XetSyncManager:
         await self.clear_queue()
         self.logger.info("XET sync manager stopped")
 
-    def get_allowlist_hash(self) -> bytes | None:
+    def get_allowlist_hash(self) -> Optional[bytes]:
         """Get allowlist hash.
 
         Returns:
@@ -197,7 +197,7 @@ class XetSyncManager:
         """
         return self.allowlist_hash
 
-    def set_allowlist_hash(self, allowlist_hash: bytes | None) -> None:
+    def set_allowlist_hash(self, allowlist_hash: Optional[bytes]) -> None:
         """Set allowlist hash.
 
         Args:
@@ -215,7 +215,7 @@ class XetSyncManager:
         """
         return self.sync_mode.value
 
-    def get_current_git_ref(self) -> str | None:
+    def get_current_git_ref(self) -> Optional[str]:
         """Get current git reference.
 
         Returns:
@@ -224,7 +224,7 @@ class XetSyncManager:
         """
         return self.current_git_ref
 
-    def set_current_git_ref(self, git_ref: str | None) -> None:
+    def set_current_git_ref(self, git_ref: Optional[str]) -> None:
         """Set current git reference.
 
         Args:
@@ -278,9 +278,9 @@ class XetSyncManager:
         self,
         file_path: str,
         chunk_hash: bytes,
-        git_ref: str | None = None,
+        git_ref: Optional[str] = None,
         priority: int = 0,
-        source_peer: str | None = None,
+        source_peer: Optional[str] = None,
     ) -> bool:
         """Queue an update for synchronization.
 
@@ -540,7 +540,7 @@ class XetSyncManager:
         to_remove: list[UpdateEntry] = []
 
         # Group updates by source peer
-        updates_by_source: dict[str | None, list[UpdateEntry]] = {}
+        updates_by_source: dict[Optional[str], list[UpdateEntry]] = {}
         for entry in self.update_queue:
             source = entry.source_peer
             if source not in updates_by_source:
@@ -645,7 +645,7 @@ class XetSyncManager:
 
         return processed
 
-    async def _elect_source_peer(self) -> str | None:
+    async def _elect_source_peer(self) -> Optional[str]:
         """Elect source peer based on criteria.
 
         Criteria: uptime, bandwidth, chunk availability
@@ -858,7 +858,7 @@ class XetSyncManager:
 
     async def _send_raft_vote_request(
         self, peer_id: str, _request: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    ) -> Optional[dict[str, Any]]:
         """Send Raft vote request to peer (simplified - would use network in production).
 
         Args:
@@ -876,7 +876,7 @@ class XetSyncManager:
 
     async def _send_raft_append_entries(
         self, peer_id: str, _request: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    ) -> Optional[dict[str, Any]]:
         """Send Raft append entries to peer (simplified - would use network in production).
 
         Args:

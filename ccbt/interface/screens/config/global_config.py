@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -139,7 +139,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
             )
         )
 
-    def _extract_row_key_value(self, row_key: Any) -> str | None:
+    def _extract_row_key_value(self, row_key: Any) -> Optional[str]:
         """Extract the actual value from a RowKey object.
 
         Args:
@@ -528,7 +528,7 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
         self.section_name = section_name
         self._editors: dict[str, ConfigValueEditor] = {}
         self._original_config: Any = None
-        self._section_schema: dict[str, Any] | None = None
+        self._section_schema: Optional[dict[str, Any]] = None
 
     def compose(self) -> ComposeResult:  # pragma: no cover
         """Compose the config detail screen."""

@@ -6,7 +6,7 @@ Wraps generic gossip protocol for XET-specific message types.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from ccbt.discovery.gossip import GossipProtocol
 
@@ -30,7 +30,7 @@ class XetGossipManager:
         node_id: str,
         fanout: int = 3,
         interval: float = 5.0,
-        peer_callback: Callable[[str], list[str]] | None = None,
+        peer_callback: Optional[Callable[[str], list[str]]] = None,
     ):
         """Initialize XET gossip manager.
 
@@ -80,8 +80,8 @@ class XetGossipManager:
     async def propagate_chunk_update(
         self,
         chunk_hash: bytes,
-        peer_ip: str | None = None,
-        peer_port: int | None = None,
+        peer_ip: Optional[str] = None,
+        peer_port: Optional[int] = None,
     ) -> None:
         """Propagate chunk update via gossip.
 
@@ -107,8 +107,8 @@ class XetGossipManager:
     async def propagate_folder_update(
         self,
         update_data: dict[str, Any],
-        peer_ip: str | None = None,
-        peer_port: int | None = None,
+        peer_ip: Optional[str] = None,
+        peer_port: Optional[int] = None,
     ) -> None:
         """Propagate folder update via gossip.
 

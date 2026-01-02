@@ -14,7 +14,7 @@ from collections import Counter, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ccbt.config.config import get_config
 from ccbt.models import (
@@ -54,7 +54,7 @@ class PieceBlock:
     requested_from: set[str] = field(
         default_factory=set,
     )  # Peer keys that have this block
-    received_from: str | None = None  # Peer key that actually sent this block
+    received_from: Optional[str] = None  # Peer key that actually sent this block
 
     def is_complete(self) -> bool:
         """Check if block is complete."""
@@ -89,7 +89,7 @@ class PieceData:
     last_activity_time: float = 0.0  # Timestamp of last block received
     last_request_time: float = 0.0  # Timestamp when piece was last requested
     request_timeout: float = 120.0  # Timeout for piece requests (seconds)
-    primary_peer: str | None = None  # Peer key that provided most blocks
+    primary_peer: Optional[str] = None  # Peer key that provided most blocks
     peer_block_counts: dict[str, int] = field(
         default_factory=dict
     )  # peer_key -> number of blocks received
@@ -306,7 +306,7 @@ class AsyncPieceManager:
     def __init__(
         self,
         torrent_data: dict[str, Any],
-        file_selection_manager: Any | None = None,
+        file_selection_manager: Optional[Any] = None,
     ):
         """Initialize async piece manager.
 
@@ -494,21 +494,23 @@ class AsyncPieceManager:
         self.download_start_time = time.time()
         self.bytes_downloaded = 0
         self._current_sequential_piece: int = 0  # Track current sequential position
-        self._peer_manager: Any | None = None  # Store peer manager for piece requests
+        self._peer_manager: Optional[Any] = (
+            None  # Store peer manager for piece requests
+        )
 
         # Callbacks
-        self.on_piece_completed: Callable[[int], None] | None = None
-        self.on_piece_verified: Callable[[int], None] | None = None
-        self.on_download_complete: Callable[[], None] | None = None
-        self.on_file_assembled: Callable[[int], None] | None = None
-        self.on_checkpoint_save: Callable[[], None] | None = None
+        self.on_piece_completed: Optional[Callable[[int], None]] = None
+        self.on_piece_verified: Optional[Callable[[int], None]] = None
+        self.on_download_complete: Optional[Callable[[], None]] = None
+        self.on_file_assembled: Optional[Callable[[int], None]] = None
+        self.on_checkpoint_save: Optional[Callable[[], None]] = None
 
         # File assembler (set by download manager)
-        self.file_assembler: Any | None = None
+        self.file_assembler: Optional[Any] = None
 
         # Background tasks
-        self._hash_worker_task: asyncio.Task | None = None
-        self._piece_selector_task: asyncio.Task | None = None
+        self._hash_worker_task: Optional[asyncio.Task] = None
+        self._piece_selector_task: Optional[asyncio.Task] = None
         self._background_tasks: set[asyncio.Task] = set()
 
         self.logger = logging.getLogger(__name__)
@@ -3009,7 +3011,7 @@ class AsyncPieceManager:
         piece_index: int,
         begin: int,
         data: bytes,
-        peer_key: str | None = None,
+        peer_key: Optional[str] = None,
     ) -> None:
         """Handle a received piece block.
 
@@ -4015,7 +4017,7 @@ class AsyncPieceManager:
             self.logger.exception("Error in hybrid piece verification")
             return False
 
-    def _get_v2_piece_hash(self, piece_index: int) -> bytes | None:
+    def _get_v2_piece_hash(self, piece_index: int) -> Optional[bytes]:
         """Get SHA-256 hash for a piece from v2 piece layers.
 
         For hybrid torrents, piece layers are organized by file (pieces_root).
@@ -5163,7 +5165,7 @@ class AsyncPieceManager:
                     len(self.peer_availability),
                 )
 
-    async def _select_rarest_piece(self) -> int | None:
+    async def _select_rarest_piece(self) -> Optional[int]:
         """Select a single piece using rarest-first algorithm."""
         async with self.lock:
             missing_pieces = [
@@ -8017,7 +8019,7 @@ class AsyncPieceManager:
         # LOGGING OPTIMIZATION: Keep as INFO - important lifecycle event
         self.logger.info("Stopped piece download")
 
-    def get_piece_data(self, piece_index: int) -> bytes | None:
+    def get_piece_data(self, piece_index: int) -> Optional[bytes]:
         """Get complete piece data if available."""
         if (
             piece_index >= len(self.pieces)
@@ -8030,7 +8032,7 @@ class AsyncPieceManager:
 
         return None
 
-    def get_block(self, piece_index: int, begin: int, length: int) -> bytes | None:
+    def get_block(self, piece_index: int, begin: int, length: int) -> Optional[bytes]:
         """Get a block of data from a piece."""
         if (
             piece_index >= len(self.pieces)

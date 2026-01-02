@@ -13,7 +13,7 @@ import ipaddress
 import json
 import logging
 from io import StringIO
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import aiohttp
 
@@ -30,8 +30,8 @@ class BlacklistUpdater:
         self,
         security_manager: SecurityManager,
         update_interval: float = 3600.0,
-        sources: list[str] | None = None,
-        local_source_config: Any | None = None,
+        sources: Optional[list[str]] = None,
+        local_source_config: Optional[Any] = None,
     ):
         """Initialize blacklist updater.
 
@@ -45,8 +45,8 @@ class BlacklistUpdater:
         self.security_manager = security_manager
         self.update_interval = update_interval
         self.sources = sources or []
-        self._update_task: asyncio.Task | None = None
-        self._local_source: Any | None = None
+        self._update_task: Optional[asyncio.Task] = None
+        self._local_source: Optional[Any] = None
         self._local_source_config = local_source_config
 
     async def update_from_source(self, source_url: str) -> int:

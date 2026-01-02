@@ -11,7 +11,7 @@ This module extends the XET extension protocol to support:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,10 @@ class XetHandshakeExtension:
 
     def __init__(
         self,
-        allowlist_hash: bytes | None = None,
+        allowlist_hash: Optional[bytes] = None,
         sync_mode: str = "best_effort",
-        git_ref: str | None = None,
-        key_manager: Any | None = None,  # Ed25519KeyManager
+        git_ref: Optional[str] = None,
+        key_manager: Optional[Any] = None,  # Ed25519KeyManager
     ) -> None:
         """Initialize XET handshake extension.
 
@@ -89,7 +89,7 @@ class XetHandshakeExtension:
 
     def decode_handshake(
         self, peer_id: str, data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    ) -> Optional[dict[str, Any]]:
         """Decode XET folder sync handshake from peer.
 
         Args:
@@ -140,7 +140,7 @@ class XetHandshakeExtension:
         return handshake_info
 
     def verify_peer_allowlist(
-        self, peer_id: str, peer_allowlist_hash: bytes | None
+        self, peer_id: str, peer_allowlist_hash: Optional[bytes]
     ) -> bool:
         """Verify peer's allowlist hash matches expected.
 
@@ -215,7 +215,7 @@ class XetHandshakeExtension:
             self.logger.exception("Error verifying peer identity")
             return False
 
-    def negotiate_sync_mode(self, peer_id: str, peer_sync_mode: str) -> str | None:
+    def negotiate_sync_mode(self, peer_id: str, peer_sync_mode: str) -> Optional[str]:
         """Negotiate sync mode with peer.
 
         Args:
@@ -262,7 +262,7 @@ class XetHandshakeExtension:
             return self.sync_mode
         return peer_sync_mode
 
-    def get_peer_git_ref(self, peer_id: str) -> str | None:
+    def get_peer_git_ref(self, peer_id: str) -> Optional[str]:
         """Get git ref from peer handshake.
 
         Args:
@@ -277,7 +277,9 @@ class XetHandshakeExtension:
             return handshake.get("git_ref")
         return None
 
-    def compare_git_refs(self, local_ref: str | None, peer_ref: str | None) -> bool:
+    def compare_git_refs(
+        self, local_ref: Optional[str], peer_ref: Optional[str]
+    ) -> bool:
         """Compare git refs to check if versions match.
 
         Args:
@@ -296,7 +298,7 @@ class XetHandshakeExtension:
 
         return local_ref == peer_ref
 
-    def get_peer_handshake_info(self, peer_id: str) -> dict[str, Any] | None:
+    def get_peer_handshake_info(self, peer_id: str) -> Optional[dict[str, Any]]:
         """Get stored handshake information for a peer.
 
         Args:

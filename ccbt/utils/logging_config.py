@@ -17,7 +17,7 @@ import time
 import uuid
 from contextvars import ContextVar
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, cast
 
 from ccbt.utils.exceptions import CCBTError
 from ccbt.utils.rich_logging import (
@@ -31,8 +31,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
 # Context variable for correlation ID
 # Help type checker understand the ContextVar generic with a None default
-correlation_id: ContextVar[str | None] = cast(
-    "ContextVar[str | None]",
+correlation_id: ContextVar[Optional[str]] = cast(
+    "ContextVar[Optional[str]]",
     ContextVar("correlation_id", default=None),
 )
 
@@ -152,7 +152,7 @@ class ColoredFormatter(logging.Formatter):
                 return f"Logging error: {record.levelname} {record.name}"
 
 
-def _generate_timestamped_log_filename(base_path: str | None) -> str:
+def _generate_timestamped_log_filename(base_path: Optional[str]) -> str:
     """Generate a unique timestamped log file name.
 
     Args:
@@ -426,7 +426,7 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"ccbt.{name}")
 
 
-def set_correlation_id(corr_id: str | None = None) -> str:
+def set_correlation_id(corr_id: Optional[str] = None) -> str:
     """Set correlation ID for the current context."""
     if corr_id is None:
         corr_id = str(uuid.uuid4())
@@ -434,7 +434,7 @@ def set_correlation_id(corr_id: str | None = None) -> str:
     return corr_id
 
 
-def get_correlation_id() -> str | None:
+def get_correlation_id() -> Optional[str]:
     """Get the current correlation ID."""
     return correlation_id.get()
 
@@ -445,9 +445,9 @@ class LoggingContext:
     def __init__(
         self,
         operation: str,
-        log_level: int | None = None,
+        log_level: Optional[int] = None,
         slow_threshold: float = 1.0,
-        verbosity_manager: Any | None = None,
+        verbosity_manager: Optional[Any] = None,
         **kwargs,
     ):
         """Initialize operation context manager.
@@ -582,7 +582,7 @@ def log_exception(logger: logging.Logger, exc: Exception, context: str = "") -> 
 
 def log_with_verbosity(
     logger: logging.Logger,
-    verbosity_manager: Any | None,
+    verbosity_manager: Optional[Any],
     level: int,
     message: str,
     *args: Any,
@@ -611,7 +611,7 @@ def log_with_verbosity(
 
 def log_info_verbose(
     logger: logging.Logger,
-    verbosity_manager: Any | None,
+    verbosity_manager: Optional[Any],
     message: str,
     *args: Any,
     **kwargs: Any,
@@ -640,7 +640,7 @@ def log_info_verbose(
 
 def log_info_normal(
     logger: logging.Logger,
-    verbosity_manager: Any | None,
+    verbosity_manager: Optional[Any],
     message: str,
     *args: Any,
     **kwargs: Any,

@@ -18,7 +18,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import click
 from rich.console import Console
@@ -358,7 +358,7 @@ async def _route_to_daemon_if_running(
         logger.debug(_("No daemon config or API key found - will create local session"))
         return False
 
-    client: IPCClient | None = None
+    client: Optional[Any] = None  # Optional[IPCClient]
     try:
         # CRITICAL FIX: Create client and verify connection before attempting operation
         # Explicitly use host/port from config to ensure consistency with daemon
@@ -662,7 +662,7 @@ async def _route_to_daemon_if_running(
                 logger.debug(_("Error closing IPC client: %s"), e)
 
 
-async def _get_executor() -> tuple[Any | None, bool]:
+async def _get_executor() -> tuple[Optional[Any], bool]:
     """Get command executor (daemon or local).
 
     Returns:
@@ -800,7 +800,9 @@ async def _get_executor() -> tuple[Any | None, bool]:
     return (executor, True)
 
 
-async def _check_daemon_and_get_client() -> tuple[bool, IPCClient | None]:
+async def _check_daemon_and_get_client() -> tuple[
+    bool, Optional[Any]
+]:  # Optional[IPCClient]
     """Check if daemon is running and return IPC client if available.
 
     Returns:
@@ -2237,7 +2239,7 @@ def config(ctx):
 @click.option("--set", "locale_code", help=_("Set locale (e.g., 'en', 'es', 'fr')"))
 @click.option("--list", "list_locales", is_flag=True, help=_("List available locales"))
 @click.pass_context
-def language(ctx, locale_code: str | None, list_locales: bool) -> None:
+def language(ctx, locale_code: Optional[str], list_locales: bool) -> None:
     """Manage language/locale settings."""
     from pathlib import Path
 

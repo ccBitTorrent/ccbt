@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from typing import Optional
 
 import click
 from rich.console import Console
@@ -74,12 +75,12 @@ def tonic() -> None:
 def tonic_create(
     ctx,
     folder_path: str,
-    output_path: str | None,
+    output_path: Optional[str],
     sync_mode: str,
-    source_peers: str | None,
-    allowlist_path: str | None,
-    git_ref: str | None,
-    announce: str | None,
+    source_peers: Optional[str],
+    allowlist_path: Optional[str],
+    git_ref: Optional[str],
+    announce: Optional[str],
     generate_link: bool,
 ) -> None:
     """Generate .tonic file from folder."""
@@ -114,8 +115,8 @@ def tonic_create(
 def tonic_link(
     _ctx,
     folder_path: str,
-    tonic_file: str | None,
-    sync_mode: str | None,
+    tonic_file: Optional[str],
+    sync_mode: Optional[str],
 ) -> None:
     """Generate tonic?: link from folder or .tonic file."""
     console = Console()
@@ -138,7 +139,7 @@ def tonic_link(
             allowlist_hash = parsed_data.get("allowlist_hash")
 
             # Flatten trackers
-            tracker_list: list[str] | None = None
+            tracker_list: Optional[list[str]] = None
             if trackers:
                 tracker_list = [url for tier in trackers for url in tier]
 
@@ -192,7 +193,7 @@ def tonic_link(
 def tonic_sync(
     _ctx,
     tonic_input: str,
-    output_dir: str | None,
+    output_dir: Optional[str],
     check_interval: float,
 ) -> None:
     """Start syncing folder from .tonic file or tonic?: link."""
@@ -331,8 +332,8 @@ def tonic_allowlist_add(
     _ctx,
     allowlist_path: str,
     peer_id: str,
-    public_key: str | None,
-    alias: str | None,
+    public_key: Optional[str],
+    alias: Optional[str],
 ) -> None:
     """Add peer to allowlist."""
     console = Console()
@@ -493,14 +494,14 @@ def tonic_mode_set(
     _ctx,
     folder_path: str,
     sync_mode: str,
-    source_peers: str | None,
+    source_peers: Optional[str],
 ) -> None:
     """Set synchronization mode for folder."""
     console = Console()
 
     try:
         # Parse source peers
-        source_peers_list: list[str] | None = None
+        source_peers_list: Optional[list[str]] = None
         if source_peers:
             source_peers_list = [
                 p.strip() for p in source_peers.split(",") if p.strip()

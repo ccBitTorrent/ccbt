@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Optional, TypeVar
 
 import ipfshttpclient
 import multiaddr
@@ -70,7 +70,7 @@ class IPFSContent:
 class IPFSProtocol(Protocol):
     """IPFS protocol implementation."""
 
-    def __init__(self, session_manager: Any | None = None):
+    def __init__(self, session_manager: Optional[Any] = None):
         """Initialize IPFS protocol.
 
         Args:
@@ -84,7 +84,7 @@ class IPFSProtocol(Protocol):
         self.session_manager = session_manager
 
         # Configuration will be set by session manager
-        self.config: Any | None = None
+        self.config: Optional[Any] = None
 
         # IPFS-specific capabilities
         self.capabilities = ProtocolCapabilities(
@@ -116,7 +116,7 @@ class IPFSProtocol(Protocol):
         ]
 
         # IPFS client and connection state
-        self._ipfs_client: ipfshttpclient.Client | None = None
+        self._ipfs_client: Optional[ipfshttpclient.Client] = None
         self._ipfs_connected: bool = False
         self._connection_retries: int = 0
         self._last_connection_attempt: float = 0.0
@@ -483,8 +483,8 @@ class IPFSProtocol(Protocol):
         self,
         peer_id: str,
         message: bytes,
-        want_list: list[str] | None = None,
-        blocks: dict[str, bytes] | None = None,
+        want_list: Optional[list[str]] = None,
+        blocks: Optional[dict[str, bytes]] = None,
     ) -> bool:
         """Send message to IPFS peer.
 
@@ -556,7 +556,7 @@ class IPFSProtocol(Protocol):
 
     async def receive_message(
         self, peer_id: str, parse_bitswap: bool = True
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Receive message from IPFS peer.
 
         Args:
@@ -618,8 +618,8 @@ class IPFSProtocol(Protocol):
     def _format_bitswap_message(
         self,
         message: bytes,
-        want_list: list[str] | None = None,
-        blocks: dict[str, bytes] | None = None,
+        want_list: Optional[list[str]] = None,
+        blocks: Optional[dict[str, bytes]] = None,
     ) -> bytes:
         """Format message according to Bitswap protocol.
 
@@ -1256,7 +1256,7 @@ class IPFSProtocol(Protocol):
 
     def _get_cached_discovery_result(
         self, cid: str, ttl: int = 300
-    ) -> list[str] | None:
+    ) -> Optional[list[str]]:
         """Get cached discovery result if valid.
 
         Args:
@@ -1461,7 +1461,7 @@ class IPFSProtocol(Protocol):
             )
             return ""
 
-    async def get_content(self, cid: str) -> bytes | None:
+    async def get_content(self, cid: str) -> Optional[bytes]:
         """Get content from IPFS by CID.
 
         First tries to retrieve from IPFS daemon, then falls back to peer-based retrieval.
@@ -1619,7 +1619,9 @@ class IPFSProtocol(Protocol):
         timeout_per_block = 30  # seconds
 
         # Request blocks from peers in parallel
-        async def request_from_peer(peer_id: str, cid: str) -> tuple[str, bytes | None]:
+        async def request_from_peer(
+            peer_id: str, cid: str
+        ) -> tuple[str, Optional[bytes]]:
             """Request a single block from a peer."""
             for attempt in range(max_retries):
                 try:
@@ -1699,7 +1701,7 @@ class IPFSProtocol(Protocol):
         return blocks
 
     async def _reconstruct_content_from_blocks(
-        self, blocks: dict[str, bytes], dag_structure: dict[str, Any] | None = None
+        self, blocks: dict[str, bytes], dag_structure: Optional[dict[str, Any]] = None
     ) -> bytes:
         """Reconstruct content from IPFS blocks following DAG structure.
 
@@ -1959,7 +1961,7 @@ class IPFSProtocol(Protocol):
         """Get IPFS content."""
         return self.ipfs_content.copy()
 
-    def get_content_stats(self, cid: str) -> dict[str, Any] | None:
+    def get_content_stats(self, cid: str) -> Optional[dict[str, Any]]:
         """Get content statistics."""
         if cid not in self.ipfs_content:
             return None

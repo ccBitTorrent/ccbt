@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.cli.interactive import InteractiveCLI
 from ccbt.cli.progress import ProgressManager
@@ -27,9 +27,9 @@ async def start_interactive_download(
     torrent_data: dict[str, Any],
     console: Console,
     resume: bool = False,
-    queue_priority: str | None = None,
-    files_selection: tuple[int, ...] | None = None,
-    file_priorities: tuple[str, ...] | None = None,
+    queue_priority: Optional[str] = None,
+    files_selection: Optional[tuple[int, ...]] = None,
+    file_priorities: Optional[tuple[str, ...]] = None,
 ) -> None:
     """Start an interactive download session with user prompts.
 
@@ -129,9 +129,9 @@ async def start_basic_download(
     torrent_data: dict[str, Any],
     console: Console,
     resume: bool = False,
-    queue_priority: str | None = None,
-    files_selection: tuple[int, ...] | None = None,
-    file_priorities: tuple[str, ...] | None = None,
+    queue_priority: Optional[str] = None,
+    files_selection: Optional[tuple[int, ...]] = None,
+    file_priorities: Optional[tuple[str, ...]] = None,
 ) -> None:
     """Start a basic download session without interactive prompts.
 

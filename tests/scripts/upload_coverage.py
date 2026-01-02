@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Configure logging
 logging.basicConfig(
@@ -27,8 +28,8 @@ logger = logging.getLogger(__name__)
 
 def upload_to_codecov(
     coverage_file: Path,
-    flags: str | None = None,
-    token: str | None = None,
+    flags: Optional[str] = None,
+    token: Optional[str] = None,
 ) -> int:
     """Upload coverage report to Codecov.
 

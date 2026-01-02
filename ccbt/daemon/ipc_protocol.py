@@ -8,7 +8,7 @@ Defines constants, models, and types for HTTP REST and WebSocket IPC communicati
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -86,7 +86,7 @@ class TorrentAddRequest(BaseModel):
     """Request to add a torrent."""
 
     path_or_magnet: str = Field(..., description="Torrent file path or magnet URI")
-    output_dir: str | None = Field(None, description="Output directory override")
+    output_dir: Optional[str] = Field(None, description="Output directory override")
     resume: bool = Field(False, description="Resume from checkpoint if available")
 
 
@@ -105,7 +105,7 @@ class TorrentStatusResponse(BaseModel):
     downloaded: int = Field(0, description="Downloaded bytes")
     uploaded: int = Field(0, description="Uploaded bytes")
     is_private: bool = Field(False, description="Whether torrent is private (BEP 27)")
-    output_dir: str | None = Field(
+    output_dir: Optional[str] = Field(
         None, description="Output directory where files are saved"
     )
     pieces_completed: int = Field(0, description="Number of completed pieces")
@@ -129,7 +129,7 @@ class PeerInfo(BaseModel):
     download_rate: float = Field(0.0, description="Download rate from peer (bytes/sec)")
     upload_rate: float = Field(0.0, description="Upload rate to peer (bytes/sec)")
     choked: bool = Field(False, description="Whether peer is choked")
-    client: str | None = Field(None, description="Peer client name")
+    client: Optional[str] = Field(None, description="Peer client name")
 
 
 class PeerListResponse(BaseModel):
@@ -159,7 +159,7 @@ class TrackerInfo(BaseModel):
     peers: int = Field(0, description="Number of peers from last scrape")
     downloaders: int = Field(0, description="Number of downloaders from last scrape")
     last_update: float = Field(0.0, description="Last update timestamp")
-    error: str | None = Field(None, description="Error message if any")
+    error: Optional[str] = Field(None, description="Error message if any")
 
 
 class TrackerListResponse(BaseModel):
@@ -293,7 +293,7 @@ class AllPeersRateLimitResponse(BaseModel):
 class ExportStateRequest(BaseModel):
     """Request to export session state."""
 
-    path: str | None = Field(
+    path: Optional[str] = Field(
         None, description="Export path (optional, defaults to state dir)"
     )
 
@@ -309,7 +309,7 @@ class ResumeCheckpointRequest(BaseModel):
 
     info_hash: str = Field(..., description="Torrent info hash (hex)")
     checkpoint: dict[str, Any] = Field(..., description="Checkpoint data")
-    torrent_path: str | None = Field(
+    torrent_path: Optional[str] = Field(
         None, description="Optional explicit torrent file path"
     )
 
@@ -319,7 +319,9 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(..., description="Error message")
     code: str = Field(..., description="Error code")
-    details: dict[str, Any] | None = Field(None, description="Additional error details")
+    details: Optional[dict[str, Any]] = Field(
+        None, description="Additional error details"
+    )
 
 
 class TorrentCancelRequest(BaseModel):
@@ -342,15 +344,15 @@ class WebSocketSubscribeRequest(BaseModel):
         default_factory=list,
         description="Event types to subscribe to (empty = all events)",
     )
-    info_hash: str | None = Field(
+    info_hash: Optional[str] = Field(
         None,
         description="Filter events to specific torrent (optional)",
     )
-    priority_filter: str | None = Field(
+    priority_filter: Optional[str] = Field(
         None,
         description="Filter by priority: 'critical', 'high', 'normal', 'low'",
     )
-    rate_limit: float | None = Field(
+    rate_limit: Optional[float] = Field(
         None,
         description="Maximum events per second (throttling)",
     )
@@ -360,7 +362,7 @@ class WebSocketMessage(BaseModel):
     """WebSocket message."""
 
     action: str = Field(..., description="Message action")
-    data: dict[str, Any] | None = Field(None, description="Message data")
+    data: Optional[dict[str, Any]] = Field(None, description="Message data")
 
 
 class WebSocketAuthMessage(BaseModel):
@@ -387,7 +389,7 @@ class FileInfo(BaseModel):
     selected: bool = Field(..., description="Whether file is selected")
     priority: str = Field(..., description="File priority")
     progress: float = Field(0.0, ge=0.0, le=1.0, description="Download progress")
-    attributes: str | None = Field(None, description="File attributes")
+    attributes: Optional[str] = Field(None, description="File attributes")
 
 
 class FileListResponse(BaseModel):
@@ -451,9 +453,9 @@ class NATStatusResponse(BaseModel):
     """NAT status response."""
 
     enabled: bool = Field(..., description="Whether NAT traversal is enabled")
-    method: str | None = Field(None, description="NAT method (UPnP, NAT-PMP, etc.)")
-    external_ip: str | None = Field(None, description="External IP address")
-    mapped_port: int | None = Field(None, description="Mapped port")
+    method: Optional[str] = Field(None, description="NAT method (UPnP, NAT-PMP, etc.)")
+    external_ip: Optional[str] = Field(None, description="External IP address")
+    mapped_port: Optional[int] = Field(None, description="Mapped port")
     mappings: list[dict[str, Any]] = Field(
         default_factory=list, description="Active port mappings"
     )
@@ -463,15 +465,15 @@ class NATMapRequest(BaseModel):
     """Request to map a port."""
 
     internal_port: int = Field(..., description="Internal port")
-    external_port: int | None = Field(None, description="External port (optional)")
+    external_port: Optional[int] = Field(None, description="External port (optional)")
     protocol: str = Field("tcp", description="Protocol (tcp/udp)")
 
 
 class ExternalIPResponse(BaseModel):
     """External IP address response."""
 
-    external_ip: str | None = Field(None, description="External IP address")
-    method: str | None = Field(
+    external_ip: Optional[str] = Field(None, description="External IP address")
+    method: Optional[str] = Field(
         None, description="Method used to obtain IP (UPnP, NAT-PMP, etc.)"
     )
 
@@ -480,7 +482,7 @@ class ExternalPortResponse(BaseModel):
     """External port mapping response."""
 
     internal_port: int = Field(..., description="Internal port")
-    external_port: int | None = Field(None, description="External port (if mapped)")
+    external_port: Optional[int] = Field(None, description="External port (if mapped)")
     protocol: str = Field("tcp", description="Protocol (tcp/udp)")
 
 
@@ -533,14 +535,14 @@ class BlacklistAddRequest(BaseModel):
     """Request to add IP to blacklist."""
 
     ip: str = Field(..., description="IP address to blacklist")
-    reason: str | None = Field(None, description="Reason for blacklisting")
+    reason: Optional[str] = Field(None, description="Reason for blacklisting")
 
 
 class WhitelistAddRequest(BaseModel):
     """Request to add IP to whitelist."""
 
     ip: str = Field(..., description="IP address to whitelist")
-    reason: str | None = Field(None, description="Reason for whitelisting")
+    reason: Optional[str] = Field(None, description="Reason for whitelisting")
 
 
 class IPFilterStatsResponse(BaseModel):
@@ -673,7 +675,7 @@ class GlobalPeerMetrics(BaseModel):
         0, description="Total bytes downloaded from peer"
     )
     total_bytes_uploaded: int = Field(0, description="Total bytes uploaded to peer")
-    client: str | None = Field(None, description="Peer client name")
+    client: Optional[str] = Field(None, description="Peer client name")
     choked: bool = Field(False, description="Whether peer is choked")
     connection_duration: float = Field(
         0.0, description="Connection duration in seconds"
@@ -928,8 +930,8 @@ class PeerEventData(BaseModel):
     info_hash: str = Field(..., description="Torrent info hash (hex)")
     peer_ip: str = Field(..., description="Peer IP address")
     peer_port: int = Field(..., description="Peer port")
-    peer_id: str | None = Field(None, description="Peer ID (hex)")
-    client: str | None = Field(None, description="Peer client name")
+    peer_id: Optional[str] = Field(None, description="Peer ID (hex)")
+    client: Optional[str] = Field(None, description="Peer client name")
     download_rate: float = Field(0.0, description="Download rate from peer (bytes/sec)")
     upload_rate: float = Field(0.0, description="Upload rate to peer (bytes/sec)")
     pieces_available: int = Field(0, description="Number of pieces available from peer")
@@ -941,7 +943,7 @@ class FileSelectionEventData(BaseModel):
     info_hash: str = Field(..., description="Torrent info hash (hex)")
     file_index: int = Field(..., description="File index")
     selected: bool = Field(..., description="Whether file is selected")
-    priority: str | None = Field(None, description="File priority")
+    priority: Optional[str] = Field(None, description="File priority")
     progress: float = Field(0.0, ge=0.0, le=1.0, description="File download progress")
 
 
@@ -959,6 +961,6 @@ class ServiceEventData(BaseModel):
     """Data for service/component events."""
 
     service_name: str = Field(..., description="Service name")
-    component_name: str | None = Field(None, description="Component name (optional)")
+    component_name: Optional[str] = Field(None, description="Component name (optional)")
     status: str = Field(..., description="Service/component status")
-    error: str | None = Field(None, description="Error message if any")
+    error: Optional[str] = Field(None, description="Error message if any")

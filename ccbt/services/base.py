@@ -13,7 +13,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from ccbt.utils.exceptions import CCBTError
 from ccbt.utils.logging_config import get_logger
@@ -334,11 +334,11 @@ class ServiceManager:
             msg = f"Failed to stop service '{service_name}': {e}"
             raise ServiceError(msg) from e
 
-    def get_service(self, service_name: str) -> Service | None:
+    def get_service(self, service_name: str) -> Optional[Service]:
         """Get a service by name."""
         return self.services.get(service_name)
 
-    def get_service_info(self, service_name: str) -> ServiceInfo | None:
+    def get_service_info(self, service_name: str) -> Optional[ServiceInfo]:
         """Get service information."""
         return self.service_info.get(service_name)
 
@@ -375,7 +375,7 @@ class ServiceManager:
 
 
 # Global service manager instance
-_service_manager: ServiceManager | None = None
+_service_manager: Optional[ServiceManager] = None
 
 
 def get_service_manager() -> ServiceManager:

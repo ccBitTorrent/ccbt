@@ -6,7 +6,7 @@ Displays connected peers for a selected torrent.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from ccbt.interface.commands.executor import CommandExecutor
@@ -73,7 +73,7 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
         self._data_provider = data_provider
         self._command_executor = command_executor
         self._info_hash = info_hash
-        self._peers_table: DataTable | None = None
+        self._peers_table: Optional[DataTable] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the peers screen."""

@@ -142,7 +142,8 @@ async def test_reconnect_ipfs_success(ipfs_protocol, mock_ipfs_client):
     """Test successful reconnection to IPFS."""
     ipfs_protocol._connection_retries = 1
 
-    with patch("ccbt.protocols.ipfs.ipfshttpclient.connect", return_value=mock_ipfs_client):
+    with patch("ccbt.protocols.ipfs.ipfshttpclient.connect", return_value=mock_ipfs_client), \
+         patch("asyncio.sleep"):
         result = await ipfs_protocol._reconnect_ipfs()
 
     assert result is True

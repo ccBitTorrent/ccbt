@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
 from ccbt.session.peer_events import PeerEventsBinder
 
@@ -27,12 +27,12 @@ class PeerManagerInitializer:
         *,
         is_private: bool,
         session_ctx: SessionContext,
-        on_peer_connected: Callable[..., None] | None = None,
-        on_peer_disconnected: Callable[..., None] | None = None,
-        on_piece_received: Callable[..., None] | None = None,
-        on_bitfield_received: Callable[..., None] | None = None,
-        logger: Any | None = None,
-        max_peers_per_torrent: int | None = None,
+        on_peer_connected: Optional[Callable[..., None]] = None,
+        on_peer_disconnected: Optional[Callable[..., None]] = None,
+        on_piece_received: Optional[Callable[..., None]] = None,
+        on_bitfield_received: Optional[Callable[..., None]] = None,
+        logger: Optional[Any] = None,
+        max_peers_per_torrent: Optional[int] = None,
     ) -> Any:
         """Ensure a running peer manager exists and is bound to callbacks.
 
@@ -109,9 +109,9 @@ class PeerManagerBinder:
         session_ctx: SessionContext,
         piece_manager: Any,
         *,
-        on_piece_verified: Callable[[int], None] | None = None,
-        on_download_complete: Callable[[], None] | None = None,
-        on_piece_completed: Callable[[int], None] | None = None,
+        on_piece_verified: Optional[Callable[[int], None]] = None,
+        on_download_complete: Optional[Callable[[], None]] = None,
+        on_piece_completed: Optional[Callable[[int], None]] = None,
     ) -> None:
         """Bind piece manager events using a PeerEventsBinder.
 
@@ -655,7 +655,7 @@ class PeerConnectionHelper:
         # CRITICAL FIX: Increased max_wait_attempts and wait_interval for better reliability
         max_wait_attempts = 20  # Increased from 10 to allow more time for initialization (10 seconds total)
         wait_interval = 0.5
-        peer_manager: AsyncPeerConnectionManager | None = None  # type: ignore[assignment]
+        peer_manager: Optional[AsyncPeerConnectionManager] = None  # type: ignore[assignment]
         peer_manager_source = "unknown"
 
         for attempt in range(max_wait_attempts):

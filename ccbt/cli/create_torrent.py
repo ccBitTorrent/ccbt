@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Optional
 
 import click
 from rich.console import Console
@@ -89,15 +90,15 @@ logger = logging.getLogger(__name__)
 def create_torrent(
     _ctx: click.Context,
     source: Path,
-    output: Path | None,
+    output: Optional[Path],
     format_v2: bool,
     format_hybrid: bool,
     format_v1: bool,
     tracker: tuple[str, ...],
     web_seed: tuple[str, ...],
-    comment: str | None,
+    comment: Optional[str],
     created_by: str,
-    piece_length: int | None,
+    piece_length: Optional[int],
     private: bool,
     _verbose: int = 0,  # ARG001: Unused parameter (Click count=True)
 ) -> None:

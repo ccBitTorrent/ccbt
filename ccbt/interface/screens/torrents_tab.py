@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ccbt.i18n import _
 from ccbt.interface.widgets.core_widgets import GlobalTorrentMetricsPanel
@@ -111,7 +111,7 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
         self,
         data_provider: DataProvider,
         command_executor: CommandExecutor,
-        selected_hash_callback: Any | None = None,
+        selected_hash_callback: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -126,10 +126,10 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
         self._data_provider = data_provider
         self._command_executor = command_executor
         self._selected_hash_callback = selected_hash_callback
-        self._torrents_table: DataTable | None = None
-        self._search_input: Input | None = None
-        self._metrics_panel: GlobalTorrentMetricsPanel | None = None
-        self._empty_message: Static | None = None
+        self._torrents_table: Optional[DataTable] = None
+        self._search_input: Optional[Input] = None
+        self._metrics_panel: Optional[GlobalTorrentMetricsPanel] = None
+        self._empty_message: Optional[Static] = None
         self._filter_text = ""
 
     def compose(self) -> Any:  # pragma: no cover
@@ -271,7 +271,7 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
             logger.warning("GlobalTorrentsScreen: Missing data provider, cannot refresh")
             return
         
-        stats: dict[str, Any] | None = None
+        stats: Optional[dict[str, Any]] = None
         swarm_samples: list[dict[str, Any]] | None = None
 
         try:
@@ -569,8 +569,8 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
         self,
         data_provider: DataProvider,
         command_executor: CommandExecutor,
-        filter_status: str | None = None,
-        selected_hash_callback: Any | None = None,
+        filter_status: Optional[str] = None,
+        selected_hash_callback: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -587,7 +587,7 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
         self._command_executor = command_executor
         self._filter_status = filter_status
         self._selected_hash_callback = selected_hash_callback
-        self._torrents_table: DataTable | None = None
+        self._torrents_table: Optional[DataTable] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the filtered torrents screen."""
@@ -827,7 +827,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         self,
         data_provider: DataProvider,
         command_executor: CommandExecutor,
-        selected_hash_callback: Any | None = None,
+        selected_hash_callback: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -842,9 +842,9 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         self._data_provider = data_provider
         self._command_executor = command_executor
         self._selected_hash_callback = selected_hash_callback
-        self._sub_tabs: Tabs | None = None
-        self._content_area: Container | None = None
-        self._active_sub_tab_id: str | None = None
+        self._sub_tabs: Optional[Tabs] = None
+        self._content_area: Optional[Container] = None
+        self._active_sub_tab_id: Optional[str] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the torrents tab with nested sub-tabs."""

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.models import PieceState, TorrentCheckpoint
 from ccbt.storage.checkpoint import CheckpointManager
@@ -31,7 +31,7 @@ class CheckpointOperations:
         self,
         info_hash: bytes,
         checkpoint: TorrentCheckpoint,
-        torrent_path: str | None = None,
+        torrent_path: Optional[str] = None,
     ) -> str:
         """Resume download from checkpoint.
 
@@ -144,7 +144,7 @@ class CheckpointOperations:
 
         return resumable
 
-    async def find_by_name(self, name: str) -> TorrentCheckpoint | None:
+    async def find_by_name(self, name: str) -> Optional[TorrentCheckpoint]:
         """Find checkpoint by torrent name."""
         checkpoint_manager = CheckpointManager(self.config.disk)
         checkpoints = await checkpoint_manager.list_checkpoints()
@@ -166,7 +166,7 @@ class CheckpointOperations:
 
         return None
 
-    async def get_info(self, info_hash: bytes) -> dict[str, Any] | None:
+    async def get_info(self, info_hash: bytes) -> Optional[dict[str, Any]]:
         """Get checkpoint summary information."""
         checkpoint_manager = CheckpointManager(self.config.disk)
         checkpoint = await checkpoint_manager.load_checkpoint(info_hash)

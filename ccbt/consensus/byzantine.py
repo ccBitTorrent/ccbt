@@ -6,7 +6,7 @@ Provides signature verification and weighted voting for Byzantine consensus.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class ByzantineConsensus:
         node_id: str,
         fault_threshold: float = 0.33,
         weighted_voting: bool = False,
-        node_weights: dict[str, float] | None = None,
+        node_weights: Optional[dict[str, float]] = None,
     ):
         """Initialize Byzantine consensus.
 
@@ -55,7 +55,7 @@ class ByzantineConsensus:
     def propose(
         self,
         proposal: dict[str, Any],
-        signature: bytes | None = None,
+        signature: Optional[bytes] = None,
     ) -> dict[str, Any]:
         """Create a proposal with optional signature.
 
@@ -77,7 +77,7 @@ class ByzantineConsensus:
         self,
         proposal: dict[str, Any],
         vote: bool,
-        signature: bytes | None = None,
+        signature: Optional[bytes] = None,
     ) -> dict[str, Any]:
         """Create a vote on a proposal.
 
@@ -132,7 +132,7 @@ class ByzantineConsensus:
     def check_byzantine_threshold(
         self,
         votes: dict[str, bool],
-        weights: dict[str, float] | None = None,
+        weights: Optional[dict[str, float]] = None,
     ) -> tuple[bool, float]:
         """Check if consensus threshold is met with Byzantine fault tolerance.
 

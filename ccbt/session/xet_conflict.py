@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class ConflictResolver:
         _file_path: str,
         _peer_id: str,
         timestamp: float,
-        existing_timestamp: float | None = None,
+        existing_timestamp: Optional[float] = None,
     ) -> bool:
         """Detect if there's a conflict.
 
@@ -76,7 +76,7 @@ class ConflictResolver:
         file_path: str,
         our_version: dict[str, Any],
         their_version: dict[str, Any],
-        base_version: dict[str, Any] | None = None,
+        base_version: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         """Resolve conflict between versions.
 
@@ -201,7 +201,7 @@ class ConflictResolver:
         self,
         our_version: dict[str, Any],
         their_version: dict[str, Any],
-        base_version: dict[str, Any] | None,
+        base_version: Optional[dict[str, Any]],
     ) -> dict[str, Any]:
         """Three-way merge strategy.
 
@@ -252,7 +252,7 @@ class ConflictResolver:
         _file_path: str,
         our_content: bytes,
         their_content: bytes,
-        base_content: bytes | None = None,
+        base_content: Optional[bytes] = None,
     ) -> bytes:
         """Merge file contents using selected strategy.
 

@@ -13,7 +13,7 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -56,7 +56,7 @@ class XetExtension:
 
     def __init__(
         self,
-        folder_sync_handshake: Any | None = None,  # XetHandshakeExtension
+        folder_sync_handshake: Optional[Any] = None,  # XetHandshakeExtension
     ):
         """Initialize Xet Extension.
 
@@ -68,10 +68,10 @@ class XetExtension:
             tuple[str, int], XetChunkRequest
         ] = {}  # (peer_id, request_id) -> request
         self.request_counter = 0
-        self.chunk_provider: Callable[[bytes], bytes | None] | None = None
+        self.chunk_provider: Optional[Callable[[bytes], Optional[bytes]]] = None
         self.folder_sync_handshake = folder_sync_handshake
 
-    def set_chunk_provider(self, provider: Callable[[bytes], bytes | None]) -> None:
+    def set_chunk_provider(self, provider: Callable[[bytes], Optional[bytes]]) -> None:
         """Set function to provide chunks by hash.
 
         Args:
@@ -424,7 +424,7 @@ class XetExtension:
         # Pack: <message_type>
         return struct.pack("!B", XetMessageType.FOLDER_VERSION_REQUEST)
 
-    def encode_version_response(self, git_ref: str | None) -> bytes:
+    def encode_version_response(self, git_ref: Optional[str]) -> bytes:
         """Encode folder version response message.
 
         Args:
@@ -444,7 +444,7 @@ class XetExtension:
             )
         return struct.pack("!BB", XetMessageType.FOLDER_VERSION_RESPONSE, 0)
 
-    def decode_version_response(self, data: bytes) -> str | None:
+    def decode_version_response(self, data: bytes) -> Optional[str]:
         """Decode folder version response message.
 
         Args:
@@ -479,7 +479,7 @@ class XetExtension:
         return ref_bytes.decode("utf-8")
 
     def encode_update_notify(
-        self, file_path: str, chunk_hash: bytes, git_ref: str | None = None
+        self, file_path: str, chunk_hash: bytes, git_ref: Optional[str] = None
     ) -> bytes:
         """Encode folder update notification message.
 
@@ -510,7 +510,7 @@ class XetExtension:
 
         return b"".join(parts)
 
-    def decode_update_notify(self, data: bytes) -> tuple[str, bytes, str | None]:
+    def decode_update_notify(self, data: bytes) -> tuple[str, bytes, Optional[str]]:
         """Decode folder update notification message.
 
         Args:
@@ -548,7 +548,7 @@ class XetExtension:
         chunk_hash = data[offset : offset + 32]
         offset += 32
 
-        git_ref: str | None = None
+        git_ref: Optional[str] = None
         if len(data) > offset:
             has_ref = data[offset]
             offset += 1

@@ -9,6 +9,7 @@ import socket
 import struct
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import Optional
 
 from ccbt.nat.exceptions import NATPMPError
 
@@ -53,7 +54,7 @@ class NATPMPPortMapping:
 # Gateway discovery functions
 
 
-async def discover_gateway() -> ipaddress.IPv4Address | None:
+async def discover_gateway() -> Optional[ipaddress.IPv4Address]:
     """Discover the NAT gateway using the default gateway method.
 
     RFC 6886 section 3.3: Gateway is typically the default route gateway.
@@ -70,7 +71,7 @@ async def discover_gateway() -> ipaddress.IPv4Address | None:
         return None
 
 
-async def get_gateway_ip() -> ipaddress.IPv4Address | None:
+async def get_gateway_ip() -> Optional[ipaddress.IPv4Address]:
     """Get gateway IP using platform-specific methods."""
     import platform
 
@@ -290,7 +291,7 @@ class NATPMPClient:
 
     def __init__(
         self,
-        gateway_ip: ipaddress.IPv4Address | None = None,
+        gateway_ip: Optional[ipaddress.IPv4Address] = None,
         timeout: float = NAT_PMP_REQUEST_TIMEOUT,
     ):
         """Initialize NAT-PMP client.
@@ -303,8 +304,8 @@ class NATPMPClient:
         self.gateway_ip = gateway_ip
         self.timeout = timeout
         self.logger = logging.getLogger(__name__)
-        self._socket: socket.socket | None = None
-        self._external_ip: ipaddress.IPv4Address | None = None
+        self._socket: Optional[socket.socket] = None
+        self._external_ip: Optional[ipaddress.IPv4Address] = None
         self._last_epoch_time: int = 0
 
     async def _ensure_socket(self) -> socket.socket:

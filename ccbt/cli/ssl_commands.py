@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import click
 from rich.console import Console
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 console = Console()
 
 
-def _should_skip_project_local_write(config_file: Path | None) -> bool:
+def _should_skip_project_local_write(config_file: Optional[Path]) -> bool:
     """Check if we should skip writing to project-local ccbt.toml during tests.
 
     Args:

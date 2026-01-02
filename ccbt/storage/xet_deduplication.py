@@ -12,7 +12,7 @@ import logging
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 from ccbt.models import PeerInfo, XetFileMetadata
 
@@ -35,8 +35,8 @@ class XetDeduplication:
 
     def __init__(
         self,
-        cache_db_path: Path | str,
-        dht_client: Any | None = None,  # type: ignore[assignment]
+        cache_db_path: Union[Path, str],
+        dht_client: Optional[Any] = None,  # type: ignore[assignment]
     ):
         """Initialize deduplication with local cache.
 
@@ -210,7 +210,7 @@ class XetDeduplication:
 
         return db
 
-    async def check_chunk_exists(self, chunk_hash: bytes) -> Path | None:
+    async def check_chunk_exists(self, chunk_hash: bytes) -> Optional[Path]:
         """Check if chunk exists locally.
 
         Queries the database for the chunk hash and updates the
@@ -242,8 +242,8 @@ class XetDeduplication:
         self,
         chunk_hash: bytes,
         chunk_data: bytes,
-        file_path: str | None = None,
-        file_offset: int | None = None,
+        file_path: Optional[str] = None,
+        file_offset: Optional[int] = None,
     ) -> Path:
         """Store chunk with deduplication.
 
@@ -456,7 +456,7 @@ class XetDeduplication:
     async def reconstruct_file_from_chunks(
         self,
         file_path: str,
-        output_path: Path | None = None,
+        output_path: Optional[Path] = None,
     ) -> Path:
         """Reconstruct a file from its stored chunks.
 
@@ -597,7 +597,7 @@ class XetDeduplication:
         except Exception as e:
             self.logger.warning("Failed to store file metadata: %s", e, exc_info=True)
 
-    async def get_file_metadata(self, file_path: str) -> XetFileMetadata | None:
+    async def get_file_metadata(self, file_path: str) -> Optional[XetFileMetadata]:
         """Get file metadata from persistent storage.
 
         Retrieves and deserializes XetFileMetadata from the database.
@@ -635,7 +635,7 @@ class XetDeduplication:
             self.logger.warning("Failed to get file metadata: %s", e, exc_info=True)
             return None
 
-    async def query_dht_for_chunk(self, chunk_hash: bytes) -> PeerInfo | None:
+    async def query_dht_for_chunk(self, chunk_hash: bytes) -> Optional[PeerInfo]:
         """Query DHT for peers that have this chunk.
 
         Uses existing DHT infrastructure to find peers that have
@@ -744,7 +744,7 @@ class XetDeduplication:
             )  # pragma: no cover - Same context
             return None  # pragma: no cover - Same context
 
-    def _extract_peer_from_dht_value(self, value: Any) -> PeerInfo | None:  # type: ignore[return]
+    def _extract_peer_from_dht_value(self, value: Any) -> Optional[PeerInfo]:  # type: ignore[return]
         """Extract PeerInfo from DHT stored value (BEP 44).
 
         The value can be in various formats:
@@ -847,7 +847,7 @@ class XetDeduplication:
 
         return None
 
-    def get_chunk_info(self, chunk_hash: bytes) -> dict | None:
+    def get_chunk_info(self, chunk_hash: bytes) -> Optional[dict]:
         """Get information about a stored chunk.
 
         Args:

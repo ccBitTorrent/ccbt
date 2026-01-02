@@ -12,7 +12,7 @@ import logging
 import socket
 import struct
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,8 @@ class XetMulticastBroadcaster:
         self,
         multicast_address: str = "239.255.255.250",
         multicast_port: int = 6882,
-        chunk_callback: Callable[[bytes, str, int], None] | None = None,
-        update_callback: Callable[[dict[str, Any], str, int], None] | None = None,
+        chunk_callback: Optional[Callable[[bytes, str, int], None]] = None,
+        update_callback: Optional[Callable[[dict[str, Any], str, int], None]] = None,
     ):
         """Initialize XET multicast broadcaster.
 
@@ -51,8 +51,8 @@ class XetMulticastBroadcaster:
         self.chunk_callback = chunk_callback
         self.update_callback = update_callback
         self.running = False
-        self._socket: socket.socket | None = None
-        self._listen_task: asyncio.Task | None = None
+        self._socket: Optional[socket.socket] = None
+        self._listen_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
         """Start multicast broadcaster."""
@@ -126,8 +126,8 @@ class XetMulticastBroadcaster:
     async def broadcast_chunk_announcement(
         self,
         chunk_hash: bytes,
-        peer_ip: str | None = None,
-        peer_port: int | None = None,
+        peer_ip: Optional[str] = None,
+        peer_port: Optional[int] = None,
     ) -> None:
         """Broadcast chunk announcement.
 
@@ -177,8 +177,8 @@ class XetMulticastBroadcaster:
     async def broadcast_update(
         self,
         update_data: dict[str, Any],
-        peer_ip: str | None = None,
-        peer_port: int | None = None,
+        peer_ip: Optional[str] = None,
+        peer_port: Optional[int] = None,
     ) -> None:
         """Broadcast folder update.
 

@@ -10,7 +10,7 @@ import asyncio
 import functools
 import logging
 import time
-from typing import Any, Awaitable, Callable, TypeVar, Union, cast
+from typing import Any, Awaitable, Callable, Optional, TypeVar, Union, cast
 
 T = TypeVar("T")
 AsyncFunc = Callable[..., Awaitable[T]]
@@ -194,7 +194,9 @@ class CircuitBreaker:
         self,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
-        expected_exception: type[Exception] | tuple[type[Exception], ...] = Exception,
+        expected_exception: Union[
+            type[Exception], tuple[type[Exception], ...]
+        ] = Exception,
     ):
         """Initialize circuit breaker.
 
@@ -457,7 +459,7 @@ class BulkOperationManager:
         self,
         items: list[Any],
         operation: Callable[[list[Any]], Any],
-        error_handler: Callable[[Exception, list[Any]], None] | None = None,
+        error_handler: Optional[Callable[[Exception, list[Any]], None]] = None,
     ) -> list[Any]:
         """Process items in batches.
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import Any, Awaitable
+from typing import Any, Awaitable, Optional
 
 
 class TaskSupervisor:
@@ -19,7 +19,7 @@ class TaskSupervisor:
         self._tasks: set[asyncio.Task[Any]] = set()
 
     def create_task(
-        self, coro: Awaitable[Any], *, name: str | None = None
+        self, coro: Awaitable[Any], *, name: Optional[str] = None
     ) -> asyncio.Task[Any]:
         """Create and track a new async task.
 

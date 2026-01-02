@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import click
 from rich.console import Console
@@ -36,7 +36,7 @@ class OptimizationPreset:
 def _apply_optimizations(
     preset: str = OptimizationPreset.BALANCED,
     save_to_file: bool = False,
-    config_file: str | None = None,
+    config_file: Optional[str] = None,
 ) -> dict[str, Any]:
     """Apply performance optimizations based on system capabilities.
 
@@ -248,7 +248,7 @@ def performance(
     optimize: bool,
     preset: str,
     save: bool,
-    config_file: str | None,
+    config_file: Optional[str],
     benchmark: bool,
     profile: bool,
 ) -> None:

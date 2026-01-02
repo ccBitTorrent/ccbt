@@ -7,7 +7,7 @@ announce loops, scrape operations, and tracker health monitoring.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Union
 
 from ccbt.session.models import SessionContext
 
@@ -209,7 +209,7 @@ class AnnounceController:
                 )
             return []
 
-    def _prepare_torrent_dict(self, td: dict[str, Any] | Any) -> dict[str, Any]:
+    def _prepare_torrent_dict(self, td: Union[dict[str, Any], Any]) -> dict[str, Any]:
         """Normalize torrent_data to a dict that tracker client expects."""
         if isinstance(td, dict):
             result = dict(td)

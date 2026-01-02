@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from ccbt.interface.splash.animation_config import (
     OCEAN_PALETTE,
     RAINBOW_PALETTE,
@@ -66,7 +68,7 @@ COLOR_TEMPLATES: dict[str, list[str]] = {
 }
 
 
-def get_color_template(name: str) -> list[str] | None:
+def get_color_template(name: str) -> Optional[list[str]]:
     """Return a copy of a registered color template."""
     palette = COLOR_TEMPLATES.get(name)
     if palette is None:

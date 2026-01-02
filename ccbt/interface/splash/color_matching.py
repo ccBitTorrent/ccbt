@@ -6,7 +6,7 @@ Provides algorithms for matching colors and generating smooth color transitions.
 from __future__ import annotations
 
 import random
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.interface.splash.animation_config import (
     OCEAN_PALETTE,
@@ -79,7 +79,7 @@ def find_matching_color(
     target_color: str,
     palette: list[str],
     min_similarity: float = 0.5,
-) -> str | None:
+) -> Optional[str]:
     """Find a color in a palette that matches the target color.
     
     Args:
@@ -240,8 +240,8 @@ def generate_random_duration(min_duration: float = 1.5, max_duration: float = 2.
 
 
 def select_matching_palettes(
-    current_palette: list[str] | None = None,
-    available_palettes: list[list[str]] | None = None,
+    current_palette: Optional[list[str]] = None,
+    available_palettes: Optional[list[list[str]]] = None,
 ) -> tuple[list[str], list[str]]:
     """Select two palettes that transition smoothly.
     

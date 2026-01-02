@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from enum import IntEnum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional
 
 from ccbt.utils.logging_config import get_logger
 
@@ -128,7 +128,7 @@ class VerbosityManager:
         return self.level == VerbosityLevel.TRACE
 
 
-def get_verbosity_from_ctx(ctx: dict[str, Any] | None) -> VerbosityManager:
+def get_verbosity_from_ctx(ctx: Optional[dict[str, Any]]) -> VerbosityManager:
     """Get verbosity manager from Click context.
 
     Args:
@@ -151,7 +151,7 @@ def log_with_verbosity(
     level: int,
     message: str,
     *args: Any,
-    exc_info: bool | None = None,
+    exc_info: Optional[bool] = None,
     **kwargs: Any,
 ) -> None:
     """Log a message respecting verbosity level.

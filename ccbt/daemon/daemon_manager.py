@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 from ccbt.utils.logging_config import get_logger
 
@@ -88,8 +88,8 @@ class DaemonManager:
 
     def __init__(
         self,
-        pid_file: str | Path | None = None,
-        state_dir: str | Path | None = None,
+        pid_file: Optional[str | Path] = None,
+        state_dir: Optional[str | Path] = None,
     ):
         """Initialize daemon manager.
 
@@ -201,7 +201,7 @@ class DaemonManager:
 
         return True
 
-    def get_pid(self) -> int | None:
+    def get_pid(self) -> Optional[int]:
         """Get daemon PID from file with validation and retry logic.
 
         Returns:
@@ -585,7 +585,7 @@ class DaemonManager:
 
     def start(
         self,
-        script_path: str | None = None,
+        script_path: Optional[str] = None,
         foreground: bool = False,
     ) -> int:
         """Start daemon process.
@@ -622,7 +622,7 @@ class DaemonManager:
             # CRITICAL FIX: Capture stderr to a log file for background mode
             # This allows debugging daemon startup failures
             log_file = self.state_dir / "daemon_startup.log"
-            log_fd: int | Any = subprocess.DEVNULL
+            log_fd: Union[int, Any] = subprocess.DEVNULL
             try:
                 log_fd = open(log_file, "a", encoding="utf-8")
             except Exception:
@@ -765,7 +765,7 @@ class DaemonManager:
             self.remove_pid()
             return False
 
-    def restart(self, script_path: str | None = None) -> int:
+    def restart(self, script_path: Optional[str] = None) -> int:
         """Restart daemon process.
 
         Args:

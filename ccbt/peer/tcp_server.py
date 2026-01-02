@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.config.config import get_config
 from ccbt.utils.exceptions import HandshakeError
@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 class IncomingPeerServer:
     """TCP server for accepting incoming BitTorrent peer connections."""
 
-    def __init__(self, session_manager: AsyncSessionManager, config: Any | None = None):
+    def __init__(
+        self, session_manager: AsyncSessionManager, config: Optional[Any] = None
+    ):
         """Initialize incoming peer server.
 
         Args:
@@ -33,7 +35,7 @@ class IncomingPeerServer:
         """
         self.session_manager = session_manager
         self.config = config or get_config()
-        self.server: asyncio.Server | None = None
+        self.server: Optional[asyncio.Server] = None
         self._running = False
         self.logger = logging.getLogger(__name__)
 
@@ -226,7 +228,7 @@ class IncomingPeerServer:
         return self._running and self.server is not None and self.server.is_serving()
 
     @property
-    def port(self) -> int | None:
+    def port(self) -> Optional[int]:
         """Get the port the server is bound to.
 
         Returns:

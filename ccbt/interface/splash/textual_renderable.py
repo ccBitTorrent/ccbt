@@ -6,7 +6,7 @@ stable renderable structures that don't get recreated on each update.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from rich.console import Console, RenderableType
@@ -33,7 +33,7 @@ class StableSplashRenderable:
         """
         self.frame_content = frame_content
         self.overlay_content = overlay_content
-        self._cached_renderable: Any | None = None
+        self._cached_renderable: Optional[Any] = None
     
     def update_frame(self, frame_content: Any) -> None:
         """Update the frame content without recreating structure.
@@ -129,7 +129,7 @@ class StableOverlayBox:
         """
         self.messages = messages
         self.title = title
-        self._cached_panel: Any | None = None
+        self._cached_panel: Optional[Any] = None
     
     def update_messages(self, messages: list[str]) -> None:
         """Update messages without recreating box structure.

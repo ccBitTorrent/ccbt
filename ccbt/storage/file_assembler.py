@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Sized
+from typing import Any, Optional, Sized, Union
 
 from ccbt.config.config import get_config
 from ccbt.core.torrent_attributes import apply_file_attributes, verify_file_sha1
@@ -41,9 +41,9 @@ class AsyncDownloadManager:
 
     def __init__(
         self,
-        torrent_data: dict[str, Any] | TorrentInfo | None = None,
+        torrent_data: Optional[Union[dict[str, Any], TorrentInfo]] = None,
         output_dir: str = ".",
-        config: Any | None = None,
+        config: Optional[Any] = None,
     ):
         """Initialize async download manager.
 
@@ -70,7 +70,7 @@ class AsyncDownloadManager:
 
     async def start_download(
         self,
-        torrent_data: dict[str, Any] | TorrentInfo,
+        torrent_data: Union[dict[str, Any], TorrentInfo],
         output_dir: str = ".",
     ) -> AsyncFileAssembler:
         """Start a new download for the given torrent.
@@ -105,7 +105,7 @@ class AsyncDownloadManager:
 
     async def stop_download(
         self,
-        torrent_data: dict[str, Any] | TorrentInfo,
+        torrent_data: Union[dict[str, Any], TorrentInfo],
     ) -> None:
         """Stop a download and clean up resources.
 
@@ -129,8 +129,8 @@ class AsyncDownloadManager:
 
     def get_assembler(
         self,
-        torrent_data: dict[str, Any] | TorrentInfo,
-    ) -> AsyncFileAssembler | None:
+        torrent_data: Union[dict[str, Any], TorrentInfo],
+    ) -> Optional[AsyncFileAssembler]:
         """Get the assembler for a torrent.
 
         Args:
@@ -246,9 +246,9 @@ class AsyncFileAssembler:
 
     def __init__(
         self,
-        torrent_data: dict[str, Any] | TorrentInfo,
+        torrent_data: Union[dict[str, Any], TorrentInfo],
         output_dir: str = ".",
-        disk_io_manager: DiskIOManager | None = None,
+        disk_io_manager: Optional[DiskIOManager] = None,
     ):
         """Initialize async file assembler.
 
@@ -458,7 +458,9 @@ class AsyncFileAssembler:
 
         return segments
 
-    def update_from_metadata(self, torrent_data: dict[str, Any] | TorrentInfo) -> None:
+    def update_from_metadata(
+        self, torrent_data: Union[dict[str, Any], TorrentInfo]
+    ) -> None:
         """Update file assembler with newly fetched metadata.
 
         This method is called when metadata is fetched for a magnet link.
@@ -582,8 +584,8 @@ class AsyncFileAssembler:
     async def write_piece_to_file(
         self,
         piece_index: int,
-        piece_data: bytes | memoryview,
-        use_xet_chunking: bool | None = None,
+        piece_data: Union[bytes, memoryview],
+        use_xet_chunking: Optional[bool] = None,
     ) -> None:
         """Write a verified piece to its corresponding file(s) asynchronously.
 
@@ -657,7 +659,7 @@ class AsyncFileAssembler:
     async def _write_segment_to_file_async(
         self,
         segment: FileSegment,
-        piece_data: bytes | memoryview,
+        piece_data: Union[bytes, memoryview],
     ) -> None:
         """Write a segment of piece data to a file asynchronously.
 
@@ -713,7 +715,7 @@ class AsyncFileAssembler:
     async def _store_xet_chunks(
         self,
         piece_index: int,
-        piece_data: bytes | memoryview,
+        piece_data: Union[bytes, memoryview],
         piece_segments: list[FileSegment],
     ) -> None:
         """Store Xet chunks for a piece with deduplication.
@@ -1047,7 +1049,7 @@ class AsyncFileAssembler:
         piece_index: int,
         begin: int,
         length: int,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Read a block of data for a given piece directly from files asynchronously.
 
         Args:
@@ -1130,7 +1132,7 @@ class AsyncFileAssembler:
         if self.config.disk.read_parallel_segments and len(segments_to_read) > 1:
             from pathlib import Path
 
-            async def read_segment(seg_info: tuple) -> tuple[int, bytes] | None:
+            async def read_segment(seg_info: tuple) -> Optional[tuple[int, bytes]]:
                 seg, file_offset, read_len, overlap_start, _overlap_end = seg_info
                 try:
                     chunk = await self.disk_io.read_block(

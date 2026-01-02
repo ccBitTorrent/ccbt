@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import weakref
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.daemon.ipc_client import IPCClient
@@ -26,7 +26,7 @@ class ExecutorManager:
     duplicate executors and session reference mismatches.
     """
 
-    _instance: ExecutorManager | None = None
+    _instance: Optional[ExecutorManager] = None
     _lock: Any = None  # threading.Lock, but avoid import if not needed
 
     def __init__(self) -> None:
@@ -91,8 +91,8 @@ class ExecutorManager:
 
     def get_executor(
         self,
-        session_manager: AsyncSessionManager | None = None,
-        ipc_client: IPCClient | None = None,
+        session_manager: Optional[AsyncSessionManager] = None,
+        ipc_client: Optional[IPCClient] = None,
     ) -> UnifiedCommandExecutor:
         """Get or create executor for session manager or IPC client.
 
@@ -248,8 +248,8 @@ class ExecutorManager:
 
     def remove_executor(
         self,
-        session_manager: AsyncSessionManager | None = None,
-        ipc_client: IPCClient | None = None,
+        session_manager: Optional[AsyncSessionManager] = None,
+        ipc_client: Optional[IPCClient] = None,
     ) -> None:
         """Remove executor for session manager or IPC client.
 

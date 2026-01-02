@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ccbt.core.magnet import build_minimal_torrent_data, parse_magnet
 from ccbt.core.torrent import TorrentParser
@@ -13,9 +13,9 @@ if TYPE_CHECKING:
 
 
 def get_torrent_info(
-    torrent_data: dict[str, Any] | TorrentInfoModel,
-    logger: Any | None = None,
-) -> TorrentInfoModel | None:
+    torrent_data: Union[dict[str, Any], TorrentInfoModel],
+    logger: Optional[Any] = None,
+) -> Optional[TorrentInfoModel]:
     """Convert torrent_data to TorrentInfo if possible.
 
     Args:
@@ -109,7 +109,7 @@ def get_torrent_info(
 
 
 def extract_is_private(
-    torrent_data: dict[str, Any] | TorrentInfoModel,
+    torrent_data: Union[dict[str, Any], TorrentInfoModel],
 ) -> bool:
     """Extract is_private flag from torrent data (BEP 27).
 
@@ -139,8 +139,8 @@ def extract_is_private(
 
 
 def normalize_torrent_data(
-    td: dict[str, Any] | TorrentInfoModel,
-    logger: Any | None = None,
+    td: Union[dict[str, Any], TorrentInfoModel],
+    logger: Optional[Any] = None,
 ) -> dict[str, Any]:
     """Convert TorrentInfoModel or legacy dict into a normalized dict expected by piece manager.
 
@@ -278,8 +278,8 @@ def normalize_torrent_data(
 
 
 def load_torrent(
-    torrent_path: str | Path, logger: Any | None = None
-) -> dict[str, Any] | None:
+    torrent_path: Union[str, Path], logger: Optional[Any] = None
+) -> Optional[dict[str, Any]]:
     """Load torrent file and return parsed data.
 
     Args:
@@ -316,8 +316,8 @@ def load_torrent(
 
 
 def parse_magnet_link(
-    magnet_uri: str, logger: Any | None = None
-) -> dict[str, Any] | None:
+    magnet_uri: str, logger: Optional[Any] = None
+) -> Optional[dict[str, Any]]:
     """Parse magnet link and return torrent data.
 
     Args:

@@ -6,7 +6,7 @@ including connection events, message events, and state changes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
     from ccbt.session.models import SessionContext
@@ -24,10 +24,10 @@ class PeerEventsBinder:
         self,
         peer_manager: PeerManagerProtocol,
         *,
-        on_peer_connected: Callable[..., None] | None = None,
-        on_peer_disconnected: Callable[..., None] | None = None,
-        on_piece_received: Callable[..., None] | None = None,
-        on_bitfield_received: Callable[..., None] | None = None,
+        on_peer_connected: Optional[Callable[..., None]] = None,
+        on_peer_disconnected: Optional[Callable[..., None]] = None,
+        on_piece_received: Optional[Callable[..., None]] = None,
+        on_bitfield_received: Optional[Callable[..., None]] = None,
     ) -> None:
         """Bind peer manager and event callbacks.
 
@@ -53,9 +53,9 @@ class PeerEventsBinder:
         self,
         piece_manager: PieceManagerProtocol,
         *,
-        on_piece_completed: Callable[[int], None] | None = None,
-        on_piece_verified: Callable[[int], None] | None = None,
-        on_download_complete: Callable[[], None] | None = None,
+        on_piece_completed: Optional[Callable[[int], None]] = None,
+        on_piece_verified: Optional[Callable[[int], None]] = None,
+        on_download_complete: Optional[Callable[[], None]] = None,
     ) -> None:
         """Bind piece manager and event callbacks.
 

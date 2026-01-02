@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.models import ScrapeResult
 
@@ -62,7 +62,7 @@ class ScrapeManager:
             if isinstance(torrent_data, dict):
                 # Normalize announce_list to list[list[str]] format (BEP 12)
                 raw_announce_list = torrent_data.get("announce_list")
-                normalized_announce_list: list[list[str]] | None = None
+                normalized_announce_list: Optional[list[list[str]]] = None
                 if raw_announce_list and isinstance(raw_announce_list, list):
                     normalized_announce_list = []
                     for item in raw_announce_list:
@@ -145,7 +145,7 @@ class ScrapeManager:
             self.logger.exception("Error during force_scrape for %s", info_hash_hex)
             return False
 
-    async def get_cached_result(self, info_hash_hex: str) -> Any | None:
+    async def get_cached_result(self, info_hash_hex: str) -> Optional[Any]:
         """Get cached scrape result for a torrent.
 
         Args:

@@ -12,7 +12,7 @@ import contextlib
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Optional
 
 import aiohttp
 
@@ -80,8 +80,8 @@ class IPCClient:
 
     def __init__(
         self,
-        api_key: str | None = None,
-        base_url: str | None = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         key_manager: Any = None,  # Ed25519KeyManager
         timeout: float = 30.0,
     ):
@@ -99,12 +99,12 @@ class IPCClient:
         self.base_url = base_url or self._get_default_url()
         self.timeout = aiohttp.ClientTimeout(total=timeout)
 
-        self._session: aiohttp.ClientSession | None = None
-        self._session_loop: asyncio.AbstractEventLoop | None = (
+        self._session: Optional[aiohttp.ClientSession] = None
+        self._session_loop: Optional[asyncio.AbstractEventLoop] = (
             None  # Track loop session was created with
         )
-        self._websocket: aiohttp.ClientWebSocketResponse | None = None
-        self._websocket_task: asyncio.Task | None = None
+        self._websocket: Optional[aiohttp.ClientWebSocketResponse] = None
+        self._websocket_task: Optional[asyncio.Task] = None
 
     @property
     def session(self) -> aiohttp.ClientSession:
@@ -288,7 +288,7 @@ class IPCClient:
         return self._session
 
     def _get_headers(
-        self, method: str = "GET", path: str = "", body: bytes | None = None
+        self, method: str = "GET", path: str = "", body: Optional[bytes] = None
     ) -> dict[str, str]:
         """Get request headers with authentication.
 
@@ -333,7 +333,7 @@ class IPCClient:
         self,
         endpoint: str,
         *,
-        params: dict[str, Any] | None = None,
+        params: Optional[dict[str, Any]] = None,
         requires_auth: bool = True,
     ) -> Any:
         """Issue authenticated GET requests and return JSON payload."""
@@ -428,7 +428,7 @@ class IPCClient:
     async def add_torrent(
         self,
         path_or_magnet: str,
-        output_dir: str | None = None,
+        output_dir: Optional[str] = None,
         resume: bool = False,
     ) -> str:
         """Add torrent or magnet.
@@ -550,7 +550,9 @@ class IPCClient:
             response = TorrentListResponse(**data)
             return response.torrents
 
-    async def get_torrent_status(self, info_hash: str) -> TorrentStatusResponse | None:
+    async def get_torrent_status(
+        self, info_hash: str
+    ) -> Optional[TorrentStatusResponse]:
         """Get torrent status.
 
         Args:
@@ -601,7 +603,7 @@ class IPCClient:
         self,
         info_hash: str,
         key: str,
-    ) -> Any | None:
+    ) -> Optional[Any]:
         """Get a per-torrent configuration option value.
 
         Args:
@@ -649,7 +651,7 @@ class IPCClient:
     async def reset_torrent_options(
         self,
         info_hash: str,
-        key: str | None = None,
+        key: Optional[str] = None,
     ) -> bool:
         """Reset per-torrent configuration options.
 
@@ -1377,7 +1379,7 @@ class IPCClient:
     async def map_nat_port(
         self,
         internal_port: int,
-        external_port: int | None = None,
+        external_port: Optional[int] = None,
         protocol: str = "tcp",
     ) -> dict[str, Any]:
         """Map a port via NAT.
@@ -1484,7 +1486,7 @@ class IPCClient:
             data = await resp.json()
             return ScrapeListResponse(**data)
 
-    async def get_scrape_result(self, info_hash: str) -> ScrapeResult | None:
+    async def get_scrape_result(self, info_hash: str) -> Optional[ScrapeResult]:
         """Get cached scrape result for a torrent.
 
         Args:
@@ -1541,11 +1543,11 @@ class IPCClient:
     async def add_xet_folder(
         self,
         folder_path: str,
-        tonic_file: str | None = None,
-        tonic_link: str | None = None,
-        sync_mode: str | None = None,
-        source_peers: list[str] | None = None,
-        check_interval: float | None = None,
+        tonic_file: Optional[str] = None,
+        tonic_link: Optional[str] = None,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        check_interval: Optional[float] = None,
     ) -> dict[str, Any]:
         """Add XET folder for synchronization.
 
@@ -1955,7 +1957,7 @@ class IPCClient:
             resp.raise_for_status()
             return await resp.json()
 
-    async def export_session_state(self, path: str | None = None) -> dict[str, Any]:
+    async def export_session_state(self, path: Optional[str] = None) -> dict[str, Any]:
         """Export session state to a file.
 
         Args:
@@ -2003,7 +2005,7 @@ class IPCClient:
         self,
         info_hash: str,
         checkpoint: dict[str, Any],
-        torrent_path: str | None = None,
+        torrent_path: Optional[str] = None,
     ) -> dict[str, Any]:
         """Resume download from checkpoint.
 
@@ -2150,7 +2152,7 @@ class IPCClient:
 
     async def get_per_peer_rate_limit(
         self, info_hash: str, peer_key: str
-    ) -> int | None:
+    ) -> Optional[int]:
         """Get per-peer upload rate limit for a specific peer.
 
         Args:
@@ -2210,7 +2212,9 @@ class IPCClient:
             resp.raise_for_status()
             return await resp.text()
 
-    async def get_rate_samples(self, seconds: int | None = None) -> RateSamplesResponse:
+    async def get_rate_samples(
+        self, seconds: Optional[int] = None
+    ) -> RateSamplesResponse:
         """Get recent upload/download rate samples for graphing.
 
         Args:
@@ -2272,7 +2276,7 @@ class IPCClient:
     async def get_torrent_dht_metrics(
         self,
         info_hash: str,
-    ) -> DHTQueryMetricsResponse | None:
+    ) -> Optional[DHTQueryMetricsResponse]:
         """Get DHT query effectiveness metrics for a torrent."""
         try:
             data = await self._get_json(f"/metrics/torrents/{info_hash}/dht")
@@ -2285,7 +2289,7 @@ class IPCClient:
     async def get_torrent_peer_quality(
         self,
         info_hash: str,
-    ) -> PeerQualityMetricsResponse | None:
+    ) -> Optional[PeerQualityMetricsResponse]:
         """Get peer quality metrics for a torrent."""
         try:
             data = await self._get_json(f"/metrics/torrents/{info_hash}/peer-quality")
@@ -2386,7 +2390,7 @@ class IPCClient:
     async def get_swarm_health_matrix(
         self,
         limit: int = 6,
-        seconds: int | None = None,
+        seconds: Optional[int] = None,
     ) -> SwarmHealthMatrixResponse:
         """Get swarm health matrix combining performance, peer, and piece metrics.
 
@@ -2545,10 +2549,10 @@ class IPCClient:
 
     async def subscribe_events(
         self,
-        event_types: list[EventType] | None = None,
-        info_hash: str | None = None,
-        priority_filter: str | None = None,
-        rate_limit: float | None = None,
+        event_types: Optional[list[EventType]] = None,
+        info_hash: Optional[str] = None,
+        priority_filter: Optional[str] = None,
+        rate_limit: Optional[float] = None,
     ) -> bool:
         """Subscribe to event types with optional filtering.
 
@@ -2584,7 +2588,7 @@ class IPCClient:
             logger.exception("Error subscribing to events")
             return False
 
-    async def receive_event(self, timeout: float = 1.0) -> WebSocketEvent | None:
+    async def receive_event(self, timeout: float = 1.0) -> Optional[WebSocketEvent]:
         """Receive event from WebSocket.
 
         Args:
@@ -2832,7 +2836,7 @@ class IPCClient:
             return False
 
     @staticmethod
-    def get_daemon_pid() -> int | None:
+    def get_daemon_pid() -> Optional[int]:
         """Read daemon PID from file with validation and retry logic.
 
         Returns:

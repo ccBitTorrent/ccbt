@@ -21,7 +21,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Union
 
 from ccbt.piece.piece_manager import PieceData, PieceManager  # type: ignore
 
@@ -121,7 +121,7 @@ def write_json(output_dir: Path, benchmark: str, config_name: str, results: List
     return path
 
 
-def derive_config_name(config_file: str | None) -> str:
+def derive_config_name(config_file: Optional[str]) -> str:
     if not config_file:
         return "default"
     stem = Path(config_file).stem

@@ -9,7 +9,7 @@ for cryptographic authentication and signing.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 try:
     from cryptography.fernet import Fernet
@@ -53,7 +53,7 @@ class Ed25519KeyManager:
     authentication. Private keys are encrypted using Fernet before storage.
     """
 
-    def __init__(self, key_dir: Path | str | None = None):
+    def __init__(self, key_dir: Optional[Path | str] = None):
         """Initialize key manager.
 
         Args:
@@ -87,8 +87,8 @@ class Ed25519KeyManager:
         self.cipher = self._get_or_create_encryption_key()
 
         # Key pair (loaded on demand)
-        self._private_key: Ed25519PrivateKey | None = None
-        self._public_key: Ed25519PublicKey | None = None
+        self._private_key: Optional[Ed25519PrivateKey] = None
+        self._public_key: Optional[Ed25519PublicKey] = None
 
     def _get_or_create_encryption_key(self) -> Fernet:
         """Get or create encryption key for private key storage.
@@ -161,8 +161,8 @@ class Ed25519KeyManager:
 
     def save_keypair(
         self,
-        private_key: Ed25519PrivateKey | None = None,
-        public_key: Ed25519PublicKey | None = None,
+        private_key: Optional[Ed25519PrivateKey] = None,
+        public_key: Optional[Ed25519PublicKey] = None,
     ) -> None:
         """Save key pair to secure storage.
 

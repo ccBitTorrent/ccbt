@@ -288,10 +288,11 @@ async def test_connect_peer_with_queued_messages(ipfs_protocol, mock_ipfs_client
         # For add_peer or other calls, just return what's needed
         return None
 
+    mock_send = patch.object(ipfs_protocol, "send_message", return_value=True)
     with (
         patch.object(ipfs_protocol, "_parse_multiaddr", side_effect=mock_parse_multiaddr),
         patch.object(ipfs_protocol, "_setup_message_listener", return_value=None),
-        patch.object(ipfs_protocol, "send_message", return_value=True) as mock_send,
+        mock_send,
         patch("ccbt.protocols.ipfs.to_thread", side_effect=mock_to_thread),
     ):
         result = await ipfs_protocol.connect_peer(peer_info)

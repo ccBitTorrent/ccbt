@@ -11,6 +11,7 @@ import logging
 import ssl
 import time
 from dataclasses import dataclass
+from typing import Optional
 
 from ccbt.config.config import get_config
 from ccbt.extensions.manager import get_extension_manager
@@ -243,7 +244,7 @@ class SSLPeerConnection:
         writer: asyncio.StreamWriter,
         peer_id: str,
         timeout: float = 5.0,  # noqa: ARG002 - Required by interface signature
-    ) -> tuple[int, bool] | None:
+    ) -> Optional[tuple[int, bool]]:
         """Send SSL extension message and wait for response.
 
         Args:
@@ -334,7 +335,7 @@ class SSLPeerConnection:
         peer_id: str,
         peer_ip: str,
         peer_port: int,
-    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter] | None:
+    ) -> Optional[tuple[asyncio.StreamReader, asyncio.StreamWriter]]:
         """Negotiate SSL after BitTorrent handshake.
 
         This method attempts to upgrade the connection to SSL after the

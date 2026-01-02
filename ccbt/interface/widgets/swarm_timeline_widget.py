@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
+from typing import Any, Optional
 
 from rich.console import Group
 from rich.panel import Panel
@@ -39,8 +39,8 @@ class SwarmTimelineWidget(Static):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: Any | None,
-        info_hash: str | None = None,
+        data_provider: Optional[Any],
+        info_hash: Optional[str] = None,
         limit: int = 3,
         history_seconds: int = 3600,
         refresh_interval: float = 4.0,
@@ -52,7 +52,7 @@ class SwarmTimelineWidget(Static):  # type: ignore[misc]
         self._limit = max(1, limit)
         self._history_seconds = max(60, history_seconds)
         self._refresh_interval = refresh_interval
-        self._update_task: Any | None = None
+        self._update_task: Optional[Any] = None
 
     def compose(self) -> Any:  # pragma: no cover
         yield Static(_("Loading swarm timeline..."), id="swarm-timeline-placeholder")

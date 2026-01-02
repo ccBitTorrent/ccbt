@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
 
 
@@ -29,7 +30,7 @@ class AsyncContextManagerMock:
         return iter([])
 
 
-def create_async_response_mock(status: int = 200, headers: dict | None = None) -> AsyncMock:
+def create_async_response_mock(status: int = 200, headers: Optional[dict] = None) -> AsyncMock:
     """Create a properly configured async response mock.
     
     Args:

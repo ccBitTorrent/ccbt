@@ -6,7 +6,7 @@ Implements the Preferences tab with nested sub-tabs for configuration options.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.i18n import _
 
@@ -60,7 +60,7 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
     def __init__(
         self,
         command_executor: CommandExecutor,
-        session: Any | None = None,
+        session: Optional[Any] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -73,9 +73,9 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self._command_executor = command_executor
         self._session = session
-        self._sub_tabs: Tabs | None = None
-        self._content_area: Container | None = None
-        self._active_sub_tab_id: str | None = None
+        self._sub_tabs: Optional[Tabs] = None
+        self._content_area: Optional[Container] = None
+        self._active_sub_tab_id: Optional[str] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the preferences tab with nested sub-tabs."""

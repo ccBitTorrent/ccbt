@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from textual.widgets import Static
@@ -95,14 +95,14 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self._availability: list[int] = []
         self._max_peers: int = 0
-        self._piece_health_data: dict[str, Any] | None = None  # Full piece health data from DataProvider
+        self._piece_health_data: Optional[dict[str, Any]] = None  # Full piece health data from DataProvider
         self._grid_rows: int = 8  # Number of rows in multi-line grid
         self._grid_cols: int = 0  # Calculated based on terminal width
 
     def update_availability(
         self,
         availability: list[int],
-        max_peers: int | None = None,
+        max_peers: Optional[int] = None,
     ) -> None:
         """Update the health bar with piece availability data.
         

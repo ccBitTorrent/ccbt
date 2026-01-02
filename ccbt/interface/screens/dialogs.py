@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ccbt.i18n import _
 
@@ -427,7 +427,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
         )
 
         # Torrent data (loaded after step 1)
-        self.torrent_data: dict[str, Any] | None = (
+        self.torrent_data: Optional[dict[str, Any]] = (
             None  # pragma: no cover - AddTorrentScreen initialization
         )
 
@@ -1186,9 +1186,9 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
         self.info_hash_hex = info_hash_hex
         self.session = session
         self.dashboard = dashboard
-        self._status_widget: Static | None = None
-        self._progress_widget: Static | None = None
-        self._check_task: Any | None = None
+        self._status_widget: Optional[Static] = None
+        self._progress_widget: Optional[Static] = None
+        self._check_task: Optional[Any] = None
         self._cancelled = False
         self._all_files_selected = True  # Default to selecting all files
 
@@ -1408,7 +1408,7 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
         self.info_hash_hex = info_hash_hex
         self.session = session
         self.dashboard = dashboard
-        self._file_table: DataTable | None = None
+        self._file_table: Optional[DataTable] = None
         self._selected_files: set[int] = set()
 
     def compose(self) -> ComposeResult:  # pragma: no cover

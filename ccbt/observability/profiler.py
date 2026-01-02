@@ -22,7 +22,7 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -133,7 +133,7 @@ class Profiler:
         function_name: str,
         module_name: str = "",
         profile_type: ProfileType = ProfileType.FUNCTION,
-        metadata: dict[str, Any] | None = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> str:
         """Start profiling a function."""
         if not self.enabled:
@@ -162,7 +162,7 @@ class Profiler:
 
         return profile_id
 
-    def end_profile(self, profile_id: str) -> ProfileEntry | None:
+    def end_profile(self, profile_id: str) -> Optional[ProfileEntry]:
         """End profiling a function."""
         if profile_id not in self.active_profiles:
             return None
@@ -206,8 +206,8 @@ class Profiler:
 
     def profile_function(
         self,
-        function_name: str | None = None,
-        module_name: str | None = None,
+        function_name: Optional[str] = None,
+        module_name: Optional[str] = None,
         profile_type: ProfileType = ProfileType.FUNCTION,
     ):
         """Provide decorator for profiling functions."""
@@ -231,8 +231,8 @@ class Profiler:
 
     def profile_async_function(
         self,
-        function_name: str | None = None,
-        module_name: str | None = None,
+        function_name: Optional[str] = None,
+        module_name: Optional[str] = None,
         profile_type: ProfileType = ProfileType.ASYNC,
     ):
         """Provide decorator for profiling async functions."""

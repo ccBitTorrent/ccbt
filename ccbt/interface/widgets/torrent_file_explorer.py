@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.i18n import _
 
@@ -123,12 +123,12 @@ class TorrentFileExplorerWidget(Container):  # type: ignore[misc]
         self._info_hash = info_hash_hex
         self._data_provider = data_provider
         self._command_executor = command_executor
-        self._file_table: DataTable | None = None
-        self._details_table: DataTable | None = None
-        self._path_display: Static | None = None
+        self._file_table: Optional[DataTable] = None
+        self._details_table: Optional[DataTable] = None
+        self._path_display: Optional[Static] = None
         self._files_data: list[dict[str, Any]] = []
-        self._base_path: Path | None = None
-        self._selected_file: dict[str, Any] | None = None
+        self._base_path: Optional[Path] = None
+        self._selected_file: Optional[dict[str, Any]] = None
         self._expanded_dirs: set[str] = set()
 
     def compose(self) -> Any:  # pragma: no cover

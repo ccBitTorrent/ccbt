@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from textual.screen import ModalScreen, Screen
@@ -125,7 +125,7 @@ class ConfirmationDialog(ModalScreen):  # type: ignore[misc]
         """
         super().__init__(*args, **kwargs)
         self.message = message
-        self.result: bool | None = None
+        self.result: Optional[bool] = None
 
     def compose(self) -> ComposeResult:  # pragma: no cover
         """Compose the confirmation dialog."""
@@ -203,7 +203,7 @@ class InputDialog(ModalScreen):  # type: ignore[misc]
         self.title = title
         self.message = message
         self.placeholder = placeholder
-        self.result: str | None = None
+        self.result: Optional[str] = None
 
     def compose(self) -> ComposeResult:  # pragma: no cover
         """Compose the input dialog."""
@@ -315,12 +315,12 @@ class MonitoringScreen(Screen):  # type: ignore[misc]
         self.metrics_collector = get_metrics_collector()
         self.alert_manager = get_alert_manager()
         self.plugin_manager = get_plugin_manager()
-        self._refresh_task: asyncio.Task | None = None
-        self._refresh_interval_id: Any | None = None
+        self._refresh_task: Optional[asyncio.Task] = None
+        self._refresh_interval_id: Optional[Any] = None
         # Command executor for executing CLI commands (will be set in on_mount to avoid circular import)
-        self._command_executor: Any | None = None
+        self._command_executor: Optional[Any] = None
         # Status bar reference (will be set in on_mount if available)
-        self.statusbar: Static | None = None
+        self.statusbar: Optional[Static] = None
 
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the screen and start refresh interval."""
@@ -401,7 +401,7 @@ class MonitoringScreen(Screen):  # type: ignore[misc]
         """Quit the monitoring screen."""
         await self.action_back()
 
-    def _get_metrics_plugin(self) -> Any | None:  # pragma: no cover
+    def _get_metrics_plugin(self) -> Optional[Any]:  # pragma: no cover
         """Get MetricsPlugin instance if available.
 
         Tries multiple methods:

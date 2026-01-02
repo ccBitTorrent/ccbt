@@ -17,7 +17,7 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, TypedDict
+from typing import Any, Optional, TypedDict
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -614,7 +614,7 @@ class AnomalyDetector:
             / max(1, self.stats["total_anomalies"]),
         }
 
-    def get_behavioral_pattern(self, peer_id: str) -> BehavioralPattern | None:
+    def get_behavioral_pattern(self, peer_id: str) -> Optional[BehavioralPattern]:
         """Get behavioral pattern for a peer."""
         return self.behavioral_patterns.get(peer_id)
 
@@ -622,7 +622,7 @@ class AnomalyDetector:
         self,
         peer_id: str,
         metric_name: str,
-    ) -> dict[str, float] | None:
+    ) -> Optional[dict[str, float]]:
         """Get statistical baseline for a peer metric."""
         return self.statistical_baselines.get(peer_id, {}).get(metric_name)
 

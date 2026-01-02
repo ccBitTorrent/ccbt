@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -35,14 +35,14 @@ class SessionContext:
     output_dir: Path
 
     # Optional references populated during lifecycle
-    info: Any | None = None  # TorrentSessionInfo
-    session_manager: Any | None = None
-    logger: Any | None = None
+    info: Optional[Any] = None  # TorrentSessionInfo
+    session_manager: Optional[Any] = None
+    logger: Optional[Any] = None
 
-    piece_manager: Any | None = None
-    peer_manager: Any | None = None
-    tracker: Any | None = None
-    dht_client: Any | None = None
-    checkpoint_manager: Any | None = None
-    download_manager: Any | None = None
-    file_selection_manager: Any | None = None
+    piece_manager: Optional[Any] = None
+    peer_manager: Optional[Any] = None
+    tracker: Optional[Any] = None
+    dht_client: Optional[Any] = None
+    checkpoint_manager: Optional[Any] = None
+    download_manager: Optional[Any] = None
+    file_selection_manager: Optional[Any] = None

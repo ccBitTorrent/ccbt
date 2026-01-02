@@ -6,7 +6,7 @@ Provides a dropdown/select widget for choosing which torrent to view details for
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.interface.data_provider import DataProvider
@@ -76,9 +76,9 @@ class TorrentSelector(Container):  # type: ignore[misc]
         """
         super().__init__(*args, **kwargs)
         self._data_provider = data_provider
-        self._selected_info_hash: str | None = None
+        self._selected_info_hash: Optional[str] = None
         self._torrent_options: list[tuple[str, str]] = []  # (display_name, info_hash)
-        self._select_widget: Select | None = None
+        self._select_widget: Optional[Select] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the torrent selector."""
@@ -169,7 +169,7 @@ class TorrentSelector(Container):  # type: ignore[misc]
         event_value = event.value
         logger.debug("TorrentSelector: Select.Changed event.value = %r (type: %s)", event_value, type(event_value).__name__)
         
-        info_hash: str | None = None
+        info_hash: Optional[str] = None
         
         # Handle different value formats from Textual Select
         if isinstance(event_value, tuple) and len(event_value) == 2:
@@ -214,7 +214,7 @@ class TorrentSelector(Container):  # type: ignore[misc]
             logger.warning("TorrentSelector: Could not extract info_hash from event.value = %r", event_value)
 
 
-    def get_selected_info_hash(self) -> str | None:
+    def get_selected_info_hash(self) -> Optional[str]:
         """Get the currently selected torrent info hash.
 
         Returns:

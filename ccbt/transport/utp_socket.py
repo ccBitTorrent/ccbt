@@ -10,7 +10,7 @@ import asyncio
 import logging
 import random
 import struct
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Optional
 
 from ccbt.config.config import get_config
 
@@ -70,7 +70,7 @@ class UTPSocketManager:
 
     # Singleton pattern removed - UTPSocketManager is now managed via AsyncSessionManager.utp_socket_manager
     # This ensures proper lifecycle management and prevents socket recreation issues
-    _instance: UTPSocketManager | None = (
+    _instance: Optional[UTPSocketManager] = (
         None  # Deprecated - use session_manager.utp_socket_manager
     )
     _lock = asyncio.Lock()  # Deprecated - kept for backward compatibility
@@ -85,8 +85,8 @@ class UTPSocketManager:
         self.logger = logging.getLogger(__name__)
 
         # UDP socket
-        self.transport: asyncio.DatagramTransport | None = None
-        self.protocol: UTPProtocol | None = None
+        self.transport: Optional[asyncio.DatagramTransport] = None
+        self.protocol: Optional[UTPProtocol] = None
         self._socket_ready = asyncio.Event()
 
         # Active connections: (ip, port, connection_id) -> UTPConnection
@@ -99,9 +99,9 @@ class UTPSocketManager:
         self.active_connection_ids: set[int] = set()
 
         # Callback for incoming connections
-        self.on_incoming_connection: (
-            Callable[[UTPConnection, tuple[str, int]], None] | None
-        ) = None
+        self.on_incoming_connection: Optional[
+            Callable[[UTPConnection, tuple[str, int]], None]
+        ] = None
 
         # Statistics
         self.total_packets_received: int = 0

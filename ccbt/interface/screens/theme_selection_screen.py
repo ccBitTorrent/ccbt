@@ -6,7 +6,7 @@ Provides a modal screen for selecting the Textual theme.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ccbt.i18n import _
 
@@ -99,7 +99,7 @@ class ThemeSelectionScreen(ModalScreen):  # type: ignore[misc]
     ) -> None:
         """Initialize theme selection screen."""
         super().__init__(*args, **kwargs)
-        self._selected_theme: str | None = None
+        self._selected_theme: Optional[str] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the theme selection screen."""

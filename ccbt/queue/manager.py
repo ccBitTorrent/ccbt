@@ -7,7 +7,7 @@ import logging
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.models import QueueConfig, QueueEntry, TorrentPriority
 
@@ -35,7 +35,7 @@ class TorrentQueueManager:
     def __init__(
         self,
         session_manager: AsyncSessionManager,
-        config: QueueConfig | None = None,
+        config: Optional[QueueConfig] = None,
     ):
         """Initialize queue manager.
 
@@ -59,8 +59,8 @@ class TorrentQueueManager:
         self._lock = asyncio.Lock()
 
         # Background tasks
-        self._monitor_task: asyncio.Task | None = None
-        self._bandwidth_task: asyncio.Task | None = None
+        self._monitor_task: Optional[asyncio.Task] = None
+        self._bandwidth_task: Optional[asyncio.Task] = None
 
         # Statistics
         self.stats = QueueStatistics()
@@ -107,7 +107,7 @@ class TorrentQueueManager:
     async def add_torrent(
         self,
         info_hash: bytes,
-        priority: TorrentPriority | None = None,
+        priority: Optional[TorrentPriority] = None,
         auto_start: bool = True,
         resume: bool = False,
     ) -> QueueEntry:
@@ -518,7 +518,9 @@ class TorrentQueueManager:
                 "entries": entries,
             }
 
-    async def get_torrent_queue_state(self, info_hash: bytes) -> dict[str, Any] | None:
+    async def get_torrent_queue_state(
+        self, info_hash: bytes
+    ) -> Optional[dict[str, Any]]:
         """Get queue state for a specific torrent.
 
         Args:
@@ -696,7 +698,7 @@ class TorrentQueueManager:
 
     async def _try_start_next_torrent(self) -> None:
         """Try to start the next queued torrent."""
-        info_hash: bytes | None = None
+        info_hash: Optional[bytes] = None
         async with self._lock:
             # Find first queued torrent (already sorted by priority)
             for info_hash_key, entry in self.queue.items():
