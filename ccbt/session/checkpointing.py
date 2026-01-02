@@ -679,6 +679,9 @@ class CheckpointController:
             # Restore security state if available
             await self._restore_security_state(checkpoint, session)
 
+            # Restore rate limits if available
+            await self._restore_rate_limits(checkpoint, session)
+
             # Restore session state if available
             await self._restore_session_state(checkpoint, session)
 
@@ -1105,6 +1108,44 @@ class CheckpointController:
         except Exception as e:
             if self._ctx.logger:
                 self._ctx.logger.debug("Failed to restore security state: %s", e)
+
+    async def _restore_rate_limits(
+        self, checkpoint: TorrentCheckpoint, session: Any
+    ) -> None:
+        """Restore rate limits from checkpoint."""
+        try:
+            if not checkpoint.rate_limits:
+                return
+
+            # Get session manager
+            session_manager = getattr(session, "session_manager", None)
+            if not session_manager:
+                return
+
+            # Get info hash
+            info_hash = getattr(self._ctx.info, "info_hash", None)
+            if not info_hash:
+                return
+
+            # Convert info hash to hex string for set_rate_limits
+            info_hash_hex = info_hash.hex()
+
+            # Restore rate limits via session manager
+            if hasattr(session_manager, "set_rate_limits"):
+                down_kib = checkpoint.rate_limits.get("down_kib", 0)
+                up_kib = checkpoint.rate_limits.get("up_kib", 0)
+                await session_manager.set_rate_limits(
+                    info_hash_hex, down_kib, up_kib
+                )
+                if self._ctx.logger:
+                    self._ctx.logger.debug(
+                        "Restored rate limits: down=%d KiB/s, up=%d KiB/s",
+                        down_kib,
+                        up_kib,
+                    )
+        except Exception as e:
+            if self._ctx.logger:
+                self._ctx.logger.debug("Failed to restore rate limits: %s", e)
 
     async def _restore_session_state(
         self, checkpoint: TorrentCheckpoint, session: Any

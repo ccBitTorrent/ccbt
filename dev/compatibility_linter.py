@@ -6,10 +6,12 @@ This script checks for Python 3.8/3.9 compatibility issues:
 1. Union type syntax (`|`) - should use `Optional` or `Union` instead
 2. Built-in generic types without `__future__` import - requires `from __future__ import annotations` for Python 3.8
 3. `tuple[...]` usage - should use `Tuple[...]` from typing for Python 3.8 compatibility
-4. `Tuple[...]` usage without proper import from typing - must import `Tuple` from typing
-5. Other compatibility patterns
+4. `tuple[...]` in type aliases - even with `__future__` import, type aliases are evaluated at runtime in Python 3.8
+5. `Tuple[...]` usage without proper import from typing - must import `Tuple` from typing
+6. Other compatibility patterns
 
-Based on patterns from compatibility_tests/COMPREHENSIVE_RESOLUTION_PLAN.md
+Based on patterns from compatibility_tests/COMPREHENSIVE_RESOLUTION_PLAN.md and
+compatibility_tests/PYTHON38_RESOLUTION_PLAN.md
 """
 
 from __future__ import annotations
@@ -75,6 +77,13 @@ class CompatibilityLinter:
                         file_path, line_num, line
                     )
                     file_issues.extend(tuple_issues)
+
+                # Check for tuple[...] in type aliases (even with __future__ import)
+                # Type aliases are evaluated at runtime in Python 3.8, so they need Tuple from typing
+                tuple_alias_issues = self._check_tuple_type_alias(
+                    file_path, line_num, line
+                )
+                file_issues.extend(tuple_alias_issues)
 
                 # Check for Tuple[...] usage without proper import
                 if not has_tuple_import:
@@ -519,6 +528,114 @@ class CompatibilityLinter:
                     line_number=line_num,
                     issue_type="tuple-usage",
                     message="Built-in generic `tuple[...]` should be replaced with `Tuple[...]` from typing for Python 3.8 compatibility. Import `Tuple` from typing and use `Tuple[...]` instead.",
+                    code=line.strip(),
+                )
+            )
+
+        return issues
+
+    def _check_tuple_type_alias(
+        self, file_path: Path, line_num: int, line: str
+    ) -> list[CompatibilityIssue]:
+        """
+        Check for tuple[...] usage in type aliases.
+        
+        IMPORTANT: Even with `from __future__ import annotations`, type aliases
+        are still evaluated at runtime in Python 3.8. This means `tuple[...]`
+        in type aliases will fail with `TypeError: 'type' object is not subscriptable`.
+        
+        Type aliases must use `Tuple[...]` from typing for Python 3.8 compatibility,
+        even when the file has `from __future__ import annotations`.
+        
+        Examples of type aliases that need fixing:
+        - `_PacketInfo = tuple[UTPPacket, float, int]`  # ❌ Fails in Python 3.8
+        - `RenewalCallback = Callable[..., Awaitable[tuple[bool, int]]]`  # ❌ Fails in Python 3.8
+        
+        Should be:
+        - `_PacketInfo = Tuple[UTPPacket, float, int]`  # ✅ Works
+        - `RenewalCallback = Callable[..., Awaitable[Tuple[bool, int]]]`  # ✅ Works
+        """
+        issues: list[CompatibilityIssue] = []
+
+        # Pattern to match tuple[...] in type aliases
+        # Matches: tuple[type, ...], tuple[type1, type2], tuple[...]
+        # Using word boundary (\b) to avoid false positives
+        pattern = r"\btuple\s*\["
+
+        # Skip if line is a comment or string
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped.startswith('"""') or stripped.startswith("'''"):
+            return issues
+
+        # Check if this looks like a type alias
+        # Type aliases typically:
+        # 1. Have uppercase variable names (convention)
+        # 2. Use = assignment
+        # 3. Are at module level (no indentation or minimal indentation)
+        # 4. May be nested inside generic types like Callable[...], Awaitable[...]
+        
+        # Pattern 1: Direct type alias: `_PacketInfo = tuple[...]`
+        # Matches: Uppercase identifier = tuple[...]
+        direct_alias_pattern = r"^[A-Z_][a-zA-Z0-9_]*\s*=\s*tuple\s*\["
+        
+        # Pattern 2: Nested in generic: `Callable[..., Awaitable[tuple[...]]]`
+        # Matches: tuple[...] inside generic type parameters
+        nested_pattern = r"[,\[\s]tuple\s*\["
+        
+        is_type_alias = False
+        match_start = None
+        
+        # Check for direct type alias
+        direct_match = re.search(direct_alias_pattern, stripped)
+        if direct_match:
+            is_type_alias = True
+            match_start = direct_match.start() + len(direct_match.group(0)) - len("tuple[")
+        
+        # Check for nested tuple in generic types (common in type aliases)
+        if not is_type_alias:
+            nested_match = re.search(nested_pattern, line)
+            if nested_match:
+                # Check if it's in a type alias context (has = before it, uppercase identifier)
+                before_match = line[:nested_match.start()]
+                # Look for type alias pattern: identifier = ... before the tuple
+                if re.search(r"[A-Z_][a-zA-Z0-9_]*\s*=\s*", before_match):
+                    is_type_alias = True
+                    match_start = nested_match.start() + 1  # +1 to skip the comma/bracket/space
+        
+        if not is_type_alias:
+            return issues  # Not a type alias, skip
+        
+        # Find all tuple[...] matches
+        matches = list(re.finditer(pattern, line))
+        for match in matches:
+            start_pos = match.start()
+            
+            # Check if we're inside a string literal
+            before_match = line[:start_pos]
+            single_quotes_before = before_match.count("'") - before_match.count("\\'")
+            double_quotes_before = before_match.count('"') - before_match.count('\\"')
+            
+            # If odd number of quotes, we're inside a string
+            if (single_quotes_before % 2 == 1) or (double_quotes_before % 2 == 1):
+                continue  # Skip - it's inside a string literal
+            
+            # Additional check: skip if it's a function call like tuple([...])
+            # Look for tuple( after the match (not tuple[...])
+            after_match = line[start_pos:]
+            if re.match(r"tuple\s*\(", after_match):
+                continue  # Skip - it's a function call, not a type annotation
+            
+            # Verify it's a complete tuple[...] expression
+            tuple_match = re.search(r"tuple\s*\[[^\]]*\]", line[start_pos:])
+            if not tuple_match:
+                continue  # No complete tuple[...] found
+            
+            issues.append(
+                CompatibilityIssue(
+                    file_path=file_path,
+                    line_number=line_num,
+                    issue_type="tuple-type-alias",
+                    message="Type alias uses `tuple[...]` which fails at runtime in Python 3.8. Even with `from __future__ import annotations`, type aliases are evaluated at runtime. Use `Tuple[...]` from typing instead and import `Tuple` from typing.",
                     code=line.strip(),
                 )
             )

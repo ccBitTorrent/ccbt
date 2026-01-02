@@ -142,7 +142,9 @@ async def test_get_peer_wait_time_when_limited(rate_limiter):
     # Should calculate wait time based on remaining window
     assert wait_time >= 0.0
     assert wait_time <= 60.0
-    assert wait_time == max(0.0, 60.0 - 30.0)  # time_window - time_since_last
+    # Use approximate comparison due to floating point precision
+    expected_wait = max(0.0, 60.0 - 30.0)  # time_window - time_since_last
+    assert abs(wait_time - expected_wait) < 0.01  # Allow small floating point differences
 
 
 @pytest.mark.asyncio

@@ -336,6 +336,7 @@ def cleanup_singleton_resources():
         # Only reset NetworkOptimizer if it exists and has active cleanup thread
         if _network_optimizer is not None:
             pool = _network_optimizer.connection_pool
+            # CRITICAL FIX: Check for connection_pool existence before accessing
             if pool is not None and pool._cleanup_task is not None:
                 # #region agent log
                 _debug_log("A", "conftest.py:cleanup_singleton_resources", "NetworkOptimizer has cleanup task", {"thread_alive": pool._cleanup_task.is_alive()})
@@ -345,14 +346,31 @@ def cleanup_singleton_resources():
                     # #region agent log
                     _debug_log("A", "conftest.py:cleanup_singleton_resources", "Calling pool.stop()", {})
                     # #endregion
-                    # Call stop to properly shutdown the thread
+                    # Call stop to properly shutdown the thread with timeout protection
                     try:
-                        pool.stop()
+                        # CRITICAL FIX: Add timeout wrapper to prevent hanging
+                        import threading
+                        stop_completed = threading.Event()
+                        def stop_with_timeout():
+                            try:
+                                pool.stop()
+                            finally:
+                                stop_completed.set()
+                        
+                        stop_thread = threading.Thread(target=stop_with_timeout, daemon=True)
+                        stop_thread.start()
+                        stop_thread.join(timeout=2.0)  # 2 second timeout
+                        
+                        if not stop_completed.is_set():
+                            # Timeout occurred, force cleanup
+                            pool._shutdown_event.set()
+                            pool._cleanup_task = None
+                        
                         # #region agent log
-                        _debug_log("A", "conftest.py:cleanup_singleton_resources", "pool.stop() completed, sleeping 0.1s", {})
+                        _debug_log("A", "conftest.py:cleanup_singleton_resources", "pool.stop() completed, sleeping 0.5s", {})
                         # #endregion
-                        # Give thread a moment to respond to shutdown signal
-                        time.sleep(0.1)
+                        # CRITICAL FIX: Increase sleep from 0.1s to 0.5s to ensure cleanup completes
+                        time.sleep(0.5)
                         # #region agent log
                         _debug_log("A", "conftest.py:cleanup_singleton_resources", "Sleep completed", {})
                         # #endregion
@@ -367,9 +385,20 @@ def cleanup_singleton_resources():
                 _debug_log("A", "conftest.py:cleanup_singleton_resources", "Resetting NetworkOptimizer", {})
                 # #endregion
                 reset_network_optimizer()
+                # CRITICAL FIX: Explicitly clear pool reference
+                pool = None
                 # #region agent log
                 _debug_log("A", "conftest.py:cleanup_singleton_resources", "NetworkOptimizer reset completed", {})
                 # #endregion
+        
+        # CRITICAL FIX: Force cleanup all ConnectionPool instances (not just singleton)
+        # This ensures any ConnectionPool instances created outside the singleton are also cleaned up
+        try:
+            from ccbt.utils.network_optimizer import force_cleanup_all_connection_pools
+            force_cleanup_all_connection_pools()
+        except Exception:
+            # Best effort - if import or cleanup fails, continue
+            pass
 
         # Always reset MetricsCollector if it exists (running or not)
         # This ensures clean state between tests to prevent state pollution
@@ -827,10 +856,47 @@ def create_interactive_cli(session, console=None):
         console.print = Mock()
         console.clear = Mock()
         console.print_json = Mock()
+        # CRITICAL FIX: Rich Progress requires console.get_time method
+        import time
+        console.get_time = Mock(return_value=time.time)
     
     adapter = LocalSessionAdapter(session)
     executor = UnifiedCommandExecutor(adapter)
     return InteractiveCLI(executor, adapter, console, session=session)
+
+
+@pytest.fixture
+def mock_config_manager():
+    """Fixture to provide a mocked ConfigManager for interactive CLI tests.
+    
+    This fixture patches ConfigManager at the module level so that when
+    commands call ConfigManager(None), they receive the mocked instance
+    instead of creating a new one.
+    
+    Also ensures config state is reset after each test.
+    """
+    from unittest.mock import Mock, MagicMock, patch
+    from ccbt.models import Config
+    
+    # Create mock config with proper structure
+    mock_config = MagicMock(spec=Config)
+    mock_config.model_dump.return_value = {"network": {"port": 6881}}
+    # Create disk mock with backup_dir attribute
+    mock_disk = Mock()
+    mock_disk.backup_dir = "/tmp/backups"
+    mock_config.disk = mock_disk
+    mock_config.config_file = None
+    
+    mock_cm = MagicMock()
+    mock_cm.config = mock_config
+    mock_cm.config_file = None
+    
+    with patch('ccbt.cli.interactive.ConfigManager', return_value=mock_cm):
+        yield mock_cm
+    
+    # Cleanup: reset config state after each test
+    from ccbt.config.config import reset_config
+    reset_config()
 
 
 def create_test_torrent_dict(

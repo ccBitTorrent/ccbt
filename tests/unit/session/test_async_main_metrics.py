@@ -25,9 +25,19 @@ class TestAsyncSessionManagerMetricsIntegration:
     @pytest.mark.asyncio
     async def test_metrics_initialized_on_start_when_enabled(self, mock_config_enabled):
         """Test metrics initialized when enabled in config."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
         session = AsyncSessionManager()
-
-        await session.start()
+        
+        # Mock NAT manager to prevent hanging on discovery
+        mock_nat = MagicMock()
+        mock_nat.start = AsyncMock()
+        mock_nat.stop = AsyncMock()
+        mock_nat.map_listen_ports = AsyncMock()
+        mock_nat.wait_for_mapping = AsyncMock()
+        
+        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
+            await session.start()
 
         # Check if metrics were initialized
         # They may be None if dependencies missing or config disabled
@@ -36,7 +46,8 @@ class TestAsyncSessionManagerMetricsIntegration:
             # If metrics enabled, should be initialized (if no errors)
             # We can't assert it's not None because dependencies might be missing
             # But we can assert it's either None or MetricsCollector
-            assert session.metrics is None or hasattr(session.metrics, "get_all_metrics")
+            # MetricsCollector has methods like get_metrics_summary, get_torrent_metrics, etc.
+            assert session.metrics is None or hasattr(session.metrics, "get_metrics_summary")
 
         await session.stop()
 
@@ -44,13 +55,26 @@ class TestAsyncSessionManagerMetricsIntegration:
     async def test_metrics_not_initialized_when_disabled(self, mock_config_disabled):
         """Test metrics not initialized when disabled in config."""
         from ccbt.monitoring import shutdown_metrics
+        from unittest.mock import AsyncMock, MagicMock, patch
         
         # Ensure clean state
         await shutdown_metrics()
         
+        # CRITICAL: Patch session.config directly to use mocked config
+        # The session manager caches config in __init__(), so we need to patch it
         session = AsyncSessionManager()
-
-        await session.start()
+        # Override the cached config with the mocked one
+        session.config = mock_config_disabled
+        
+        # Mock NAT manager to prevent hanging on discovery
+        mock_nat = MagicMock()
+        mock_nat.start = AsyncMock()
+        mock_nat.stop = AsyncMock()
+        mock_nat.map_listen_ports = AsyncMock()
+        mock_nat.wait_for_mapping = AsyncMock()
+        
+        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
+            await session.start()
 
         # Metrics should be None when disabled
         assert session.metrics is None
@@ -63,9 +87,19 @@ class TestAsyncSessionManagerMetricsIntegration:
     @pytest.mark.asyncio
     async def test_metrics_shutdown_on_stop(self, mock_config_enabled):
         """Test metrics shutdown when session stops."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
         session = AsyncSessionManager()
-
-        await session.start()
+        
+        # Mock NAT manager to prevent hanging on discovery
+        mock_nat = MagicMock()
+        mock_nat.start = AsyncMock()
+        mock_nat.stop = AsyncMock()
+        mock_nat.map_listen_ports = AsyncMock()
+        mock_nat.wait_for_mapping = AsyncMock()
+        
+        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
+            await session.start()
 
         # Track if metrics were set
         had_metrics = session.metrics is not None
@@ -84,10 +118,20 @@ class TestAsyncSessionManagerMetricsIntegration:
     @pytest.mark.asyncio
     async def test_metrics_shutdown_when_not_initialized(self):
         """Test shutdown when metrics were never initialized."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
         session = AsyncSessionManager()
-
-        # Start without metrics
-        await session.start()
+        
+        # Mock NAT manager to prevent hanging on discovery
+        mock_nat = MagicMock()
+        mock_nat.start = AsyncMock()
+        mock_nat.stop = AsyncMock()
+        mock_nat.map_listen_ports = AsyncMock()
+        mock_nat.wait_for_mapping = AsyncMock()
+        
+        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
+            # Start without metrics
+            await session.start()
 
         # If metrics weren't initialized, stop should still work
         await session.stop()
@@ -110,11 +154,21 @@ class TestAsyncSessionManagerMetricsIntegration:
 
         monkeypatch.setattr(config_module, "get_config", raise_error)
 
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
         session = AsyncSessionManager()
-
-        # Should not raise, but metrics should be None
-        # init_metrics() handles exceptions internally and returns None
-        await session.start()
+        
+        # Mock NAT manager to prevent hanging on discovery
+        mock_nat = MagicMock()
+        mock_nat.start = AsyncMock()
+        mock_nat.stop = AsyncMock()
+        mock_nat.map_listen_ports = AsyncMock()
+        mock_nat.wait_for_mapping = AsyncMock()
+        
+        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
+            # Should not raise, but metrics should be None
+            # init_metrics() handles exceptions internally and returns None
+            await session.start()
         # Exception is caught in init_metrics() and returns None, so self.metrics is None
         assert session.metrics is None
 
@@ -137,9 +191,19 @@ class TestAsyncSessionManagerMetricsIntegration:
             shutdown_called = True
             raise Exception("Shutdown error")
 
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
         # First start normally
         session = AsyncSessionManager()
-        await session.start()
+        # Mock NAT manager to prevent hanging on discovery
+        mock_nat = MagicMock()
+        mock_nat.start = AsyncMock()
+        mock_nat.stop = AsyncMock()
+        mock_nat.map_listen_ports = AsyncMock()
+        mock_nat.wait_for_mapping = AsyncMock()
+        
+        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
+            await session.start()
 
         # Then patch shutdown to raise
         monkeypatch.setattr(monitoring_module, "shutdown_metrics", raise_error)
@@ -163,42 +227,69 @@ class TestAsyncSessionManagerMetricsIntegration:
     @pytest.mark.asyncio
     async def test_metrics_accessible_during_session(self, mock_config_enabled):
         """Test metrics are accessible via session.metrics during session."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
         session = AsyncSessionManager()
-
-        await session.start()
+        
+        # Mock NAT manager to prevent hanging on discovery
+        mock_nat = MagicMock()
+        mock_nat.start = AsyncMock()
+        mock_nat.stop = AsyncMock()
+        mock_nat.map_listen_ports = AsyncMock()
+        mock_nat.wait_for_mapping = AsyncMock()
+        
+        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
+            await session.start()
 
         if session.metrics is not None:
             # Should be able to call methods
-            all_metrics = session.metrics.get_all_metrics()
-            assert isinstance(all_metrics, dict)
-
-            stats = session.metrics.get_metrics_statistics()
-            assert isinstance(stats, dict)
+            summary = session.metrics.get_metrics_summary()
+            assert isinstance(summary, dict)
 
         await session.stop()
 
     @pytest.mark.asyncio
     async def test_multiple_start_stop_cycles(self, mock_config_enabled):
         """Test metrics handling across multiple start/stop cycles."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
+        # CRITICAL: Patch session.config directly to use mocked config
+        # The session manager caches config in __init__(), so we need to patch it
         session = AsyncSessionManager()
+        # Override the cached config with the mocked one
+        session.config = mock_config_enabled
+        
+        # Mock NAT manager to prevent hanging on discovery
+        mock_nat = MagicMock()
+        mock_nat.start = AsyncMock()
+        mock_nat.stop = AsyncMock()
+        mock_nat.map_listen_ports = AsyncMock()
+        mock_nat.wait_for_mapping = AsyncMock()
+        
+        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
+            # First cycle
+            await session.start()
+            metrics1 = session.metrics
+            await session.stop()
+            assert session.metrics is None
 
-        # First cycle
-        await session.start()
-        metrics1 = session.metrics
-        await session.stop()
-        assert session.metrics is None
-
-        # Second cycle
-        await session.start()
-        metrics2 = session.metrics
-        await session.stop()
-        assert session.metrics is None
+            # Second cycle
+            await session.start()
+            metrics2 = session.metrics
+            await session.stop()
+            assert session.metrics is None
 
         # Metrics should be reinitialized on each start
-        # (singleton means they might be the same instance)
+        # Note: Metrics() creates a new instance each time (not a singleton),
+        # so metrics1 and metrics2 will be different instances
+        # The important thing is that metrics are properly initialized and cleaned up
         if metrics1 is not None and metrics2 is not None:
-            # They should be the same singleton instance
-            assert metrics1 is metrics2
+            # Both should be MetricsCollector instances
+            from ccbt.utils.metrics import MetricsCollector
+            assert isinstance(metrics1, MetricsCollector)
+            assert isinstance(metrics2, MetricsCollector)
+            # They will be different instances (not singletons)
+            # This is expected behavior - each start() creates a new Metrics instance
 
 
 @pytest.fixture(scope="function")

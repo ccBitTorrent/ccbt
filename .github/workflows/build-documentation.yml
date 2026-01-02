@@ -1,6 +1,21 @@
 name: Build Documentation
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'dev/mkdocs.yml'
+      - '.readthedocs.yaml'
+      - 'dev/requirements-rtd.txt'
+      - 'ccbt/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'dev/mkdocs.yml'
+      - '.readthedocs.yaml'
+      - 'dev/requirements-rtd.txt'
   workflow_dispatch:
     # Can be triggered manually from any branch for testing
     # Documentation is automatically published to Read the Docs when changes are pushed
@@ -94,16 +109,13 @@ jobs:
       
       - name: Generate coverage report
         run: |
-          uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html:site/reports/htmlcov || echo "⚠️  Coverage report generation failed, continuing..."
+          uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html:site/reports/htmlcov
         continue-on-error: true
       
-      - name: Generate Bandit reports
+      - name: Generate Bandit report
         run: |
           uv run python tests/scripts/ensure_bandit_dir.py
-          # Generate main bandit report
-          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks || echo "⚠️  Bandit report generation failed"
-          # Generate all severity levels report
-          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report-all.json --severity-level all -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks || echo "⚠️  Bandit all report generation failed"
+          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks
         continue-on-error: true
       
       - name: Ensure report files exist in documentation location
@@ -162,6 +174,34 @@ jobs:
           path: site/
           retention-days: 7
       
+      - name: Trigger Read the Docs build
+        if: env.RTD_API_TOKEN != ''
+        env:
+          RTD_API_TOKEN: ${{ secrets.RTD_API_TOKEN }}
+          RTD_PROJECT_SLUG: ${{ secrets.RTD_PROJECT_SLUG || 'ccbittorrent' }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          echo "Triggering Read the Docs build for branch: $BRANCH_NAME"
+          curl -X POST \
+            -H "Authorization: Token $RTD_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://readthedocs.org/api/v3/projects/$RTD_PROJECT_SLUG/versions/$BRANCH_NAME/builds/" \
+            -d "{}" || echo "⚠️  Failed to trigger Read the Docs build. This may be expected if the branch is not configured in Read the Docs."
+        continue-on-error: true
+      
+      - name: Read the Docs build info
+        if: env.RTD_API_TOKEN == ''
+        run: |
+          echo "ℹ️  Read the Docs API token not configured."
+          echo "   To enable automatic Read the Docs builds from any branch:"
+          echo "   1. Get your Read the Docs API token from https://readthedocs.org/accounts/token/"
+          echo "   2. Add it as a GitHub secret named RTD_API_TOKEN"
+          echo "   3. Optionally set RTD_PROJECT_SLUG secret (defaults to 'ccbittorrent')"
+          echo ""
+          echo "   Note: Read the Docs will only build branches configured in your project settings."
+          echo "   By default, only 'main' and 'dev' branches are built automatically."
+      
       # Note: Documentation is automatically published to Read the Docs
-      # when changes are pushed to the repository. No GitHub Pages deployment needed.
+      # when changes are pushed to the repository for configured branches (main/dev by default).
+      # To build other branches, configure them in Read the Docs project settings or use the API trigger above.
 
