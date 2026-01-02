@@ -6,6 +6,7 @@ Tests error paths and edge cases not covered in main test file.
 from __future__ import annotations
 
 import pytest
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Try to import aiortc, skip tests if not available
@@ -66,7 +67,7 @@ class TestAdditionalCoverage:
         peer_id = "test_peer_1"
         callback_called = []
 
-        async def ice_callback(peer_id: str, candidate: dict | None):
+        async def ice_callback(peer_id: str, candidate: Optional[dict]):
             callback_called.append((peer_id, candidate))
 
         with patch.object(webrtc_manager_module, "RTCPeerConnection") as mock_pc_class:

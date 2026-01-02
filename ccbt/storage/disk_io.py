@@ -18,7 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 # Platform-specific imports
 if (
@@ -172,7 +172,7 @@ class DiskIOManager:
             max_workers=max_workers,
             thread_name_prefix="disk-io",
         )
-        self._worker_adjustment_task: asyncio.Task[None] | None = None
+        self._worker_adjustment_task: Optional[asyncio.Task[None]] = None
         # Lock to prevent concurrent executor recreation
         self._executor_recreation_lock = threading.Lock()
         # Tracking for worker adjustments
@@ -189,7 +189,7 @@ class DiskIOManager:
             self._write_queue_heap: list[WriteRequest] = []
             self._write_queue_lock = asyncio.Lock()
             self._write_queue_condition = asyncio.Condition(self._write_queue_lock)
-            self.write_queue: asyncio.Queue[WriteRequest] | None = (
+            self.write_queue: Optional[asyncio.Queue[WriteRequest]] = (
                 None  # Will be handled by priority queue methods
             )
         else:  # pragma: no cover - Non-priority queue mode not tested, priority queue is default
@@ -246,7 +246,7 @@ class DiskIOManager:
         )
 
         # io_uring wrapper (lazy initialization)
-        self._io_uring_wrapper: Any | None = None
+        self._io_uring_wrapper: Optional[Any] = None
 
         # Read pattern tracking for adaptive read-ahead
         self._read_patterns: dict[Path, ReadPattern] = {}
@@ -257,18 +257,18 @@ class DiskIOManager:
         self._read_buffer_pool_lock = threading.Lock()
 
         # Background tasks
-        self._write_batcher_task: asyncio.Task[None] | None = None
-        self._cache_cleaner_task: asyncio.Task[None] | None = None
-        self._cache_adaptive_task: asyncio.Task[None] | None = None
-        self._worker_adjustment_task: asyncio.Task[None] | None = None
+        self._write_batcher_task: Optional[asyncio.Task[None]] = None
+        self._cache_cleaner_task: Optional[asyncio.Task[None]] = None
+        self._cache_adaptive_task: Optional[asyncio.Task[None]] = None
+        self._worker_adjustment_task: Optional[asyncio.Task[None]] = None
         # Flag to track if manager is running (for cancellation checks)
         self._running = False
 
         # Xet deduplication (lazy initialization)
-        self._xet_deduplication: Any | None = None
-        self._xet_file_deduplication: Any | None = None
-        self._xet_data_aggregator: Any | None = None
-        self._xet_defrag_prevention: Any | None = None
+        self._xet_deduplication: Optional[Any] = None
+        self._xet_file_deduplication: Optional[Any] = None
+        self._xet_data_aggregator: Optional[Any] = None
+        self._xet_defrag_prevention: Optional[Any] = None
 
         # Statistics
         self.stats = {
@@ -305,7 +305,7 @@ class DiskIOManager:
             min_size,
             int(getattr(self.config.disk, "write_buffer_kib", 256)) * 1024,
         )
-        buf: bytearray | None = getattr(self._thread_local, "staging_buffer", None)
+        buf: Optional[bytearray] = getattr(self._thread_local, "staging_buffer", None)
         if buf is None or len(buf) < default_size:
             buf = bytearray(default_size)
             self._thread_local.staging_buffer = buf
@@ -1195,7 +1195,7 @@ class DiskIOManager:
 
     async def read_block_mmap(
         self,
-        file_path: str | Path,
+        file_path: Union[str, Path],
         offset: int,
         length: int,
     ) -> bytes:
@@ -1293,7 +1293,7 @@ class DiskIOManager:
             msg = f"Failed to read from {file_path}: {e}"
             raise DiskIOError(msg) from e
 
-    async def _get_write_request(self) -> WriteRequest | None:
+    async def _get_write_request(self) -> Optional[WriteRequest]:
         """Get next write request from queue (priority or regular).
 
         Returns:
@@ -1752,8 +1752,8 @@ class DiskIOManager:
                     )
                     buffer = self._get_thread_staging_buffer(staging_threshold)
                     buf_pos = 0
-                    run_start: int | None = None
-                    prev_end: int | None = None
+                    run_start: Optional[int] = None
+                    prev_end: Optional[int] = None
 
                     def flush_run() -> None:
                         nonlocal run_start, buf_pos
@@ -1927,7 +1927,7 @@ class DiskIOManager:
                 # This allows cancellation to work and prevents CPU spinning
                 await asyncio.sleep(1.0)
 
-    def _get_mmap_entry(self, file_path: Path) -> MmapCache | None:
+    def _get_mmap_entry(self, file_path: Path) -> Optional[MmapCache]:
         """Get or create a memory-mapped file entry."""
         if file_path in self.mmap_cache:  # Cache hit - return existing entry
             cache_entry = self.mmap_cache[file_path]
@@ -1974,7 +1974,7 @@ class DiskIOManager:
             return cache_entry
 
     async def warmup_cache(
-        self, file_paths: list[Path], priority_order: list[int] | None = None
+        self, file_paths: list[Path], priority_order: Optional[list[int]] = None
     ) -> None:
         """Warmup cache by pre-loading frequently accessed files.
 
@@ -2383,7 +2383,7 @@ class DiskIOManager:
             error_msg = f"Failed to write Xet chunk: {e}"
             raise DiskIOError(error_msg) from e
 
-    async def read_xet_chunk(self, chunk_hash: bytes) -> bytes | None:
+    async def read_xet_chunk(self, chunk_hash: bytes) -> Optional[bytes]:
         """Read chunk by hash from Xet storage.
 
         Args:
@@ -2426,7 +2426,7 @@ class DiskIOManager:
             )
             return None
 
-    async def read_file_by_chunks(self, file_path: Path) -> bytes | None:
+    async def read_file_by_chunks(self, file_path: Path) -> Optional[bytes]:
         """Read file by reconstructing it from chunks.
 
         If the file has XET chunk metadata, reconstructs the file
@@ -2587,7 +2587,7 @@ class DiskIOManager:
         self,
         chunk_hash: bytes,
         chunk_data: bytes,
-        dedup: Any | None = None,
+        dedup: Optional[Any] = None,
     ) -> bool:
         """Store a new chunk with metadata.
 

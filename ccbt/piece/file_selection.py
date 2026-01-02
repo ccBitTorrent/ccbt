@@ -10,7 +10,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from ccbt.models import TorrentInfo
@@ -439,7 +439,7 @@ class FileSelectionManager:
             if file_index in self.file_states:
                 self.file_states[file_index].bytes_downloaded = bytes_downloaded
 
-    def get_file_state(self, file_index: int) -> FileSelectionState | None:
+    def get_file_state(self, file_index: int) -> Optional[FileSelectionState]:
         """Get selection state for a file.
 
         Args:

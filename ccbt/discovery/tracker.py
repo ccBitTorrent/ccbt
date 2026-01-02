@@ -16,7 +16,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Optional, Union
 
 import aiohttp
 
@@ -103,11 +103,11 @@ class TrackerResponse:
     peers: (
         list[PeerInfo] | list[dict[str, Any]]
     )  # Support both formats for backward compatibility
-    complete: int | None = None
-    incomplete: int | None = None
-    download_url: str | None = None
-    tracker_id: str | None = None
-    warning_message: str | None = None
+    complete: Optional[int] = None
+    incomplete: Optional[int] = None
+    download_url: Optional[str] = None
+    tracker_id: Optional[str] = None
+    warning_message: Optional[str] = None
 
 
 @dataclass
@@ -142,16 +142,16 @@ class TrackerSession:
     url: str
     last_announce: float = 0.0
     interval: int = 1800
-    min_interval: int | None = None
-    tracker_id: str | None = None
+    min_interval: Optional[int] = None
+    tracker_id: Optional[str] = None
     failure_count: int = 0
     last_failure: float = 0.0
     backoff_delay: float = 1.0
     performance: TrackerPerformance = None  # type: ignore[assignment]
     # Statistics from last tracker response (announce or scrape)
-    last_complete: int | None = None  # Number of seeders (complete peers)
-    last_incomplete: int | None = None  # Number of leechers (incomplete peers)
-    last_downloaded: int | None = None  # Total number of completed downloads
+    last_complete: Optional[int] = None  # Number of seeders (complete peers)
+    last_incomplete: Optional[int] = None  # Number of leechers (incomplete peers)
+    last_downloaded: Optional[int] = None  # Total number of completed downloads
     last_scrape_time: float = 0.0  # Timestamp of last scrape/announce with statistics
 
     def __post_init__(self):
@@ -163,7 +163,7 @@ class TrackerSession:
 class AsyncTrackerClient:
     """High-performance async client for communicating with BitTorrent trackers."""
 
-    def __init__(self, peer_id_prefix: bytes | None = None):
+    def __init__(self, peer_id_prefix: Optional[bytes] = None):
         """Initialize the async tracker client.
 
         Args:
@@ -184,7 +184,7 @@ class AsyncTrackerClient:
         self.user_agent = get_user_agent()
 
         # HTTP session
-        self.session: aiohttp.ClientSession | None = None
+        self.session: Optional[aiohttp.ClientSession] = None
 
         # Tracker sessions
         self.sessions: dict[str, TrackerSession] = {}
@@ -193,7 +193,7 @@ class AsyncTrackerClient:
         self.health_manager = TrackerHealthManager()
 
         # Background tasks
-        self._announce_task: asyncio.Task | None = None
+        self._announce_task: Optional[asyncio.Task] = None
 
         # Session metrics
         self._session_metrics: dict[str, dict[str, Any]] = {}
@@ -203,9 +203,9 @@ class AsyncTrackerClient:
         # CRITICAL FIX: Immediate peer connection callback
         # This allows sessions to connect peers immediately when tracker responses arrive
         # instead of waiting for the announce loop to process them
-        self.on_peers_received: (
-            Callable[[list[PeerInfo] | list[dict[str, Any]], str], None] | None
-        ) = None
+        self.on_peers_received: Optional[
+            Callable[[Union[list[PeerInfo], list[dict[str, Any]]], str], None]
+        ] = None
 
     async def _call_immediate_connection(
         self, peers: list[dict[str, Any]], tracker_url: str
@@ -475,7 +475,9 @@ class AsyncTrackerClient:
 
         self.logger.info("Async tracker client stopped")
 
-    def get_healthy_trackers(self, exclude_urls: set[str] | None = None) -> list[str]:
+    def get_healthy_trackers(
+        self, exclude_urls: Optional[set[str]] = None
+    ) -> list[str]:
         """Get list of healthy trackers for use in announces.
 
         Args:
@@ -487,7 +489,9 @@ class AsyncTrackerClient:
         """
         return self.health_manager.get_healthy_trackers(exclude_urls)
 
-    def get_fallback_trackers(self, exclude_urls: set[str] | None = None) -> list[str]:
+    def get_fallback_trackers(
+        self, exclude_urls: Optional[set[str]] = None
+    ) -> list[str]:
         """Get fallback trackers when no healthy trackers are available.
 
         Args:
@@ -784,9 +788,9 @@ class AsyncTrackerClient:
         port: int = 6881,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: int | None = None,
+        left: Optional[int] = None,
         event: str = "started",
-    ) -> TrackerResponse | None:
+    ) -> Optional[TrackerResponse]:
         """Announce to the tracker and get peer list asynchronously.
 
         Args:
@@ -977,7 +981,7 @@ class AsyncTrackerClient:
 
             # Track performance: start time
             start_time = time.time()
-            response_time: float | None = None
+            response_time: Optional[float] = None
 
             # Emit tracker announce started event
             try:
@@ -1506,7 +1510,7 @@ class AsyncTrackerClient:
         port: int = 6881,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: int | None = None,
+        left: Optional[int] = None,
         event: str = "started",
     ) -> list[TrackerResponse]:
         """Announce to multiple trackers concurrently.
@@ -1708,9 +1712,9 @@ class AsyncTrackerClient:
         port: int,
         uploaded: int,
         downloaded: int,
-        left: int | None,
+        left: Optional[int],
         event: str,
-    ) -> TrackerResponse | None:
+    ) -> Optional[TrackerResponse]:
         """Announce to a single tracker.
 
         Returns:
@@ -2595,7 +2599,7 @@ class AsyncTrackerClient:
             self.logger.exception("HTTP scrape failed")
             return {}
 
-    def _build_scrape_url(self, info_hash: bytes, announce_url: str) -> str | None:
+    def _build_scrape_url(self, info_hash: bytes, announce_url: str) -> Optional[str]:
         """Build scrape URL from tracker URL.
 
         Args:
@@ -2842,7 +2846,7 @@ class TrackerHealthManager:
         }
 
         # Background cleanup task
-        self._cleanup_task: asyncio.Task | None = None
+        self._cleanup_task: Optional[asyncio.Task] = None
         self._running = False
 
     async def start(self):
@@ -2927,7 +2931,9 @@ class TrackerHealthManager:
         else:
             metrics.record_failure()
 
-    def get_healthy_trackers(self, exclude_urls: set[str] | None = None) -> list[str]:
+    def get_healthy_trackers(
+        self, exclude_urls: Optional[set[str]] = None
+    ) -> list[str]:
         """Get list of healthy trackers, optionally excluding some URLs."""
         if exclude_urls is None:
             exclude_urls = set()
@@ -2942,7 +2948,9 @@ class TrackerHealthManager:
 
         return [url for url, _ in healthy]
 
-    def get_fallback_trackers(self, exclude_urls: set[str] | None = None) -> list[str]:
+    def get_fallback_trackers(
+        self, exclude_urls: Optional[set[str]] = None
+    ) -> list[str]:
         """Get fallback trackers that aren't already in use."""
         if exclude_urls is None:
             exclude_urls = set()
@@ -2977,7 +2985,7 @@ class TrackerHealthManager:
 class TrackerClient:
     """Synchronous tracker client for backward compatibility."""
 
-    def __init__(self, peer_id_prefix: bytes | None = None):
+    def __init__(self, peer_id_prefix: Optional[bytes] = None):
         """Initialize the tracker client.
 
         Args:
@@ -3248,7 +3256,7 @@ class TrackerClient:
         port: int = 6881,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: int | None = None,
+        left: Optional[int] = None,
         event: str = "started",
     ) -> dict[str, Any]:
         """Announce to the tracker and get peer list.

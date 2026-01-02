@@ -94,6 +94,12 @@ select = [
     "RUF",  # ruff-specific rules
 ]
 
+# Ignore incompatible pydocstyle rules
+ignore = [
+    "D203",  # incorrect-blank-line-before-class - incompatible with D211
+    "D213",  # multi-line-summary-second-line - incompatible with D212
+]
+
 # Allow fix for all enabled rules
 fixable = ["ALL"]
 unfixable = []
@@ -124,6 +130,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "TRY301",   # abstract-raise - raise statements are clear as-is
     "PERF203",  # try-except-in-loop - necessary for async error handling
     "TRY300",   # try-else - async patterns don't always benefit from else blocks
+    "UP045",    # Use X | None - intentionally using Optional[X] for Python 3.8/3.9 compatibility
+    "UP007",    # Use X | Y - intentionally using Union[X, Y] for Python 3.8/3.9 compatibility
+    "UP006",    # Use tuple instead of Tuple - intentionally using Tuple for Python 3.8 compatibility
 ]
 "ccbt/session/session.py" = [
     "SLF001",  # Private member access used for integration points
@@ -176,6 +185,15 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "G201",     # logging.exception - logging.error with exc_info is acceptable
     "TRY400",   # logging.exception - logging.error is acceptable for UI code
 ]
+
+# Python 3.8/3.9 Compatibility Rules
+# These rules enforce compatibility patterns from compatibility_tests/COMPREHENSIVE_RESOLUTION_PLAN.md
+[lint.pydocstyle]
+convention = "google"
+
+# Note: Custom compatibility checks are implemented in dev/compatibility_linter.py
+# and integrated into pre-commit hooks. Ruff's pygrep-hooks (PGH) rules are used
+# where possible, but complex pattern matching requires the custom linter.
 
 
 

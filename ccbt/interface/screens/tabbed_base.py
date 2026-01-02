@@ -12,7 +12,7 @@ This file is kept for backward compatibility but should not be used in new code.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
@@ -79,7 +79,7 @@ class PerTorrentTabScreen(MonitoringScreen):  # type: ignore[misc]
     def __init__(
         self,
         session: AsyncSessionManager,
-        selected_info_hash: str | None = None,
+        selected_info_hash: Optional[str] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:

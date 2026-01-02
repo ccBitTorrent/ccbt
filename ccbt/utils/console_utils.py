@@ -9,7 +9,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import sys
-from typing import Any, Iterator
+from typing import Any, Iterator, Optional
 
 from rich.console import Console
 from rich.status import Status
@@ -57,7 +57,7 @@ def create_console() -> Console:
 @contextlib.contextmanager
 def spinner(
     message: str,
-    console: Console | None = None,
+    console: Optional[Console] = None,
     spinner_style: str = "dots",
 ) -> Iterator[Status]:
     """Context manager for showing a spinner during async operations.
@@ -92,7 +92,7 @@ def spinner(
 
 def print_success(
     message: str,
-    console: Console | None = None,
+    console: Optional[Console] = None,
     **kwargs: Any,
 ) -> None:
     """Print a success message with Rich formatting and i18n.
@@ -112,7 +112,7 @@ def print_success(
 
 def print_error(
     message: str,
-    console: Console | None = None,
+    console: Optional[Console] = None,
     **kwargs: Any,
 ) -> None:
     """Print an error message with Rich formatting and i18n.
@@ -132,7 +132,7 @@ def print_error(
 
 def print_warning(
     message: str,
-    console: Console | None = None,
+    console: Optional[Console] = None,
     **kwargs: Any,
 ) -> None:
     """Print a warning message with Rich formatting and i18n.
@@ -152,7 +152,7 @@ def print_warning(
 
 def print_info(
     message: str,
-    console: Console | None = None,
+    console: Optional[Console] = None,
     **kwargs: Any,
 ) -> None:
     """Print an info message with Rich formatting and i18n.
@@ -171,13 +171,13 @@ def print_info(
 
 
 def print_table(
-    title: str | None = None,
-    console: Console | None = None,
+    title: Optional[str] = None,
+    console: Optional[Console] = None,
     show_header: bool = True,
     show_footer: bool = False,
     border_style: str = "blue",
     header_style: str = "bold cyan",
-    row_styles: list[str] | None = None,
+    row_styles: Optional[list[str]] = None,
     **kwargs: Any,
 ) -> Any:
     """Create and print a Rich table with i18n support and enhanced styling.
@@ -222,8 +222,8 @@ def print_table(
 
 def print_panel(
     content: str,
-    title: str | None = None,
-    console: Console | None = None,
+    title: Optional[str] = None,
+    console: Optional[Console] = None,
     border_style: str = "blue",
     title_align: str = "left",
     expand: bool = False,
@@ -263,7 +263,7 @@ def print_panel(
 
 def print_markdown(
     content: str,
-    console: Console | None = None,
+    console: Optional[Console] = None,
     code_theme: str = "monokai",
     **kwargs: Any,
 ) -> None:
@@ -293,8 +293,8 @@ def print_markdown(
 
 @contextlib.contextmanager
 def live_display(
-    renderable: Any | None = None,
-    console: Console | None = None,
+    renderable: Optional[Any] = None,
+    console: Optional[Console] = None,
     refresh_per_second: float = 4.0,
     vertical_overflow: str = "visible",
 ) -> Iterator[Any]:
@@ -335,8 +335,8 @@ def live_display(
 
 
 def create_progress(
-    console: Console | None = None,
-    _description: str | None = None,
+    console: Optional[Console] = None,
+    _description: Optional[str] = None,
 ) -> Progress:
     """Create a Rich Progress bar with i18n support.
 
@@ -370,8 +370,8 @@ def create_progress(
 
 def log_user_output(
     message: str,
-    verbosity_manager: Any | None = None,
-    logger: logging.Logger | None = None,
+    verbosity_manager: Optional[Any] = None,
+    logger: Optional[logging.Logger] = None,
     level: int = logging.INFO,
     *args: Any,
     **kwargs: Any,
@@ -413,8 +413,8 @@ def log_user_output(
 def log_operation(
     operation: str,
     status: str = "started",
-    verbosity_manager: Any | None = None,
-    logger: logging.Logger | None = None,
+    verbosity_manager: Optional[Any] = None,
+    logger: Optional[logging.Logger] = None,
     **kwargs: Any,
 ) -> None:
     """Log an operation status message.
@@ -460,9 +460,9 @@ def log_operation(
 def log_result(
     operation: str,
     success: bool,
-    details: str | None = None,
-    verbosity_manager: Any | None = None,
-    logger: logging.Logger | None = None,
+    details: Optional[str] = None,
+    verbosity_manager: Optional[Any] = None,
+    logger: Optional[logging.Logger] = None,
     **kwargs: Any,
 ) -> None:
     """Log a command result.

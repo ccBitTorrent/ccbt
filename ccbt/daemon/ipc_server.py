@@ -13,7 +13,7 @@ import logging
 import os
 import ssl
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import aiohttp
 from aiohttp import web
@@ -163,8 +163,8 @@ class IPCServer:
         self.websocket_heartbeat_interval = websocket_heartbeat_interval
 
         self.app = web.Application()  # type: ignore[attr-defined]
-        self.runner: web.AppRunner | None = None  # type: ignore[attr-defined]
-        self.site: web.TCPSite | None = None  # type: ignore[attr-defined]
+        self.runner: Optional[web.AppRunner] = None  # type: ignore[attr-defined]
+        self.site: Optional[web.TCPSite] = None  # type: ignore[attr-defined]
         self._start_time = time.time()
 
         # WebSocket connections
@@ -2131,7 +2131,7 @@ class IPCServer:
 
     async def _handle_add_torrent(self, request: Request) -> Response:
         """Handle POST /api/v1/torrents/add."""
-        info_hash_hex: str | None = None
+        info_hash_hex: Optional[str] = None
         path_or_magnet: str = "unknown"
         try:
             # Parse JSON request body with error handling

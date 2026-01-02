@@ -1,7 +1,5 @@
 """Enhanced DHT (BEP 5) client with full Kademlia implementation.
 
-from __future__ import annotations
-
 Provides high-performance peer discovery using Kademlia routing table,
 iterative lookups, token verification, and continuous refresh.
 """
@@ -15,7 +13,7 @@ import os
 import socket
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Optional, Union
 
 from ccbt.config.config import get_config
 from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
@@ -44,8 +42,8 @@ class DHTNode:
     failed_queries: int = 0
     successful_queries: int = 0
     # IPv6 support
-    ipv6: str | None = None
-    port6: int | None = None
+    ipv6: Optional[str] = None
+    port6: Optional[int] = None
     has_ipv6: bool = False
     additional_addresses: list[tuple[str, int]] = field(default_factory=list)
 
@@ -283,7 +281,9 @@ class KademliaRoutingTable:
                 bucket.remove(node)
             del self.nodes[node_id]
 
-    def mark_node_bad(self, node_id: bytes, response_time: float | None = None) -> None:
+    def mark_node_bad(
+        self, node_id: bytes, response_time: Optional[float] = None
+    ) -> None:
         """Mark a node as bad and update quality metrics.
 
         Args:
@@ -337,7 +337,7 @@ class KademliaRoutingTable:
                 node.quality_score = node.success_rate * time_factor
 
     def mark_node_good(
-        self, node_id: bytes, response_time: float | None = None
+        self, node_id: bytes, response_time: Optional[float] = None
     ) -> None:
         """Mark a node as good and update quality metrics.
 
@@ -459,8 +459,8 @@ class AsyncDHTClient:
         # Network
         self.bind_ip = bind_ip
         self.bind_port = bind_port
-        self.socket: asyncio.DatagramProtocol | None = None
-        self.transport: asyncio.DatagramTransport | None = None
+        self.socket: Optional[asyncio.DatagramProtocol] = None
+        self.transport: Optional[asyncio.DatagramTransport] = None
 
         # Routing table
         self.routing_table = KademliaRoutingTable(self.node_id)
@@ -513,18 +513,18 @@ class AsyncDHTClient:
         self.query_timeout = self.config.network.dht_timeout
 
         # Peer manager reference for health tracking (optional)
-        self.peer_manager: Any | None = None
+        self.peer_manager: Optional[Any] = None
 
         # Adaptive timeout calculator (lazy initialization)
-        self._timeout_calculator: Any | None = None
+        self._timeout_calculator: Optional[Any] = None
 
         # Tokens for announce_peer
         self.tokens: dict[bytes, DHTToken] = {}
         self.token_secret = os.urandom(20)
 
         # Background tasks
-        self._refresh_task: asyncio.Task | None = None
-        self._cleanup_task: asyncio.Task | None = None
+        self._refresh_task: Optional[asyncio.Task] = None
+        self._cleanup_task: Optional[asyncio.Task] = None
 
         # Callbacks with info_hash filtering
         # Maps info_hash -> list of callbacks, or None for global callbacks
@@ -534,7 +534,7 @@ class AsyncDHTClient:
         ] = {}
 
         # BEP 27: Callback to check if a torrent is private
-        self.is_private_torrent: Callable[[bytes], bool] | None = None
+        self.is_private_torrent: Optional[Callable[[bytes], bool]] = None
 
     def _generate_node_id(self) -> bytes:
         """Generate a random node ID."""
@@ -987,7 +987,7 @@ class AsyncDHTClient:
         self,
         node: DHTNode,
         info_hash: bytes,
-    ) -> dict[bytes, Any] | None:
+    ) -> Optional[dict[bytes, Any]]:
         """Query a single node for peers.
 
         Args:
@@ -1050,7 +1050,7 @@ class AsyncDHTClient:
         max_peers: int = 50,
         alpha: int = 3,  # Parallel queries (BEP 5)
         k: int = 8,  # Bucket size
-        max_depth: int | None = None,  # Override max depth (default: 10)
+        max_depth: Optional[int] = None,  # Override max depth (default: 10)
     ) -> list[tuple[str, int]]:
         """Get peers for an info hash using proper Kademlia iterative lookup (BEP 5).
 
@@ -1537,8 +1537,8 @@ class AsyncDHTClient:
     async def get_data(
         self,
         key: bytes,
-        _public_key: bytes | None = None,
-    ) -> bytes | None:
+        _public_key: Optional[bytes] = None,
+    ) -> Optional[bytes]:
         """Get data from DHT using BEP 44 get_mutable query.
 
         Args:
@@ -1559,7 +1559,7 @@ class AsyncDHTClient:
     async def put_data(
         self,
         key: bytes,
-        value: bytes | dict[bytes, bytes],
+        value: Union[bytes, dict[bytes, bytes]],
     ) -> int:
         """Put data to DHT using BEP 44 put_mutable query.
 
@@ -1628,7 +1628,7 @@ class AsyncDHTClient:
         self,
         query: str,
         max_results: int = 50,
-        public_key: bytes | None = None,
+        public_key: Optional[bytes] = None,
     ) -> list:
         """Query the infohash index (BEP 51).
 
@@ -1684,7 +1684,7 @@ class AsyncDHTClient:
         addr: tuple[str, int],
         query: str,
         args: dict[bytes, Any],
-    ) -> dict[bytes, Any] | None:
+    ) -> Optional[dict[bytes, Any]]:
         """Send a DHT query and wait for response, tracking response time for quality metrics."""
         # Calculate adaptive timeout based on peer health
         query_timeout = self._calculate_adaptive_query_timeout()
@@ -1709,7 +1709,7 @@ class AsyncDHTClient:
 
         # Track response time for quality metrics
         start_time = time.time()
-        response_time: float | None = None
+        response_time: Optional[float] = None
 
         # Wait for response
         try:
@@ -1985,7 +1985,7 @@ class AsyncDHTClient:
     def add_peer_callback(
         self,
         callback: Callable[[list[tuple[str, int]]], None],
-        info_hash: bytes | None = None,
+        info_hash: Optional[bytes] = None,
     ) -> None:
         """Add callback for new peers.
 
@@ -2015,7 +2015,7 @@ class AsyncDHTClient:
     def remove_peer_callback(
         self,
         callback: Callable[[list[tuple[str, int]]], None],
-        info_hash: bytes | None = None,
+        info_hash: Optional[bytes] = None,
     ) -> None:
         """Remove peer callback.
 
@@ -2063,7 +2063,7 @@ class DHTProtocol(asyncio.DatagramProtocol):
 
 
 # Global DHT client instance
-_dht_client: AsyncDHTClient | None = None
+_dht_client: Optional[AsyncDHTClient] = None
 
 
 def get_dht_client() -> AsyncDHTClient:

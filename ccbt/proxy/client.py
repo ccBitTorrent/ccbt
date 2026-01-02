@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 import aiohttp
 from aiohttp import ClientSession, ClientTimeout
@@ -91,8 +91,8 @@ class ProxyClient:
         self,
         proxy_host: str,
         proxy_port: int,
-        proxy_username: str | None = None,
-        proxy_password: str | None = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
     ) -> str:
         """Build proxy URL for aiohttp.
 
@@ -115,9 +115,9 @@ class ProxyClient:
         proxy_host: str,
         proxy_port: int,
         proxy_type: str = "http",
-        proxy_username: str | None = None,
-        proxy_password: str | None = None,
-        timeout: ClientTimeout | None = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
+        timeout: Optional[ClientTimeout] = None,
     ) -> aiohttp.BaseConnector:
         """Create aiohttp ProxyConnector for proxy connections.
 
@@ -187,10 +187,10 @@ class ProxyClient:
         proxy_host: str,
         proxy_port: int,
         proxy_type: str = "http",
-        proxy_username: str | None = None,
-        proxy_password: str | None = None,
-        timeout: ClientTimeout | None = None,
-        headers: dict[str, str] | None = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
+        timeout: Optional[ClientTimeout] = None,
+        headers: Optional[dict[str, str]] = None,
     ) -> ClientSession:
         """Create aiohttp ClientSession configured for proxy.
 
@@ -235,8 +235,8 @@ class ProxyClient:
         proxy_host: str,
         proxy_port: int,
         proxy_type: str = "http",
-        proxy_username: str | None = None,
-        proxy_password: str | None = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
     ) -> ClientSession:
         """Get or create connection pool for proxy.
 
@@ -277,8 +277,8 @@ class ProxyClient:
         proxy_host: str,
         proxy_port: int,
         proxy_type: str = "http",
-        proxy_username: str | None = None,
-        proxy_password: str | None = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
         test_url: str = "http://httpbin.org/get",
     ) -> bool:
         """Test proxy connection.
@@ -391,7 +391,7 @@ class ProxyClient:
         target_host: str,
         target_port: int,
         proxy_chain: list[dict[str, Any]],
-        timeout: float | None = None,
+        timeout: Optional[float] = None,
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         """Connect to target through a chain of proxies using HTTP CONNECT.
 
@@ -433,8 +433,8 @@ class ProxyClient:
         # Connect through chain
         # For now, only HTTP proxies support chaining via CONNECT
         # SOCKS proxies would need special handling
-        reader: asyncio.StreamReader | None = None
-        writer: asyncio.StreamWriter | None = None
+        reader: Optional[asyncio.StreamReader] = None
+        writer: Optional[asyncio.StreamWriter] = None
 
         for i, proxy in enumerate(proxy_chain):
             proxy_host = proxy["host"]
@@ -511,8 +511,8 @@ class ProxyClient:
         self,
         proxy_host: str,
         proxy_port: int,
-        _username: str | None,
-        _password: str | None,
+        _username: Optional[str],
+        _password: Optional[str],
         timeout: float,
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         """Establish TCP connection to proxy server.
@@ -548,8 +548,8 @@ class ProxyClient:
         writer: asyncio.StreamWriter,
         target_host: str,
         target_port: int,
-        username: str | None,
-        password: str | None,
+        username: Optional[str],
+        password: Optional[str],
     ) -> None:
         """Send HTTP CONNECT request through proxy.
 
@@ -576,7 +576,7 @@ class ProxyClient:
 
     async def _read_connect_response(
         self, reader: asyncio.StreamReader
-    ) -> asyncio.StreamReader | None:
+    ) -> Optional[asyncio.StreamReader]:
         """Read and parse HTTP CONNECT response.
 
         Args:

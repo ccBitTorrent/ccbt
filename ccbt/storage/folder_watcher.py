@@ -10,7 +10,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Optional, Union
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -84,7 +84,7 @@ class FolderWatcher:
 
     def __init__(
         self,
-        folder_path: str | Path,
+        folder_path: Union[str, Path],
         check_interval: float = 5.0,
         use_watchdog: bool = True,
     ) -> None:
@@ -100,8 +100,8 @@ class FolderWatcher:
         self.check_interval = check_interval
         self.use_watchdog = use_watchdog and WATCHDOG_AVAILABLE
 
-        self.observer: Observer | None = None  # type: ignore[type-arg]
-        self.polling_task: asyncio.Task | None = None
+        self.observer: Optional[Observer] = None  # type: ignore[type-arg]
+        self.polling_task: Optional[asyncio.Task] = None
         self.is_watching = False
         self.last_check_time = time.time()
         self.last_file_states: dict[str, float] = {}  # file_path -> mtime

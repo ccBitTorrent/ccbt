@@ -5,11 +5,12 @@ from __future__ import annotations
 import contextlib
 import socket
 import sys
+from typing import Optional
 
 
 def is_port_available(
     host: str, port: int, protocol: str = "tcp"
-) -> tuple[bool, str | None]:
+) -> tuple[bool, Optional[str]]:
     """Check if a port is available for binding.
 
     Args:
@@ -140,7 +141,7 @@ def get_port_conflict_resolution(port: int, _protocol: str = "tcp") -> str:
 
 
 def get_permission_error_resolution(
-    port: int, protocol: str = "tcp", config_key: str | None = None
+    port: int, protocol: str = "tcp", config_key: Optional[str] = None
 ) -> str:
     """Get resolution steps for permission denied errors.
 

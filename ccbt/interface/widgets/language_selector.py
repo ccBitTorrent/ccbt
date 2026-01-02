@@ -7,7 +7,7 @@ and native language names.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.interface.commands.executor import CommandExecutor
@@ -125,8 +125,8 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self._data_provider = data_provider
         self._command_executor = command_executor
-        self._select_widget: Select | None = None
-        self._info_widget: Static | None = None
+        self._select_widget: Optional[Select] = None
+        self._info_widget: Optional[Static] = None
         self._current_locale = get_locale()
 
     def compose(self) -> Any:  # pragma: no cover

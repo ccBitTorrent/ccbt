@@ -7,6 +7,7 @@ import ipaddress
 import logging
 import socket
 import warnings
+from typing import Optional
 from urllib.parse import urljoin
 
 try:
@@ -45,7 +46,7 @@ UPNP_IGD2_SERVICE_TYPE = "urn:schemas-upnp-org:service:WANIPConnection:2"
 UPNP_IGD_DEVICE_TYPE = "urn:schemas-upnp-org:device:InternetGatewayDevice:1"
 
 
-def build_msearch_request(search_target: str | None = None) -> bytes:
+def build_msearch_request(search_target: Optional[str] = None) -> bytes:
     """Build SSDP M-SEARCH request (UPnP Device Architecture 1.1).
 
     Args:
@@ -432,8 +433,8 @@ async def fetch_device_description(location_url: str) -> dict[str, str]:
 
     # Improved error handling with retries for device description fetching
     max_retries = 2
-    last_error: Exception | None = None
-    xml_content: str | None = None
+    last_error: Optional[Exception] = None
+    xml_content: Optional[str] = None
 
     for attempt in range(max_retries):
         try:
@@ -752,7 +753,7 @@ async def send_soap_action(
 class UPnPClient:
     """Async UPnP IGD client."""
 
-    def __init__(self, device_url: str | None = None):
+    def __init__(self, device_url: Optional[str] = None):
         """Initialize UPnP client.
 
         Args:
@@ -760,7 +761,7 @@ class UPnPClient:
 
         """
         self.device_url = device_url
-        self.control_url: str | None = None
+        self.control_url: Optional[str] = None
         self.service_type: str = UPNP_IGD_SERVICE_TYPE
         self.logger = logging.getLogger(__name__)
 

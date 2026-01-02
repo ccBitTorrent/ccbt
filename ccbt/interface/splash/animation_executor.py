@@ -6,17 +6,17 @@ Provides a single interface to execute animations with full configuration suppor
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.interface.splash.animation_config import AnimationConfig, BackgroundConfig
 from ccbt.interface.splash.animation_helpers import AnimationController
-from typing import Any
+from typing import Any, Optional
 
 
 class AnimationExecutor:
     """Executes animations from AnimationConfig objects."""
 
-    def __init__(self, controller: AnimationController | None = None) -> None:
+    def __init__(self, controller: Optional[AnimationController] = None) -> None:
         """Initialize animation executor.
         
         Args:

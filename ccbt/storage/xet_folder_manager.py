@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ccbt.session.xet_sync_manager import XetSyncManager
 
@@ -26,9 +26,9 @@ class XetFolder:
 
     def __init__(
         self,
-        folder_path: str | Path,
+        folder_path: Union[str, Path],
         sync_mode: str = "best_effort",
-        source_peers: list[str] | None = None,
+        source_peers: Optional[list[str]] = None,
         check_interval: float = 5.0,
         enable_git: bool = True,
     ) -> None:
@@ -60,7 +60,7 @@ class XetFolder:
             check_interval=check_interval,
         )
 
-        self.git_versioning: GitVersioning | None = None
+        self.git_versioning: Optional[GitVersioning] = None
         if enable_git:
             self.git_versioning = GitVersioning(folder_path=self.folder_path)
 
@@ -146,7 +146,7 @@ class XetFolder:
         self.logger.info("Removed peer %s from folder sync", peer_id)
 
     def set_sync_mode(
-        self, sync_mode: str, source_peers: list[str] | None = None
+        self, sync_mode: str, source_peers: Optional[list[str]] = None
     ) -> None:
         """Set synchronization mode for folder.
 

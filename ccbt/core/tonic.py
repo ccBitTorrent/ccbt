@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ccbt.core.bencode import decode, encode
 from ccbt.utils.exceptions import TorrentError
@@ -32,7 +32,7 @@ class TonicFile:
     def __init__(self) -> None:
         """Initialize the tonic file handler."""
 
-    def parse(self, tonic_path: str | Path) -> dict[str, Any]:
+    def parse(self, tonic_path: Union[str, Path]) -> dict[str, Any]:
         """Parse a .tonic file from a local path.
 
         Args:
@@ -106,13 +106,13 @@ class TonicFile:
         self,
         folder_name: str,
         xet_metadata: XetTorrentMetadata,
-        git_refs: list[str] | None = None,
+        git_refs: Optional[list[str]] = None,
         sync_mode: str = "best_effort",
-        source_peers: list[str] | None = None,
-        allowlist_hash: bytes | None = None,
-        announce: str | None = None,
-        announce_list: list[list[str]] | None = None,
-        comment: str | None = None,
+        source_peers: Optional[list[str]] = None,
+        allowlist_hash: Optional[bytes] = None,
+        announce: Optional[str] = None,
+        announce_list: Optional[list[list[str]]] = None,
+        comment: Optional[str] = None,
     ) -> bytes:
         """Create a bencoded .tonic file.
 
@@ -293,7 +293,7 @@ class TonicFile:
         return {}
 
     def _convert_tree_keys(
-        self, tree: dict[bytes, Any] | dict[str, Any]
+        self, tree: Union[dict[bytes, Any], dict[str, Any]]
     ) -> dict[str, Any]:
         """Convert tree keys from bytes to strings recursively.
 
@@ -389,7 +389,7 @@ class TonicFile:
         info_bencoded = encode(info_bytes_dict)
         return hashlib.sha256(info_bencoded).digest()
 
-    def _read_from_file(self, file_path: str | Path) -> bytes:
+    def _read_from_file(self, file_path: Union[str, Path]) -> bytes:
         """Read tonic data from a local file.
 
         Args:

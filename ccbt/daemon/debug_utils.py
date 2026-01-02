@@ -9,15 +9,15 @@ import threading
 import time
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 # Global debug state
 _debug_enabled = False
-_debug_log_file: Path | None = None
+_debug_log_file: Optional[Path] = None
 _debug_lock = threading.Lock()
 
 
-def enable_debug_logging(log_file: Path | None = None) -> None:
+def enable_debug_logging(log_file: Optional[Path] = None) -> None:
     """Enable comprehensive debug logging to file.
 
     Args:

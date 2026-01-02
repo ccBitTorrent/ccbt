@@ -6,7 +6,7 @@ Implements the Per-Torrent tab with nested sub-tabs for detailed torrent informa
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.i18n import _
 
@@ -88,7 +88,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
         self,
         data_provider: DataProvider,
         command_executor: CommandExecutor,
-        selected_info_hash: str | None = None,
+        selected_info_hash: Optional[str] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -102,11 +102,11 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self._data_provider = data_provider
         self._command_executor = command_executor
-        self._selected_info_hash: str | None = selected_info_hash
-        self._sub_tabs: Tabs | None = None
-        self._content_area: Container | None = None
-        self._loading_sub_tab: str | None = None  # Guard to prevent concurrent loading
-        self._active_sub_tab_id: str | None = None
+        self._selected_info_hash: Optional[str] = selected_info_hash
+        self._sub_tabs: Optional[Tabs] = None
+        self._content_area: Optional[Container] = None
+        self._loading_sub_tab: Optional[str] = None  # Guard to prevent concurrent loading
+        self._active_sub_tab_id: Optional[str] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the per-torrent tab with nested sub-tabs."""
@@ -230,7 +230,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                 # Fallback to call_later
                 self.call_later(self._load_sub_tab_content, "sub-tab-files")  # type: ignore[attr-defined]
 
-    def set_selected_info_hash(self, info_hash: str | None) -> None:  # pragma: no cover
+    def set_selected_info_hash(self, info_hash: Optional[str]) -> None:  # pragma: no cover
         """Update the selected torrent info hash externally.
         
         Args:
@@ -577,7 +577,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
         # Reload the sub-tab content to ensure it's up-to-date
         await self._load_sub_tab_content(self._active_sub_tab_id)
 
-    def get_selected_info_hash(self) -> str | None:  # pragma: no cover
+    def get_selected_info_hash(self) -> Optional[str]:  # pragma: no cover
         """Get the currently selected torrent info hash.
         
         Returns:

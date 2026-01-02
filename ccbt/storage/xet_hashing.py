@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -179,7 +179,7 @@ class XetHasher:
     @staticmethod
     def hash_file_incremental(
         file_path: str,
-        chunk_callback: Callable[[bytes], None] | None = None,
+        chunk_callback: Optional[Callable[[bytes], None]] = None,
     ) -> bytes:
         """Compute file hash incrementally by reading and hashing chunks.
 

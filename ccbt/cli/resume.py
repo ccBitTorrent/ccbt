@@ -7,7 +7,7 @@ and managing checkpoint data.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.cli.interactive import InteractiveCLI
 
@@ -16,12 +16,9 @@ if TYPE_CHECKING:
 from ccbt.cli.progress import ProgressManager
 from ccbt.i18n import _
 
-if TYPE_CHECKING:
-    from ccbt.session.session import AsyncSessionManager
-
 
 async def resume_download(
-    session: AsyncSessionManager | None,
+    session: Optional[Any],  # Optional[AsyncSessionManager]
     info_hash_bytes: bytes,
     checkpoint: Any,
     interactive: bool,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Tuple
 
 from ccbt.nat.exceptions import NATPMPError, UPnPError
 from ccbt.nat.natpmp import NATPMPClient
@@ -31,16 +31,16 @@ class NATManager:
         self.config = config
         self.logger = logging.getLogger(__name__)
 
-        self.natpmp_client: NATPMPClient | None = None
-        self.upnp_client: UPnPClient | None = None
+        self.natpmp_client: Optional[NATPMPClient] = None
+        self.upnp_client: Optional[UPnPClient] = None
         # Pass renewal callback to port mapping manager
         self.port_mapping_manager = PortMappingManager(
             renewal_callback=self._renew_mapping_callback
         )
 
-        self.active_protocol: str | None = None  # "natpmp" or "upnp"
-        self.external_ip: ipaddress.IPv4Address | None = None
-        self._discovery_task: asyncio.Task | None = None
+        self.active_protocol: Optional[str] = None  # "natpmp" or "upnp"
+        self.external_ip: Optional[ipaddress.IPv4Address] = None
+        self._discovery_task: Optional[asyncio.Task] = None
         self._discovery_attempted: bool = False  # Track if discovery has been attempted
 
     async def discover(self, force: bool = False) -> bool:
@@ -222,7 +222,7 @@ class NATManager:
         internal_port: int,
         external_port: int = 0,
         protocol: str = "tcp",
-    ) -> PortMapping | None:
+    ) -> Optional[PortMapping]:
         """Map a port using the active protocol with retry logic.
 
         Args:
@@ -484,7 +484,7 @@ class NATManager:
         )
         return None
 
-    async def renew_mapping(self, mapping: PortMapping) -> tuple[bool, int | None]:
+    async def renew_mapping(self, mapping: PortMapping) -> Tuple[bool, Optional[int]]:
         """Renew a port mapping.
 
         Renewal requests are identical to initial mapping requests per RFC 6886.
@@ -495,7 +495,7 @@ class NATManager:
             mapping: Port mapping to renew
 
         Returns:
-            Tuple of (success: bool, new_lifetime: int | None)
+            Tuple of (success: bool, new_lifetime: Optional[int])
             new_lifetime is None if renewal failed or if mapping is permanent
 
         """
@@ -602,7 +602,7 @@ class NATManager:
 
     async def _renew_mapping_callback(
         self, mapping: PortMapping
-    ) -> tuple[bool, int | None]:
+    ) -> Tuple[bool, Optional[int]]:
         """Handle port mapping renewal callback.
 
         This is passed to PortMappingManager to enable renewal.
@@ -611,7 +611,7 @@ class NATManager:
             mapping: Port mapping to renew
 
         Returns:
-            Tuple of (success: bool, new_lifetime: int | None)
+            Tuple of (success: bool, new_lifetime: Optional[int])
 
         """
         return await self.renew_mapping(mapping)
@@ -1230,7 +1230,7 @@ class NATManager:
 
         self.logger.info("NAT manager stopped")
 
-    async def get_external_ip(self) -> ipaddress.IPv4Address | None:
+    async def get_external_ip(self) -> Optional[ipaddress.IPv4Address]:
         """Get external IP address.
 
         Returns:
@@ -1262,7 +1262,7 @@ class NATManager:
 
     async def get_external_port(
         self, internal_port: int, protocol: str = "tcp"
-    ) -> int | None:
+    ) -> Optional[int]:
         """Get external port for a given internal port and protocol.
 
         This method queries the port mapping manager to find the external port

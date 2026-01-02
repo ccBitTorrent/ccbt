@@ -19,7 +19,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ccbt.i18n import _
 from ccbt.utils.events import Event, EventType, emit_event
@@ -167,7 +167,7 @@ class DashboardManager:
         name: str,
         dashboard_type: DashboardType,
         description: str = "",
-        widgets: list[Widget] | None = None,
+        widgets: Optional[list[Widget]] = None,
     ) -> str:
         """Create a new dashboard."""
         dashboard_id = f"dashboard_{int(time.time())}"
@@ -297,7 +297,7 @@ class DashboardManager:
 
         return False
 
-    def get_dashboard(self, dashboard_id: str) -> Dashboard | None:
+    def get_dashboard(self, dashboard_id: str) -> Optional[Dashboard]:
         """Get dashboard by ID."""
         return self.dashboards.get(dashboard_id)
 
@@ -305,7 +305,7 @@ class DashboardManager:
         """Get all dashboards."""
         return self.dashboards.copy()
 
-    def get_dashboard_data(self, dashboard_id: str) -> DashboardData | None:
+    def get_dashboard_data(self, dashboard_id: str) -> Optional[DashboardData]:
         """Get dashboard data."""
         return self.dashboard_data.get(dashboard_id)
 
@@ -517,7 +517,7 @@ class DashboardManager:
         )
         self.templates[DashboardType.SECURITY] = security_dashboard
 
-    def _widget_to_grafana_panel(self, widget: Widget) -> dict[str, Any] | None:
+    def _widget_to_grafana_panel(self, widget: Widget) -> Optional[dict[str, Any]]:
         """Convert widget to Grafana panel."""
         if widget.type == WidgetType.METRIC:
             return {
@@ -614,7 +614,7 @@ class DashboardManager:
         self,
         session: AsyncSessionManager,
         file_path: str,
-        _output_dir: str | None = None,
+        _output_dir: Optional[str] = None,
         resume: bool = False,
         download_limit: int = 0,
         upload_limit: int = 0,
@@ -676,7 +676,7 @@ class DashboardManager:
         self,
         session: AsyncSessionManager,
         magnet_uri: str,
-        _output_dir: str | None = None,
+        _output_dir: Optional[str] = None,
         resume: bool = False,
         download_limit: int = 0,
         upload_limit: int = 0,

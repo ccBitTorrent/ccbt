@@ -30,7 +30,7 @@ class GraphMetricSeries:
     unit: str = "KiB/s"
     color: str = "green"
     style: str = "solid"
-    description: str | None = None
+    description: Optional[str] = None
     category: SeriesCategory = SeriesCategory.SPEED
     source_path: Tuple[str, ...] = ("global_stats",)
     scale: float = 1.0

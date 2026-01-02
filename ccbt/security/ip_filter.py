@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Union
 
 import aiofiles
 import aiohttp
@@ -46,7 +46,7 @@ class FilterMode(Enum):
 class IPFilterRule:
     """IP filter rule definition."""
 
-    network: IPv4Network | IPv6Network
+    network: Union[IPv4Network, IPv6Network]
     mode: FilterMode
     priority: int = 0  # Higher priority wins (allow > block on tie)
     source: str = "manual"  # Source of rule (file path, URL, or "manual")
@@ -92,8 +92,8 @@ class IPFilter:
         self.mode: FilterMode = mode
 
         # Auto-update task
-        self._update_task: asyncio.Task | None = None
-        self._last_update: float | None = None
+        self._update_task: Optional[asyncio.Task] = None
+        self._last_update: Optional[float] = None
 
         logger.debug("IPFilter initialized: enabled=%s, mode=%s", enabled, mode.value)
 
@@ -137,7 +137,7 @@ class IPFilter:
         return True
 
     def _is_ip_in_ranges(
-        self, ip: ipaddress.IPv4Address | ipaddress.IPv6Address
+        self, ip: Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
     ) -> bool:
         """Check if IP address is in any filter range.
 
@@ -190,7 +190,7 @@ class IPFilter:
     def add_rule(
         self,
         ip_range: str,
-        mode: FilterMode | None = None,
+        mode: Optional[FilterMode] = None,
         priority: int = 0,
         source: str = "manual",
     ) -> bool:
@@ -306,7 +306,7 @@ class IPFilter:
         """
         return self.rules.copy()
 
-    def get_filter_statistics(self) -> dict[str, int | float | None]:
+    def get_filter_statistics(self) -> dict[str, Optional[int | float]]:
         """Get filter statistics.
 
         Returns:
@@ -403,8 +403,8 @@ class IPFilter:
     async def load_from_file(
         self,
         file_path: str,
-        mode: FilterMode | None = None,
-        source: str | None = None,
+        mode: Optional[FilterMode] = None,
+        source: Optional[str] = None,
     ) -> tuple[int, int]:
         """Load filter rules from a file.
 
@@ -491,7 +491,7 @@ class IPFilter:
     async def _parse_and_add_line(
         self,
         line: str,
-        mode: FilterMode | None,
+        mode: Optional[FilterMode],
         source: str,
     ) -> bool:
         """Parse a single line and add rule if valid."""
@@ -522,10 +522,10 @@ class IPFilter:
     async def load_from_url(
         self,
         url: str,
-        cache_dir: str | Path | None = None,
-        mode: FilterMode | None = None,
+        cache_dir: Optional[str | Path] = None,
+        mode: Optional[FilterMode] = None,
         update_interval: float = 86400.0,
-    ) -> tuple[bool, int, str | None]:
+    ) -> tuple[bool, int, Optional[str]]:
         """Load filter rules from a URL.
 
         Args:
@@ -535,7 +535,7 @@ class IPFilter:
             update_interval: Minimum seconds between updates (default 24h)
 
         Returns:
-            Tuple of (success: bool, rules_loaded: int, error_message: str | None)
+            Tuple of (success: bool, rules_loaded: int, error_message: Optional[str])
 
         """
         source = f"url:{url}"
@@ -642,7 +642,7 @@ class IPFilter:
     async def update_filter_lists(
         self,
         urls: list[str],
-        cache_dir: str | Path,
+        cache_dir: Union[str, Path],
         update_interval: float = 86400.0,
     ) -> dict[str, tuple[bool, int]]:
         """Update filter lists from URLs.
@@ -674,7 +674,7 @@ class IPFilter:
     async def start_auto_update(
         self,
         urls: list[str],
-        cache_dir: str | Path,
+        cache_dir: Union[str, Path],
         update_interval: float = 86400.0,
     ) -> None:
         """Start background task to auto-update filter lists.

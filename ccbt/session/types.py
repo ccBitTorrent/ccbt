@@ -6,7 +6,7 @@ the session management system.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Any, Callable, Optional, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -16,7 +16,7 @@ class DHTClientProtocol(Protocol):
     def add_peer_callback(  # noqa: D102
         self,
         callback: Callable[[list[tuple[str, int]]], None],
-        info_hash: bytes | None = None,
+        info_hash: Optional[bytes] = None,
     ) -> None: ...
 
     async def get_peers(  # noqa: D102
@@ -43,7 +43,7 @@ class TrackerClientProtocol(Protocol):
         port: int,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: int | None = None,
+        left: Optional[int] = None,
         event: str = "started",
     ) -> Any: ...
 

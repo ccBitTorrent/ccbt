@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, ValidationError
 
@@ -48,7 +48,7 @@ class ConfigSchema:
         return ConfigSchema.generate_schema(Config)
 
     @staticmethod
-    def get_schema_for_section(section_name: str) -> dict[str, Any] | None:
+    def get_schema_for_section(section_name: str) -> Optional[dict[str, Any]]:
         """Get schema for a specific configuration section.
 
         Args:
@@ -126,7 +126,7 @@ class ConfigDiscovery:
         }
 
     @staticmethod
-    def get_option_metadata(key_path: str) -> dict[str, Any] | None:
+    def get_option_metadata(key_path: str) -> Optional[dict[str, Any]]:
         """Get metadata for specific configuration option.
 
         Args:

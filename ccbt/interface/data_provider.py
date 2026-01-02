@@ -10,7 +10,7 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.daemon.ipc_client import IPCClient
@@ -78,7 +78,7 @@ class DataProvider(ABC):
         pass
 
     @abstractmethod
-    async def get_torrent_status(self, info_hash_hex: str) -> dict[str, Any] | None:
+    async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:
         """Get status for a specific torrent.
 
         Args:
@@ -137,7 +137,7 @@ class DataProvider(ABC):
             - peers: Number of peers from last scrape
             - downloaders: Number of downloaders from last scrape
             - last_update: Last update timestamp (float)
-            - error: Error message if any (str | None)
+            - error: Error message if any (Optional[str])
         """
         pass
 
@@ -293,10 +293,10 @@ class DataProvider(ABC):
 
     async def get_swarm_health_samples(
         self,
-        info_hash_hex: str | None = None,
+        info_hash_hex: Optional[str] = None,
         limit: int = 6,
         include_history: bool = False,
-        history_seconds: int | None = None,
+        history_seconds: Optional[int] = None,
     ) -> list[dict[str, Any]]:
         """Get swarm health samples for global or per-torrent views.
         
@@ -474,7 +474,7 @@ class DaemonDataProvider(DataProvider):
     Never access daemon session internals directly.
     """
 
-    def __init__(self, ipc_client: IPCClient, executor: Any | None = None, adapter: Any | None = None) -> None:
+    def __init__(self, ipc_client: IPCClient, executor: Optional[Any] = None, adapter: Optional[Any] = None) -> None:
         """Initialize daemon data provider.
 
         Args:
@@ -489,7 +489,7 @@ class DaemonDataProvider(DataProvider):
         self._cache_ttl = 1.0  # 1.0 second TTL - balanced for responsiveness and reduced redundant requests
         self._cache_lock = asyncio.Lock()
     
-    def get_adapter(self) -> Any | None:
+    def get_adapter(self) -> Optional[Any]:
         """Get the DaemonInterfaceAdapter instance for widget registration.
         
         Returns:
@@ -498,7 +498,7 @@ class DaemonDataProvider(DataProvider):
         return self._adapter
 
     async def _get_cached(
-        self, key: str, fetch_func: Any, ttl: float | None = None
+        self, key: str, fetch_func: Any, ttl: Optional[float] = None
     ) -> Any:  # pragma: no cover
         """Get cached value or fetch if expired.
 
@@ -521,7 +521,7 @@ class DaemonDataProvider(DataProvider):
             self._cache[key] = (value, time.time())
             return value
 
-    def invalidate_cache(self, key: str | None = None) -> None:  # pragma: no cover
+    def invalidate_cache(self, key: Optional[str] = None) -> None:  # pragma: no cover
         """Invalidate cache entry or all cache if key is None.
 
         Args:
@@ -548,7 +548,7 @@ class DaemonDataProvider(DataProvider):
             elif key in self._cache:
                 del self._cache[key]
     
-    def invalidate_on_event(self, event_type: str, info_hash: str | None = None) -> None:
+    def invalidate_on_event(self, event_type: str, info_hash: Optional[str] = None) -> None:
         """Invalidate cache based on event type.
         
         Args:
@@ -612,7 +612,7 @@ class DaemonDataProvider(DataProvider):
             }
         return await self._get_cached("global_stats", _fetch)
 
-    async def get_torrent_status(self, info_hash_hex: str) -> dict[str, Any] | None:
+    async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:
         """Get torrent status from daemon."""
         try:
             status = await self._client.get_torrent_status(info_hash_hex)
@@ -1508,7 +1508,7 @@ class LocalDataProvider(DataProvider):
         self._cache_lock = asyncio.Lock()
 
     async def _get_cached(
-        self, key: str, fetch_func: Any, ttl: float | None = None
+        self, key: str, fetch_func: Any, ttl: Optional[float] = None
     ) -> Any:  # pragma: no cover
         """Get cached value or fetch if expired."""
         ttl = ttl or self._cache_ttl
@@ -1527,7 +1527,7 @@ class LocalDataProvider(DataProvider):
             return await self._session.get_global_stats()
         return await self._get_cached("global_stats", _fetch)
 
-    async def get_torrent_status(self, info_hash_hex: str) -> dict[str, Any] | None:
+    async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:
         """Get torrent status from local session."""
         try:
             status = await self._session.get_status()
@@ -1570,7 +1570,7 @@ class LocalDataProvider(DataProvider):
             torrent_data = torrent_session.torrent_data
             
             # Extract file_info from torrent_data
-            file_info: dict[str, Any] | None = None
+            file_info: Optional[dict[str, Any]] = None
             if isinstance(torrent_data, dict):
                 file_info = torrent_data.get("file_info")
             elif hasattr(torrent_data, "file_info"):
@@ -2325,7 +2325,7 @@ class LocalDataProvider(DataProvider):
             return {}
 
 
-def create_data_provider(session: AsyncSessionManager, executor: Any | None = None) -> DataProvider:
+def create_data_provider(session: AsyncSessionManager, executor: Optional[Any] = None) -> DataProvider:
     """Create appropriate data provider based on session type.
 
     Args:

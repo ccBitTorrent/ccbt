@@ -11,7 +11,7 @@ import hashlib
 import logging
 import random
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class GossipProtocol:
         fanout: int = 3,
         interval: float = 5.0,
         message_ttl: float = 300.0,  # 5 minutes
-        peer_callback: Callable[[str], list[str]] | None = None,
+        peer_callback: Optional[Callable[[str], list[str]]] = None,
     ):
         """Initialize gossip protocol.
 
@@ -61,8 +61,8 @@ class GossipProtocol:
         self.received_messages: set[str] = set()  # For deduplication
 
         self.running = False
-        self._gossip_task: asyncio.Task | None = None
-        self._cleanup_task: asyncio.Task | None = None
+        self._gossip_task: Optional[asyncio.Task] = None
+        self._cleanup_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
         """Start gossip protocol."""

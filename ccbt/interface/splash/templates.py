@@ -6,7 +6,7 @@ Provides a unified interface for loading, validating, and normalizing ASCII art 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass
@@ -22,8 +22,8 @@ class Template:
     
     name: str
     content: str
-    normalized_lines: list[str] | None = None
-    metadata: dict[str, Any] | None = None
+    normalized_lines: Optional[list[str]] = None
+    metadata: Optional[dict[str, Any]] = None
     
     def __post_init__(self) -> None:
         """Initialize template after creation."""
@@ -81,7 +81,7 @@ class Template:
         
         return lines
     
-    def validate(self) -> tuple[bool, str | None]:
+    def validate(self) -> tuple[bool, Optional[str]]:
         """Validate template content.
         
         Returns:
@@ -147,7 +147,7 @@ class TemplateRegistry:
         
         self._templates[template.name] = template
     
-    def get(self, name: str) -> Template | None:
+    def get(self, name: str) -> Optional[Template]:
         """Get a template by name.
         
         Args:
@@ -208,7 +208,7 @@ def register_template(template: Template) -> None:
     _registry.register(template)
 
 
-def get_template(name: str) -> Template | None:
+def get_template(name: str) -> Optional[Template]:
     """Get a template from the global registry.
     
     Args:

@@ -10,7 +10,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Literal
+from typing import Any, Dict, Literal, Optional
 
 # Configure logging
 logging.basicConfig(
@@ -101,7 +101,7 @@ def get_git_metadata() -> Dict[str, Any]:
 
 
 def determine_record_mode(
-    requested_mode: str | None, env_var: str | None = None
+    requested_mode: Optional[str], env_var: Optional[str] = None
 ) -> Literal["pre-commit", "commit", "both", "none"]:
     """Determine the actual recording mode based on context.
 
@@ -286,8 +286,8 @@ def record_benchmark_results(
     config_name: str,
     results: list[Any],
     record_mode: str,
-    output_base: Path | None = None,
-) -> tuple[Path | None, Path | None]:
+    output_base: Optional[Path] = None,
+) -> tuple[Optional[Path], Optional[Path]]:
     """Record benchmark results according to the specified mode.
 
     Args:
@@ -312,8 +312,8 @@ def record_benchmark_results(
     if actual_mode == "none":
         return (None, None)
 
-    per_run_path: Path | None = None
-    timeseries_path: Path | None = None
+    per_run_path: Optional[Path] = None
+    timeseries_path: Optional[Path] = None
 
     # Platform info
     platform_info = {

@@ -6,7 +6,7 @@ Provides bottom-right message display that can be cleared and refreshed.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -22,8 +22,8 @@ class MessageOverlay:
     
     def __init__(
         self,
-        console: Console | None = None,
-        textual_widget: Static | None = None,
+        console: Optional[Console] = None,
+        textual_widget: Optional[Static] = None,
         position: str = "bottom_right",
         max_lines: int = 1,
         clear_on_update: bool = True,
@@ -45,7 +45,7 @@ class MessageOverlay:
         self.messages: list[str] = []
         self._last_rendered: str = ""
     
-    def add_message(self, message: str, clear: bool | None = None) -> None:
+    def add_message(self, message: str, clear: Optional[bool] = None) -> None:
         """Add a message to the overlay.
         
         Args:
@@ -93,8 +93,8 @@ class MessageOverlay:
     def render_overlay(
         self,
         frame_content: Any,
-        width: int | None = None,
-        height: int | None = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
     ) -> Any:
         """Render overlay on top of frame content.
         
@@ -173,11 +173,11 @@ class LoggingMessageOverlay(MessageOverlay):
     
     def __init__(
         self,
-        console: Console | None = None,
-        textual_widget: Static | None = None,
+        console: Optional[Console] = None,
+        textual_widget: Optional[Static] = None,
         position: str = "bottom_right",
         max_lines: int = 10,  # Show last 10 log messages
-        log_levels: list[str] | None = None,
+        log_levels: Optional[list[str]] = None,
     ) -> None:
         """Initialize logging message overlay.
         
@@ -191,7 +191,7 @@ class LoggingMessageOverlay(MessageOverlay):
         # Initialize with clear_on_update=False to preserve messages between updates
         super().__init__(console, textual_widget, position, max_lines, clear_on_update=False)
         self.log_levels = log_levels  # None = capture all levels
-        self._log_handler: logging.Handler | None = None
+        self._log_handler: Optional[logging.Handler] = None
         self._log_buffer: list[tuple[str, str]] = []  # List of (level, message) tuples
     
     def capture_log_message(self, level: str, message: str) -> None:

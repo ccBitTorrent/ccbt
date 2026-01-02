@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.models import PeerInfo
 from ccbt.peer.peer import Handshake
@@ -47,11 +47,11 @@ class P2PCASClient:
 
     def __init__(
         self,
-        dht_client: Any | None = None,  # type: ignore[assignment]
-        tracker_client: Any | None = None,  # type: ignore[assignment]
+        dht_client: Optional[Any] = None,  # type: ignore[assignment]
+        tracker_client: Optional[Any] = None,  # type: ignore[assignment]
         key_manager: Any = None,  # Ed25519KeyManager
-        bloom_filter: Any | None = None,  # XetChunkBloomFilter
-        catalog: Any | None = None,  # XetChunkCatalog
+        bloom_filter: Optional[Any] = None,  # XetChunkBloomFilter
+        catalog: Optional[Any] = None,  # XetChunkCatalog
     ):
         """Initialize P2P CAS with DHT and tracker clients.
 
@@ -416,8 +416,8 @@ class P2PCASClient:
         self,
         chunk_hash: bytes,
         peer: PeerInfo,
-        torrent_data: dict[str, Any] | None = None,
-        connection_manager: Any | None = None,  # type: ignore[assignment]
+        torrent_data: Optional[dict[str, Any]] = None,
+        connection_manager: Optional[Any] = None,  # type: ignore[assignment]
     ) -> bytes:
         """Download chunk from peer using BitTorrent protocol extension.
 
@@ -650,7 +650,7 @@ class P2PCASClient:
                         cleanup_error,
                     )  # pragma: no cover - Same context
 
-    def _extract_peer_from_dht(self, dht_result: Any) -> PeerInfo | None:  # type: ignore[return]
+    def _extract_peer_from_dht(self, dht_result: Any) -> Optional[PeerInfo]:  # type: ignore[return]
         """Extract PeerInfo from DHT result.
 
         Args:
@@ -681,7 +681,7 @@ class P2PCASClient:
 
         return None
 
-    def _extract_peer_from_dht_value(self, value: Any) -> PeerInfo | None:  # type: ignore[return]
+    def _extract_peer_from_dht_value(self, value: Any) -> Optional[PeerInfo]:  # type: ignore[return]
         """Extract PeerInfo from DHT stored value (BEP 44).
 
         Args:
@@ -747,7 +747,7 @@ class P2PCASClient:
             local_path,
         )
 
-    def get_local_chunk_path(self, chunk_hash: bytes) -> str | None:
+    def get_local_chunk_path(self, chunk_hash: bytes) -> Optional[str]:
         """Get local path for a chunk if available.
 
         Args:

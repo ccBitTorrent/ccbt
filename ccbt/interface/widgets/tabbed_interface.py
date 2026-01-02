@@ -6,7 +6,7 @@ Provides widgets for the main tabbed interface structure.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.i18n import _
 
@@ -125,23 +125,23 @@ class MainTabsContainer(Container):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self.session = session
         # Workflow pane tabs (left side)
-        self._workflow_selector: Any | None = None  # ButtonSelector
-        self._workflow_content: Container | None = None
-        self._active_workflow_tab_id: str | None = None
+        self._workflow_selector: Optional[Any] = None  # ButtonSelector
+        self._workflow_content: Optional[Container] = None
+        self._active_workflow_tab_id: Optional[str] = None
         # Torrent Insight pane selector (right side)
-        self._torrent_insight_selector: Any | None = None  # ButtonSelector
-        self._torrent_insight_content: Container | None = None
-        self._active_insight_tab_id: str | None = None
+        self._torrent_insight_selector: Optional[Any] = None  # ButtonSelector
+        self._torrent_insight_content: Optional[Container] = None
+        self._active_insight_tab_id: Optional[str] = None
         # Shared selection model for cross-pane communication
-        self._selected_torrent_hash: str | None = None
+        self._selected_torrent_hash: Optional[str] = None
         # Create command executor first (like CLI uses)
         from ccbt.interface.commands.executor import CommandExecutor
-        self._command_executor: CommandExecutor | None = CommandExecutor(session)
+        self._command_executor: Optional[CommandExecutor] = CommandExecutor(session)
         # Create data provider with executor reference
         from ccbt.interface.data_provider import create_data_provider
         # Pass executor to data provider so it can use executor for commands
         executor_for_provider = self._command_executor._executor if self._command_executor and hasattr(self._command_executor, "_executor") else None
-        self._data_provider: DataProvider | None = create_data_provider(session, executor_for_provider)
+        self._data_provider: Optional[DataProvider] = create_data_provider(session, executor_for_provider)
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the main tabs container with side-by-side panes.

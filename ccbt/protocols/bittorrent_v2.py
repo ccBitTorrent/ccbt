@@ -12,7 +12,7 @@ import asyncio
 import logging
 import struct
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
 from ccbt.extensions.protocol import ExtensionMessageType, ExtensionProtocol
@@ -196,8 +196,8 @@ def parse_v2_handshake(data: bytes) -> dict[str, Any]:
     version = detect_protocol_version(data)
 
     # Parse info hashes and peer_id based on version
-    info_hash_v2: bytes | None = None
-    info_hash_v1: bytes | None = None
+    info_hash_v2: Optional[bytes] = None
+    info_hash_v1: Optional[bytes] = None
     peer_id: bytes
 
     hash_start = reserved_end
@@ -425,7 +425,7 @@ async def send_hybrid_handshake(
 def negotiate_protocol_version(
     handshake: bytes,
     supported_versions: list[ProtocolVersion],
-) -> ProtocolVersion | None:
+) -> Optional[ProtocolVersion]:
     """Negotiate highest common protocol version with peer.
 
     Compares peer's supported version (from handshake) with our supported versions
@@ -512,8 +512,8 @@ def negotiate_protocol_version(
 async def handle_v2_handshake(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,  # noqa: ARG001 - Reserved for future use
-    our_info_hash_v2: bytes | None = None,
-    our_info_hash_v1: bytes | None = None,
+    our_info_hash_v2: Optional[bytes] = None,
+    our_info_hash_v1: Optional[bytes] = None,
     timeout: float = 30.0,
 ) -> tuple[ProtocolVersion, bytes, dict[str, Any]]:
     """Handle incoming v2 handshake from peer.
@@ -640,7 +640,7 @@ async def _send_extension_message(
 async def _receive_extension_message(
     connection: Any,
     timeout: float = 10.0,
-) -> tuple[int, bytes] | None:
+) -> Optional[tuple[int, bytes]]:
     """Receive an extension message via BEP 10 extension protocol.
 
     Args:

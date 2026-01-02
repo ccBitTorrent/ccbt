@@ -15,7 +15,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from heapq import heappop, heappush
-from typing import TYPE_CHECKING, Any, Callable, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Optional, Union
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from ccbt.security.encrypted_stream import (
@@ -128,8 +128,8 @@ class AsyncPeerConnection:
 
     peer_info: PeerInfo
     torrent_data: dict[str, Any]
-    reader: asyncio.StreamReader | EncryptedStreamReader | None = None
-    writer: asyncio.StreamWriter | EncryptedStreamWriter | None = None
+    reader: Optional[Union[asyncio.StreamReader, EncryptedStreamReader]] = None
+    writer: Optional[Union[asyncio.StreamWriter, EncryptedStreamWriter]] = None
     state: ConnectionState = ConnectionState.DISCONNECTED
     peer_state: PeerState = field(default_factory=PeerState)
     message_decoder: MessageDecoder = field(default_factory=MessageDecoder)
@@ -141,7 +141,7 @@ class AsyncPeerConnection:
     )
     request_queue: deque = field(default_factory=deque)
     max_pipeline_depth: int = 16
-    _priority_queue: list[tuple[float, float, RequestInfo]] | None = (
+    _priority_queue: Optional[list[tuple[float, float, RequestInfo]]] = (
         None  # (priority, timestamp, request)
     )
 
@@ -152,15 +152,15 @@ class AsyncPeerConnection:
     peer_interested: bool = False
 
     # Connection management
-    connection_task: asyncio.Task | None = None
-    error_message: str | None = None
+    connection_task: Optional[asyncio.Task] = None
+    error_message: Optional[str] = None
 
     # Encryption support
     is_encrypted: bool = False
     encryption_cipher: Any = None  # CipherSuite instance from MSE handshake
 
     # Reserved bytes from handshake (for extension support detection)
-    reserved_bytes: bytes | None = None
+    reserved_bytes: Optional[bytes] = None
 
     # Per-peer rate limiting (upload throttling)
     per_peer_upload_limit_kib: int = 0  # KiB/s, 0 = unlimited
@@ -172,23 +172,25 @@ class AsyncPeerConnection:
     _quality_probation_started: float = 0.0
 
     # Connection pool support
-    _pooled_connection: Any | None = None  # Pooled connection from connection pool
-    _pooled_connection_key: str | None = None  # Key for connection pool lookup
+    _pooled_connection: Optional[Any] = None  # Pooled connection from connection pool
+    _pooled_connection_key: Optional[str] = None  # Key for connection pool lookup
 
     # Connection timing and status
-    connection_start_time: float | None = (
+    connection_start_time: Optional[float] = (
         None  # Timestamp when connection was established
     )
     is_seeder: bool = False  # Whether peer is a seeder (has all pieces)
     completion_percent: float = 0.0  # Peer's completion percentage (0.0-1.0)
 
     # Callback functions (set by connection manager)
-    on_peer_connected: Callable[[AsyncPeerConnection], None] | None = None
-    on_peer_disconnected: Callable[[AsyncPeerConnection], None] | None = None
-    on_bitfield_received: (
-        Callable[[AsyncPeerConnection, BitfieldMessage], None] | None
-    ) = None
-    on_piece_received: Callable[[AsyncPeerConnection, PieceMessage], None] | None = None
+    on_peer_connected: Optional[Callable[[AsyncPeerConnection], None]] = None
+    on_peer_disconnected: Optional[Callable[[AsyncPeerConnection], None]] = None
+    on_bitfield_received: Optional[
+        Callable[[AsyncPeerConnection, BitfieldMessage], None]
+    ] = None
+    on_piece_received: Optional[Callable[[AsyncPeerConnection, PieceMessage], None]] = (
+        None
+    )
 
     def __str__(self):
         """Return string representation of the connection."""
@@ -293,7 +295,7 @@ class AsyncPeerConnection:
         self._quality_probation_started = value
 
     @property
-    def pooled_connection(self) -> Any | None:
+    def pooled_connection(self) -> Optional[Any]:
         """Get pooled connection if available.
 
         Returns:
@@ -303,7 +305,7 @@ class AsyncPeerConnection:
         return self._pooled_connection
 
     @pooled_connection.setter
-    def pooled_connection(self, value: Any | None) -> None:
+    def pooled_connection(self, value: Optional[Any]) -> None:
         """Set pooled connection.
 
         Args:
@@ -313,7 +315,7 @@ class AsyncPeerConnection:
         self._pooled_connection = value
 
     @property
-    def pooled_connection_key(self) -> str | None:
+    def pooled_connection_key(self) -> Optional[str]:
         """Get pooled connection key if available.
 
         Returns:
@@ -323,7 +325,7 @@ class AsyncPeerConnection:
         return self._pooled_connection_key
 
     @pooled_connection_key.setter
-    def pooled_connection_key(self, value: str | None) -> None:
+    def pooled_connection_key(self, value: Optional[str]) -> None:
         """Set pooled connection key.
 
         Args:
@@ -487,9 +489,9 @@ class AsyncPeerConnectionManager:
         self,
         torrent_data: dict[str, Any],
         piece_manager: Any,
-        peer_id: bytes | None = None,
+        peer_id: Optional[bytes] = None,
         key_manager: Any = None,  # Ed25519KeyManager
-        max_peers_per_torrent: int | None = None,
+        max_peers_per_torrent: Optional[int] = None,
     ):
         """Initialize async peer connection manager.
 
@@ -584,7 +586,7 @@ class AsyncPeerConnectionManager:
         )
 
         # Adaptive timeout calculator (lazy initialization)
-        self._timeout_calculator: Any | None = None
+        self._timeout_calculator: Optional[Any] = None
 
         # Failed peer tracking with exponential backoff
         # CRITICAL FIX: Track failure count for exponential backoff instead of just timestamp
@@ -613,7 +615,7 @@ class AsyncPeerConnectionManager:
             str, dict[str, Any]
         ] = {}  # peer_key -> peer_data
         self._tracker_retry_lock = asyncio.Lock()
-        self._tracker_retry_task: asyncio.Task | None = None
+        self._tracker_retry_task: Optional[asyncio.Task] = None
 
         # CRITICAL FIX: Global connection limiter for Windows to prevent WinError 121 and WinError 10055
         # Windows has strict limits on socket buffers and OS-level TCP connection semaphores
@@ -651,14 +653,14 @@ class AsyncPeerConnectionManager:
 
         # Choking management
         self.upload_slots: list[AsyncPeerConnection] = []
-        self.optimistic_unchoke: AsyncPeerConnection | None = None
+        self.optimistic_unchoke: Optional[AsyncPeerConnection] = None
         self.optimistic_unchoke_time: float = 0.0
 
         # Background tasks
-        self._choking_task: asyncio.Task | None = None
-        self._stats_task: asyncio.Task | None = None
-        self._reconnection_task: asyncio.Task | None = None
-        self._peer_evaluation_task: asyncio.Task | None = None
+        self._choking_task: Optional[asyncio.Task] = None
+        self._stats_task: Optional[asyncio.Task] = None
+        self._reconnection_task: Optional[asyncio.Task] = None
+        self._peer_evaluation_task: Optional[asyncio.Task] = None
 
         # Running state flag for idempotency
         self._running: bool = False
@@ -670,19 +672,19 @@ class AsyncPeerConnectionManager:
         self._piece_selection_debounce_lock = asyncio.Lock()
 
         # Callbacks
-        self._on_peer_connected: Callable[[AsyncPeerConnection], None] | None = None
-        self._external_peer_disconnected: (
-            Callable[[AsyncPeerConnection], None] | None
-        ) = None
-        self._on_peer_disconnected: Callable[[AsyncPeerConnection], None] | None = (
+        self._on_peer_connected: Optional[Callable[[AsyncPeerConnection], None]] = None
+        self._external_peer_disconnected: Optional[
+            Callable[[AsyncPeerConnection], None]
+        ] = None
+        self._on_peer_disconnected: Optional[Callable[[AsyncPeerConnection], None]] = (
             self._peer_disconnected_wrapper
         )
-        self._on_bitfield_received: (
-            Callable[[AsyncPeerConnection, BitfieldMessage], None] | None
-        ) = None
-        self._on_piece_received: (
-            Callable[[AsyncPeerConnection, PieceMessage], None] | None
-        ) = None
+        self._on_bitfield_received: Optional[
+            Callable[[AsyncPeerConnection, BitfieldMessage], None]
+        ] = None
+        self._on_piece_received: Optional[
+            Callable[[AsyncPeerConnection, PieceMessage], None]
+        ] = None
 
         # Message handlers
         self.message_handlers: dict[
@@ -716,14 +718,14 @@ class AsyncPeerConnectionManager:
                 )
 
         # Security manager and privacy flags (set via public setters)
-        self._security_manager: Any | None = None
+        self._security_manager: Optional[Any] = None
         self._is_private: bool = False
 
         # Event bus (optional, set externally if needed)
-        self._event_bus: Any | None = None  # EventBus | None
-        self.event_bus: Any | None = None  # EventBus | None
+        self._event_bus: Optional[Any] = None  # Optional[EventBus]
+        self.event_bus: Optional[Any] = None  # Optional[EventBus]
 
-    def set_security_manager(self, security_manager: Any | None) -> None:
+    def set_security_manager(self, security_manager: Optional[Any]) -> None:
         """Set the security manager for peer validation.
 
         Args:
@@ -761,13 +763,13 @@ class AsyncPeerConnectionManager:
     @property
     def on_piece_received(
         self,
-    ) -> Callable[[AsyncPeerConnection, PieceMessage], None] | None:
+    ) -> Optional[Callable[[AsyncPeerConnection, PieceMessage], None]]:
         """Get the on_piece_received callback."""
         return self._on_piece_received
 
     @on_piece_received.setter
     def on_piece_received(
-        self, value: Callable[[AsyncPeerConnection, PieceMessage], None] | None
+        self, value: Optional[Callable[[AsyncPeerConnection, PieceMessage], None]]
     ) -> None:
         """Set the on_piece_received callback and propagate to existing connections."""
         self.logger.info(
@@ -795,13 +797,13 @@ class AsyncPeerConnectionManager:
     @property
     def on_bitfield_received(
         self,
-    ) -> Callable[[AsyncPeerConnection, BitfieldMessage], None] | None:
+    ) -> Optional[Callable[[AsyncPeerConnection, BitfieldMessage], None]]:
         """Get the on_bitfield_received callback."""
         return self._on_bitfield_received
 
     @on_bitfield_received.setter
     def on_bitfield_received(
-        self, value: Callable[[AsyncPeerConnection, BitfieldMessage], None] | None
+        self, value: Optional[Callable[[AsyncPeerConnection, BitfieldMessage], None]]
     ) -> None:
         """Set the on_bitfield_received callback and propagate to existing connections."""
         self._on_bitfield_received = value
@@ -814,13 +816,13 @@ class AsyncPeerConnectionManager:
             pass
 
     @property
-    def on_peer_connected(self) -> Callable[[AsyncPeerConnection], None] | None:
+    def on_peer_connected(self) -> Optional[Callable[[AsyncPeerConnection], None]]:
         """Get the on_peer_connected callback."""
         return self._on_peer_connected
 
     @on_peer_connected.setter
     def on_peer_connected(
-        self, value: Callable[[AsyncPeerConnection], None] | None
+        self, value: Optional[Callable[[AsyncPeerConnection], None]]
     ) -> None:
         """Set the on_peer_connected callback and propagate to existing connections."""
         self._on_peer_connected = value
@@ -833,13 +835,13 @@ class AsyncPeerConnectionManager:
             pass
 
     @property
-    def on_peer_disconnected(self) -> Callable[[AsyncPeerConnection], None] | None:
+    def on_peer_disconnected(self) -> Optional[Callable[[AsyncPeerConnection], None]]:
         """Get the on_peer_disconnected callback."""
         return self._external_peer_disconnected
 
     @on_peer_disconnected.setter
     def on_peer_disconnected(
-        self, value: Callable[[AsyncPeerConnection], None] | None
+        self, value: Optional[Callable[[AsyncPeerConnection], None]]
     ) -> None:
         """Set the on_peer_disconnected callback and propagate to existing connections."""
         self._external_peer_disconnected = value
@@ -1005,7 +1007,7 @@ class AsyncPeerConnectionManager:
     def _record_probation_peer(
         self,
         peer_key: str,
-        connection: AsyncPeerConnection | None = None,
+        connection: Optional[AsyncPeerConnection] = None,
     ) -> None:
         """Mark peer as probationary until it proves useful."""
         self._ensure_quality_tracking_initialized()
@@ -1020,7 +1022,7 @@ class AsyncPeerConnectionManager:
         self,
         peer_key: str,
         reason: str,
-        connection: AsyncPeerConnection | None = None,
+        connection: Optional[AsyncPeerConnection] = None,
     ) -> None:
         """Mark peer as quality-verified and remove from probation."""
         self._ensure_quality_tracking_initialized()
@@ -1298,7 +1300,7 @@ class AsyncPeerConnectionManager:
         return self._timeout_calculator.calculate_handshake_timeout()
 
     def _calculate_timeout(
-        self, connection: AsyncPeerConnection | None = None
+        self, connection: Optional[AsyncPeerConnection] = None
     ) -> float:
         """Calculate adaptive timeout based on measured RTT.
 
@@ -1369,7 +1371,7 @@ class AsyncPeerConnectionManager:
         self,
         piece_index: int,
         piece_manager: Any,
-        peer_connection: AsyncPeerConnection | None = None,
+        peer_connection: Optional[AsyncPeerConnection] = None,
     ) -> tuple[float, float]:
         """Calculate priority score for a request with bandwidth consideration.
 
@@ -1650,7 +1652,7 @@ class AsyncPeerConnectionManager:
         sorted_requests = sorted(requests, key=lambda r: (r.piece_index, r.begin))
 
         coalesced: list[RequestInfo] = []
-        current: RequestInfo | None = None
+        current: Optional[RequestInfo] = None
 
         for req in sorted_requests:
             if current is None:
@@ -3031,7 +3033,7 @@ class AsyncPeerConnectionManager:
                 )
 
             try:
-                pending_enqueue_reason: str | None = None
+                pending_enqueue_reason: Optional[str] = None
                 for batch_start in range(0, len(all_peers_to_process), batch_size):
                     # CRITICAL FIX: Check if manager is shutting down before processing batch
                     if not self._running:
@@ -3969,7 +3971,7 @@ class AsyncPeerConnectionManager:
         # CRITICAL FIX: Acquire semaphore to limit concurrent connection attempts (BitTorrent spec compliant)
         # This prevents OS socket exhaustion on Windows and other platforms
         async with self._global_connection_semaphore:
-            connection: AsyncPeerConnection | None = None
+            connection: Optional[AsyncPeerConnection] = None
             try:
                 # Check if torrent is private and validate peer source (BEP 27)
                 is_private = getattr(
@@ -7296,7 +7298,7 @@ class AsyncPeerConnectionManager:
                                         num_pieces = math.ceil(metadata_size / 16384)
                                         # Recreate state for late response handling
                                         piece_events: dict[int, asyncio.Event] = {}
-                                        piece_data_dict: dict[int, bytes | None] = {}
+                                        piece_data_dict: dict[int, Optional[bytes]] = {}
                                         for piece_idx in range(num_pieces):
                                             piece_events[piece_idx] = asyncio.Event()
                                             piece_data_dict[piece_idx] = None
@@ -12243,7 +12245,7 @@ class AsyncPeerConnectionManager:
             else:
                 peer_key = str(connection.peer_info)
             piece_events: dict[int, asyncio.Event] = {}
-            piece_data_dict: dict[int, bytes | None] = {}
+            piece_data_dict: dict[int, Optional[bytes]] = {}
 
             for piece_idx in range(num_pieces):
                 piece_events[piece_idx] = asyncio.Event()
@@ -13652,7 +13654,7 @@ class AsyncPeerConnectionManager:
             )
             return True
 
-    async def get_per_peer_rate_limit(self, peer_key: str) -> int | None:
+    async def get_per_peer_rate_limit(self, peer_key: str) -> Optional[int]:
         """Get per-peer upload rate limit for a specific peer.
 
         Args:

@@ -25,7 +25,7 @@ from ccbt.transport.utp import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover
-    from typing import Any, Callable
+    from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -152,13 +152,13 @@ class UTPPeerConnection(AsyncPeerConnection):
     """
 
     # uTP-specific fields
-    utp_connection: UTPConnection | None = None
+    utp_connection: Optional[UTPConnection] = None
 
     # Callbacks for compatibility with AsyncPeerConnection interface
-    on_peer_connected: Callable[[AsyncPeerConnection], None] | None = None
-    on_peer_disconnected: Callable[[AsyncPeerConnection], None] | None = None
-    on_bitfield_received: Callable[[AsyncPeerConnection, Any], None] | None = None
-    on_piece_received: Callable[[AsyncPeerConnection, Any], None] | None = None
+    on_peer_connected: Optional[Callable[[AsyncPeerConnection], None]] = None
+    on_peer_disconnected: Optional[Callable[[AsyncPeerConnection], None]] = None
+    on_bitfield_received: Optional[Callable[[AsyncPeerConnection, Any], None]] = None
+    on_piece_received: Optional[Callable[[AsyncPeerConnection, Any], None]] = None
 
     def __post_init__(self) -> None:
         """Initialize uTP peer connection."""

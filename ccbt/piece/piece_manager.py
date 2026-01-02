@@ -6,7 +6,7 @@ import hashlib
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 
 class PieceState(Enum):
@@ -55,7 +55,7 @@ class PieceData:
     blocks: list[PieceBlock] = field(default_factory=list)
     state: PieceState = PieceState.MISSING
     hash_verified: bool = False
-    data_buffer: bytearray | None = None
+    data_buffer: Optional[bytearray] = None
 
     def __post_init__(self):
         """Initialize blocks after creation."""
@@ -153,10 +153,10 @@ class PieceManager:
         self.lock = threading.Lock()
 
         # Callbacks
-        self.on_piece_completed: Callable[[int], None] | None = None
-        self.on_piece_verified: Callable[[int], None] | None = None
-        self.on_file_assembled: Callable[[int], None] | None = None
-        self.on_download_complete: Callable[[], None] | None = None
+        self.on_piece_completed: Optional[Callable[[int], None]] = None
+        self.on_piece_verified: Optional[Callable[[int], None]] = None
+        self.on_file_assembled: Optional[Callable[[int], None]] = None
+        self.on_download_complete: Optional[Callable[[], None]] = None
 
         # File assembler
         self.file_assembler = None
@@ -173,7 +173,7 @@ class PieceManager:
                 if piece.state == PieceState.MISSING
             ]
 
-    def get_random_missing_piece(self) -> int | None:
+    def get_random_missing_piece(self) -> Optional[int]:
         """Get a random missing piece index."""
         missing = self.get_missing_pieces()
         if not missing:
@@ -291,7 +291,7 @@ class PieceManager:
                 if self.on_download_complete:
                     self.on_download_complete()
 
-    def get_piece_data(self, piece_index: int) -> bytes | None:
+    def get_piece_data(self, piece_index: int) -> Optional[bytes]:
         """Get data for a verified piece."""
         if piece_index >= self.num_pieces:
             return None

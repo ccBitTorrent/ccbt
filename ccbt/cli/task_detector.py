@@ -6,7 +6,7 @@ Detects commands that typically take a long time and should show splash screens.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional
 
 
 @dataclass
@@ -79,7 +79,7 @@ class TaskDetector:
             return task_info.expected_duration >= self.threshold
         return False
 
-    def get_task_info(self, command_name: str) -> TaskInfo | None:
+    def get_task_info(self, command_name: str) -> Optional[Any]:  # Optional[TaskInfo]
         """Get task information for a command.
 
         Args:
@@ -148,7 +148,7 @@ class TaskDetector:
         )
 
     @staticmethod
-    def from_command(ctx: dict[str, Any] | None = None) -> TaskDetector:
+    def from_command(ctx: Optional[dict[str, Any]] = None) -> TaskDetector:
         """Create TaskDetector from Click context.
 
         Args:

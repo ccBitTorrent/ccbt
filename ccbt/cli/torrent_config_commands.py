@@ -8,7 +8,7 @@ Provides commands to set, get, list, and reset per-torrent configuration options
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
+from typing import Any, Optional, Union, cast
 
 import click
 from rich.console import Console
@@ -25,7 +25,7 @@ console = Console()
 
 
 async def _get_torrent_session(
-    info_hash_hex: str, session_manager: AsyncSessionManager | None = None
+    info_hash_hex: str, session_manager: Optional[AsyncSessionManager] = None
 ) -> Any:
     """Get torrent session by info hash.
 
@@ -50,7 +50,7 @@ async def _get_torrent_session(
         return session_manager.torrents.get(info_hash)
 
 
-def _parse_value(raw: str) -> bool | int | float | str:
+def _parse_value(raw: str) -> Union[bool, int, float, str]:
     """Parse string value to appropriate type.
 
     Args:
@@ -430,7 +430,7 @@ def torrent_config_list(_ctx: click.Context, info_hash: str) -> None:
 
 
 async def _reset_torrent_options(
-    info_hash: str, key: str | None, save_checkpoint: bool
+    info_hash: str, key: Optional[str], save_checkpoint: bool
 ) -> None:
     """Reset per-torrent configuration options (async implementation).
 
@@ -551,7 +551,7 @@ async def _reset_torrent_options(
 )
 @click.pass_context
 def torrent_config_reset(
-    _ctx: click.Context, info_hash: str, key: str | None, save_checkpoint: bool
+    _ctx: click.Context, info_hash: str, key: Optional[str], save_checkpoint: bool
 ) -> None:
     """Reset per-torrent configuration options.
 

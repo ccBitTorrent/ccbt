@@ -12,7 +12,7 @@ import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.extensions.compact import CompactPeerLists
 from ccbt.extensions.dht import DHTExtension
@@ -46,7 +46,7 @@ class ExtensionState:
     capabilities: dict[str, Any]
     last_activity: float
     error_count: int = 0
-    last_error: str | None = None
+    last_error: Optional[str] = None
 
 
 class ExtensionManager:
@@ -255,11 +255,11 @@ class ExtensionManager:
                     ),
                 )
 
-    def get_extension(self, name: str) -> Any | None:
+    def get_extension(self, name: str) -> Optional[Any]:
         """Get extension by name."""
         return self.extensions.get(name)
 
-    def get_extension_state(self, name: str) -> ExtensionState | None:
+    def get_extension_state(self, name: str) -> Optional[ExtensionState]:
         """Get extension state."""
         return self.extension_states.get(name)
 
@@ -384,7 +384,7 @@ class ExtensionManager:
         peer_ip: str,
         peer_port: int,
         data: bytes,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Handle DHT message."""
         if not self.is_extension_active("dht"):
             return None
@@ -406,7 +406,7 @@ class ExtensionManager:
         self,
         webseed_id: str,
         piece_info: PieceInfo,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Download piece from WebSeed."""
         if not self.is_extension_active("webseed"):
             return None
@@ -423,7 +423,7 @@ class ExtensionManager:
         else:
             return data
 
-    def add_webseed(self, url: str, name: str | None = None) -> str:
+    def add_webseed(self, url: str, name: Optional[str] = None) -> str:
         """Add WebSeed."""
         if not self.is_extension_active("webseed"):
             msg = "WebSeed extension not active"
@@ -448,7 +448,7 @@ class ExtensionManager:
         peer_id: str,
         message_type: int,  # noqa: ARG002 - Required by interface signature
         data: bytes,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Handle SSL Extension message.
 
         Args:
@@ -510,7 +510,7 @@ class ExtensionManager:
         peer_id: str,
         message_type: int,  # noqa: ARG002 - Required by interface signature
         data: bytes,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Handle Xet Extension message.
 
         Args:
@@ -714,7 +714,7 @@ class ExtensionManager:
 # Singleton pattern removed - ExtensionManager is now managed via AsyncSessionManager.extension_manager
 # This ensures proper lifecycle management and prevents conflicts between multiple session managers
 # Deprecated singleton kept for backward compatibility
-_extension_manager: ExtensionManager | None = (
+_extension_manager: Optional[ExtensionManager] = (
     None  # Deprecated - use session_manager.extension_manager
 )
 

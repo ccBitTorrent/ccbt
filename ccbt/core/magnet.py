@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass
@@ -18,11 +18,11 @@ class MagnetInfo:
     """Information extracted from a magnet link (BEP 9 + BEP 53)."""
 
     info_hash: bytes
-    display_name: str | None
+    display_name: Optional[str]
     trackers: list[str]
     web_seeds: list[str]
-    selected_indices: list[int] | None = None  # BEP 53: so parameter
-    prioritized_indices: dict[int, int] | None = None  # BEP 53: x.pe parameter
+    selected_indices: Optional[list[int]] = None  # BEP 53: so parameter
+    prioritized_indices: Optional[dict[int, int]] = None  # BEP 53: x.pe parameter
 
 
 def _hex_or_base32_to_bytes(btih: str) -> bytes:
@@ -243,9 +243,9 @@ def parse_magnet(uri: str) -> MagnetInfo:
 
 def build_minimal_torrent_data(
     info_hash: bytes,
-    name: str | None,
+    name: Optional[str],
     trackers: list[str],
-    web_seeds: list[str] | None = None,
+    web_seeds: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Create a minimal `torrent_data` placeholder using known info.
 
@@ -371,7 +371,7 @@ def build_minimal_torrent_data(
 
 
 def validate_and_normalize_indices(
-    indices: list[int] | None,
+    indices: Optional[list[int]],
     num_files: int,
     parameter_name: str = "indices",
 ) -> list[int]:
@@ -695,11 +695,11 @@ async def apply_magnet_file_selection(
 
 def generate_magnet_link(
     info_hash: bytes,
-    display_name: str | None = None,
-    trackers: list[str] | None = None,
-    web_seeds: list[str] | None = None,
-    selected_indices: list[int] | None = None,
-    prioritized_indices: dict[int, int] | None = None,
+    display_name: Optional[str] = None,
+    trackers: Optional[list[str]] = None,
+    web_seeds: Optional[list[str]] = None,
+    selected_indices: Optional[list[int]] = None,
+    prioritized_indices: Optional[dict[int, int]] = None,
     use_base32: bool = False,
 ) -> str:
     """Generate a magnet URI with optional file indices (BEP 53).

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.session.tasks import TaskSupervisor
 
@@ -17,7 +17,7 @@ class MetricsAndStatus:
     """Status aggregation and metrics emission helper for session/manager."""
 
     def __init__(
-        self, ctx: SessionContext, tasks: TaskSupervisor | None = None
+        self, ctx: SessionContext, tasks: Optional[TaskSupervisor] = None
     ) -> None:
         """Initialize the metrics and status helper with session context and optional task supervisor."""
         self._ctx = ctx

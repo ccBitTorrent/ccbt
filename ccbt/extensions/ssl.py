@@ -12,7 +12,7 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -33,7 +33,7 @@ class SSLNegotiationState:
     peer_id: str
     state: str  # "idle", "requested", "accepted", "rejected"
     timestamp: float
-    request_id: int | None = None
+    request_id: Optional[int] = None
 
 
 class SSLExtension:
@@ -297,7 +297,7 @@ class SSLExtension:
             ),
         )
 
-    def get_negotiation_state(self, peer_id: str) -> SSLNegotiationState | None:
+    def get_negotiation_state(self, peer_id: str) -> Optional[SSLNegotiationState]:
         """Get SSL negotiation state for peer.
 
         Args:

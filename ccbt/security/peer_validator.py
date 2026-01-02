@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from ccbt.models import PeerInfo
@@ -226,7 +226,7 @@ class PeerValidator:
 
         return quality_score, assessment_details
 
-    def get_validation_metrics(self, peer_id: str) -> ValidationMetrics | None:
+    def get_validation_metrics(self, peer_id: str) -> Optional[ValidationMetrics]:
         """Get validation metrics for a peer."""
         return self.validation_metrics.get(peer_id)
 

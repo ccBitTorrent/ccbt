@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
@@ -125,10 +125,10 @@ def get_app() -> TerminalDashboard:
         
         # Use a thread pool executor to run the async function in isolation
         # This prevents event loop conflicts with Textual
-        result_container: list[tuple[bool, Any | None]] = []
+        result_container: list[tuple[bool, Optional[Any]]] = []
         exception_container: list[Exception] = []
         
-        async def _ensure_and_close() -> tuple[bool, Any | None]:
+        async def _ensure_and_close() -> tuple[bool, Optional[Any]]:
             """Ensure daemon is running and close the IPCClient before returning.
             
             This wrapper ensures the IPCClient is closed in the same event loop
@@ -321,7 +321,7 @@ def get_app() -> TerminalDashboard:
 # CRITICAL: Textual's run command may try to call `app()` as a function
 # So we need to make `app` a callable that returns the app instance
 # We use lazy initialization to avoid creating the app twice
-_app_instance: TerminalDashboard | None = None
+_app_instance: Optional[TerminalDashboard] = None
 _daemon_ready: bool = False
 
 def _get_app_instance() -> TerminalDashboard:

@@ -13,7 +13,7 @@ Provides comprehensive progress tracking including:
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Optional, Union
 
 from rich.progress import (
     BarColumn,
@@ -46,7 +46,7 @@ class ProgressManager:
         self.active_progress: dict[str, Progress] = {}
         self.progress_tasks: dict[str, Any] = {}
 
-    def create_progress(self, _description: str | None = None) -> Progress:
+    def create_progress(self, _description: Optional[str] = None) -> Progress:
         """Create a new progress bar with i18n support.
 
         Args:
@@ -67,7 +67,7 @@ class ProgressManager:
         )
 
     def create_download_progress(
-        self, _torrent: TorrentInfo | Mapping[str, Any]
+        self, _torrent: Union[TorrentInfo, Mapping[str, Any]]
     ) -> Progress:
         """Create download progress bar with i18n support."""
         return Progress(
@@ -83,7 +83,7 @@ class ProgressManager:
         )
 
     def create_upload_progress(
-        self, _torrent: TorrentInfo | Mapping[str, Any]
+        self, _torrent: Union[TorrentInfo, Mapping[str, Any]]
     ) -> Progress:
         """Create upload progress bar with i18n support."""
         return Progress(
@@ -389,7 +389,7 @@ class ProgressManager:
         )
 
     def create_operation_progress(
-        self, _description: str | None = None, show_speed: bool = False
+        self, _description: Optional[str] = None, show_speed: bool = False
     ) -> Progress:
         """Create a generic operation progress bar.
 
@@ -415,7 +415,9 @@ class ProgressManager:
 
         return Progress(*columns, console=self.console)
 
-    def create_multi_task_progress(self, _description: str | None = None) -> Progress:
+    def create_multi_task_progress(
+        self, _description: Optional[str] = None
+    ) -> Progress:
         """Create a progress bar for multiple parallel tasks.
 
         Args:
@@ -437,7 +439,7 @@ class ProgressManager:
         )
 
     def create_indeterminate_progress(
-        self, _description: str | None = None
+        self, _description: Optional[str] = None
     ) -> Progress:
         """Create an indeterminate progress bar (no known total).
 
@@ -460,7 +462,7 @@ class ProgressManager:
     def with_progress(
         self,
         description: str,
-        total: int | None = None,
+        total: Optional[int] = None,
         progress_type: str = "operation",
     ) -> Iterator[tuple[Progress, int]]:
         """Context manager for automatic progress tracking.
@@ -507,7 +509,7 @@ class ProgressManager:
 
     def create_progress_callback(
         self, progress: Progress, task_id: int
-    ) -> Callable[[float, dict[str, Any] | None], None]:
+    ) -> Callable[[float, Optional[dict[str, Any]]], None]:
         """Create a progress callback for async operations.
 
         Args:
@@ -519,7 +521,7 @@ class ProgressManager:
 
         """
 
-        def callback(completed: float, fields: dict[str, Any] | None = None) -> None:
+        def callback(completed: float, fields: Optional[dict[str, Any]] = None) -> None:
             """Update progress with completed amount and optional fields."""
             progress.update(task_id, completed=completed)
             if fields:

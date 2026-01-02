@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.services.base import HealthCheck, Service
 from ccbt.utils.logging_config import LoggingContext
@@ -58,7 +58,7 @@ class PeerService(Service):
         self.total_pieces_uploaded = 0
 
         # Background task reference
-        self._monitor_task: asyncio.Task[None] | None = None
+        self._monitor_task: Optional[asyncio.Task[None]] = None
 
     async def start(self) -> None:
         """Start the peer service."""
@@ -248,7 +248,7 @@ class PeerService(Service):
         except Exception:
             self.logger.exception("Error disconnecting peer %s", peer_id)
 
-    async def get_peer(self, peer_id: str) -> PeerConnection | None:
+    async def get_peer(self, peer_id: str) -> Optional[PeerConnection]:
         """Get peer connection by ID."""
         return self.peers.get(peer_id)
 

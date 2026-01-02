@@ -1,7 +1,5 @@
 """Advanced Metrics Collector for ccBitTorrent.
 
-from __future__ import annotations
-
 Provides comprehensive metrics collection including:
 - Custom metrics with labels
 - Metric aggregation and rollup
@@ -19,7 +17,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, Optional, TypedDict, Union
 
 import psutil
 
@@ -73,7 +71,7 @@ class MetricLabel:
 class MetricValue:
     """Metric value with timestamp."""
 
-    value: int | float | str
+    value: Union[int, float, str]
     timestamp: float
     labels: list[MetricLabel] = field(default_factory=list)
 
@@ -198,16 +196,16 @@ class MetricsCollector:
         }
 
         # Session reference for accessing DHT, queue, disk I/O, and tracker services
-        self._session: Any | None = None
+        self._session: Optional[Any] = None
 
         # Collection interval
         self.collection_interval = 5.0  # seconds
-        self.collection_task: asyncio.Task | None = None
+        self.collection_task: Optional[asyncio.Task] = None
         self.running = False
 
         # HTTP server for Prometheus endpoint (if enabled)
-        self._http_server: Any | None = None
-        self._http_server_thread: Any | None = None
+        self._http_server: Optional[Any] = None
+        self._http_server_thread: Optional[Any] = None
 
         # Statistics
         self.stats = {
@@ -270,7 +268,7 @@ class MetricsCollector:
         name: str,
         metric_type: MetricType,
         description: str,
-        labels: list[MetricLabel] | None = None,
+        labels: Optional[list[MetricLabel]] = None,
         aggregation: AggregationType = AggregationType.SUM,
         retention_seconds: int = 3600,
     ) -> None:
@@ -287,8 +285,8 @@ class MetricsCollector:
     def record_metric(
         self,
         name: str,
-        value: float | str,
-        labels: list[MetricLabel] | None = None,
+        value: Union[float, str],
+        labels: Optional[list[MetricLabel]] = None,
     ) -> None:
         """Record a metric value."""
         if name not in self.metrics:
@@ -320,7 +318,7 @@ class MetricsCollector:
 
             am = get_alert_manager()
             # Only attempt numeric evaluation for shared rules
-            v_any: float | str = value
+            v_any: Union[float, str] = value
             if isinstance(value, str):
                 # simple numeric parse; ignore parse errors
                 with contextlib.suppress(Exception):  # pragma: no cover
@@ -349,7 +347,7 @@ class MetricsCollector:
         self,
         name: str,
         value: int = 1,
-        labels: list[MetricLabel] | None = None,
+        labels: Optional[list[MetricLabel]] = None,
     ) -> None:
         """Increment a counter metric."""
         if name not in self.metrics:  # pragma: no cover
@@ -370,7 +368,7 @@ class MetricsCollector:
         self,
         name: str,
         value: float,
-        labels: list[MetricLabel] | None = None,
+        labels: Optional[list[MetricLabel]] = None,
     ) -> None:
         """Set a gauge metric value."""
         if name not in self.metrics:
@@ -382,7 +380,7 @@ class MetricsCollector:
         self,
         name: str,
         value: float,
-        labels: list[MetricLabel] | None = None,
+        labels: Optional[list[MetricLabel]] = None,
     ) -> None:
         """Record a histogram value."""
         if name not in self.metrics:
@@ -409,15 +407,15 @@ class MetricsCollector:
             cooldown_seconds=cooldown_seconds,
         )
 
-    def get_metric(self, name: str) -> Metric | None:
+    def get_metric(self, name: str) -> Optional[Metric]:
         """Get a metric by name."""
         return self.metrics.get(name)  # pragma: no cover
 
     def get_metric_value(
         self,
         name: str,
-        aggregation: AggregationType | None = None,
-    ) -> int | float | str | None:
+        aggregation: Optional[AggregationType] = None,
+    ) -> Optional[Union[int, float, str]]:
         """Get aggregated metric value."""
         if name not in self.metrics:  # pragma: no cover
             return None
@@ -891,7 +889,9 @@ class MetricsCollector:
                 self._connection_successes.get(peer_key, 0) + 1
             )
 
-    async def get_connection_success_rate(self, peer_key: str | None = None) -> float:
+    async def get_connection_success_rate(
+        self, peer_key: Optional[str] = None
+    ) -> float:
         """Get connection success rate for a peer or globally.
 
         Args:
@@ -1274,7 +1274,7 @@ class MetricsCollector:
                     ),
                 )
 
-    def _check_alert_rules(self, metric_name: str, value: float | str) -> None:
+    def _check_alert_rules(self, metric_name: str, value: Union[float, str]) -> None:
         """Check alert rules for a metric."""
         for rule_name, rule in self.alert_rules.items():
             if rule.metric_name != metric_name or not rule.enabled:
@@ -1328,7 +1328,7 @@ class MetricsCollector:
                     lambda _t: None
                 )  # Discard task reference  # pragma: no cover
 
-    def _evaluate_condition(self, condition: str, value: float | str) -> bool:
+    def _evaluate_condition(self, condition: str, value: Union[float, str]) -> bool:
         """Evaluate alert condition safely."""
         try:
             # Replace 'value' with actual value

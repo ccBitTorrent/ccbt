@@ -21,7 +21,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from typing_extensions import Self
 
@@ -56,12 +56,12 @@ class Span:
 
     trace_id: str
     span_id: str
-    parent_span_id: str | None
+    parent_span_id: Optional[str]
     name: str
     kind: SpanKind
     start_time: float
-    end_time: float | None = None
-    duration: float | None = None
+    end_time: Optional[float] = None
+    duration: Optional[float] = None
     status: SpanStatus = SpanStatus.OK
     attributes: dict[str, Any] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
@@ -75,10 +75,10 @@ class Trace:
 
     trace_id: str
     spans: list[Span] = field(default_factory=list)
-    start_time: float | None = None
-    end_time: float | None = None
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
     duration: float = 0.0
-    root_span: Span | None = None
+    root_span: Optional[Span] = None
 
 
 class TracingManager:
@@ -89,7 +89,7 @@ class TracingManager:
         self.active_spans: dict[str, Span] = {}
         self.completed_spans: deque = deque(maxlen=10000)
         self.traces: dict[str, Trace] = {}
-        self.trace_context: contextvars.ContextVar[dict[str, str] | None] = (
+        self.trace_context: contextvars.ContextVar[Optional[dict[str, str]]] = (
             contextvars.ContextVar("trace_context", default=None)
         )
 
@@ -115,8 +115,8 @@ class TracingManager:
         self,
         name: str,
         kind: SpanKind = SpanKind.INTERNAL,
-        parent_span_id: str | None = None,
-        attributes: dict[str, Any] | None = None,
+        parent_span_id: Optional[str] = None,
+        attributes: Optional[dict[str, Any]] = None,
     ) -> str:
         """Start a new span."""
         # Generate trace ID if not in context
@@ -168,8 +168,8 @@ class TracingManager:
         self,
         span_id: str,
         status: SpanStatus = SpanStatus.OK,
-        attributes: dict[str, Any] | None = None,
-    ) -> Span | None:
+        attributes: Optional[dict[str, Any]] = None,
+    ) -> Optional[Span]:
         """End a span."""
         if span_id not in self.active_spans:
             return None
@@ -217,7 +217,7 @@ class TracingManager:
         self,
         span_id: str,
         name: str,
-        attributes: dict[str, Any] | None = None,
+        attributes: Optional[dict[str, Any]] = None,
     ) -> None:
         """Add an event to a span."""
         if span_id not in self.active_spans:
@@ -239,14 +239,14 @@ class TracingManager:
         span = self.active_spans[span_id]
         span.attributes[key] = value
 
-    def get_active_span(self) -> Span | None:
+    def get_active_span(self) -> Optional[Span]:
         """Get the current active span."""
         span_id = self._get_current_span_id()
         if span_id and span_id in self.active_spans:
             return self.active_spans[span_id]
         return None
 
-    def get_trace(self, trace_id: str) -> Trace | None:
+    def get_trace(self, trace_id: str) -> Optional[Trace]:
         """Get a complete trace."""
         return self.traces.get(trace_id)
 
@@ -336,14 +336,14 @@ class TracingManager:
 
         return trace_id
 
-    def _get_current_span_id(self) -> str | None:
+    def _get_current_span_id(self) -> Optional[str]:
         """Get current span ID from context."""
         context = self.trace_context.get()
         if context is None:
             return None
         return context.get("span_id")
 
-    def _update_trace_context(self, trace_id: str, span_id: str | None) -> None:
+    def _update_trace_context(self, trace_id: str, span_id: Optional[str]) -> None:
         """Update trace context."""
         context = {
             "trace_id": trace_id,
@@ -429,14 +429,14 @@ class TraceContext:
         tracing_manager: TracingManager,
         name: str,
         kind: SpanKind = SpanKind.INTERNAL,
-        attributes: dict[str, Any] | None = None,
+        attributes: Optional[dict[str, Any]] = None,
     ):
         """Initialize trace context."""
         self.tracing_manager = tracing_manager
         self.name = name
         self.kind = kind
         self.attributes = attributes
-        self.span_id: str | None = None
+        self.span_id: Optional[str] = None
 
     def __enter__(self) -> Self:
         """Enter the span context manager."""
@@ -466,7 +466,7 @@ class TraceContext:
             # End span
             self.tracing_manager.end_span(self.span_id, status)
 
-    def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> None:
+    def add_event(self, name: str, attributes: Optional[dict[str, Any]] = None) -> None:
         """Add event to current span."""
         if self.span_id:
             self.tracing_manager.add_span_event(self.span_id, name, attributes)
@@ -477,7 +477,7 @@ class TraceContext:
             self.tracing_manager.add_span_attribute(self.span_id, key, value)
 
 
-def trace_function(tracing_manager: TracingManager, name: str | None = None):
+def trace_function(tracing_manager: TracingManager, name: Optional[str] = None):
     """Provide decorator for tracing functions."""
 
     def decorator(func):
@@ -492,7 +492,7 @@ def trace_function(tracing_manager: TracingManager, name: str | None = None):
     return decorator
 
 
-def trace_async_function(tracing_manager: TracingManager, name: str | None = None):
+def trace_async_function(tracing_manager: TracingManager, name: Optional[str] = None):
     """Provide decorator for tracing async functions."""
 
     def decorator(func):

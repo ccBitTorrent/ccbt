@@ -11,7 +11,7 @@ from __future__ import annotations
 import threading
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Optional, Union
 
 from ccbt.utils.logging_config import get_logger
 
@@ -125,7 +125,7 @@ class RingBuffer:
             self.used -= to_read
             return bytes(result)
 
-    def peek_views(self, size: int | None = None) -> list[memoryview]:
+    def peek_views(self, size: Optional[int] = None) -> list[memoryview]:
         """Return up to two memoryviews representing current readable data without consuming it.
 
         Args:
@@ -230,7 +230,7 @@ class MemoryPool:
         self,
         size: int,
         count: int,
-        factory: Callable[[], Any] | None = None,
+        factory: Optional[Callable[[], Any]] = None,
     ) -> None:
         """Initialize memory pool.
 
@@ -322,7 +322,7 @@ class ZeroCopyBuffer:
         self.lock = threading.Lock()
         self.logger = get_logger(__name__)
 
-    def write(self, data: bytes | memoryview) -> int:
+    def write(self, data: Union[bytes, memoryview]) -> int:
         """Write data to buffer with zero-copy when possible.
 
         Args:
@@ -430,7 +430,7 @@ class BufferManager:
         self,
         size: int,
         count: int,
-        factory: Callable[[], Any] | None = None,
+        factory: Optional[Callable[[], Any]] = None,
     ) -> MemoryPool:
         """Create a new memory pool."""
         with self.lock:
@@ -457,7 +457,7 @@ class BufferManager:
 
 
 # Global buffer manager instance
-_buffer_manager: BufferManager | None = None
+_buffer_manager: Optional[BufferManager] = None
 
 
 def get_buffer_manager() -> BufferManager:

@@ -7,7 +7,7 @@ tabbed interface without requiring full screen push.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from ccbt.interface.commands.executor import CommandExecutor
@@ -155,7 +155,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         config_type: str,
         data_provider: DataProvider,
         command_executor: CommandExecutor,
-        info_hash: str | None = None,
+        info_hash: Optional[str] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -172,11 +172,11 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         self._data_provider = data_provider
         self._command_executor = command_executor
         self._info_hash = info_hash
-        self._content_widget: Static | None = None
-        self._sections_table: DataTable | None = None
-        self._selected_section: str | None = None
+        self._content_widget: Optional[Static] = None
+        self._sections_table: Optional[DataTable] = None
+        self._selected_section: Optional[str] = None
         self._editors: dict[str, ConfigValueEditor] = {}
-        self._editors_container: Container | None = None
+        self._editors_container: Optional[Container] = None
         self._original_values: dict[str, Any] = {}
         self._editing_mode = False
         self._changed_values: set[str] = set()

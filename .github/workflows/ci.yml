@@ -38,6 +38,10 @@ jobs:
       - name: Run Ruff formatting check
         run: |
           uv run ruff --config dev/ruff.toml format --check ccbt/
+      
+      - name: Run compatibility linter
+        run: |
+          uv run python dev/compatibility_linter.py ccbt/
 
   type-check:
     name: type-check

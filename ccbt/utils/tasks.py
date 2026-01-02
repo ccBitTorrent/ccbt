@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Coroutine
+from typing import Any, Coroutine, Optional
 
 
 class BackgroundTaskGroup:
@@ -20,7 +20,7 @@ class BackgroundTaskGroup:
         task.add_done_callback(self._tasks.discard)
         return task
 
-    async def cancel_and_wait(self, timeout: float | None = None) -> None:
+    async def cancel_and_wait(self, timeout: Optional[float] = None) -> None:
         """Cancel all tracked tasks and wait for completion (with optional timeout)."""
         if not self._tasks:
             return

@@ -9,7 +9,7 @@ import logging
 import os
 import platform
 import subprocess
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from ccbt.interface.commands.executor import CommandExecutor
@@ -92,9 +92,9 @@ class TorrentInfoScreen(Container):  # type: ignore[misc]
         self._data_provider = data_provider
         self._command_executor = command_executor
         self._info_hash = info_hash
-        self._info_widget: Static | None = None
-        self._health_bar: PieceAvailabilityHealthBar | None = None
-        self._dht_aggressive_switch: Switch | None = None
+        self._info_widget: Optional[Static] = None
+        self._health_bar: Optional[PieceAvailabilityHealthBar] = None
+        self._dht_aggressive_switch: Optional[Switch] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the info screen."""

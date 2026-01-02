@@ -6,7 +6,7 @@ Handles XET folder synchronization commands (tonic.create, tonic.sync, etc.).
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.executor.base import CommandExecutor, CommandResult
 
@@ -83,12 +83,12 @@ class XetExecutor(CommandExecutor):
     async def _create_tonic(
         self,
         folder_path: str,
-        output_path: str | None = None,
+        output_path: Optional[str] = None,
         sync_mode: str = "best_effort",
-        source_peers: list[str] | None = None,
-        allowlist_path: str | None = None,
-        git_ref: str | None = None,
-        announce: str | None = None,
+        source_peers: Optional[list[str]] = None,
+        allowlist_path: Optional[str] = None,
+        git_ref: Optional[str] = None,
+        announce: Optional[str] = None,
     ) -> CommandResult:
         """Create .tonic file from folder."""
         try:
@@ -116,8 +116,8 @@ class XetExecutor(CommandExecutor):
 
     async def _generate_link(
         self,
-        folder_path: str | None = None,
-        tonic_file: str | None = None,
+        folder_path: Optional[str] = None,
+        tonic_file: Optional[str] = None,
     ) -> CommandResult:
         """Generate tonic?: link."""
         try:
@@ -137,7 +137,7 @@ class XetExecutor(CommandExecutor):
                 source_peers = parsed_data.get("source_peers")
                 allowlist_hash = parsed_data.get("allowlist_hash")
 
-                tracker_list: list[str] | None = None
+                tracker_list: Optional[list[str]] = None
                 if trackers:
                     tracker_list = [url for tier in trackers for url in tier]
 
@@ -168,7 +168,7 @@ class XetExecutor(CommandExecutor):
     async def _sync_folder(
         self,
         tonic_input: str,
-        output_dir: str | None = None,
+        output_dir: Optional[str] = None,
         check_interval: float = 5.0,
     ) -> CommandResult:
         """Start syncing folder from .tonic file or tonic?: link."""
@@ -236,7 +236,7 @@ class XetExecutor(CommandExecutor):
         self,
         allowlist_path: str,
         peer_id: str,
-        public_key: str | None = None,
+        public_key: Optional[str] = None,
     ) -> CommandResult:
         """Add peer to allowlist."""
         try:
@@ -430,7 +430,7 @@ class XetExecutor(CommandExecutor):
         self,
         folder_path: str,
         sync_mode: str,
-        source_peers: list[str] | None = None,
+        source_peers: Optional[list[str]] = None,
     ) -> CommandResult:
         """Set synchronization mode for folder."""
         try:
@@ -574,11 +574,11 @@ class XetExecutor(CommandExecutor):
     async def _add_xet_folder_session(
         self,
         folder_path: str,
-        tonic_file: str | None = None,
-        tonic_link: str | None = None,
-        sync_mode: str | None = None,
-        source_peers: list[str] | None = None,
-        check_interval: float | None = None,
+        tonic_file: Optional[str] = None,
+        tonic_link: Optional[str] = None,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        check_interval: Optional[float] = None,
     ) -> CommandResult:
         """Add XET folder session via session manager."""
         try:

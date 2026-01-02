@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional, Union
 
 from ccbt.models import Config
 
@@ -57,7 +57,7 @@ class ConfigMigrator:
     @staticmethod
     def migrate_config(
         config_data: dict[str, Any],
-        target_version: str | None = None,
+        target_version: Optional[str] = None,
     ) -> tuple[dict[str, Any], list[str]]:
         """Migrate configuration to target version.
 
@@ -220,9 +220,9 @@ class ConfigMigrator:
 
     @staticmethod
     def migrate_file(
-        config_file: Path | str,
+        config_file: Union[Path, str],
         backup: bool = True,
-        target_version: str | None = None,
+        target_version: Optional[str] = None,
     ) -> tuple[bool, list[str]]:
         """Migrate a configuration file.
 
@@ -305,8 +305,8 @@ class ConfigMigrator:
 
     @staticmethod
     def rollback_migration(
-        config_file: Path | str,
-        backup_file: Path | str | None = None,
+        config_file: Union[Path, str],
+        backup_file: Optional[Union[Path, str]] = None,
     ) -> tuple[bool, list[str]]:
         """Rollback a migration using backup file.
 

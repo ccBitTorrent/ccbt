@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.storage.xet_deduplication import XetDeduplication
@@ -77,8 +77,8 @@ class XetDataAggregator:
     async def batch_store_chunks(
         self,
         chunks: list[tuple[bytes, bytes]],
-        file_path: str | None = None,
-        file_offsets: list[int] | None = None,
+        file_path: Optional[str] = None,
+        file_offsets: Optional[list[int]] = None,
     ) -> list[Path]:
         """Store multiple chunks in a batch operation.
 
@@ -173,7 +173,7 @@ class XetDataAggregator:
 
         return results
 
-    async def _read_chunk_async(self, chunk_hash: bytes) -> bytes | None:
+    async def _read_chunk_async(self, chunk_hash: bytes) -> Optional[bytes]:
         """Read a single chunk asynchronously.
 
         Args:
@@ -196,7 +196,7 @@ class XetDataAggregator:
             return None
 
     async def optimize_storage_layout(
-        self, _chunk_hashes: list[bytes] | None = None
+        self, _chunk_hashes: Optional[list[bytes]] = None
     ) -> dict[str, Any]:
         """Optimize storage layout for chunks.
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.protocols.base import (
     Protocol,
@@ -262,7 +262,7 @@ class BitTorrentProtocol(Protocol):
             self.update_stats(errors=1)
             return False
 
-    async def receive_message(self, peer_id: str) -> bytes | None:
+    async def receive_message(self, peer_id: str) -> Optional[bytes]:
         """Receive message from BitTorrent peer."""
         try:
             # Use peer manager if available

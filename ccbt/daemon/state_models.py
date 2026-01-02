@@ -6,7 +6,7 @@ Defines Pydantic models for serializing daemon state to msgpack format.
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -44,12 +44,14 @@ class TorrentState(BaseModel):
     total_size: int = Field(0, description="Total size in bytes")
     downloaded: int = Field(0, description="Downloaded bytes")
     uploaded: int = Field(0, description="Uploaded bytes")
-    torrent_file_path: str | None = Field(None, description="Path to torrent file")
-    magnet_uri: str | None = Field(None, description="Magnet URI if added via magnet")
-    per_torrent_options: dict[str, Any] | None = Field(
+    torrent_file_path: Optional[str] = Field(None, description="Path to torrent file")
+    magnet_uri: Optional[str] = Field(
+        None, description="Magnet URI if added via magnet"
+    )
+    per_torrent_options: Optional[dict[str, Any]] = Field(
         None, description="Per-torrent configuration options"
     )
-    rate_limits: dict[str, int] | None = Field(
+    rate_limits: Optional[dict[str, int]] = Field(
         None, description="Per-torrent rate limits: {down_kib: int, up_kib: int}"
     )
 

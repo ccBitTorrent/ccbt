@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from textual.widgets import Input, Static
@@ -23,7 +23,7 @@ class ConfigValueEditor(Input):  # type: ignore[misc]
         current_value: Any,
         value_type: str = "string",
         description: str = "",
-        constraints: dict[str, Any] | None = None,
+        constraints: Optional[dict[str, Any]] = None,
         *args: Any,
         **kwargs: Any,
     ):  # pragma: no cover
@@ -47,7 +47,7 @@ class ConfigValueEditor(Input):  # type: ignore[misc]
         self.description = description
         self.constraints = normalized_constraints
         self._original_value = current_value
-        self._validation_error: str | None = None
+        self._validation_error: Optional[str] = None
 
         # Format initial value for display
         if value_type == "bool":
@@ -102,7 +102,7 @@ class ConfigValueEditor(Input):  # type: ignore[misc]
         return value_str
 
     def validate_value(
-        self, value: str | None = None
+        self, value: Optional[str] = None
     ) -> tuple[bool, str]:  # pragma: no cover
         """Validate the current value or a provided value.
 

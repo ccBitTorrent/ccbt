@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+from typing import Any, Optional
 
 import click
 from rich.console import Console
@@ -20,7 +21,7 @@ from ccbt.storage.xet_deduplication import XetDeduplication
 logger = logging.getLogger(__name__)
 
 
-async def _get_xet_protocol() -> XetProtocol | None:
+async def _get_xet_protocol() -> Optional[Any]:  # Optional[XetProtocol]
     """Get Xet protocol instance from session manager.
 
     Note: If daemon is running, this will check via IPC but cannot return
@@ -98,7 +99,7 @@ def xet() -> None:
 @xet.command("enable")
 @click.option("--config", "config_file", type=click.Path(), default=None)
 @click.pass_context
-def xet_enable(_ctx, config_file: str | None) -> None:
+def xet_enable(_ctx, config_file: Optional[str]) -> None:
     """Enable Xet protocol in configuration."""
     console = Console()
     from ccbt.cli.main import _get_config_from_context
@@ -140,7 +141,7 @@ def xet_enable(_ctx, config_file: str | None) -> None:
 @xet.command("disable")
 @click.option("--config", "config_file", type=click.Path(), default=None)
 @click.pass_context
-def xet_disable(_ctx, config_file: str | None) -> None:
+def xet_disable(_ctx, config_file: Optional[str]) -> None:
     """Disable Xet protocol in configuration."""
     console = Console()
     from ccbt.cli.main import _get_config_from_context
@@ -178,7 +179,7 @@ def xet_disable(_ctx, config_file: str | None) -> None:
 @xet.command("status")
 @click.option("--config", "config_file", type=click.Path(), default=None)
 @click.pass_context
-def xet_status(_ctx, config_file: str | None) -> None:
+def xet_status(_ctx, config_file: Optional[str]) -> None:
     """Show Xet protocol status and configuration."""
     console = Console()
     from ccbt.cli.main import _get_config_from_context
@@ -253,7 +254,7 @@ def xet_status(_ctx, config_file: str | None) -> None:
 @click.option("--config", "config_file", type=click.Path(), default=None)
 @click.option("--json", "json_output", is_flag=True, help="Output in JSON format")
 @click.pass_context
-def xet_stats(_ctx, config_file: str | None, json_output: bool) -> None:
+def xet_stats(_ctx, config_file: Optional[str], json_output: bool) -> None:
     """Show Xet deduplication cache statistics."""
     console = Console()
     from ccbt.cli.main import _get_config_from_context
@@ -320,7 +321,7 @@ def xet_stats(_ctx, config_file: str | None, json_output: bool) -> None:
 @click.option("--limit", type=int, default=10, help="Limit number of chunks to show")
 @click.pass_context
 def xet_cache_info(
-    _ctx, config_file: str | None, json_output: bool, limit: int
+    _ctx, config_file: Optional[str], json_output: bool, limit: int
 ) -> None:
     """Show detailed information about cached chunks."""
     console = Console()
@@ -454,7 +455,7 @@ def xet_cache_info(
 )
 @click.pass_context
 def xet_cleanup(
-    _ctx, config_file: str | None, dry_run: bool, max_age_days: int
+    _ctx, config_file: Optional[str], dry_run: bool, max_age_days: int
 ) -> None:
     """Clean up unused chunks from the deduplication cache."""
     console = Console()

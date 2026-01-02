@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Optional
 
 from ccbt.plugins.base import Plugin
 from ccbt.utils.events import Event, EventHandler, EventType
@@ -18,7 +19,7 @@ from ccbt.utils.logging_config import get_logger
 class EventLoggingHandler(EventHandler):
     """Handler for logging events."""
 
-    def __init__(self, log_file: str | None = None):
+    def __init__(self, log_file: Optional[str] = None):
         """Initialize event logging handler."""
         super().__init__("event_logging_handler")
         self.log_file = log_file
@@ -58,7 +59,7 @@ class LoggingPlugin(Plugin):
     def __init__(
         self,
         name: str = "logging_plugin",
-        log_file: str | None = None,
+        log_file: Optional[str] = None,
         log_level: str = "INFO",
     ):
         """Initialize logging plugin."""
@@ -69,7 +70,7 @@ class LoggingPlugin(Plugin):
         )
         self.log_file = log_file
         self.log_level = log_level
-        self.handler: EventLoggingHandler | None = None
+        self.handler: Optional[EventLoggingHandler] = None
 
     async def initialize(self) -> None:
         """Initialize the logging plugin."""

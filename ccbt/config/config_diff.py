@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ class ConfigDiff:
     def apply_changes(
         base_config: dict[str, Any],
         changes: dict[str, Any],
-        change_types: dict[str, str] | None = None,
+        change_types: Optional[dict[str, str]] = None,
     ) -> dict[str, Any]:
         """Apply specific changes to a configuration.
 
@@ -437,8 +437,8 @@ class ConfigDiff:
 
     @staticmethod
     def compare_files(
-        file1: Path | str,
-        file2: Path | str,
+        file1: Union[Path, str],
+        file2: Union[Path, str],
         ignore_metadata: bool = True,
     ) -> dict[str, Any]:
         """Compare two configuration files.

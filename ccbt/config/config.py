@@ -14,7 +14,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, Callable, Optional, Union, cast
 
 import toml
 
@@ -79,13 +79,13 @@ IS_LINUX = sys.platform.startswith("linux")
 IS_MACOS = sys.platform == "darwin"
 
 # Global configuration instance
-_config_manager: ConfigManager | None = None
+_config_manager: Optional[ConfigManager] = None
 
 
 class ConfigManager:
     """Manages configuration loading, validation, and hot-reload."""
 
-    def __init__(self, config_file: str | Path | None = None):
+    def __init__(self, config_file: Optional[Union[str, Path]] = None):
         """Initialize configuration manager.
 
         Args:
@@ -93,8 +93,8 @@ class ConfigManager:
 
         """
         # internal
-        self._hot_reload_task: asyncio.Task | None = None
-        self._encryption_key: bytes | None = None
+        self._hot_reload_task: Optional[asyncio.Task] = None
+        self._encryption_key: Optional[bytes] = None
         self.config_file = self._find_config_file(config_file)
         self.config = self._load_config()
 
@@ -106,8 +106,8 @@ class ConfigManager:
 
     def _find_config_file(
         self,
-        config_file: str | Path | None,
-    ) -> Path | None:
+        config_file: Optional[Union[str, Path]],
+    ) -> Optional[Path]:
         """Find configuration file in standard locations."""
         if config_file:
             return Path(config_file)
@@ -560,7 +560,7 @@ class ConfigManager:
 
         def _parse_env_value(
             raw: str, path: str
-        ) -> bool | int | float | str | list[str]:
+        ) -> Union[bool, int, float, str, list[str]]:
             # Handle list values (comma-separated strings)
             if path == "security.encryption_allowed_ciphers":
                 return [item.strip() for item in raw.split(",") if item.strip()]
@@ -685,7 +685,7 @@ class ConfigManager:
         config_str = self.export(fmt="toml", encrypt_passwords=True)
         self.config_file.write_text(config_str, encoding="utf-8")
 
-    def _get_encryption_key(self) -> bytes | None:
+    def _get_encryption_key(self) -> Optional[bytes]:
         """Get or create encryption key for proxy passwords.
 
         Returns:
@@ -919,7 +919,7 @@ class ConfigManager:
 
         return ConfigSchema.generate_full_schema()
 
-    def get_section_schema(self, section_name: str) -> dict[str, Any] | None:
+    def get_section_schema(self, section_name: str) -> Optional[dict[str, Any]]:
         """Get schema for a specific configuration section.
 
         Args:
@@ -944,7 +944,7 @@ class ConfigManager:
 
         return ConfigDiscovery.list_all_options()
 
-    def get_option_metadata(self, key_path: str) -> dict[str, Any] | None:
+    def get_option_metadata(self, key_path: str) -> Optional[dict[str, Any]]:
         """Get metadata for a specific configuration option.
 
         Args:
@@ -973,7 +973,9 @@ class ConfigManager:
 
         return ConfigValidator.validate_option(key_path, value)
 
-    def apply_profile(self, profile: OptimizationProfile | str | None = None) -> None:
+    def apply_profile(
+        self, profile: Optional[Union[OptimizationProfile, str]] = None
+    ) -> None:
         """Apply optimization profile to configuration.
 
         Args:
@@ -1134,7 +1136,7 @@ def get_config() -> Config:
     return _config_manager.config
 
 
-def init_config(config_file: str | Path | None = None) -> ConfigManager:
+def init_config(config_file: Optional[Union[str, Path]] = None) -> ConfigManager:
     """Initialize the global configuration manager."""
     return ConfigManager(config_file)
 

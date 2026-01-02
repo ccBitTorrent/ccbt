@@ -9,7 +9,7 @@ import os
 import random
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import pytest
 import pytest_asyncio
@@ -17,7 +17,7 @@ import pytest_asyncio
 # #region agent log
 # Debug logging helper
 _DEBUG_LOG_PATH = Path(__file__).parent.parent / ".cursor" / "debug.log"
-def _debug_log(hypothesis_id: str, location: str, message: str, data: dict | None = None):
+def _debug_log(hypothesis_id: str, location: str, message: str, data: Optional[dict] = None):
     """Write debug log entry in NDJSON format."""
     try:
         # Ensure directory exists

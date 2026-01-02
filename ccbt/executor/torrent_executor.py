@@ -6,7 +6,7 @@ Handles torrent-related commands (add, remove, list, status, pause, resume).
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.executor.base import CommandExecutor, CommandResult
 
@@ -114,7 +114,7 @@ class TorrentExecutor(CommandExecutor):
     async def _add_torrent(
         self,
         path_or_magnet: str,
-        output_dir: str | None = None,
+        output_dir: Optional[str] = None,
         resume: bool = False,
     ) -> CommandResult:
         """Add torrent or magnet."""
@@ -350,7 +350,7 @@ class TorrentExecutor(CommandExecutor):
         self,
         info_hash: bytes,
         checkpoint: Any,
-        torrent_path: str | None = None,
+        torrent_path: Optional[str] = None,
     ) -> CommandResult:
         """Resume download from checkpoint."""
         try:
@@ -726,7 +726,7 @@ class TorrentExecutor(CommandExecutor):
     async def _reset_torrent_options(
         self,
         info_hash: str,
-        key: str | None = None,
+        key: Optional[str] = None,
     ) -> CommandResult:
         """Reset per-torrent configuration options.
 

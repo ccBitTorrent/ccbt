@@ -16,13 +16,13 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 # Define at module level so they always exist for patching/mocking
-CollectorRegistry: type | None = None  # type: ignore[assignment, misc]
-Counter: type | None = None  # type: ignore[assignment, misc]
-Gauge: type | None = None  # type: ignore[assignment, misc]
-start_http_server: Callable | None = None  # type: ignore[assignment, misc]
+CollectorRegistry: Optional[type] = None  # type: ignore[assignment, misc]
+Counter: Optional[type] = None  # type: ignore[assignment, misc]
+Gauge: Optional[type] = None  # type: ignore[assignment, misc]
+start_http_server: Optional[Callable] = None  # type: ignore[assignment, misc]
 
 try:
     from prometheus_client import (
@@ -203,11 +203,11 @@ class MetricsCollector:
             self._setup_prometheus_metrics()
 
         # Background tasks
-        self._metrics_task: asyncio.Task | None = None
-        self._cleanup_task: asyncio.Task | None = None
+        self._metrics_task: Optional[asyncio.Task] = None
+        self._cleanup_task: Optional[asyncio.Task] = None
 
         # Callbacks
-        self.on_metrics_update: Callable[[dict[str, Any]], None] | None = None
+        self.on_metrics_update: Optional[Callable[[dict[str, Any]], None]] = None
 
         self.logger = logging.getLogger(__name__)
 
@@ -700,11 +700,11 @@ class MetricsCollector:
             "peers": len(self.peer_metrics),
         }
 
-    def get_torrent_metrics(self, torrent_id: str) -> TorrentMetrics | None:
+    def get_torrent_metrics(self, torrent_id: str) -> Optional[TorrentMetrics]:
         """Get metrics for a specific torrent."""
         return self.torrent_metrics.get(torrent_id)
 
-    def get_peer_metrics(self, peer_key: str) -> PeerMetrics | None:
+    def get_peer_metrics(self, peer_key: str) -> Optional[PeerMetrics]:
         """Get metrics for a specific peer."""
         return self.peer_metrics.get(peer_key)
 

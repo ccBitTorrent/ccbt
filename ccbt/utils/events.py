@@ -16,7 +16,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.utils.exceptions import CCBTError
 from ccbt.utils.logging_config import get_logger
@@ -239,9 +239,9 @@ class Event:
     timestamp: float = field(default_factory=time.time)
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     priority: EventPriority = EventPriority.NORMAL
-    source: str | None = None
+    source: Optional[str] = None
     data: dict[str, Any] = field(default_factory=dict)
-    correlation_id: str | None = None
+    correlation_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert event to dictionary."""
@@ -285,7 +285,7 @@ class PeerConnectedEvent(Event):
 
     peer_ip: str = ""
     peer_port: int = 0
-    peer_id: str | None = None
+    peer_id: Optional[str] = None
 
     def __post_init__(self):
         """Initialize event type and data."""
@@ -305,7 +305,7 @@ class PeerDisconnectedEvent(Event):
 
     peer_ip: str = ""
     peer_port: int = 0
-    reason: str | None = None
+    reason: Optional[str] = None
 
     def __post_init__(self):
         """Initialize event type and data."""
@@ -324,7 +324,7 @@ class PeerCountLowEvent(Event):
     """Event emitted when peer count is low, triggering discovery."""
 
     active_peers: int = 0
-    info_hash: bytes | None = None
+    info_hash: Optional[bytes] = None
     total_peers: int = 0
 
     def __post_init__(self):
@@ -350,7 +350,7 @@ class PieceDownloadedEvent(Event):
     piece_index: int = 0
     piece_size: int = 0
     download_time: float = 0.0
-    peer_ip: str | None = None
+    peer_ip: Optional[str] = None
 
     def __post_init__(self):
         """Initialize event type and data."""
@@ -436,7 +436,7 @@ class EventBus:
         batch_timeout: float = 0.05,
         emit_timeout: float = 0.01,
         queue_full_threshold: float = 0.9,
-        throttle_intervals: dict[str, float] | None = None,
+        throttle_intervals: Optional[dict[str, float]] = None,
     ):
         """Initialize event bus.
 
@@ -457,8 +457,8 @@ class EventBus:
         self.max_replay_events = 1000
         self.running = False
         self.logger = get_logger(__name__)
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._task: asyncio.Task | None = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._task: Optional[asyncio.Task] = None
 
         # Batch processing configuration
         self.batch_size = batch_size
@@ -796,7 +796,7 @@ class EventBus:
 
     def get_replay_events(
         self,
-        event_type: str | None = None,
+        event_type: Optional[str] = None,
         limit: int = 100,
     ) -> list[Event]:
         """Get events from replay buffer.
@@ -830,7 +830,7 @@ class EventBus:
 
 
 # Global event bus instance
-_event_bus: EventBus | None = None
+_event_bus: Optional[EventBus] = None
 
 
 def get_event_bus() -> EventBus:
@@ -866,7 +866,9 @@ def get_event_bus() -> EventBus:
     return _event_bus
 
 
-def get_recent_events(limit: int = 100, event_type: str | None = None) -> list[Event]:
+def get_recent_events(
+    limit: int = 100, event_type: Optional[str] = None
+) -> list[Event]:
     """Get recent events from the global event bus.
 
     Args:
@@ -890,7 +892,7 @@ async def emit_event(event: Event) -> None:
 async def emit_peer_connected(
     peer_ip: str,
     peer_port: int,
-    peer_id: str | None = None,
+    peer_id: Optional[str] = None,
 ) -> None:
     """Emit peer connected event."""
     event = PeerConnectedEvent(
@@ -905,7 +907,7 @@ async def emit_peer_connected(
 async def emit_peer_disconnected(
     peer_ip: str,
     peer_port: int,
-    reason: str | None = None,
+    reason: Optional[str] = None,
 ) -> None:
     """Emit peer disconnected event."""
     event = PeerDisconnectedEvent(
@@ -921,7 +923,7 @@ async def emit_piece_downloaded(
     piece_index: int,
     piece_size: int,
     download_time: float,
-    peer_ip: str | None = None,
+    peer_ip: Optional[str] = None,
 ) -> None:
     """Emit piece downloaded event."""
     event = PieceDownloadedEvent(
@@ -955,7 +957,7 @@ async def emit_performance_metric(
     metric_name: str,
     metric_value: float,
     metric_unit: str,
-    tags: dict[str, str] | None = None,
+    tags: Optional[dict[str, str]] = None,
 ) -> None:
     """Emit performance metric event."""
     event = PerformanceMetricEvent(

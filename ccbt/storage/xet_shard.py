@@ -10,8 +10,7 @@ import hashlib
 import hmac
 import logging
 import struct
-
-# No Optional needed - using X | None syntax
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +106,7 @@ class XetShard:
         if xorb_hash not in self.xorbs:
             self.xorbs.append(xorb_hash)
 
-    def serialize(self, hmac_key: bytes | None = None) -> bytes:
+    def serialize(self, hmac_key: Optional[bytes] = None) -> bytes:
         """Serialize shard to binary format with optional HMAC.
 
         Format:
@@ -229,7 +228,7 @@ class XetShard:
 
         return data
 
-    def _serialize_footer(self, hmac_key: bytes | None, data: bytes) -> bytes:
+    def _serialize_footer(self, hmac_key: Optional[bytes], data: bytes) -> bytes:
         """Serialize footer with HMAC.
 
         Args:
@@ -245,7 +244,7 @@ class XetShard:
         return b""
 
     @staticmethod
-    def deserialize(data: bytes, hmac_key: bytes | None = None) -> XetShard:
+    def deserialize(data: bytes, hmac_key: Optional[bytes] = None) -> XetShard:
         """Deserialize shard from binary format.
 
         Args:
@@ -392,7 +391,7 @@ class XetShard:
         """
         return len(self.files)
 
-    def get_file_by_path(self, file_path: str) -> dict | None:
+    def get_file_by_path(self, file_path: str) -> Optional[dict]:
         """Get file information by path.
 
         Args:

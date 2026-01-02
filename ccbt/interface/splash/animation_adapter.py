@@ -7,7 +7,7 @@ and message overlays for both Rich Console and Textual widgets.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -25,8 +25,8 @@ class MessageOverlay:
     
     def __init__(
         self,
-        console: Any | None = None,
-        textual_widget: Any | None = None,
+        console: Optional[Any] = None,
+        textual_widget: Optional[Any] = None,
         position: str = "bottom_right",
         max_lines: int = 1,
     ) -> None:
@@ -84,8 +84,8 @@ class AnimationAdapter:
     
     def __init__(
         self,
-        console: Any | None = None,
-        textual_widget: Any | None = None,
+        console: Optional[Any] = None,
+        textual_widget: Optional[Any] = None,
     ) -> None:
         """Initialize animation adapter.
         
@@ -104,8 +104,8 @@ class AnimationAdapter:
         self,
         template_name: str,
         transition: Transition,
-        bg_config: BackgroundConfig | None = None,
-        update_callback: Any | None = None,
+        bg_config: Optional[BackgroundConfig] = None,
+        update_callback: Optional[Any] = None,
     ) -> None:
         """Render animation with template, transition, and background.
         
@@ -144,8 +144,8 @@ class AnimationAdapter:
         self,
         text: str,
         transition: Transition,
-        bg_config: BackgroundConfig | None = None,
-        update_callback: Any | None = None,
+        bg_config: Optional[BackgroundConfig] = None,
+        update_callback: Optional[Any] = None,
     ) -> None:
         """Render animation with text, transition, and background.
         
@@ -186,7 +186,7 @@ class AnimationAdapter:
     def render_frame_with_overlay(
         self,
         frame_content: Any,
-        messages: list[str] | None = None,
+        messages: Optional[list[str]] = None,
     ) -> Any:
         """Render frame (overlay removed - returns frame as-is).
         
@@ -202,9 +202,9 @@ class AnimationAdapter:
     async def run_sequence(
         self,
         transitions: list[Transition],
-        template_name: str | None = None,
-        text: str | None = None,
-        bg_config: BackgroundConfig | None = None,
+        template_name: Optional[str] = None,
+        text: Optional[str] = None,
+        bg_config: Optional[BackgroundConfig] = None,
     ) -> None:
         """Run a sequence of transitions.
         

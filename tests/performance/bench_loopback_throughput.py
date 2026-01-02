@@ -19,7 +19,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 # Import bench_utils using relative import or direct import
 try:
@@ -97,7 +97,7 @@ def write_json(output_dir: Path, benchmark: str, config_name: str, results: List
 	return path
 
 
-def derive_config_name(config_file: str | None) -> str:
+def derive_config_name(config_file: Optional[str]) -> str:
 	if not config_file:
 		return "default"
 	stem = Path(config_file).stem

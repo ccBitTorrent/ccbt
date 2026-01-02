@@ -6,7 +6,7 @@ Provides registration and weighted selection of animations for random sequences.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.interface.splash.animation_config import (
     BackgroundConfig,
@@ -27,9 +27,9 @@ class AnimationMetadata:
     max_duration: float = 2.5
     weight: float = 1.0  # Weight for random selection
     description: str = ""
-    color_palettes: list[list[str]] | None = None
-    background_types: list[str] | None = None
-    directions: list[str] | None = None
+    color_palettes: Optional[list[list[str]]] = None
+    background_types: Optional[list[str]] = None
+    directions: Optional[list[str]] = None
 
 
 class AnimationRegistry:
@@ -51,7 +51,7 @@ class AnimationRegistry:
         """
         self._animations[metadata.name] = metadata
     
-    def get(self, name: str) -> AnimationMetadata | None:
+    def get(self, name: str) -> Optional[AnimationMetadata]:
         """Get animation metadata by name.
         
         Args:
@@ -70,7 +70,7 @@ class AnimationRegistry:
         """
         return list(self._animations.keys())
     
-    def select_random(self, exclude: list[str] | None = None) -> AnimationMetadata | None:
+    def select_random(self, exclude: Optional[list[str]] = None) -> Optional[AnimationMetadata]:
         """Select a random animation based on weights.
         
         Args:
@@ -342,7 +342,7 @@ def register_animation(metadata: AnimationMetadata) -> None:
     _registry.register(metadata)
 
 
-def get_animation(name: str) -> AnimationMetadata | None:
+def get_animation(name: str) -> Optional[AnimationMetadata]:
     """Get animation metadata from the global registry.
     
     Args:
@@ -354,7 +354,7 @@ def get_animation(name: str) -> AnimationMetadata | None:
     return _registry.get(name)
 
 
-def select_random_animation(exclude: list[str] | None = None) -> AnimationMetadata | None:
+def select_random_animation(exclude: Optional[list[str]] = None) -> Optional[AnimationMetadata]:
     """Select a random animation from the global registry.
     
     Args:

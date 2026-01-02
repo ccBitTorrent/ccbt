@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class XetChunkCatalog:
 
     def __init__(
         self,
-        catalog_path: Path | str | None = None,
+        catalog_path: Optional[Path | str] = None,
         sync_interval: float = 300.0,  # 5 minutes
     ):
         """Initialize chunk catalog.
@@ -51,7 +51,7 @@ class XetChunkCatalog:
     async def add_chunk(
         self,
         chunk_hash: bytes,
-        peer_info: tuple[str, int] | None = None,
+        peer_info: Optional[tuple[str, int]] = None,
     ) -> None:
         """Add chunk to catalog.
 
@@ -78,7 +78,7 @@ class XetChunkCatalog:
     async def remove_chunk(
         self,
         chunk_hash: bytes,
-        peer_info: tuple[str, int] | None = None,
+        peer_info: Optional[tuple[str, int]] = None,
     ) -> None:
         """Remove chunk from catalog.
 
@@ -154,8 +154,8 @@ class XetChunkCatalog:
 
     async def query_catalog(
         self,
-        chunk_hashes: list[bytes] | None = None,
-        peer_info: tuple[str, int] | None = None,
+        chunk_hashes: Optional[list[bytes]] = None,
+        peer_info: Optional[tuple[str, int]] = None,
     ) -> dict[bytes, set[tuple[str, int]]]:
         """Query catalog for chunk-to-peer mappings.
 
