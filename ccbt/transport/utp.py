@@ -20,7 +20,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 from ccbt.config.config import get_config
 
@@ -230,7 +230,7 @@ class UTPPacket:
 
 
 # Connection state tracking tuple: (packet, send_time, retry_count)
-_PacketInfo = tuple[UTPPacket, float, int]
+_PacketInfo = Tuple[UTPPacket, float, int]
 
 
 class UTPConnection:

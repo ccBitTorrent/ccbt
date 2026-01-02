@@ -24,6 +24,29 @@ from rich.console import Console
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
 
 
+def _create_mock_config_manager(mock_config=None, config_file=None):
+    """Helper function to create a properly structured mock ConfigManager.
+    
+    Args:
+        mock_config: Optional mock config object. If None, creates a default one.
+        config_file: Optional config file path. Defaults to None.
+    
+    Returns:
+        Mock ConfigManager instance with config and config_file attributes.
+    """
+    from unittest.mock import Mock
+    
+    if mock_config is None:
+        mock_config = Mock()
+        mock_config.model_dump.return_value = {"network": {"port": 6881}}
+        mock_config.disk.backup_dir = "/tmp/backups"
+    
+    mock_cm = Mock()
+    mock_cm.config = mock_config
+    mock_cm.config_file = config_file
+    return mock_cm
+
+
 @pytest.fixture
 def mock_session():
     """Create a mock AsyncSessionManager."""
@@ -38,8 +61,12 @@ def mock_session():
 
 
 @pytest.fixture
-def interactive_cli(mock_session):
-    """Create InteractiveCLI instance."""
+def interactive_cli(mock_session, mock_config_manager):
+    """Create InteractiveCLI instance.
+    
+    Uses mock_config_manager fixture to ensure ConfigManager is patched
+    at module level for all commands that create ConfigManager(None) instances.
+    """
     from ccbt.cli.interactive import InteractiveCLI
     
     from tests.conftest import create_interactive_cli
@@ -221,8 +248,8 @@ class TestInteractiveFinalCoverage:
         
         with patch("ccbt.config.config_conditional.ConditionalConfig", return_value=mock_cc):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-                mock_cm = MagicMock()
-                mock_cm.config = MagicMock()
+                mock_config = MagicMock()
+                mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_auto_tune(["preview"])
@@ -240,10 +267,10 @@ class TestInteractiveFinalCoverage:
             mock_cb_class.return_value = mock_cb
             
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
-                mock_cm = MagicMock()
-                mock_cm.config = MagicMock()
-                mock_cm.config.disk = MagicMock()
-                mock_cm.config.disk.backup_dir = "/tmp"
+                mock_config = MagicMock()
+                mock_config.disk = MagicMock()
+                mock_config.disk.backup_dir = "/tmp"
+                mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
                 
                 await interactive_cli.cmd_config_backup(["list"])

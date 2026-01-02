@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "benchmark": "disk_io",
+    "config": "example-config-performance",
+    "timestamp": "2026-01-02T05:09:47.440940+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "11",
+      "python": "3.13.3"
+    },
+    "git": {
+      "commit_hash": "ea3cad3c4d3f1d60b727f8878caa72c5584bb532",
+      "commit_hash_short": "ea3cad3",
+      "branch": "addscom",
+      "author": "Joseph Pollack",
+      "is_dirty": false
+    }
+  },
+  "results": [
+    {
+      "size_bytes": 262144,
+      "iterations": 10,
+      "write_elapsed_s": 1.0489899999956833,
+      "read_elapsed_s": 0.005929799997829832,
+      "write_throughput_bytes_per_s": 2499013.336648383,
+      "read_throughput_bytes_per_s": 442078991.021516
+    },
+    {
+      "size_bytes": 1048576,
+      "iterations": 10,
+      "write_elapsed_s": 0.03471130000252742,
+      "read_elapsed_s": 0.006363599997712299,
+      "write_throughput_bytes_per_s": 302084911.8078696,
+      "read_throughput_bytes_per_s": 1647771702.1449509
+    },
+    {
+      "size_bytes": 4194304,
+      "iterations": 10,
+      "write_elapsed_s": 0.06873649999761255,
+      "read_elapsed_s": 0.016081100002338644,
+      "write_throughput_bytes_per_s": 610200403.0094174,
+      "read_throughput_bytes_per_s": 2608219586.589245
+    }
+  ]
+}

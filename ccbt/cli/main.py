@@ -1236,7 +1236,7 @@ def _apply_nat_overrides(cfg: Config, options: dict[str, Any]) -> None:
 
 def _apply_protocol_v2_overrides(cfg: Config, options: dict[str, Any]) -> None:
     """Apply Protocol v2-related CLI overrides."""
-    # v2_only flag sets all v2 options
+    # v2_only flag sets all v2 options (takes precedence)
     if options.get("v2_only"):
         cfg.network.protocol_v2.enable_protocol_v2 = True
         cfg.network.protocol_v2.prefer_protocol_v2 = True
@@ -1435,6 +1435,10 @@ def cli(ctx, config, verbose, debug):
 )
 @click.option("--unchoke-interval", type=float, help=_("Unchoke interval (s)"))
 @click.option("--metrics-interval", type=float, help=_("Metrics interval (s)"))
+@click.option("--enable-v2", "enable_v2", is_flag=True, help=_("Enable Protocol v2 (BEP 52)"))
+@click.option("--disable-v2", "disable_v2", is_flag=True, help=_("Disable Protocol v2 (BEP 52)"))
+@click.option("--prefer-v2", "prefer_v2", is_flag=True, help=_("Prefer Protocol v2 when available"))
+@click.option("--v2-only", "v2_only", is_flag=True, help=_("Use Protocol v2 only (disable v1)"))
 @click.pass_context
 def download(
     ctx,
@@ -1771,6 +1775,10 @@ def download(
 )
 @click.option("--unchoke-interval", type=float, help=_("Unchoke interval (s)"))
 @click.option("--metrics-interval", type=float, help=_("Metrics interval (s)"))
+@click.option("--enable-v2", "enable_v2", is_flag=True, help=_("Enable Protocol v2 (BEP 52)"))
+@click.option("--disable-v2", "disable_v2", is_flag=True, help=_("Disable Protocol v2 (BEP 52)"))
+@click.option("--prefer-v2", "prefer_v2", is_flag=True, help=_("Prefer Protocol v2 when available"))
+@click.option("--v2-only", "v2_only", is_flag=True, help=_("Use Protocol v2 only (disable v1)"))
 @click.pass_context
 def magnet(
     ctx,

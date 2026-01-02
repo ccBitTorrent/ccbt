@@ -127,8 +127,12 @@ def interactive_cli_with_layout(interactive_cli):
 
 
 @pytest.fixture
-def interactive_cli(mock_session, mock_console):
-    """Create an InteractiveCLI instance."""
+def interactive_cli(mock_session, mock_console, mock_config_manager):
+    """Create an InteractiveCLI instance.
+    
+    Uses mock_config_manager fixture to ensure ConfigManager is patched
+    at module level for all commands that create ConfigManager(None) instances.
+    """
     from tests.conftest import create_interactive_cli
     return create_interactive_cli(mock_session, mock_console)
 
