@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from rich.panel import Panel
 from rich.table import Table
@@ -164,7 +164,7 @@ class PerTorrentConfigMainScreen(PerTorrentConfigScreen):  # type: ignore[misc]
         await self._update_stats(stats_widget, None)
 
     async def _update_stats(
-        self, stats_widget: Static, selected_ih: str | None
+        self, stats_widget: Static, selected_ih: Optional[str]
     ) -> None:  # pragma: no cover
         """Update stats panel with selected torrent information."""
         if selected_ih:

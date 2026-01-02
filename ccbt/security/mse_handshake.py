@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import struct
 from enum import IntEnum
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, Optional
 
 from ccbt.security.ciphers.aes import AESCipher
 from ccbt.security.ciphers.chacha20 import ChaCha20Cipher
@@ -42,8 +42,8 @@ class MSEHandshakeResult(NamedTuple):
     """Result of MSE handshake."""
 
     success: bool
-    cipher: CipherSuite | None
-    error: str | None = None
+    cipher: Optional[CipherSuite]
+    error: Optional[str] = None
 
 
 class MSEHandshake:
@@ -58,7 +58,7 @@ class MSEHandshake:
         self,
         dh_key_size: int = 768,
         prefer_rc4: bool = True,
-        allowed_ciphers: list[CipherType] | None = None,
+        allowed_ciphers: Optional[list[CipherType]] = None,
     ):
         """Initialize MSE handshake handler.
 
@@ -332,7 +332,7 @@ class MSEHandshake:
         length = len(payload) + 1  # +1 for message type byte
         return struct.pack("!IB", length, int(msg_type)) + payload
 
-    def _decode_message(self, data: bytes) -> tuple[MSEHandshakeType, bytes] | None:
+    def _decode_message(self, data: bytes) -> Optional[tuple[MSEHandshakeType, bytes]]:
         """Decode MSE handshake message.
 
         Args:
@@ -354,7 +354,7 @@ class MSEHandshake:
 
         return (msg_type, payload)
 
-    async def _read_message(self, reader: asyncio.StreamReader) -> bytes | None:
+    async def _read_message(self, reader: asyncio.StreamReader) -> Optional[bytes]:
         """Read a complete MSE handshake message from stream.
 
         Args:

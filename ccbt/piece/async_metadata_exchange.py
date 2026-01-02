@@ -35,7 +35,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from ccbt.config.config import get_config
 from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
@@ -61,13 +61,13 @@ class PeerMetadataSession:
     """Metadata exchange session with a single peer."""
 
     peer_info: tuple[str, int]  # (ip, port)
-    reader: asyncio.StreamReader | None = None
-    writer: asyncio.StreamWriter | None = None
+    reader: Optional[asyncio.StreamReader] = None
+    writer: Optional[asyncio.StreamWriter] = None
     state: MetadataState = MetadataState.CONNECTING
 
     # Extended protocol
-    ut_metadata_id: int | None = None
-    metadata_size: int | None = None
+    ut_metadata_id: Optional[int] = None
+    metadata_size: Optional[int] = None
 
     # Reliability tracking
     reliability_score: float = 1.0
@@ -93,7 +93,7 @@ class MetadataPiece:
     """Represents a metadata piece."""
 
     index: int
-    data: bytes | None = None
+    data: Optional[bytes] = None
     received_count: int = 0
     sources: set[tuple[str, int]] = field(default_factory=set)
 
@@ -101,7 +101,7 @@ class MetadataPiece:
 class AsyncMetadataExchange:
     """High-performance async metadata exchange manager."""
 
-    def __init__(self, info_hash: bytes, peer_id: bytes | None = None):
+    def __init__(self, info_hash: bytes, peer_id: Optional[bytes] = None):
         """Initialize async metadata exchange.
 
         Args:
@@ -119,21 +119,21 @@ class AsyncMetadataExchange:
         # Session management
         self.sessions: dict[tuple[str, int], PeerMetadataSession] = {}
         self.metadata_pieces: dict[int, MetadataPiece] = {}
-        self.metadata_size: int | None = None
+        self.metadata_size: Optional[int] = None
         self.num_pieces: int = 0
 
         # Completion tracking
         self.completed = False
-        self.metadata_data: bytes | None = None
-        self.metadata_dict: dict[bytes, Any] | None = None
+        self.metadata_data: Optional[bytes] = None
+        self.metadata_dict: Optional[dict[bytes, Any]] = None
 
         # Background tasks
-        self._cleanup_task: asyncio.Task | None = None
+        self._cleanup_task: Optional[asyncio.Task] = None
 
         # Callbacks
-        self.on_progress: Callable | None = None
-        self.on_complete: Callable | None = None
-        self.on_error: Callable | None = None
+        self.on_progress: Optional[Callable] = None
+        self.on_complete: Optional[Callable] = None
+        self.on_error: Optional[Callable] = None
 
         self.logger = logging.getLogger(__name__)
 
@@ -188,7 +188,7 @@ class AsyncMetadataExchange:
         peers: list[dict[str, Any]],
         max_peers: int = 10,
         timeout: float = 30.0,
-    ) -> dict[bytes, Any] | None:
+    ) -> Optional[dict[bytes, Any]]:
         """Fetch metadata from multiple peers in parallel.
 
         Args:
@@ -973,8 +973,8 @@ async def fetch_metadata_from_peers(
     info_hash: bytes,
     peers: list[dict[str, Any]],
     timeout: float = 30.0,
-    peer_id: bytes | None = None,
-) -> dict[bytes, Any] | None:
+    peer_id: Optional[bytes] = None,
+) -> Optional[dict[bytes, Any]]:
     """High-performance parallel metadata fetch.
 
     Args:
@@ -1129,7 +1129,7 @@ class MetadataCache:
         self.cache: dict[bytes, dict[str, Any]] = {}
         self.access_times: dict[bytes, float] = {}
 
-    def get(self, info_hash: bytes) -> dict[str, Any] | None:
+    def get(self, info_hash: bytes) -> Optional[dict[str, Any]]:
         """Get cached metadata."""
         if info_hash in self.cache:
             self.access_times[info_hash] = time.time()
@@ -1262,7 +1262,7 @@ async def _fetch_metadata_from_peer(
     peer_info: tuple[str, int],
     _info_hash: bytes,
     timeout: float = 30.0,
-) -> dict[str, Any] | None:  # pragma: no cover - Internal helper stub for testing
+) -> Optional[dict[str, Any]]:  # pragma: no cover - Internal helper stub for testing
     """Fetch metadata from a single peer."""
     try:
         _reader, _writer = await _connect_to_peer(
@@ -1281,7 +1281,7 @@ async def fetch_metadata_from_peers_async(
     peers: list[dict[str, Any]],
     info_hash: bytes,
     timeout: int = 30,
-) -> dict[str, Any] | None:
+) -> Optional[dict[str, Any]]:
     """Fetch metadata from peers asynchronously.
 
     Args:

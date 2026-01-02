@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import struct
+from typing import Optional
 
 try:
     import lz4.frame
@@ -358,7 +359,7 @@ class Xorb:
 
         return xorb
 
-    def get_chunk_by_hash(self, chunk_hash: bytes) -> bytes | None:
+    def get_chunk_by_hash(self, chunk_hash: bytes) -> Optional[bytes]:
         """Get chunk data by hash.
 
         Args:

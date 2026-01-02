@@ -140,12 +140,19 @@ jobs:
       
       - name: Build documentation
         run: |
+          # Ensure coverage directory exists right before build (in case it was cleaned)
+          mkdir -p site/reports/htmlcov
+          if [ ! -f site/reports/htmlcov/index.html ]; then
+            echo '<html><body><h1>Coverage Report</h1><p>Coverage report not available. Run tests to generate coverage data.</p></body></html>' > site/reports/htmlcov/index.html
+          fi
+          
           # Use the patched build script which includes all necessary patches:
           # - i18n plugin fixes (alternates attribute, Locale validation for 'arc')
           # - git-revision-date-localized plugin fix for 'arc' locale
+          # - Autorefs plugin patch to suppress multiple primary URLs warnings
+          # - Coverage plugin patch to suppress missing directory warnings
           # - All patches are applied before mkdocs is imported
           # Set MKDOCS_STRICT=true to enable strict mode in CI
-          # Reports are ensured to exist in previous step to avoid warnings
           MKDOCS_STRICT=true uv run python dev/build_docs_patched_clean.py
       
       - name: Upload documentation artifact

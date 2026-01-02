@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 try:
     import aiohttp
@@ -58,7 +58,7 @@ class SessionAdapter(ABC):
     async def add_torrent(
         self,
         path_or_magnet: str,
-        output_dir: str | None = None,
+        output_dir: Optional[str] = None,
         resume: bool = False,
     ) -> str:
         """Add torrent or magnet.
@@ -95,7 +95,9 @@ class SessionAdapter(ABC):
         """
 
     @abstractmethod
-    async def get_torrent_status(self, info_hash: str) -> TorrentStatusResponse | None:
+    async def get_torrent_status(
+        self, info_hash: str
+    ) -> Optional[TorrentStatusResponse]:
         """Get torrent status.
 
         Args:
@@ -329,7 +331,7 @@ class SessionAdapter(ABC):
     async def map_nat_port(
         self,
         internal_port: int,
-        external_port: int | None = None,
+        external_port: Optional[int] = None,
         protocol: str = "tcp",
     ) -> dict[str, Any]:
         """Map a port via NAT.
@@ -469,11 +471,11 @@ class SessionAdapter(ABC):
     async def add_xet_folder(
         self,
         folder_path: str,
-        tonic_file: str | None = None,
-        tonic_link: str | None = None,
-        sync_mode: str | None = None,
-        source_peers: list[str] | None = None,
-        check_interval: float | None = None,
+        tonic_file: Optional[str] = None,
+        tonic_link: Optional[str] = None,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        check_interval: Optional[float] = None,
     ) -> str:
         """Add XET folder for synchronization.
 
@@ -512,7 +514,7 @@ class SessionAdapter(ABC):
         """
 
     @abstractmethod
-    async def get_xet_folder_status(self, folder_key: str) -> dict[str, Any] | None:
+    async def get_xet_folder_status(self, folder_key: str) -> Optional[dict[str, Any]]:
         """Get XET folder status.
 
         Args:
@@ -667,7 +669,7 @@ class SessionAdapter(ABC):
     @abstractmethod
     async def get_per_peer_rate_limit(
         self, info_hash: str, peer_key: str
-    ) -> int | None:
+    ) -> Optional[int]:
         """Get per-peer upload rate limit for a specific peer.
 
         Args:
@@ -696,7 +698,7 @@ class SessionAdapter(ABC):
         self,
         info_hash: bytes,
         checkpoint: Any,
-        torrent_path: str | None = None,
+        torrent_path: Optional[str] = None,
     ) -> str:
         """Resume download from checkpoint.
 
@@ -712,7 +714,7 @@ class SessionAdapter(ABC):
         """
 
     @abstractmethod
-    async def get_scrape_result(self, info_hash: str) -> Any | None:
+    async def get_scrape_result(self, info_hash: str) -> Optional[Any]:
         """Get cached scrape result for a torrent.
 
         Args:
@@ -747,7 +749,7 @@ class SessionAdapter(ABC):
         self,
         info_hash: str,
         key: str,
-    ) -> Any | None:
+    ) -> Optional[Any]:
         """Get a per-torrent configuration option value.
 
         Args:
@@ -778,7 +780,7 @@ class SessionAdapter(ABC):
     async def reset_torrent_options(
         self,
         info_hash: str,
-        key: str | None = None,
+        key: Optional[str] = None,
     ) -> bool:
         """Reset per-torrent configuration options.
 
@@ -824,7 +826,7 @@ class LocalSessionAdapter(SessionAdapter):
     async def add_torrent(
         self,
         path_or_magnet: str,
-        output_dir: str | None = None,
+        output_dir: Optional[str] = None,
         resume: bool = False,
     ) -> str:
         """Add torrent or magnet."""
@@ -872,7 +874,9 @@ class LocalSessionAdapter(SessionAdapter):
             )
         return torrents
 
-    async def get_torrent_status(self, info_hash: str) -> TorrentStatusResponse | None:
+    async def get_torrent_status(
+        self, info_hash: str
+    ) -> Optional[TorrentStatusResponse]:
         """Get torrent status."""
         from ccbt.daemon.ipc_protocol import TorrentStatusResponse
 
@@ -1060,7 +1064,7 @@ class LocalSessionAdapter(SessionAdapter):
     async def verify_files(
         self,
         info_hash: str,
-        progress_callback: Any | None = None,
+        progress_callback: Optional[Any] = None,
     ) -> dict[str, Any]:
         """Verify torrent files.
 
@@ -1580,7 +1584,7 @@ class LocalSessionAdapter(SessionAdapter):
     async def map_nat_port(
         self,
         internal_port: int,
-        external_port: int | None = None,
+        external_port: Optional[int] = None,
         protocol: str = "tcp",
     ) -> dict[str, Any]:
         """Map a port via NAT."""
@@ -1807,11 +1811,11 @@ class LocalSessionAdapter(SessionAdapter):
     async def add_xet_folder(
         self,
         folder_path: str,
-        tonic_file: str | None = None,
-        tonic_link: str | None = None,
-        sync_mode: str | None = None,
-        source_peers: list[str] | None = None,
-        check_interval: float | None = None,
+        tonic_file: Optional[str] = None,
+        tonic_link: Optional[str] = None,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        check_interval: Optional[float] = None,
     ) -> str:
         """Add XET folder for synchronization."""
         return await self.session_manager.add_xet_folder(
@@ -1831,7 +1835,7 @@ class LocalSessionAdapter(SessionAdapter):
         """List all registered XET folders."""
         return await self.session_manager.list_xet_folders()
 
-    async def get_xet_folder_status(self, folder_key: str) -> dict[str, Any] | None:
+    async def get_xet_folder_status(self, folder_key: str) -> Optional[dict[str, Any]]:
         """Get XET folder status."""
         folder = await self.session_manager.get_xet_folder(folder_key)
         if not folder:
@@ -1909,7 +1913,7 @@ class LocalSessionAdapter(SessionAdapter):
 
     async def get_per_peer_rate_limit(
         self, info_hash: str, peer_key: str
-    ) -> int | None:
+    ) -> Optional[int]:
         """Get per-peer upload rate limit."""
         return await self.session_manager.get_per_peer_rate_limit(info_hash, peer_key)
 
@@ -1921,7 +1925,7 @@ class LocalSessionAdapter(SessionAdapter):
         self,
         info_hash: bytes,
         checkpoint: Any,
-        torrent_path: str | None = None,
+        torrent_path: Optional[str] = None,
     ) -> str:
         """Resume download from checkpoint."""
         return await self.session_manager.resume_from_checkpoint(
@@ -1930,7 +1934,7 @@ class LocalSessionAdapter(SessionAdapter):
             torrent_path=torrent_path,
         )
 
-    async def get_scrape_result(self, info_hash: str) -> Any | None:
+    async def get_scrape_result(self, info_hash: str) -> Optional[Any]:
         """Get cached scrape result for a torrent."""
         # Access scrape_cache via scrape_cache_lock
         if not hasattr(self.session_manager, "scrape_cache") or not hasattr(
@@ -1973,7 +1977,7 @@ class LocalSessionAdapter(SessionAdapter):
         self,
         info_hash: str,
         key: str,
-    ) -> Any | None:
+    ) -> Optional[Any]:
         """Get a per-torrent configuration option value."""
         try:
             info_hash_bytes = bytes.fromhex(info_hash)
@@ -2019,7 +2023,7 @@ class LocalSessionAdapter(SessionAdapter):
     async def reset_torrent_options(
         self,
         info_hash: str,
-        key: str | None = None,
+        key: Optional[str] = None,
     ) -> bool:
         """Reset per-torrent configuration options."""
         try:
@@ -2174,7 +2178,7 @@ class DaemonSessionAdapter(SessionAdapter):
     async def add_torrent(
         self,
         path_or_magnet: str,
-        output_dir: str | None = None,
+        output_dir: Optional[str] = None,
         resume: bool = False,
     ) -> str:
         """Add torrent or magnet."""
@@ -2221,7 +2225,7 @@ class DaemonSessionAdapter(SessionAdapter):
         self,
         info_hash: str,
         key: str,
-    ) -> Any | None:
+    ) -> Optional[Any]:
         """Get a per-torrent configuration option value."""
         return await self.ipc_client.get_torrent_option(info_hash, key)
 
@@ -2235,7 +2239,7 @@ class DaemonSessionAdapter(SessionAdapter):
     async def reset_torrent_options(
         self,
         info_hash: str,
-        key: str | None = None,
+        key: Optional[str] = None,
     ) -> bool:
         """Reset per-torrent configuration options."""
         return await self.ipc_client.reset_torrent_options(info_hash, key=key)
@@ -2266,7 +2270,7 @@ class DaemonSessionAdapter(SessionAdapter):
         self,
         info_hash: bytes,
         checkpoint: Any,
-        torrent_path: str | None = None,
+        torrent_path: Optional[str] = None,
     ) -> str:
         """Resume download from checkpoint.
 
@@ -2343,7 +2347,9 @@ class DaemonSessionAdapter(SessionAdapter):
         """List all torrents."""
         return await self.ipc_client.list_torrents()
 
-    async def get_torrent_status(self, info_hash: str) -> TorrentStatusResponse | None:
+    async def get_torrent_status(
+        self, info_hash: str
+    ) -> Optional[TorrentStatusResponse]:
         """Get torrent status."""
         return await self.ipc_client.get_torrent_status(info_hash)
 
@@ -2431,7 +2437,7 @@ class DaemonSessionAdapter(SessionAdapter):
     async def map_nat_port(
         self,
         internal_port: int,
-        external_port: int | None = None,
+        external_port: Optional[int] = None,
         protocol: str = "tcp",
     ) -> dict[str, Any]:
         """Map a port via NAT."""
@@ -2455,7 +2461,7 @@ class DaemonSessionAdapter(SessionAdapter):
         """List all cached scrape results."""
         return await self.ipc_client.list_scrape_results()
 
-    async def get_scrape_result(self, info_hash: str) -> Any | None:
+    async def get_scrape_result(self, info_hash: str) -> Optional[Any]:
         """Get cached scrape result for a torrent."""
         try:
             return await self.ipc_client.get_scrape_result(info_hash)
@@ -2537,11 +2543,11 @@ class DaemonSessionAdapter(SessionAdapter):
     async def add_xet_folder(
         self,
         folder_path: str,
-        tonic_file: str | None = None,
-        tonic_link: str | None = None,
-        sync_mode: str | None = None,
-        source_peers: list[str] | None = None,
-        check_interval: float | None = None,
+        tonic_file: Optional[str] = None,
+        tonic_link: Optional[str] = None,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        check_interval: Optional[float] = None,
     ) -> str:
         """Add XET folder for synchronization."""
         result = await self.ipc_client.add_xet_folder(
@@ -2569,7 +2575,7 @@ class DaemonSessionAdapter(SessionAdapter):
             return result["folders"]
         return result if isinstance(result, list) else []
 
-    async def get_xet_folder_status(self, folder_key: str) -> dict[str, Any] | None:
+    async def get_xet_folder_status(self, folder_key: str) -> Optional[dict[str, Any]]:
         """Get XET folder status."""
         result = await self.ipc_client.get_xet_folder_status(folder_key)
         if not result:

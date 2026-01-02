@@ -15,6 +15,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Optional, Union
 
 import click
 import toml
@@ -26,7 +27,7 @@ from ccbt.i18n import _
 logger = logging.getLogger(__name__)
 
 
-def _find_project_root(start_path: Path | None = None) -> Path | None:
+def _find_project_root(start_path: Optional[Path] = None) -> Optional[Path]:
     """Find the project root directory by looking for pyproject.toml or .git.
 
     Walks up the directory tree from start_path (or current directory) until
@@ -56,7 +57,7 @@ def _find_project_root(start_path: Path | None = None) -> Path | None:
 
 
 def _should_skip_project_local_write(
-    config_file: Path | None, explicit_config_file: str | Path | None
+    config_file: Optional[Path], explicit_config_file: Optional[Union[str, Path]]
 ) -> bool:
     """Check if we should skip writing to project-local ccbt.toml during tests.
 
@@ -130,9 +131,9 @@ def config():
 @click.option("--config", "config_file", type=click.Path(exists=True), default=None)
 def show_config(
     format_: str,
-    section: str | None,
-    key: str | None,
-    config_file: str | None,
+    section: Optional[str],
+    key: Optional[str],
+    config_file: Optional[str],
 ):
     """Show current configuration in the desired format."""
     cm = ConfigManager(config_file)
@@ -174,7 +175,7 @@ def show_config(
 @config.command("get")
 @click.argument("key")
 @click.option("--config", "config_file", type=click.Path(exists=True), default=None)
-def get_value(key: str, config_file: str | None):
+def get_value(key: str, config_file: Optional[str]):
     """Get a specific configuration value by dotted path."""
     cm = ConfigManager(config_file)
     data = cm.config.model_dump(mode="json")
@@ -223,9 +224,9 @@ def set_value(
     value: str,
     global_flag: bool,
     local_flag: bool,
-    config_file: str | None,
-    restart_daemon_flag: bool | None,
-    no_restart_daemon_flag: bool | None,
+    config_file: Optional[str],
+    restart_daemon_flag: Optional[bool],
+    no_restart_daemon_flag: Optional[bool],
 ):
     """Set a configuration value and persist to TOML file.
 
@@ -325,12 +326,12 @@ def set_value(
     help=_("Skip daemon restart even if needed"),
 )
 def reset_config(
-    section: str | None,
-    key: str | None,
+    section: Optional[str],
+    key: Optional[str],
     confirm: bool,
-    config_file: str | None,
-    restart_daemon_flag: bool | None,
-    no_restart_daemon_flag: bool | None,
+    config_file: Optional[str],
+    restart_daemon_flag: Optional[bool],
+    no_restart_daemon_flag: Optional[bool],
 ):
     """Reset configuration to defaults (optionally for a section/key)."""
     if not confirm:
@@ -399,7 +400,7 @@ def reset_config(
 
 @config.command("validate")
 @click.option("--config", "config_file", type=click.Path(exists=True), default=None)
-def validate_config_cmd(config_file: str | None):
+def validate_config_cmd(config_file: Optional[str]):
     """Validate configuration file and print result."""
     try:
         ConfigManager(config_file)
@@ -414,10 +415,10 @@ def validate_config_cmd(config_file: str | None):
 @click.option("--backup", is_flag=True, help=_("Create backup before migration"))
 @click.option("--config", "config_file", type=click.Path(exists=True), default=None)
 def migrate_config_cmd(
-    from_version: str | None,  # noqa: ARG001
-    to_version: str | None,  # noqa: ARG001
+    from_version: Optional[str],  # noqa: ARG001
+    to_version: Optional[str],  # noqa: ARG001
     backup: bool,
-    config_file: str | None,
+    config_file: Optional[str],
 ):
     """Migrate configuration between versions (no-op placeholder)."""
     # For now, this is a placeholder that just validates and echoes

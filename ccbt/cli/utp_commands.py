@@ -11,6 +11,7 @@ Adds commands:
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 import click
 from rich.console import Console
@@ -133,7 +134,7 @@ def utp_config_group() -> None:
 
 @utp_config_group.command("get")
 @click.argument("key", required=False)
-def utp_config_get(key: str | None) -> None:
+def utp_config_get(key: Optional[str]) -> None:
     """Get uTP configuration value(s).
 
     Args:

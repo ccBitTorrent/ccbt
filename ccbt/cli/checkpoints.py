@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
@@ -236,7 +236,7 @@ def backup_checkpoint(
 def restore_checkpoint(
     config_manager: ConfigManager,
     backup_file: str,
-    info_hash: str | None,
+    info_hash: Optional[str],
     console: Console,
 ) -> None:
     """Restore a checkpoint from a backup file."""

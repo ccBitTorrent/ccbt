@@ -13,7 +13,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.core.bencode import encode
 from ccbt.models import FileInfo, TorrentInfo
@@ -32,8 +32,8 @@ class FileTreeNode:
 
     name: str
     length: int = 0
-    pieces_root: bytes | None = None
-    children: dict[str, FileTreeNode] | None = None
+    pieces_root: Optional[bytes] = None
+    children: Optional[dict[str, FileTreeNode]] = None
 
     def __post_init__(self) -> None:
         """Validate node structure."""
@@ -99,13 +99,13 @@ class TorrentV2Info:
 
     name: str
     info_hash_v2: bytes  # 32 bytes SHA-256
-    info_hash_v1: bytes | None = None  # 20 bytes SHA-1 for hybrid torrents
+    info_hash_v1: Optional[bytes] = None  # 20 bytes SHA-1 for hybrid torrents
     announce: str = ""
-    announce_list: list[list[str]] | None = None
-    comment: str | None = None
-    created_by: str | None = None
-    creation_date: int | None = None
-    encoding: str | None = None
+    announce_list: Optional[list[list[str]]] = None
+    comment: Optional[str] = None
+    created_by: Optional[str] = None
+    creation_date: Optional[int] = None
+    encoding: Optional[str] = None
     is_private: bool = False
 
     # v2-specific fields
@@ -149,7 +149,7 @@ class TorrentV2Info:
 
         return paths
 
-    def get_piece_layer(self, pieces_root: bytes) -> PieceLayer | None:
+    def get_piece_layer(self, pieces_root: bytes) -> Optional[PieceLayer]:
         """Get piece layer for a given pieces_root hash."""
         return self.piece_layers.get(pieces_root)
 
@@ -497,7 +497,7 @@ def _calculate_info_hash_v2(info_dict: dict[bytes, Any]) -> bytes:
         raise TorrentError(msg) from e
 
 
-def _calculate_info_hash_v1(info_dict: dict[bytes, Any]) -> bytes | None:
+def _calculate_info_hash_v1(info_dict: dict[bytes, Any]) -> Optional[bytes]:
     """Calculate SHA-1 info hash for hybrid torrent (v1 part).
 
     Args:
@@ -810,7 +810,7 @@ class TorrentV2Parser:
     def _build_file_tree(
         self,
         files: list[tuple[str, int]],
-        base_path: Path | None = None,
+        base_path: Optional[Path] = None,
     ) -> dict[str, FileTreeNode]:
         """Build v2 file tree structure from file list.
 
@@ -874,7 +874,7 @@ class TorrentV2Parser:
         self,
         name: str,
         files: list[tuple[str, int]],
-    ) -> FileTreeNode | None:
+    ) -> Optional[FileTreeNode]:
         """Build a FileTreeNode from a list of files.
 
         Args:
@@ -906,7 +906,7 @@ class TorrentV2Parser:
         # Build directory structure
         # Group files by first path component
         children_dict: dict[str, list[tuple[str, int]]] = {}
-        single_file_at_root: tuple[str, int] | None = None
+        single_file_at_root: Optional[tuple[str, int]] = None
 
         for file_path, file_length in files:
             if not file_path or file_path == "/":  # pragma: no cover
@@ -1310,7 +1310,7 @@ class TorrentV2Parser:
         return result
 
     def _collect_files_from_path(
-        self, source: Path, base_path: Path | None = None
+        self, source: Path, base_path: Optional[Path] = None
     ) -> list[tuple[str, int]]:
         """Collect all files from source path with their sizes.
 
@@ -1386,12 +1386,12 @@ class TorrentV2Parser:
     def generate_v2_torrent(
         self,
         source: Path,
-        output: Path | None = None,
-        trackers: list[str] | None = None,
-        web_seeds: list[str] | None = None,
-        comment: str | None = None,
+        output: Optional[Path] = None,
+        trackers: Optional[list[str]] = None,
+        web_seeds: Optional[list[str]] = None,
+        comment: Optional[str] = None,
         created_by: str = "ccBitTorrent",
-        piece_length: int | None = None,
+        piece_length: Optional[int] = None,
         private: bool = False,
     ) -> bytes:
         """Generate a v2-only torrent file.
@@ -1531,12 +1531,12 @@ class TorrentV2Parser:
     def generate_hybrid_torrent(
         self,
         source: Path,
-        output: Path | None = None,
-        trackers: list[str] | None = None,
-        web_seeds: list[str] | None = None,
-        comment: str | None = None,
+        output: Optional[Path] = None,
+        trackers: Optional[list[str]] = None,
+        web_seeds: Optional[list[str]] = None,
+        comment: Optional[str] = None,
         created_by: str = "ccBitTorrent",
-        piece_length: int | None = None,
+        piece_length: Optional[int] = None,
         private: bool = False,
     ) -> bytes:
         """Generate a hybrid torrent (v1 + v2).

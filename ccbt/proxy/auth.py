@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import logging
 from pathlib import Path
+from typing import Optional
 
 try:
     from cryptography.fernet import Fernet
@@ -91,7 +92,7 @@ class CredentialStore:
     Uses Fernet symmetric encryption to store credentials encrypted.
     """
 
-    def __init__(self, config_dir: Path | None = None):
+    def __init__(self, config_dir: Optional[Path] = None):
         """Initialize credential store.
 
         Args:
@@ -213,7 +214,7 @@ class CredentialStore:
 class ProxyAuth:
     """Handles proxy authentication challenges and credential management."""
 
-    def __init__(self, credential_store: CredentialStore | None = None):
+    def __init__(self, credential_store: Optional[CredentialStore] = None):
         """Initialize proxy authentication handler.
 
         Args:
@@ -227,9 +228,9 @@ class ProxyAuth:
     async def handle_challenge(
         self,
         challenge_header: str,
-        username: str | None = None,
-        password: str | None = None,
-    ) -> str | None:
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+    ) -> Optional[str]:
         """Handle Proxy-Authenticate challenge.
 
         Args:

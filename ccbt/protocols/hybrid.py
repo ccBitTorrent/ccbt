@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.protocols import (
     WebTorrentProtocol,  # Import from protocols __init__ which handles the module/package conflict
@@ -60,7 +60,9 @@ class HybridProtocol(Protocol):
     """Hybrid protocol combining multiple protocols."""
 
     def __init__(
-        self, strategy: HybridStrategy | None = None, session_manager: Any | None = None
+        self,
+        strategy: Optional[HybridStrategy] = None,
+        session_manager: Optional[Any] = None,
     ):
         """Initialize hybrid protocol.
 
@@ -333,7 +335,7 @@ class HybridProtocol(Protocol):
         else:
             return success
 
-    async def receive_message(self, peer_id: str) -> bytes | None:
+    async def receive_message(self, peer_id: str) -> Optional[bytes]:
         """Receive message from peer using the best available protocol."""
         # Find which protocol has this peer
         best_protocol = self._find_protocol_for_peer(peer_id)
@@ -444,7 +446,7 @@ class HybridProtocol(Protocol):
 
         return combined_stats
 
-    def _select_best_protocol(self, _peer_info: PeerInfo) -> Protocol | None:
+    def _select_best_protocol(self, _peer_info: PeerInfo) -> Optional[Protocol]:
         """Select the best protocol for a peer."""
         # Calculate scores for each protocol
         protocol_scores = {}
@@ -467,7 +469,7 @@ class HybridProtocol(Protocol):
 
         return None
 
-    def _find_protocol_for_peer(self, peer_id: str) -> Protocol | None:
+    def _find_protocol_for_peer(self, peer_id: str) -> Optional[Protocol]:
         """Find which protocol has a specific peer."""
         for protocol in self.sub_protocols.values():
             if protocol.is_connected(peer_id):

@@ -8,13 +8,13 @@ and debugging throughout the application.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 
 class CCBTError(Exception):
     """Base exception for all ccBitTorrent errors."""
 
-    def __init__(self, message: str, details: dict[str, Any] | None = None):
+    def __init__(self, message: str, details: Optional[dict[str, Any]] = None):
         """Initialize CCBT error."""
         super().__init__(message)
         self.message = message

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
@@ -192,8 +192,8 @@ class CommandExecutor:
     async def execute_click_command(
         self,
         command_path: str,
-        args: list[str] | None = None,
-        ctx_obj: dict[str, Any] | None = None,
+        args: Optional[list[str]] = None,
+        ctx_obj: Optional[dict[str, Any]] = None,
     ) -> tuple[bool, str, Any]:
         """Execute a Click command group command.
 

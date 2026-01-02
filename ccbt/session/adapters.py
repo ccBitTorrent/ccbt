@@ -6,7 +6,7 @@ This module provides adapters for integrating different protocol implementations
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from ccbt.session.types import DHTClientProtocol, TrackerClientProtocol
 
@@ -21,7 +21,7 @@ class DHTAdapter(DHTClientProtocol):
     def add_peer_callback(
         self,
         callback: Callable[[list[tuple[str, int]]], None],
-        info_hash: bytes | None = None,
+        info_hash: Optional[bytes] = None,
     ) -> None:
         """Add a callback for peer discovery events.
 
@@ -85,7 +85,7 @@ class TrackerAdapter(TrackerClientProtocol):
         port: int,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: int | None = None,
+        left: Optional[int] = None,
         event: str = "started",
     ) -> Any:
         """Announce to the tracker.

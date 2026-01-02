@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class ControlledFlooding:
         self,
         node_id: str,
         max_hops: int = 10,
-        message_callback: Callable[[dict[str, Any], str, int], None] | None = None,
+        message_callback: Optional[Callable[[dict[str, Any], str, int], None]] = None,
     ):
         """Initialize controlled flooding.
 
@@ -65,7 +65,7 @@ class ControlledFlooding:
         self,
         message: dict[str, Any],
         priority: int = 0,
-        target_peers: list[str] | None = None,
+        target_peers: Optional[list[str]] = None,
     ) -> None:
         """Flood a message to peers.
 

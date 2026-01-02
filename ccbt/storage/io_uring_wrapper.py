@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from typing import Any
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class IOUringWrapper:
         else:
             logger.debug("io_uring not available, will use fallback I/O")
 
-    async def read(self, file_path: str | Any, offset: int, length: int) -> bytes:
+    async def read(self, file_path: Union[str, Any], offset: int, length: int) -> bytes:
         """Read data using io_uring if available, otherwise fallback.
 
         Args:
@@ -108,7 +108,7 @@ class IOUringWrapper:
             logger.debug("io_uring read failed, using fallback: %s", e)
             return await self._read_fallback(file_path, offset, length)
 
-    async def write(self, file_path: str | Any, offset: int, data: bytes) -> int:
+    async def write(self, file_path: Union[str, Any], offset: int, data: bytes) -> int:
         """Write data using io_uring if available, otherwise fallback.
 
         Args:
@@ -136,7 +136,7 @@ class IOUringWrapper:
             return await self._write_fallback(file_path, offset, data)
 
     async def _read_aiofiles(
-        self, file_path: str | Any, offset: int, length: int
+        self, file_path: Union[str, Any], offset: int, length: int
     ) -> bytes:
         """Read using aiofiles."""
         import aiofiles  # type: ignore[import-untyped]
@@ -149,7 +149,7 @@ class IOUringWrapper:
             return data
 
     async def _write_aiofiles(
-        self, file_path: str | Any, offset: int, data: bytes
+        self, file_path: Union[str, Any], offset: int, data: bytes
     ) -> int:
         """Write using aiofiles."""
         import aiofiles  # type: ignore[import-untyped]
@@ -162,7 +162,7 @@ class IOUringWrapper:
             return len(data)
 
     async def _read_fallback(
-        self, file_path: str | Any, offset: int, length: int
+        self, file_path: Union[str, Any], offset: int, length: int
     ) -> bytes:
         """Fallback read using regular async I/O."""
         loop = asyncio.get_event_loop()
@@ -176,7 +176,7 @@ class IOUringWrapper:
         return await loop.run_in_executor(None, _read_sync)
 
     async def _write_fallback(
-        self, file_path: str | Any, offset: int, data: bytes
+        self, file_path: Union[str, Any], offset: int, data: bytes
     ) -> int:
         """Fallback write using regular async I/O."""
         loop = asyncio.get_event_loop()

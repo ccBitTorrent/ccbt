@@ -20,7 +20,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import aiofiles
 
@@ -110,7 +110,7 @@ class BlacklistEntry:
     ip: str
     reason: str
     added_at: float
-    expires_at: float | None = None  # None = permanent
+    expires_at: Optional[float] = None  # None = permanent
     source: str = "manual"  # "manual", "auto", "reputation", "violation"
 
     def is_expired(self) -> bool:
@@ -141,12 +141,12 @@ class SecurityManager:
         self.peer_reputations: dict[str, PeerReputation] = {}
         self.blacklist_entries: dict[str, BlacklistEntry] = {}
         self.ip_whitelist: set[str] = set()
-        self.ip_filter: IPFilter | None = None
+        self.ip_filter: Optional[IPFilter] = None
         self.security_events: deque = deque(maxlen=10000)
-        self.blacklist_file: Path | None = None
-        self.blacklist_updater: Any | None = None
-        self._cleanup_task: asyncio.Task | None = None
-        self._default_expiration_hours: float | None = None
+        self.blacklist_file: Optional[Path] = None
+        self.blacklist_updater: Optional[Any] = None
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._default_expiration_hours: Optional[float] = None
 
         # Rate limiting
         self.connection_rates: dict[str, deque] = defaultdict(lambda: deque())
@@ -285,7 +285,7 @@ class SecurityManager:
         ip: str,
         violation: ThreatType,
         description: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """Report a security violation."""
         reputation = self._get_peer_reputation(peer_id, ip)
@@ -327,7 +327,7 @@ class SecurityManager:
         self,
         ip: str,
         reason: str = "",
-        expires_in: float | None = None,
+        expires_in: Optional[float] = None,
         source: str = "manual",
     ) -> None:
         """Add IP to blacklist.
@@ -481,7 +481,7 @@ class SecurityManager:
             if entry.expires_at is None or entry.expires_at > current_time
         }
 
-    async def save_blacklist(self, blacklist_file: Path | None = None) -> None:
+    async def save_blacklist(self, blacklist_file: Optional[Path] = None) -> None:
         """Save blacklist to persistent storage.
 
         Args:
@@ -543,7 +543,7 @@ class SecurityManager:
                 with contextlib.suppress(Exception):
                     temp_file.unlink()
 
-    async def load_blacklist(self, blacklist_file: Path | None = None) -> None:
+    async def load_blacklist(self, blacklist_file: Optional[Path] = None) -> None:
         """Load blacklist from persistent storage.
 
         Args:
@@ -613,7 +613,7 @@ class SecurityManager:
         except Exception as e:
             logger.warning("Failed to load blacklist from %s: %s", blacklist_file, e)
 
-    def get_peer_reputation(self, peer_id: str, _ip: str) -> PeerReputation | None:
+    def get_peer_reputation(self, peer_id: str, _ip: str) -> Optional[PeerReputation]:
         """Get peer reputation."""
         return self.peer_reputations.get(peer_id)
 
@@ -708,7 +708,7 @@ class SecurityManager:
         ip: str,
         severity: SecurityLevel,
         description: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """Log a security event."""
         event = SecurityEvent(

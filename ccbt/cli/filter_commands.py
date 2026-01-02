@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+from typing import Optional
 
 import click
 from rich.console import Console
@@ -205,7 +206,7 @@ def filter_list(ctx, fmt: str) -> None:
     help="Filter mode (uses default if not specified)",
 )
 @click.pass_context
-def filter_load(ctx, file_path: str, mode: str | None) -> None:
+def filter_load(ctx, file_path: str, mode: Optional[str]) -> None:
     """Load filter rules from file."""
     console = Console()
 

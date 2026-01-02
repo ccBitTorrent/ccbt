@@ -10,7 +10,7 @@ import hashlib
 import logging
 import ssl
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 from ccbt.config.config import get_config
 
@@ -226,7 +226,7 @@ class SSLContextBuilder:
 
         return version_map[version_str]
 
-    def _load_ca_certificates(self, path: str | Path) -> tuple[list[str], int]:
+    def _load_ca_certificates(self, path: Union[str, Path]) -> tuple[list[str], int]:
         """Load CA certificates from file or directory.
 
         Args:
@@ -263,8 +263,8 @@ class SSLContextBuilder:
         return cert_paths, len(cert_paths)
 
     def _validate_certificate_paths(
-        self, cert_path: str, key_path: str | None = None
-    ) -> tuple[Path, Path | None]:
+        self, cert_path: str, key_path: Optional[str] = None
+    ) -> tuple[Path, Optional[Path]]:
         """Validate certificate file paths.
 
         Args:
@@ -335,7 +335,7 @@ class SSLCertificateValidator:
         )
         return False
 
-    def _extract_common_name(self, cert: dict[str, Any]) -> str | None:
+    def _extract_common_name(self, cert: dict[str, Any]) -> Optional[str]:
         """Extract common name from certificate.
 
         Args:
@@ -374,7 +374,7 @@ class SSLCertificateValidator:
                     sans.append(value)
         return sans
 
-    def _match_hostname(self, hostname: str, pattern: str | None) -> bool:
+    def _match_hostname(self, hostname: str, pattern: Optional[str]) -> bool:
         """Match hostname against certificate pattern.
 
         Supports wildcard certificates (e.g., *.example.com).
@@ -425,7 +425,7 @@ class CertificatePinner:
         self.pinned_certs[hostname.lower()] = fingerprint
         self.logger.info("Pinned certificate for %s: %s", hostname, fingerprint)
 
-    def verify_pin(self, hostname: str, cert: bytes | dict[str, Any]) -> bool:
+    def verify_pin(self, hostname: str, cert: Union[bytes, dict[str, Any]]) -> bool:
         """Verify certificate matches pinned fingerprint.
 
         Args:

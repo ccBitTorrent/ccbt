@@ -77,6 +77,17 @@ def main():
         "Ty type checking"
     )
     
+    # 4. Compatibility linter (Python 3.8/3.9 compatibility)
+    compatibility_output = output_dir / f"compatibility_linter_{timestamp}.txt"
+    compatibility_cmd = [
+        "uv", "run", "python", "dev/compatibility_linter.py", "ccbt/"
+    ]
+    results["compatibility_linter"] = run_command(
+        compatibility_cmd,
+        compatibility_output,
+        "Compatibility linter (Python 3.8/3.9)"
+    )
+    
     # Summary
     print("\n" + "="*60)
     print("SUMMARY")
@@ -90,6 +101,7 @@ def main():
     print(f"  - Ruff check: {ruff_check_output.name}")
     print(f"  - Ruff format: {ruff_format_output.name}")
     print(f"  - Ty check: {ty_output.name}")
+    print(f"  - Compatibility linter: {compatibility_output.name}")
     
     # Return non-zero if any check failed
     return 0 if all(code == 0 for code in results.values()) else 1

@@ -7,7 +7,7 @@ trackers, DHT, PEX, and other discovery mechanisms.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
 from ccbt.session.tasks import TaskSupervisor
 
@@ -20,7 +20,7 @@ class DiscoveryController:
     """Controller to orchestrate DHT/tracker/PEX peer discovery with dedup and scheduling."""
 
     def __init__(
-        self, ctx: SessionContext, tasks: TaskSupervisor | None = None
+        self, ctx: SessionContext, tasks: Optional[TaskSupervisor] = None
     ) -> None:
         """Initialize the discovery controller with session context and optional task supervisor."""
         self._ctx = ctx

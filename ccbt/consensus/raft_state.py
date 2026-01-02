@@ -9,7 +9,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -40,7 +40,7 @@ class RaftState:
     """
 
     current_term: int = 0
-    voted_for: str | None = None
+    voted_for: Optional[str] = None
     log: list[LogEntry] = field(default_factory=list)
     commit_index: int = -1
     last_applied: int = -1
@@ -160,7 +160,7 @@ class RaftState:
         self.log.append(entry)
         return entry
 
-    def get_entry(self, index: int) -> LogEntry | None:
+    def get_entry(self, index: int) -> Optional[LogEntry]:
         """Get log entry by index.
 
         Args:

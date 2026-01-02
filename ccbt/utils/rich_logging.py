@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -64,9 +64,9 @@ class CorrelationRichHandler(RichHandler):  # type: ignore[misc]
     def __init__(
         self,
         *args: Any,
-        console: Console | None = None,
+        console: Optional[Console] = None,
         show_icons: bool = False,  # noqa: ARG002  # Deprecated, reserved for future use
-        _show_icons: bool | None = None,  # Deprecated, use show_icons
+        _show_icons: Optional[bool] = None,  # Deprecated, use show_icons
         show_colors: bool = True,
         **kwargs: Any,
     ) -> None:
@@ -322,7 +322,7 @@ class FileFormatter(logging.Formatter):
 
 
 def create_rich_handler(
-    console: Console | None = None,
+    console: Optional[Console] = None,
     level: int = logging.INFO,
     show_path: bool = False,
     rich_tracebacks: bool = True,

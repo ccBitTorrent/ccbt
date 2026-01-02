@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 from ccbt.utils.logging_config import get_logger
@@ -66,7 +66,7 @@ class Alert:
     description: str
     timestamp: float
     resolved: bool = False
-    resolved_timestamp: float | None = None
+    resolved_timestamp: Optional[float] = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -247,7 +247,7 @@ class AlertManager:
         self,
         metric_name: str,
         value: Any,
-        timestamp: float | None = None,
+        timestamp: Optional[float] = None,
     ) -> None:
         """Process an alert for a metric."""
         if timestamp is None:
@@ -269,7 +269,7 @@ class AlertManager:
     async def resolve_alert(
         self,
         alert_id: str,
-        timestamp: float | None = None,
+        timestamp: Optional[float] = None,
     ) -> bool:
         """Resolve an alert."""
         if timestamp is None:
@@ -308,7 +308,7 @@ class AlertManager:
     async def resolve_alerts_for_metric(
         self,
         metric_name: str,
-        timestamp: float | None = None,
+        timestamp: Optional[float] = None,
     ) -> int:
         """Resolve all alerts for a specific metric."""
         if timestamp is None:

@@ -11,7 +11,7 @@ import contextlib
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 try:
     import psutil
@@ -120,8 +120,8 @@ class PeerConnectionPool:
         self.semaphore = asyncio.Semaphore(self.max_connections)
 
         # Background tasks
-        self._health_check_task: asyncio.Task | None = None
-        self._cleanup_task: asyncio.Task | None = None
+        self._health_check_task: Optional[asyncio.Task] = None
+        self._cleanup_task: Optional[asyncio.Task] = None
 
         # State
         self._running = False
@@ -338,7 +338,7 @@ class PeerConnectionPool:
         """Async context manager exit."""
         await self.stop()
 
-    async def acquire(self, peer_info: PeerInfo) -> Any | None:
+    async def acquire(self, peer_info: PeerInfo) -> Optional[Any]:
         """Acquire a connection for a peer.
 
         Args:
@@ -562,7 +562,7 @@ class PeerConnectionPool:
             "warmup_success_rate": warmup_success_rate,
         }
 
-    async def _create_connection(self, peer_info: PeerInfo) -> Any | None:
+    async def _create_connection(self, peer_info: PeerInfo) -> Optional[Any]:
         """Create a new connection to a peer.
 
         Args:
@@ -605,7 +605,7 @@ class PeerConnectionPool:
 
     async def _create_peer_connection(
         self, peer_info: PeerInfo
-    ) -> PooledConnection | None:
+    ) -> Optional[PooledConnection]:
         """Create a peer connection.
 
         Establishes a TCP connection to the peer and returns a PooledConnection

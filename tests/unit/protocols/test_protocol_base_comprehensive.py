@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -74,7 +75,7 @@ class _TestProtocolImpl(Protocol):
             return True
         return False
 
-    async def receive_message(self, peer_id: str) -> bytes | None:
+    async def receive_message(self, peer_id: str) -> Optional[bytes]:
         """Receive message from peer."""
         if peer_id in self.active_connections:
             self.stats.messages_received += 1

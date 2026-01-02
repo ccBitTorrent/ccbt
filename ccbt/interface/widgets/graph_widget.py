@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
     def __init__(
         self,
         title: str,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         max_samples: int = 120,
         *args: Any,
         **kwargs: Any,
@@ -118,7 +118,7 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
         self._data_provider = data_provider
         self._max_samples = max_samples
         self._data_history: list[float] = []
-        self._sparkline: Sparkline | None = None
+        self._sparkline: Optional[Sparkline] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the graph widget."""
@@ -300,7 +300,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -309,13 +309,13 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         self._download_history: list[float] = []
         self._upload_history: list[float] = []
         self._timestamps: list[float] = []  # Store timestamps for time-based display
-        self._download_sparkline: Sparkline | None = None
-        self._upload_sparkline: Sparkline | None = None
-        self._update_task: Any | None = None
+        self._download_sparkline: Optional[Sparkline] = None
+        self._upload_sparkline: Optional[Sparkline] = None
+        self._update_task: Optional[Any] = None
         # Event timeline tracking for annotations
         self._event_timeline: list[dict[str, Any]] = []  # List of {timestamp, type, label, info_hash}
         self._max_events = 50  # Keep last 50 events
-        self._event_annotations_widget: Static | None = None
+        self._event_annotations_widget: Optional[Static] = None
 
     DEFAULT_CSS = """
     UploadDownloadGraphWidget {
@@ -704,7 +704,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         # Update event annotations
         self._update_event_annotations()
     
-    def _add_event_annotation(self, timestamp: float, event_type: str, label: str, info_hash: str | None = None) -> None:
+    def _add_event_annotation(self, timestamp: float, event_type: str, label: str, info_hash: Optional[str] = None) -> None:
         """Add an event annotation to the timeline.
         
         Args:
@@ -795,17 +795,17 @@ class PieceHealthPictogram(Container):  # type: ignore[misc]
     def __init__(
         self,
         info_hash_hex: str,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._info_hash = info_hash_hex
         self._data_provider = data_provider
-        self._stats: Static | None = None
-        self._content: Static | None = None
-        self._legend: Static | None = None
-        self._update_task: Any | None = None
+        self._stats: Optional[Static] = None
+        self._content: Optional[Static] = None
+        self._legend: Optional[Static] = None
+        self._update_task: Optional[Any] = None
         self._row_width = 16
 
     def compose(self) -> Any:  # pragma: no cover
@@ -1008,7 +1008,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -1017,10 +1017,10 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         self._read_history: list[float] = []
         self._write_history: list[float] = []
         self._cache_hit_history: list[float] = []
-        self._read_sparkline: Sparkline | None = None
-        self._write_sparkline: Sparkline | None = None
-        self._cache_sparkline: Sparkline | None = None
-        self._update_task: Any | None = None
+        self._read_sparkline: Optional[Sparkline] = None
+        self._write_sparkline: Optional[Sparkline] = None
+        self._cache_sparkline: Optional[Sparkline] = None
+        self._update_task: Optional[Any] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the disk graph widget."""
@@ -1246,7 +1246,7 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -1254,9 +1254,9 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         super().__init__("Network Timing", data_provider, *args, **kwargs)
         self._utp_delay_history: list[float] = []
         self._overhead_history: list[float] = []
-        self._utp_sparkline: Sparkline | None = None
-        self._overhead_sparkline: Sparkline | None = None
-        self._update_task: Any | None = None
+        self._utp_sparkline: Optional[Sparkline] = None
+        self._overhead_sparkline: Optional[Sparkline] = None
+        self._update_task: Optional[Any] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the network graph widget."""
@@ -1415,14 +1415,14 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
         """Initialize download graph widget."""
         super().__init__("Download Speed", data_provider, *args, **kwargs)
         self._download_history: list[float] = []
-        self._update_task: Any | None = None
+        self._update_task: Optional[Any] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the download graph widget."""
@@ -1550,14 +1550,14 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
         """Initialize upload graph widget."""
         super().__init__("Upload Speed", data_provider, *args, **kwargs)
         self._upload_history: list[float] = []
-        self._update_task: Any | None = None
+        self._update_task: Optional[Any] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the upload graph widget."""
@@ -1739,7 +1739,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
     def __init__(
         self,
         info_hash_hex: str,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -1755,11 +1755,11 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
         self._download_history: list[float] = []
         self._upload_history: list[float] = []
         self._piece_rate_history: list[float] = []
-        self._download_sparkline: Sparkline | None = None
-        self._upload_sparkline: Sparkline | None = None
-        self._piece_rate_sparkline: Sparkline | None = None
-        self._peer_table: DataTable | None = None
-        self._update_task: Any | None = None
+        self._download_sparkline: Optional[Sparkline] = None
+        self._upload_sparkline: Optional[Sparkline] = None
+        self._piece_rate_sparkline: Optional[Sparkline] = None
+        self._peer_table: Optional[DataTable] = None
+        self._update_task: Optional[Any] = None
         self._max_samples = 120
 
     def compose(self) -> Any:  # pragma: no cover
@@ -2120,14 +2120,14 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
         """Initialize performance graph widget (upload/download only)."""
         super().__init__(*args, **kwargs)
         self._data_provider = data_provider
-        self._upload_download_widget: UploadDownloadGraphWidget | None = None
+        self._upload_download_widget: Optional[UploadDownloadGraphWidget] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the performance graph widget.
@@ -2390,7 +2390,7 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -2400,10 +2400,10 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
         self._cpu_history: list[float] = []
         self._memory_history: list[float] = []
         self._disk_history: list[float] = []
-        self._cpu_sparkline: Sparkline | None = None
-        self._memory_sparkline: Sparkline | None = None
-        self._disk_sparkline: Sparkline | None = None
-        self._update_task: Any | None = None
+        self._cpu_sparkline: Optional[Sparkline] = None
+        self._memory_sparkline: Optional[Sparkline] = None
+        self._disk_sparkline: Optional[Sparkline] = None
+        self._update_task: Optional[Any] = None
         self._max_samples = 120
 
     def compose(self) -> Any:  # pragma: no cover
@@ -2513,8 +2513,8 @@ class SwarmHealthDotPlot(Container):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: DataProvider | None = None,
-        info_hash_hex: str | None = None,
+        data_provider: Optional[DataProvider] = None,
+        info_hash_hex: Optional[str] = None,
         max_rows: int = 6,
         *args: Any,
         **kwargs: Any,
@@ -2522,9 +2522,9 @@ class SwarmHealthDotPlot(Container):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self._data_provider = data_provider
         self._info_hash = info_hash_hex
-        self._content: Static | None = None
-        self._legend: Static | None = None
-        self._update_task: Any | None = None
+        self._content: Optional[Static] = None
+        self._legend: Optional[Static] = None
+        self._update_task: Optional[Any] = None
         self._max_rows = max_rows
         self._dot_count = 12
         self._previous_samples: dict[str, dict[str, Any]] = {}  # Track previous samples for trends
@@ -2603,7 +2603,7 @@ class SwarmHealthDotPlot(Container):  # type: ignore[misc]
         table.add_column("Rates", style="green", ratio=1)
 
         strongest_sample = max(samples, key=lambda s: float(s.get("swarm_availability", 0.0)))
-        rarity_percentiles: dict[str, float] | None = None
+        rarity_percentiles: Optional[dict[str, float]] = None
 
         for sample in samples:
             info_hash = sample.get("info_hash", "")
@@ -2880,15 +2880,15 @@ class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: DataProvider | None = None,
+        data_provider: Optional[DataProvider] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._data_provider = data_provider
-        self._summary: Static | None = None
-        self._table: DataTable | None = None
-        self._update_task: Any | None = None
+        self._summary: Optional[Static] = None
+        self._table: Optional[DataTable] = None
+        self._update_task: Optional[Any] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the peer quality widget."""

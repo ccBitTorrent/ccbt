@@ -10,7 +10,7 @@ import logging
 import time
 from collections import deque
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
     from ccbt.interface.data_provider import DataProvider
@@ -40,7 +40,7 @@ class UpdateEvent:
         event_type: str,
         data: dict[str, Any],
         priority: UpdatePriority = UpdatePriority.NORMAL,
-        timestamp: float | None = None,
+        timestamp: Optional[float] = None,
     ) -> None:
         """Initialize update event.
 
@@ -88,7 +88,7 @@ class ReactiveUpdateManager:
         self._last_update_times: dict[str, float] = {}
         
         # Processing task
-        self._processing_task: asyncio.Task | None = None
+        self._processing_task: Optional[asyncio.Task] = None
         self._running = False
         
         # Lock for thread safety
@@ -241,7 +241,7 @@ class ReactiveUpdateManager:
         while self._running:
             try:
                 # Process events in priority order (CRITICAL -> HIGH -> NORMAL -> LOW)
-                event: UpdateEvent | None = None
+                event: Optional[UpdateEvent] = None
                 
                 for priority in [
                     UpdatePriority.CRITICAL,

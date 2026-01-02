@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -262,7 +262,7 @@ class XetManagementScreen(MonitoringScreen):  # type: ignore[misc]
         except Exception:
             widget.update("")
 
-    async def _get_xet_protocol(self) -> Any | None:  # pragma: no cover
+    async def _get_xet_protocol(self) -> Optional[Any]:  # pragma: no cover
         """Get Xet protocol instance from session."""
         try:
             from ccbt.protocols.base import ProtocolType

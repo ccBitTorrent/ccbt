@@ -82,13 +82,18 @@ async def test_connection_pool_acquire_in_connect(mock_torrent_data, mock_piece_
         
         manager.connection_pool.acquire = mock_acquire
         
-        # Mock the rest of connection process to avoid actual connection
-        with patch.object(manager, '_disconnect_peer', new_callable=AsyncMock):
-            # This will call acquire but fail later, which is fine for testing
-            try:
-                await manager._connect_to_peer(peer_info)
-            except Exception:
-                pass  # Expected to fail without actual connection
+        # CRITICAL FIX: Mock asyncio.open_connection to prevent real network calls
+        # This prevents 30-second timeouts per connection attempt
+        with patch("asyncio.open_connection") as mock_open_conn:
+            mock_open_conn.side_effect = ConnectionError("Mocked connection failure")
+            
+            # Mock the rest of connection process to avoid actual connection
+            with patch.object(manager, '_disconnect_peer', new_callable=AsyncMock):
+                # This will call acquire but fail later, which is fine for testing
+                try:
+                    await manager._connect_to_peer(peer_info)
+                except Exception:
+                    pass  # Expected to fail without actual connection
         
         # Verify acquire was called (would be called if we had proper mocking)
         # The fact that we can call _connect_to_peer without error in setup

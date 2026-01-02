@@ -18,7 +18,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.i18n import _
 
@@ -29,7 +29,7 @@ _DEBUG_LOG_PATH = Path(__file__).resolve().parents[2] / ".cursor" / "debug.log"
 def _agent_debug_log(
     hypothesis_id: str,
     message: str,
-    data: dict[str, Any] | None = None,
+    data: Optional[dict[str, Any]] = None,
 ) -> None:
     payload = {
         "sessionId": "debug-session",
@@ -115,10 +115,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover - TYPE_CHECKING imports not executed at runtime
-    from rich.progress import (
-        Progress,
-    )
-
     from ccbt.session.session import AsyncSessionManager
 
 
@@ -130,7 +126,7 @@ class InteractiveCLI:
         executor: UnifiedCommandExecutor,
         adapter: SessionAdapter,
         console: Console,
-        session: AsyncSessionManager | None = None,
+        session: Optional[AsyncSessionManager] = None,
     ):
         """Initialize interactive CLI interface.
 
@@ -151,9 +147,9 @@ class InteractiveCLI:
             # Daemon mode - no direct session access
             self.session = None
         self.running = False
-        self.current_torrent: dict[str, Any] | None = None
+        self.current_torrent: Optional[dict[str, Any]] = None
         self.layout = Layout()
-        self.live_display: Live | None = None
+        self.live_display: Optional[Any] = None  # Optional[Live]
 
         # Statistics
         self.stats = {
@@ -165,12 +161,12 @@ class InteractiveCLI:
         }
 
         # Track current torrent info-hash (hex) for control commands
-        self.current_info_hash_hex: str | None = None
+        self.current_info_hash_hex: Optional[str] = None
         self._last_peers: list[dict[str, Any]] = []
 
         # Download progress widgets
-        self._download_progress: Progress | None = None
-        self._download_task: int | None = None
+        self._download_progress: Optional[Any] = None  # Optional[Progress]
+        self._download_task: Optional[int] = None
         self.progress_manager = ProgressManager(self.console)
 
         # Commands

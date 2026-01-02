@@ -12,7 +12,7 @@ import hashlib
 import os
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 from ccbt.core.bencode import decode, encode
 from ccbt.models import FileInfo, TorrentInfo
@@ -75,7 +75,7 @@ class TorrentParser:
     def __init__(self) -> None:
         """Initialize the torrent parser."""
 
-    def parse(self, torrent_path: str | Path) -> TorrentInfo:
+    def parse(self, torrent_path: Union[str, Path]) -> TorrentInfo:
         """Parse a torrent file from a local path or URL.
 
         Args:
@@ -113,12 +113,12 @@ class TorrentParser:
             msg = f"Failed to parse torrent: {e}"
             raise TorrentError(msg) from e
 
-    def _is_url(self, path: str | Path) -> bool:
+    def _is_url(self, path: Union[str, Path]) -> bool:
         """Check if path is a URL."""
         path_str = str(path)
         return path_str.startswith(("http://", "https://"))
 
-    def _read_from_file(self, file_path: str | Path) -> bytes:
+    def _read_from_file(self, file_path: Union[str, Path]) -> bytes:
         """Read torrent data from a local file."""
         path = Path(file_path)
         if not path.exists():
@@ -357,7 +357,7 @@ class TorrentParser:
             if b"symlink path" in info:
                 symlink_path = info[b"symlink path"].decode("utf-8")
 
-            file_sha1 = info.get(b"sha1")  # bytes | None, 20 bytes if present
+            file_sha1 = info.get(b"sha1")  # Optional[bytes], 20 bytes if present
 
             return [
                 FileInfo(
@@ -386,7 +386,7 @@ class TorrentParser:
             if b"symlink path" in file_info:
                 symlink_path = file_info[b"symlink path"].decode("utf-8")
 
-            file_sha1 = file_info.get(b"sha1")  # bytes | None, 20 bytes if present
+            file_sha1 = file_info.get(b"sha1")  # Optional[bytes], 20 bytes if present
 
             files.append(
                 FileInfo(

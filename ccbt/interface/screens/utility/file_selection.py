@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
@@ -108,8 +108,8 @@ class FileSelectionScreen(Screen):  # type: ignore[misc]
         self.info_hash_bytes = bytes.fromhex(
             info_hash_hex
         )  # pragma: no cover - UI initialization
-        self.file_manager: Any | None = None  # pragma: no cover - UI initialization
-        self._refresh_task: asyncio.Task | None = (
+        self.file_manager: Optional[Any] = None  # pragma: no cover - UI initialization
+        self._refresh_task: Optional[asyncio.Task] = (
             None  # pragma: no cover - UI initialization
         )
 

@@ -13,7 +13,7 @@ import logging
 import math
 import socket
 import struct
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
 
@@ -61,8 +61,8 @@ def fetch_metadata_from_peers(
     info_hash: bytes,
     peers: list[dict[str, Any]],
     timeout: float = 5.0,
-    peer_id: bytes | None = None,
-) -> dict[bytes, Any] | None:
+    peer_id: Optional[bytes] = None,
+) -> Optional[dict[bytes, Any]]:
     """Fetch torrent metadata from a list of peers."""
     if peer_id is None:
         peer_id = b"-CC0101-" + b"x" * 12

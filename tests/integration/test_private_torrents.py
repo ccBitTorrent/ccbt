@@ -36,63 +36,71 @@ async def test_private_torrent_peer_source_validation(tmp_path: Path):
     # Start the manager so _running is True (required for _connect_to_peer to work)
     await peer_manager.start()
     
-    try:
-        # Test 1: Tracker peer should be accepted
-        tracker_peer = PeerInfo(ip="192.168.1.1", port=6881, peer_source="tracker")
-        # Should not raise exception about peer source
-        try:
-            await peer_manager._connect_to_peer(tracker_peer)
-            # Connection will fail (no real network), but shouldn't raise PeerConnectionError
-            # about peer source
-        except PeerConnectionError as e:
-            # If PeerConnectionError is raised, it should not be about peer source
-            assert "Private torrents only accept tracker-provided peers" not in str(e)
-        except Exception:
-            # Other exceptions (network, etc.) are OK
-            pass
-
-        # Test 2: DHT peer should be rejected
-        dht_peer = PeerInfo(ip="192.168.1.2", port=6882, peer_source="dht")
-        # The exception is logged but caught by the outer exception handler
-        # Check that it raises the correct error by catching it directly
-        try:
-            await peer_manager._connect_to_peer(dht_peer)
-            pytest.fail("Expected PeerConnectionError for DHT peer in private torrent")
-        except PeerConnectionError as e:
-            assert "Private torrents only accept tracker-provided peers" in str(e)
-            assert "dht" in str(e).lower()
-        except Exception:
-            # Network errors are OK, but we should have gotten PeerConnectionError first
-            pass
-    finally:
-        await peer_manager.stop()
-
-        # Test 3: PEX peer should be rejected
-        pex_peer = PeerInfo(ip="192.168.1.3", port=6883, peer_source="pex")
-        with pytest.raises(PeerConnectionError) as exc_info:
-            await peer_manager._connect_to_peer(pex_peer)
-        assert "Private torrents only accept tracker-provided peers" in str(exc_info.value)
-        assert "pex" in str(exc_info.value).lower()
+    # CRITICAL FIX: Mock asyncio.open_connection to prevent real network calls
+    # This prevents 30-second timeouts per connection attempt (2 retries = 60s per peer)
+    # Without this mock, the test would timeout after 300+ seconds with 5 peers
+    with patch("asyncio.open_connection") as mock_open_conn:
+        # Mock connection to fail immediately with ConnectionError (simulates network failure)
+        # This allows the test to verify peer source validation without waiting for timeouts
+        mock_open_conn.side_effect = ConnectionError("Mocked connection failure")
         
-        # Test 4: LSD peer should be rejected
-        lsd_peer = PeerInfo(ip="192.168.1.4", port=6884, peer_source="lsd")
-        with pytest.raises(PeerConnectionError) as exc_info:
-            await peer_manager._connect_to_peer(lsd_peer)
-        assert "Private torrents only accept tracker-provided peers" in str(exc_info.value)
-        assert "lsd" in str(exc_info.value).lower()
-        
-        # Test 5: Manual peer should be accepted
-        manual_peer = PeerInfo(ip="192.168.1.5", port=6885, peer_source="manual")
         try:
-            await peer_manager._connect_to_peer(manual_peer)
-            # Connection will fail (no real network), but shouldn't raise PeerConnectionError
-            # about peer source
-        except PeerConnectionError as e:
-            # If PeerConnectionError is raised, it should not be about peer source
-            assert "Private torrents only accept tracker-provided peers" not in str(e)
-        except Exception:
-            # Other exceptions (network, etc.) are OK
-            pass
+            # Test 1: Tracker peer should be accepted
+            tracker_peer = PeerInfo(ip="192.168.1.1", port=6881, peer_source="tracker")
+            # Should not raise exception about peer source
+            try:
+                await peer_manager._connect_to_peer(tracker_peer)
+                # Connection will fail (mocked network), but shouldn't raise PeerConnectionError
+                # about peer source
+            except PeerConnectionError as e:
+                # If PeerConnectionError is raised, it should not be about peer source
+                assert "Private torrents only accept tracker-provided peers" not in str(e)
+            except Exception:
+                # Other exceptions (network, etc.) are OK
+                pass
+
+            # Test 2: DHT peer should be rejected
+            dht_peer = PeerInfo(ip="192.168.1.2", port=6882, peer_source="dht")
+            # The exception is logged but caught by the outer exception handler
+            # Check that it raises the correct error by catching it directly
+            try:
+                await peer_manager._connect_to_peer(dht_peer)
+                pytest.fail("Expected PeerConnectionError for DHT peer in private torrent")
+            except PeerConnectionError as e:
+                assert "Private torrents only accept tracker-provided peers" in str(e)
+                assert "dht" in str(e).lower()
+            except Exception:
+                # Network errors are OK, but we should have gotten PeerConnectionError first
+                pass
+
+            # Test 3: PEX peer should be rejected
+            pex_peer = PeerInfo(ip="192.168.1.3", port=6883, peer_source="pex")
+            with pytest.raises(PeerConnectionError) as exc_info:
+                await peer_manager._connect_to_peer(pex_peer)
+            assert "Private torrents only accept tracker-provided peers" in str(exc_info.value)
+            assert "pex" in str(exc_info.value).lower()
+            
+            # Test 4: LSD peer should be rejected
+            lsd_peer = PeerInfo(ip="192.168.1.4", port=6884, peer_source="lsd")
+            with pytest.raises(PeerConnectionError) as exc_info:
+                await peer_manager._connect_to_peer(lsd_peer)
+            assert "Private torrents only accept tracker-provided peers" in str(exc_info.value)
+            assert "lsd" in str(exc_info.value).lower()
+            
+            # Test 5: Manual peer should be accepted
+            manual_peer = PeerInfo(ip="192.168.1.5", port=6885, peer_source="manual")
+            try:
+                await peer_manager._connect_to_peer(manual_peer)
+                # Connection will fail (mocked network), but shouldn't raise PeerConnectionError
+                # about peer source
+            except PeerConnectionError as e:
+                # If PeerConnectionError is raised, it should not be about peer source
+                assert "Private torrents only accept tracker-provided peers" not in str(e)
+            except Exception:
+                # Other exceptions (network, etc.) are OK
+                pass
+        finally:
+            await peer_manager.stop()
 
 
 @pytest.mark.asyncio
@@ -272,11 +280,16 @@ async def test_private_torrent_tracker_only_peers(tmp_path: Path):
                 # Verify _is_private flag is set on peer manager
                 assert getattr(peer_manager, "_is_private", False) is True
                 
-                # Test that DHT peer would be rejected
-                dht_peer = PeerInfo(ip="192.168.1.100", port=6881, peer_source="dht")
-                with pytest.raises(PeerConnectionError) as exc_info:
-                    await peer_manager._connect_to_peer(dht_peer)
-                assert "Private torrents only accept tracker-provided peers" in str(exc_info.value)
+                # CRITICAL FIX: Mock asyncio.open_connection to prevent real network calls
+                # This prevents 30-second timeouts per connection attempt
+                with patch("asyncio.open_connection") as mock_open_conn:
+                    mock_open_conn.side_effect = ConnectionError("Mocked connection failure")
+                    
+                    # Test that DHT peer would be rejected
+                    dht_peer = PeerInfo(ip="192.168.1.100", port=6881, peer_source="dht")
+                    with pytest.raises(PeerConnectionError) as exc_info:
+                        await peer_manager._connect_to_peer(dht_peer)
+                    assert "Private torrents only accept tracker-provided peers" in str(exc_info.value)
         
     finally:
         await session.stop()
@@ -296,20 +309,30 @@ async def test_non_private_torrent_allows_all_sources(tmp_path: Path):
     # Create peer connection manager
     peer_manager = AsyncPeerConnectionManager(torrent_data, MagicMock())
     peer_manager._is_private = False  # Explicitly mark as non-private
+    # Start the manager so _running is True (required for _connect_to_peer to work)
+    await peer_manager.start()
     
-    # All peer sources should be accepted (no PeerConnectionError about source)
-    for source in ["tracker", "dht", "pex", "lsd", "manual"]:
-        peer = PeerInfo(ip="192.168.1.1", port=6881, peer_source=source)
-        try:
-            await peer_manager._connect_to_peer(peer)
-            # Connection will fail (no real network), but shouldn't raise PeerConnectionError
-            # about peer source
-        except PeerConnectionError as e:
-            # If PeerConnectionError is raised, it should not be about peer source
-            assert "Private torrents only accept tracker-provided peers" not in str(e)
-        except Exception:
-            # Other exceptions (network, etc.) are OK
-            pass
+    try:
+        # CRITICAL FIX: Mock asyncio.open_connection to prevent real network calls
+        # This prevents 30-second timeouts per connection attempt (5 sources = 150+ seconds)
+        with patch("asyncio.open_connection") as mock_open_conn:
+            mock_open_conn.side_effect = ConnectionError("Mocked connection failure")
+            
+            # All peer sources should be accepted (no PeerConnectionError about source)
+            for source in ["tracker", "dht", "pex", "lsd", "manual"]:
+                peer = PeerInfo(ip="192.168.1.1", port=6881, peer_source=source)
+                try:
+                    await peer_manager._connect_to_peer(peer)
+                    # Connection will fail (mocked network), but shouldn't raise PeerConnectionError
+                    # about peer source
+                except PeerConnectionError as e:
+                    # If PeerConnectionError is raised, it should not be about peer source
+                    assert "Private torrents only accept tracker-provided peers" not in str(e)
+                except Exception:
+                    # Other exceptions (network, etc.) are OK
+                    pass
+    finally:
+        await peer_manager.stop()
 
 
 @pytest.mark.asyncio

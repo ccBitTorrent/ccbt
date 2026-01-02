@@ -6,7 +6,7 @@ Generates random sequences up to 90 seconds with smooth transitions.
 from __future__ import annotations
 
 import random
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.interface.splash.animation_config import (
     AnimationConfig,
@@ -63,7 +63,7 @@ class SequenceGenerator:
         """
         sequence = AnimationSequence()
         current_duration = 0.0
-        current_palette: list[str] | None = None
+        current_palette: Optional[list[str]] = None
         used_animations: list[str] = []
         
         # Generate segments until we reach target duration

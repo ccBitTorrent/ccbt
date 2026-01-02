@@ -10,7 +10,7 @@ import contextlib
 import logging
 import socket
 import struct
-from typing import Callable
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class LocalPeerDiscovery:
         listen_port: int,
         multicast_address: str = LPD_MULTICAST_ADDRESS,
         multicast_port: int = LPD_MULTICAST_PORT,
-        peer_callback: Callable[[str, int], None] | None = None,
+        peer_callback: Optional[Callable[[str, int], None]] = None,
     ):
         """Initialize Local Peer Discovery.
 
@@ -54,9 +54,9 @@ class LocalPeerDiscovery:
         self.multicast_port = multicast_port
         self.peer_callback = peer_callback
         self.running = False
-        self._socket: socket.socket | None = None
-        self._listen_task: asyncio.Task | None = None
-        self._announce_task: asyncio.Task | None = None
+        self._socket: Optional[socket.socket] = None
+        self._listen_task: Optional[asyncio.Task] = None
+        self._announce_task: Optional[asyncio.Task] = None
         self._announce_interval = 300.0  # 5 minutes (BEP 14 recommendation)
 
     async def start(self) -> None:

@@ -12,7 +12,7 @@ import hashlib
 import secrets
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.utils.logging_config import get_logger
 
@@ -329,7 +329,7 @@ class SecureMessaging:
             raise SecureMessageError(msg) from e
 
     def decrypt_message(
-        self, secure_message: SecureMessage, sender_public_key: bytes | None = None
+        self, secure_message: SecureMessage, sender_public_key: Optional[bytes] = None
     ) -> bytes:
         """Decrypt and verify a message.
 

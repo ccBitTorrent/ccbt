@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import pytest
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 # Try to import aiortc, skip tests if not available
@@ -200,7 +201,7 @@ class TestWebRTCConnectionManagerConnectionCreation:
         peer_id = "test_peer_1"
         callback_called = []
 
-        async def ice_callback(peer_id: str, candidate: dict | None):
+        async def ice_callback(peer_id: str, candidate: Optional[dict]):
             callback_called.append((peer_id, candidate))
 
         from ccbt.protocols.webtorrent import webrtc_manager as webrtc_manager_module

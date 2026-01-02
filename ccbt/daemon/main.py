@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import sys
-from typing import TYPE_CHECKING, Any, Callable, Coroutine
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -80,7 +80,7 @@ class DaemonMain:
 
     def __init__(
         self,
-        config_file: str | Path | None = None,
+        config_file: Optional[str | Path] = None,
         foreground: bool = False,
     ):
         """Initialize daemon main.
@@ -108,11 +108,11 @@ class DaemonMain:
             state_dir=daemon_state_dir,
         )
 
-        self.session_manager: AsyncSessionManager | None = None
-        self.ipc_server: IPCServer | None = None
+        self.session_manager: Optional[AsyncSessionManager] = None
+        self.ipc_server: Optional[IPCServer] = None
 
         self._shutdown_event = asyncio.Event()
-        self._auto_save_task: asyncio.Task | None = None
+        self._auto_save_task: Optional[asyncio.Task] = None
         self._stopping = False  # Flag to prevent double-calling stop()
 
     @property
@@ -199,7 +199,7 @@ class DaemonMain:
         # This ensures API key, Ed25519 keys, and TLS are ready before NAT manager starts
         # Security initialization must happen before any network components
         daemon_config = self.config.daemon
-        api_key: str | None = None
+        api_key: Optional[str] = None
         key_manager = None
         tls_enabled = False
 
@@ -386,7 +386,7 @@ class DaemonMain:
             from typing import cast
 
             self.session_manager.on_torrent_complete = cast(  # type: ignore[assignment]
-                "Callable[[bytes, str], None] | Callable[[bytes, str], Coroutine[Any, Any, None]] | None",
+                "Optional[Callable[[bytes, str], None] | Callable[[bytes, str], Coroutine[Any, Any, None]]]",
                 on_torrent_complete_callback,
             )
 
@@ -669,7 +669,7 @@ class DaemonMain:
 
             # CRITICAL FIX: Initialize keep_alive to None to ensure it's always in scope
             # This prevents NameError if exception occurs before task creation
-            keep_alive: asyncio.Task | None = None
+            keep_alive: Optional[asyncio.Task] = None
 
             # CRITICAL: Create a background task to keep the event loop alive
             # This ensures the loop never exits even if all other tasks complete

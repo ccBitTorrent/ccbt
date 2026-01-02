@@ -7,11 +7,12 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 # Type alias for renewal callback (using string for forward reference)
-RenewalCallback = Callable[["PortMapping"], Awaitable[tuple[bool, int | None]]]
+RenewalCallback = Callable[["PortMapping"], Awaitable[tuple[bool, Optional[int]]]]
 
 
 @dataclass
@@ -23,19 +24,19 @@ class PortMapping:
     protocol: str  # "tcp" or "udp"
     protocol_source: str  # "natpmp" or "upnp"
     created_at: float = field(default_factory=time.time)
-    expires_at: float | None = None
-    renewal_task: asyncio.Task | None = None
+    expires_at: Optional[float] = None
+    renewal_task: Optional[asyncio.Task] = None
 
 
 class PortMappingManager:
     """Manages active port mappings and renewal."""
 
-    def __init__(self, renewal_callback: RenewalCallback | None = None) -> None:
+    def __init__(self, renewal_callback: Optional[RenewalCallback] = None) -> None:
         """Initialize port mapping manager.
 
         Args:
             renewal_callback: Optional async callback for renewing mappings.
-                Signature: async (mapping: PortMapping) -> tuple[bool, int | None]
+                Signature: async (mapping: PortMapping) -> tuple[bool, Optional[int]]
                 Returns (success, new_lifetime)
 
         """
@@ -54,7 +55,7 @@ class PortMappingManager:
         external_port: int,
         protocol: str,
         protocol_source: str,
-        lifetime: int | None = None,
+        lifetime: Optional[int] = None,
     ) -> PortMapping:
         """Add port mapping and schedule renewal.
 
@@ -166,7 +167,7 @@ class PortMappingManager:
                 return
 
             success = False
-            new_lifetime: int | None = None
+            new_lifetime: Optional[int] = None
 
             for attempt in range(max_retries):
                 try:
@@ -292,7 +293,7 @@ class PortMappingManager:
 
     async def get_mapping(
         self, protocol: str, external_port: int
-    ) -> PortMapping | None:
+    ) -> Optional[PortMapping]:
         """Get a specific mapping.
 
         Args:

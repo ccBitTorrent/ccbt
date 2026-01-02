@@ -7,7 +7,7 @@ existing LanguageSelectorWidget.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ccbt.i18n import _
 
@@ -76,8 +76,8 @@ class LanguageSelectionScreen(ModalScreen):  # type: ignore[misc]
 
     def __init__(
         self,
-        data_provider: DataProvider | None = None,
-        command_executor: CommandExecutor | None = None,
+        data_provider: Optional[DataProvider] = None,
+        command_executor: Optional[CommandExecutor] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -90,8 +90,8 @@ class LanguageSelectionScreen(ModalScreen):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self._data_provider = data_provider
         self._command_executor = command_executor
-        self._language_selector: Any | None = None
-        self._selected_locale: str | None = None
+        self._language_selector: Optional[Any] = None
+        self._selected_locale: Optional[str] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the language selection screen."""

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from ccbt import session as _session_mod
 
@@ -21,7 +21,7 @@ class ComponentFactory:
         self._di = manager._di
         self.logger = manager.logger
 
-    def create_security_manager(self) -> Any | None:
+    def create_security_manager(self) -> Optional[Any]:
         """Create security manager with DI fallback.
 
         Returns:
@@ -42,7 +42,7 @@ class ComponentFactory:
         except Exception:
             return None
 
-    def create_dht_client(self, bind_ip: str, bind_port: int) -> Any | None:
+    def create_dht_client(self, bind_ip: str, bind_port: int) -> Optional[Any]:
         """Create DHT client with DI fallback.
 
         Args:
@@ -76,7 +76,7 @@ class ComponentFactory:
             self.logger.exception("Failed to create DHT client")
             return None
 
-    def create_nat_manager(self) -> Any | None:
+    def create_nat_manager(self) -> Optional[Any]:
         """Create NAT manager with DI fallback.
 
         Returns:
@@ -97,7 +97,7 @@ class ComponentFactory:
         except Exception:
             return None
 
-    def create_tcp_server(self) -> Any | None:
+    def create_tcp_server(self) -> Optional[Any]:
         """Create TCP server with DI fallback.
 
         Returns:

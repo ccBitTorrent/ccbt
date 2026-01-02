@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from ccbt.session.fast_resume import FastResumeLoader
 from ccbt.session.tasks import TaskSupervisor
@@ -22,16 +22,16 @@ class CheckpointController:
     def __init__(
         self,
         ctx: SessionContext,
-        tasks: TaskSupervisor | None = None,
-        checkpoint_manager: CheckpointManager | None = None,
+        tasks: Optional[TaskSupervisor] = None,
+        checkpoint_manager: Optional[CheckpointManager] = None,
     ) -> None:
         """Initialize the checkpoint controller with session context and optional dependencies."""
         self._ctx = ctx
         self._tasks = tasks or TaskSupervisor()
         # Prefer provided manager, else from context
         self._manager: CheckpointManager = checkpoint_manager or ctx.checkpoint_manager  # type: ignore[assignment]
-        self._queue: asyncio.Queue[bool] | None = None
-        self._batch_task: asyncio.Task[None] | None = None
+        self._queue: Optional[asyncio.Queue[bool]] = None
+        self._batch_task: Optional[asyncio.Task[None]] = None
         self._batch_interval: float = 0.0
         self._batch_pieces: int = 0
         # Initialize fast resume loader if enabled

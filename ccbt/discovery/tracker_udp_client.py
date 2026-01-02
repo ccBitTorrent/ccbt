@@ -13,7 +13,7 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from ccbt.config.config import get_config
 
@@ -45,16 +45,16 @@ class TrackerResponse:
 
     action: TrackerAction
     transaction_id: int
-    connection_id: int | None = None
-    interval: int | None = None
-    leechers: int | None = None
-    seeders: int | None = None
-    peers: list[dict[str, Any]] | None = None
-    error_message: str | None = None
+    connection_id: Optional[int] = None
+    interval: Optional[int] = None
+    leechers: Optional[int] = None
+    seeders: Optional[int] = None
+    peers: Optional[list[dict[str, Any]]] = None
+    error_message: Optional[str] = None
     # Scrape-specific fields
-    complete: int | None = None  # Seeders in scrape response
-    downloaded: int | None = None  # Completed downloads in scrape response
-    incomplete: int | None = None  # Leechers in scrape response
+    complete: Optional[int] = None  # Seeders in scrape response
+    downloaded: Optional[int] = None  # Completed downloads in scrape response
+    incomplete: Optional[int] = None  # Leechers in scrape response
 
 
 @dataclass
@@ -64,22 +64,22 @@ class TrackerSession:
     url: str
     host: str
     port: int
-    connection_id: int | None = None
+    connection_id: Optional[int] = None
     connection_time: float = 0.0
     last_announce: float = 0.0
     # Interval suggested by tracker for next announce (seconds)
-    interval: int | None = None
+    interval: Optional[int] = None
     retry_count: int = 0
     backoff_delay: float = 1.0
     max_retries: int = 3
     is_connected: bool = False
-    last_response_time: float | None = None
+    last_response_time: Optional[float] = None
 
 
 class AsyncUDPTrackerClient:
     """High-performance async UDP tracker client."""
 
-    def __init__(self, peer_id: bytes | None = None, test_mode: bool = False):
+    def __init__(self, peer_id: Optional[bytes] = None, test_mode: bool = False):
         """Initialize UDP tracker client.
 
         Args:
@@ -99,15 +99,15 @@ class AsyncUDPTrackerClient:
         self.sessions: dict[str, TrackerSession] = {}
 
         # UDP socket
-        self.socket: asyncio.DatagramProtocol | None = None
-        self.transport: asyncio.DatagramTransport | None = None
+        self.socket: Optional[asyncio.DatagramProtocol] = None
+        self.transport: Optional[asyncio.DatagramTransport] = None
         self.transaction_counter = 0
 
         # Pending requests
         self.pending_requests: dict[int, asyncio.Future] = {}
 
         # Background tasks
-        self._cleanup_task: asyncio.Task | None = None
+        self._cleanup_task: Optional[asyncio.Task] = None
 
         # CRITICAL FIX: Add lock to prevent concurrent socket operations
         # Windows requires serialized access to UDP sockets to prevent WinError 10022
@@ -132,9 +132,9 @@ class AsyncUDPTrackerClient:
         # CRITICAL FIX: Immediate peer connection callback
         # This allows sessions to connect peers immediately when tracker responses arrive
         # instead of waiting for the announce loop to process them
-        self.on_peers_received: Callable[[list[dict[str, Any]], str], None] | None = (
-            None
-        )
+        self.on_peers_received: Optional[
+            Callable[[list[dict[str, Any]], str], None]
+        ] = None
 
         # Test mode: bypass socket validation for testing
         self._test_mode: bool = test_mode
@@ -155,12 +155,14 @@ class AsyncUDPTrackerClient:
         self,
         url: str,
         torrent_data: dict[str, Any],
-        port: int | None = None,
+        port: Optional[int] = None,
         uploaded: int = 0,
         downloaded: int = 0,
         left: int = 0,
         event: TrackerEvent = TrackerEvent.STARTED,
-    ) -> tuple[list[dict[str, Any]], int | None, int | None, int | None] | None:
+    ) -> Optional[
+        tuple[list[dict[str, Any]], Optional[int], Optional[int], Optional[int]]
+    ]:
         """Announce to tracker with full response (public API wrapper).
 
         Args:
@@ -668,7 +670,7 @@ class AsyncUDPTrackerClient:
         torrent_data: dict[str, Any],
         uploaded: int = 0,
         downloaded: int = 0,
-        left: int | None = None,
+        left: Optional[int] = None,
         event: TrackerEvent = TrackerEvent.STARTED,
     ) -> list[dict[str, Any]]:
         """Announce to UDP trackers and get peer list.
@@ -765,7 +767,7 @@ class AsyncUDPTrackerClient:
         self,
         url: str,
         torrent_data: dict[str, Any],
-        port: int | None = None,
+        port: Optional[int] = None,
         uploaded: int = 0,
         downloaded: int = 0,
         left: int = 0,
@@ -876,12 +878,14 @@ class AsyncUDPTrackerClient:
         self,
         url: str,
         torrent_data: dict[str, Any],
-        port: int | None = None,
+        port: Optional[int] = None,
         uploaded: int = 0,
         downloaded: int = 0,
         left: int = 0,
         event: TrackerEvent = TrackerEvent.STARTED,
-    ) -> tuple[list[dict[str, Any]], int | None, int | None, int | None] | None:
+    ) -> Optional[
+        tuple[list[dict[str, Any]], Optional[int], Optional[int], Optional[int]]
+    ]:
         """Announce to a single UDP tracker and return full response info.
 
         Returns:
@@ -1421,7 +1425,7 @@ class AsyncUDPTrackerClient:
         self,
         session: TrackerSession,
         torrent_data: dict[str, Any],
-        port: int | None = None,
+        port: Optional[int] = None,
         uploaded: int = 0,
         downloaded: int = 0,
         left: int = 0,
@@ -1716,12 +1720,14 @@ class AsyncUDPTrackerClient:
         self,
         session: TrackerSession,
         torrent_data: dict[str, Any],
-        port: int | None = None,
+        port: Optional[int] = None,
         uploaded: int = 0,
         downloaded: int = 0,
         left: int = 0,
         event: TrackerEvent = TrackerEvent.STARTED,
-    ) -> tuple[list[dict[str, Any]], int | None, int | None, int | None] | None:
+    ) -> Optional[
+        tuple[list[dict[str, Any]], Optional[int], Optional[int], Optional[int]]
+    ]:
         """Send announce request to tracker and return full response info.
 
         Returns:
@@ -1974,7 +1980,7 @@ class AsyncUDPTrackerClient:
         self,
         transaction_id: int,
         timeout: float,
-    ) -> TrackerResponse | None:
+    ) -> Optional[TrackerResponse]:
         """Wait for UDP tracker response."""
         future = asyncio.Future()
         self.pending_requests[transaction_id] = future

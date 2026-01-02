@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -45,7 +45,7 @@ class PieceSelectionStrategyWidget(Static):  # type: ignore[misc]
         self,
         *,
         info_hash: str,
-        data_provider: Any | None,
+        data_provider: Optional[Any],
         refresh_interval: float = 2.5,
         **kwargs: Any,
     ) -> None:
@@ -53,8 +53,8 @@ class PieceSelectionStrategyWidget(Static):  # type: ignore[misc]
         self._info_hash = info_hash
         self._data_provider = data_provider
         self._refresh_interval = refresh_interval
-        self._update_task: Any | None = None
-        self._adapter: Any | None = None
+        self._update_task: Optional[Any] = None
+        self._adapter: Optional[Any] = None
 
     def compose(self) -> ComposeResult:  # pragma: no cover
         """Render placeholder before metrics arrive."""

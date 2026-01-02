@@ -5,6 +5,8 @@ This script parses coverage.xml and optionally htmlcov to provide
 line-level analysis of uncovered code.
 """
 
+from __future__ import annotations
+
 import sys
 import os
 import xml.etree.ElementTree as ET

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from typing import Any
+from typing import Any, Optional
 
 logger = None
 
@@ -65,7 +65,7 @@ class RTTMeasurer:
         self.total_samples = 0
         self.retransmission_count = 0
 
-    def record_send(self, sequence: int, timestamp: float | None = None) -> None:
+    def record_send(self, sequence: int, timestamp: Optional[float] = None) -> None:
         """Record packet send time for RTT measurement.
 
         Args:
@@ -79,8 +79,8 @@ class RTTMeasurer:
         self.pending_measurements[sequence] = timestamp
 
     def record_receive(
-        self, sequence: int, timestamp: float | None = None
-    ) -> float | None:
+        self, sequence: int, timestamp: Optional[float] = None
+    ) -> Optional[float]:
         """Record packet receive time and calculate RTT.
 
         Args:

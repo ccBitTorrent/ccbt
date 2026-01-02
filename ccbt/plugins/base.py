@@ -14,7 +14,7 @@ import importlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from ccbt.utils.exceptions import CCBTError
 from ccbt.utils.logging_config import get_logger
@@ -48,7 +48,7 @@ class PluginInfo:
     dependencies: list[str] = field(default_factory=list)
     hooks: list[str] = field(default_factory=list)
     state: PluginState = PluginState.UNLOADED
-    error: str | None = None
+    error: Optional[str] = None
 
 
 class Plugin(ABC):
@@ -67,7 +67,7 @@ class Plugin(ABC):
         self.version = version
         self.description = description
         self.state = PluginState.UNLOADED
-        self.error: str | None = None
+        self.error: Optional[str] = None
         self.logger = get_logger(f"plugin.{name}")
         self._hooks: dict[str, list[Callable]] = {}
         self._dependencies: list[str] = []
@@ -154,7 +154,7 @@ class PluginManager:
     async def load_plugin(
         self,
         plugin_class: type[Plugin],
-        config: dict[str, Any] | None = None,
+        config: Optional[dict[str, Any]] = None,
     ) -> str:
         """Load a plugin.
 
@@ -331,11 +331,11 @@ class PluginManager:
                     self.logger.exception("Global hook '%s' failed", hook_name)
         return results
 
-    def get_plugin(self, plugin_name: str) -> Plugin | None:
+    def get_plugin(self, plugin_name: str) -> Optional[Plugin]:
         """Get a plugin by name."""
         return self.plugins.get(plugin_name)
 
-    def get_plugin_info(self, plugin_name: str) -> PluginInfo | None:
+    def get_plugin_info(self, plugin_name: str) -> Optional[PluginInfo]:
         """Get plugin information."""
         return self.plugin_info.get(plugin_name)
 
@@ -353,7 +353,7 @@ class PluginManager:
         self,
         module_path: str,
         plugin_class_name: str = "Plugin",
-        config: dict[str, Any] | None = None,
+        config: Optional[dict[str, Any]] = None,
     ) -> str:
         """Load a plugin from a module.
 
@@ -404,7 +404,7 @@ class PluginManager:
 
 
 # Global plugin manager instance
-_plugin_manager: PluginManager | None = None
+_plugin_manager: Optional[PluginManager] = None
 
 
 def get_plugin_manager() -> PluginManager:

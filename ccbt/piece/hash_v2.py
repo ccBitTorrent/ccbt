@@ -16,7 +16,7 @@ import contextlib
 import hashlib
 import logging
 from enum import Enum
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional, Union
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from io import BytesIO
@@ -57,7 +57,7 @@ def hash_piece_v2(data: bytes) -> bytes:
 
 
 def hash_piece_v2_streaming(
-    data_source: BinaryIO | bytes | BytesIO,
+    data_source: Union[BinaryIO, bytes, BytesIO],
     chunk_size: int = 65536,
 ) -> bytes:
     """Calculate SHA-256 hash of piece data using streaming for large pieces.
@@ -164,7 +164,7 @@ def verify_piece_v2(data: bytes, expected_hash: bytes) -> bool:
 
 
 def verify_piece_v2_streaming(
-    data_source: BinaryIO | bytes | BytesIO,
+    data_source: Union[BinaryIO, bytes, BytesIO],
     expected_hash: bytes,
     chunk_size: int = 65536,
 ) -> bool:
@@ -548,7 +548,7 @@ class HashAlgorithm(Enum):
 def verify_piece(
     data: bytes,
     expected_hash: bytes,
-    algorithm: HashAlgorithm | None = None,
+    algorithm: Optional[HashAlgorithm] = None,
 ) -> bool:
     """Verify piece data against expected hash using specified algorithm.
 
@@ -625,7 +625,7 @@ def verify_piece(
 
 
 def verify_piece_streaming(
-    data_source: BinaryIO | bytes | BytesIO,
+    data_source: Union[BinaryIO, bytes, BytesIO],
     expected_hash: bytes,
     algorithm: HashAlgorithm = HashAlgorithm.SHA256,
     chunk_size: int = 65536,

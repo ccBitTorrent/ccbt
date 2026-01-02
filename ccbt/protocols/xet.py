@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.discovery.xet_cas import P2PCASClient
 from ccbt.protocols.base import (
@@ -82,7 +82,7 @@ class XetProtocol(Protocol):
         self.bloom_filter = bloom_filter
 
         # P2P CAS client
-        self.cas_client: P2PCASClient | None = None
+        self.cas_client: Optional[P2PCASClient] = None
 
         # Logger
         self.logger = logging.getLogger(__name__)
@@ -282,7 +282,7 @@ class XetProtocol(Protocol):
             self.update_stats(errors=1)
             return False
 
-    async def receive_message(self, _peer_id: str) -> bytes | None:
+    async def receive_message(self, _peer_id: str) -> Optional[bytes]:
         """Receive message from peer.
 
         Note: Xet uses BitTorrent protocol extension for chunk messages,

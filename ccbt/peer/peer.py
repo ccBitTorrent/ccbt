@@ -13,7 +13,7 @@ import logging
 import socket
 import struct
 from collections import deque
-from typing import Any
+from typing import Any, Optional, Union
 
 from ccbt.config.config import get_config
 from ccbt.models import MessageType
@@ -32,7 +32,9 @@ class PeerState:
         self.am_interested: bool = False  # We are interested in the peer
         self.peer_choking: bool = True  # Peer is choking us
         self.peer_interested: bool = False  # Peer is interested in us
-        self.bitfield: bytes | None = None  # Peer's bitfield (which pieces they have)
+        self.bitfield: Optional[bytes] = (
+            None  # Peer's bitfield (which pieces they have)
+        )
         self.pieces_we_have: set[int] = set()  # Pieces we have downloaded
 
     def __str__(self) -> str:
@@ -78,9 +80,9 @@ class Handshake:
         self,
         info_hash: bytes,
         peer_id: bytes,
-        reserved_bytes: bytes | None = None,
-        ed25519_public_key: bytes | None = None,
-        ed25519_signature: bytes | None = None,
+        reserved_bytes: Optional[bytes] = None,
+        ed25519_public_key: Optional[bytes] = None,
+        ed25519_signature: Optional[bytes] = None,
     ) -> None:
         """Initialize handshake.
 
@@ -113,8 +115,8 @@ class Handshake:
         self.reserved_bytes: bytes = (
             reserved_bytes if reserved_bytes is not None else self.RESERVED_BYTES
         )
-        self.ed25519_public_key: bytes | None = ed25519_public_key
-        self.ed25519_signature: bytes | None = ed25519_signature
+        self.ed25519_public_key: Optional[bytes] = ed25519_public_key
+        self.ed25519_signature: Optional[bytes] = ed25519_signature
 
     def encode(self) -> bytes:
         """Encode handshake to bytes.
@@ -751,7 +753,7 @@ class AsyncMessageDecoder:
         # Async message queue
         self.message_queue = asyncio.Queue(maxsize=1000)
         self.buffer = bytearray()
-        self.buffer_view: memoryview | None = None
+        self.buffer_view: Optional[memoryview] = None
 
         # Object pools for message reuse
         self.message_pools = {
@@ -772,7 +774,7 @@ class AsyncMessageDecoder:
 
         self.logger = logging.getLogger(__name__)
 
-    async def feed_data(self, data: bytes | memoryview) -> None:
+    async def feed_data(self, data: Union[bytes, memoryview]) -> None:
         """Feed data to the decoder asynchronously.
 
         Args:
@@ -788,7 +790,7 @@ class AsyncMessageDecoder:
         # Process complete messages from buffer
         await self._process_buffer()
 
-    async def get_message(self) -> PeerMessage | None:
+    async def get_message(self) -> Optional[PeerMessage]:
         """Get the next message from the queue.
 
         Returns:
@@ -1016,7 +1018,7 @@ class OptimizedMessageDecoder:
 
         # Simple buffer for partial messages
         self.buffer = bytearray()
-        self.buffer_view: memoryview | None = None
+        self.buffer_view: Optional[memoryview] = None
 
         # Object pools for message reuse
         self.message_pools = {
@@ -1037,7 +1039,7 @@ class OptimizedMessageDecoder:
 
         self.logger = logging.getLogger(__name__)
 
-    def add_data(self, data: bytes | memoryview) -> list[PeerMessage]:
+    def add_data(self, data: Union[bytes, memoryview]) -> list[PeerMessage]:
         """Add data to the buffer and return any complete messages.
 
         Args:
@@ -1095,7 +1097,7 @@ class OptimizedMessageDecoder:
 
         return messages
 
-    def _decode_next_message(self) -> PeerMessage | None:
+    def _decode_next_message(self) -> Optional[PeerMessage]:
         """Decode the next message from the buffer using memoryview."""
         if self.buffer_size < 4:
             return None  # Need at least 4 bytes for length
@@ -1593,7 +1595,7 @@ class MessageBuffer:
 
 
 # Global socket optimizer instance (lazy initialization)
-_socket_optimizer: SocketOptimizer | None = None
+_socket_optimizer: Optional[SocketOptimizer] = None
 
 
 def _get_socket_optimizer() -> SocketOptimizer:

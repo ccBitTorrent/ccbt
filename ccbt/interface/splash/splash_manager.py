@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -23,9 +23,9 @@ class SplashManager:
     
     def __init__(
         self,
-        console: Any | None = None,
-        textual_widget: Any | None = None,
-        verbosity: VerbosityManager | None = None,
+        console: Optional[Any] = None,
+        textual_widget: Optional[Any] = None,
+        verbosity: Optional[VerbosityManager] = None,
     ) -> None:
         """Initialize splash manager.
         
@@ -37,10 +37,10 @@ class SplashManager:
         self.console = console
         self.textual_widget = textual_widget
         self.verbosity = verbosity or VerbosityManager(0)  # NORMAL by default
-        self._splash_screen: SplashScreen | None = None
-        self._adapter: AnimationAdapter | None = None
+        self._splash_screen: Optional[SplashScreen] = None
+        self._adapter: Optional[AnimationAdapter] = None
         self._stop_event = threading.Event()  # Event to signal splash to stop
-        self._running_task: asyncio.Task[None] | None = None  # Track running task for cancellation
+        self._running_task: Optional[asyncio.Task[None]] = None  # Track running task for cancellation
     
     def should_show_splash(self) -> bool:
         """Check if splash screen should be shown.
@@ -59,7 +59,7 @@ class SplashManager:
     def create_splash_screen(
         self,
         duration: float = 90.0,
-        logo_text: str | None = None,
+        logo_text: Optional[str] = None,
     ) -> SplashScreen:
         """Create a splash screen instance.
         
@@ -95,7 +95,7 @@ class SplashManager:
     async def show_splash_for_task(
         self,
         task_name: str,
-        task_duration: float | None = None,
+        task_duration: Optional[float] = None,
         max_duration: float = 90.0,
         show_progress: bool = True,
     ) -> None:
@@ -223,8 +223,8 @@ class SplashManager:
     
     @staticmethod
     def from_cli_context(
-        ctx: dict[str, Any] | None = None,
-        console: Any | None = None,
+        ctx: Optional[dict[str, Any]] = None,
+        console: Optional[Any] = None,
     ) -> SplashManager:
         """Create SplashManager from CLI context.
         
@@ -243,7 +243,7 @@ class SplashManager:
     @staticmethod
     def from_verbosity_count(
         verbosity_count: int = 0,
-        console: Any | None = None,
+        console: Optional[Any] = None,
     ) -> SplashManager:
         """Create SplashManager from verbosity count.
         
@@ -260,10 +260,10 @@ class SplashManager:
 
 async def show_splash_if_needed(
     task_name: str,
-    verbosity: VerbosityManager | None = None,
-    console: Any | None = None,
+    verbosity: Optional[VerbosityManager] = None,
+    console: Optional[Any] = None,
     duration: float = 90.0,
-) -> SplashManager | None:
+) -> Optional[SplashManager]:
     """Show splash screen if verbosity allows.
     
     Convenience function to show splash screen for a task.

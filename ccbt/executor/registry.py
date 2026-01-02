@@ -5,7 +5,7 @@ Maps command names to executor methods.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 
 class CommandRegistry:
@@ -28,7 +28,7 @@ class CommandRegistry:
         """
         self._handlers[command] = handler
 
-    def get(self, command: str) -> Callable[..., Any] | None:
+    def get(self, command: str) -> Optional[Callable[..., Any]]:
         """Get command handler.
 
         Args:

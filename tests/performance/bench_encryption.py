@@ -28,6 +28,7 @@ import platform
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from typing import Optional
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -1113,7 +1114,7 @@ def write_json(
     return path
 
 
-def derive_config_name(config_file: str | None) -> str:
+def derive_config_name(config_file: Optional[str]) -> str:
     """Derive config name from config file path."""
     if not config_file:
         return "default"

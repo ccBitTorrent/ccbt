@@ -10,7 +10,7 @@ import asyncio
 import logging
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class GitVersioning:
 
     def __init__(
         self,
-        folder_path: str | Path,
+        folder_path: Union[str, Path],
         auto_commit: bool = False,
     ) -> None:
         """Initialize git versioning.
@@ -48,7 +48,7 @@ class GitVersioning:
         git_dir = self.folder_path / ".git"
         return git_dir.exists() and git_dir.is_dir()
 
-    async def get_current_commit(self) -> str | None:
+    async def get_current_commit(self) -> Optional[str]:
         """Get current git commit hash.
 
         Returns:
@@ -94,7 +94,7 @@ class GitVersioning:
 
         return []
 
-    async def get_changed_files(self, since_ref: str | None = None) -> list[str]:
+    async def get_changed_files(self, since_ref: Optional[str] = None) -> list[str]:
         """Get list of changed files since a git ref.
 
         Args:
@@ -124,7 +124,7 @@ class GitVersioning:
 
         return []
 
-    async def get_diff(self, since_ref: str | None = None) -> str | None:
+    async def get_diff(self, since_ref: Optional[str] = None) -> Optional[str]:
         """Get git diff since a ref.
 
         Args:
@@ -171,8 +171,8 @@ class GitVersioning:
             return False
 
     async def create_commit(
-        self, message: str | None = None, files: list[str] | None = None
-    ) -> str | None:
+        self, message: Optional[str] = None, files: Optional[list[str]] = None
+    ) -> Optional[str]:
         """Create a git commit.
 
         Args:
@@ -211,7 +211,7 @@ class GitVersioning:
 
         return None
 
-    async def auto_commit_if_changes(self) -> str | None:
+    async def auto_commit_if_changes(self) -> Optional[str]:
         """Automatically commit changes if auto_commit is enabled and changes exist.
 
         Returns:
@@ -226,7 +226,7 @@ class GitVersioning:
 
         return None
 
-    async def get_file_hash(self, file_path: str) -> str | None:
+    async def get_file_hash(self, file_path: str) -> Optional[str]:
         """Get git hash (blob SHA-1) for a file.
 
         Args:
@@ -248,7 +248,7 @@ class GitVersioning:
 
         return None
 
-    async def get_file_at_ref(self, file_path: str, ref: str) -> bytes | None:
+    async def get_file_at_ref(self, file_path: str, ref: str) -> Optional[bytes]:
         """Get file contents at a specific git ref.
 
         Args:
@@ -283,7 +283,7 @@ class GitVersioning:
 
     async def _run_git_command(
         self, args: list[str], capture_output: bool = True
-    ) -> str | None:
+    ) -> Optional[str]:
         """Run a git command and return output.
 
         Args:

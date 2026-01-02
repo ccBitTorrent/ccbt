@@ -6,7 +6,7 @@ Displays file list for a selected torrent with file selection and priority contr
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from ccbt.interface.commands.executor import CommandExecutor
@@ -104,7 +104,7 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
         self._data_provider = data_provider
         self._command_executor = command_executor
         self._info_hash = info_hash
-        self._files_table: DataTable | None = None
+        self._files_table: Optional[DataTable] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the files screen."""
@@ -374,7 +374,7 @@ class PrioritySelectDialog(ModalScreen):  # type: ignore[misc]
         """
         super().__init__(*args, **kwargs)
         self._current_priority = current_priority
-        self._selected_priority: str | None = None
+        self._selected_priority: Optional[str] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the priority selection dialog."""

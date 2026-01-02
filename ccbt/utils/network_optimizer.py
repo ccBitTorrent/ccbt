@@ -16,7 +16,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.utils.exceptions import NetworkError
 from ccbt.utils.logging_config import get_logger
@@ -120,9 +120,9 @@ class SocketOptimizer:
 
     def _calculate_optimal_buffer_size(
         self,
-        bandwidth_bps: float | None = None,
-        rtt_ms: float | None = None,
-        connection_stats: ConnectionStats | None = None,
+        bandwidth_bps: Optional[float] = None,
+        rtt_ms: Optional[float] = None,
+        connection_stats: Optional[ConnectionStats] = None,
     ) -> int:
         """Calculate optimal buffer size using BDP (Bandwidth-Delay Product).
 
@@ -232,7 +232,7 @@ class SocketOptimizer:
         self,
         sock: socket.socket,
         socket_type: SocketType,
-        connection_stats: ConnectionStats | None = None,
+        connection_stats: Optional[ConnectionStats] = None,
     ) -> None:
         """Optimize socket settings for the given type.
 
@@ -413,7 +413,7 @@ class ConnectionPool:
         host: str,
         port: int,
         socket_type: SocketType = SocketType.PEER_CONNECTION,
-    ) -> socket.socket | None:
+    ) -> Optional[socket.socket]:
         """Get a connection from the pool.
 
         Args:
@@ -489,7 +489,7 @@ class ConnectionPool:
         host: str,
         port: int,
         socket_type: SocketType,
-    ) -> socket.socket | None:
+    ) -> Optional[socket.socket]:
         """Create a new connection."""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -635,7 +635,7 @@ class ConnectionPool:
                 alpha = 0.125  # RFC 6298 default
                 self.stats.rtt_ms = alpha * rtt_ms + (1 - alpha) * self.stats.rtt_ms
 
-    def get_connection_stats(self, sock: socket.socket) -> ConnectionStats | None:
+    def get_connection_stats(self, sock: socket.socket) -> Optional[ConnectionStats]:
         """Get statistics for a specific connection.
 
         Args:
@@ -714,7 +714,7 @@ class NetworkOptimizer:
         self,
         sock: socket.socket,
         socket_type: SocketType,
-        connection_stats: ConnectionStats | None = None,
+        connection_stats: Optional[ConnectionStats] = None,
     ) -> None:
         """Optimize socket settings for the given type.
 
@@ -743,7 +743,7 @@ class NetworkOptimizer:
         host: str,
         port: int,
         socket_type: SocketType = SocketType.PEER_CONNECTION,
-    ) -> socket.socket | None:
+    ) -> Optional[socket.socket]:
         """Get an optimized connection."""
         return self.connection_pool.get_connection(host, port, socket_type)
 
@@ -766,7 +766,7 @@ class NetworkOptimizer:
 
 
 # Global network optimizer instance
-_network_optimizer: NetworkOptimizer | None = None
+_network_optimizer: Optional[NetworkOptimizer] = None
 
 
 def get_network_optimizer() -> NetworkOptimizer:

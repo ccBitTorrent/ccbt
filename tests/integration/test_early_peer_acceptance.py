@@ -8,6 +8,7 @@ These tests verify that:
 import asyncio
 import json
 from pathlib import Path
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,7 +18,7 @@ pytestmark = [pytest.mark.integration]
 from ccbt.session.session import AsyncSessionManager, AsyncTorrentSession
 
 # #region agent log
-def _debug_log(hypothesis_id: str, location: str, message: str, data: dict | None = None):
+def _debug_log(hypothesis_id: str, location: str, message: str, data: Optional[dict] = None):
     """Debug logging for test hang investigation."""
     try:
         log_path = Path(".cursor/debug.log")
@@ -44,7 +45,7 @@ class TestEarlyPeerAcceptance:
     @pytest.mark.asyncio
     async def test_incoming_peer_before_tracker_announce(self, tmp_path):
         """Test that incoming peers are queued and accepted even before tracker announce completes."""
-        start_task: asyncio.Task | None = None
+        start_task: Optional[asyncio.Task] = None
         
         with patch("ccbt.config.config.get_config") as mock_get_config:
             from ccbt.config.config import Config
@@ -292,7 +293,7 @@ class TestEarlyDownloadStart:
     @pytest.mark.asyncio
     async def test_download_starts_on_first_tracker_response(self, tmp_path):
         """Test that download starts immediately when first tracker responds with peers."""
-        start_task: asyncio.Task | None = None
+        start_task: Optional[asyncio.Task] = None
         
         with patch("ccbt.config.config.get_config") as mock_get_config:
             from ccbt.config.config import Config
@@ -416,7 +417,7 @@ class TestEarlyDownloadStart:
     @pytest.mark.asyncio
     async def test_peer_manager_reused_when_already_exists(self, tmp_path):
         """Test that existing peer_manager is reused when connecting new peers."""
-        start_task: asyncio.Task | None = None
+        start_task: Optional[asyncio.Task] = None
         
         with patch("ccbt.config.config.get_config") as mock_get_config:
             from ccbt.config.config import Config

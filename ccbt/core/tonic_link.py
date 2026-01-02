@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 
 @dataclass
@@ -18,12 +18,12 @@ class TonicLinkInfo:
     """Information extracted from a tonic?: link."""
 
     info_hash: bytes  # 32-byte SHA-256 hash
-    display_name: str | None = None
-    trackers: list[str] | None = None
-    git_refs: list[str] | None = None
-    sync_mode: str | None = None
-    source_peers: list[str] | None = None
-    allowlist_hash: bytes | None = None
+    display_name: Optional[str] = None
+    trackers: Optional[list[str]] = None
+    git_refs: Optional[list[str]] = None
+    sync_mode: Optional[str] = None
+    source_peers: Optional[list[str]] = None
+    allowlist_hash: Optional[bytes] = None
 
 
 def _hex_or_base32_to_bytes(value: str) -> bytes:
@@ -166,12 +166,12 @@ def parse_tonic_link(uri: str) -> TonicLinkInfo:
 
 def generate_tonic_link(
     info_hash: bytes,
-    display_name: str | None = None,
-    trackers: list[str] | None = None,
-    git_refs: list[str] | None = None,
-    sync_mode: str | None = None,
-    source_peers: list[str] | None = None,
-    allowlist_hash: bytes | None = None,
+    display_name: Optional[str] = None,
+    trackers: Optional[list[str]] = None,
+    git_refs: Optional[list[str]] = None,
+    sync_mode: Optional[str] = None,
+    source_peers: Optional[list[str]] = None,
+    allowlist_hash: Optional[bytes] = None,
     use_base32: bool = False,
 ) -> str:
     """Generate a tonic?: link from provided parameters.
@@ -251,7 +251,7 @@ def generate_tonic_link(
 
 def build_minimal_tonic_data(
     info_hash: bytes,
-    name: str | None,
+    name: Optional[str],
     trackers: list[str],
     sync_mode: str = "best_effort",
 ) -> dict[str, Any]:

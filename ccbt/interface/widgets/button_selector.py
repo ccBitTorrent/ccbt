@@ -1,6 +1,8 @@
 """Button-based selector widget to replace Tabs for better visibility control."""
 
-from typing import TYPE_CHECKING, Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Optional
 
 from textual.containers import Container
 from textual.message import Message
@@ -42,7 +44,7 @@ class ButtonSelector(Container):  # type: ignore[misc]
     def __init__(
         self,
         options: list[tuple[str, str]],  # [(id, label), ...]
-        initial_selection: str | None = None,
+        initial_selection: Optional[str] = None,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -55,7 +57,7 @@ class ButtonSelector(Container):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self._options = options
         self._buttons: dict[str, Button] = {}
-        self._active_id: str | None = initial_selection or (options[0][0] if options else None)
+        self._active_id: Optional[str] = initial_selection or (options[0][0] if options else None)
 
     def compose(self) -> "ComposeResult":  # pragma: no cover
         """Compose the button selector."""
@@ -102,7 +104,7 @@ class ButtonSelector(Container):  # type: ignore[misc]
         self._active_id = option_id
 
     @property
-    def active(self) -> str | None:  # pragma: no cover
+    def active(self) -> Optional[str]:  # pragma: no cover
         """Get active selection ID."""
         return self._active_id
 
