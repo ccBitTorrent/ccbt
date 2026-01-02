@@ -14,9 +14,22 @@ by falling back to 'en' for date formatting, since Babel doesn't recognize 'arc'
 """
 
 # Apply patch BEFORE importing mkdocs
-import mkdocs_static_i18n
-from mkdocs_static_i18n.plugin import I18n
-import mkdocs_static_i18n.reconfigure
+# Check if dependencies are installed first
+try:
+    import mkdocs_static_i18n
+    from mkdocs_static_i18n.plugin import I18n
+    import mkdocs_static_i18n.reconfigure
+except ImportError as e:
+    import sys
+    print("ERROR: Required MkDocs dependencies are not installed.", file=sys.stderr)
+    print(f"Missing module: {e.name}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("Please install dependencies from dev/requirements-rtd.txt:", file=sys.stderr)
+    print("  pip install -r dev/requirements-rtd.txt", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("For Read the Docs builds, ensure .readthedocs.yaml is in the root directory", file=sys.stderr)
+    print("and that python.install section includes dev/requirements-rtd.txt", file=sys.stderr)
+    sys.exit(1)
 
 # Patch git-revision-date-localized plugin to handle 'arc' locale
 # Babel doesn't recognize 'arc' (Aramaic, ISO-639-2), so we fall back to 'en'
