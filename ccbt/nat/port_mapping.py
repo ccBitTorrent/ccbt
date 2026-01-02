@@ -7,12 +7,12 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 # Type alias for renewal callback (using string for forward reference)
-RenewalCallback = Callable[["PortMapping"], Awaitable[tuple[bool, Optional[int]]]]
+RenewalCallback = Callable[["PortMapping"], Awaitable[Tuple[bool, Optional[int]]]]
 
 
 @dataclass

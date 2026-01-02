@@ -488,11 +488,14 @@ def _apply_utp_overrides(cfg: Config, options: dict[str, Any]) -> None:
 
 
 def _apply_protocol_v2_overrides(cfg: Config, options: dict[str, Any]) -> None:
+    """Apply Protocol v2-related CLI overrides."""
+    # v2_only flag sets all v2 options (takes precedence)
     if options.get("v2_only"):
         cfg.network.protocol_v2.enable_protocol_v2 = True
         cfg.network.protocol_v2.prefer_protocol_v2 = True
         cfg.network.protocol_v2.support_hybrid = False
-    if not options.get("v2_only"):
+    else:
+        # Individual flags (only if v2_only is not set)
         if options.get("enable_v2"):
             cfg.network.protocol_v2.enable_protocol_v2 = True
         if options.get("disable_v2"):

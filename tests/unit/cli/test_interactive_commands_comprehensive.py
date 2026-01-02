@@ -18,6 +18,27 @@ from rich.console import Console
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
 
 
+def _create_mock_config_manager(mock_config=None, config_file=None):
+    """Helper function to create a properly structured mock ConfigManager.
+    
+    Args:
+        mock_config: Optional mock config object. If None, creates a default one.
+        config_file: Optional config file path. Defaults to None.
+    
+    Returns:
+        Mock ConfigManager instance with config and config_file attributes.
+    """
+    if mock_config is None:
+        mock_config = Mock()
+        mock_config.model_dump.return_value = {"network": {"port": 6881}}
+        mock_config.disk.backup_dir = "/tmp/backups"
+    
+    mock_cm = Mock()
+    mock_cm.config = mock_config
+    mock_cm.config_file = config_file
+    return mock_cm
+
+
 @pytest.fixture
 def mock_session():
     """Create a mock AsyncSessionManager."""
@@ -57,8 +78,12 @@ def mock_console():
 
 
 @pytest.fixture
-def interactive_cli(mock_session, mock_console):
-    """Create an InteractiveCLI instance."""
+def interactive_cli(mock_session, mock_console, mock_config_manager):
+    """Create an InteractiveCLI instance.
+    
+    Uses mock_config_manager fixture to ensure ConfigManager is patched
+    at module level for all commands that create ConfigManager(None) instances.
+    """
     from tests.conftest import create_interactive_cli
     
     cli = create_interactive_cli(mock_session, mock_console)
@@ -109,7 +134,7 @@ async def test_cmd_auto_tune_preview(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm, \
          patch('ccbt.config.config_conditional.ConditionalConfig') as mock_cc:
         mock_config = Mock()
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_cc_instance = Mock()
         # Return a mock config object with model_dump method
@@ -131,8 +156,7 @@ async def test_cmd_auto_tune_apply(interactive_cli):
          patch('ccbt.config.config_conditional.ConditionalConfig') as mock_cc, \
          patch('ccbt.config.config.set_config') as mock_set:
         mock_config = Mock()
-        mock_cm_instance = Mock(config=mock_config)
-        mock_cm.return_value = mock_cm_instance
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_cc_instance = Mock()
         # Return a mock config object (could be dict or model)
@@ -152,7 +176,7 @@ async def test_cmd_auto_tune_with_warnings(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm, \
          patch('ccbt.config.config_conditional.ConditionalConfig') as mock_cc:
         mock_config = Mock()
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_cc_instance = Mock()
         # Return a mock config object with model_dump method
@@ -201,9 +225,14 @@ async def test_cmd_template_apply(interactive_cli):
          patch('ccbt.config.config_templates.ConfigTemplates') as mock_templates, \
          patch('ccbt.config.config.set_config') as mock_set, \
          patch('ccbt.models.Config') as mock_config_model:
+        # CRITICAL FIX: Ensure mock ConfigManager has all required attributes
         mock_config = Mock()
         mock_config.model_dump.return_value = {"existing": "config"}
-        mock_cm.return_value = Mock(config=mock_config)
+        
+        mock_cm_instance = Mock()
+        mock_cm_instance.config = mock_config
+        mock_cm_instance.config_file = None
+        mock_cm.return_value = mock_cm_instance
         
         mock_templates.apply_template.return_value = {"new": "config"}
         mock_config_model.model_validate.return_value = Mock()
@@ -224,7 +253,7 @@ async def test_cmd_template_apply_with_strategy(interactive_cli):
          patch('ccbt.models.Config') as mock_config_model:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"existing": "config"}
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_templates.apply_template.return_value = {"new": "config"}
         mock_config_model.model_validate.return_value = Mock()
@@ -276,9 +305,14 @@ async def test_cmd_profile_apply(interactive_cli):
          patch('ccbt.config.config_templates.ConfigProfiles') as mock_profiles, \
          patch('ccbt.config.config.set_config') as mock_set, \
          patch('ccbt.models.Config') as mock_config_model:
+        # CRITICAL FIX: Ensure mock ConfigManager has all required attributes
         mock_config = Mock()
         mock_config.model_dump.return_value = {"existing": "config"}
-        mock_cm.return_value = Mock(config=mock_config)
+        
+        mock_cm_instance = Mock()
+        mock_cm_instance.config = mock_config
+        mock_cm_instance.config_file = None
+        mock_cm.return_value = mock_cm_instance
         
         mock_profiles.apply_profile.return_value = {"new": "config"}
         mock_config_model.model_validate.return_value = Mock()
@@ -305,7 +339,7 @@ async def test_cmd_config_backup_list(interactive_cli):
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
         mock_config.disk.backup_dir = "/backup/dir"
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_backup_instance = Mock()
         mock_backup_instance.list_backups.return_value = [
@@ -326,7 +360,7 @@ async def test_cmd_config_backup_list_empty(interactive_cli):
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
         mock_config.disk.backup_dir = "/backup/dir"
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_backup_instance = Mock()
         mock_backup_instance.list_backups.return_value = []
@@ -344,8 +378,7 @@ async def test_cmd_config_backup_create(interactive_cli):
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
         mock_config.disk.backup_dir = "/backup/dir"
-        mock_config.config_file = "/path/to/config.toml"
-        mock_cm.return_value = Mock(config=mock_config, config_file="/path/to/config.toml")
+        mock_cm.return_value = _create_mock_config_manager(mock_config, config_file="/path/to/config.toml")
         
         mock_backup_instance = Mock()
         mock_backup_instance.create_backup.return_value = (True, "/backup/file.tar.gz", [])
@@ -364,7 +397,7 @@ async def test_cmd_config_backup_create_with_description(interactive_cli):
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
         mock_config.disk.backup_dir = "/backup/dir"
-        mock_cm.return_value = Mock(config=mock_config, config_file="/path/to/config.toml")
+        mock_cm.return_value = _create_mock_config_manager(mock_config, config_file="/path/to/config.toml")
         
         mock_backup_instance = Mock()
         mock_backup_instance.create_backup.return_value = (True, "/backup/file.tar.gz", [])
@@ -382,7 +415,7 @@ async def test_cmd_config_backup_create_no_config_file(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm:
         mock_config = Mock()
         mock_config.disk.backup_dir = "/backup/dir"
-        mock_cm.return_value = Mock(config=mock_config, config_file=None)
+        mock_cm.return_value = _create_mock_config_manager(mock_config, config_file=None)
         
         await interactive_cli.cmd_config_backup(["create"])
         
@@ -396,8 +429,7 @@ async def test_cmd_config_backup_restore(interactive_cli):
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
         mock_config.disk.backup_dir = "/backup/dir"
-        mock_cm_instance = Mock(config=mock_config, config_file="/path/to/config.toml")
-        mock_cm.return_value = mock_cm_instance
+        mock_cm.return_value = _create_mock_config_manager(mock_config, config_file="/path/to/config.toml")
         
         mock_backup_instance = Mock()
         # restore_backup returns (ok: bool, msgs: list[str])
@@ -417,7 +449,7 @@ async def test_cmd_config_backup_restore_failure(interactive_cli):
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
         mock_config.disk.backup_dir = "/backup/dir"
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_backup_instance = Mock()
         mock_backup_instance.restore_backup.return_value = (False, "error")
@@ -1036,7 +1068,7 @@ async def test_cmd_config_export_json(interactive_cli, tmp_path):
          patch('pathlib.Path') as mock_path:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"config": "data"}
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_path_instance = Mock()
         mock_path.return_value = mock_path_instance
@@ -1056,7 +1088,7 @@ async def test_cmd_config_export_toml(interactive_cli):
          tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.toml') as tmp:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"config": "data"}
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         tmp_path = tmp.name
         
@@ -1086,7 +1118,7 @@ async def test_cmd_config_export_yaml(interactive_cli):
              tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yaml') as tmp:
             mock_config = Mock()
             mock_config.model_dump.return_value = {"config": "data"}
-            mock_cm.return_value = Mock(config=mock_config)
+            mock_cm.return_value = _create_mock_config_manager(mock_config)
             
             tmp_path = tmp.name
             
@@ -1110,7 +1142,7 @@ async def test_cmd_config_export_yaml_not_installed(interactive_cli, tmp_path):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"config": "data"}
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         # Simulate import error
         with patch.dict('sys.modules', {'yaml': None}):
@@ -1143,8 +1175,7 @@ async def test_cmd_config_import_json(interactive_cli, tmp_path):
          patch('ccbt.config.config.set_config') as mock_set:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"existing": "config"}
-        mock_cm_instance = Mock(config=mock_config)
-        mock_cm.return_value = mock_cm_instance
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_path_instance = Mock()
         mock_path_instance.read_text.return_value = '{"new": "config"}'
@@ -1186,7 +1217,7 @@ async def test_cmd_config_show_all(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {"port": 6881}}
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         await interactive_cli.cmd_config(["show"])
         
@@ -1199,7 +1230,7 @@ async def test_cmd_config_show_section(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {"port": 6881}}
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         await interactive_cli.cmd_config(["show", "network"])
         
@@ -1212,7 +1243,7 @@ async def test_cmd_config_show_key_not_found(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {"port": 6881}}
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         await interactive_cli.cmd_config(["show", "nonexistent.key"])
         
@@ -1225,7 +1256,7 @@ async def test_cmd_config_get(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {"port": 6881}}
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         await interactive_cli.cmd_config(["get", "network.port"])
         
@@ -1246,7 +1277,7 @@ async def test_cmd_config_get_key_not_found(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {"port": 6881}}
-        mock_cm.return_value = Mock(config=mock_config)
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         await interactive_cli.cmd_config(["get", "nonexistent.key"])
         
@@ -1269,8 +1300,7 @@ async def test_cmd_config_set(interactive_cli):
          patch('ccbt.config.config.set_config') as mock_set:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {"port": 6881}}
-        mock_cm_instance = Mock(config=mock_config)
-        mock_cm.return_value = mock_cm_instance
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_config_model.return_value = Mock()
         
@@ -1288,8 +1318,7 @@ async def test_cmd_config_set_boolean_true(interactive_cli):
          patch('ccbt.config.config.set_config') as mock_set:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {}}
-        mock_cm_instance = Mock(config=mock_config)
-        mock_cm.return_value = mock_cm_instance
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_config_model.return_value = Mock()
         
@@ -1307,8 +1336,7 @@ async def test_cmd_config_set_boolean_false(interactive_cli):
          patch('ccbt.config.config.set_config') as mock_set:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {}}
-        mock_cm_instance = Mock(config=mock_config)
-        mock_cm.return_value = mock_cm_instance
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_config_model.return_value = Mock()
         
@@ -1326,8 +1354,7 @@ async def test_cmd_config_set_float(interactive_cli):
          patch('ccbt.config.config.set_config') as mock_set:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {}}
-        mock_cm_instance = Mock(config=mock_config)
-        mock_cm.return_value = mock_cm_instance
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_config_model.return_value = Mock()
         
@@ -1344,8 +1371,7 @@ async def test_cmd_config_set_error(interactive_cli):
          patch('ccbt.models.Config') as mock_config_model:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {}}
-        mock_cm_instance = Mock(config=mock_config)
-        mock_cm.return_value = mock_cm_instance
+        mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         # Make ConfigModel raise an error
         mock_config_model.side_effect = ValueError("Invalid config")
@@ -1704,8 +1730,7 @@ async def test_cmd_config_import_yaml_not_installed(interactive_cli, tmp_path):
              patch('pathlib.Path') as mock_path:
             mock_config = Mock()
             mock_config.model_dump.return_value = {"existing": "config"}
-            mock_cm_instance = Mock(config=mock_config)
-            mock_cm.return_value = mock_cm_instance
+            mock_cm.return_value = _create_mock_config_manager(mock_config)
             
             mock_path_instance = Mock()
             mock_path_instance.read_text.return_value = "status: error"

@@ -62,8 +62,12 @@ def mock_console():
 
 
 @pytest.fixture
-def interactive_cli(mock_session, mock_console):
-    """Create an InteractiveCLI instance."""
+def interactive_cli(mock_session, mock_console, mock_config_manager):
+    """Create an InteractiveCLI instance.
+    
+    Uses mock_config_manager fixture to ensure ConfigManager is patched
+    at module level for all commands that create ConfigManager(None) instances.
+    """
     from tests.conftest import create_interactive_cli
     
     cli = create_interactive_cli(mock_session, mock_console)
@@ -695,8 +699,31 @@ async def test_cmd_capabilities(interactive_cli):
 async def test_cmd_auto_tune(interactive_cli):
     """Test cmd_auto_tune command handler."""
     if hasattr(interactive_cli, "cmd_auto_tune"):
-        await interactive_cli.cmd_auto_tune([])
-        assert True
+        from unittest.mock import patch, MagicMock, Mock
+        from ccbt.config.config_conditional import ConditionalConfig
+        
+        mock_cc = MagicMock()
+        mock_tuned_config = MagicMock()
+        mock_tuned_config.model_dump = Mock(return_value={"test": "value"})
+        mock_cc.adjust_for_system = Mock(return_value=(mock_tuned_config, []))
+        
+        with patch("ccbt.config.config_conditional.ConditionalConfig", return_value=mock_cc):
+            with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
+                mock_config = Mock()
+                # Create proper disk mock with read_ahead_kib attribute
+                mock_disk = Mock()
+                mock_disk.read_ahead_kib = 512
+                mock_config.disk = mock_disk
+                mock_config.model_dump.return_value = {"network": {"port": 6881}}
+                # Create mock ConfigManager instance
+                mock_cm = MagicMock()
+                mock_cm.config = mock_config
+                mock_cm.config_file = None
+                mock_cm_class.return_value = mock_cm
+                
+                await interactive_cli.cmd_auto_tune([])
+        
+        assert interactive_cli.console.print.called
 
 
 @pytest.mark.asyncio
