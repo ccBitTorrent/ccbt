@@ -18,7 +18,11 @@ from tests.conftest import create_test_torrent_dict
 
 
 def _disable_network_services(session: AsyncSessionManager) -> None:
-    """Helper to disable network services that can hang in tests."""
+    """Helper to disable network services that can hang in tests.
+    
+    DEPRECATED: Use mock_network_components fixture and apply_network_mocks_to_session() instead.
+    This function is kept for backward compatibility but should be replaced.
+    """
     session.config.discovery.enable_dht = False
     session.config.nat.auto_map_ports = False
 
@@ -27,13 +31,15 @@ class TestQueueIntegration:
     """Integration tests for queue management."""
 
     @pytest.mark.asyncio
-    async def test_queue_lifecycle_with_session_manager(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_queue_lifecycle_with_session_manager(self, tmp_path, mock_network_components):
         """Test queue manager lifecycle integrated with session manager."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
-        # Disable network services to avoid hanging on network initialization
-        session.config.discovery.enable_dht = False
-        session.config.nat.auto_map_ports = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
 
         await session.start()
 
@@ -47,12 +53,10 @@ class TestQueueIntegration:
             assert session.queue_manager._monitor_task.cancelled()
 
     @pytest.mark.asyncio
-    async def test_add_torrent_through_queue(self, tmp_path, monkeypatch):
+    @pytest.mark.timeout_medium
+    async def test_add_torrent_through_queue(self, tmp_path, mock_network_components):
         """Test adding torrent through session manager uses queue."""
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -64,12 +68,8 @@ class TestQueueIntegration:
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
         session.config.queue.max_active_downloading = 5
-        _disable_network_services(session)
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -102,12 +102,10 @@ class TestQueueIntegration:
                     await session.stop()
 
     @pytest.mark.asyncio
-    async def test_priority_change_integration(self, tmp_path, monkeypatch):
+    @pytest.mark.timeout_medium
+    async def test_priority_change_integration(self, tmp_path, mock_network_components):
         """Test changing priority through queue manager."""
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -118,13 +116,8 @@ class TestQueueIntegration:
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
-        _disable_network_services(session)
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.network.enable_utp = False  # Disable uTP to prevent port conflicts
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -160,12 +153,10 @@ class TestQueueIntegration:
                     await session.stop()
 
     @pytest.mark.asyncio
-    async def test_queue_limits_enforcement(self, tmp_path, monkeypatch):
+    @pytest.mark.timeout_medium
+    async def test_queue_limits_enforcement(self, tmp_path, mock_network_components):
         """Test queue limits are enforced with real sessions."""
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -177,12 +168,8 @@ class TestQueueIntegration:
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
         session.config.queue.max_active_downloading = 2
-        _disable_network_services(session)
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -254,12 +241,10 @@ class TestQueueIntegration:
                         AsyncTorrentSession.get_status = original_get_status
 
     @pytest.mark.asyncio
-    async def test_queue_remove_torrent(self, tmp_path, monkeypatch):
+    @pytest.mark.timeout_medium
+    async def test_queue_remove_torrent(self, tmp_path, mock_network_components):
         """Test removing torrent removes from both session and queue."""
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -270,12 +255,8 @@ class TestQueueIntegration:
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
-        _disable_network_services(session)
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -316,12 +297,10 @@ class TestQueueIntegration:
                     await session.stop()
 
     @pytest.mark.asyncio
-    async def test_queue_pause_resume(self, tmp_path, monkeypatch):
+    @pytest.mark.timeout_medium
+    async def test_queue_pause_resume(self, tmp_path, mock_network_components):
         """Test pausing and resuming torrents through queue."""
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -332,12 +311,8 @@ class TestQueueIntegration:
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
-        _disable_network_services(session)
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -380,12 +355,10 @@ class TestQueueIntegration:
                     await session.stop()
 
     @pytest.mark.asyncio
-    async def test_queue_status_integration(self, tmp_path, monkeypatch):
+    @pytest.mark.timeout_medium
+    async def test_queue_status_integration(self, tmp_path, mock_network_components):
         """Test getting queue status with real queue manager."""
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -396,12 +369,8 @@ class TestQueueIntegration:
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
-        _disable_network_services(session)
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -458,35 +427,47 @@ class TestQueueIntegration:
                         AsyncTorrentSession.get_status = original_get_status
 
     @pytest.mark.asyncio
-    async def test_queue_without_auto_manage(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_queue_without_auto_manage(self, tmp_path, mock_network_components):
         """Test queue functionality when auto_manage_queue is disabled."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = False
-        _disable_network_services(session)
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
+        
+        # Patch _wait_for_starting_session to return immediately (don't wait for status change)
+        from ccbt.session.torrent_addition import TorrentAdditionHandler
+        async def mock_wait_for_starting_session(self, session):
+            """Mock that returns immediately without waiting."""
+            # Set status to 'downloading' to allow test to proceed
+            if hasattr(session, 'info'):
+                session.info.status = "downloading"
+            return
+        
+        with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+            await session.start()
 
-        await session.start()
+            # Queue manager should not be created when disabled
+            assert session.queue_manager is None
 
-        # Queue manager should not be created when disabled
-        assert session.queue_manager is None
+            # Torrent should still be added (fallback behavior)
+            torrent_data = create_test_torrent_dict(
+                name="no_queue_test",
+                info_hash=b"\x05" * 20,
+            )
 
-        # Torrent should still be added (fallback behavior)
-        torrent_data = create_test_torrent_dict(
-            name="no_queue_test",
-            info_hash=b"\x05" * 20,
-        )
+            info_hash_hex = await session.add_torrent(torrent_data)
+            assert info_hash_hex is not None
 
-        info_hash_hex = await session.add_torrent(torrent_data)
-        assert info_hash_hex is not None
-
-        await session.stop()
+            await session.stop()
 
     @pytest.mark.asyncio
-    async def test_queue_priority_reordering(self, tmp_path, monkeypatch):
+    @pytest.mark.timeout_medium
+    async def test_queue_priority_reordering(self, tmp_path, mock_network_components):
         """Test priority changes trigger queue reordering."""
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -497,42 +478,29 @@ class TestQueueIntegration:
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
-        _disable_network_services(session)
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
-        
-        # Mock UDP tracker client to prevent socket binding (patch at module level)
-        mock_udp_client = MagicMock()
-        mock_udp_client.start = AsyncMock(return_value=None)
-        mock_udp_client.stop = AsyncMock(return_value=None)
-        mock_udp_client.transport = None
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
-                # Patch AsyncUDPTrackerClient where it's imported in start_udp_tracker_client
-                with patch("ccbt.discovery.tracker_udp_client.AsyncUDPTrackerClient") as mock_udp_class:
-                    mock_udp_class.return_value = mock_udp_client
-                    # Patch _wait_for_starting_session to return immediately (don't wait for status change)
-                    from ccbt.session.torrent_addition import TorrentAdditionHandler
-                    async def mock_wait_for_starting_session(self, session):
-                        """Mock that returns immediately without waiting."""
-                        # Set status to 'downloading' to allow test to proceed
-                        if hasattr(session, 'info'):
-                            session.info.status = "downloading"
-                        return
-                    
-                    with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
-                        # Start with timeout to prevent hanging
-                        try:
-                            # CRITICAL FIX: Increase timeout to 30 seconds to allow for background task initialization
-                            # Some background tasks may take time to start even with mocks
-                            await asyncio.wait_for(session.start(), timeout=30.0)
-                        except asyncio.TimeoutError:
-                            pytest.fail("Session start timed out")
+                # Patch _wait_for_starting_session to return immediately (don't wait for status change)
+                from ccbt.session.torrent_addition import TorrentAdditionHandler
+                async def mock_wait_for_starting_session(self, session):
+                    """Mock that returns immediately without waiting."""
+                    # Set status to 'downloading' to allow test to proceed
+                    if hasattr(session, 'info'):
+                        session.info.status = "downloading"
+                    return
+                
+                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+                    # Start with timeout to prevent hanging
+                    try:
+                        # CRITICAL FIX: Increase timeout to 30 seconds to allow for background task initialization
+                        # Some background tasks may take time to start even with mocks
+                        await asyncio.wait_for(session.start(), timeout=30.0)
+                    except asyncio.TimeoutError:
+                        pytest.fail("Session start timed out")
 
                     # Add torrents with different priorities
                     torrent1_data = create_test_torrent_dict(
@@ -581,20 +549,34 @@ class TestQueueIntegration:
                             session._task_supervisor.cancel_all()
 
     @pytest.mark.asyncio
-    async def test_queue_with_session_info_update(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_queue_with_session_info_update(self, tmp_path, mock_network_components):
         """Test queue updates session info with priority and position."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
-        _disable_network_services(session)
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
+        
+        # Patch _wait_for_starting_session to return immediately (don't wait for status change)
+        from ccbt.session.torrent_addition import TorrentAdditionHandler
+        async def mock_wait_for_starting_session(self, session):
+            """Mock that returns immediately without waiting."""
+            # Set status to 'downloading' to allow test to proceed
+            if hasattr(session, 'info'):
+                session.info.status = "downloading"
+            return
+        
+        with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+            await session.start()
 
-        await session.start()
+            torrent_data = create_test_torrent_dict(
+                name="session_info_test",
+                info_hash=b"\x08" * 20,
+            )
 
-        torrent_data = create_test_torrent_dict(
-            name="session_info_test",
-            info_hash=b"\x08" * 20,
-        )
-
-        info_hash_hex = await session.add_torrent(torrent_data)
+            info_hash_hex = await session.add_torrent(torrent_data)
         info_hash_bytes = bytes.fromhex(info_hash_hex)
 
         if session.queue_manager and info_hash_bytes in session.torrents:
@@ -611,140 +593,196 @@ class TestQueueIntegration:
                 # The info may be updated by queue manager
                 pass
 
-        await session.stop()
+            await session.stop()
 
 
 class TestBandwidthAllocationIntegration:
     """Integration tests for bandwidth allocation."""
 
     @pytest.mark.asyncio
-    async def test_bandwidth_allocation_loop_runs(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_bandwidth_allocation_loop_runs(self, tmp_path, mock_network_components):
         """Test bandwidth allocation loop runs with queue manager."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
-        _disable_network_services(session)
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
+        
+        # Patch _wait_for_starting_session to return immediately (don't wait for status change)
+        from ccbt.session.torrent_addition import TorrentAdditionHandler
+        async def mock_wait_for_starting_session(self, session):
+            """Mock that returns immediately without waiting."""
+            # Set status to 'downloading' to allow test to proceed
+            if hasattr(session, 'info'):
+                session.info.status = "downloading"
+            return
+        
+        with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+            await session.start()
 
-        await session.start()
+            if session.queue_manager:
+                # Add a torrent
+                torrent_data = create_test_torrent_dict(
+                    name="bandwidth_test",
+                    info_hash=b"\x09" * 20,
+                )
 
-        if session.queue_manager:
-            # Add a torrent
-            torrent_data = create_test_torrent_dict(
-                name="bandwidth_test",
-                info_hash=b"\x09" * 20,
-            )
+                await session.add_torrent(torrent_data)
 
-            await session.add_torrent(torrent_data)
+                # Wait for bandwidth allocation loop
+                await asyncio.sleep(0.2)
 
-            # Wait for bandwidth allocation loop
-            await asyncio.sleep(0.2)
+                # Bandwidth task should be running
+                assert session.queue_manager._bandwidth_task is not None
+                assert not session.queue_manager._bandwidth_task.done()
 
-            # Bandwidth task should be running
-            assert session.queue_manager._bandwidth_task is not None
-            assert not session.queue_manager._bandwidth_task.done()
-
-        await session.stop()
+            await session.stop()
 
     @pytest.mark.asyncio
-    async def test_proportional_allocation_with_real_queue(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_proportional_allocation_with_real_queue(self, tmp_path, mock_network_components):
         """Test proportional allocation with real queue manager."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager(output_dir=str(tmp_path))
         queue_config = session.config.queue
         queue_config.auto_manage_queue = True
         queue_config.bandwidth_allocation_mode = BandwidthAllocationMode.PROPORTIONAL
         limits_config = session.config.limits
         limits_config.global_down_kib = 1000
-        _disable_network_services(session)
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
+        
+        # Patch _wait_for_starting_session to return immediately (don't wait for status change)
+        from ccbt.session.torrent_addition import TorrentAdditionHandler
+        async def mock_wait_for_starting_session(self, session):
+            """Mock that returns immediately without waiting."""
+            # Set status to 'downloading' to allow test to proceed
+            if hasattr(session, 'info'):
+                session.info.status = "downloading"
+            return
+        
+        with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+            await session.start()
 
-        await session.start()
-
-        # Add multiple torrents with different priorities
-        for i, priority in enumerate([TorrentPriority.MAXIMUM, TorrentPriority.NORMAL]):
-            torrent_data = create_test_torrent_dict(
-                name=f"alloc_test_{i}",
-                info_hash=bytes([i + 30] * 20),
-            )
-            info_hash_hex = await session.add_torrent(torrent_data)
-            if session.queue_manager:
-                await session.queue_manager.set_priority(
-                    bytes.fromhex(info_hash_hex),
-                    priority,
+            # Add multiple torrents with different priorities
+            for i, priority in enumerate([TorrentPriority.MAXIMUM, TorrentPriority.NORMAL]):
+                torrent_data = create_test_torrent_dict(
+                    name=f"alloc_test_{i}",
+                    info_hash=bytes([i + 30] * 20),
                 )
+                info_hash_hex = await session.add_torrent(torrent_data)
+                if session.queue_manager:
+                    await session.queue_manager.set_priority(
+                        bytes.fromhex(info_hash_hex),
+                        priority,
+                    )
 
-        # Wait for allocation
-        await asyncio.sleep(0.3)
+            # Wait for allocation
+            await asyncio.sleep(0.3)
 
-        if session.queue_manager:
-            # Check allocations were made
-            entries = [
-                entry
-                for entry in session.queue_manager.queue.values()
-                if entry.status == "active"
-            ]
-            # At least verify the queue has entries
-            assert len(entries) >= 0  # May not be active if limits prevent it
+            if session.queue_manager:
+                # Check allocations were made
+                entries = [
+                    entry
+                    for entry in session.queue_manager.queue.values()
+                    if entry.status == "active"
+                ]
+                # At least verify the queue has entries
+                assert len(entries) >= 0  # May not be active if limits prevent it
 
-        await session.stop()
+            await session.stop()
 
 
 class TestQueueEdgeCases:
     """Test edge cases in queue management."""
 
     @pytest.mark.asyncio
-    async def test_multiple_torrents_same_priority(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_multiple_torrents_same_priority(self, tmp_path, mock_network_components):
         """Test multiple torrents with same priority maintain FIFO."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
-        _disable_network_services(session)
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
+        
+        # Patch _wait_for_starting_session to return immediately (don't wait for status change)
+        from ccbt.session.torrent_addition import TorrentAdditionHandler
+        async def mock_wait_for_starting_session(self, session):
+            """Mock that returns immediately without waiting."""
+            # Set status to 'downloading' to allow test to proceed
+            if hasattr(session, 'info'):
+                session.info.status = "downloading"
+            return
+        
+        with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+            await session.start()
 
-        await session.start()
+            hashes = []
+            for i in range(3):
+                torrent_data = create_test_torrent_dict(
+                    name=f"fifo_test_{i}",
+                    info_hash=bytes([i + 40] * 20),
+                )
+                info_hash_hex = await session.add_torrent(torrent_data)
+                hashes.append(bytes.fromhex(info_hash_hex))
+                await asyncio.sleep(0.01)  # Ensure different timestamps
 
-        hashes = []
-        for i in range(3):
-            torrent_data = create_test_torrent_dict(
-                name=f"fifo_test_{i}",
-                info_hash=bytes([i + 40] * 20),
-            )
-            info_hash_hex = await session.add_torrent(torrent_data)
-            hashes.append(bytes.fromhex(info_hash_hex))
-            await asyncio.sleep(0.01)  # Ensure different timestamps
+            if session.queue_manager:
+                # All should have same priority, maintain order
+                items = list(session.queue_manager.queue.items())
+                # Verify they're in the order added
+                for i, (info_hash, entry) in enumerate(items[:3]):
+                    if info_hash in hashes:
+                        # Should maintain approximate order
+                        pass
 
-        if session.queue_manager:
-            # All should have same priority, maintain order
-            items = list(session.queue_manager.queue.items())
-            # Verify they're in the order added
-            for i, (info_hash, entry) in enumerate(items[:3]):
-                if info_hash in hashes:
-                    # Should maintain approximate order
-                    pass
-
-        await session.stop()
+            await session.stop()
 
     @pytest.mark.asyncio
-    async def test_queue_max_active_zero_unlimited(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_queue_max_active_zero_unlimited(self, tmp_path, mock_network_components):
         """Test queue with max_active = 0 (unlimited)."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.queue.auto_manage_queue = True
         session.config.queue.max_active_downloading = 0  # Unlimited
         session.config.queue.max_active_seeding = 0
-        _disable_network_services(session)
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
+        
+        # Patch _wait_for_starting_session to return immediately (don't wait for status change)
+        from ccbt.session.torrent_addition import TorrentAdditionHandler
+        async def mock_wait_for_starting_session(self, session):
+            """Mock that returns immediately without waiting."""
+            # Set status to 'downloading' to allow test to proceed
+            if hasattr(session, 'info'):
+                session.info.status = "downloading"
+            return
+        
+        with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+            await session.start()
 
-        await session.start()
+            # Add multiple torrents - all should be able to start
+            for i in range(5):
+                torrent_data = create_test_torrent_dict(
+                    name=f"unlimited_test_{i}",
+                    info_hash=bytes([i + 50] * 20),
+                )
+                await session.add_torrent(torrent_data)
 
-        # Add multiple torrents - all should be able to start
-        for i in range(5):
-            torrent_data = create_test_torrent_dict(
-                name=f"unlimited_test_{i}",
-                info_hash=bytes([i + 50] * 20),
-            )
-            await session.add_torrent(torrent_data)
+            await asyncio.sleep(0.3)
 
-        await asyncio.sleep(0.3)
+            if session.queue_manager:
+                # All should potentially be active (depends on actual session state)
+                # Just verify no crashes
+                status = await session.queue_manager.get_queue_status()
+                assert status["statistics"]["total_torrents"] == 5
 
-        if session.queue_manager:
-            # All should potentially be active (depends on actual session state)
-            # Just verify no crashes
-            status = await session.queue_manager.get_queue_status()
-            assert status["statistics"]["total_torrents"] == 5
-
-        await session.stop()
+            await session.stop()
 

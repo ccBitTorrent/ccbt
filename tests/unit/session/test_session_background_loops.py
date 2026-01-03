@@ -7,6 +7,7 @@ from ccbt.models import TorrentCheckpoint
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_announce_loop_cancel_breaks_cleanly(monkeypatch):
     """Test _announce_loop handles CancelledError and breaks."""
     from ccbt.session.session import AsyncTorrentSession
@@ -47,6 +48,7 @@ async def test_announce_loop_cancel_breaks_cleanly(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_status_loop_cancel_breaks_cleanly(monkeypatch):
     """Test _status_loop handles CancelledError and breaks."""
     from ccbt.session.session import AsyncTorrentSession
@@ -78,6 +80,7 @@ async def test_status_loop_cancel_breaks_cleanly(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_checkpoint_loop_cancel_breaks_cleanly(monkeypatch):
     """Test _checkpoint_loop handles CancelledError and breaks."""
     from ccbt.session.session import AsyncTorrentSession
@@ -127,6 +130,7 @@ async def test_checkpoint_loop_cancel_breaks_cleanly(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_announce_loop_handles_exception_gracefully(monkeypatch):
     """Test _announce_loop handles exception gracefully without crashing."""
     from ccbt.session.session import AsyncTorrentSession
@@ -185,6 +189,7 @@ async def test_announce_loop_handles_exception_gracefully(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_status_loop_calls_on_status_update(monkeypatch):
     """Test _status_loop calls on_status_update callback."""
     from ccbt.session.session import AsyncTorrentSession
