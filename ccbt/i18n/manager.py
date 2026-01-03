@@ -65,3 +65,19 @@ class TranslationManager:
         # get_locale() will handle the fallback chain
         final_locale = get_locale()
         logger.debug("Using locale: %s", final_locale)
+
+    def reload(self) -> None:
+        """Reload translations from current locale.
+        
+        This method resets the translation cache and forces
+        a reload of translations on the next translation call.
+        """
+        import ccbt.i18n as i18n_module
+        
+        # Reset global translation cache to force reload
+        i18n_module._translation = None  # type: ignore[attr-defined]
+        
+        # Re-initialize locale to ensure it's up to date
+        self._initialize_locale()
+        
+        logger.debug("Translation manager reloaded")

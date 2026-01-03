@@ -43,12 +43,13 @@ def test_parse_announce_response_dictionary_peers_peer_source():
     # Parse response using _parse_response_async (which now handles dictionary format)
     response = tracker._parse_response_async(response_data)
     
+    # CRITICAL FIX: PeerInfo is a Pydantic model, access attributes with dot notation, not dict keys
     # Verify peer_source is set for all peers
     assert len(response.peers) == 2
-    assert response.peers[0]["peer_source"] == "tracker"
-    assert response.peers[1]["peer_source"] == "tracker"
-    assert response.peers[0]["ip"] == "192.168.1.3"
-    assert response.peers[0]["port"] == 6883
-    assert response.peers[1]["ip"] == "192.168.1.4"
-    assert response.peers[1]["port"] == 6884
+    assert response.peers[0].peer_source == "tracker"
+    assert response.peers[1].peer_source == "tracker"
+    assert response.peers[0].ip == "192.168.1.3"
+    assert response.peers[0].port == 6883
+    assert response.peers[1].ip == "192.168.1.4"
+    assert response.peers[1].port == 6884
 

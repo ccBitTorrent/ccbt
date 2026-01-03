@@ -7,6 +7,7 @@ from ccbt.models import TorrentCheckpoint, PieceState
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_save_checkpoint_enriches_announce_and_display_name(monkeypatch):
     """Test _save_checkpoint enriches checkpoint with announce URLs and display name."""
     from ccbt.session.session import AsyncTorrentSession
@@ -71,6 +72,7 @@ async def test_save_checkpoint_enriches_announce_and_display_name(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_delete_checkpoint_returns_false_on_error(monkeypatch):
     """Test delete_checkpoint returns False when checkpoint manager raises."""
     from ccbt.session.session import AsyncTorrentSession
@@ -100,6 +102,7 @@ async def test_delete_checkpoint_returns_false_on_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_get_torrent_status_missing_returns_none():
     """Test get_torrent_status returns None for missing torrent."""
     from ccbt.session.session import AsyncSessionManager
@@ -110,6 +113,7 @@ async def test_get_torrent_status_missing_returns_none():
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_save_checkpoint_with_torrent_file_path(monkeypatch):
     """Test _save_checkpoint sets torrent_file_path when available."""
     from ccbt.session.session import AsyncTorrentSession
@@ -155,6 +159,7 @@ async def test_save_checkpoint_with_torrent_file_path(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_save_checkpoint_exception_logs(monkeypatch):
     """Test _save_checkpoint logs exception and re-raises."""
     from ccbt.session.session import AsyncTorrentSession
@@ -166,13 +171,37 @@ async def test_save_checkpoint_exception_logs(monkeypatch):
     td = {
         "name": "test",
         "info_hash": b"1" * 20,
-        "pieces_info": {"num_pieces": 0, "piece_length": 0, "piece_hashes": [], "total_length": 0},
-        "file_info": {"total_length": 0},
+        # CRITICAL FIX: piece_length must be > 0 for TorrentCheckpoint validation
+        "pieces_info": {"num_pieces": 1, "piece_length": 16384, "piece_hashes": [b"hash"], "total_length": 16384},
+        "file_info": {"total_length": 16384},
     }
 
     session = AsyncTorrentSession(td, ".")
-    session.download_manager = type("_DM", (), {"piece_manager": _PM()})()
+    mock_pm = _PM()
+    session.download_manager = type("_DM", (), {"piece_manager": mock_pm})()
     
-    with pytest.raises(RuntimeError):
+    # CRITICAL FIX: _save_checkpoint calls checkpoint_controller.save_checkpoint_state()
+    # which uses self._ctx.piece_manager first, then falls back to session.piece_manager
+    # Ensure checkpoint_controller exists and uses our mocked piece_manager
+    if not hasattr(session, 'checkpoint_controller') or session.checkpoint_controller is None:
+        from ccbt.session.checkpointing import CheckpointController
+        from ccbt.session.models import SessionContext
+        # Create context with the mocked piece_manager
+        ctx = SessionContext(
+            config=session.config,
+            torrent_data=td,
+            output_dir=session.output_dir,
+            info=session.info,
+            logger=session.logger,
+            piece_manager=mock_pm,  # CRITICAL: Set piece_manager in context
+        )
+        session.checkpoint_controller = CheckpointController(ctx)
+    else:
+        # If checkpoint_controller already exists, set piece_manager on context
+        if hasattr(session.checkpoint_controller, '_ctx'):
+            session.checkpoint_controller._ctx.piece_manager = mock_pm
+    
+    # The exception from get_checkpoint_state should be re-raised
+    with pytest.raises(RuntimeError, match="get_checkpoint_state failed"):
         await session._save_checkpoint()
 

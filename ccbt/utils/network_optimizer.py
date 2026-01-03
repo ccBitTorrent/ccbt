@@ -16,7 +16,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 from ccbt.utils.exceptions import NetworkError
 from ccbt.utils.logging_config import get_logger
@@ -367,7 +367,7 @@ class ConnectionPool:
     """Connection pool for efficient connection management."""
 
     # Track all active instances for debugging and forced cleanup
-    _active_instances: set = set()
+    _active_instances: ClassVar[set[ConnectionPool]] = set()
 
     def __init__(
         self,
@@ -801,14 +801,12 @@ def reset_network_optimizer() -> None:
 
 def force_cleanup_all_connection_pools() -> None:
     """Force cleanup all ConnectionPool instances (emergency use for test teardown).
-    
+
     This function should be used in test fixtures to ensure all ConnectionPool
     instances are properly stopped, preventing thread leaks and test timeouts.
     """
-    for pool in list(ConnectionPool._active_instances):
-        try:
-            pool.stop()
-        except Exception:
+    for pool in list(ConnectionPool._active_instances):  # noqa: SLF001
+        with contextlib.suppress(Exception):
             # Best effort cleanup - ignore errors to ensure all pools are attempted
-            pass
-    ConnectionPool._active_instances.clear()
+            pool.stop()
+    ConnectionPool._active_instances.clear()  # noqa: SLF001
