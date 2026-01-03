@@ -68,16 +68,16 @@ class TranslationManager:
 
     def reload(self) -> None:
         """Reload translations from current locale.
-        
+
         This method resets the translation cache and forces
         a reload of translations on the next translation call.
         """
-        import ccbt.i18n as i18n_module
-        
-        # Reset global translation cache to force reload
-        i18n_module._translation = None  # type: ignore[attr-defined]
-        
+        # Reset translation cache by calling set_locale with current locale
+        # This ensures the cache is cleared and reloaded on next use
+        current_locale = get_locale()
+        set_locale(current_locale)
+
         # Re-initialize locale to ensure it's up to date
         self._initialize_locale()
-        
+
         logger.debug("Translation manager reloaded")

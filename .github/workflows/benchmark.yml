@@ -1,12 +1,11 @@
 name: Benchmark
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'ccbt/**'
-      - 'tests/performance/**'
-  workflow_dispatch:
+  workflow_dispatch:  # Manual only, never automatic
+
+concurrency:
+  group: benchmark-write-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   benchmark:
@@ -72,6 +71,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add docs/reports/benchmarks/
+          git add -f docs/reports/benchmarks/
           git diff --staged --quiet || git commit -m "ci: record benchmark results [skip ci]"
           git push

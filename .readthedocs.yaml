@@ -11,9 +11,12 @@ build:
   tools:
     python: "3.11"
   commands:
+    # Explicitly install dependencies first (python.install may not run before commands)
+    - pip install -r dev/requirements-rtd.txt
+    # Install the project itself (needed for mkdocstrings to parse code)
+    - pip install -e .
     # Use the patched build script to ensure i18n plugin works correctly
     # This applies patches to mkdocs-static-i18n before building
-    # Dependencies are installed via python.install below BEFORE this runs
     - python dev/build_docs_patched_clean.py
 
 # MkDocs configuration

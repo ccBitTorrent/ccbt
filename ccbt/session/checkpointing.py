@@ -460,10 +460,31 @@ class CheckpointController:
         """
         # #region agent log
         import json
+
         log_path = r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log"
         try:
             with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "RESUME", "location": "checkpointing.py:451", "message": "resume_from_checkpoint entry", "data": {"checkpoint_rate_limits": str(checkpoint.rate_limits) if hasattr(checkpoint, "rate_limits") else None, "has_ctx": hasattr(self, "_ctx"), "has_ctx_info": hasattr(self, "_ctx") and hasattr(self._ctx, "info")}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "RESUME",
+                            "location": "checkpointing.py:451",
+                            "message": "resume_from_checkpoint entry",
+                            "data": {
+                                "checkpoint_rate_limits": str(checkpoint.rate_limits)
+                                if hasattr(checkpoint, "rate_limits")
+                                else None,
+                                "has_ctx": hasattr(self, "_ctx"),
+                                "has_ctx_info": hasattr(self, "_ctx")
+                                and hasattr(self._ctx, "info"),
+                            },
+                            "timestamp": __import__("time").time() * 1000,
+                        }
+                    )
+                    + "\n"
+                )
         except Exception:
             pass
         # #endregion
@@ -691,10 +712,35 @@ class CheckpointController:
             # Restore rate limits if available
             # #region agent log
             import json
+
             log_path = r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log"
             try:
                 with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "RESUME", "location": "checkpointing.py:683", "message": "About to call _restore_rate_limits", "data": {"has_checkpoint_rate_limits": bool(checkpoint.rate_limits) if hasattr(checkpoint, "rate_limits") else False, "checkpoint_rate_limits": str(checkpoint.rate_limits) if hasattr(checkpoint, "rate_limits") else None}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                    f.write(
+                        json.dumps(
+                            {
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "RESUME",
+                                "location": "checkpointing.py:683",
+                                "message": "About to call _restore_rate_limits",
+                                "data": {
+                                    "has_checkpoint_rate_limits": bool(
+                                        checkpoint.rate_limits
+                                    )
+                                    if hasattr(checkpoint, "rate_limits")
+                                    else False,
+                                    "checkpoint_rate_limits": str(
+                                        checkpoint.rate_limits
+                                    )
+                                    if hasattr(checkpoint, "rate_limits")
+                                    else None,
+                                },
+                                "timestamp": __import__("time").time() * 1000,
+                            }
+                        )
+                        + "\n"
+                    )
             except Exception:
                 pass
             # #endregion
@@ -714,10 +760,27 @@ class CheckpointController:
         except Exception as e:
             # #region agent log
             import json
+
             log_path = r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log"
             try:
                 with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "EXCEPTION", "location": "checkpointing.py:714", "message": "Exception in resume_from_checkpoint", "data": {"exception_type": str(type(e)), "exception_msg": str(e)}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                    f.write(
+                        json.dumps(
+                            {
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "EXCEPTION",
+                                "location": "checkpointing.py:714",
+                                "message": "Exception in resume_from_checkpoint",
+                                "data": {
+                                    "exception_type": str(type(e)),
+                                    "exception_msg": str(e),
+                                },
+                                "timestamp": __import__("time").time() * 1000,
+                            }
+                        )
+                        + "\n"
+                    )
             except Exception:
                 pass
             # #endregion
@@ -1142,10 +1205,28 @@ class CheckpointController:
         """Restore rate limits from checkpoint."""
         # #region agent log
         import json
+
         log_path = r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log"
         try:
             with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "checkpointing.py:1112", "message": "_restore_rate_limits entry", "data": {"checkpoint_rate_limits": str(checkpoint.rate_limits) if hasattr(checkpoint, "rate_limits") else None}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "A",
+                            "location": "checkpointing.py:1112",
+                            "message": "_restore_rate_limits entry",
+                            "data": {
+                                "checkpoint_rate_limits": str(checkpoint.rate_limits)
+                                if hasattr(checkpoint, "rate_limits")
+                                else None
+                            },
+                            "timestamp": __import__("time").time() * 1000,
+                        }
+                    )
+                    + "\n"
+                )
         except Exception:
             pass
         # #endregion
@@ -1154,7 +1235,20 @@ class CheckpointController:
                 # #region agent log
                 try:
                     with open(log_path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "C", "location": "checkpointing.py:1117", "message": "Early return: checkpoint.rate_limits is None/empty", "data": {}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                        f.write(
+                            json.dumps(
+                                {
+                                    "sessionId": "debug-session",
+                                    "runId": "run1",
+                                    "hypothesisId": "C",
+                                    "location": "checkpointing.py:1117",
+                                    "message": "Early return: checkpoint.rate_limits is None/empty",
+                                    "data": {},
+                                    "timestamp": __import__("time").time() * 1000,
+                                }
+                            )
+                            + "\n"
+                        )
                 except Exception:
                     pass
                 # #endregion
@@ -1165,7 +1259,27 @@ class CheckpointController:
             # #region agent log
             try:
                 with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "checkpointing.py:1121", "message": "Session manager check", "data": {"has_session_manager": session_manager is not None, "has_set_rate_limits": hasattr(session_manager, "set_rate_limits") if session_manager else False}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                    f.write(
+                        json.dumps(
+                            {
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "B",
+                                "location": "checkpointing.py:1121",
+                                "message": "Session manager check",
+                                "data": {
+                                    "has_session_manager": session_manager is not None,
+                                    "has_set_rate_limits": hasattr(
+                                        session_manager, "set_rate_limits"
+                                    )
+                                    if session_manager
+                                    else False,
+                                },
+                                "timestamp": __import__("time").time() * 1000,
+                            }
+                        )
+                        + "\n"
+                    )
             except Exception:
                 pass
             # #endregion
@@ -1173,7 +1287,20 @@ class CheckpointController:
                 # #region agent log
                 try:
                     with open(log_path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "B", "location": "checkpointing.py:1123", "message": "Early return: session_manager is None", "data": {}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                        f.write(
+                            json.dumps(
+                                {
+                                    "sessionId": "debug-session",
+                                    "runId": "run1",
+                                    "hypothesisId": "B",
+                                    "location": "checkpointing.py:1123",
+                                    "message": "Early return: session_manager is None",
+                                    "data": {},
+                                    "timestamp": __import__("time").time() * 1000,
+                                }
+                            )
+                            + "\n"
+                        )
                 except Exception:
                     pass
                 # #endregion
@@ -1183,18 +1310,70 @@ class CheckpointController:
             # #region agent log
             try:
                 with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "checkpointing.py:1125", "message": "Before info hash check", "data": {"has_ctx": hasattr(self, "_ctx"), "has_ctx_info": hasattr(self._ctx, "info") if hasattr(self, "_ctx") else False, "ctx_info": str(getattr(self._ctx, "info", None)) if hasattr(self, "_ctx") else None, "checkpoint_info_hash": str(checkpoint.info_hash) if hasattr(checkpoint, "info_hash") else None}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                    f.write(
+                        json.dumps(
+                            {
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "A",
+                                "location": "checkpointing.py:1125",
+                                "message": "Before info hash check",
+                                "data": {
+                                    "has_ctx": hasattr(self, "_ctx"),
+                                    "has_ctx_info": hasattr(self._ctx, "info")
+                                    if hasattr(self, "_ctx")
+                                    else False,
+                                    "ctx_info": str(getattr(self._ctx, "info", None))
+                                    if hasattr(self, "_ctx")
+                                    else None,
+                                    "checkpoint_info_hash": str(checkpoint.info_hash)
+                                    if hasattr(checkpoint, "info_hash")
+                                    else None,
+                                },
+                                "timestamp": __import__("time").time() * 1000,
+                            }
+                        )
+                        + "\n"
+                    )
             except Exception:
                 pass
             # #endregion
-            info_hash = getattr(self._ctx.info, "info_hash", None) if hasattr(self._ctx, "info") and self._ctx.info else None
+            info_hash = (
+                getattr(self._ctx.info, "info_hash", None)
+                if hasattr(self._ctx, "info") and self._ctx.info
+                else None
+            )
             # Fall back to checkpoint.info_hash if ctx.info.info_hash is not available
             if not info_hash and hasattr(checkpoint, "info_hash"):
                 info_hash = checkpoint.info_hash
             # #region agent log
             try:
                 with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "checkpointing.py:1126", "message": "Info hash check", "data": {"has_ctx_info": hasattr(self._ctx, "info"), "info_hash": str(info_hash) if info_hash else None, "ctx_info_type": str(type(getattr(self._ctx, "info", None))), "used_checkpoint_fallback": not getattr(self._ctx.info, "info_hash", None) if hasattr(self._ctx, "info") and self._ctx.info else False}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                    f.write(
+                        json.dumps(
+                            {
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "A",
+                                "location": "checkpointing.py:1126",
+                                "message": "Info hash check",
+                                "data": {
+                                    "has_ctx_info": hasattr(self._ctx, "info"),
+                                    "info_hash": str(info_hash) if info_hash else None,
+                                    "ctx_info_type": str(
+                                        type(getattr(self._ctx, "info", None))
+                                    ),
+                                    "used_checkpoint_fallback": not getattr(
+                                        self._ctx.info, "info_hash", None
+                                    )
+                                    if hasattr(self._ctx, "info") and self._ctx.info
+                                    else False,
+                                },
+                                "timestamp": __import__("time").time() * 1000,
+                            }
+                        )
+                        + "\n"
+                    )
             except Exception:
                 pass
             # #endregion
@@ -1202,7 +1381,20 @@ class CheckpointController:
                 # #region agent log
                 try:
                     with open(log_path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "A", "location": "checkpointing.py:1128", "message": "Early return: info_hash is None", "data": {}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                        f.write(
+                            json.dumps(
+                                {
+                                    "sessionId": "debug-session",
+                                    "runId": "run1",
+                                    "hypothesisId": "A",
+                                    "location": "checkpointing.py:1128",
+                                    "message": "Early return: info_hash is None",
+                                    "data": {},
+                                    "timestamp": __import__("time").time() * 1000,
+                                }
+                            )
+                            + "\n"
+                        )
                 except Exception:
                     pass
                 # #endregion
@@ -1218,7 +1410,24 @@ class CheckpointController:
                 # #region agent log
                 try:
                     with open(log_path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "checkpointing.py:1137", "message": "Calling set_rate_limits", "data": {"info_hash_hex": info_hash_hex, "down_kib": down_kib, "up_kib": up_kib}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                        f.write(
+                            json.dumps(
+                                {
+                                    "sessionId": "debug-session",
+                                    "runId": "run1",
+                                    "hypothesisId": "D",
+                                    "location": "checkpointing.py:1137",
+                                    "message": "Calling set_rate_limits",
+                                    "data": {
+                                        "info_hash_hex": info_hash_hex,
+                                        "down_kib": down_kib,
+                                        "up_kib": up_kib,
+                                    },
+                                    "timestamp": __import__("time").time() * 1000,
+                                }
+                            )
+                            + "\n"
+                        )
                 except Exception:
                     pass
                 # #endregion
@@ -1226,7 +1435,20 @@ class CheckpointController:
                 # #region agent log
                 try:
                     with open(log_path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "D", "location": "checkpointing.py:1138", "message": "set_rate_limits completed", "data": {}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                        f.write(
+                            json.dumps(
+                                {
+                                    "sessionId": "debug-session",
+                                    "runId": "run1",
+                                    "hypothesisId": "D",
+                                    "location": "checkpointing.py:1138",
+                                    "message": "set_rate_limits completed",
+                                    "data": {},
+                                    "timestamp": __import__("time").time() * 1000,
+                                }
+                            )
+                            + "\n"
+                        )
                 except Exception:
                     pass
                 # #endregion
@@ -1240,7 +1462,23 @@ class CheckpointController:
             # #region agent log
             try:
                 with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "E", "location": "checkpointing.py:1144", "message": "Exception in _restore_rate_limits", "data": {"exception_type": str(type(e)), "exception_msg": str(e)}, "timestamp": __import__("time").time() * 1000}) + "\n")
+                    f.write(
+                        json.dumps(
+                            {
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "E",
+                                "location": "checkpointing.py:1144",
+                                "message": "Exception in _restore_rate_limits",
+                                "data": {
+                                    "exception_type": str(type(e)),
+                                    "exception_msg": str(e),
+                                },
+                                "timestamp": __import__("time").time() * 1000,
+                            }
+                        )
+                        + "\n"
+                    )
             except Exception:
                 pass
             # #endregion

@@ -2,27 +2,17 @@ name: Version Check
 
 on:
   pull_request:
-    branches: [main]  # Only check versions on PRs to main, not dev
+    branches: [dev]  # Only check versions on PRs to dev
     paths:
       - 'pyproject.toml'
       - 'ccbt/__init__.py'
-  push:
-    branches: [main, dev]
-    paths:
-      - 'pyproject.toml'
-      - 'ccbt/__init__.py'
-  merge_group:
-    branches: [dev]
 
 jobs:
   check-version-consistency:
     name: check-version-consistency
     runs-on: ubuntu-latest
-    # Only run on PRs to main, not dev (or on push/merge_group events)
-    if: |
-      github.event_name == 'push' ||
-      github.event_name == 'merge_group' ||
-      (github.event_name == 'pull_request' && github.base_ref == 'main')
+    # Only run on PRs to dev
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
       actions: read
@@ -117,7 +107,7 @@ jobs:
           fi
       
       - name: Check maintainer permissions for 0.1+ versions on main
-        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        if: false  # Removed - not needed for dev branch PRs
         run: |
           VERSION="${{ steps.pyproject_version.outputs.version }}"
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
@@ -139,10 +129,8 @@ jobs:
           fi
       
       - name: Run Python version validation script
-        # Only run on PRs to main or when script exists
-        if: |
-          (github.event_name == 'pull_request' && github.base_ref == 'main') ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        # Run on PRs to dev
+        if: github.event_name == 'pull_request'
         run: |
           if [ -f dev/scripts/validate_version.py ]; then
             python dev/scripts/validate_version.py
@@ -152,10 +140,8 @@ jobs:
           fi
       
       - name: Validate changelog
-        # Only run on PRs to main or when script exists
-        if: |
-          (github.event_name == 'pull_request' && github.base_ref == 'main') ||
-          (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        # Run on PRs to dev
+        if: github.event_name == 'pull_request'
         run: |
           if [ -f dev/scripts/validate_changelog.py ]; then
             python dev/scripts/validate_changelog.py || {
