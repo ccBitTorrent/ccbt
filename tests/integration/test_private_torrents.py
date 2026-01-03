@@ -104,17 +104,14 @@ async def test_private_torrent_peer_source_validation(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_private_torrent_dht_disabled(tmp_path: Path, monkeypatch):
+@pytest.mark.timeout_medium
+async def test_private_torrent_dht_disabled(tmp_path: Path, monkeypatch, mock_network_components):
     """Test that DHT is disabled for private torrents in session manager.
     
     Verifies that private torrents are tracked and DHT announces are skipped.
     """
     import asyncio
-    
-    # Disable NAT auto port mapping to prevent 60s wait
-    monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-    # Disable DHT to prevent network initialization  
-    monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+    from tests.fixtures.network_mocks import apply_network_mocks_to_session
     
     # Mock AsyncTrackerClient at class level to prevent network calls
     mock_tracker = MagicMock()
@@ -126,14 +123,10 @@ async def test_private_torrent_dht_disabled(tmp_path: Path, monkeypatch):
     # Create session manager
     session = AsyncSessionManager(str(tmp_path))
     session.config.discovery.enable_dht = True  # Enable DHT globally (but will be mocked)
-    session.config.nat.auto_map_ports = False  # Disable NAT to avoid blocking
     session.config.discovery.enable_pex = False  # Disable PEX for this test
-    session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-    session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
     
-    # Mock heavy initialization methods to prevent hangs
-    session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-    session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+    # Use network mocks instead of disabling features
+    apply_network_mocks_to_session(session, mock_network_components)
     
     # Mock DHT client and tracker client to avoid network initialization
     with patch.object(session, "_make_dht_client", return_value=None):
@@ -187,112 +180,138 @@ async def test_private_torrent_dht_disabled(tmp_path: Path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_private_torrent_pex_disabled(tmp_path: Path):
+@pytest.mark.timeout_medium
+async def test_private_torrent_pex_disabled(tmp_path: Path, mock_network_components):
     """Test that PEX is disabled for private torrents.
     
     Verifies that PEX manager is not started for private torrents.
     """
+    from tests.fixtures.network_mocks import apply_network_mocks_to_session
+    
     # Create session manager
     session = AsyncSessionManager(str(tmp_path))
     session.config.discovery.enable_pex = True  # Enable PEX globally
-    session.config.discovery.enable_dht = False
-    session.config.nat.auto_map_ports = False
     
-    try:
-        await session.start()
+    # Use network mocks instead of disabling features
+    apply_network_mocks_to_session(session, mock_network_components)
+    
+    # Patch _wait_for_starting_session to return immediately (don't wait for status change)
+    from ccbt.session.torrent_addition import TorrentAdditionHandler
+    async def mock_wait_for_starting_session(self, session):
+        """Mock that returns immediately without waiting."""
+        # Set status to 'downloading' to allow test to proceed
+        if hasattr(session, 'info'):
+            session.info.status = "downloading"
+        return
+    
+    with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+        try:
+            await session.start()
 
-        # Create private torrent data with proper structure
-        info_hash = b"\x02" * 20
-        torrent_data = create_test_torrent_dict(
-            name="private_pex_test",
-            info_hash=info_hash,
-            file_length=1024,
-            piece_length=16384,
-            num_pieces=1,
-        )
-        # Add private flag
-        if "info" in torrent_data and isinstance(torrent_data["info"], dict):
-            torrent_data["info"]["private"] = 1
-        torrent_data["is_private"] = True
+            # Create private torrent data with proper structure
+            info_hash = b"\x02" * 20
+            torrent_data = create_test_torrent_dict(
+                name="private_pex_test",
+                info_hash=info_hash,
+                file_length=1024,
+                piece_length=16384,
+                num_pieces=1,
+            )
+            # Add private flag
+            if "info" in torrent_data and isinstance(torrent_data["info"], dict):
+                torrent_data["info"]["private"] = 1
+            torrent_data["is_private"] = True
 
-        # Add private torrent
-        info_hash_hex = await session.add_torrent(torrent_data, resume=False)
-        
-        # Get the torrent session
-        torrent_session = session.torrents.get(info_hash)
-        assert torrent_session is not None
-        
-        # Verify PEX manager was NOT started (private torrent)
-        assert torrent_session.pex_manager is None or not hasattr(torrent_session, "pex_manager")
-        
-        # Verify is_private flag is set
-        assert torrent_session.is_private is True
-        
-    finally:
-        await session.stop()
+            # Add private torrent
+            info_hash_hex = await session.add_torrent(torrent_data, resume=False)
+            
+            # Get the torrent session
+            torrent_session = session.torrents.get(info_hash)
+            assert torrent_session is not None
+            
+            # Verify PEX manager was NOT started (private torrent)
+            assert torrent_session.pex_manager is None or not hasattr(torrent_session, "pex_manager")
+            
+            # Verify is_private flag is set
+            assert torrent_session.is_private is True
+        finally:
+            await session.stop()
 
 
 @pytest.mark.asyncio
-async def test_private_torrent_tracker_only_peers(tmp_path: Path):
+@pytest.mark.timeout_medium
+async def test_private_torrent_tracker_only_peers(tmp_path: Path, mock_network_components):
     """Test that private torrents only connect to tracker-provided peers.
     
     Verifies end-to-end that private torrents reject non-tracker peers
     during connection attempts.
     """
+    from tests.fixtures.network_mocks import apply_network_mocks_to_session
+    
     # Create session manager
     session = AsyncSessionManager(str(tmp_path))
-    session.config.discovery.enable_dht = False
     session.config.discovery.enable_pex = False
-    session.config.nat.auto_map_ports = False
     
-    try:
-        await session.start()
-        
-        # Create private torrent data with proper structure
-        info_hash = b"\x03" * 20
-        torrent_data = create_test_torrent_dict(
-            name="private_peer_test",
-            info_hash=info_hash,
-            file_length=1024,
-            piece_length=16384,
-            num_pieces=1,
-        )
-        # Add private flag
-        if "info" in torrent_data and isinstance(torrent_data["info"], dict):
-            torrent_data["info"]["private"] = 1
-        torrent_data["is_private"] = True
+    # Use network mocks instead of disabling features
+    apply_network_mocks_to_session(session, mock_network_components)
+    
+    # Patch _wait_for_starting_session to return immediately (don't wait for status change)
+    from ccbt.session.torrent_addition import TorrentAdditionHandler
+    async def mock_wait_for_starting_session(self, session):
+        """Mock that returns immediately without waiting."""
+        # Set status to 'downloading' to allow test to proceed
+        if hasattr(session, 'info'):
+            session.info.status = "downloading"
+        return
+    
+    with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+        try:
+            await session.start()
+            
+            # Create private torrent data with proper structure
+            info_hash = b"\x03" * 20
+            torrent_data = create_test_torrent_dict(
+                name="private_peer_test",
+                info_hash=info_hash,
+                file_length=1024,
+                piece_length=16384,
+                num_pieces=1,
+            )
+            # Add private flag
+            if "info" in torrent_data and isinstance(torrent_data["info"], dict):
+                torrent_data["info"]["private"] = 1
+            torrent_data["is_private"] = True
 
-        # Add private torrent
-        info_hash_hex = await session.add_torrent(torrent_data, resume=False)
+            # Add private torrent
+            info_hash_hex = await session.add_torrent(torrent_data, resume=False)
 
-        # Get the torrent session
-        info_hash_bytes = bytes.fromhex(info_hash_hex)
-        torrent_session = session.torrents.get(info_hash_bytes)
-        assert torrent_session is not None
-        
-        # Verify is_private flag is set
-        assert torrent_session.is_private is True
-        
-        # Get peer manager from download manager
-        if hasattr(torrent_session, "download_manager") and torrent_session.download_manager:
-            peer_manager = getattr(torrent_session.download_manager, "peer_manager", None)
-            if peer_manager:
-                # Verify _is_private flag is set on peer manager
-                assert getattr(peer_manager, "_is_private", False) is True
-                
-                # CRITICAL FIX: Mock asyncio.open_connection to prevent real network calls
-                # This prevents 30-second timeouts per connection attempt
-                with patch("asyncio.open_connection") as mock_open_conn:
-                    mock_open_conn.side_effect = ConnectionError("Mocked connection failure")
+            # Get the torrent session
+            info_hash_bytes = bytes.fromhex(info_hash_hex)
+            torrent_session = session.torrents.get(info_hash_bytes)
+            assert torrent_session is not None
+            
+            # Verify is_private flag is set
+            assert torrent_session.is_private is True
+            
+            # Get peer manager from download manager
+            if hasattr(torrent_session, "download_manager") and torrent_session.download_manager:
+                peer_manager = getattr(torrent_session.download_manager, "peer_manager", None)
+                if peer_manager:
+                    # Verify _is_private flag is set on peer manager
+                    assert getattr(peer_manager, "_is_private", False) is True
                     
-                    # Test that DHT peer would be rejected
-                    dht_peer = PeerInfo(ip="192.168.1.100", port=6881, peer_source="dht")
-                    with pytest.raises(PeerConnectionError) as exc_info:
-                        await peer_manager._connect_to_peer(dht_peer)
-                    assert "Private torrents only accept tracker-provided peers" in str(exc_info.value)
-        
-    finally:
-        await session.stop()
+                    # CRITICAL FIX: Mock asyncio.open_connection to prevent real network calls
+                    # This prevents 30-second timeouts per connection attempt
+                    with patch("asyncio.open_connection") as mock_open_conn:
+                        mock_open_conn.side_effect = ConnectionError("Mocked connection failure")
+                        
+                        # Test that DHT peer would be rejected
+                        dht_peer = PeerInfo(ip="192.168.1.100", port=6881, peer_source="dht")
+                        with pytest.raises(PeerConnectionError) as exc_info:
+                            await peer_manager._connect_to_peer(dht_peer)
+                        assert "Private torrents only accept tracker-provided peers" in str(exc_info.value)
+        finally:
+            await session.stop()
 
 
 @pytest.mark.asyncio

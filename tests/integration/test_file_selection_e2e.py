@@ -104,14 +104,11 @@ def multi_file_torrent_dict(multi_file_torrent_info):
 class TestFileSelectionEndToEnd:
     """End-to-end tests for file selection."""
 
-    async def test_selective_download_basic(self, tmp_path, multi_file_torrent_dict, monkeypatch):
+    @pytest.mark.timeout_medium
+    async def test_selective_download_basic(self, tmp_path, multi_file_torrent_dict, mock_network_components):
         """Test basic selective downloading workflow."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -122,13 +119,8 @@ class TestFileSelectionEndToEnd:
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = False  # Disable for simplicity
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -191,19 +183,16 @@ class TestFileSelectionEndToEnd:
                     finally:
                         await session.stop()
 
+    @pytest.mark.timeout_medium
     async def test_file_priority_affects_piece_selection(
         self,
         tmp_path,
         multi_file_torrent_dict,
-        monkeypatch,
+        mock_network_components,
     ):
         """Test that file priorities affect piece selection priorities."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -213,13 +202,8 @@ class TestFileSelectionEndToEnd:
         mock_tracker._session_manager = None
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -296,19 +280,16 @@ class TestFileSelectionEndToEnd:
                     finally:
                         await session.stop()
 
+    @pytest.mark.timeout_medium
     async def test_file_selection_statistics(
         self,
         tmp_path,
         multi_file_torrent_dict,
-        monkeypatch,
+        mock_network_components,
     ):
         """Test file selection statistics tracking."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -318,13 +299,8 @@ class TestFileSelectionEndToEnd:
         mock_tracker._session_manager = None
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -396,14 +372,11 @@ class TestFileSelectionEndToEnd:
 class TestFileSelectionCheckpointResume:
     """Integration tests for file selection with checkpoint/resume."""
 
-    async def test_checkpoint_saves_file_selection(self, tmp_path, multi_file_torrent_dict, monkeypatch):
+    @pytest.mark.timeout_medium
+    async def test_checkpoint_saves_file_selection(self, tmp_path, multi_file_torrent_dict, mock_network_components):
         """Test that checkpoint saves file selection state."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -415,13 +388,8 @@ class TestFileSelectionCheckpointResume:
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = True
         session.config.disk.checkpoint_format = "binary"  # Use binary format (JSON has bytes serialization issues)
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -495,14 +463,11 @@ class TestFileSelectionCheckpointResume:
                     finally:
                         await session.stop()
 
-    async def test_resume_restores_file_selection(self, tmp_path, multi_file_torrent_dict, monkeypatch):
+    @pytest.mark.timeout_medium
+    async def test_resume_restores_file_selection(self, tmp_path, multi_file_torrent_dict, mock_network_components):
         """Test that resuming from checkpoint restores file selection state."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -514,13 +479,8 @@ class TestFileSelectionCheckpointResume:
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = True
         session.config.disk.checkpoint_format = "binary"  # Use binary to avoid JSON serialization issues
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -619,19 +579,16 @@ class TestFileSelectionCheckpointResume:
                     finally:
                         await session.stop()
 
+    @pytest.mark.timeout_medium
     async def test_checkpoint_preserves_progress(
         self,
         tmp_path,
         multi_file_torrent_dict,
-        monkeypatch,
+        mock_network_components,
     ):
         """Test that file progress is preserved in checkpoint."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -643,13 +600,8 @@ class TestFileSelectionCheckpointResume:
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = True
         session.config.disk.checkpoint_format = "binary"  # Use binary to avoid JSON serialization issues
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -729,19 +681,16 @@ class TestFileSelectionCheckpointResume:
 class TestFileSelectionPriorityWorkflows:
     """Test priority-based download workflows."""
 
+    @pytest.mark.timeout_medium
     async def test_priority_affects_piece_selection_order(
         self,
         tmp_path,
         multi_file_torrent_dict,
-        monkeypatch,
+        mock_network_components,
     ):
         """Test that higher priority files are selected first in sequential mode."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -751,13 +700,8 @@ class TestFileSelectionPriorityWorkflows:
         mock_tracker._session_manager = None
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -831,19 +775,16 @@ class TestFileSelectionPriorityWorkflows:
                     finally:
                         await session.stop()
 
+    @pytest.mark.timeout_medium
     async def test_deselect_prevents_download(
         self,
         tmp_path,
         multi_file_torrent_dict,
-        monkeypatch,
+        mock_network_components,
     ):
         """Test that deselected files prevent their pieces from being downloaded."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -853,13 +794,8 @@ class TestFileSelectionPriorityWorkflows:
         mock_tracker._session_manager = None
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -933,19 +869,16 @@ class TestFileSelectionPriorityWorkflows:
 class TestFileSelectionSessionIntegration:
     """Integration tests for file selection with session management."""
 
+    @pytest.mark.timeout_medium
     async def test_file_selection_manager_created_for_multi_file(
         self,
         tmp_path,
         multi_file_torrent_dict,
-        monkeypatch,
+        mock_network_components,
     ):
         """Test that FileSelectionManager is automatically created for multi-file torrents."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -955,13 +888,8 @@ class TestFileSelectionSessionIntegration:
         mock_tracker._session_manager = None
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -1003,18 +931,15 @@ class TestFileSelectionSessionIntegration:
                     finally:
                         await session.stop()
 
+    @pytest.mark.timeout_medium
     async def test_file_selection_manager_not_created_for_single_file(
         self,
         tmp_path,
-        monkeypatch,
+        mock_network_components,
     ):
         """Test that FileSelectionManager is not created for single-file torrents (optional)."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -1024,13 +949,8 @@ class TestFileSelectionSessionIntegration:
         mock_tracker._session_manager = None
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
@@ -1079,19 +999,16 @@ class TestFileSelectionSessionIntegration:
                     finally:
                         await session.stop()
 
+    @pytest.mark.timeout_medium
     async def test_file_selection_persists_across_torrent_restart(
         self,
         tmp_path,
         multi_file_torrent_dict,
-        monkeypatch,
+        mock_network_components,
     ):
         """Test that file selection persists when torrent is restarted."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        
-        # Disable NAT auto port mapping to prevent 60s wait
-        monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
-        monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
@@ -1103,13 +1020,8 @@ class TestFileSelectionSessionIntegration:
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = True
         session.config.disk.checkpoint_format = "binary"  # Use binary to avoid JSON serialization issues
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
-        session.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
-        # Mock heavy initialization methods to prevent hangs
-        session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-        session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(session, mock_network_components)
         
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):

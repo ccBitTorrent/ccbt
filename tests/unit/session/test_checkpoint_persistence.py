@@ -259,8 +259,43 @@ async def test_checkpoint_load_rate_limits():
     )
     session.session_manager = session_manager
 
+    # #region agent log
+    import json
+    log_path = r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log"
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            ctx_info_hash = None
+            if hasattr(session, "checkpoint_controller") and session.checkpoint_controller:
+                if hasattr(session.checkpoint_controller, "_ctx"):
+                    if hasattr(session.checkpoint_controller._ctx, "info"):
+                        ctx_info_hash = getattr(session.checkpoint_controller._ctx.info, "info_hash", None)
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "TEST", "location": "test_checkpoint_persistence.py:262", "message": "Before _resume_from_checkpoint", "data": {"has_checkpoint_controller": hasattr(session, "checkpoint_controller"), "checkpoint_controller": str(session.checkpoint_controller) if hasattr(session, "checkpoint_controller") else None, "session_manager": str(session_manager), "ctx_info_hash": str(ctx_info_hash) if ctx_info_hash else None, "session_info_hash": str(session.info.info_hash) if hasattr(session, "info") and hasattr(session.info, "info_hash") else None}, "timestamp": __import__("time").time() * 1000}) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    
     # Restore from checkpoint
-    await session._resume_from_checkpoint(checkpoint)
+    try:
+        await session._resume_from_checkpoint(checkpoint)
+    except Exception as e:
+        # #region agent log
+        import json
+        log_path = r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log"
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "EXCEPTION", "location": "test_checkpoint_persistence.py:273", "message": "Exception in _resume_from_checkpoint", "data": {"exception_type": str(type(e)), "exception_msg": str(e)}, "timestamp": __import__("time").time() * 1000}) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        raise
+
+    # #region agent log
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "TEST", "location": "test_checkpoint_persistence.py:265", "message": "After _resume_from_checkpoint", "data": {"_per_torrent_limits": str(session_manager._per_torrent_limits), "info_hash_in_limits": info_hash in session_manager._per_torrent_limits}, "timestamp": __import__("time").time() * 1000}) + "\n")
+    except Exception:
+        pass
+    # #endregion
 
     # Verify rate limits were restored
     assert info_hash in session_manager._per_torrent_limits

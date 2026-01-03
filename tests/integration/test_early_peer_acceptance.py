@@ -43,8 +43,11 @@ class TestEarlyPeerAcceptance:
     """Test that incoming peers are accepted before tracker announce completes."""
 
     @pytest.mark.asyncio
-    async def test_incoming_peer_before_tracker_announce(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_incoming_peer_before_tracker_announce(self, tmp_path, mock_network_components):
         """Test that incoming peers are queued and accepted even before tracker announce completes."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         start_task: Optional[asyncio.Task] = None
         
         with patch("ccbt.config.config.get_config") as mock_get_config:
@@ -54,41 +57,29 @@ class TestEarlyPeerAcceptance:
             config.discovery.aggressive_initial_dht_interval = 30.0
             config.discovery.aggressive_discovery_interval_popular = 30.0
             config.discovery.aggressive_discovery_interval_active = 30.0
-            config.nat.auto_map_ports = False  # Disable NAT to prevent blocking
-            config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-            config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
             mock_get_config.return_value = config
             
-            # Mock NAT manager to prevent hanging on port mapping
-            with patch("ccbt.session.session.AsyncSessionManager._make_nat_manager") as mock_nat:
-                mock_nat.return_value = None  # Disable NAT manager to prevent hangs
+            manager = AsyncSessionManager(output_dir=str(tmp_path))
+            # Use network mocks instead of disabling features
+            apply_network_mocks_to_session(manager, mock_network_components)
+            
+            # Mock DHT client to prevent port conflicts
+            with patch.object(manager, "_make_dht_client", return_value=None):
+                # Mock _wait_for_starting_session to return immediately
+                from ccbt.session.torrent_addition import TorrentAdditionHandler
+                async def mock_wait_for_starting_session(self, session):
+                    """Mock that returns immediately without waiting."""
+                    # Set status to 'downloading' to allow test to proceed
+                    if hasattr(session, 'info'):
+                        session.info.status = "downloading"
+                    return
                 
-                manager = AsyncSessionManager(output_dir=str(tmp_path))
-                manager.config.nat.auto_map_ports = False
-                manager.config.network.enable_tcp = False
-                manager.config.discovery.enable_dht = False
-                
-                # Mock heavy initialization methods
-                manager._make_nat_manager = lambda: None  # type: ignore[method-assign]
-                manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
-                
-                # Mock DHT client to prevent port conflicts
-                with patch.object(manager, "_make_dht_client", return_value=None):
-                    # Mock _wait_for_starting_session to return immediately
-                    from ccbt.session.torrent_addition import TorrentAdditionHandler
-                    async def mock_wait_for_starting_session(self, session):
-                        """Mock that returns immediately without waiting."""
-                        # Set status to 'downloading' to allow test to proceed
-                        if hasattr(session, 'info'):
-                            session.info.status = "downloading"
-                        return
-                    
-                    with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
-                        # Start manager with timeout to prevent hanging
-                        try:
-                            await asyncio.wait_for(manager.start(), timeout=10.0)
-                        except asyncio.TimeoutError:
-                            pytest.fail("Manager start timed out")
+                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+                    # Start manager with timeout to prevent hanging
+                    try:
+                        await asyncio.wait_for(manager.start(), timeout=10.0)
+                    except asyncio.TimeoutError:
+                        pytest.fail("Manager start timed out")
                         
                         try:
                             # Create a torrent session
@@ -187,8 +178,11 @@ class TestEarlyPeerAcceptance:
                                 pass  # Manager stop timeout is not critical for test
 
     @pytest.mark.asyncio
-    async def test_incoming_peer_queue_when_peer_manager_not_ready(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_incoming_peer_queue_when_peer_manager_not_ready(self, tmp_path, mock_network_components):
         """Test that incoming peers are queued when peer_manager is not ready."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         with patch("ccbt.config.config.get_config") as mock_get_config:
             from ccbt.config.config import Config
             # Create a valid config with discovery intervals >= 30
@@ -196,41 +190,29 @@ class TestEarlyPeerAcceptance:
             config.discovery.aggressive_initial_dht_interval = 30.0
             config.discovery.aggressive_discovery_interval_popular = 30.0
             config.discovery.aggressive_discovery_interval_active = 30.0
-            config.nat.auto_map_ports = False  # Disable NAT to prevent blocking
-            config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-            config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
             mock_get_config.return_value = config
             
-            # Mock NAT manager to prevent hanging on port mapping
-            with patch("ccbt.session.session.AsyncSessionManager._make_nat_manager") as mock_nat:
-                mock_nat.return_value = None  # Disable NAT manager to prevent hangs
+            manager = AsyncSessionManager(output_dir=str(tmp_path))
+            # Use network mocks instead of disabling features
+            apply_network_mocks_to_session(manager, mock_network_components)
+            
+            # Mock DHT client to prevent port conflicts
+            with patch.object(manager, "_make_dht_client", return_value=None):
+                # Mock _wait_for_starting_session to return immediately
+                from ccbt.session.torrent_addition import TorrentAdditionHandler
+                async def mock_wait_for_starting_session(self, session):
+                    """Mock that returns immediately without waiting."""
+                    # Set status to 'downloading' to allow test to proceed
+                    if hasattr(session, 'info'):
+                        session.info.status = "downloading"
+                    return
                 
-                manager = AsyncSessionManager(output_dir=str(tmp_path))
-                manager.config.nat.auto_map_ports = False
-                manager.config.network.enable_tcp = False
-                manager.config.discovery.enable_dht = False
-                
-                # Mock heavy initialization methods
-                manager._make_nat_manager = lambda: None  # type: ignore[method-assign]
-                manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
-                
-                # Mock DHT client to prevent port conflicts
-                with patch.object(manager, "_make_dht_client", return_value=None):
-                    # Mock _wait_for_starting_session to return immediately
-                    from ccbt.session.torrent_addition import TorrentAdditionHandler
-                    async def mock_wait_for_starting_session(self, session):
-                        """Mock that returns immediately without waiting."""
-                        # Set status to 'downloading' to allow test to proceed
-                        if hasattr(session, 'info'):
-                            session.info.status = "downloading"
-                        return
-                    
-                    with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
-                        # Start manager with timeout
-                        try:
-                            await asyncio.wait_for(manager.start(), timeout=10.0)
-                        except asyncio.TimeoutError:
-                            pytest.fail("Manager start timed out")
+                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+                    # Start manager with timeout
+                    try:
+                        await asyncio.wait_for(manager.start(), timeout=10.0)
+                    except asyncio.TimeoutError:
+                        pytest.fail("Manager start timed out")
                         
                         try:
                             # Create a torrent session
@@ -291,8 +273,11 @@ class TestEarlyDownloadStart:
     """Test that download starts as soon as first peers are discovered."""
 
     @pytest.mark.asyncio
-    async def test_download_starts_on_first_tracker_response(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_download_starts_on_first_tracker_response(self, tmp_path, mock_network_components):
         """Test that download starts immediately when first tracker responds with peers."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         start_task: Optional[asyncio.Task] = None
         
         with patch("ccbt.config.config.get_config") as mock_get_config:
@@ -302,41 +287,29 @@ class TestEarlyDownloadStart:
             config.discovery.aggressive_initial_dht_interval = 30.0
             config.discovery.aggressive_discovery_interval_popular = 30.0
             config.discovery.aggressive_discovery_interval_active = 30.0
-            config.nat.auto_map_ports = False  # Disable NAT to prevent blocking
-            config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-            config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
             mock_get_config.return_value = config
             
-            # Mock NAT manager to prevent hanging on port mapping
-            with patch("ccbt.session.session.AsyncSessionManager._make_nat_manager") as mock_nat:
-                mock_nat.return_value = None  # Disable NAT manager to prevent hangs
+            manager = AsyncSessionManager(output_dir=str(tmp_path))
+            # Use network mocks instead of disabling features
+            apply_network_mocks_to_session(manager, mock_network_components)
+            
+            # Mock DHT client to prevent port conflicts
+            with patch.object(manager, "_make_dht_client", return_value=None):
+                # Mock _wait_for_starting_session to return immediately
+                from ccbt.session.torrent_addition import TorrentAdditionHandler
+                async def mock_wait_for_starting_session(self, session):
+                    """Mock that returns immediately without waiting."""
+                    # Set status to 'downloading' to allow test to proceed
+                    if hasattr(session, 'info'):
+                        session.info.status = "downloading"
+                    return
                 
-                manager = AsyncSessionManager(output_dir=str(tmp_path))
-                manager.config.nat.auto_map_ports = False
-                manager.config.network.enable_tcp = False
-                manager.config.discovery.enable_dht = False
-                
-                # Mock heavy initialization methods
-                manager._make_nat_manager = lambda: None  # type: ignore[method-assign]
-                manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
-                
-                # Mock DHT client to prevent port conflicts
-                with patch.object(manager, "_make_dht_client", return_value=None):
-                    # Mock _wait_for_starting_session to return immediately
-                    from ccbt.session.torrent_addition import TorrentAdditionHandler
-                    async def mock_wait_for_starting_session(self, session):
-                        """Mock that returns immediately without waiting."""
-                        # Set status to 'downloading' to allow test to proceed
-                        if hasattr(session, 'info'):
-                            session.info.status = "downloading"
-                        return
-                    
-                    with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
-                        # Start manager with timeout
-                        try:
-                            await asyncio.wait_for(manager.start(), timeout=10.0)
-                        except asyncio.TimeoutError:
-                            pytest.fail("Manager start timed out")
+                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+                    # Start manager with timeout
+                    try:
+                        await asyncio.wait_for(manager.start(), timeout=10.0)
+                    except asyncio.TimeoutError:
+                        pytest.fail("Manager start timed out")
                         
                         try:
                             # Create a torrent session
@@ -415,8 +388,11 @@ class TestEarlyDownloadStart:
                                 pass  # Manager stop timeout is not critical for test
 
     @pytest.mark.asyncio
-    async def test_peer_manager_reused_when_already_exists(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_peer_manager_reused_when_already_exists(self, tmp_path, mock_network_components):
         """Test that existing peer_manager is reused when connecting new peers."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         start_task: Optional[asyncio.Task] = None
         
         with patch("ccbt.config.config.get_config") as mock_get_config:
@@ -426,41 +402,29 @@ class TestEarlyDownloadStart:
             config.discovery.aggressive_initial_dht_interval = 30.0
             config.discovery.aggressive_discovery_interval_popular = 30.0
             config.discovery.aggressive_discovery_interval_active = 30.0
-            config.nat.auto_map_ports = False  # Disable NAT to prevent blocking
-            config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
-            config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
             mock_get_config.return_value = config
             
-            # Mock NAT manager to prevent hanging on port mapping
-            with patch("ccbt.session.session.AsyncSessionManager._make_nat_manager") as mock_nat:
-                mock_nat.return_value = None  # Disable NAT manager to prevent hangs
+            manager = AsyncSessionManager(output_dir=str(tmp_path))
+            # Use network mocks instead of disabling features
+            apply_network_mocks_to_session(manager, mock_network_components)
+            
+            # Mock DHT client to prevent port conflicts
+            with patch.object(manager, "_make_dht_client", return_value=None):
+                # Mock _wait_for_starting_session to return immediately
+                from ccbt.session.torrent_addition import TorrentAdditionHandler
+                async def mock_wait_for_starting_session(self, session):
+                    """Mock that returns immediately without waiting."""
+                    # Set status to 'downloading' to allow test to proceed
+                    if hasattr(session, 'info'):
+                        session.info.status = "downloading"
+                    return
                 
-                manager = AsyncSessionManager(output_dir=str(tmp_path))
-                manager.config.nat.auto_map_ports = False
-                manager.config.network.enable_tcp = False
-                manager.config.discovery.enable_dht = False
-                
-                # Mock heavy initialization methods
-                manager._make_nat_manager = lambda: None  # type: ignore[method-assign]
-                manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
-                
-                # Mock DHT client to prevent port conflicts
-                with patch.object(manager, "_make_dht_client", return_value=None):
-                    # Mock _wait_for_starting_session to return immediately
-                    from ccbt.session.torrent_addition import TorrentAdditionHandler
-                    async def mock_wait_for_starting_session(self, session):
-                        """Mock that returns immediately without waiting."""
-                        # Set status to 'downloading' to allow test to proceed
-                        if hasattr(session, 'info'):
-                            session.info.status = "downloading"
-                        return
-                    
-                    with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
-                        # Start manager with timeout
-                        try:
-                            await asyncio.wait_for(manager.start(), timeout=10.0)
-                        except asyncio.TimeoutError:
-                            pytest.fail("Manager start timed out")
+                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+                    # Start manager with timeout
+                    try:
+                        await asyncio.wait_for(manager.start(), timeout=10.0)
+                    except asyncio.TimeoutError:
+                        pytest.fail("Manager start timed out")
                         
                         try:
                             # Create a torrent session

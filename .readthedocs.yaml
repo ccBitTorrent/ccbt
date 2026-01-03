@@ -1,8 +1,7 @@
 # Read the Docs configuration file
 # See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
 #
-# Note: This file must be in the root directory (Read the Docs requirement)
-# but references dev/mkdocs.yml for the MkDocs configuration
+# It references dev/mkdocs.yml for the MkDocs configuration
 
 version: 2
 
@@ -14,6 +13,7 @@ build:
   commands:
     # Use the patched build script to ensure i18n plugin works correctly
     # This applies patches to mkdocs-static-i18n before building
+    # Dependencies are installed via python.install below BEFORE this runs
     - python dev/build_docs_patched_clean.py
 
 # MkDocs configuration
@@ -24,9 +24,10 @@ mkdocs:
   configuration: dev/mkdocs.yml
 
 # Python environment configuration
+# These steps run BEFORE build.commands
 python:
   install:
-    # Install dependencies from requirements file
+    # Install dependencies from requirements file (relative to project root)
     - requirements: dev/requirements-rtd.txt
     # Install the project itself (needed for mkdocstrings to parse code)
     # Use editable install to ensure imports work correctly
@@ -38,4 +39,12 @@ python:
 formats:
   - htmlzip
   - pdf
+
+
+
+
+
+
+
+
 
