@@ -25,6 +25,14 @@ repos:
         files: ^ccbt/.*\.py$
         exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: false
+      - id: compatibility-linter
+        name: compatibility-linter
+        entry: uv run python dev/compatibility_linter.py ccbt/
+        language: system
+        types: [python]
+        files: ^ccbt/.*\.py$
+        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        pass_filenames: false
       - id: ty
         name: ty
         entry: uv run ty check --config-file=dev/ty.toml --output-format=concise
@@ -63,10 +71,53 @@ repos:
         pass_filenames: false
         stages: [pre-push]
         require_serial: true
-      # Benchmark hooks removed from pre-commit - benchmarks now run only in CI
-      # See .github/workflows/benchmark.yml for CI benchmark execution
-      # To run benchmarks locally, use:
-      #   uv run python tests/performance/bench_*.py --quick --record-mode=commit
+      # Benchmark hooks - can be skipped by setting SKIP_BENCHMARKS=1 environment variable
+      # Usage: SKIP_BENCHMARKS=1 git commit
+      # Or: export SKIP_BENCHMARKS=1 (to skip for all commits in current shell)
+      - id: bench-smoke-hash
+        name: bench-smoke-hash
+        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_hash_verify.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: bench-smoke-disk
+        name: bench-smoke-disk
+        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_disk_io.py --quick --sizes 256KiB 1MiB --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: bench-smoke-piece
+        name: bench-smoke-piece
+        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_piece_assembly.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: bench-smoke-loopback
+        name: bench-smoke-loopback
+        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_loopback_throughput.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: bench-smoke-encryption
+        name: bench-smoke-encryption
+        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_encryption.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: bench-smoke-all
+        name: bench-smoke-all
+        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/scripts/run_benchmarks_selective.py
+        language: system
+        types: [python]
+        files: ^ccbt/.*\.py$
+        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        pass_filenames: true
+        stages: [pre-commit]
       - id: mkdocs-build
         name: mkdocs-build
         entry: uv run python dev/build_docs_patched_clean.py
