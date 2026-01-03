@@ -14,8 +14,9 @@ from typing import Any, Optional
 import pytest
 import pytest_asyncio
 
-# Import network mock fixtures for convenience
-# Tests can import these directly: from tests.fixtures.network_mocks import mock_nat_manager
+# Import network mock fixtures to make them available to all tests
+# This ensures fixtures from tests/fixtures/network_mocks.py are discoverable
+pytest_plugins = ["tests.fixtures.network_mocks"]
 
 # Import timeout hooks for per-test timeout management
 # This applies timeout markers based on test categories
