@@ -9,6 +9,10 @@ on:
         default: 'dev'
         type: string
 
+concurrency:
+  group: release-to-main
+  cancel-in-progress: false
+
 jobs:
   release-to-main:
     name: release-to-main
@@ -28,6 +32,31 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Checkout main branch
+        run: |
+          git fetch origin main
+          git checkout main
+          git pull origin main
+      
+      - name: Merge dev into main
+        run: |
+          SOURCE_BRANCH="${{ github.event.inputs.source_branch || 'dev' }}"
+          git fetch origin "$SOURCE_BRANCH"
+          if git merge-base --is-ancestor "origin/$SOURCE_BRANCH" HEAD; then
+            echo "✅ $SOURCE_BRANCH is already merged into main"
+          else
+            git merge "origin/$SOURCE_BRANCH" --no-ff -m "chore: merge $SOURCE_BRANCH into main for release [skip ci]"
+            git push origin main || {
+              echo "⚠️  Push failed (may need manual merge)"
+              exit 1
+            }
+            echo "✅ Merged $SOURCE_BRANCH into main"
+          fi
+      
+      - name: Validate version using script
+        run: |
+          uv run python dev/scripts/validate_version.py || exit 1
       
       - name: Extract current version from pyproject.toml
         id: current_version
@@ -62,12 +91,6 @@ jobs:
             exit 1
           fi
           echo "✅ New version validation passed: $NEW_VERSION"
-      
-      - name: Checkout main branch
-        run: |
-          git fetch origin main
-          git checkout main
-          git pull origin main
       
       - name: Update version in pyproject.toml
         run: |

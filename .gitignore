@@ -14,7 +14,7 @@ MagicMock
 scripts
 compatibility_tests/
 lint_outputs/   
-
+docs/reports/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -55,7 +55,7 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 htmlcov/
-.tox/
+.tox/git add -f docs/reports/benchmarks/
 .nox/
 .coverage
 .coverage.*
@@ -335,6 +335,8 @@ docs/reports/coverage/
 # docs/reports/benchmarks/timeseries/ (tracked)
 # Legacy artifacts directory (deprecated but kept for compatibility)
 docs/reports/benchmarks/artifacts/
+# Local benchmark run reports (CI/CD will force-add its own)
+docs/reports/benchmarks/runs/*.json
 
 # Package builds
 *.tar.gz

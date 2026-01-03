@@ -11,6 +11,10 @@ on:
         required: false
         type: string
 
+concurrency:
+  group: publish-main-pypi
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: publish-to-pypi

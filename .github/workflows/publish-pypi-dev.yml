@@ -1,18 +1,72 @@
 name: Publish Dev Branch to PyPI (Nightly)
 
 on:
-  push:
-    branches: [dev]
+  pull_request:
+    branches: [dev]  # Available on PRs but not automatic
     paths:
       - 'pyproject.toml'
       - 'ccbt/**'
       - 'ccbt/__init__.py'
-  workflow_dispatch:
+  push:
+    branches: [dev]  # Available on pushes but not automatic
+    paths:
+      - 'pyproject.toml'
+      - 'ccbt/**'
+      - 'ccbt/__init__.py'
+  workflow_dispatch:  # Manual trigger
+  workflow_run:  # Trigger after validation workflows pass
+    workflows: ["CI/CD Pipeline", "Test", "Version Check"]
+    types:
+      - completed
+    branches: [dev]
+
+concurrency:
+  group: publish-dev-pypi
+  cancel-in-progress: false
 
 jobs:
+  check-validation:
+    name: check-validation
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: Check if validation workflows passed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // For PRs, check if required workflows have passed
+            if (context.eventName === 'pull_request') {
+              const { data: checks } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.payload.pull_request.head.sha,
+              });
+              const requiredChecks = ['CI/CD Pipeline', 'Test', 'Version Check'];
+              const passedChecks = checks.check_runs.filter(
+                check => requiredChecks.includes(check.name) && check.conclusion === 'success'
+              );
+              if (passedChecks.length < requiredChecks.length) {
+                core.setFailed('Required validation workflows must pass first');
+              }
+            }
+            // For workflow_run, validation already passed
+            // For workflow_dispatch, allow manual override
+  
   publish-nightly:
     name: publish-dev-to-pypi
+    needs: check-validation
     runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'pull_request' && needs.check-validation.result == 'success') ||
+      (github.event_name == 'push' && needs.check-validation.result == 'success')
     permissions:
       contents: read
     
@@ -39,19 +93,9 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Dev branch version: $VERSION"
       
-      - name: Validate version for dev branch
+      - name: Validate version using script
         run: |
-          VERSION="${{ steps.get_version.outputs.version }}"
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          PATCH=$(echo "$VERSION" | cut -d. -f3)
-          
-          # Dev branch: allow 0.0.1 or any valid semver
-          if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -eq 0 ] && [ "$PATCH" -eq 0 ]; then
-            echo "❌ Dev branch version must be > 0.0.0, got $VERSION"
-            exit 1
-          fi
-          echo "✅ Version validation passed: $VERSION"
+          uv run python dev/scripts/validate_version.py || exit 1
       
       - name: Install project dependencies
         run: |
