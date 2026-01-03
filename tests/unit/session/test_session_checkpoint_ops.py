@@ -7,6 +7,7 @@ from ccbt.models import TorrentCheckpoint, PieceState
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_save_checkpoint_enriches_announce_and_display_name(monkeypatch):
     """Test _save_checkpoint enriches checkpoint with announce URLs and display name."""
     from ccbt.session.session import AsyncTorrentSession
@@ -71,6 +72,7 @@ async def test_save_checkpoint_enriches_announce_and_display_name(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_delete_checkpoint_returns_false_on_error(monkeypatch):
     """Test delete_checkpoint returns False when checkpoint manager raises."""
     from ccbt.session.session import AsyncTorrentSession
@@ -100,6 +102,7 @@ async def test_delete_checkpoint_returns_false_on_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_get_torrent_status_missing_returns_none():
     """Test get_torrent_status returns None for missing torrent."""
     from ccbt.session.session import AsyncSessionManager
@@ -110,6 +113,7 @@ async def test_get_torrent_status_missing_returns_none():
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_save_checkpoint_with_torrent_file_path(monkeypatch):
     """Test _save_checkpoint sets torrent_file_path when available."""
     from ccbt.session.session import AsyncTorrentSession
@@ -155,6 +159,7 @@ async def test_save_checkpoint_with_torrent_file_path(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_save_checkpoint_exception_logs(monkeypatch):
     """Test _save_checkpoint logs exception and re-raises."""
     from ccbt.session.session import AsyncTorrentSession

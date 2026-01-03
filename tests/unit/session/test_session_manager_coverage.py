@@ -5,6 +5,7 @@ import pytest
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_add_torrent_missing_info_hash_dict(monkeypatch):
     from ccbt.session.session import AsyncSessionManager
 
@@ -16,6 +17,7 @@ async def test_add_torrent_missing_info_hash_dict(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_add_torrent_duplicate(monkeypatch, tmp_path):
     """Test adding duplicate torrent raises ValueError.
     
@@ -66,6 +68,7 @@ async def test_add_torrent_duplicate(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_add_magnet_bad_info_hash_raises(monkeypatch):
     from ccbt.session import session as sess_mod
     from ccbt.session.session import AsyncSessionManager
@@ -91,6 +94,7 @@ async def test_add_magnet_bad_info_hash_raises(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_remove_pause_resume_invalid_hex(monkeypatch):
     from ccbt.session.session import AsyncSessionManager
 
@@ -149,6 +153,7 @@ def test_parse_magnet_exception_returns_none(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_start_web_interface_raises_not_implemented():
     """Test start_web_interface behavior.
     
@@ -193,6 +198,7 @@ async def test_start_web_interface_raises_not_implemented():
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_add_torrent_dict_with_info_hash_str_converts(monkeypatch, tmp_path):
     from ccbt.session import session as sess_mod
     from ccbt.session.session import AsyncSessionManager
@@ -210,6 +216,7 @@ async def test_add_torrent_dict_with_info_hash_str_converts(monkeypatch, tmp_pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_add_torrent_model_path(monkeypatch, tmp_path):
     from ccbt.session import session as sess_mod
     from ccbt.session.session import AsyncSessionManager
@@ -243,6 +250,7 @@ async def test_add_torrent_model_path(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_add_magnet_duplicate_direct(monkeypatch):
     """Test duplicate magnet detection by directly adding a session first."""
     from ccbt.session.session import AsyncSessionManager, AsyncTorrentSession
@@ -282,6 +290,7 @@ async def test_add_magnet_duplicate_direct(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_remove_existing_torrent_calls_callback(monkeypatch):
     from ccbt.session.session import AsyncSessionManager
 
@@ -313,6 +322,7 @@ async def test_remove_existing_torrent_calls_callback(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_force_announce_invalid_hex_returns_false():
     from ccbt.session.session import AsyncSessionManager
 
@@ -321,6 +331,7 @@ async def test_force_announce_invalid_hex_returns_false():
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_force_scrape_returns_true_for_valid_hex(tmp_path):
     """Test force_scrape returns False when no torrent exists."""
     from ccbt.session.session import AsyncSessionManager
@@ -428,7 +439,6 @@ def test_peers_property_handles_exception():
 
 def test_dht_property_returns_dht_client():
     """Test dht property returns dht_client instance."""
-    from ccbt.discovery.dht import AsyncDHTClient
     from ccbt.session.session import AsyncSessionManager
     from unittest.mock import MagicMock
 
@@ -439,7 +449,9 @@ def test_dht_property_returns_dht_client():
     assert mgr.dht is None
     
     # Test when dht_client is set
-    mock_dht = MagicMock(spec=AsyncDHTClient)
+    # CRITICAL FIX: Don't use spec=AsyncDHTClient as it may be mocked by network fixtures
+    # Just use a plain MagicMock
+    mock_dht = MagicMock()
     mgr.dht_client = mock_dht
     assert mgr.dht is mock_dht
 

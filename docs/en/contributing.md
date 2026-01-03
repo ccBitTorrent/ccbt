@@ -71,6 +71,55 @@ Run with coverage:
 uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html --cov-report=xml
 ```
 
+#### Test Guidelines
+
+**Network Operation Mocking:**
+- Always use network mocks for unit tests that create `AsyncSessionManager` or `AsyncTorrentSession`
+- Use `mock_network_components` fixture from `tests/fixtures/network_mocks.py`
+- Apply mocks before calling `session.start()` to prevent actual network operations
+- Example:
+  ```python
+  from tests.fixtures.network_mocks import apply_network_mocks_to_session
+  
+  async def test_xyz(mock_network_components):
+      session = AsyncSessionManager()
+      apply_network_mocks_to_session(session, mock_network_components)
+      await session.start()  # No network operations
+  ```
+
+**Port Management:**
+- Use `get_free_port()` from `tests/utils/port_pool.py` for dynamic port allocation
+- Port pool ensures unique ports per test and prevents conflicts
+- Example:
+  ```python
+  from tests.utils.port_pool import get_free_port
+  
+  port = get_free_port()  # Always unique, automatically cleaned up
+  ```
+
+**Timeout Markers:**
+- Add timeout markers to all tests for faster failure detection
+- Use `@pytest.mark.timeout_fast` for unit tests (< 5 seconds)
+- Use `@pytest.mark.timeout_medium` for integration tests with mocks (< 30 seconds)
+- Use `@pytest.mark.timeout_long` for E2E tests with real network (< 300 seconds)
+- Example:
+  ```python
+  @pytest.mark.asyncio
+  @pytest.mark.timeout_fast
+  async def test_xyz():
+      # Test code
+  ```
+
+**Avoid Manual Port Disabling:**
+- Don't use `enable_tcp = False` or `enable_dht = False` as workarounds
+- Use network mocks instead to test actual code paths
+- This ensures tests verify real functionality, not disabled features
+
+**Test Isolation:**
+- Tests should be independent and not rely on shared state
+- Use fixtures for setup/teardown
+- Clean up resources in fixtures, not in test code
+
 ### Pre-commit Hooks
 
 All quality checks run automatically via pre-commit hooks configured in [dev/pre-commit-config.yaml](https://github.com/ccBittorrent/ccbt/blob/main/dev/pre-commit-config.yaml). This includes:

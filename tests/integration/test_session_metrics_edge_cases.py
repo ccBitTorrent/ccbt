@@ -16,10 +16,17 @@ class TestAsyncSessionManagerMetricsEdgeCases:
     """Edge case tests for metrics in AsyncSessionManager."""
 
     @pytest.mark.asyncio
-    async def test_start_stop_without_torrents(self, mock_config_enabled):
+    @pytest.mark.timeout_medium
+    async def test_start_stop_without_torrents(
+        self, 
+        mock_config_enabled,
+        mock_network_components
+    ):
         """Test metrics lifecycle when session has no torrents."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager()
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
+        apply_network_mocks_to_session(session, mock_network_components)
 
         await session.start()
 
@@ -35,53 +42,55 @@ class TestAsyncSessionManagerMetricsEdgeCases:
         assert session.metrics is None
 
     @pytest.mark.asyncio
-    async def test_multiple_start_calls(self, mock_config_enabled):
+    @pytest.mark.timeout_medium
+    async def test_multiple_start_calls(
+        self, 
+        mock_config_enabled,
+        mock_network_components
+    ):
         """Test behavior when start() is called multiple times.
         
         CRITICAL FIX: Metrics may be recreated on second start, so we check
         that metrics exist and are valid, not that they're the same instance.
         Also ensure proper cleanup between starts to prevent port conflicts.
         """
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         session = AsyncSessionManager()
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent port conflicts
-
-        # CRITICAL FIX: Mock NAT manager to prevent blocking discovery
-        mock_nat = MagicMock()
-        mock_nat.start = AsyncMock()
-        mock_nat.stop = AsyncMock()
-        mock_nat.map_listen_ports = AsyncMock()
-        mock_nat.wait_for_mapping = AsyncMock()
+        apply_network_mocks_to_session(session, mock_network_components)
         
-        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
-            # First start
-            await session.start()
-            metrics1 = session.metrics
+        # First start
+        await session.start()
+        metrics1 = session.metrics
 
-            # CRITICAL FIX: Stop and cleanup before second start to prevent port conflicts
-            await session.stop()
-            # Wait a bit for ports to be released
-            import asyncio
-            await asyncio.sleep(0.5)
+        # CRITICAL FIX: Stop and cleanup before second start to prevent port conflicts
+        await session.stop()
+        # Wait a bit for ports to be released
+        await asyncio.sleep(0.5)
 
-            # Second start (may create new metrics instance)
-            await session.start()
-            metrics2 = session.metrics
+        # Second start (may create new metrics instance)
+        await session.start()
+        metrics2 = session.metrics
 
-            # Metrics should exist and be valid (may be different instances)
-            if mock_config_enabled.observability.enable_metrics:
-                assert metrics1 is None or hasattr(metrics1, "get_metrics_summary")
-                assert metrics2 is None or hasattr(metrics2, "get_metrics_summary")
+        # Metrics should exist and be valid (may be different instances)
+        if mock_config_enabled.observability.enable_metrics:
+            assert metrics1 is None or hasattr(metrics1, "get_metrics_summary")
+            assert metrics2 is None or hasattr(metrics2, "get_metrics_summary")
 
-            await session.stop()
+        await session.stop()
 
     @pytest.mark.asyncio
-    async def test_multiple_stop_calls(self, mock_config_enabled):
+    @pytest.mark.timeout_medium
+    async def test_multiple_stop_calls(
+        self, 
+        mock_config_enabled,
+        mock_network_components
+    ):
         """Test behavior when stop() is called multiple times."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager()
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
+        apply_network_mocks_to_session(session, mock_network_components)
 
         await session.start()
 
@@ -94,10 +103,17 @@ class TestAsyncSessionManagerMetricsEdgeCases:
         assert session.metrics is None
 
     @pytest.mark.asyncio
-    async def test_metrics_after_exception_during_stop(self, mock_config_enabled):
+    @pytest.mark.timeout_medium
+    async def test_metrics_after_exception_during_stop(
+        self, 
+        mock_config_enabled,
+        mock_network_components
+    ):
         """Test metrics state after exception during torrent stop."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager()
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
+        apply_network_mocks_to_session(session, mock_network_components)
 
         await session.start()
 
@@ -115,46 +131,48 @@ class TestAsyncSessionManagerMetricsEdgeCases:
         assert session.metrics is None
 
     @pytest.mark.asyncio
-    async def test_config_dynamic_change(self, mock_config_enabled):
+    @pytest.mark.timeout_medium
+    async def test_config_dynamic_change(
+        self, 
+        mock_config_enabled,
+        mock_network_components
+    ):
         """Test metrics when config changes between start/stop."""
         from ccbt.monitoring import shutdown_metrics
         import ccbt.monitoring as monitoring_module
-        from unittest.mock import AsyncMock, MagicMock, patch
-        import asyncio
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         
         # Ensure clean state
         await shutdown_metrics()
         monitoring_module._GLOBAL_METRICS_COLLECTOR = None
         
         session = AsyncSessionManager()
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking
-        session.config.discovery.enable_dht = False  # Disable DHT to prevent port conflicts
-
-        # CRITICAL FIX: Mock NAT manager to prevent blocking discovery
-        mock_nat = MagicMock()
-        mock_nat.start = AsyncMock()
-        mock_nat.stop = AsyncMock()
-        mock_nat.map_listen_ports = AsyncMock()
-        mock_nat.wait_for_mapping = AsyncMock()
+        apply_network_mocks_to_session(session, mock_network_components)
         
-        with patch.object(session, '_make_nat_manager', return_value=mock_nat):
-            # Start with metrics enabled
-            mock_config_enabled.observability.enable_metrics = True
-            await session.start()
+        # Start with metrics enabled
+        mock_config_enabled.observability.enable_metrics = True
+        await session.start()
 
-            initial_metrics = session.metrics
+        initial_metrics = session.metrics
 
-            # Change config (simulating hot reload)
-            mock_config_enabled.observability.enable_metrics = False
+        # Change config (simulating hot reload)
+        mock_config_enabled.observability.enable_metrics = False
 
-            # Stop and restart - need to reset singleton to reflect new config
-            await session.stop()
-            # Wait for ports to be released
-            await asyncio.sleep(0.5)
+        # Stop and restart - need to reset singleton to reflect new config
+        await session.stop()
+        # Wait for ports to be released
+        await asyncio.sleep(0.5)
         
         # Reset singleton so new config is read
         await shutdown_metrics()
         monitoring_module._GLOBAL_METRICS_COLLECTOR = None
+        
+        # CRITICAL: Update session's config reference to reflect the changed mock config
+        # The session reads config in __init__, so we need to update it
+        session.config = mock_config_enabled
+        
+        # Re-apply network mocks before second start
+        apply_network_mocks_to_session(session, mock_network_components)
         
         await session.start()
 
@@ -167,10 +185,17 @@ class TestAsyncSessionManagerMetricsEdgeCases:
         await shutdown_metrics()
 
     @pytest.mark.asyncio
-    async def test_metrics_accessible_after_partial_failure(self, mock_config_enabled):
+    @pytest.mark.timeout_medium
+    async def test_metrics_accessible_after_partial_failure(
+        self, 
+        mock_config_enabled,
+        mock_network_components
+    ):
         """Test metrics accessibility even if some components fail."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+        
         session = AsyncSessionManager()
-        session.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
+        apply_network_mocks_to_session(session, mock_network_components)
 
         await session.start()
 
@@ -208,7 +233,30 @@ def mock_config_enabled(monkeypatch):
     mock_observability.enable_metrics = True
     mock_observability.metrics_interval = 0.5
     mock_observability.metrics_port = 9090
+    # Event bus config values needed for EventManager initialization
+    mock_observability.event_bus_max_queue_size = 10000
+    mock_observability.event_bus_batch_size = 50
+    mock_observability.event_bus_batch_timeout = 0.05
+    mock_observability.event_bus_emit_timeout = 0.01
+    mock_observability.event_bus_queue_full_threshold = 0.9
+    mock_observability.event_bus_throttle_dht_node_found = 0.1
+    mock_observability.event_bus_throttle_dht_node_added = 0.1
+    mock_observability.event_bus_throttle_monitoring_heartbeat = 1.0
+    mock_observability.event_bus_throttle_global_metrics_update = 0.5
     mock_config.observability = mock_observability
+    
+    # Network config
+    mock_config.network = Mock()
+    mock_config.network.max_global_peers = 100
+    mock_config.network.connection_timeout = 30.0
+    
+    # NAT config
+    mock_config.nat = Mock()
+    mock_config.nat.auto_map_ports = False
+    
+    # Discovery config
+    mock_config.discovery = Mock()
+    mock_config.discovery.enable_dht = False
 
     from ccbt import config as config_module
 

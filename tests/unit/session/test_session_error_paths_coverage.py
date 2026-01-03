@@ -25,12 +25,15 @@ class TestAsyncTorrentSessionErrorPaths:
     """Test AsyncTorrentSession error paths and edge cases."""
 
     @pytest.mark.asyncio
-    async def test_start_with_error_callback(self, tmp_path):
+    @pytest.mark.timeout_fast
+    async def test_start_with_error_callback(self, tmp_path, mock_network_components):
         """Test start() error handler with on_error callback (line 446-447)."""
         from ccbt.session.session import AsyncTorrentSession
 
         torrent_data = create_test_torrent_dict(name="test", file_length=1024)
         session = AsyncTorrentSession(torrent_data, str(tmp_path), None)
+        # Note: This test doesn't use session_manager, so network mocks aren't needed
+        # The test intentionally causes an error during start()
 
         # Set error callback
         error_called = []
@@ -55,12 +58,17 @@ class TestAsyncTorrentSessionErrorPaths:
         assert session.info.status == "error"
 
     @pytest.mark.asyncio
-    async def test_pause_exception_handler(self, tmp_path):
+    @pytest.mark.timeout_fast
+    async def test_pause_exception_handler(self, tmp_path, mock_network_components):
         """Test pause() exception handler (line 513-514)."""
         from ccbt.session.session import AsyncTorrentSession
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         torrent_data = create_test_torrent_dict(name="test", file_length=1024)
         session = AsyncTorrentSession(torrent_data, str(tmp_path), None)
+        # Apply network mocks if session has session_manager
+        if session.session_manager:
+            apply_network_mocks_to_session(session.session_manager, mock_network_components)
         await session.start()
 
         # Mock download_manager.pause to raise exception
@@ -73,12 +81,17 @@ class TestAsyncTorrentSessionErrorPaths:
         assert session.info.status == "paused"
 
     @pytest.mark.asyncio
-    async def test_resume_exception_handler(self, tmp_path):
+    @pytest.mark.timeout_fast
+    async def test_resume_exception_handler(self, tmp_path, mock_network_components):
         """Test resume() exception handler (line 765-768)."""
         from ccbt.session.session import AsyncTorrentSession
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         torrent_data = create_test_torrent_dict(name="test", file_length=1024)
         session = AsyncTorrentSession(torrent_data, str(tmp_path), None)
+        # Apply network mocks if session has session_manager
+        if session.session_manager:
+            apply_network_mocks_to_session(session.session_manager, mock_network_components)
         await session.start()
         await session.pause()
 
@@ -92,6 +105,7 @@ class TestAsyncTorrentSessionErrorPaths:
         assert session.info.status in ["downloading", "starting"]
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout_fast
     async def test_get_torrent_info_with_torrent_info_model(self, tmp_path):
         """Test _get_torrent_info with TorrentInfoModel input (line 158-159)."""
         from ccbt.session.session import AsyncTorrentSession
@@ -190,21 +204,16 @@ class TestAsyncSessionManagerErrorPaths:
     """Test AsyncSessionManager error paths and edge cases."""
 
     @pytest.mark.asyncio
-    async def test_stop_peer_service_exception(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_stop_peer_service_exception(self, tmp_path, mock_network_components):
         """Test stop() handles peer service stop exception (line 1123-1125)."""
         from ccbt.session.session import AsyncSessionManager
-        from unittest.mock import AsyncMock, patch
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        # Disable NAT to prevent blocking socket operations
-        manager.config.nat.auto_map_ports = False
-        # Patch socket operations to prevent blocking
-        with patch('socket.socket') as mock_socket:
-            # Make recvfrom return immediately to prevent blocking
-            mock_sock = AsyncMock()
-            mock_sock.recvfrom = AsyncMock(return_value=(b'\x00' * 12, ('127.0.0.1', 5351)))
-            mock_socket.return_value = mock_sock
-            await manager.start()
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
+        await manager.start()
 
         # Mock peer_service.stop to raise exception
         if manager.peer_service:
@@ -217,6 +226,7 @@ class TestAsyncSessionManagerErrorPaths:
         assert manager.peer_service is not None or True  # Service may be None
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout_fast
     async def test_stop_nat_manager_exception(self, tmp_path):
         """Test stop() handles NAT manager stop exception (line 1131-1133)."""
         from ccbt.session.session import AsyncSessionManager
@@ -233,17 +243,16 @@ class TestAsyncSessionManagerErrorPaths:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_add_torrent_with_torrent_info_model(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_add_torrent_with_torrent_info_model(self, tmp_path, mock_network_components):
         """Test add_torrent with TorrentInfoModel input (line 1296-1308)."""
         import asyncio
         from ccbt.session.session import AsyncSessionManager
         from unittest.mock import AsyncMock, patch, MagicMock
         from ccbt.discovery.tracker import TrackerResponse
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         # CRITICAL FIX: Mock tracker client to prevent real network calls that cause timeout
-        from ccbt.discovery.tracker import TrackerResponse
-        from unittest.mock import AsyncMock, MagicMock, patch
-        
         mock_tracker_response = TrackerResponse(
             interval=1800,
             peers=[],
@@ -264,9 +273,6 @@ class TestAsyncSessionManagerErrorPaths:
         mock_response.__aexit__ = AsyncMock(return_value=None)
         mock_session.get = AsyncMock(return_value=mock_response)
         mock_session.post = AsyncMock(return_value=mock_response)
-        
-        # Mock connector to prevent real network connections
-        mock_connector = MagicMock()
         
         # Patch everything needed to prevent network calls
         # CRITICAL: Patch AnnounceLoop.run() to prevent real tracker calls
@@ -308,7 +314,8 @@ class TestAsyncSessionManagerErrorPaths:
              patch("ccbt.session.announce.AnnounceController.announce_initial", new_callable=AsyncMock, return_value=[mock_tracker_response]):
             
             manager = AsyncSessionManager(str(tmp_path))
-            manager.config.nat.auto_map_ports = False
+            # Use network mocks instead of disabling features
+            apply_network_mocks_to_session(manager, mock_network_components)
             await manager.start()
 
             # Create TorrentInfo object and convert to dict (add_torrent expects dict or path)
@@ -376,9 +383,11 @@ class TestAsyncSessionManagerErrorPaths:
                     pass  # Ignore errors during cleanup
 
     @pytest.mark.asyncio
-    async def test_add_torrent_with_dict_parser_result(self, monkeypatch, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_add_torrent_with_dict_parser_result(self, monkeypatch, tmp_path, mock_network_components):
         """Test add_torrent with dict result from parser (line 1270-1294)."""
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         # Mock parser to return dict
         class _DictParser:
@@ -399,9 +408,8 @@ class TestAsyncSessionManagerErrorPaths:
         monkeypatch.setattr("ccbt.core.torrent.TorrentParser", _DictParser)
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         torrent_file = tmp_path / "test.torrent"
@@ -415,15 +423,16 @@ class TestAsyncSessionManagerErrorPaths:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_get_global_stats_with_multiple_torrents(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_get_global_stats_with_multiple_torrents(self, tmp_path, mock_network_components):
         """Test get_global_stats aggregates correctly across multiple torrents."""
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
         import asyncio
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         # Add multiple torrents with timeout to prevent hanging
@@ -452,15 +461,16 @@ class TestAsyncSessionManagerErrorPaths:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_export_import_session_state(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_export_import_session_state(self, tmp_path, mock_network_components):
         """Test export_session_state and import_session_state."""
         from unittest.mock import AsyncMock, patch
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         # Add a torrent
@@ -542,12 +552,17 @@ class TestTorrentInfoValidationEdgeCases:
         assert len(session.info.info_hash) == 20
 
     @pytest.mark.asyncio
-    async def test_delete_checkpoint_exception_handler(self, tmp_path):
+    @pytest.mark.timeout_fast
+    async def test_delete_checkpoint_exception_handler(self, tmp_path, mock_network_components):
         """Test delete_checkpoint exception handler (line 623-626)."""
         from ccbt.session.session import AsyncTorrentSession
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         torrent_data = create_test_torrent_dict(name="test", file_length=1024)
         session = AsyncTorrentSession(torrent_data, str(tmp_path), None)
+        # Apply network mocks if session has session_manager
+        if session.session_manager:
+            apply_network_mocks_to_session(session.session_manager, mock_network_components)
         await session.start()
 
         # Mock checkpoint_manager.delete_checkpoint to raise exception
@@ -566,15 +581,15 @@ class TestBackgroundTaskCleanup:
     """Test background task cleanup paths."""
 
     @pytest.mark.asyncio
-    async def test_scrape_task_cancellation(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_scrape_task_cancellation(self, tmp_path, mock_network_components):
         """Test scrape task cancellation in stop() (line 1136-1141)."""
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        # Disable NAT to prevent hanging during start
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         # Create a scrape task
@@ -594,15 +609,15 @@ class TestBackgroundTaskCleanup:
         assert manager.scrape_task.done()
 
     @pytest.mark.asyncio
-    async def test_background_task_cancellation(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_background_task_cancellation(self, tmp_path, mock_network_components):
         """Test background task cancellation in stop()."""
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        # Disable NAT to prevent hanging during start
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         # Verify tasks exist
@@ -621,15 +636,16 @@ class TestSessionManagerAdditionalMethods:
     """Test additional session manager methods for coverage."""
 
     @pytest.mark.asyncio
-    async def test_force_announce(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_force_announce(self, tmp_path, mock_network_components):
         """Test force_announce method (line 1500-1524)."""
         from ccbt.session.session import AsyncSessionManager
         from unittest.mock import AsyncMock
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         # Add torrent
@@ -653,15 +669,16 @@ class TestSessionManagerAdditionalMethods:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_force_announce_with_torrent_info_model(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_force_announce_with_torrent_info_model(self, tmp_path, mock_network_components):
         """Test force_announce with TorrentInfoModel torrent_data (line 1514-1519)."""
         from ccbt.session.session import AsyncSessionManager
         from unittest.mock import AsyncMock
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         # Create TorrentInfo and convert to dict for add_torrent
@@ -703,15 +720,16 @@ class TestSessionManagerAdditionalMethods:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_force_announce_exception_handler(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_force_announce_exception_handler(self, tmp_path, mock_network_components):
         """Test force_announce exception handler (line 1521-1522)."""
         from ccbt.session.session import AsyncSessionManager
         from unittest.mock import patch, AsyncMock
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         torrent_data = create_test_torrent_dict(name="test", file_length=1024)
@@ -730,15 +748,16 @@ class TestSessionManagerAdditionalMethods:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_force_scrape(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_force_scrape(self, tmp_path, mock_network_components):
         """Test force_scrape method (line 1581-1650)."""
         from ccbt.session.session import AsyncSessionManager
         from unittest.mock import AsyncMock
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         torrent_data = create_test_torrent_dict(
@@ -769,14 +788,15 @@ class TestSessionManagerAdditionalMethods:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_get_peers_for_torrent_with_peer_service(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_get_peers_for_torrent_with_peer_service(self, tmp_path, mock_network_components):
         """Test get_peers_for_torrent with peer_service (line 1478-1498)."""
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         # Mock peer_service.list_peers
@@ -812,14 +832,15 @@ class TestSessionManagerAdditionalMethods:
         assert peers == []
 
     @pytest.mark.asyncio
-    async def test_get_peers_for_torrent_exception_handler(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_get_peers_for_torrent_exception_handler(self, tmp_path, mock_network_components):
         """Test get_peers_for_torrent exception handler (line 1495-1498)."""
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         if manager.peer_service:
@@ -831,13 +852,16 @@ class TestSessionManagerAdditionalMethods:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_auto_scrape_torrent(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_auto_scrape_torrent(self, tmp_path, mock_network_components):
         """Test _auto_scrape_torrent background task (line 1366-1371)."""
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
         manager.config.discovery.tracker_auto_scrape = True  # type: ignore[assignment]
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         torrent_data = create_test_torrent_dict(
@@ -869,13 +893,16 @@ class TestSessionManagerAdditionalMethods:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_queue_manager_auto_start_path(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_queue_manager_auto_start_path(self, tmp_path, mock_network_components):
         """Test queue manager auto-start path in add_torrent (line 1348-1354)."""
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
         manager.config.queue.auto_manage_queue = True
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         torrent_data = create_test_torrent_dict(name="test", file_length=1024)
@@ -887,14 +914,15 @@ class TestSessionManagerAdditionalMethods:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_on_torrent_callbacks(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_on_torrent_callbacks(self, tmp_path, mock_network_components):
         """Test on_torrent_added and on_torrent_removed callbacks."""
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         added_calls = []
@@ -927,15 +955,16 @@ class TestSessionManagerAdditionalMethods:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_add_torrent_exception_handler(self, monkeypatch, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_add_torrent_exception_handler(self, monkeypatch, tmp_path, mock_network_components):
         """Test add_torrent exception handler logs properly (line 1375-1380)."""
         from ccbt.session import session as sess_mod
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
-        manager.config.discovery.enable_dht = False
-        manager.config.network.enable_tcp = False
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         # Mock parser to raise exception - patch where it's defined
@@ -958,13 +987,16 @@ class TestSessionManagerAdditionalMethods:
         await manager.stop()
 
     @pytest.mark.asyncio
-    async def test_add_torrent_fallback_start(self, tmp_path):
+    @pytest.mark.timeout_medium
+    async def test_add_torrent_fallback_start(self, tmp_path, mock_network_components):
         """Test add_torrent fallback start when queue manager not initialized (line 1356-1357)."""
         from ccbt.session.session import AsyncSessionManager
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
         manager = AsyncSessionManager(str(tmp_path))
-        manager.config.nat.auto_map_ports = False
         manager.config.queue.auto_manage_queue = False  # No queue manager
+        # Use network mocks instead of disabling features
+        apply_network_mocks_to_session(manager, mock_network_components)
         await manager.start()
 
         torrent_data = create_test_torrent_dict(name="test", file_length=1024)
