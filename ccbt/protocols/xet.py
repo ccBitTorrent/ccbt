@@ -13,7 +13,6 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Optional
 
-from ccbt.discovery.xet_cas import P2PCASClient
 from ccbt.protocols.base import (
     Protocol,
     ProtocolCapabilities,
@@ -31,6 +30,7 @@ class XetProtocol(Protocol):
 
     def __init__(
         self,
+        cas_client=None,
         dht_client=None,
         tracker_client=None,
         pex_manager=None,
@@ -44,6 +44,7 @@ class XetProtocol(Protocol):
         """Initialize Xet protocol.
 
         Args:
+            cas_client: Optional P2P CAS client override
             dht_client: Optional DHT client for chunk discovery
             tracker_client: Optional tracker client for chunk announcements
             pex_manager: Optional PEX manager for peer exchange
@@ -71,6 +72,7 @@ class XetProtocol(Protocol):
         )
 
         # Dependencies
+        self.cas_client = cas_client
         self.dht_client = dht_client
         self.tracker_client = tracker_client
         self.pex_manager = pex_manager
@@ -81,25 +83,17 @@ class XetProtocol(Protocol):
         self.catalog = catalog
         self.bloom_filter = bloom_filter
 
-        # P2P CAS client
-        self.cas_client: Optional[P2PCASClient] = None
-
         # Logger
         self.logger = logging.getLogger(__name__)
 
     async def start(self) -> None:
-        """Start Xet protocol."""
-        try:
-            # Initialize P2P CAS client with all discovery mechanisms
-            if self.dht_client or self.tracker_client:
-                self.cas_client = P2PCASClient(
-                    dht_client=self.dht_client,
-                    tracker_client=self.tracker_client,
-                    bloom_filter=self.bloom_filter,
-                    catalog=self.catalog,
-                )
-                self.logger.info("Xet P2P CAS client initialized")
+        """Start Xet protocol.
 
+        Uses the session-injected cas_client (no fallback). Session must create
+        the shared discovery graph (_ensure_xet_discovery_graph) before registering
+        this protocol.
+        """
+        try:
             # Start discovery mechanisms if available
             if self.lpd_client:
                 try:
@@ -114,6 +108,22 @@ class XetProtocol(Protocol):
                     self.logger.info("Gossip protocol started")
                 except Exception as e:
                     self.logger.warning("Failed to start gossip: %s", e)
+
+            if self.pex_manager:
+                try:
+                    await self.pex_manager.start()
+                    self.logger.info("XET PEX manager started")
+                except Exception as e:
+                    self.logger.warning("Failed to start XET PEX manager: %s", e)
+
+            if self.multicast_broadcaster:
+                try:
+                    await self.multicast_broadcaster.start()
+                    self.logger.info("XET multicast broadcaster started")
+                except Exception as e:
+                    self.logger.warning(
+                        "Failed to start XET multicast broadcaster: %s", e
+                    )
 
             # Set state to connected
             self.set_state(ProtocolState.CONNECTED)
@@ -153,6 +163,18 @@ class XetProtocol(Protocol):
                     await self.gossip_manager.stop()
                 except Exception as e:
                     self.logger.warning("Error stopping gossip: %s", e)
+
+            if self.pex_manager:
+                try:
+                    await self.pex_manager.stop()
+                except Exception as e:
+                    self.logger.warning("Error stopping XET PEX manager: %s", e)
+
+            if self.multicast_broadcaster:
+                try:
+                    await self.multicast_broadcaster.stop()
+                except Exception as e:
+                    self.logger.warning("Error stopping multicast broadcaster: %s", e)
 
             # Set state to disconnected
             self.set_state(ProtocolState.DISCONNECTED)

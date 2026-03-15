@@ -69,6 +69,19 @@ class EventType(str, Enum):
     PIECE_COMPLETED = "piece_completed"
     # Progress events
     PROGRESS_UPDATED = "progress_updated"
+    # Media streaming events
+    MEDIA_STREAM_STARTED = "media_stream_started"
+    MEDIA_STREAM_BUFFERING = "media_stream_buffering"
+    MEDIA_STREAM_READY = "media_stream_ready"
+    MEDIA_STREAM_STOPPED = "media_stream_stopped"
+    MEDIA_STREAM_ERROR = "media_stream_error"
+    # XET workspace events
+    XET_FOLDER_ADDED = "xet_folder_added"
+    XET_FOLDER_REMOVED = "xet_folder_removed"
+    XET_FOLDER_CHANGED = "xet_folder_changed"
+    XET_SYNC_PROGRESS = "xet_sync_progress"
+    XET_SYNC_ERROR = "xet_sync_error"
+    XET_METADATA_READY = "xet_metadata_ready"
 
 
 class StatusResponse(BaseModel):
@@ -82,6 +95,96 @@ class StatusResponse(BaseModel):
     ipc_url: str = Field(..., description="IPC server URL")
 
 
+class XetSyncModeRequest(BaseModel):
+    """Request to update the live sync mode for an XET folder."""
+
+    sync_mode: str = Field(..., description="Requested XET sync mode")
+    source_peers: Optional[list[str]] = Field(
+        default=None,
+        description="Optional designated source peers for designated mode",
+    )
+
+
+class XetWorkspacePolicyRequest(BaseModel):
+    """Request to update live XET workspace policy."""
+
+    sync_mode: Optional[str] = Field(None, description="Requested sync mode override")
+    source_peers: Optional[list[str]] = Field(
+        default=None,
+        description="Optional designated source peers for designated mode",
+    )
+    auth_scope: Optional[str] = Field(None, description="Workspace auth scope override")
+    allowlist_path: Optional[str] = Field(
+        None, description="Override path to workspace allowlist"
+    )
+    require_signed_metadata: Optional[bool] = Field(
+        None, description="Require signed metadata for this workspace"
+    )
+    hash_algorithm: Optional[str] = Field(
+        None,
+        description="Override hash algorithm identity or name",
+    )
+
+
+class XetDiscoveryBackendStatus(BaseModel):
+    """Status for a single XET discovery backend."""
+
+    enabled: bool = Field(False, description="Whether backend is enabled")
+    injected: bool = Field(False, description="Whether backend dependency is injected")
+    health: bool = Field(False, description="Current backend health")
+    last_success: Optional[float] = Field(
+        None,
+        description="Timestamp of last successful backend operation",
+    )
+
+
+class XetDiscoveryStatusResponse(BaseModel):
+    """XET discovery backend status snapshot."""
+
+    backends: dict[str, XetDiscoveryBackendStatus] = Field(
+        default_factory=dict,
+        description="Backend status map keyed by backend name",
+    )
+
+
+class XetFolderStatusResponse(BaseModel):
+    """Typed XET folder status payload."""
+
+    model_config = {"extra": "allow"}
+
+    folder_key: Optional[str] = Field(None, description="Canonical folder key")
+    workspace_id: Optional[str] = Field(None, description="Workspace identifier (hex)")
+    sync_mode: Optional[str] = Field(None, description="Current sync mode")
+    downgrade_reason: Optional[str] = Field(
+        None,
+        description="Reason the effective sync mode was downgraded",
+    )
+    status: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Runtime status payload for folder sync",
+    )
+    backend_status: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Discovery backend status snapshot for this workspace",
+    )
+
+
+class XetWorkspacePolicyResponse(BaseModel):
+    """Typed response for workspace policy updates."""
+
+    workspace_id: str = Field(..., description="Workspace identifier (hex)")
+    sync_mode: str = Field(..., description="Effective sync mode")
+    downgrade_reason: Optional[str] = Field(
+        None,
+        description="Reason the effective sync mode was downgraded",
+    )
+    updated_folders: int = Field(0, description="Number of active runtimes updated")
+    policy: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Current transport policy snapshot after update",
+    )
+
+
 class TorrentAddRequest(BaseModel):
     """Request to add a torrent."""
 
@@ -91,7 +194,11 @@ class TorrentAddRequest(BaseModel):
 
 
 class TorrentStatusResponse(BaseModel):
-    """Torrent status response."""
+    """Torrent status response (external IPC API).
+
+    External API uses num_peers/num_seeds. Internal canonical status uses
+    connected_peers/active_peers; translation happens at executor/IPC boundary.
+    """
 
     info_hash: str = Field(..., description="Torrent info hash (hex)")
     name: str = Field(..., description="Torrent name")
@@ -372,10 +479,26 @@ class WebSocketAuthMessage(BaseModel):
 
 
 class WebSocketEvent(BaseModel):
-    """WebSocket event."""
+    """WebSocket event.
+
+    `type` remains the stable external event contract. `raw_type` preserves the
+    original internal event name when the bridge has to collapse several
+    internal events onto one external type.
+    """
 
     type: EventType = Field(..., description="Event type")
     timestamp: float = Field(..., description="Event timestamp")
+    raw_type: Optional[str] = Field(
+        None,
+        description="Original internal event type before IPC translation",
+    )
+    event_id: Optional[str] = Field(None, description="Unique event identifier")
+    source: Optional[str] = Field(None, description="Source component")
+    priority: Optional[str] = Field(None, description="Event priority")
+    correlation_id: Optional[str] = Field(
+        None,
+        description="Correlation identifier for related events",
+    )
     data: dict[str, Any] = Field(default_factory=dict, description="Event data")
 
 
@@ -390,6 +513,9 @@ class FileInfo(BaseModel):
     priority: str = Field(..., description="File priority")
     progress: float = Field(0.0, ge=0.0, le=1.0, description="Download progress")
     attributes: Optional[str] = Field(None, description="File attributes")
+    path: Optional[str] = Field(None, description="Resolved file path on disk")
+    mime_type: Optional[str] = Field(None, description="Best-effort MIME type")
+    is_media: bool = Field(False, description="Whether the file looks playable")
 
 
 class FileListResponse(BaseModel):
@@ -397,6 +523,83 @@ class FileListResponse(BaseModel):
 
     info_hash: str = Field(..., description="Torrent info hash")
     files: list[FileInfo] = Field(default_factory=list, description="List of files")
+
+
+class MediaStreamStartRequest(BaseModel):
+    """Request to start a media stream for a torrent file."""
+
+    file_index: int = Field(..., ge=0, description="File index to stream")
+    port: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=65535,
+        description="Optional preferred local port",
+    )
+
+
+class MediaStreamStopRequest(BaseModel):
+    """Request to stop a media stream."""
+
+    stream_id: str = Field(..., description="Media stream identifier")
+
+
+class MediaStreamStartResponse(BaseModel):
+    """Response returned after starting a media stream."""
+
+    stream_id: str = Field(..., description="Media stream identifier")
+    info_hash: str = Field(..., description="Torrent info hash")
+    file_index: int = Field(..., ge=0, description="Selected file index")
+    state: str = Field(..., description="Current media stream state")
+    stream_url: str = Field(..., description="Tokenized localhost stream URL")
+    launched_external: bool = Field(
+        default=False,
+        description="Whether an external player launch was requested",
+    )
+
+
+class MediaStreamStatusResponse(BaseModel):
+    """Media stream status response."""
+
+    stream_id: str = Field(..., description="Media stream identifier")
+    info_hash: str = Field(..., description="Torrent info hash")
+    file_index: int = Field(..., ge=0, description="Selected file index")
+    file_name: str = Field(..., description="Selected file name")
+    file_path: str = Field(..., description="Resolved file path")
+    file_size: int = Field(..., ge=0, description="Selected file size in bytes")
+    state: str = Field(..., description="Media stream state")
+    stream_url: Optional[str] = Field(
+        None, description="Tokenized localhost stream URL"
+    )
+    bind_host: str = Field(..., description="Bind host for the local HTTP server")
+    bind_port: int = Field(..., ge=0, le=65535, description="Bound local HTTP port")
+    token_expires_at: Optional[float] = Field(
+        None,
+        description="Epoch timestamp when the stream token expires",
+    )
+    bytes_served: int = Field(0, ge=0, description="Total bytes served")
+    client_count: int = Field(0, ge=0, description="Number of active HTTP clients")
+    current_range_start: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Start offset of the latest requested range",
+    )
+    current_range_end: Optional[int] = Field(
+        None,
+        ge=0,
+        description="End offset of the latest requested range",
+    )
+    available_bytes: int = Field(
+        0,
+        ge=0,
+        description="Best-effort locally readable bytes for the selected file",
+    )
+    buffer_progress: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Readiness estimate for startup buffering",
+    )
+    last_error: Optional[str] = Field(None, description="Latest stream error")
 
 
 class FileSelectRequest(BaseModel):
@@ -964,3 +1167,20 @@ class ServiceEventData(BaseModel):
     component_name: Optional[str] = Field(None, description="Component name (optional)")
     status: str = Field(..., description="Service/component status")
     error: Optional[str] = Field(None, description="Error message if any")
+
+
+class XetFolderEventData(BaseModel):
+    """Data for XET folder and sync events."""
+
+    model_config = {"extra": "allow"}
+
+    folder_key: Optional[str] = Field(None, description="Canonical folder key")
+    folder_path: Optional[str] = Field(None, description="Folder path")
+    workspace_id: Optional[str] = Field(None, description="Workspace identifier (hex)")
+    sync_mode: Optional[str] = Field(None, description="Effective sync mode")
+    downgrade_reason: Optional[str] = Field(
+        None,
+        description="Reason sync mode was downgraded",
+    )
+    status: Optional[str] = Field(None, description="Human-readable status")
+    error: Optional[str] = Field(None, description="Error message for failed sync")

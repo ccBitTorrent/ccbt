@@ -88,8 +88,9 @@ async def test_nat_protocol_fallback(tmp_path: Path):
     
     Verifies that if NAT-PMP fails, UPnP is tried next.
     """
-    with patch("ccbt.nat.natpmp.NATPMPClient") as mock_natpmp_class, \
-         patch("ccbt.nat.upnp.UPnPClient") as mock_upnp_class:
+    with patch("ccbt.nat.manager.NATPMPClient") as mock_natpmp_class, patch(
+        "ccbt.nat.manager.UPnPClient"
+    ) as mock_upnp_class:
         
         # NAT-PMP fails
         mock_natpmp = MagicMock()

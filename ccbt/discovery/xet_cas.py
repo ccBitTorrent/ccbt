@@ -7,6 +7,8 @@ infrastructure, eliminating the need for HuggingFace's centralized CAS service.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import logging
 import time
 from typing import TYPE_CHECKING, Any, Optional
@@ -68,13 +70,87 @@ class P2PCASClient:
         self.key_manager = key_manager
         self.bloom_filter = bloom_filter
         self.catalog = catalog
+        self.pex_manager: Optional[Any] = None
+        self.peer_authorizer: Optional[Any] = None
+        self.discovery_backend_success_notifier: Optional[Any] = None
         self.local_chunks: dict[bytes, str] = {}  # hash -> local path
         # Discovery result cache: chunk_hash -> (peers, timestamp)
         self._discovery_cache: dict[bytes, tuple[list[PeerInfo], float]] = {}
         self._cache_ttl = 60.0  # Default 60 seconds, configurable
         self.logger = logging.getLogger(__name__)
 
-    async def announce_chunk(self, chunk_hash: bytes) -> None:
+    def _verify_signed_chunk_metadata(self, metadata: dict[str, Any]) -> bool:
+        """Verify signed DHT metadata when signature fields are present."""
+        public_key_hex = metadata.get("ed25519_public_key")
+        signature_hex = metadata.get("ed25519_signature")
+        if public_key_hex is None and signature_hex is None:
+            return True
+        if not isinstance(public_key_hex, str) or not isinstance(signature_hex, str):
+            return False
+        try:
+            from ccbt.security.key_manager import Ed25519KeyManager
+
+            public_key = bytes.fromhex(public_key_hex)
+            signature = bytes.fromhex(signature_hex)
+            signed_payload = json.dumps(
+                {
+                    "available": bool(metadata.get("available")),
+                    "type": metadata.get("type"),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            return Ed25519KeyManager.verify_signature(
+                signed_payload,
+                signature,
+                public_key,
+            )
+        except Exception:
+            self.logger.debug("Invalid signed chunk metadata", exc_info=True)
+            return False
+
+    def record_chunk_peer(
+        self, chunk_hash: bytes, peer_ip: str, peer_port: int
+    ) -> None:
+        """Record that a peer has a chunk (for multicast/gossip/LPD inbound).
+
+        Async-safe: schedules catalog.add_chunk on the running event loop.
+        Callable from sync callbacks (e.g. multicast chunk_callback).
+
+        Args:
+            chunk_hash: 32-byte chunk hash
+            peer_ip: Peer IP address
+            peer_port: Peer port
+
+        """
+        if len(chunk_hash) != 32 or not self.catalog:
+            return
+        catalog = self.catalog
+        add_chunk = getattr(catalog, "add_chunk", None)
+        if not callable(add_chunk):
+            return
+
+        peer_info: tuple[str, int] = (peer_ip, peer_port)
+
+        async def _add() -> None:
+            try:
+                await add_chunk(chunk_hash, peer_info)
+            except Exception as e:
+                self.logger.warning("Error recording chunk peer from inbound: %s", e)
+
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(_add())
+            task.add_done_callback(lambda _finished: None)
+        except RuntimeError:
+            pass
+
+    async def announce_chunk(
+        self,
+        chunk_hash: bytes,
+        peer_info: Optional[PeerInfo] = None,
+        workspace_id_hex: Optional[str] = None,
+    ) -> None:
         """Announce chunk availability to DHT/trackers.
 
         Stores chunk metadata in DHT (BEP 44) and announces to tracker
@@ -82,6 +158,8 @@ class P2PCASClient:
 
         Args:
             chunk_hash: 32-byte chunk hash
+            peer_info: Optional peer descriptor for catalog/tracker updates
+            workspace_id_hex: Optional workspace scope for tracker registration
 
         """
         if len(chunk_hash) != 32:
@@ -97,6 +175,9 @@ class P2PCASClient:
                     "type": "xet_chunk",
                     "available": True,
                 }
+                if peer_info is not None:
+                    metadata["ip"] = peer_info.ip
+                    metadata["port"] = peer_info.port
 
                 # Sign chunk metadata with Ed25519 if key_manager available
                 if self.key_manager:
@@ -118,14 +199,10 @@ class P2PCASClient:
                         self.logger.warning("Failed to sign chunk announcement: %s", e)
 
                 # Use DHT store method if available
-                if hasattr(self.dht, "store"):
+                if hasattr(self.dht, "store_chunk_hash"):
+                    await self.dht.store_chunk_hash(chunk_hash, metadata)
+                elif hasattr(self.dht, "store"):
                     await self.dht.store(chunk_hash, metadata)
-                elif hasattr(
-                    self.dht, "store_chunk_hash"
-                ):  # pragma: no cover - Alternative DHT storage method path
-                    await self.dht.store_chunk_hash(
-                        chunk_hash, metadata
-                    )  # pragma: no cover - Same context
                 else:
                     self.logger.warning(
                         "DHT client does not support chunk storage",
@@ -135,6 +212,8 @@ class P2PCASClient:
                     "Announced chunk %s to DHT",
                     chunk_hash.hex()[:16],
                 )
+                if callable(self.discovery_backend_success_notifier):
+                    self.discovery_backend_success_notifier("dht")
             except Exception as e:
                 self.logger.warning("Failed to announce chunk to DHT: %s", e)
 
@@ -153,10 +232,12 @@ class P2PCASClient:
         if self.catalog:
             try:
                 # Get our peer info if available
-                peer_info = None
-                if hasattr(self, "peer_info"):
-                    peer_info = (self.peer_info.ip, self.peer_info.port)  # type: ignore[attr-defined]
-                await self.catalog.add_chunk(chunk_hash, peer_info)
+                catalog_peer = None
+                if peer_info is not None:
+                    catalog_peer = (peer_info.ip, peer_info.port)
+                elif hasattr(self, "peer_info"):
+                    catalog_peer = (self.peer_info.ip, self.peer_info.port)  # type: ignore[attr-defined]
+                await self.catalog.add_chunk(chunk_hash, catalog_peer)
                 self.logger.debug(
                     "Added chunk %s to catalog",
                     chunk_hash.hex()[:16],
@@ -168,18 +249,32 @@ class P2PCASClient:
         if self.tracker:
             try:
                 if hasattr(self.tracker, "announce_chunk"):
-                    await self.tracker.announce_chunk(chunk_hash)
+                    if peer_info is None:
+                        await self.tracker.announce_chunk(
+                            chunk_hash,
+                            workspace_id_hex=workspace_id_hex,
+                        )
+                    else:
+                        await self.tracker.announce_chunk(
+                            chunk_hash,
+                            peer_info=peer_info,
+                            workspace_id_hex=workspace_id_hex,
+                        )
                 self.logger.debug(
                     "Announced chunk %s to tracker",
                     chunk_hash.hex()[:16],
                 )
+                if callable(self.discovery_backend_success_notifier):
+                    self.discovery_backend_success_notifier("tracker")
             except Exception as e:
                 self.logger.warning(
                     "Failed to announce chunk to tracker: %s",
                     e,
                 )
 
-    async def find_chunk_peers(self, chunk_hash: bytes) -> list[PeerInfo]:
+    async def find_chunk_peers(
+        self, chunk_hash: bytes, workspace_id_hex: Optional[str] = None
+    ) -> list[PeerInfo]:
         """Find peers that have a specific chunk.
 
         Queries DHT and tracker (if configured) to find peers that can
@@ -188,6 +283,7 @@ class P2PCASClient:
 
         Args:
             chunk_hash: 32-byte chunk hash
+            workspace_id_hex: Optional workspace scope for tracker lookup
 
         Returns:
             List of peers that can provide this chunk
@@ -284,6 +380,8 @@ class P2PCASClient:
                     len(peers),
                     chunk_hash.hex()[:16],
                 )
+                if callable(self.discovery_backend_success_notifier) and dht_results:
+                    self.discovery_backend_success_notifier("dht")
             except Exception as e:
                 self.logger.warning(
                     "Failed to query DHT for chunk: %s",
@@ -293,8 +391,11 @@ class P2PCASClient:
         # Query tracker if available
         if self.tracker:
             try:
+                tracker_peers: list[PeerInfo] = []
                 if hasattr(self.tracker, "get_chunk_peers"):
-                    tracker_peers = await self.tracker.get_chunk_peers(chunk_hash)
+                    tracker_peers = await self.tracker.get_chunk_peers(
+                        chunk_hash, workspace_id_hex=workspace_id_hex
+                    )
                     peers.extend(tracker_peers)
 
                 self.logger.debug(
@@ -302,14 +403,41 @@ class P2PCASClient:
                     len(peers),
                     chunk_hash.hex()[:16],
                 )
+                if callable(self.discovery_backend_success_notifier) and tracker_peers:
+                    self.discovery_backend_success_notifier("tracker")
             except Exception as e:
                 self.logger.warning(
                     "Failed to query tracker for chunk: %s",
                     e,
                 )
 
+        # Query PEX if available (sync, returns peers known to have chunk)
+        if self.pex_manager and hasattr(self.pex_manager, "get_peers_with_chunks"):
+            try:
+                pex_result = self.pex_manager.get_peers_with_chunks([chunk_hash])
+                if chunk_hash in pex_result:
+                    peers.extend(pex_result[chunk_hash])
+                self.logger.debug(
+                    "Found %d peers for chunk %s via PEX",
+                    len(pex_result.get(chunk_hash, [])),
+                    chunk_hash.hex()[:16],
+                )
+            except Exception as e:
+                self.logger.warning("Failed to query PEX for chunk: %s", e)
+
         # Remove duplicates
         deduplicated_peers = self._deduplicate_peers(peers)
+
+        # Optional strict-workspace filtering using session-provided peer authorizer.
+        # Peer key format follows existing connection id convention: "ip:port".
+        if callable(self.peer_authorizer):
+            filtered: list[PeerInfo] = []
+            for peer in deduplicated_peers:
+                peer_key = f"{peer.ip}:{peer.port}"
+                with contextlib.suppress(Exception):
+                    if self.peer_authorizer(peer_key, None):
+                        filtered.append(peer)
+            deduplicated_peers = filtered
 
         # Cache result
         self._discovery_cache[chunk_hash] = (deduplicated_peers, time.time())
@@ -385,6 +513,14 @@ class P2PCASClient:
 
         return results
 
+    def set_peer_authorizer(self, authorizer: Any) -> None:
+        """Set callback used to filter discovered peers by workspace auth policy."""
+        self.peer_authorizer = authorizer
+
+    def set_discovery_backend_success_notifier(self, notifier: Any) -> None:
+        """Set callback used to mark backend last_success timestamps."""
+        self.discovery_backend_success_notifier = notifier
+
     def register_pex_manager(self, pex_manager: Any) -> None:
         """Register PEX manager for chunk exchange.
 
@@ -394,21 +530,36 @@ class P2PCASClient:
         """
         self.pex_manager = pex_manager
 
-        # Register callback for PEX chunks
-        async def on_pex_chunks(chunk_hashes: list[bytes]) -> None:
-            """Handle chunks received via PEX."""
-            for chunk_hash in chunk_hashes:
-                # Update catalog if available
-                if len(chunk_hash) == 32 and self.catalog:
+        # Register callback for PEX chunks (signature: chunk_hashes, optional peer_ip, optional peer_port)
+        def on_pex_chunks(
+            chunk_hashes: list[bytes],
+            peer_ip: Optional[str] = None,
+            peer_port: Optional[int] = None,
+        ) -> None:
+            """Handle chunks received via PEX; update catalog with peer when available."""
+            peer_info = (
+                (peer_ip, peer_port)
+                if peer_ip is not None and peer_port is not None
+                else None
+            )
+
+            async def _add_to_catalog() -> None:
+                for chunk_hash in chunk_hashes:
+                    if len(chunk_hash) != 32 or not self.catalog:
+                        continue
                     try:
-                        # Get peer info from PEX if available
-                        # This is a simplified version - in practice, we'd track
-                        # which peer sent which chunks
-                        await self.catalog.add_chunk(chunk_hash, None)
+                        await self.catalog.add_chunk(chunk_hash, peer_info)
                     except Exception as e:
                         self.logger.warning("Error updating catalog from PEX: %s", e)
 
-        # Add callback to PEX manager
+            try:
+                loop = asyncio.get_running_loop()
+                task = loop.create_task(_add_to_catalog())
+                task.add_done_callback(lambda _finished: None)
+            except RuntimeError:
+                pass
+
+        # Add callback to PEX manager (sync callback)
         if hasattr(pex_manager, "chunk_callbacks"):
             pex_manager.chunk_callbacks.append(on_pex_chunks)
 
@@ -441,10 +592,6 @@ class P2PCASClient:
             msg = f"Chunk hash must be 32 bytes, got {len(chunk_hash)}"
             raise ValueError(msg)
 
-        if not torrent_data:
-            msg = "torrent_data is required for chunk download"
-            raise ValueError(msg)
-
         # Get extension manager and Xet extension
         from ccbt.extensions.manager import get_extension_manager
 
@@ -472,6 +619,12 @@ class P2PCASClient:
 
             # If no connection, establish one with handshake
             if not connection:  # pragma: no cover - New connection establishment path, tested in integration tests
+                if not torrent_data or "info_hash" not in torrent_data:
+                    msg = (
+                        "torrent_data with info_hash is required when no existing "
+                        "connection is available for chunk download"
+                    )
+                    raise ValueError(msg)
                 self.logger.debug(
                     "No existing connection to peer %s, establishing new connection",
                     peer,
@@ -504,15 +657,10 @@ class P2PCASClient:
                     msg = f"Peer {peer} does not support Xet extension"
                     raise ValueError(msg)
 
-            # Get Xet extension message ID
-            xet_ext_info = extension_protocol.get_extension_info("xet")
-            if (
-                not xet_ext_info
-            ):  # pragma: no cover - Extension info validation, defensive check
-                msg = "Xet extension not registered in protocol"
-                raise ValueError(msg)  # pragma: no cover - Same context
-
-            xet_message_id = xet_ext_info.message_id
+            xet_message_id = extension_protocol.get_peer_message_id(peer_id, "xet")
+            if xet_message_id is None:
+                msg = f"Peer {peer} has not advertised an Xet extension ID"
+                raise ValueError(msg)
 
             # Encode chunk request
             request_payload = xet_ext.encode_chunk_request(chunk_hash)
@@ -524,14 +672,7 @@ class P2PCASClient:
                 msg = f"Connection to peer {peer} not available"
                 raise ValueError(msg)  # pragma: no cover - Same context
 
-            # Encode as BitTorrent extension message (message ID 20)
-            # Note: encode_extension_message is called but result not used directly
-            # as we send the message through the connection
-            extension_protocol.encode_extension_message(xet_message_id, request_payload)
-
             # Send message: <length><message_id_20><extension_id><payload>
-            # ExtensionProtocol.encode_extension_message already includes length + message_id
-            # But we need to send it as BitTorrent message type 20
             from ccbt.protocols.bittorrent_v2 import _send_extension_message
 
             sent = await _send_extension_message(
@@ -665,6 +806,8 @@ class P2PCASClient:
                 return dht_result
 
             if isinstance(dht_result, dict):
+                if not self._verify_signed_chunk_metadata(dht_result):
+                    return None
                 # Extract IP and port from dict
                 ip = dht_result.get("ip") or dht_result.get("address")
                 port = dht_result.get("port")
@@ -694,7 +837,13 @@ class P2PCASClient:
         try:
             # Check if it's a chunk metadata entry
             if isinstance(value, dict) and value.get("type") == "xet_chunk":
+                if not self._verify_signed_chunk_metadata(value):
+                    return None
                 # Extract peer info from metadata
+                ip = value.get("ip") or value.get("address")
+                port = value.get("port")
+                if ip and port:
+                    return PeerInfo(ip=str(ip), port=int(port))
                 peer_id = value.get("peer_id")
                 if peer_id:
                     # Try to get peer info from peer_id

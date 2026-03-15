@@ -13,8 +13,9 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
+from ccbt.storage.xet_hashing import XetHasher
 from ccbt.utils.events import Event, EventType, emit_event
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,8 @@ class XetMessageType(IntEnum):
     # Bloom filter messages
     BLOOM_FILTER_REQUEST = 0x30  # Request peer's bloom filter
     BLOOM_FILTER_RESPONSE = 0x31  # Response with bloom filter data
+    # Gossip sync (receive path: peer sends us gossip messages)
+    GOSSIP_SYNC = 0x40  # Gossip message batch from peer (payload: JSON messages dict)
 
 
 @dataclass
@@ -70,6 +73,29 @@ class XetExtension:
         self.request_counter = 0
         self.chunk_provider: Optional[Callable[[bytes], Optional[bytes]]] = None
         self.folder_sync_handshake = folder_sync_handshake
+        self.version_provider: Optional[Callable[[str], Optional[str]]] = None
+        self.sync_mode_provider: Optional[Callable[[str], Optional[str]]] = None
+        self.update_handler: Optional[
+            Callable[
+                [
+                    str,
+                    Optional[str],
+                    str,
+                    bytes,
+                    Optional[str],
+                    str,
+                    Optional[str],
+                    Optional[str],
+                ],
+                Awaitable[None] | None,
+            ]
+        ] = None
+        self.bloom_provider: Optional[Callable[[str], bytes]] = None
+        self.on_bloom_response: Optional[Callable[[str, bytes], None]] = None
+        self.metadata_exchange: Optional[Any] = None
+        self.message_sender: Optional[
+            Callable[[str, bytes], Awaitable[bool] | bool]
+        ] = None
 
     def set_chunk_provider(self, provider: Callable[[bytes], Optional[bytes]]) -> None:
         """Set function to provide chunks by hash.
@@ -80,6 +106,56 @@ class XetExtension:
 
         """
         self.chunk_provider = provider
+
+    def set_version_provider(self, provider: Callable[[str], Optional[str]]) -> None:
+        """Set function that returns current folder version for a peer."""
+        self.version_provider = provider
+
+    def set_sync_mode_provider(self, provider: Callable[[str], Optional[str]]) -> None:
+        """Set function that returns sync mode for a peer."""
+        self.sync_mode_provider = provider
+
+    def set_update_handler(
+        self,
+        handler: Callable[
+            [
+                str,
+                Optional[str],
+                str,
+                bytes,
+                Optional[str],
+                str,
+                Optional[str],
+                Optional[str],
+            ],
+            Awaitable[None] | None,
+        ],
+    ) -> None:
+        """Set callback for incoming folder update notifications."""
+        self.update_handler = handler
+
+    def set_bloom_provider(self, provider: Callable[[str], bytes]) -> None:
+        """Set function that returns serialized bloom filter data for a peer."""
+        self.bloom_provider = provider
+
+    def set_metadata_exchange(self, metadata_exchange: Any) -> None:
+        """Attach metadata exchange helper used for folder metadata messages."""
+        self.metadata_exchange = metadata_exchange
+
+    def set_message_sender(
+        self, sender: Callable[[str, bytes], Awaitable[bool] | bool]
+    ) -> None:
+        """Attach a transport callback for outbound XET messages."""
+        self.message_sender = sender
+
+    async def send_message(self, peer_id: str, payload: bytes) -> bool:
+        """Send an outbound XET message through the configured transport."""
+        if self.message_sender is None:
+            return False
+        result = self.message_sender(peer_id, payload)
+        if hasattr(result, "__await__"):
+            return bool(await result)
+        return bool(result)
 
     def encode_handshake(self) -> dict[str, Any]:
         """Encode Xet extension handshake data.
@@ -93,7 +169,13 @@ class XetExtension:
                 "version": "1.0",
                 "supports_chunk_requests": True,
                 "supports_p2p_cas": True,
-                "supports_folder_sync": True,  # New: folder sync support
+                "supports_folder_sync": True,
+                "supports_delete_updates": True,
+                "supports_metadata_exchange": True,
+                "supports_bloom_filters": True,
+                "supports_discovery_hints": True,
+                "update_notify_version": 1,
+                "hash_algorithm": XetHasher.get_hash_identity(),
             }
         }
 
@@ -134,10 +216,14 @@ class XetExtension:
                 )
 
                 if handshake_info:
-                    # Verify allowlist hash
+                    # Verify allowlist hash and freshness (replay check)
                     peer_allowlist_hash = handshake_info.get("allowlist_hash")
                     if not self.folder_sync_handshake.verify_peer_allowlist(
-                        peer_id, peer_allowlist_hash
+                        peer_id,
+                        peer_allowlist_hash,
+                        peer_public_key=handshake_info.get("ed25519_public_key"),
+                        peer_workspace_id=handshake_info.get("workspace_id"),
+                        peer_nonce=handshake_info.get("ed25519_nonce"),
                     ):
                         logger.warning(
                             "Peer %s failed allowlist verification, rejecting",
@@ -145,15 +231,14 @@ class XetExtension:
                         )
                         return False
 
-                    # Verify peer identity if public key provided
-                    public_key = handshake_info.get("ed25519_public_key")
-                    if public_key and self.folder_sync_handshake.key_manager:
-                        # Note: Full signature verification would happen during
-                        # actual message exchange, not just handshake
-                        logger.debug(
-                            "Peer %s provided Ed25519 public key for verification",
+                    if not self.folder_sync_handshake.verify_handshake_identity(
+                        peer_id, handshake_info
+                    ):
+                        logger.warning(
+                            "Peer %s failed XET identity verification, rejecting",
                             peer_id,
                         )
+                        return False
 
                     logger.debug("Peer %s passed allowlist verification", peer_id)
             except Exception as e:
@@ -411,6 +496,7 @@ class XetExtension:
             "supports_p2p_cas": True,
             "supports_folder_sync": True,
             "version": "1.0",
+            "hash_algorithm": XetHasher.get_hash_identity(),
             "pending_requests": len(self.pending_requests),
         }
 
@@ -479,7 +565,14 @@ class XetExtension:
         return ref_bytes.decode("utf-8")
 
     def encode_update_notify(
-        self, file_path: str, chunk_hash: bytes, git_ref: Optional[str] = None
+        self,
+        file_path: str,
+        chunk_hash: bytes,
+        git_ref: Optional[str] = None,
+        workspace_id: Optional[bytes] = None,
+        operation: str = "upsert",
+        metadata_version: Optional[str] = None,
+        metadata_root: Optional[str] = None,
     ) -> bytes:
         """Encode folder update notification message.
 
@@ -487,19 +580,47 @@ class XetExtension:
             file_path: Path to updated file
             chunk_hash: Hash of updated chunk
             git_ref: Optional git commit hash/ref
+            workspace_id: Optional workspace identifier for routed updates
+            operation: Operation kind (`upsert` or `delete`)
+            metadata_version: Optional metadata snapshot version for validation
+            metadata_root: Optional metadata root hash for validation
 
         Returns:
             Encoded update notification message
 
         """
-        # Pack: <message_type><file_path_length><file_path><chunk_hash><has_ref><ref_length><ref_data>
+        # Pack:
+        # <message_type><version><operation><has_workspace><workspace_id?>
+        # <file_path_length><file_path><file_root_hash><has_ref><ref_length?><ref_data?>
+        # <has_metadata_version><metadata_version_length?><metadata_version?>
+        # <has_metadata_root><metadata_root_length?><metadata_root?>
+        #
+        # Runtime contract:
+        # - workspace_id should be present for routed workspace updates
+        # - file_path + chunk_hash are required for remote materialization
+        # - git_ref is advisory and may be omitted by older peers
+        # - operation distinguishes create/update/delete on the wire
         file_path_bytes = file_path.encode("utf-8")
+        operation_codes = {"upsert": 1, "delete": 2}
+        operation_code = operation_codes.get(operation, 1)
         parts = [
             struct.pack("!B", XetMessageType.FOLDER_UPDATE_NOTIFY),
-            struct.pack("!I", len(file_path_bytes)),
-            file_path_bytes,
-            chunk_hash,
+            struct.pack("!B", 1),
+            struct.pack("!B", operation_code),
+            struct.pack("!B", 1 if workspace_id is not None else 0),
         ]
+        if workspace_id is not None:
+            if len(workspace_id) != 32:
+                msg = f"Workspace ID must be 32 bytes, got {len(workspace_id)}"
+                raise ValueError(msg)
+            parts.append(workspace_id)
+        parts.extend(
+            [
+                struct.pack("!I", len(file_path_bytes)),
+                file_path_bytes,
+                chunk_hash,
+            ]
+        )
 
         if git_ref:
             ref_bytes = git_ref.encode("utf-8")
@@ -508,16 +629,40 @@ class XetExtension:
         else:
             parts.append(struct.pack("!B", 0))
 
+        if metadata_version:
+            metadata_version_bytes = metadata_version.encode("utf-8")
+            parts.append(struct.pack("!BI", 1, len(metadata_version_bytes)))
+            parts.append(metadata_version_bytes)
+        else:
+            parts.append(struct.pack("!B", 0))
+
+        if metadata_root:
+            metadata_root_bytes = metadata_root.encode("utf-8")
+            parts.append(struct.pack("!BI", 1, len(metadata_root_bytes)))
+            parts.append(metadata_root_bytes)
+        else:
+            parts.append(struct.pack("!B", 0))
+
         return b"".join(parts)
 
-    def decode_update_notify(self, data: bytes) -> tuple[str, bytes, Optional[str]]:
+    def decode_update_notify(
+        self, data: bytes
+    ) -> tuple[
+        Optional[str],
+        str,
+        bytes,
+        Optional[str],
+        str,
+        Optional[str],
+        Optional[str],
+    ]:
         """Decode folder update notification message.
 
         Args:
             data: Encoded notification message
 
         Returns:
-            Tuple of (file_path, chunk_hash, git_ref)
+            Tuple of (workspace_id_hex, file_path, chunk_hash, git_ref, operation, metadata_version, metadata_root)
 
         """
         if len(data) < 1:
@@ -529,17 +674,43 @@ class XetExtension:
             msg = "Invalid message type for update notify"
             raise ValueError(msg)
 
-        if len(data) < 5:
+        if len(data) < 2:
             msg = "Incomplete update notify message"
             raise ValueError(msg)
 
-        file_path_length = struct.unpack("!I", data[1:5])[0]
-        if len(data) < 5 + file_path_length:
+        offset = 1
+        version = data[offset]
+        offset += 1
+        operation = "upsert"
+        if version >= 1:
+            if len(data) < offset + 2:
+                msg = "Incomplete versioned update notify header"
+                raise ValueError(msg)
+            operation_code = data[offset]
+            operation = "delete" if operation_code == 2 else "upsert"
+            offset += 1
+        has_workspace = data[offset]
+        offset += 1
+
+        workspace_id_hex: Optional[str] = None
+        if has_workspace == 1:
+            if len(data) < offset + 32:
+                msg = "Incomplete workspace id in update notify"
+                raise ValueError(msg)
+            workspace_id_hex = data[offset : offset + 32].hex()
+            offset += 32
+
+        if len(data) < offset + 4:
+            msg = "Incomplete file path length in update notify"
+            raise ValueError(msg)
+        file_path_length = struct.unpack("!I", data[offset : offset + 4])[0]
+        offset += 4
+        if len(data) < offset + file_path_length:
             msg = "Incomplete file path in update notify"
             raise ValueError(msg)
 
-        file_path = data[5 : 5 + file_path_length].decode("utf-8")
-        offset = 5 + file_path_length
+        file_path = data[offset : offset + file_path_length].decode("utf-8")
+        offset += file_path_length
 
         if len(data) < offset + 32:
             msg = "Incomplete chunk hash in update notify"
@@ -560,8 +731,135 @@ class XetExtension:
                 offset += 4
                 if len(data) >= offset + ref_length:
                     git_ref = data[offset : offset + ref_length].decode("utf-8")
+                    offset += ref_length
 
-        return file_path, chunk_hash, git_ref
+        metadata_version: Optional[str] = None
+        if len(data) > offset:
+            has_metadata_version = data[offset]
+            offset += 1
+            if has_metadata_version == 1:
+                if len(data) < offset + 4:
+                    msg = "Incomplete metadata version in update notify"
+                    raise ValueError(msg)
+                metadata_length = struct.unpack("!I", data[offset : offset + 4])[0]
+                offset += 4
+                if len(data) < offset + metadata_length:
+                    msg = "Incomplete metadata version payload in update notify"
+                    raise ValueError(msg)
+                metadata_version = data[offset : offset + metadata_length].decode(
+                    "utf-8"
+                )
+                offset += metadata_length
+
+        metadata_root: Optional[str] = None
+        if len(data) > offset:
+            has_metadata_root = data[offset]
+            offset += 1
+            if has_metadata_root == 1:
+                if len(data) < offset + 4:
+                    msg = "Incomplete metadata root in update notify"
+                    raise ValueError(msg)
+                metadata_root_length = struct.unpack("!I", data[offset : offset + 4])[0]
+                offset += 4
+                if len(data) < offset + metadata_root_length:
+                    msg = "Incomplete metadata root payload in update notify"
+                    raise ValueError(msg)
+                metadata_root = data[offset : offset + metadata_root_length].decode(
+                    "utf-8"
+                )
+
+        return (
+            workspace_id_hex,
+            file_path,
+            chunk_hash,
+            git_ref,
+            operation,
+            metadata_version,
+            metadata_root,
+        )
+
+    def encode_sync_mode_request(self) -> bytes:
+        """Encode folder sync mode request message."""
+        return struct.pack("!B", XetMessageType.FOLDER_SYNC_MODE_REQUEST)
+
+    def decode_sync_mode_request(self, data: bytes) -> bool:
+        """Decode folder sync mode request message."""
+        if len(data) < 1 or data[0] != XetMessageType.FOLDER_SYNC_MODE_REQUEST:
+            msg = "Invalid sync mode request message"
+            raise ValueError(msg)
+        return True
+
+    def encode_sync_mode_response(self, sync_mode: Optional[str]) -> bytes:
+        """Encode folder sync mode response message."""
+        if not sync_mode:
+            return struct.pack("!BB", XetMessageType.FOLDER_SYNC_MODE_RESPONSE, 0)
+        mode_bytes = sync_mode.encode("utf-8")
+        return (
+            struct.pack(
+                "!BBI", XetMessageType.FOLDER_SYNC_MODE_RESPONSE, 1, len(mode_bytes)
+            )
+            + mode_bytes
+        )
+
+    def decode_sync_mode_response(self, data: bytes) -> Optional[str]:
+        """Decode folder sync mode response message."""
+        if len(data) < 2 or data[0] != XetMessageType.FOLDER_SYNC_MODE_RESPONSE:
+            msg = "Invalid sync mode response message"
+            raise ValueError(msg)
+        if data[1] == 0:
+            return None
+        if len(data) < 6:
+            msg = "Incomplete sync mode response message"
+            raise ValueError(msg)
+        mode_length = struct.unpack("!I", data[2:6])[0]
+        if len(data) < 6 + mode_length:
+            msg = "Incomplete sync mode response data"
+            raise ValueError(msg)
+        return data[6 : 6 + mode_length].decode("utf-8")
+
+    async def handle_version_request(self, peer_id: str) -> bytes:
+        """Build a version response for a peer."""
+        git_ref = self.version_provider(peer_id) if self.version_provider else None
+        return self.encode_version_response(git_ref)
+
+    async def handle_update_notify(
+        self,
+        peer_id: str,
+        workspace_id_hex: Optional[str],
+        file_path: str,
+        chunk_hash: bytes,
+        git_ref: Optional[str],
+        operation: str = "upsert",
+        metadata_version: Optional[str] = None,
+        metadata_root: Optional[str] = None,
+    ) -> None:
+        """Handle an incoming folder update notification."""
+        if self.update_handler is None:
+            return
+        result = self.update_handler(
+            peer_id,
+            workspace_id_hex,
+            file_path,
+            chunk_hash,
+            git_ref,
+            operation,
+            metadata_version,
+            metadata_root,
+        )
+        if hasattr(result, "__await__"):
+            await result
+
+    async def handle_sync_mode_request(self, peer_id: str) -> bytes:
+        """Build a sync mode response for a peer."""
+        sync_mode = (
+            self.sync_mode_provider(peer_id) if self.sync_mode_provider else None
+        )
+        return self.encode_sync_mode_response(sync_mode)
+
+    async def handle_bloom_request(self, peer_id: str) -> bytes:
+        """Build a bloom filter response for a peer."""
+        bloom_data = self.bloom_provider(peer_id) if self.bloom_provider else b""
+        return self.encode_bloom_response(bloom_data)
 
     def encode_bloom_request(self) -> bytes:
         """Encode bloom filter request message.

@@ -44,7 +44,8 @@ class MetricsAndStatus:
             total_downloaded += torrent.downloaded_bytes
             total_uploaded += torrent.uploaded_bytes
             total_left += torrent.left_bytes
-            total_peers += len(torrent.peers)
+            # Session.peers is {"count": n}; use count, not len(dict)
+            total_peers += (getattr(torrent, "peers", None) or {}).get("count", 0)
             total_download_rate += torrent.download_rate
             total_upload_rate += torrent.upload_rate
 
@@ -141,12 +142,11 @@ class StatusLoop:
                 if peer_manager and hasattr(peer_manager, "connections"):
                     try:
                         actual_peer_count = len(peer_manager.connections)  # type: ignore[attr-defined]
-                        status["peers"] = actual_peer_count
                         status["connected_peers"] = actual_peer_count
                     except Exception:
                         pass
 
-                connected_peers = status.get("connected_peers", status.get("peers", 0))
+                connected_peers = status.get("connected_peers", 0)
                 download_rate = status.get("download_rate", 0.0)
                 upload_rate = status.get("upload_rate", 0.0)
                 download_complete = status.get(
@@ -225,13 +225,13 @@ class StatusLoop:
                         progress * 100,
                     )
 
-                # Update cached status
+                # Update cached status (canonical keys; preserve byte counters)
                 # Use setattr to avoid SLF001 for internal cache
                 cached_status = {
-                    "downloaded": 0,
-                    "uploaded": 0,
-                    "left": 0,
-                    "peers": connected_peers,
+                    "downloaded": status.get("downloaded", 0),
+                    "uploaded": status.get("uploaded", 0),
+                    "left": status.get("left", 0),
+                    "connected_peers": connected_peers,
                     "download_rate": download_rate,
                     "upload_rate": upload_rate,
                     "progress": progress,

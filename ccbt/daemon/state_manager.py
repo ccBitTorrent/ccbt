@@ -33,6 +33,17 @@ from ccbt.utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def _is_valid_workspace_id_hex(workspace_id_hex: str) -> bool:
+    """Return True when the workspace identifier is valid 32-byte hex."""
+    if len(workspace_id_hex) != 64:
+        return False
+    try:
+        bytes.fromhex(workspace_id_hex)
+    except ValueError:
+        return False
+    return True
+
+
 class StateManager:
     """Manages daemon state persistence using msgpack format."""
 
@@ -256,6 +267,8 @@ class StateManager:
                     e,
                 )
 
+            # Canonical internal uses connected_peers; state model uses num_peers
+            num_peers = status.get("connected_peers", status.get("num_peers", 0))
             torrents[info_hash_hex] = TorrentState(
                 info_hash=info_hash_hex,
                 name=status.get("name", "Unknown"),
@@ -266,7 +279,7 @@ class StateManager:
                 paused=status.get("status") == "paused",
                 download_rate=status.get("download_rate", 0.0),
                 upload_rate=status.get("upload_rate", 0.0),
-                num_peers=status.get("num_peers", 0),
+                num_peers=num_peers,
                 total_size=status.get("total_size", 0),
                 downloaded=status.get("downloaded", 0),
                 uploaded=status.get("uploaded", 0),
@@ -313,6 +326,25 @@ class StateManager:
             nat_mapped_ports=nat_mapped_ports,
         )
 
+        xet_folder_records: list[dict[str, Any]] = []
+        if hasattr(session_manager, "list_xet_folders"):
+            try:
+                xet_folder_records = await session_manager.list_xet_folders()
+            except Exception as e:
+                logger.debug("Failed to collect XET folders for state: %s", e)
+
+        # XET metadata registry: keys workspace_id_hex (str), values metadata bytes as hex (str)
+        xet_metadata_registry: dict[str, str] = {}
+        registry = getattr(session_manager, "_xet_metadata_registry", {})
+        if isinstance(registry, dict):
+            xet_metadata_registry = {
+                key: value.hex()
+                for key, value in registry.items()
+                if isinstance(key, str)
+                and _is_valid_workspace_id_hex(key)
+                and isinstance(value, bytes)
+            }
+
         # Create state
         return DaemonState(
             version=STATE_VERSION,
@@ -321,6 +353,10 @@ class StateManager:
             torrents=torrents,
             session=session,
             components=components,
+            metadata={
+                "xet_folders": xet_folder_records,
+                "xet_metadata_registry": xet_metadata_registry,
+            },
         )
 
     async def validate_state(self, state: DaemonState) -> bool:

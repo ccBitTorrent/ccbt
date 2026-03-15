@@ -5077,7 +5077,10 @@ class AsyncPieceManager:
         elif (
             self.config.strategy.piece_selection == PieceSelectionStrategy.SEQUENTIAL
         ):  # pragma: no cover - Strategy branch
-            await self._select_sequential()
+            if self.config.strategy.streaming_mode:
+                await self._select_sequential_streaming()
+            else:
+                await self._select_sequential()
         elif (
             self.config.strategy.piece_selection
             == PieceSelectionStrategy.BANDWIDTH_WEIGHTED_RAREST
@@ -6963,8 +6966,8 @@ class AsyncPieceManager:
                     # Increase priority for pieces in seek window
                     self.pieces[piece_idx].priority += 500
 
-            # Trigger piece selection update
-            await self._select_sequential()
+        # Trigger piece selection update after releasing the lock.
+        await self._select_sequential_streaming()
 
     async def _select_round_robin(self) -> None:
         """Select pieces in round-robin fashion.

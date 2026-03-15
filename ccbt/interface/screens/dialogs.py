@@ -1319,7 +1319,11 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
             
             # Update status message
             if self._status_widget:
-                peers = status.get("num_peers", 0) if status else 0
+                peers = (
+                    status.get("connected_peers", status.get("num_peers", 0))
+                    if status
+                    else 0
+                )
                 self._status_widget.update(f"Connected to {peers} peer(s), fetching metadata...")
         except Exception as e:
             import logging

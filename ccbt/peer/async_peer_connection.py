@@ -547,6 +547,7 @@ class AsyncPeerConnectionManager:
         # Metadata exchange state tracking (per connection)
         # Maps connection peer_key -> {ut_metadata_id, metadata_size, pieces: dict, events: dict}
         self._metadata_exchange_state: dict[str, dict[str, Any]] = {}
+        self._xet_peer_auth: dict[str, dict[str, Any]] = {}
 
         # Circuit breaker for peer connections
         if self.config.network.circuit_breaker_enabled:
@@ -3385,7 +3386,7 @@ class AsyncPeerConnectionManager:
                         ):  # pragma: no cover - Same context
                             # CRITICAL FIX: Handle CancelledError as a temporary failure (not permanent)
                             # Cancelled connections should be retried in subsequent batches
-                            if isinstance(result, asyncio.CancelledError):
+                            if isinstance(conn_result, asyncio.CancelledError):
                                 # Cancelled connections are temporary - don't mark as permanent failure
                                 # They'll be retried in subsequent batches
                                 self.logger.debug(
@@ -3397,8 +3398,8 @@ class AsyncPeerConnectionManager:
                                 connection_stats["failed"] += 1
 
                             # CRITICAL FIX: Record failure with exponential backoff tracking
-                            error_str = str(result)
-                            error_type = type(result).__name__
+                            error_str = str(conn_result)
+                            error_type = type(conn_result).__name__
 
                             # Determine failure reason for better retry strategy
                             # CRITICAL FIX: Categorize errors as temporary (should retry) vs permanent (should not retry)
@@ -3422,7 +3423,7 @@ class AsyncPeerConnectionManager:
                                 connection_stats["connection_refused"] += 1
                                 is_temporary = True  # Connection refused is temporary - peer may be busy
                             elif "timeout" in error_str.lower() or isinstance(
-                                result, asyncio.TimeoutError
+                                conn_result, asyncio.TimeoutError
                             ):
                                 failure_reason = "timeout"
                                 connection_stats["timeout"] += 1
@@ -3502,7 +3503,7 @@ class AsyncPeerConnectionManager:
                                 self.logger.warning(
                                     "Permanent connection failure to %s: %s (reason: %s, will not retry)",
                                     peer_info,
-                                    result,
+                                    conn_result,
                                     failure_reason,
                                 )
                             elif failure_reason == "semaphore_timeout":
@@ -3513,7 +3514,7 @@ class AsyncPeerConnectionManager:
                                         "This is normal on Windows when many connections are attempted simultaneously. "
                                         "Will retry after %.1fs (attempt %d)",
                                         peer_info,
-                                        result,
+                                        conn_result,
                                         backoff_interval,
                                         fail_count,
                                     )
@@ -3521,7 +3522,7 @@ class AsyncPeerConnectionManager:
                                     self.logger.warning(
                                         "Connection semaphore timeout to %s: %s (will retry after %.1fs, attempt %d)",
                                         peer_info,
-                                        result,
+                                        conn_result,
                                         backoff_interval,
                                         fail_count,
                                     )
@@ -3538,7 +3539,7 @@ class AsyncPeerConnectionManager:
                                 self.logger.debug(
                                     "Temporary connection failure to %s: %s (reason: %s, will retry after %.1fs, attempt %d)",
                                     peer_info,
-                                    result,
+                                    conn_result,
                                     failure_reason,
                                     backoff_interval,
                                     fail_count,
@@ -3550,7 +3551,7 @@ class AsyncPeerConnectionManager:
                                     self.logger.warning(
                                         "Temporary connection failure to %s: %s (will retry after %.1fs, attempt %d, reason: %s)",
                                         peer_info,
-                                        result,
+                                        conn_result,
                                         backoff_interval,
                                         fail_count,
                                         failure_reason,
@@ -3559,7 +3560,7 @@ class AsyncPeerConnectionManager:
                                     self.logger.debug(
                                         "Temporary connection failure to %s: %s (will retry after %.1fs, attempt %d, reason: %s)",
                                         peer_info,
-                                        result,
+                                        conn_result,
                                         backoff_interval,
                                         fail_count,
                                         failure_reason,
@@ -6927,7 +6928,7 @@ class AsyncPeerConnectionManager:
                         # Log and return to avoid processing invalid data
                         return
 
-                    # Store peer extensions (this will extract SSL capability)
+                    # Store peer extensions (this also normalizes the peer BEP 10 message map)
                     extension_manager.set_peer_extensions(peer_id, handshake_data)
 
                     # Update connection's peer_info with SSL capability if discovered
@@ -6949,73 +6950,140 @@ class AsyncPeerConnectionManager:
                     try:
                         from ccbt.extensions.xet_handshake import XetHandshakeExtension
                         from ccbt.session.session import AsyncSessionManager
+                        from ccbt.storage.xet_hashing import XetHasher
 
-                        # Get XET handshake extension if available
-                        xet_handshake = getattr(self, "_xet_handshake", None)
-                        # Try to get from session manager if available
-                        if (
-                            xet_handshake is None
-                            and hasattr(self, "session_manager")
-                            and isinstance(self.session_manager, AsyncSessionManager)
-                        ):
-                            # Get XET sync manager if available
-                            sync_manager = getattr(
-                                self.session_manager, "_xet_sync_manager", None
+                        provisional_handshake = XetHandshakeExtension(
+                            require_signed_metadata=False
+                        )
+                        peer_xet_data = provisional_handshake.decode_handshake(
+                            peer_id, handshake_data
+                        )
+                        if peer_xet_data:
+                            peer_workspace_id = peer_xet_data.get("workspace_id")
+                            workspace_id_hex = (
+                                peer_workspace_id.hex()
+                                if isinstance(peer_workspace_id, bytes)
+                                else None
                             )
-                            if sync_manager:
-                                allowlist_hash = sync_manager.get_allowlist_hash()
-                                sync_mode = sync_manager.get_sync_mode()
-                                git_ref = sync_manager.get_current_git_ref()
-                                xet_handshake = XetHandshakeExtension(
-                                    allowlist_hash=allowlist_hash,
-                                    sync_mode=sync_mode,
-                                    git_ref=git_ref,
-                                )
-                                self._xet_handshake = xet_handshake
-
-                        if xet_handshake:
-                            # Decode XET handshake from peer
-                            peer_xet_data = xet_handshake.decode_handshake(
-                                peer_id, handshake_data
-                            )
-
-                            if peer_xet_data:
-                                # Verify allowlist hash
-                                peer_allowlist_hash = peer_xet_data.get(
-                                    "allowlist_hash"
-                                )
-                                if not xet_handshake.verify_peer_allowlist(
-                                    peer_id, peer_allowlist_hash
-                                ):
-                                    self.logger.warning(
-                                        "Rejecting peer %s: allowlist verification failed",
-                                        connection.peer_info,
+                            transport_state = None
+                            if hasattr(self, "session_manager") and isinstance(
+                                self.session_manager, AsyncSessionManager
+                            ):
+                                transport_state = (
+                                    self.session_manager.get_xet_transport_state(
+                                        workspace_id_hex=workspace_id_hex
                                     )
-                                    # Close connection if allowlist verification fails
-                                    await connection.close()
-                                    return
-
-                                # Negotiate sync mode
-                                peer_sync_mode = peer_xet_data.get(
-                                    "sync_mode", "best_effort"
                                 )
-                                agreed_mode = xet_handshake.negotiate_sync_mode(
-                                    peer_id, peer_sync_mode
-                                )
-                                if agreed_mode is None:
-                                    self.logger.warning(
-                                        "Rejecting peer %s: sync mode negotiation failed",
-                                        connection.peer_info,
-                                    )
-                                    await connection.close()
-                                    return
-
-                                self.logger.info(
-                                    "XET handshake verified for peer %s: sync_mode=%s, git_ref=%s",
+                            if transport_state is None:
+                                self.logger.warning(
+                                    "Rejecting peer %s: no live XET workspace state for %s",
                                     connection.peer_info,
-                                    agreed_mode,
-                                    peer_xet_data.get("git_ref"),
+                                    workspace_id_hex,
                                 )
+                                await connection.close()
+                                return
+                            xet_ext = extension_manager.get_extension("xet")
+                            allowlist_hash = transport_state.get("allowlist_hash")
+                            if isinstance(allowlist_hash, str):
+                                with contextlib.suppress(ValueError):
+                                    allowlist_hash = bytes.fromhex(allowlist_hash)
+                            if not isinstance(allowlist_hash, bytes):
+                                allowlist_hash = None
+                            xet_handshake = XetHandshakeExtension(
+                                allowlist_hash=allowlist_hash,
+                                sync_mode=str(
+                                    transport_state.get("sync_mode", "best_effort")
+                                ),
+                                git_ref=transport_state.get("git_ref"),
+                                key_manager=getattr(self, "key_manager", None),
+                                workspace_id=transport_state.get("workspace_id"),
+                                hash_algorithm=str(
+                                    transport_state.get("hash_algorithm")
+                                    or XetHasher.get_hash_algorithm()
+                                ),
+                                capabilities=(
+                                    xet_ext.get_capabilities() if xet_ext else {}
+                                ),
+                                allowlist=transport_state.get("allowlist"),
+                                auth_scope=str(
+                                    transport_state.get(
+                                        "auth_scope", "strict_workspace_auth"
+                                    )
+                                ),
+                                require_signed_metadata=bool(
+                                    transport_state.get("require_signed_metadata", True)
+                                ),
+                            )
+                            self._xet_handshake = xet_handshake
+                            if not xet_handshake.verify_peer_allowlist(
+                                peer_id,
+                                peer_xet_data.get("allowlist_hash"),
+                                peer_xet_data.get("ed25519_public_key"),
+                                peer_workspace_id=peer_workspace_id,
+                                peer_nonce=peer_xet_data.get("ed25519_nonce"),
+                            ):
+                                self.logger.warning(
+                                    "Rejecting peer %s: allowlist verification failed",
+                                    connection.peer_info,
+                                )
+                                await connection.close()
+                                return
+                            if not xet_handshake.verify_handshake_identity(
+                                peer_id, peer_xet_data
+                            ):
+                                self.logger.warning(
+                                    "Rejecting peer %s: XET identity verification failed",
+                                    connection.peer_info,
+                                )
+                                await connection.close()
+                                return
+                            peer_hash_algorithm = XetHasher.normalize_hash_algorithm(
+                                str(
+                                    peer_xet_data.get(
+                                        "hash_algorithm",
+                                        XetHasher.get_hash_algorithm(),
+                                    )
+                                )
+                            )
+                            local_hash_algorithm = XetHasher.normalize_hash_algorithm(
+                                xet_handshake.hash_algorithm
+                            )
+                            if peer_hash_algorithm != local_hash_algorithm:
+                                self.logger.warning(
+                                    "Rejecting peer %s: hash algorithm mismatch local=%s peer=%s",
+                                    connection.peer_info,
+                                    local_hash_algorithm,
+                                    peer_hash_algorithm,
+                                )
+                                await connection.close()
+                                return
+                            peer_sync_mode = peer_xet_data.get(
+                                "sync_mode", "best_effort"
+                            )
+                            agreed_mode = xet_handshake.negotiate_sync_mode(
+                                peer_id, peer_sync_mode
+                            )
+                            if agreed_mode is None:
+                                self.logger.warning(
+                                    "Rejecting peer %s: sync mode negotiation failed",
+                                    connection.peer_info,
+                                )
+                                await connection.close()
+                                return
+                            self.set_peer_xet_auth(
+                                peer_id,
+                                workspace_id_hex=workspace_id_hex,
+                                authorized=True,
+                                auth_scope=str(peer_xet_data.get("auth_scope")),
+                                handshake_info=peer_xet_data,
+                            )
+                            self.logger.info(
+                                "XET handshake verified for peer %s: workspace=%s sync_mode=%s, git_ref=%s",
+                                connection.peer_info,
+                                workspace_id_hex,
+                                agreed_mode,
+                                peer_xet_data.get("git_ref"),
+                            )
                     except Exception as e:
                         # Log but don't fail connection if XET handshake fails
                         # (peer may not support XET folder sync)
@@ -7335,13 +7403,24 @@ class AsyncPeerConnectionManager:
                                     exc_info=True,
                                 )
 
+                resolved_extension_name = extension_protocol.get_peer_extension_name(
+                    peer_id, extension_id
+                )
+
                 # Handle other extension messages only if ut_metadata wasn't handled
                 # Use registered extension handlers for pluggable architecture
                 if not ut_metadata_handled:
-                    # Check if there's a registered handler for this extension_id
-                    registered_handler = extension_protocol.message_handlers.get(
-                        extension_id
-                    )
+                    registered_handler = None
+                    if resolved_extension_name is not None:
+                        local_ext_info = extension_protocol.get_extension_info(
+                            resolved_extension_name
+                        )
+                        if local_ext_info is not None:
+                            registered_handler = (
+                                extension_protocol.message_handlers.get(
+                                    local_ext_info.message_id
+                                )
+                            )
                     if registered_handler:
                         # Use registered handler (for extensions that register via ExtensionProtocol)
                         try:
@@ -7349,14 +7428,13 @@ class AsyncPeerConnectionManager:
                                 peer_id, extension_payload
                             )
                             if response and connection.writer:
-                                # Send response back
-                                extension_message = (
-                                    extension_protocol.encode_extension_message(
-                                        extension_id, response
-                                    )
+                                from ccbt.protocols.bittorrent_v2 import (
+                                    _send_extension_message,
                                 )
-                                connection.writer.write(extension_message)
-                                await connection.writer.drain()
+
+                                await _send_extension_message(
+                                    connection, extension_id, response
+                                )
                         except Exception as handler_error:
                             self.logger.debug(
                                 "Error in registered extension handler for extension_id=%d from %s: %s",
@@ -7367,38 +7445,34 @@ class AsyncPeerConnectionManager:
                     else:
                         # Fallback to ExtensionManager handlers for extensions that don't use registration
                         # Handle SSL extension messages
-                        ssl_ext_info = extension_protocol.get_extension_info("ssl")
-                        if ssl_ext_info and extension_id == ssl_ext_info.message_id:
+                        if resolved_extension_name == "ssl":
                             # Route to SSL extension handler
                             response = await extension_manager.handle_ssl_message(
                                 peer_id, extension_id, extension_payload
                             )
                             if response and connection.writer:
-                                # Send response back
-                                extension_message = (
-                                    extension_protocol.encode_extension_message(
-                                        extension_id, response
-                                    )
+                                from ccbt.protocols.bittorrent_v2 import (
+                                    _send_extension_message,
                                 )
-                                connection.writer.write(extension_message)
-                                await connection.writer.drain()
+
+                                await _send_extension_message(
+                                    connection, extension_id, response
+                                )
 
                         # Handle Xet extension messages
-                        xet_ext_info = extension_protocol.get_extension_info("xet")
-                        if xet_ext_info and extension_id == xet_ext_info.message_id:
+                        if resolved_extension_name == "xet":
                             # Route to Xet extension handler
                             response = await extension_manager.handle_xet_message(
                                 peer_id, extension_id, extension_payload
                             )
                             if response and connection.writer:
-                                # Send response back
-                                extension_message = (
-                                    extension_protocol.encode_extension_message(
-                                        extension_id, response
-                                    )
+                                from ccbt.protocols.bittorrent_v2 import (
+                                    _send_extension_message,
                                 )
-                                connection.writer.write(extension_message)
-                                await connection.writer.drain()
+
+                                await _send_extension_message(
+                                    connection, extension_id, response
+                                )
 
         except Exception as e:
             self.logger.warning(
@@ -12039,6 +12113,37 @@ class AsyncPeerConnectionManager:
                     connection, lock_held=True
                 )  # pragma: no cover - Same context
 
+    def set_peer_xet_auth(
+        self,
+        peer_id: str,
+        *,
+        workspace_id_hex: Optional[str],
+        authorized: bool,
+        auth_scope: Optional[str] = None,
+        handshake_info: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Persist XET authorization state for a connected peer."""
+        if not authorized:
+            self._xet_peer_auth.pop(peer_id, None)
+            return
+        self._xet_peer_auth[peer_id] = {
+            "workspace_id_hex": workspace_id_hex,
+            "authorized": True,
+            "auth_scope": auth_scope,
+            "handshake_info": dict(handshake_info or {}),
+        }
+
+    def is_peer_xet_authorized(
+        self, peer_id: str, workspace_id_hex: Optional[str] = None
+    ) -> bool:
+        """Return whether a peer passed XET handshake authorization."""
+        auth_state = self._xet_peer_auth.get(peer_id)
+        if not auth_state or not auth_state.get("authorized", False):
+            return False
+        if workspace_id_hex is None:
+            return True
+        return auth_state.get("workspace_id_hex") == workspace_id_hex
+
     async def _send_our_extension_handshake(
         self, connection: AsyncPeerConnection
     ) -> None:
@@ -12089,15 +12194,24 @@ class AsyncPeerConnectionManager:
                 # Already registered, that's fine
                 pass
 
-            # Create our extension handshake dictionary
-            # BEP 10 format: d<m><ut_metadata><message_id>e
-            # We need: {"m": {"ut_metadata": 1}}
-            handshake_dict = {b"m": {b"ut_metadata": 1}}
+            local_message_map = extension_protocol.get_local_message_map()
+            if "ut_metadata" not in local_message_map:
+                local_message_map["ut_metadata"] = 1
+
+            # Create our extension handshake dictionary with the canonical BEP 10
+            # message map. Peer-local extension IDs are negotiated via "m".
+            handshake_dict = {
+                b"m": {
+                    name.encode("utf-8"): message_id
+                    for name, message_id in sorted(local_message_map.items())
+                }
+            }
 
             # Add XET folder sync handshake data if available
             try:
                 from ccbt.extensions.xet_handshake import XetHandshakeExtension
                 from ccbt.session.session import AsyncSessionManager
+                from ccbt.storage.xet_hashing import XetHasher
 
                 xet_handshake = getattr(self, "_xet_handshake", None)
                 # Try to get from session manager if available
@@ -12106,22 +12220,59 @@ class AsyncPeerConnectionManager:
                     and hasattr(self, "session_manager")
                     and isinstance(self.session_manager, AsyncSessionManager)
                 ):
-                    sync_manager = getattr(
-                        self.session_manager, "_xet_sync_manager", None
+                    peer_key = (
+                        str(connection.peer_info) if connection.peer_info else None
                     )
-                    if sync_manager:
-                        allowlist_hash = sync_manager.get_allowlist_hash()
-                        sync_mode = sync_manager.get_sync_mode()
-                        git_ref = sync_manager.get_current_git_ref()
+                    workspace_id_hex = None
+                    if peer_key is not None:
+                        auth_state = self._xet_peer_auth.get(peer_key, {})
+                        workspace_id_hex = auth_state.get("workspace_id_hex")
+                    transport_state = self.session_manager.get_xet_transport_state(
+                        workspace_id_hex=workspace_id_hex
+                    )
+                    if transport_state:
+                        xet_ext = extension_manager.get_extension("xet")
+                        allowlist_hash = transport_state.get("allowlist_hash")
+                        if isinstance(allowlist_hash, str):
+                            with contextlib.suppress(ValueError):
+                                allowlist_hash = bytes.fromhex(allowlist_hash)
+                        if not isinstance(allowlist_hash, bytes):
+                            allowlist_hash = None
                         xet_handshake = XetHandshakeExtension(
                             allowlist_hash=allowlist_hash,
-                            sync_mode=sync_mode,
-                            git_ref=git_ref,
+                            sync_mode=str(
+                                transport_state.get("sync_mode", "best_effort")
+                            ),
+                            git_ref=transport_state.get("git_ref"),
+                            key_manager=getattr(self, "key_manager", None),
+                            workspace_id=transport_state.get("workspace_id"),
+                            hash_algorithm=str(
+                                transport_state.get("hash_algorithm")
+                                or XetHasher.get_hash_algorithm()
+                            ),
+                            capabilities=xet_ext.get_capabilities() if xet_ext else {},
+                            allowlist=transport_state.get("allowlist"),
+                            auth_scope=str(
+                                transport_state.get(
+                                    "auth_scope", "strict_workspace_auth"
+                                )
+                            ),
+                            require_signed_metadata=bool(
+                                transport_state.get("require_signed_metadata", True)
+                            ),
                         )
                         self._xet_handshake = xet_handshake
 
-                if xet_handshake:
+                xet_ext = extension_manager.get_extension("xet")
+                if xet_ext is not None and xet_handshake is not None:
+                    xet_ext.folder_sync_handshake = xet_handshake
+                if xet_ext is not None:
+                    xet_handshake_data = xet_ext.encode_handshake()
+                elif xet_handshake is not None:
                     xet_handshake_data = xet_handshake.encode_handshake()
+                else:
+                    xet_handshake_data = {}
+                if xet_handshake_data:
                     # Merge XET handshake data into our handshake
                     for key, value in xet_handshake_data.items():
                         key_bytes = key.encode("utf-8") if isinstance(key, str) else key

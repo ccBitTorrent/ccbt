@@ -7,6 +7,7 @@ periodic polling fallback for detecting changes in XET folders.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from pathlib import Path
@@ -105,6 +106,7 @@ class FolderWatcher:
         self.is_watching = False
         self.last_check_time = time.time()
         self.last_file_states: dict[str, float] = {}  # file_path -> mtime
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
         self.change_callbacks: list[Callable[[str, str], None]] = []
         self.logger = logging.getLogger(__name__)
@@ -116,6 +118,7 @@ class FolderWatcher:
             return
 
         self.is_watching = True
+        self._loop = asyncio.get_running_loop()
         self.last_check_time = time.time()
 
         # Start watchdog observer if available
@@ -144,6 +147,7 @@ class FolderWatcher:
             return
 
         self.is_watching = False
+        self._loop = None
 
         # Stop watchdog observer
         if self.observer:
@@ -211,9 +215,10 @@ class FolderWatcher:
 
         """
         try:
-            # Emit event - fire-and-forget
-            asyncio.create_task(  # noqa: RUF006
-                emit_event(
+            # Watchdog callbacks may run on a non-event-loop thread, so bounce
+            # the event emission back onto the loop that started the watcher.
+            async def _emit_folder_changed() -> None:
+                await emit_event(
                     Event(
                         event_type=EventType.FOLDER_CHANGED.value,
                         data={
@@ -223,8 +228,15 @@ class FolderWatcher:
                             "timestamp": time.time(),
                         },
                     ),
-                ),
-            )
+                )
+
+            if self._loop is not None and self._loop.is_running():
+                self._loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(_emit_folder_changed())
+                )
+            else:
+                with contextlib.suppress(RuntimeError):
+                    asyncio.create_task(_emit_folder_changed())  # noqa: RUF006
 
             # Call all callbacks
             for callback in self.change_callbacks:

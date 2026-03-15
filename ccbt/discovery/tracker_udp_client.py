@@ -13,9 +13,12 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ccbt.config.config import get_config
+
+if TYPE_CHECKING:
+    from ccbt.models import PeerInfo
 
 # Error message constants
 _ERROR_UDP_TRANSPORT_NOT_INITIALIZED = "UDP transport is not initialized"
@@ -138,6 +141,7 @@ class AsyncUDPTrackerClient:
 
         # Test mode: bypass socket validation for testing
         self._test_mode: bool = test_mode
+        self._xet_chunk_registry: dict[tuple[bytes, Optional[str]], list[PeerInfo]] = {}
 
         self.logger = logging.getLogger(__name__)
 
@@ -150,6 +154,41 @@ class AsyncUDPTrackerClient:
 
         """
         return self._socket_ready
+
+    async def announce_chunk(
+        self,
+        chunk_hash: bytes,
+        peer_info: Optional[PeerInfo] = None,
+        workspace_id_hex: Optional[str] = None,
+    ) -> None:
+        """Record XET chunk availability for tracker-backed lookup."""
+        key = (chunk_hash, workspace_id_hex)
+        if peer_info is None:
+            self._xet_chunk_registry.setdefault(key, [])
+            return
+        peers = self._xet_chunk_registry.setdefault(key, [])
+        if not any(
+            existing.ip == peer_info.ip and existing.port == peer_info.port
+            for existing in peers
+        ):
+            peers.append(peer_info)
+
+    async def get_chunk_peers(
+        self, chunk_hash: bytes, workspace_id_hex: Optional[str] = None
+    ) -> list[PeerInfo]:
+        """Return peers recorded for an XET chunk."""
+        if workspace_id_hex is None:
+            peers: list[PeerInfo] = []
+            for (
+                stored_hash,
+                _stored_workspace,
+            ), stored_peers in self._xet_chunk_registry.items():
+                if stored_hash == chunk_hash:
+                    peers.extend(stored_peers)
+            return peers
+        scoped = list(self._xet_chunk_registry.get((chunk_hash, workspace_id_hex), []))
+        scoped.extend(self._xet_chunk_registry.get((chunk_hash, None), []))
+        return scoped
 
     async def announce_to_tracker_full(
         self,

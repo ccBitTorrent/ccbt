@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 import time
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
@@ -24,6 +26,22 @@ else:
         AsyncSessionManager = None  # type: ignore[assignment, misc]
 
 logger = logging.getLogger(__name__)
+
+_MEDIA_EXTENSIONS = {
+    ".avi",
+    ".flac",
+    ".m4a",
+    ".mkv",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".mpeg",
+    ".mpg",
+    ".ogg",
+    ".opus",
+    ".wav",
+    ".webm",
+}
 
 
 def _compute_dht_health_score(metrics: dict[str, Any]) -> tuple[float, str]:
@@ -54,6 +72,199 @@ def _empty_dht_summary() -> dict[str, Any]:
         "total_queries": 0,
         "items": [],
         "all_items": [],
+    }
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    """Best-effort integer coercion for provider read models."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    """Best-effort float coercion for provider read models."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _guess_media_metadata(path: str) -> tuple[Optional[str], bool]:
+    """Return a best-effort MIME type and playable-media flag."""
+
+    mime_type, _encoding = mimetypes.guess_type(path)
+    is_media = bool(
+        Path(path).suffix.lower() in _MEDIA_EXTENSIONS
+        or (
+            mime_type is not None
+            and (mime_type.startswith("audio/") or mime_type.startswith("video/"))
+        )
+    )
+    return mime_type, is_media
+
+
+def _normalize_torrent_read_model(
+    raw: dict[str, Any],
+    *,
+    include_compat_aliases: bool = True,
+) -> dict[str, Any]:
+    """Normalize a torrent status payload into the canonical UI schema.
+
+    Internal session status uses canonical keys such as `connected_peers` and
+    `active_peers`. IPC transport uses `num_peers` and `num_seeds`. UI layers
+    should read the canonical keys only; compatibility aliases are temporary.
+    """
+    connected_peers = _to_int(
+        raw.get("connected_peers", raw.get("num_peers", raw.get("peers", 0))),
+    )
+    active_peers = _to_int(
+        raw.get("active_peers", raw.get("num_seeds", raw.get("seeds", 0))),
+    )
+    normalized = {
+        "info_hash": raw.get("info_hash", ""),
+        "name": raw.get("name", "Unknown"),
+        "status": raw.get("status", "unknown"),
+        "progress": _to_float(raw.get("progress", 0.0)),
+        "download_rate": _to_float(raw.get("download_rate", 0.0)),
+        "upload_rate": _to_float(raw.get("upload_rate", 0.0)),
+        "connected_peers": connected_peers,
+        "active_peers": active_peers,
+        "downloaded": _to_int(raw.get("downloaded", 0)),
+        "uploaded": _to_int(raw.get("uploaded", 0)),
+        "left": _to_int(raw.get("left", 0)),
+        "total_size": _to_int(raw.get("total_size", 0)),
+        "pieces_completed": _to_int(raw.get("pieces_completed", 0)),
+        "pieces_total": _to_int(raw.get("pieces_total", 0)),
+        "is_private": bool(raw.get("is_private", False)),
+        "output_dir": raw.get("output_dir"),
+        "tracker_status": raw.get("tracker_status"),
+        "last_error": raw.get("last_error"),
+        "uptime": _to_float(raw.get("uptime", 0.0)),
+        "added_time": _to_float(raw.get("added_time", 0.0)),
+        "download_complete": bool(
+            raw.get("download_complete", raw.get("completed", False)),
+        ),
+    }
+    if include_compat_aliases:
+        normalized["num_peers"] = connected_peers
+        normalized["num_seeds"] = active_peers
+    return normalized
+
+
+def _normalize_global_stats_read_model(
+    raw: dict[str, Any],
+    *,
+    include_compat_aliases: bool = True,
+) -> dict[str, Any]:
+    """Normalize global stats into the canonical UI schema."""
+    download_rate = _to_float(
+        raw.get("download_rate", raw.get("total_download_rate", 0.0)),
+    )
+    upload_rate = _to_float(
+        raw.get("upload_rate", raw.get("total_upload_rate", 0.0)),
+    )
+    normalized = dict(raw)
+    normalized.update(
+        {
+            "num_torrents": _to_int(raw.get("num_torrents", raw.get("total_torrents", 0))),
+            "num_active": _to_int(raw.get("num_active", 0)),
+            "num_paused": _to_int(raw.get("num_paused", 0)),
+            "num_seeding": _to_int(raw.get("num_seeding", 0)),
+            "download_rate": download_rate,
+            "upload_rate": upload_rate,
+            "average_progress": _to_float(raw.get("average_progress", 0.0)),
+            "total_downloaded": _to_int(raw.get("total_downloaded", 0)),
+            "total_uploaded": _to_int(raw.get("total_uploaded", 0)),
+            "total_left": _to_int(raw.get("total_left", 0)),
+            "connected_peers": _to_int(raw.get("connected_peers", raw.get("total_peers", 0))),
+            "uptime": _to_float(raw.get("uptime", 0.0)),
+        },
+    )
+    if include_compat_aliases:
+        normalized["total_download_rate"] = download_rate
+        normalized["total_upload_rate"] = upload_rate
+    return normalized
+
+
+def _normalize_xet_folder_read_model(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalize an XET runtime record into the canonical UI schema."""
+    status = raw.get("status", {})
+    if not isinstance(status, dict):
+        status = {}
+    normalized = dict(status)
+    normalized.update(
+        {
+            "folder_key": raw.get("folder_key", normalized.get("folder_key")),
+            "folder_path": raw.get("folder_path", normalized.get("folder_path", "")),
+            "workspace_id": raw.get("workspace_id"),
+            "sync_mode": raw.get("sync_mode", normalized.get("sync_mode", "best_effort")),
+            "bootstrap_pending": bool(raw.get("bootstrap_pending", False)),
+            "metadata_source": raw.get("metadata_source"),
+            "started": bool(raw.get("started", False)),
+            "connected_peers": _to_int(
+                normalized.get("connected_peers", raw.get("connected_peers", 0))
+            ),
+            "synced_peers": _to_int(
+                normalized.get("synced_peers", raw.get("synced_peers", 0))
+            ),
+            "pending_changes": _to_int(
+                normalized.get("pending_changes", raw.get("pending_changes", 0))
+            ),
+            "sync_progress": _to_float(
+                normalized.get("sync_progress", raw.get("sync_progress", 0.0))
+            ),
+            "is_syncing": bool(normalized.get("is_syncing", raw.get("is_syncing", False))),
+            "current_git_ref": normalized.get(
+                "current_git_ref",
+                raw.get("git_ref"),
+            ),
+            "error": normalized.get("error", raw.get("error")),
+        }
+    )
+    return normalized
+
+
+def _build_aggressive_discovery_status(
+    info_hash_hex: str,
+    status: dict[str, Any],
+    config: Any,
+) -> dict[str, Any]:
+    """Compute a local aggressive-discovery summary matching daemon reads."""
+    peer_count = _to_int(status.get("connected_peers", 0))
+    download_rate = _to_float(status.get("download_rate", 0.0))
+    discovery_config = getattr(config, "discovery", None)
+    popular_threshold = _to_int(
+        getattr(discovery_config, "aggressive_discovery_popular_threshold", 20),
+        20,
+    )
+    active_threshold_kib = _to_float(
+        getattr(discovery_config, "aggressive_discovery_active_threshold_kib", 1.0),
+        1.0,
+    )
+    active_threshold_bytes = active_threshold_kib * 1024.0
+    is_popular = peer_count >= popular_threshold
+    is_active = download_rate >= active_threshold_bytes
+    enabled = is_popular or is_active
+    reason = "popular" if is_popular else ("active" if is_active else "normal")
+    query_interval = _to_float(
+        getattr(
+            discovery_config,
+            "aggressive_discovery_interval_popular" if is_popular else "aggressive_discovery_interval_active",
+            60.0,
+        ),
+        60.0,
+    )
+    return {
+        "info_hash": info_hash_hex,
+        "enabled": enabled,
+        "reason": reason,
+        "current_peer_count": peer_count,
+        "current_download_rate_kib": download_rate / 1024.0,
+        "popular_threshold": popular_threshold,
+        "active_threshold_kib": active_threshold_kib,
+        "query_interval": query_interval,
     }
 
 
@@ -90,12 +301,35 @@ class DataProvider(ABC):
         pass
 
     @abstractmethod
+    async def get_aggressive_discovery_status(
+        self,
+        info_hash_hex: str,
+    ) -> dict[str, Any]:
+        """Get DHT aggressive discovery status for a specific torrent."""
+        pass
+
+    @abstractmethod
     async def list_torrents(self) -> list[dict[str, Any]]:
         """List all torrents.
 
         Returns:
             List of torrent status dictionaries
         """
+        pass
+
+    @abstractmethod
+    async def list_xet_folders(self) -> list[dict[str, Any]]:
+        """List all active XET workspaces using the canonical runtime read model."""
+        pass
+
+    @abstractmethod
+    async def get_xet_folder_status(self, folder_key: str) -> Optional[dict[str, Any]]:
+        """Get the live status snapshot for a specific XET workspace."""
+        pass
+
+    @abstractmethod
+    async def get_xet_discovery_status(self) -> dict[str, Any]:
+        """Get shared XET discovery backend status."""
         pass
 
     @abstractmethod
@@ -120,6 +354,19 @@ class DataProvider(ABC):
         Returns:
             List of file dictionaries
         """
+        pass
+
+    @abstractmethod
+    async def get_media_stream_status(
+        self,
+        info_hash_hex: str,
+    ) -> Optional[dict[str, Any]]:
+        """Get media stream status for a torrent if one is active."""
+        pass
+
+    @abstractmethod
+    async def get_media_candidates(self, info_hash_hex: str) -> list[dict[str, Any]]:
+        """Return playable media candidates for the torrent."""
         pass
 
     @abstractmethod
@@ -586,30 +833,90 @@ class DaemonDataProvider(DataProvider):
                 # PIECE_COMPLETED also affects torrent status (piece counts)
                 if event_type == EventType.PIECE_COMPLETED:
                     self.invalidate_cache(f"torrent_status_{info_hash}")
-        elif event_type in (EventType.TORRENT_STATUS_CHANGED, EventType.TORRENT_ADDED, EventType.TORRENT_REMOVED):
+        elif event_type in (
+            EventType.TORRENT_STATUS_CHANGED,
+            EventType.TORRENT_ADDED,
+            EventType.TORRENT_REMOVED,
+            EventType.SEEDING_STARTED,
+            EventType.SEEDING_STOPPED,
+            EventType.SEEDING_STATS_UPDATED,
+        ):
             # Invalidate torrent list and related caches
             self.invalidate_cache("torrent_list")
             self.invalidate_cache("swarm_health")
             if info_hash:
                 self.invalidate_cache(f"per_torrent_performance_{info_hash}")
                 self.invalidate_cache(f"piece_health_{info_hash}")
+                self.invalidate_cache(f"torrent_status_{info_hash}")
+                self.invalidate_cache(f"torrent_files_{info_hash}")
+                self.invalidate_cache(f"trackers_{info_hash}")
+        elif event_type in (
+            EventType.TRACKER_ANNOUNCE_STARTED,
+            EventType.TRACKER_ANNOUNCE_SUCCESS,
+            EventType.TRACKER_ANNOUNCE_ERROR,
+        ):
+            if info_hash:
+                self.invalidate_cache(f"trackers_{info_hash}")
+                self.invalidate_cache(f"torrent_status_{info_hash}")
+                self.invalidate_cache(f"per_torrent_performance_{info_hash}")
+        elif event_type in (
+            EventType.METADATA_READY,
+            EventType.METADATA_FETCH_STARTED,
+            EventType.METADATA_FETCH_PROGRESS,
+            EventType.METADATA_FETCH_COMPLETED,
+            EventType.METADATA_FETCH_FAILED,
+            EventType.FILE_SELECTION_CHANGED,
+            EventType.FILE_PRIORITY_CHANGED,
+        ):
+            if info_hash:
+                self.invalidate_cache(f"torrent_files_{info_hash}")
+                self.invalidate_cache(f"torrent_status_{info_hash}")
+                self.invalidate_cache(f"piece_health_{info_hash}")
+        elif event_type in (
+            EventType.XET_FOLDER_ADDED,
+            EventType.XET_FOLDER_REMOVED,
+            EventType.XET_FOLDER_CHANGED,
+            EventType.XET_SYNC_PROGRESS,
+            EventType.XET_SYNC_ERROR,
+            EventType.XET_METADATA_READY,
+        ):
+            self.invalidate_cache("xet_folders")
+            if info_hash:
+                self.invalidate_cache(f"xet_folder_status_{info_hash}")
+            self.invalidate_cache("global_stats")
+        elif event_type in (
+            EventType.MEDIA_STREAM_STARTED,
+            EventType.MEDIA_STREAM_BUFFERING,
+            EventType.MEDIA_STREAM_READY,
+            EventType.MEDIA_STREAM_STOPPED,
+            EventType.MEDIA_STREAM_ERROR,
+        ):
+            if info_hash:
+                self.invalidate_cache(f"media_status_{info_hash}")
+                self.invalidate_cache(f"torrent_status_{info_hash}")
+                self.invalidate_cache(f"torrent_files_{info_hash}")
+        # Broad caches often affected by event bursts
+        self.invalidate_cache("metrics")
+        self.invalidate_cache("global_kpis")
+        self.invalidate_cache("peer_metrics")
 
     async def get_global_stats(self) -> dict[str, Any]:
         """Get global statistics from daemon."""
         async def _fetch() -> dict[str, Any]:
             stats_response = await self._client.get_global_stats()
-            return {
-                "num_torrents": stats_response.num_torrents,
-                "num_active": stats_response.num_active,
-                "num_paused": stats_response.num_paused,
-                "total_download_rate": stats_response.total_download_rate,
-                "total_upload_rate": stats_response.total_upload_rate,
-                "total_downloaded": stats_response.total_downloaded,
-                "total_uploaded": stats_response.total_uploaded,
-                "connected_peers": 0,  # Would need to aggregate from torrents
-                "uptime": 0.0,  # Would need from status endpoint
-                **stats_response.stats,
-            }
+            stats = dict(stats_response.stats or {})
+            stats.update(
+                {
+                    "num_torrents": stats_response.num_torrents,
+                    "num_active": stats_response.num_active,
+                    "num_paused": stats_response.num_paused,
+                    "download_rate": stats_response.total_download_rate,
+                    "upload_rate": stats_response.total_upload_rate,
+                    "total_downloaded": stats_response.total_downloaded,
+                    "total_uploaded": stats_response.total_uploaded,
+                },
+            )
+            return _normalize_global_stats_read_model(stats)
         return await self._get_cached("global_stats", _fetch)
 
     async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:
@@ -618,24 +925,27 @@ class DaemonDataProvider(DataProvider):
             status = await self._client.get_torrent_status(info_hash_hex)
             if not status:
                 return None
-            return {
-                "info_hash": status.info_hash,
-                "name": status.name,
-                "status": status.status,
-                "progress": status.progress,
-                "download_rate": status.download_rate,
-                "upload_rate": status.upload_rate,
-                "num_peers": status.num_peers,
-                "num_seeds": status.num_seeds,
-                "total_size": status.total_size,
-                "downloaded": status.downloaded,
-                "uploaded": status.uploaded,
-                "is_private": status.is_private,
-                "output_dir": status.output_dir,
-            }
+            return _normalize_torrent_read_model(status.model_dump())
         except Exception as e:
             logger.debug("Error getting torrent status: %s", e)
             return None
+
+    async def get_aggressive_discovery_status(
+        self,
+        info_hash_hex: str,
+    ) -> dict[str, Any]:
+        """Get DHT aggressive discovery status from daemon."""
+        cache_key = f"aggressive_discovery_status_{info_hash_hex}"
+
+        async def _fetch() -> dict[str, Any]:
+            try:
+                response = await self._client.get_aggressive_discovery_status(info_hash_hex)
+                return response.model_dump()
+            except Exception as e:
+                logger.debug("Error getting aggressive discovery status: %s", e)
+                return {}
+
+        return await self._get_cached(cache_key, _fetch, ttl=1.0)
 
     async def list_torrents(self) -> list[dict[str, Any]]:
         """List all torrents from daemon."""
@@ -645,19 +955,7 @@ class DaemonDataProvider(DataProvider):
                 torrent_list = await self._client.list_torrents()
                 logger.debug("DaemonDataProvider.list_torrents: Received %d torrent(s) from IPC client", len(torrent_list) if torrent_list else 0)
                 result = [
-                    {
-                        "info_hash": t.info_hash,
-                        "name": t.name,
-                        "status": t.status,
-                        "progress": t.progress,
-                        "download_rate": t.download_rate,
-                        "upload_rate": t.upload_rate,
-                        "num_peers": t.num_peers,
-                        "num_seeds": t.num_seeds,
-                        "total_size": t.total_size,
-                        "downloaded": t.downloaded,
-                        "uploaded": t.uploaded,
-                    }
+                    _normalize_torrent_read_model(t.model_dump())
                     for t in torrent_list
                 ]
                 logger.debug("DaemonDataProvider.list_torrents: Converted to %d dict(s)", len(result))
@@ -673,6 +971,74 @@ class DaemonDataProvider(DataProvider):
             logger.error("DaemonDataProvider.list_torrents: Error in list_torrents: %s", e, exc_info=True)
             return []  # Return empty list on error to prevent UI breakage
 
+    async def list_xet_folders(self) -> list[dict[str, Any]]:
+        """List active XET workspaces from the daemon runtime."""
+        async def _fetch() -> list[dict[str, Any]]:
+            result = await self.execute_command("xet.list_xet_folders")
+            if hasattr(result, "success"):
+                if not result.success:
+                    return []
+                folders = result.data.get("folders", []) if isinstance(result.data, dict) else []
+            else:
+                success, _message, data = result
+                if not success:
+                    return []
+                folders = data.get("folders", []) if isinstance(data, dict) else []
+            return [
+                _normalize_xet_folder_read_model(folder)
+                for folder in folders
+                if isinstance(folder, dict)
+            ]
+
+        return await self._get_cached("xet_folders", _fetch, ttl=0.5)
+
+    async def get_xet_folder_status(self, folder_key: str) -> Optional[dict[str, Any]]:
+        """Get a single XET workspace status from the daemon runtime."""
+        cache_key = f"xet_folder_status_{folder_key}"
+
+        async def _fetch() -> Optional[dict[str, Any]]:
+            result = await self.execute_command(
+                "xet.get_xet_folder_status",
+                folder_key=folder_key,
+            )
+            if hasattr(result, "success"):
+                if not result.success:
+                    return None
+                payload = result.data.get("status") if isinstance(result.data, dict) else None
+            else:
+                success, _message, data = result
+                if not success:
+                    return None
+                payload = data.get("status") if isinstance(data, dict) else None
+            if not isinstance(payload, dict):
+                return None
+            return _normalize_xet_folder_read_model(
+                {"folder_key": folder_key, "status": payload}
+            )
+
+        return await self._get_cached(cache_key, _fetch, ttl=0.5)
+
+    async def get_xet_discovery_status(self) -> dict[str, Any]:
+        """Get shared XET discovery backend status from daemon runtime."""
+        async def _fetch() -> dict[str, Any]:
+            result = await self.execute_command("xet.get_xet_discovery_status")
+            if hasattr(result, "success"):
+                if not result.success:
+                    return {}
+                payload = (
+                    result.data.get("backends")
+                    if isinstance(result.data, dict)
+                    else None
+                )
+            else:
+                success, _message, data = result
+                if not success:
+                    return {}
+                payload = data.get("backends") if isinstance(data, dict) else None
+            return payload if isinstance(payload, dict) else {}
+
+        return await self._get_cached("xet_discovery_status", _fetch, ttl=0.5)
+
     async def get_torrent_peers(self, info_hash_hex: str) -> list[dict[str, Any]]:
         """Get peers for a torrent from daemon."""
         try:
@@ -685,6 +1051,11 @@ class DaemonDataProvider(DataProvider):
                     "upload_rate": p.upload_rate,
                     "choked": p.choked,
                     "client": p.client,
+                    # Keep parity with local provider schema
+                    "uploaded": 0,
+                    "downloaded": 0,
+                    "left": 0,
+                    "state": "unknown",
                 }
                 for p in peer_list.peers
             ]
@@ -706,6 +1077,9 @@ class DaemonDataProvider(DataProvider):
                         "priority": f.priority,
                         "progress": f.progress,
                         "attributes": f.attributes,
+                        "path": f.path,
+                        "mime_type": f.mime_type,
+                        "is_media": f.is_media,
                     }
                     for f in file_list.files
                 ]
@@ -716,6 +1090,28 @@ class DaemonDataProvider(DataProvider):
         # Cache file list responses briefly to avoid hammering the daemon endpoint
         cache_key = f"torrent_files_{info_hash_hex}"
         return await self._get_cached(cache_key, _fetch, ttl=2.0)
+
+    async def get_media_stream_status(
+        self,
+        info_hash_hex: str,
+    ) -> Optional[dict[str, Any]]:
+        """Get media stream status from daemon."""
+
+        async def _fetch() -> Optional[dict[str, Any]]:
+            try:
+                status = await self._client.get_media_stream_status(info_hash=info_hash_hex)
+                return status.model_dump() if status is not None else None
+            except Exception as e:
+                logger.debug("Error getting media stream status: %s", e)
+                return None
+
+        return await self._get_cached(f"media_status_{info_hash_hex}", _fetch, ttl=1.0)
+
+    async def get_media_candidates(self, info_hash_hex: str) -> list[dict[str, Any]]:
+        """Return playable media candidates for a torrent."""
+
+        files = await self.get_torrent_files(info_hash_hex)
+        return [file_info for file_info in files if file_info.get("is_media")]
 
     async def get_torrent_trackers(self, info_hash_hex: str) -> list[dict[str, Any]]:
         """Get trackers for a torrent from daemon."""
@@ -1524,29 +1920,103 @@ class LocalDataProvider(DataProvider):
     async def get_global_stats(self) -> dict[str, Any]:
         """Get global statistics from local session."""
         async def _fetch() -> dict[str, Any]:
-            return await self._session.get_global_stats()
+            stats = await self._session.get_global_stats()
+            return _normalize_global_stats_read_model(stats)
         return await self._get_cached("global_stats", _fetch)
 
     async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:
         """Get torrent status from local session."""
         try:
-            status = await self._session.get_status()
-            return status.get(info_hash_hex)
+            status = await self._session.get_torrent_status(info_hash_hex)
+            if not status:
+                return None
+            return _normalize_torrent_read_model(status)
         except Exception as e:
             logger.debug("Error getting torrent status: %s", e)
             return None
+
+    async def get_aggressive_discovery_status(
+        self,
+        info_hash_hex: str,
+    ) -> dict[str, Any]:
+        """Get best-effort local aggressive discovery status."""
+        cache_key = f"aggressive_discovery_status_{info_hash_hex}"
+
+        async def _fetch() -> dict[str, Any]:
+            status = await self.get_torrent_status(info_hash_hex)
+            if not status:
+                return {}
+            return _build_aggressive_discovery_status(
+                info_hash_hex,
+                status,
+                getattr(self._session, "config", None),
+            )
+
+        return await self._get_cached(cache_key, _fetch, ttl=1.0)
 
     async def list_torrents(self) -> list[dict[str, Any]]:
         """List all torrents from local session."""
         async def _fetch() -> list[dict[str, Any]]:
             status = await self._session.get_status()
-            return list(status.values())
+            return [_normalize_torrent_read_model(torrent_status) for torrent_status in status.values()]
         return await self._get_cached("torrent_list", _fetch, ttl=0.5)  # Increased from 0.2s to 0.5s for better balance
+
+    async def list_xet_folders(self) -> list[dict[str, Any]]:
+        """List active XET workspaces from the local runtime."""
+        async def _fetch() -> list[dict[str, Any]]:
+            folders = await self._session.list_xet_folders()
+            return [
+                _normalize_xet_folder_read_model(folder)
+                for folder in folders
+                if isinstance(folder, dict)
+            ]
+
+        return await self._get_cached("xet_folders", _fetch, ttl=0.5)
+
+    async def get_xet_folder_status(self, folder_key: str) -> Optional[dict[str, Any]]:
+        """Get a single XET workspace status from the local runtime."""
+        cache_key = f"xet_folder_status_{folder_key}"
+
+        async def _fetch() -> Optional[dict[str, Any]]:
+            status = await self._session.get_xet_folder_status(folder_key)
+            if status is None:
+                return None
+            return _normalize_xet_folder_read_model(
+                {"folder_key": folder_key, "status": status}
+            )
+
+        return await self._get_cached(cache_key, _fetch, ttl=0.5)
+
+    async def get_xet_discovery_status(self) -> dict[str, Any]:
+        """Get shared XET discovery backend status from local runtime."""
+        async def _fetch() -> dict[str, Any]:
+            getter = getattr(self._session, "get_xet_discovery_status", None)
+            if callable(getter):
+                status = getter()
+                return status if isinstance(status, dict) else {}
+            return {}
+
+        return await self._get_cached("xet_discovery_status", _fetch, ttl=0.5)
 
     async def get_torrent_peers(self, info_hash_hex: str) -> list[dict[str, Any]]:
         """Get peers for a torrent from local session."""
         try:
-            return await self._session.get_peers_for_torrent(info_hash_hex)
+            peers = await self._session.get_peers_for_torrent(info_hash_hex)
+            return [
+                {
+                    "ip": p.get("ip", ""),
+                    "port": p.get("port", 0),
+                    "download_rate": float(p.get("download_rate", 0.0)),
+                    "upload_rate": float(p.get("upload_rate", 0.0)),
+                    "choked": bool(p.get("choked", False)),
+                    "client": p.get("client"),
+                    "uploaded": p.get("uploaded", 0),
+                    "downloaded": p.get("downloaded", 0),
+                    "left": p.get("left", 0),
+                    "state": p.get("state", "unknown"),
+                }
+                for p in peers
+            ]
         except Exception as e:
             logger.debug("Error getting torrent peers: %s", e)
             return []
@@ -1612,6 +2082,8 @@ class LocalDataProvider(DataProvider):
                     "priority": "normal",  # Default priority
                     "selected": True,  # Single file is always selected
                     "attributes": None,
+                    "mime_type": _guess_media_metadata(file_path)[0],
+                    "is_media": _guess_media_metadata(file_path)[1],
                 })
             elif file_info.get("type") == "multi":
                 # Multi-file torrent
@@ -1656,12 +2128,30 @@ class LocalDataProvider(DataProvider):
                             "priority": "normal",  # Default priority
                             "selected": True,  # Default to selected
                             "attributes": file_data.get("attributes"),
+                            "mime_type": _guess_media_metadata(full_path)[0],
+                            "is_media": _guess_media_metadata(full_path)[1],
                         })
             
             return files_list
         except Exception as e:
             logger.debug("Error getting torrent files: %s", e)
             return []
+
+    async def get_media_stream_status(
+        self,
+        info_hash_hex: str,
+    ) -> Optional[dict[str, Any]]:
+        """Get media stream status from local session state."""
+        try:
+            return await self._session.get_media_stream_status(info_hash_hex=info_hash_hex)
+        except Exception as e:
+            logger.debug("Error getting local media status: %s", e)
+            return None
+
+    async def get_media_candidates(self, info_hash_hex: str) -> list[dict[str, Any]]:
+        """Return playable media candidates for a torrent."""
+        files = await self.get_torrent_files(info_hash_hex)
+        return [file_info for file_info in files if file_info.get("is_media")]
 
     async def get_torrent_trackers(self, info_hash_hex: str) -> list[dict[str, Any]]:
         """Get trackers for a torrent from local session."""
@@ -2312,8 +2802,8 @@ class LocalDataProvider(DataProvider):
                 "progress": status.get("progress", 0.0),
                 "pieces_completed": status.get("pieces_completed", 0),
                 "pieces_total": status.get("pieces_total", 0),
-                "connected_peers": status.get("num_peers", 0),
-                "active_peers": status.get("num_seeds", 0),
+                "connected_peers": status.get("connected_peers", 0),
+                "active_peers": status.get("active_peers", 0),
                 "top_peers": top_peers,
                 "bytes_downloaded": status.get("downloaded", 0),
                 "bytes_uploaded": status.get("uploaded", 0),

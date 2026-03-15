@@ -63,7 +63,10 @@ class TestP2PCASClient:
         await cas_client.announce_chunk(chunk_hash)
 
         # Should call tracker announce_chunk
-        mock_tracker.announce_chunk.assert_called_once_with(chunk_hash)
+        mock_tracker.announce_chunk.assert_called_once_with(
+            chunk_hash,
+            workspace_id_hex=None,
+        )
 
     @pytest.mark.asyncio
     async def test_announce_chunk_invalid_hash(self, cas_client):
@@ -101,7 +104,10 @@ class TestP2PCASClient:
         peers = await cas_client.find_chunk_peers(chunk_hash)
 
         assert len(peers) >= 2  # May include DHT results too
-        mock_tracker.get_chunk_peers.assert_called_once_with(chunk_hash)
+        mock_tracker.get_chunk_peers.assert_called_once_with(
+            chunk_hash,
+            workspace_id_hex=None,
+        )
 
     @pytest.mark.asyncio
     async def test_find_chunk_peers_deduplication(self, cas_client, mock_dht, mock_tracker):
@@ -359,6 +365,44 @@ class TestP2PCASClient:
 
         # Should handle exception gracefully
         assert result is None or isinstance(result, PeerInfo)
+
+    def test_extract_peer_from_signed_dht_dict_invalid_signature(self, cas_client):
+        """Signed DHT peer entries should be rejected when signature verification fails."""
+        dht_result = {
+            "ip": "192.168.1.1",
+            "port": 6881,
+            "type": "xet_chunk",
+            "available": True,
+            "ed25519_public_key": "11" * 32,
+            "ed25519_signature": "22" * 64,
+        }
+
+        with patch(
+            "ccbt.security.key_manager.Ed25519KeyManager.verify_signature",
+            return_value=False,
+        ):
+            result = cas_client._extract_peer_from_dht(dht_result)
+
+        assert result is None
+
+    def test_extract_peer_from_signed_dht_dict_valid_signature(self, cas_client):
+        """Signed DHT peer entries should be accepted when signature verification succeeds."""
+        dht_result = {
+            "ip": "192.168.1.1",
+            "port": 6881,
+            "type": "xet_chunk",
+            "available": True,
+            "ed25519_public_key": "11" * 32,
+            "ed25519_signature": "22" * 64,
+        }
+
+        with patch(
+            "ccbt.security.key_manager.Ed25519KeyManager.verify_signature",
+            return_value=True,
+        ):
+            result = cas_client._extract_peer_from_dht(dht_result)
+
+        assert isinstance(result, PeerInfo)
 
     def test_extract_peer_from_dht_value_dict(self, cas_client):
         """Test extracting PeerInfo from DHT value dict."""

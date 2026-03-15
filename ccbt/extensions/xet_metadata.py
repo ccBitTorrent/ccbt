@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from ccbt.extensions.xet import XetExtension, XetMessageType
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,10 @@ class XetMetadataExchange:
 
         # Metadata provider callback
         self.metadata_provider: Optional[Callable[[bytes], Optional[bytes]]] = None
+        self.piece_requester: Optional[
+            Callable[[str, bytes, int], Awaitable[bool] | bool]
+        ] = None
+        self.pending_fetches: dict[str, asyncio.Future[Optional[bytes]]] = {}
 
     def set_metadata_provider(
         self, provider: Callable[[bytes], Optional[bytes]]
@@ -49,6 +53,33 @@ class XetMetadataExchange:
 
         """
         self.metadata_provider = provider
+
+    def set_piece_requester(
+        self, requester: Callable[[str, bytes, int], Awaitable[bool] | bool]
+    ) -> None:
+        """Attach a transport callback for requesting metadata pieces."""
+        self.piece_requester = requester
+
+    def begin_fetch(
+        self, peer_id: str, info_hash: bytes
+    ) -> asyncio.Future[Optional[bytes]]:
+        """Create or return the pending future for an in-flight metadata fetch."""
+        state_key = f"{peer_id}:{info_hash.hex()}"
+        future = self.pending_fetches.get(state_key)
+        if future is None or future.done():
+            future = asyncio.get_running_loop().create_future()
+            self.pending_fetches[state_key] = future
+        return future
+
+    async def request_metadata(self, peer_id: str, info_hash: bytes) -> Optional[bytes]:
+        """Request metadata from a peer and await the assembled result."""
+        future = self.begin_fetch(peer_id, info_hash)
+        success = await self._request_piece(peer_id, info_hash, 0)
+        if not success:
+            if not future.done():
+                future.set_result(None)
+            return None
+        return await future
 
     def encode_metadata_request(self, info_hash: bytes, piece: int = 0) -> bytes:
         """Encode metadata request message.
@@ -147,7 +178,7 @@ class XetMetadataExchange:
 
     async def handle_metadata_request(
         self, peer_id: str, info_hash: bytes, piece: int
-    ) -> None:
+    ) -> Optional[bytes]:
         """Handle incoming metadata request.
 
         Args:
@@ -158,7 +189,7 @@ class XetMetadataExchange:
         """
         if not self.metadata_provider:
             self.logger.warning("Metadata request from %s but no provider set", peer_id)
-            return
+            return self._send_metadata_not_found(peer_id, info_hash)
 
         # Get metadata
         metadata_bytes = self.metadata_provider(info_hash)
@@ -166,9 +197,7 @@ class XetMetadataExchange:
             self.logger.debug(
                 "Metadata not available for info_hash %s", info_hash.hex()[:16]
             )
-            # Send not found response
-            await self._send_metadata_not_found(peer_id, info_hash)
-            return
+            return self._send_metadata_not_found(peer_id, info_hash)
 
         # For now, send full metadata (can be extended to support piece-based)
         # Calculate total pieces (if metadata is large, split into pieces)
@@ -182,7 +211,7 @@ class XetMetadataExchange:
                 total_pieces,
                 peer_id,
             )
-            return
+            return None
 
         # Extract piece data
         start = piece * piece_size
@@ -193,8 +222,6 @@ class XetMetadataExchange:
         response = self.encode_metadata_response(
             info_hash, piece, total_pieces, piece_data
         )
-        if self.extension is not None:
-            await self.extension.send_message(peer_id, response)  # type: ignore[attr-defined]
 
         self.logger.debug(
             "Sent metadata piece %d/%d to %s (size: %d)",
@@ -203,8 +230,9 @@ class XetMetadataExchange:
             peer_id,
             len(piece_data),
         )
+        return response
 
-    async def _send_metadata_not_found(self, peer_id: str, info_hash: bytes) -> None:
+    def _send_metadata_not_found(self, _peer_id: str, info_hash: bytes) -> bytes:
         """Send metadata not found response.
 
         Args:
@@ -213,11 +241,17 @@ class XetMetadataExchange:
 
         """
         # Format: <message_type><info_hash>
-        not_found_msg = (
-            struct.pack("!B", XetMessageType.FOLDER_METADATA_NOT_FOUND) + info_hash
-        )
-        if self.extension is not None:
-            await self.extension.send_message(peer_id, not_found_msg)  # type: ignore[attr-defined]
+        return struct.pack("!B", XetMessageType.FOLDER_METADATA_NOT_FOUND) + info_hash
+
+    def decode_metadata_not_found(self, data: bytes) -> bytes:
+        """Decode metadata not found message and return its workspace id."""
+        if len(data) < 33:
+            msg = "Invalid metadata not found message"
+            raise ValueError(msg)
+        if data[0] != XetMessageType.FOLDER_METADATA_NOT_FOUND:
+            msg = "Invalid message type for metadata not found"
+            raise ValueError(msg)
+        return data[1:33]
 
     async def handle_metadata_response(
         self, peer_id: str, info_hash: bytes, piece: int, total_pieces: int, data: bytes
@@ -269,6 +303,19 @@ class XetMetadataExchange:
 
                 tonic_parser = TonicFile()
                 parsed_data = tonic_parser.parse_bytes(full_metadata)
+                derived_workspace_id = tonic_parser.get_info_hash(parsed_data)
+                if derived_workspace_id != info_hash:
+                    self.logger.warning(
+                        "Received metadata workspace mismatch from %s (expected=%s got=%s)",
+                        peer_id,
+                        info_hash.hex()[:16],
+                        derived_workspace_id.hex()[:16],
+                    )
+                    future = self.pending_fetches.get(state_key)
+                    if future is not None and not future.done():
+                        future.set_result(None)
+                    del self.metadata_state[state_key]
+                    return
 
                 self.logger.info(
                     "Received complete metadata from %s (info_hash: %s)",
@@ -281,14 +328,19 @@ class XetMetadataExchange:
 
                 await emit_event(
                     Event(
-                        event_type=EventType.XET_METADATA_RECEIVED.value,
+                        event_type=EventType.XET_METADATA_READY.value,
                         data={
                             "peer_id": peer_id,
                             "info_hash": info_hash.hex(),
+                            "metadata_bytes": full_metadata,
                             "metadata": parsed_data,
                         },
                     )
                 )
+
+                future = self.pending_fetches.get(state_key)
+                if future is not None and not future.done():
+                    future.set_result(full_metadata)
 
                 # Clean up state
                 del self.metadata_state[state_key]
@@ -297,6 +349,14 @@ class XetMetadataExchange:
                 self.logger.exception("Failed to parse received metadata")
                 # Request all pieces again
                 await self._request_all_pieces(peer_id, info_hash, total_pieces)
+
+    async def handle_metadata_not_found(self, peer_id: str, info_hash: bytes) -> None:
+        """Resolve an in-flight metadata fetch as unavailable."""
+        state_key = f"{peer_id}:{info_hash.hex()}"
+        future = self.pending_fetches.get(state_key)
+        if future is not None and not future.done():
+            future.set_result(None)
+        self.metadata_state.pop(state_key, None)
 
     async def _request_all_pieces(
         self, peer_id: str, info_hash: bytes, total_pieces: int
@@ -310,8 +370,25 @@ class XetMetadataExchange:
 
         """
         for piece in range(total_pieces):
-            request = self.encode_metadata_request(info_hash, piece)
-            if self.extension is not None:
-                await self.extension.send_message(peer_id, request)  # type: ignore[attr-defined]
+            await self._request_piece(peer_id, info_hash, piece)
             # Small delay between requests
             await asyncio.sleep(0.1)
+
+    async def _request_piece(self, peer_id: str, info_hash: bytes, piece: int) -> bool:
+        """Request a single metadata piece via the configured transport."""
+        requester = self.piece_requester
+        if requester is None:
+            requester = self._send_piece_via_extension
+        result = requester(peer_id, info_hash, piece)
+        if hasattr(result, "__await__"):
+            return bool(await result)
+        return bool(result)
+
+    async def _send_piece_via_extension(
+        self, peer_id: str, info_hash: bytes, piece: int
+    ) -> bool:
+        """Fallback piece sender that uses the owning XET extension transport."""
+        if self.extension is None:
+            return False
+        request = self.encode_metadata_request(info_hash, piece)
+        return await self.extension.send_message(peer_id, request)

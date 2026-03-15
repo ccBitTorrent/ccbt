@@ -28,6 +28,7 @@ from ccbt.interface.widgets.reusable_table import ReusableDataTable
 from ccbt.interface.widgets.tabbed_interface import MainTabsContainer
 from ccbt.interface.widgets.torrent_selector import TorrentSelector
 from ccbt.interface.widgets.language_selector import LanguageSelectorWidget
+from ccbt.interface.widgets.media_playback_widget import MediaPlaybackWidget
 from ccbt.interface.widgets.piece_availability_bar import PieceAvailabilityHealthBar
 from ccbt.interface.widgets.peer_quality_distribution_widget import (
     PeerQualityDistributionWidget,
@@ -49,6 +50,7 @@ __all__ = [
     "GlobalTorrentMetricsPanel",
     "GraphsSectionContainer",
     "MainTabsContainer",
+    "MediaPlaybackWidget",
     "MetricsTableWidget",
     "MonitoringScreenWrapper",
     "Overview",

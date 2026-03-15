@@ -273,12 +273,12 @@ class DHTDiscoverySetup:
                                     break
                             if not self.session.is_ready():
                                 self.logger.warning(
-                                    "peer_manager still not ready for %s after retries, queuing %d peers",
+                                    "peer_manager still not ready for %s after retries, queuing %d peers for generic drain",
                                     self.session.info.name,
                                     len(peer_list),
                                 )
-                                # Queue peers for later connection
-                                self.session.add_queued_dht_peers(peer_list)
+                                # Use generic queue so PeerConnectionHelper drains them when ready
+                                await helper.connect_peers_to_download(peer_list)
                                 return
 
                         self.logger.info(
@@ -323,15 +323,18 @@ class DHTDiscoverySetup:
                             connection_error,
                             exc_info=True,
                         )
-                        # CRITICAL FIX: Retry connection with exponential backoff
-                        # Store peers for retry if connection fails
+                        # Queue to generic _queued_peers so they are drained when peer_manager is ready
+                        import time as _time
+
+                        now = _time.time()
                         for peer in peer_list:
-                            self.session.add_pending_dht_peer(peer)
-                        pending_count = len(self.session.get_pending_dht_peers())
+                            peer_copy = dict(peer)
+                            peer_copy["_queued_at"] = now
+                            self.session.add_queued_peer(peer_copy)
                         self.logger.debug(
-                            "Queued %d peers for retry connection (total queued: %d)",
+                            "Queued %d peers for retry via generic queue (total: %d)",
                             len(peer_list),
-                            pending_count,
+                            len(self.session.get_queued_peers()),
                         )
             except Exception:
                 self.logger.exception(
@@ -1270,9 +1273,12 @@ class DHTDiscoverySetup:
                     routing_table_size,
                 )
 
-        # CRITICAL FIX: Wait until we have 50 peers before starting DHT discovery
-        # This prevents aggressive DHT queries that can cause blacklisting
-        min_peers_before_dht = 50
+        # Use configurable minimum; DHT can start earlier as fallback with conservative intervals
+        min_peers_before_dht = getattr(
+            self.session.config.discovery,
+            "min_peers_before_dht",
+            10,
+        )
         dht_started = False
 
         while not self.session.stopped:
@@ -1365,24 +1371,20 @@ class DHTDiscoverySetup:
                             if hasattr(stats, "download_rate"):
                                 current_download_rate = stats.download_rate
 
-                # CRITICAL FIX: Don't start DHT until we have minimum peers
-                # This prevents aggressive DHT queries that can cause blacklisting
+                # Allow DHT to start when we have at least min_peers_before_dht (configurable, default 10)
                 if not dht_started and current_peer_count < min_peers_before_dht:
                     self.logger.info(
-                        "⏸️ DHT DISCOVERY: Waiting for minimum peers (%d/%d) before starting DHT discovery to avoid blacklisting. "
-                        "Current peer count: %d. Sleeping for 30s before checking again...",
+                        "⏸️ DHT DISCOVERY: Waiting for minimum peers (%d/%d). Sleeping 30s before recheck...",
                         current_peer_count,
                         min_peers_before_dht,
-                        current_peer_count,
                     )
-                    await asyncio.sleep(30.0)  # Wait 30 seconds before checking again
-                    continue  # Skip DHT query for this iteration
+                    await asyncio.sleep(30.0)
+                    continue
 
-                # Mark DHT as started once we reach minimum peer count
                 if not dht_started and current_peer_count >= min_peers_before_dht:
                     dht_started = True
                     self.logger.info(
-                        "✅ DHT DISCOVERY: Minimum peer count reached (%d >= %d). Starting DHT discovery with conservative settings to avoid blacklisting.",
+                        "✅ DHT DISCOVERY: Minimum peer count reached (%d >= %d). Starting DHT discovery.",
                         current_peer_count,
                         min_peers_before_dht,
                     )

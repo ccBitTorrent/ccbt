@@ -6,7 +6,7 @@ Provides interface for managing XET folder sync sessions (similar to torrent man
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -36,7 +36,6 @@ else:
         Static = None  # type: ignore[assignment, misc]
 
 from rich.panel import Panel
-from rich.table import Table
 
 from ccbt.interface.commands.executor import CommandExecutor
 from ccbt.interface.screens.base import ConfirmationDialog, MonitoringScreen
@@ -76,6 +75,11 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
         ("x", "remove_alias", "Remove Alias"),
     ]
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize screen state."""
+        super().__init__(*args, **kwargs)
+        self._folder_keys_by_row: dict[int, str] = {}
+
     def compose(self) -> ComposeResult:  # pragma: no cover
         """Compose the XET folder sync screen."""
         yield Header()
@@ -96,6 +100,7 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
         # Initialize command executor
         if not hasattr(self, "_command_executor") or self._command_executor is None:
             self._command_executor = CommandExecutor(self.session)
+        self._data_provider = getattr(self.app, "_data_provider", None)
 
         # Setup folders table
         folders_table = self.query_one("#folders_table", DataTable)
@@ -125,42 +130,44 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
     async def _refresh_data(self) -> None:  # pragma: no cover
         """Refresh XET folder sync sessions."""
         try:
-            # Get XET folders from session
-            result = await self._command_executor.execute_command(
-                "xet.list_xet_folders"
-            )
-
             status_panel = self.query_one("#status_panel", Static)
             folders_table = self.query_one("#folders_table", DataTable)
 
-            # Handle both CommandResult and tuple return formats
-            if hasattr(result, "success"):
-                # CommandResult format
-                if not result.success:
-                    status_panel.update(
-                        Panel(
-                            f"Error loading XET folders: {result.error}",
-                            title="Error",
-                            border_style="red",
-                        )
-                    )
-                    folders_table.clear()
-                    return
-                folder_list = result.data.get("folders", [])
+            if self._data_provider is not None and hasattr(
+                self._data_provider, "list_xet_folders"
+            ):
+                folder_list = await self._data_provider.list_xet_folders()
             else:
-                # Tuple format (legacy)
-                success, message, data = result
-                if not success:
-                    status_panel.update(
-                        Panel(
-                            f"Error loading XET folders: {message}",
-                            title="Error",
-                            border_style="red",
+                result = await self._command_executor.execute_command(
+                    "xet.list_xet_folders"
+                )
+
+                # Handle both CommandResult and tuple return formats
+                if hasattr(result, "success"):
+                    if not result.success:
+                        status_panel.update(
+                            Panel(
+                                f"Error loading XET folders: {result.error}",
+                                title="Error",
+                                border_style="red",
+                            )
                         )
-                    )
-                    folders_table.clear()
-                    return
-                folder_list = data.get("folders", []) if isinstance(data, dict) else []
+                        folders_table.clear()
+                        return
+                    folder_list = result.data.get("folders", [])
+                else:
+                    success, message, data = result
+                    if not success:
+                        status_panel.update(
+                            Panel(
+                                f"Error loading XET folders: {message}",
+                                title="Error",
+                                border_style="red",
+                            )
+                        )
+                        folders_table.clear()
+                        return
+                    folder_list = data.get("folders", []) if isinstance(data, dict) else []
 
             if not folder_list:
                 folder_list = []
@@ -182,7 +189,7 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
             else:
                 config_success, _, config_data = config_result
                 config_data = config_data if isinstance(config_data, dict) else {}
-            
+
             if config_success:
                 status_lines.append(
                     f"XET enabled: {'[green]Yes[/green]' if config_data.get('enable_xet') else '[red]No[/red]'}"
@@ -194,21 +201,38 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
                     f"Default sync mode: {config_data.get('default_sync_mode', 'N/A')}"
                 )
 
+            if self._data_provider is not None and hasattr(
+                self._data_provider, "get_xet_discovery_status"
+            ):
+                discovery = await self._data_provider.get_xet_discovery_status()
+                if isinstance(discovery, dict) and discovery:
+                    healthy = sum(
+                        1
+                        for backend in discovery.values()
+                        if isinstance(backend, dict) and backend.get("health")
+                    )
+                    status_lines.append(
+                        f"Discovery healthy backends: {healthy}/{len(discovery)}"
+                    )
+
             status_panel.update(Panel("\n".join(status_lines), title="XET Folder Sync Status"))
 
             # Update folders table
             folders_table.clear()
+            self._folder_keys_by_row.clear()
             for folder in folder_list:
                 folder_key = folder.get("folder_key", "N/A")
                 folder_path = folder.get("folder_path", "N/A")
                 sync_mode = folder.get("sync_mode", "N/A")
-                is_syncing = folder.get("is_syncing", False)
-                connected_peers = folder.get("connected_peers", 0)
-                sync_progress = folder.get("sync_progress", 0.0)
-                git_ref = folder.get("current_git_ref", "N/A")
+                status_data = folder.get("status", {}) if isinstance(folder.get("status"), dict) else {}
+                is_syncing = status_data.get("is_syncing", folder.get("is_syncing", False))
+                connected_peers = status_data.get("connected_peers", folder.get("connected_peers", 0))
+                sync_progress = status_data.get("sync_progress", folder.get("sync_progress", 0.0))
+                git_ref = status_data.get("current_git_ref", folder.get("current_git_ref", "N/A"))
 
                 status = "[green]Syncing[/green]" if is_syncing else "[yellow]Idle[/yellow]"
-                progress_str = f"{sync_progress:.1f}%" if sync_progress is not None else "N/A"
+                progress_value = float(sync_progress) if sync_progress is not None else 0.0
+                progress_str = f"{progress_value * 100:.1f}%" if progress_value <= 1.0 else f"{progress_value:.1f}%"
 
                 folders_table.add_row(
                     folder_key[:16] + "..." if len(folder_key) > 16 else folder_key,
@@ -219,6 +243,7 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
                     progress_str,
                     git_ref[:8] + "..." if git_ref and git_ref != "N/A" and len(git_ref) > 8 else (git_ref or "N/A"),
                 )
+                self._folder_keys_by_row[len(self._folder_keys_by_row)] = folder_key
 
         except Exception as e:
             status_panel = self.query_one("#status_panel", Static)
@@ -249,25 +274,40 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
 
             # Determine if it's a tonic link or folder path
             if folder_input.startswith("tonic?:"):
+                output_dialog = InputDialog(
+                    "Join XET Workspace",
+                    "Enter output directory for the joined workspace:",
+                    placeholder="path/to/output-directory",
+                )
+                output_dir = await self.app.push_screen(output_dialog)  # type: ignore[attr-defined]
+                if not output_dir or not str(output_dir).strip():
+                    return
                 result = await self._command_executor.execute_command(
                     "xet.add_xet_folder",
-                    folder_path=".",
+                    folder_path=str(output_dir).strip(),
                     tonic_link=folder_input,
                 )
+            # Check if it's a .tonic file
+            elif folder_input.endswith(".tonic"):
+                output_dialog = InputDialog(
+                    "Join XET Workspace",
+                    "Enter output directory for the joined workspace:",
+                    placeholder="path/to/output-directory",
+                )
+                output_dir = await self.app.push_screen(output_dialog)  # type: ignore[attr-defined]
+                if not output_dir or not str(output_dir).strip():
+                    return
+                result = await self._command_executor.execute_command(
+                    "xet.add_xet_folder",
+                    folder_path=str(output_dir).strip(),
+                    tonic_file=folder_input,
+                )
             else:
-                # Check if it's a .tonic file
-                if folder_input.endswith(".tonic"):
-                    result = await self._command_executor.execute_command(
-                        "xet.add_xet_folder",
-                        folder_path=".",
-                        tonic_file=folder_input,
-                    )
-                else:
-                    # Regular folder path
-                    result = await self._command_executor.execute_command(
-                        "xet.add_xet_folder",
-                        folder_path=folder_input,
-                    )
+                # Regular folder path
+                result = await self._command_executor.execute_command(
+                    "xet.add_xet_folder",
+                    folder_path=folder_input,
+                )
 
             # Handle both CommandResult and tuple return formats
             if hasattr(result, "success"):
@@ -288,15 +328,14 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
                             border_style="green",
                         )
                     )
-            else:
-                if self.statusbar:
-                    self.statusbar.update(
-                        Panel(
-                            f"Failed to add XET folder: {error}",
-                            title="Error",
-                            border_style="red",
-                        )
+            elif self.statusbar:
+                self.statusbar.update(
+                    Panel(
+                        f"Failed to add XET folder: {error}",
+                        title="Error",
+                        border_style="red",
                     )
+                )
 
             await self._refresh_data()
 
@@ -317,7 +356,9 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
             return
 
         # Get folder key from selected row
-        folder_key = folders_table.get_row_at(cursor_row)[0]
+        folder_key = self._folder_keys_by_row.get(cursor_row)
+        if not folder_key:
+            return
 
         # Show confirmation
         confirmation = ConfirmationDialog(
@@ -348,15 +389,14 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
                             border_style="green",
                         )
                     )
-            else:
-                if self.statusbar:
-                    self.statusbar.update(
-                        Panel(
-                            f"Failed to remove XET folder: {error}",
-                            title="Error",
-                            border_style="red",
-                        )
+            elif self.statusbar:
+                self.statusbar.update(
+                    Panel(
+                        f"Failed to remove XET folder: {error}",
+                        title="Error",
+                        border_style="red",
                     )
+                )
 
             await self._refresh_data()
 
@@ -381,26 +421,36 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
             return
 
         # Get folder key from selected row
-        folder_key = folders_table.get_row_at(cursor_row)[0]
+        folder_key = self._folder_keys_by_row.get(cursor_row)
+        if not folder_key:
+            return
 
-        # Get detailed status
-        status_result = await self._command_executor.execute_command(
-            "xet.get_xet_folder_status",
-            folder_key=folder_key,
-        )
-
-        # Handle both CommandResult and tuple return formats
-        if hasattr(status_result, "success"):
-            success = status_result.success
-            error = status_result.error
-            result_data = status_result.data if status_result.success else {}
+        status_data: Optional[dict[str, Any]] = None
+        error: Optional[str] = None
+        if self._data_provider is not None and hasattr(
+            self._data_provider, "get_xet_folder_status"
+        ):
+            status_data = await self._data_provider.get_xet_folder_status(folder_key)
+            if status_data is None:
+                error = "status unavailable"
         else:
-            success, message, result_data = status_result
-            error = message if not success else None
-            result_data = result_data if isinstance(result_data, dict) else {}
+            status_result = await self._command_executor.execute_command(
+                "xet.get_xet_folder_status",
+                folder_key=folder_key,
+            )
 
-        if success:
-            status_data = result_data.get("status", {})
+            if hasattr(status_result, "success"):
+                success = status_result.success
+                error = status_result.error
+                result_data = status_result.data if status_result.success else {}
+            else:
+                success, message, result_data = status_result
+                error = message if not success else None
+                result_data = result_data if isinstance(result_data, dict) else {}
+            if success:
+                status_data = result_data.get("status", {})
+
+        if status_data is not None:
             status_panel = self.query_one("#status_panel", Static)
 
             status_lines = [
@@ -415,15 +465,14 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
             ]
 
             status_panel.update(Panel("\n".join(status_lines), title="Folder Status"))
-        else:
-            if self.statusbar:
-                self.statusbar.update(
-                    Panel(
-                        f"Failed to get folder status: {error}",
-                        title="Error",
-                        border_style="red",
-                    )
+        elif self.statusbar:
+            self.statusbar.update(
+                Panel(
+                    f"Failed to get folder status: {error}",
+                    title="Error",
+                    border_style="red",
                 )
+            )
 
     async def action_manage_allowlist(self) -> None:  # pragma: no cover
         """Manage allowlist for selected folder."""
@@ -442,7 +491,9 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
             return
 
         # Get folder key from selected row
-        folder_key = folders_table.get_row_at(cursor_row)[0]
+        folder_key = self._folder_keys_by_row.get(cursor_row)
+        if not folder_key:
+            return
 
         # Show input dialog for allowlist path
         from ccbt.interface.screens.base import InputDialog
@@ -553,7 +604,7 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
         ]
 
         status_panel.update(Panel("\n".join(status_lines) + "\n\n" + str(table), title="Allowlist"))
-        
+
         # Store allowlist path for later use
         self._current_allowlist_path = allowlist_path  # type: ignore[attr-defined]
 
@@ -738,15 +789,14 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
             # Refresh allowlist display if currently showing it
             if hasattr(self, "_current_allowlist_path") and self._current_allowlist_path == allowlist_path:
                 await self._show_allowlist_menu(allowlist_path)
-        else:
-            if self.statusbar:
-                self.statusbar.update(
-                    Panel(
-                        f"Failed to set alias: {error}",
-                        title="Error",
-                        border_style="red",
-                    )
+        elif self.statusbar:
+            self.statusbar.update(
+                Panel(
+                    f"Failed to set alias: {error}",
+                    title="Error",
+                    border_style="red",
                 )
+            )
 
     async def _remove_alias(self, allowlist_path: str, peer_id: str) -> None:  # pragma: no cover
         """Remove alias for a peer."""
@@ -776,15 +826,14 @@ class XetFolderSyncScreen(MonitoringScreen):  # type: ignore[misc]
             # Refresh allowlist display if currently showing it
             if hasattr(self, "_current_allowlist_path") and self._current_allowlist_path == allowlist_path:
                 await self._show_allowlist_menu(allowlist_path)
-        else:
-            if self.statusbar:
-                self.statusbar.update(
-                    Panel(
-                        f"Failed to remove alias: {error}",
-                        title="Error",
-                        border_style="red",
-                    )
+        elif self.statusbar:
+            self.statusbar.update(
+                Panel(
+                    f"Failed to remove alias: {error}",
+                    title="Error",
+                    border_style="red",
                 )
+            )
 
     async def on_button_pressed(self, event: Any) -> None:  # pragma: no cover
         """Handle button presses."""

@@ -6,6 +6,7 @@ Provides AsyncSessionManager-like interface that wraps IPCClient for daemon comm
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
@@ -15,8 +16,54 @@ if TYPE_CHECKING:
 
 from ccbt.config.config import get_config
 from ccbt.daemon.ipc_protocol import EventType
+from ccbt.interface.data_provider import (
+    _normalize_global_stats_read_model,
+    _normalize_torrent_read_model,
+)
 
 logger = logging.getLogger(__name__)
+
+
+WEBSOCKET_EVENT_SUBSCRIPTIONS = (
+    EventType.TORRENT_ADDED,
+    EventType.TORRENT_REMOVED,
+    EventType.TORRENT_COMPLETED,
+    EventType.TORRENT_STATUS_CHANGED,
+    EventType.METADATA_READY,
+    EventType.METADATA_FETCH_STARTED,
+    EventType.METADATA_FETCH_PROGRESS,
+    EventType.METADATA_FETCH_COMPLETED,
+    EventType.METADATA_FETCH_FAILED,
+    EventType.FILE_SELECTION_CHANGED,
+    EventType.FILE_PRIORITY_CHANGED,
+    EventType.PEER_CONNECTED,
+    EventType.PEER_DISCONNECTED,
+    EventType.PEER_HANDSHAKE_COMPLETE,
+    EventType.PEER_BITFIELD_RECEIVED,
+    EventType.SEEDING_STARTED,
+    EventType.SEEDING_STOPPED,
+    EventType.SEEDING_STATS_UPDATED,
+    EventType.GLOBAL_STATS_UPDATED,
+    EventType.TRACKER_ANNOUNCE_STARTED,
+    EventType.TRACKER_ANNOUNCE_SUCCESS,
+    EventType.TRACKER_ANNOUNCE_ERROR,
+    EventType.PIECE_REQUESTED,
+    EventType.PIECE_DOWNLOADED,
+    EventType.PIECE_VERIFIED,
+    EventType.PIECE_COMPLETED,
+    EventType.PROGRESS_UPDATED,
+    EventType.MEDIA_STREAM_STARTED,
+    EventType.MEDIA_STREAM_BUFFERING,
+    EventType.MEDIA_STREAM_READY,
+    EventType.MEDIA_STREAM_STOPPED,
+    EventType.MEDIA_STREAM_ERROR,
+    EventType.XET_FOLDER_ADDED,
+    EventType.XET_FOLDER_REMOVED,
+    EventType.XET_FOLDER_CHANGED,
+    EventType.XET_SYNC_PROGRESS,
+    EventType.XET_SYNC_ERROR,
+    EventType.XET_METADATA_READY,
+)
 
 
 class DaemonInterfaceAdapter:
@@ -48,9 +95,17 @@ class DaemonInterfaceAdapter:
         self._cached_status: dict[str, Any] = {}
         self._cached_torrents: dict[str, dict[str, Any]] = {}
         self._cache_lock = asyncio.Lock()
-        
+        # Event-driven caches (used by _handle_websocket_event)
+        self._torrent_status_cache: dict[str, Any] = {}
+        self._torrent_files_cache: dict[str, Any] = {}
+        self._torrent_peers_cache: dict[str, Any] = {}
+        self._torrent_trackers_cache: dict[str, Any] = {}
+        self._media_status_cache: dict[str, Any] = {}
+        self._global_stats_cache: Optional[dict[str, Any]] = None
+
         # WebSocket subscription
         self._websocket_task: Optional[asyncio.Task] = None
+        self._peers_update_task: Optional[asyncio.Task] = None
         self._event_callbacks: dict[EventType, list[Callable[[dict[str, Any]], None]]] = {}
         self._websocket_connected = False
         
@@ -67,9 +122,11 @@ class DaemonInterfaceAdapter:
         self.on_peer_metrics: Optional[Callable[[dict[str, Any]], None]] = None
         self.on_tracker_event: Optional[Callable[[dict[str, Any]], None]] = None
         self.on_metadata_event: Optional[Callable[[dict[str, Any]], None]] = None
+        self.on_media_event: Optional[Callable[[dict[str, Any]], None]] = None
         # XET folder callbacks
         self.on_xet_folder_added: Optional[Callable[[str, str], None]] = None
         self.on_xet_folder_removed: Optional[Callable[[str], None]] = None
+        self.on_xet_event: Optional[Callable[[dict[str, Any]], None]] = None
         
         # Properties matching AsyncSessionManager
         self.torrents: dict[bytes, Any] = {}  # Will be populated from cached status
@@ -84,6 +141,11 @@ class DaemonInterfaceAdapter:
         
         self.logger = logger
 
+    @staticmethod
+    def _subscription_events() -> list[EventType]:
+        """Return the full websocket subscription set."""
+        return list(WEBSOCKET_EVENT_SUBSCRIPTIONS)
+
     async def start(self) -> None:
         """Connect to daemon and start WebSocket subscription."""
         max_retries = 3
@@ -97,12 +159,14 @@ class DaemonInterfaceAdapter:
                         self.logger.warning(
                             "Daemon is not running or not accessible (attempt %d/%d), retrying...",
                             attempt + 1,
-                            max_retries
+                            max_retries,
                         )
                         await asyncio.sleep(retry_delay)
                         continue
-                    else:
-                        raise RuntimeError("Daemon is not running or not accessible after %d attempts" % max_retries)
+                    message = (
+                        f"Daemon is not running or not accessible after {max_retries} attempts"
+                    )
+                    raise RuntimeError(message)
                 
                 # Connect WebSocket for real-time updates
                 if await self._client.connect_websocket():
@@ -112,7 +176,6 @@ class DaemonInterfaceAdapter:
                     # This prevents "Concurrent call to receive() is not allowed" error
                     # The IPC client starts _websocket_receive_loop() in connect_websocket(),
                     # but we need to use our own _websocket_event_loop() for proper event handling
-                    import contextlib
                     if self._client._websocket_task and not self._client._websocket_task.done():  # type: ignore[attr-defined]
                         self._client._websocket_task.cancel()  # type: ignore[attr-defined]
                         # Wait for cancellation to complete with timeout
@@ -135,37 +198,7 @@ class DaemonInterfaceAdapter:
                     await asyncio.sleep(0.1)
                     
                     # Subscribe to relevant events
-                    await self._client.subscribe_events([
-                        EventType.TORRENT_ADDED,
-                        EventType.TORRENT_REMOVED,
-                        EventType.TORRENT_COMPLETED,
-                        EventType.TORRENT_STATUS_CHANGED,
-                        EventType.METADATA_READY,
-                        EventType.METADATA_FETCH_STARTED,
-                        EventType.METADATA_FETCH_PROGRESS,
-                        EventType.METADATA_FETCH_COMPLETED,
-                        EventType.METADATA_FETCH_FAILED,
-                        EventType.FILE_SELECTION_CHANGED,
-                        EventType.FILE_PRIORITY_CHANGED,
-                        EventType.PEER_CONNECTED,
-                        EventType.PEER_DISCONNECTED,
-                        EventType.PEER_HANDSHAKE_COMPLETE,
-                        EventType.PEER_BITFIELD_RECEIVED,
-                        EventType.SEEDING_STARTED,
-                        EventType.SEEDING_STOPPED,
-                        EventType.SEEDING_STATS_UPDATED,
-                        EventType.GLOBAL_STATS_UPDATED,
-                        EventType.TRACKER_ANNOUNCE_STARTED,
-                        EventType.TRACKER_ANNOUNCE_SUCCESS,
-                        EventType.TRACKER_ANNOUNCE_ERROR,
-                        # Piece events for real-time piece updates
-                        EventType.PIECE_REQUESTED,
-                        EventType.PIECE_DOWNLOADED,
-                        EventType.PIECE_VERIFIED,
-                        EventType.PIECE_COMPLETED,
-                        # Progress events for real-time progress updates
-                        EventType.PROGRESS_UPDATED,
-                    ])
+                    await self._client.subscribe_events(self._subscription_events())
                     # Mapping reference for UI planning:
                     #   GLOBAL_STATS_UPDATED   -> dashboard overview/speeds.
                     #   TORRENT_* events       -> torrents table + selectors.
@@ -208,14 +241,14 @@ class DaemonInterfaceAdapter:
         # Stop WebSocket task
         if self._websocket_task:
             self._websocket_task.cancel()
-            with asyncio.suppress(asyncio.CancelledError):
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._websocket_task
             self._websocket_task = None
-        
+
         # Stop peers update task
         if self._peers_update_task:
             self._peers_update_task.cancel()
-            with asyncio.suppress(asyncio.CancelledError):
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._peers_update_task
             self._peers_update_task = None
         
@@ -276,12 +309,9 @@ class DaemonInterfaceAdapter:
                         
                         # Try to reconnect WebSocket
                         if await self._client.connect_websocket():
-                            await self._client.subscribe_events([
-                                EventType.TORRENT_ADDED,
-                                EventType.TORRENT_REMOVED,
-                                EventType.TORRENT_COMPLETED,
-                                EventType.TORRENT_STATUS_CHANGED,
-                            ])
+                            await self._client.subscribe_events(
+                                self._subscription_events(),
+                            )
                             self.logger.info("WebSocket reconnected successfully")
                             consecutive_failures = 0
                             reconnect_delay = 1.0
@@ -309,6 +339,22 @@ class DaemonInterfaceAdapter:
                         await result
                 except Exception as cb_error:
                     self.logger.debug("Error in adapter callback %s: %s", getattr(callback, "__name__", "?"), cb_error)
+
+            def _event_payload() -> dict[str, Any]:
+                """Build a consistent event payload for UI consumers."""
+                payload = dict(event.data or {})
+                payload.setdefault("event", event.type.value)
+                if getattr(event, "raw_type", None):
+                    payload["raw_type"] = event.raw_type
+                if getattr(event, "event_id", None):
+                    payload["event_id"] = event.event_id
+                if getattr(event, "source", None):
+                    payload["source"] = event.source
+                if getattr(event, "priority", None):
+                    payload["priority"] = event.priority
+                if getattr(event, "correlation_id", None):
+                    payload["correlation_id"] = event.correlation_id
+                return payload
 
             if event.type == EventType.TORRENT_ADDED:
                 info_hash_hex = event.data.get("info_hash", "")
@@ -382,7 +428,8 @@ class DaemonInterfaceAdapter:
                         # Invalidate cached status to force refresh
                         if info_hash_hex in self._torrent_status_cache:
                             del self._torrent_status_cache[info_hash_hex]
-                await self._refresh_cache()
+                        self._cached_torrents.pop(info_hash_hex, None)
+                        self._cached_status.clear()
             
             elif event.type == EventType.METADATA_READY:
                 # Metadata is now available - trigger cache refresh
@@ -392,7 +439,49 @@ class DaemonInterfaceAdapter:
                         # Invalidate cached files to force refresh
                         if info_hash_hex in self._torrent_files_cache:
                             del self._torrent_files_cache[info_hash_hex]
-                await self._refresh_cache()
+                        self._cached_torrents.pop(info_hash_hex, None)
+
+            elif event.type == EventType.XET_FOLDER_ADDED:
+                folder_key = event.data.get("folder_key", "")
+                folder_path = event.data.get("folder_path", "")
+                if folder_key and self.on_xet_folder_added:
+                    await _dispatch(self.on_xet_folder_added, folder_key, folder_path)
+                await self._refresh_xet_folders_cache()
+                await _dispatch(self.on_xet_event, _event_payload())
+
+            elif event.type == EventType.XET_FOLDER_REMOVED:
+                folder_key = event.data.get("folder_key", "")
+                if folder_key and self.on_xet_folder_removed:
+                    await _dispatch(self.on_xet_folder_removed, folder_key)
+                await self._refresh_xet_folders_cache()
+                await _dispatch(self.on_xet_event, _event_payload())
+
+            elif event.type in (
+                EventType.XET_FOLDER_CHANGED,
+                EventType.XET_SYNC_PROGRESS,
+                EventType.XET_SYNC_ERROR,
+                EventType.XET_METADATA_READY,
+            ):
+                await self._refresh_xet_folders_cache()
+                await _dispatch(self.on_xet_event, _event_payload())
+
+            elif event.type in (
+                EventType.MEDIA_STREAM_STARTED,
+                EventType.MEDIA_STREAM_BUFFERING,
+                EventType.MEDIA_STREAM_READY,
+                EventType.MEDIA_STREAM_STOPPED,
+                EventType.MEDIA_STREAM_ERROR,
+            ):
+                info_hash_hex = event.data.get("info_hash", "")
+                stream_id = event.data.get("stream_id", "")
+                async with self._cache_lock:
+                    if info_hash_hex:
+                        self._media_status_cache.pop(info_hash_hex, None)
+                        self._torrent_status_cache.pop(info_hash_hex, None)
+                    if stream_id:
+                        self._media_status_cache.pop(stream_id, None)
+                self._notify_widgets_media_event(event.type.value, event.data)
+                await _dispatch(self.on_media_event, _event_payload())
             
             elif event.type in [
                 EventType.METADATA_FETCH_STARTED,
@@ -402,8 +491,7 @@ class DaemonInterfaceAdapter:
             ]:
                 # Metadata fetch events - just log for now, could trigger UI updates
                 self.logger.debug("Metadata fetch event: %s for %s", event.type, event.data.get("info_hash", ""))
-                payload = {"event": event.type.value, **(event.data or {})}
-                await _dispatch(self.on_metadata_event, payload)
+                await _dispatch(self.on_metadata_event, _event_payload())
             
             elif event.type in [
                 EventType.FILE_SELECTION_CHANGED,
@@ -415,7 +503,7 @@ class DaemonInterfaceAdapter:
                     async with self._cache_lock:
                         if info_hash_hex in self._torrent_files_cache:
                             del self._torrent_files_cache[info_hash_hex]
-                await self._refresh_cache()
+                        self._cached_torrents.pop(info_hash_hex, None)
             
             elif event.type in [
                 EventType.PEER_CONNECTED,
@@ -430,6 +518,8 @@ class DaemonInterfaceAdapter:
                         if info_hash_hex in self._torrent_peers_cache:
                             del self._torrent_peers_cache[info_hash_hex]
                 # Don't refresh immediately - peers update loop will handle it
+                self._notify_widgets_peer_event(event.type.value, event.data)
+                await _dispatch(self.on_peer_metrics, _event_payload())
             
             elif event.type in [
                 EventType.SEEDING_STARTED,
@@ -442,14 +532,16 @@ class DaemonInterfaceAdapter:
                     async with self._cache_lock:
                         if info_hash_hex in self._torrent_status_cache:
                             del self._torrent_status_cache[info_hash_hex]
-                await self._refresh_cache()
+                        self._cached_torrents.pop(info_hash_hex, None)
+                async with self._cache_lock:
+                    self._cached_status.clear()
             
             elif event.type == EventType.GLOBAL_STATS_UPDATED:
                 # Global stats updated - invalidate global stats cache
                 async with self._cache_lock:
                     self._global_stats_cache = None
                 # Notify listeners with fresh metrics payload (if provided)
-                await _dispatch(self.on_global_stats, event.data or {})
+                await _dispatch(self.on_global_stats, _event_payload())
                 # Don't refresh immediately - let polling handle it or trigger specific update
             
             elif event.type in [
@@ -466,8 +558,7 @@ class DaemonInterfaceAdapter:
                 # Notify widgets about tracker events for timeline annotations
                 self._notify_widgets_tracker_event(event.type.value, event.data)
                 # Don't refresh immediately - trackers update on demand
-                payload = {"event": event.type.value, **(event.data or {})}
-                await _dispatch(self.on_tracker_event, payload)
+                await _dispatch(self.on_tracker_event, _event_payload())
             
             elif event.type in [
                 EventType.PIECE_REQUESTED,
@@ -480,11 +571,10 @@ class DaemonInterfaceAdapter:
                 info_hash_hex = event.data.get("info_hash", "")
                 if info_hash_hex:
                     async with self._cache_lock:
-                        # Invalidate torrent status cache if it exists
-                        if hasattr(self, "_torrent_status_cache") and info_hash_hex in self._torrent_status_cache:
+                        if info_hash_hex in self._torrent_status_cache:
                             del self._torrent_status_cache[info_hash_hex]
-                # Trigger cache refresh for real-time updates
-                await self._refresh_cache()
+                        self._cached_torrents.pop(info_hash_hex, None)
+                        self._cached_status.clear()
                 # Notify registered widgets
                 self._notify_widgets_piece_event(event.type.value, event.data)
             
@@ -494,26 +584,15 @@ class DaemonInterfaceAdapter:
                 info_hash_hex = event.data.get("info_hash", "")
                 if info_hash_hex:
                     async with self._cache_lock:
-                        # Invalidate torrent status (contains progress) if it exists
-                        if hasattr(self, "_torrent_status_cache") and info_hash_hex in self._torrent_status_cache:
+                        # Invalidate torrent status (contains progress)
+                        if info_hash_hex in self._torrent_status_cache:
                             del self._torrent_status_cache[info_hash_hex]
-                        # Invalidate global stats (contains average progress) if it exists
-                        if hasattr(self, "_global_stats_cache"):
-                            self._global_stats_cache = None
-                # Trigger cache refresh for real-time updates
-                await self._refresh_cache()
+                        # Invalidate global stats (contains average progress)
+                        self._global_stats_cache = None
+                        self._cached_torrents.pop(info_hash_hex, None)
+                        self._cached_status.clear()
                 # Notify registered widgets
                 self._notify_widgets_progress_event(event.type.value, event.data)
-            
-            elif event.type in [
-                EventType.PEER_CONNECTED,
-                EventType.PEER_DISCONNECTED,
-                EventType.PEER_HANDSHAKE_COMPLETE,
-                EventType.PEER_BITFIELD_RECEIVED,
-            ]:
-                # Notify widgets about peer events (in addition to cache invalidation above)
-                self._notify_widgets_peer_event(event.type.value, event.data)
-                await _dispatch(self.on_peer_metrics, event.data or {})
             
             # Emit torrent delta callbacks for UI patching
             if event.type in [
@@ -526,17 +605,14 @@ class DaemonInterfaceAdapter:
             ]:
                 await _dispatch(
                     self.on_torrent_list_delta,
-                    {
-                        "event": event.type.value,
-                        **(event.data or {}),
-                    },
+                    _event_payload(),
                 )
             
             # Call registered callbacks
             if event.type in self._event_callbacks:
                 for callback in self._event_callbacks[event.type]:
                     try:
-                        callback(event.data)
+                        callback(_event_payload())
                     except Exception as e:
                         self.logger.debug("Error in event callback: %s", e)
         except Exception as e:
@@ -557,67 +633,15 @@ class DaemonInterfaceAdapter:
                     try:
                         info_hash = bytes.fromhex(info_hash_hex)
                         self.torrents[info_hash] = torrent_status  # Store status object
-                        
-                        # Convert to dict format for compatibility
-                        self._cached_torrents[info_hash_hex] = {
-                            "info_hash": info_hash_hex,
-                            "name": torrent_status.name,
-                            "status": torrent_status.status,
-                            "progress": torrent_status.progress,
-                            "download_rate": torrent_status.download_rate,
-                            "upload_rate": torrent_status.upload_rate,
-                            "peers": torrent_status.num_peers,
-                            "seeds": torrent_status.num_seeds,
-                            "total_size": torrent_status.total_size,
-                            "downloaded": torrent_status.downloaded,
-                            "uploaded": torrent_status.uploaded,
-                        }
+
+                        self._cached_torrents[info_hash_hex] = _normalize_torrent_read_model(
+                            torrent_status.model_dump(),
+                        )
                     except ValueError:
                         continue
-                
-                # Update global stats using executor adapter
+
                 stats = await self._executor_adapter.get_global_stats()
-                
-                # Aggregate download_rate, upload_rate, and average_progress from all torrents
-                total_download_rate = 0.0
-                total_upload_rate = 0.0
-                total_progress = 0.0
-                torrent_count = 0
-                
-                for torrent_status in torrent_list:
-                    if hasattr(torrent_status, 'download_rate'):
-                        total_download_rate += torrent_status.download_rate
-                    elif isinstance(torrent_status, dict):
-                        total_download_rate += torrent_status.get("download_rate", 0.0)
-                    
-                    if hasattr(torrent_status, 'upload_rate'):
-                        total_upload_rate += torrent_status.upload_rate
-                    elif isinstance(torrent_status, dict):
-                        total_upload_rate += torrent_status.get("upload_rate", 0.0)
-                    
-                    if hasattr(torrent_status, 'progress'):
-                        total_progress += torrent_status.progress
-                    elif isinstance(torrent_status, dict):
-                        total_progress += torrent_status.get("progress", 0.0)
-                    
-                    torrent_count += 1
-                
-                # Calculate averages
-                average_progress = total_progress / torrent_count if torrent_count > 0 else 0.0
-                
-                # Use aggregated values if available, otherwise fall back to stats from executor
-                download_rate = total_download_rate if total_download_rate > 0.0 else stats.get("download_rate", 0.0)
-                upload_rate = total_upload_rate if total_upload_rate > 0.0 else stats.get("upload_rate", 0.0)
-                
-                self._cached_status = {
-                    "num_torrents": stats.get("num_torrents", torrent_count),
-                    "num_active": stats.get("num_active", 0),
-                    "num_paused": stats.get("num_paused", 0),
-                    "num_seeding": stats.get("num_seeding", 0),
-                    "download_rate": download_rate,
-                    "upload_rate": upload_rate,
-                    "average_progress": average_progress,
-                }
+                self._cached_status = _normalize_global_stats_read_model(stats)
         except Exception as e:
             self.logger.debug("Error refreshing cache: %s", e)
 
@@ -636,20 +660,8 @@ class DaemonInterfaceAdapter:
             torrent_status = await self._executor_adapter.get_torrent_status(info_hash_hex)
             if not torrent_status:
                 return None
-            
-            return {
-                "info_hash": torrent_status.info_hash,
-                "name": torrent_status.name,
-                "status": torrent_status.status,
-                "progress": torrent_status.progress,
-                "download_rate": torrent_status.download_rate,
-                "upload_rate": torrent_status.upload_rate,
-                "peers": torrent_status.num_peers,
-                "seeds": torrent_status.num_seeds,
-                "total_size": torrent_status.total_size,
-                "downloaded": torrent_status.downloaded,
-                "uploaded": torrent_status.uploaded,
-            }
+
+            return _normalize_torrent_read_model(torrent_status.model_dump())
         except Exception as e:
             self.logger.debug("Error getting torrent status: %s", e)
             return None
@@ -686,7 +698,7 @@ class DaemonInterfaceAdapter:
             await self._refresh_cache()
             
             return info_hash_hex
-        except Exception as e:
+        except Exception:
             self.logger.exception("Failed to add torrent via daemon")
             raise
 
@@ -712,7 +724,7 @@ class DaemonInterfaceAdapter:
             await self._refresh_cache()
             
             return info_hash_hex
-        except Exception as e:
+        except Exception:
             self.logger.exception("Failed to add magnet via daemon")
             raise
 
@@ -761,45 +773,15 @@ class DaemonInterfaceAdapter:
         """Aggregate global statistics across all torrents."""
         await self._refresh_cache()
         async with self._cache_lock:
-            stats = dict(self._cached_status)
-            
-            # Calculate aggregate stats from torrents
-            total_download_rate = 0.0
-            total_upload_rate = 0.0
-            total_progress = 0.0
-            num_active = 0
-            num_paused = 0
-            num_seeding = 0
-            
-            for torrent_data in self._cached_torrents.values():
-                status = torrent_data.get("status", "")
-                if status == "paused":
-                    num_paused += 1
-                elif status == "seeding":
-                    num_seeding += 1
-                else:
-                    num_active += 1
-                
-                total_download_rate += float(torrent_data.get("download_rate", 0.0))
-                total_upload_rate += float(torrent_data.get("upload_rate", 0.0))
-                total_progress += float(torrent_data.get("progress", 0.0))
-            
-            stats.update({
-                "num_active": num_active,
-                "num_paused": num_paused,
-                "num_seeding": num_seeding,
-                "download_rate": total_download_rate,
-                "upload_rate": total_upload_rate,
-                "average_progress": total_progress / len(self._cached_torrents) if self._cached_torrents else 0.0,
-            })
-            
-            return stats
+            return dict(self._cached_status)
 
     async def get_peers_for_torrent(self, info_hash_hex: str) -> list[dict[str, Any]]:
-        """Return list of peers for a torrent."""
-        # IPC doesn't provide detailed peer info, return empty list
-        # This could be extended if IPC adds peer details endpoint
-        return []
+        """Return list of peers for a torrent via daemon IPC."""
+        try:
+            return await self._executor_adapter.get_peers_for_torrent(info_hash_hex)
+        except Exception as e:
+            self.logger.debug("Error getting peers for torrent %s: %s", info_hash_hex[:8], e)
+            return []
 
     # XET folder methods (matching AsyncSessionManager interface)
 
@@ -910,6 +892,25 @@ class DaemonInterfaceAdapter:
             self.logger.debug("Error getting XET folder status: %s", e)
             return None
 
+    async def get_media_stream_status(
+        self,
+        info_hash_hex: Optional[str] = None,
+        stream_id: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Get media stream status via daemon executor."""
+        try:
+            result = await self._executor.execute(
+                "media.status",
+                info_hash=info_hash_hex,
+                stream_id=stream_id,
+            )
+            if not result.success:
+                return None
+            return result.data.get("status")
+        except Exception as e:
+            self.logger.debug("Error getting media stream status: %s", e)
+            return None
+
     async def _refresh_xet_folders_cache(self) -> None:
         """Refresh XET folders cache from daemon."""
         try:
@@ -931,9 +932,16 @@ class DaemonInterfaceAdapter:
             self.logger.debug("Error refreshing XET folders cache: %s", e)
 
     async def force_announce(self, info_hash_hex: str) -> bool:
-        """Force a tracker announce for a given torrent if possible."""
-        # IPC doesn't provide force announce, return False
-        return False
+        """Force a tracker announce for a given torrent via daemon IPC."""
+        try:
+            result = await self._executor.execute(
+                "torrent.force_announce",
+                info_hash=info_hash_hex,
+            )
+            return bool(result.success)
+        except Exception as e:
+            self.logger.debug("Error forcing announce for %s: %s", info_hash_hex[:8], e)
+            return False
 
     async def set_rate_limits(
         self,
@@ -941,9 +949,20 @@ class DaemonInterfaceAdapter:
         download_kib: int,
         upload_kib: int,
     ) -> bool:
-        """Set per-torrent rate limits."""
-        # IPC doesn't provide rate limit setting, return False
-        return False
+        """Set per-torrent rate limits via daemon IPC."""
+        try:
+            result = await self._executor.execute(
+                "torrent.set_rate_limits",
+                info_hash=info_hash_hex,
+                download_kib=download_kib,
+                upload_kib=upload_kib,
+            )
+            return bool(result.success)
+        except Exception as e:
+            self.logger.debug(
+                "Error setting rate limits for %s: %s", info_hash_hex[:8], e
+            )
+            return False
 
     async def reload_config(self, new_config: Any) -> None:
         """Reload configuration."""
@@ -986,22 +1005,30 @@ class DaemonInterfaceAdapter:
             # CRITICAL: Use executor adapter for all operations (consistent with CLI)
             torrent_list = await self._executor_adapter.list_torrents()
             
-            # Aggregate peers from all torrents
+            # Aggregate peers from all torrents (executor returns list of dicts)
             for torrent_status in torrent_list:
-                info_hash_hex = torrent_status.info_hash
+                info_hash_hex = getattr(torrent_status, "info_hash", "")
+                if not info_hash_hex:
+                    continue
                 try:
                     peer_list = await self._executor_adapter.get_peers_for_torrent(info_hash_hex)
-                    for peer_info in peer_list.peers:
-                        peer_key = (peer_info.ip, peer_info.port)
+                    if not isinstance(peer_list, list):
+                        continue
+                    for peer_info in peer_list:
+                        if not isinstance(peer_info, dict):
+                            continue
+                        ip = peer_info.get("ip", "")
+                        port = int(peer_info.get("port", 0))
+                        peer_key = (ip, port)
                         if peer_key not in seen_peers:
                             seen_peers.add(peer_key)
                             all_peers.append({
-                                "ip": peer_info.ip,
-                                "port": peer_info.port,
-                                "download_rate": peer_info.download_rate,
-                                "upload_rate": peer_info.upload_rate,
-                                "choked": peer_info.choked,
-                                "client": peer_info.client,
+                                "ip": ip,
+                                "port": port,
+                                "download_rate": peer_info.get("download_rate", 0.0),
+                                "upload_rate": peer_info.get("upload_rate", 0.0),
+                                "choked": peer_info.get("choked", False),
+                                "client": peer_info.get("client"),
                             })
                 except Exception as e:
                     self.logger.debug("Error getting peers for torrent %s: %s", info_hash_hex, e)
@@ -1123,3 +1150,16 @@ class DaemonInterfaceAdapter:
                     widget.on_tracker_event(event_type, event_data)
             except Exception as e:
                 logger.debug("Error notifying widget %s about tracker event: %s", type(widget).__name__, e)
+
+    def _notify_widgets_media_event(self, event_type: str, event_data: dict[str, Any]) -> None:
+        """Notify all registered widgets about a media-stream event."""
+        for widget in self._widget_callbacks:
+            try:
+                if hasattr(widget, "on_media_event"):
+                    widget.on_media_event(event_type, event_data)
+            except Exception as e:
+                logger.debug(
+                    "Error notifying widget %s about media event: %s",
+                    type(widget).__name__,
+                    e,
+                )

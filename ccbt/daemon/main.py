@@ -27,6 +27,17 @@ from ccbt.utils.logging_config import get_logger, setup_logging
 logger = get_logger(__name__)
 
 
+def _is_workspace_id_hex(workspace_id_hex: str) -> bool:
+    """Return True when workspace ID is canonical 32-byte hex."""
+    if len(workspace_id_hex) != 64:
+        return False
+    try:
+        bytes.fromhex(workspace_id_hex)
+    except ValueError:
+        return False
+    return True
+
+
 async def _restore_torrent_config(
     session_manager: AsyncSessionManager,
     info_hash_hex: str,
@@ -267,7 +278,9 @@ class DaemonMain:
         )
         self.session_manager = AsyncSessionManager(
             output_dir=default_output_dir,
+            key_manager=self._key_manager,
         )
+        self.session_manager.key_manager = self._key_manager
 
         try:
             # Start session manager (must be started before restoring torrents)
@@ -565,6 +578,88 @@ class DaemonMain:
                         restored_count,
                         len(state.torrents),
                     )
+
+                    xet_metadata_registry = state.metadata.get(
+                        "xet_metadata_registry", {}
+                    )
+                    if isinstance(xet_metadata_registry, dict):
+                        for (
+                            workspace_id_hex,
+                            metadata_hex,
+                        ) in xet_metadata_registry.items():
+                            if (
+                                isinstance(workspace_id_hex, str)
+                                and _is_workspace_id_hex(workspace_id_hex)
+                                and isinstance(metadata_hex, str)
+                            ):
+                                with contextlib.suppress(Exception):
+                                    await self.session_manager.register_xet_metadata(
+                                        workspace_id_hex,
+                                        bytes.fromhex(metadata_hex),
+                                    )
+
+                    xet_folders = state.metadata.get("xet_folders", [])
+                    restored_xet_count = 0
+                    if isinstance(xet_folders, list):
+                        for folder_state in xet_folders:
+                            if not isinstance(folder_state, dict):
+                                continue
+                            folder_key = folder_state.get("folder_key")
+                            folder_path = folder_state.get("folder_path")
+                            if not folder_key or not folder_path:
+                                continue
+                            metadata_bytes = None
+                            workspace_id = folder_state.get("workspace_id")
+                            metadata_hex = None
+                            if isinstance(workspace_id, str) and _is_workspace_id_hex(
+                                workspace_id
+                            ):
+                                metadata_hex = xet_metadata_registry.get(workspace_id)
+                            elif isinstance(workspace_id, str):
+                                logger.debug(
+                                    "Skipping invalid workspace_id in folder state: %s",
+                                    workspace_id,
+                                )
+                            if metadata_hex is None:
+                                # Legacy fallback for older state files keyed by folder key.
+                                metadata_hex = xet_metadata_registry.get(folder_key)
+                            if isinstance(metadata_hex, str):
+                                with contextlib.suppress(ValueError):
+                                    metadata_bytes = bytes.fromhex(metadata_hex)
+                            try:
+                                await self.session_manager.add_xet_folder(
+                                    folder_path=folder_path,
+                                    tonic_file=folder_state.get("tonic_source")
+                                    if str(
+                                        folder_state.get("tonic_source", "")
+                                    ).endswith(".tonic")
+                                    else None,
+                                    tonic_link=folder_state.get("tonic_source")
+                                    if str(
+                                        folder_state.get("tonic_source", "")
+                                    ).startswith("tonic?:")
+                                    else None,
+                                    sync_mode=folder_state.get("sync_mode"),
+                                    source_peers=folder_state.get("source_peers"),
+                                    folder_key=folder_key,
+                                    metadata_bytes=metadata_bytes,
+                                    allowlist_path=folder_state.get("allowlist_path"),
+                                    auth_scope=folder_state.get("auth_scope"),
+                                    require_signed_metadata=folder_state.get(
+                                        "require_signed_metadata"
+                                    ),
+                                    hash_algorithm=folder_state.get("hash_algorithm"),
+                                )
+                                restored_xet_count += 1
+                            except Exception:
+                                logger.exception(
+                                    "Failed to restore XET folder %s",
+                                    folder_key,
+                                )
+                    if restored_xet_count:
+                        logger.info(
+                            "Restored %d XET folders from state", restored_xet_count
+                        )
                 else:
                     logger.warning("State validation failed, skipping restoration")
 

@@ -277,14 +277,15 @@ class SSLPeerConnection:
             request_data = ssl_extension.encode_request()
             request_id = ssl_extension.decode_request(request_data)
 
-            # Encode as extension message
-            extension_message = extension_protocol.encode_extension_message(
-                ssl_ext_info.message_id, request_data
-            )
+            from ccbt.protocols.bittorrent_v2 import _send_extension_message
 
-            # Send message
-            writer.write(extension_message)
-            await writer.drain()
+            # Send the request as a BEP 10 frame.
+            connection = type("_WriterAdapter", (), {"writer": writer})()
+            sent = await _send_extension_message(
+                connection, ssl_ext_info.message_id, request_data
+            )
+            if not sent:
+                return None
 
             self.logger.debug(
                 "Sent SSL extension request (ID: %d) to peer %s", request_id, peer_id

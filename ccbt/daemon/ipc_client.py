@@ -41,6 +41,8 @@ from ccbt.daemon.ipc_protocol import (
     GlobalStatsResponse,
     ImportStateRequest,
     IPFilterStatsResponse,
+    MediaStreamStartResponse,
+    MediaStreamStatusResponse,
     NATMapRequest,
     NATStatusResponse,
     NetworkTimingMetricsResponse,
@@ -69,6 +71,11 @@ from ccbt.daemon.ipc_protocol import (
     WebSocketSubscribeRequest,
     WhitelistAddRequest,
     WhitelistResponse,
+    XetDiscoveryStatusResponse,
+    XetFolderStatusResponse,
+    XetSyncModeRequest,
+    XetWorkspacePolicyRequest,
+    XetWorkspacePolicyResponse,
 )
 from ccbt.i18n import _
 
@@ -1538,6 +1545,59 @@ class IPCClient:
             data = await resp.json()
             return ProtocolInfo(**data)
 
+    # Media streaming methods
+
+    async def start_media_stream(
+        self,
+        info_hash: str,
+        *,
+        file_index: int,
+        port: Optional[int] = None,
+    ) -> MediaStreamStartResponse:
+        """Start a daemon-backed media stream for a torrent file."""
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/media/start"
+        payload: dict[str, Any] = {"file_index": file_index}
+        if port is not None:
+            payload["port"] = port
+
+        async with session.post(url, json=payload, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            return MediaStreamStartResponse(**data)
+
+    async def stop_media_stream(self, stream_id: str) -> dict[str, Any]:
+        """Stop an active media stream."""
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/media/{stream_id}/stop"
+
+        async with session.post(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def get_media_stream_status(
+        self,
+        *,
+        stream_id: Optional[str] = None,
+        info_hash: Optional[str] = None,
+    ) -> Optional[MediaStreamStatusResponse]:
+        """Fetch media stream status by stream id or torrent info hash."""
+        session = await self._ensure_session()
+        if stream_id:
+            url = f"{self.base_url}{API_BASE_PATH}/media/{stream_id}/status"
+        elif info_hash:
+            url = f"{self.base_url}{API_BASE_PATH}/torrents/{info_hash}/media/status"
+        else:
+            msg = "Either stream_id or info_hash is required"
+            raise ValueError(msg)
+
+        async with session.get(url, headers=self._get_headers()) as resp:
+            if resp.status == 404:
+                return None
+            resp.raise_for_status()
+            data = await resp.json()
+            return MediaStreamStatusResponse(**data)
+
     # XET Folder Methods
 
     async def add_xet_folder(
@@ -1613,20 +1673,88 @@ class IPCClient:
             resp.raise_for_status()
             return await resp.json()
 
-    async def get_xet_folder_status(self, folder_key: str) -> dict[str, Any]:
+    async def get_xet_folder_status(self, folder_key: str) -> XetFolderStatusResponse:
         """Get XET folder status.
 
         Args:
             folder_key: Folder identifier (folder_path or info_hash)
 
         Returns:
-            Folder status dict
+            Typed folder status payload
 
         """
         session = await self._ensure_session()
         url = f"{self.base_url}{API_BASE_PATH}/xet/folders/{folder_key}"
 
         async with session.get(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            return XetFolderStatusResponse.model_validate(data)
+
+    async def get_xet_discovery_status(self) -> dict[str, Any]:
+        """Get XET discovery backend status map."""
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/xet/discovery-status"
+
+        async with session.get(url, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            parsed = XetDiscoveryStatusResponse.model_validate(data)
+            return {
+                name: backend.model_dump(mode="json")
+                for name, backend in parsed.backends.items()
+            }
+
+    async def set_xet_workspace_policy(
+        self,
+        workspace_id_hex: str,
+        *,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        auth_scope: Optional[str] = None,
+        allowlist_path: Optional[str] = None,
+        require_signed_metadata: Optional[bool] = None,
+        hash_algorithm: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Set live workspace policy for an active XET workspace."""
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/xet/workspace-policy/{workspace_id_hex}"
+        payload = XetWorkspacePolicyRequest(
+            sync_mode=sync_mode,
+            source_peers=source_peers,
+            auth_scope=auth_scope,
+            allowlist_path=allowlist_path,
+            require_signed_metadata=require_signed_metadata,
+            hash_algorithm=hash_algorithm,
+        )
+        async with session.post(
+            url,
+            json=payload.model_dump(mode="json"),
+            headers=self._get_headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            parsed = XetWorkspacePolicyResponse.model_validate(data)
+            return parsed.model_dump(mode="json")
+
+    async def set_xet_folder_sync_mode(
+        self,
+        folder_key: str,
+        sync_mode: str,
+        source_peers: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Update the live sync mode for an XET folder."""
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/xet/folders/{folder_key}/sync-mode"
+        payload = XetSyncModeRequest(
+            sync_mode=sync_mode,
+            source_peers=source_peers,
+        )
+        async with session.post(
+            url,
+            json=payload.model_dump(mode="json"),
+            headers=self._get_headers(),
+        ) as resp:
             resp.raise_for_status()
             return await resp.json()
 
@@ -2582,6 +2710,16 @@ class IPCClient:
 
             if self._websocket and not self._websocket.closed:
                 await self._websocket.send_json(message.model_dump())
+                if not self._websocket_task or self._websocket_task.done():
+                    try:
+                        ack = await asyncio.wait_for(
+                            self._websocket.receive(), timeout=0.5
+                        )
+                        if ack.type == aiohttp.WSMsgType.TEXT:
+                            payload = json.loads(ack.data)
+                            return payload.get("action") == "subscribed"
+                    except asyncio.TimeoutError:
+                        logger.debug("Timed out waiting for WebSocket subscription ack")
                 return True
             return False
         except Exception:

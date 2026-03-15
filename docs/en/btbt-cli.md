@@ -54,6 +54,8 @@ Strategy options (see [ccbt/cli/main.py:_apply_strategy_overrides](https://githu
 - `--endgame-threshold <float>`: Endgame threshold
 - `--streaming`: Enable streaming mode
 
+`--streaming` enables seek-aware sequential prioritization for playback-oriented downloads. In the Bitonic media tab, this is paired with a daemon-managed localhost HTTP range stream; playback itself remains external to the terminal UI, typically via VLC.
+
 Discovery options (see [ccbt/cli/main.py:_apply_discovery_overrides](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L123)):
 - `--enable-dht`: Enable DHT
 - `--disable-dht`: Disable DHT
@@ -218,6 +220,7 @@ Monitoring command group: [ccbt/cli/monitoring_commands.py](https://github.com/c
 ### dashboard
 
 Start terminal monitoring dashboard (Bitonic).
+This command requires daemon mode; local dashboard startup is intentionally unsupported.
 
 Implementation: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/monitoring_commands.py#L20)
 
@@ -226,7 +229,31 @@ Usage:
 uv run btbt dashboard [--refresh <seconds>] [--rules <path>]
 ```
 
+`--no-daemon` is deprecated for the dashboard command.
+
 See [Bitonic Guide](bitonic.md) for detailed usage.
+
+For XET workspace sharing, treat `.tonic` files and `tonic?:` links as workspace sources and always choose an explicit output directory when joining a workspace.
+
+## XET Workspace Commands
+
+### tonic sync
+
+Start syncing a workspace from a `.tonic` file or `tonic?:` link.
+
+Behavior notes:
+- Uses the executor/daemon runtime path instead of constructing a transient `XetFolder`.
+- Returns a live `folder_key` and workspace identity for the registered runtime.
+- When joining from a link, provide an explicit output directory for materialization.
+
+### tonic status
+
+Show the status of a registered XET workspace.
+
+Behavior notes:
+- Reads the live runtime status through the executor/session path.
+- Fails if the folder is not currently registered as an active XET workspace.
+- Reports the runtime `folder_key` and `workspace_id` alongside sync metrics.
 
 ### alerts
 

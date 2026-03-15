@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import ipaddress
+import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -387,10 +388,11 @@ class TestStorageIntegrationWorkflow:
 
         # Test get_data (check signature - may not have mutable param)
         retrieved = await client.get_data(key)
-        # Should retrieve the stored data (get_data returns dict, not DHTImmutableData)
+        # Current implementation returns raw bytes for immutable storage payloads.
         if retrieved:
-            assert isinstance(retrieved, dict)
-            assert b"v" in retrieved
+            assert isinstance(retrieved, bytes)
+            decoded = json.loads(retrieved.decode("utf-8"))
+            assert decoded.get("v") == "test data"
 
 
 class TestMultiAddressIntegrationWorkflow:
