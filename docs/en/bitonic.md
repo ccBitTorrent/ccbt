@@ -2,6 +2,12 @@
 
 **Bitonic** is the main entrypoint for ccBitTorrent, providing a live, interactive terminal dashboard for monitoring and managing torrents, peers, speeds, and system metrics.
 
+> Dashboard mode is daemon-backed. Local session mode is not supported for Bitonic/UI startup.
+
+> XET workspace joins from `.tonic` files or `tonic?:` links now require an explicit output directory. The dashboard prompts for the source first, then the destination folder to materialize into.
+
+> The XET monitoring screen reads live daemon/runtime state through the shared data-provider path. It no longer constructs ad hoc folder wrappers for status reads.
+
 - Entry point: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3914)
 - Defined in: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbt/blob/main/pyproject.toml#L81)
 - Main class: [ccbt/interface/terminal_dashboard.py:TerminalDashboard](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3009)
@@ -26,6 +32,8 @@ uv run bitonic --refresh 2.0
 # Via CLI with alert rules
 uv run ccbt dashboard --rules /path/to/alert-rules.json
 ```
+
+`--no-daemon` is deprecated for dashboard startup and intentionally not supported.
 
 Implementation: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/monitoring_commands.py#L20)
 
@@ -171,6 +179,9 @@ The dashboard uses a **tabbed interface** with a split layout:
    - **Trackers Sub-tab**: Tracker list with add/remove functionality
    - **Graphs Sub-tab**: Per-torrent speed graphs
    - **Config Sub-tab**: Per-torrent configuration
+   - **Media Sub-tab**: Embedded playback controls that start a daemon-backed localhost stream and open it in VLC or another external player
+
+Media playback in Bitonic is intentionally split into terminal-native controls plus an external player. The TUI can manage stream startup, buffering state, and diagnostics, but true native video embedding inside the Textual terminal surface is out of scope.
 
 3. **Preferences Tab** - Configuration with nested sub-tabs:
    - **General**: Language selection and basic settings

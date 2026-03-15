@@ -23,7 +23,7 @@ By combining CDC, deduplication, and P2P CAS, Xet transforms BitTorrent into a s
 - **Content-Defined Chunking (CDC)**: Gearhash-based intelligent file segmentation (8KB-128KB chunks)
 - **Cross-Torrent Deduplication**: Chunk-level deduplication across multiple torrents
 - **Peer-to-Peer CAS**: Decentralized Content Addressable Storage using DHT and trackers
-- **Merkle Tree Verification**: BLAKE3-256 hashing with SHA-256 fallback for integrity
+- **Merkle Tree Verification**: Integrity is keyed by the peer's negotiated hash algorithm (`blake3` or `sha256`)
 - **Xorb Format**: Efficient storage format for grouping multiple chunks
 - **Shard Format**: Metadata storage for file information and CAS data
 - **LZ4 Compression**: Optional compression for Xorb data
@@ -56,7 +56,7 @@ Transform BitTorrent into a P2P file system:
 The Xet protocol extension is fully implemented in ccBitTorrent:
 
 - ✅ Content-Defined Chunking (Gearhash CDC)
-- ✅ BLAKE3-256 hashing with SHA-256 fallback
+- ✅ Explicit hash-algorithm advertisement in the XET handshake
 - ✅ SQLite deduplication cache
 - ✅ DHT integration (BEP 44)
 - ✅ Tracker integration (HTTP and UDP)
@@ -65,13 +65,37 @@ The Xet protocol extension is fully implemented in ccBitTorrent:
 - ✅ BitTorrent protocol extension (BEP 10)
 - ✅ CLI integration
 - ✅ Configuration management
-- ✅ Folder synchronization with multiple sync modes
-- ✅ Consensus mechanisms (Raft and Byzantine Fault Tolerance)
+- ✅ Folder session/runtime management
+- ✅ Best-effort folder synchronization runtime
+- ✅ Tonic file format (`.tonic`) and `tonic?:` link parsing
+- ✅ Imported metadata bootstrap without empty-workspace overwrite
+- ✅ Materialization of joined workspaces into an explicit output directory
+- ✅ Workspace-scoped update routing inside the active session/daemon runtime
+- ✅ Missing-chunk reconstruction from sibling workspace runtimes before failing sync
+- ✅ Daemon persistence for registered XET workspaces
+- ✅ XET folder status via daemon IPC and monitoring UI
 - ✅ Git versioning integration
 - ✅ Encrypted allowlist with Ed25519
 - ✅ All 10 discovery mechanisms
 - ✅ Tonic file format (.tonic)
-- ✅ Real-time folder synchronization
+- ✅ Real-time folder synchronization scaffolding and event bridge
+- `supported`: `best_effort` workspace sync inside the active daemon/session runtime
+- `experimental`: designated and broadcast distributed semantics
+- `experimental`: transport-backed metadata discovery from arbitrary remote peers
+- `experimental`: chunk materialization that depends on ad-hoc remote peer transport
+- `not implemented`: consensus or Byzantine synchronization guarantees
+
+### Support Matrix
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `best_effort` workspace sync | supported | Canonical daemon/session runtime path |
+| Signed XET peer handshake | supported | Proof-of-possession over the handshake payload |
+| Allowlist storage encryption | supported | AES-256-GCM with derived key and versioned envelope |
+| DHT/tracker chunk lookup | supported | Signed DHT metadata is verified when present |
+| Designated / broadcast sync modes | experimental | Queueing exists, distributed semantics remain incomplete |
+| Consensus / Byzantine modes | not implemented | Do not rely on Raft/BFT guarantees |
+| Ad-hoc remote chunk transport | experimental | Existing peer connections are preferred; arbitrary remote fetches remain provisional |
 
 ## Configuration
 
@@ -116,11 +140,11 @@ xet_compression_enabled = true             # Enable LZ4 compression for Xorb dat
 
 The XET extension follows BEP 10 (Extension Protocol) for negotiation. During the extended handshake, peers exchange extension capabilities:
 
-- **Extension Name**: `ut_xet`
+- **Extension Name**: `xet`
 - **Extension ID**: Assigned dynamically during handshake (1-255)
 - **Required Capabilities**: None (extension is optional)
 
-Peers supporting XET include `ut_xet` in their extension handshake. The extension ID is stored per peer session for message routing.
+Peers supporting XET include `xet` in the BEP 10 `m` dictionary. The extension ID is peer-local and must be stored per session for message routing.
 
 ### Message Types
 
@@ -205,9 +229,19 @@ N       40    Git commit reference (SHA-1, 20 bytes) or (SHA-256, 32 bytes)
 
 ```
 Offset  Size  Description
-0       N     Folder identifier (UTF-8, null-terminated)
-N       40    New git commit reference
-N+40    8     Timestamp (big-endian, Unix epoch)
+0       1     Update-notify version
+1       1     Operation code (`1=upsert`, `2=delete`)
+2       1     Has workspace id flag
+3       32?   Workspace identifier when present
+35      4     File path length (big-endian)
+39      N     File path (UTF-8)
+39+N    32    File root hash / content identifier
+71+N    1     Has git ref flag
+72+N    4?    Git ref length (big-endian) when present
+76+N    M?    Git ref (UTF-8) when present
+76+N+M  1     Has metadata-version flag
+77+N+M  4?    Metadata-version length (big-endian) when present
+81+N+M  K?    Metadata-version payload (UTF-8) when present
 ```
 
 #### FOLDER_SYNC_MODE_REQUEST
@@ -349,10 +383,11 @@ Encrypted allowlist using Ed25519 for signing and AES-256-GCM for storage. Verif
 
 **Implementation Notes:**
 - Allowlist is managed via `XetAllowlist` class in `ccbt/security/xet_allowlist.py`
-- Ed25519 keys are managed via `Ed25519KeyManager`
+- Allowlist files are saved in a versioned envelope with random salt and AES-GCM nonce
+- Key material is derived from an explicit secret, `CCBT_XET_ALLOWLIST_SECRET`, local Ed25519 key material, or a generated local secret file
 - Allowlist hash is calculated from all peer entries and exchanged during handshake
-- Peer identity verification happens in `XetHandshakeExtension`
-- Non-allowed peers are rejected during handshake if allowlist is enforced
+- Peer identity verification happens in `XetHandshakeExtension` using a signed handshake payload
+- Non-allowed peers are rejected during handshake when allowlist enforcement is enabled
 - Aliases are stored in peer metadata and can be managed via CLI commands
 - See `ccbt/cli/tonic_commands.py` for allowlist management commands
 

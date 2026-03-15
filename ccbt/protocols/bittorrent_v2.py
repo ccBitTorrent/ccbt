@@ -617,9 +617,22 @@ async def _send_extension_message(
         return False
 
     try:
-        # Create ExtensionProtocol instance for encoding
-        ext_protocol = ExtensionProtocol()
-        message_bytes = ext_protocol.encode_extension_message(message_id, payload)
+        if message_id <= 0 or message_id > 255:
+            logger.warning("Invalid extension message ID: %s", message_id)
+            return False
+        if len(payload) > 0xFFFFFFFF - 2:
+            logger.warning("Extension payload too large: %d bytes", len(payload))
+            return False
+
+        message_bytes = (
+            struct.pack(
+                "!IBB",
+                len(payload) + 2,
+                ExtensionMessageType.EXTENDED,
+                message_id,
+            )
+            + payload
+        )
 
         # Send message via connection writer
         connection.writer.write(message_bytes)

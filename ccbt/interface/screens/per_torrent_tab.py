@@ -118,6 +118,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
         yield Tabs(
             Tab(_("Files"), id="sub-tab-files"),
             Tab(_("File Explorer"), id="sub-tab-file-explorer"),
+            Tab(_("Media"), id="sub-tab-media"),
             Tab(_("Info"), id="sub-tab-info"),
             Tab(_("Peers"), id="sub-tab-peers"),
             Tab(_("Trackers"), id="sub-tab-trackers"),
@@ -345,41 +346,39 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                 # Trigger initial refresh after mount
                 self.call_later(screen.refresh_files)  # type: ignore[attr-defined]
             elif sub_tab_id == "sub-tab-file-explorer":
-                # Use Textual's DirectoryTree for browsing torrent files
-                from textual.widgets import DirectoryTree
-                from pathlib import Path
-                
-                # Get torrent output directory
+                from ccbt.interface.widgets.torrent_file_explorer import (
+                    TorrentFileExplorerWidget,
+                )
+
                 try:
-                    status = await self._data_provider.get_torrent_status(self._selected_info_hash)
-                    if status:
-                        output_dir = status.get("output_dir") or status.get("save_path") or "."
-                        base_path = Path(output_dir)
-                        # Resolve to absolute path
-                        if not base_path.is_absolute():
-                            base_path = base_path.resolve()
-                        
-                        if base_path.exists() and base_path.is_dir():
-                            # Create DirectoryTree with absolute path
-                            file_tree = DirectoryTree(str(base_path.resolve()), id="file-tree")
-                            self._content_area.mount(file_tree)  # type: ignore[attr-defined]
-                            self._active_sub_tab_id = sub_tab_id
-                        else:
-                            # Fallback: show error message
-                            error_msg = Static(f"Torrent output directory not found: {output_dir}", id="file-explorer-error")
-                            self._content_area.mount(error_msg)  # type: ignore[attr-defined]
-                            self._active_sub_tab_id = sub_tab_id
-                    else:
-                        # Fallback: show error message
-                        error_msg = Static("Torrent status not available", id="file-explorer-error")
-                        self._content_area.mount(error_msg)  # type: ignore[attr-defined]
-                        self._active_sub_tab_id = sub_tab_id
+                    explorer = TorrentFileExplorerWidget(
+                        self._selected_info_hash,
+                        self._data_provider,
+                        self._command_executor,
+                        id="torrent-file-explorer",
+                    )
+                    self._content_area.mount(explorer)  # type: ignore[attr-defined]
                 except Exception as e:
-                    # Fallback: show error message
-                    logger.debug("Error mounting file explorer: %s", e)
-                    error_msg = Static(f"Error loading file explorer: {str(e)}", id="file-explorer-error")
+                    logger.debug("Error mounting file explorer widget: %s", e)
+                    error_msg = Static(
+                        f"Error loading file explorer: {str(e)}",
+                        id="file-explorer-error",
+                    )
                     self._content_area.mount(error_msg)  # type: ignore[attr-defined]
-                    self._active_sub_tab_id = sub_tab_id
+                self._active_sub_tab_id = sub_tab_id
+            elif sub_tab_id == "sub-tab-media":
+                from ccbt.interface.widgets.media_playback_widget import (
+                    MediaPlaybackWidget,
+                )
+
+                widget = MediaPlaybackWidget(
+                    self._selected_info_hash,
+                    self._data_provider,
+                    self._command_executor,
+                    id="media-playback-widget",
+                )
+                self._content_area.mount(widget)  # type: ignore[attr-defined]
+                self._active_sub_tab_id = sub_tab_id
             elif sub_tab_id == "sub-tab-info":
                 from ccbt.interface.screens.per_torrent_info import TorrentInfoScreen
                 screen = TorrentInfoScreen(

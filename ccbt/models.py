@@ -166,6 +166,70 @@ class PeerInfo(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
+# ---------------------------------------------------------------------------
+# Canonical internal status contracts (session/manager → IPC/UI translation)
+# Use these names internally; translate to num_peers/num_seeds at IPC boundary.
+# ---------------------------------------------------------------------------
+
+
+class CanonicalTorrentStatus(BaseModel):
+    """Internal per-torrent status snapshot. Single source of truth for session/manager."""
+
+    info_hash: str = Field(..., description="Info hash hex")
+    name: str = Field("", description="Torrent name")
+    status: str = Field("unknown", description="Lifecycle status")
+    progress: float = Field(0.0, ge=0.0, le=1.0, description="Download progress 0-1")
+    download_rate: float = Field(0.0, ge=0.0, description="Download rate bytes/sec")
+    upload_rate: float = Field(0.0, ge=0.0, description="Upload rate bytes/sec")
+    connected_peers: int = Field(0, ge=0, description="Connected peer count")
+    active_peers: int = Field(0, ge=0, description="Active/unchoked peer count")
+    downloaded: int = Field(0, ge=0, description="Bytes downloaded")
+    uploaded: int = Field(0, ge=0, description="Bytes uploaded")
+    left: int = Field(0, ge=0, description="Bytes remaining")
+    total_size: int = Field(0, ge=0, description="Total size bytes")
+    pieces_completed: int = Field(0, ge=0, description="Verified pieces count")
+    pieces_total: int = Field(0, ge=0, description="Total pieces")
+    is_private: bool = Field(False, description="BEP 27 private flag")
+    output_dir: Optional[str] = Field(None, description="Output directory")
+    tracker_status: Optional[str] = Field(None, description="Tracker status")
+    last_error: Optional[str] = Field(None, description="Last error message")
+    uptime: float = Field(0.0, ge=0.0, description="Session uptime seconds")
+    added_time: float = Field(0.0, ge=0.0, description="Added timestamp")
+    download_complete: bool = Field(False, description="Download complete")
+
+    model_config = {"arbitrary_types_allowed": True}
+
+
+class CanonicalGlobalStats(BaseModel):
+    """Internal global stats snapshot. Single source of truth for manager aggregation."""
+
+    num_torrents: int = Field(0, ge=0)
+    num_active: int = Field(0, ge=0)
+    num_paused: int = Field(0, ge=0)
+    num_seeding: int = Field(0, ge=0)
+    connected_peers: int = Field(0, ge=0)
+    download_rate: float = Field(0.0, ge=0.0)
+    upload_rate: float = Field(0.0, ge=0.0)
+    average_progress: float = Field(0.0, ge=0.0, le=1.0)
+    total_downloaded: int = Field(0, ge=0)
+    total_uploaded: int = Field(0, ge=0)
+    total_left: int = Field(0, ge=0)
+    uptime: float = Field(0.0, ge=0.0)
+    timestamp: float = Field(0.0, ge=0.0)
+
+    model_config = {"arbitrary_types_allowed": True}
+
+
+def canonical_torrent_status_to_dict(s: CanonicalTorrentStatus) -> dict[str, Any]:
+    """Export canonical torrent status as dict for backward compatibility."""
+    return s.model_dump()
+
+
+def canonical_global_stats_to_dict(s: CanonicalGlobalStats) -> dict[str, Any]:
+    """Export canonical global stats as dict for backward compatibility."""
+    return s.model_dump()
+
+
 class TrackerResponse(BaseModel):
     """Tracker response data."""
 
@@ -1865,6 +1929,12 @@ class DiscoveryConfig(BaseModel):
     """Peer discovery configuration."""
 
     enable_dht: bool = Field(default=True, description="Enable DHT")
+    min_peers_before_dht: int = Field(
+        default=10,
+        ge=0,
+        le=100,
+        description="Minimum active peers before starting DHT discovery (0 = allow DHT immediately as fallback)",
+    )
     enable_pex: bool = Field(default=True, description="Enable Peer Exchange")
     enable_udp_trackers: bool = Field(default=True, description="Enable UDP trackers")
     enable_http_trackers: bool = Field(default=True, description="Enable HTTP trackers")
@@ -3415,6 +3485,67 @@ class DaemonConfig(BaseModel):
     )
 
 
+class MediaConfig(BaseModel):
+    """Media streaming configuration."""
+
+    enable_media_streaming: bool = Field(
+        default=True,
+        description="Enable daemon-backed local media streaming support",
+    )
+    bind_host: str = Field(
+        default="127.0.0.1",
+        description="Bind host for local media stream servers",
+    )
+    default_port: int = Field(
+        default=0,
+        ge=0,
+        le=65535,
+        description="Preferred media stream port (0 selects an ephemeral port)",
+    )
+    startup_buffer_seconds: float = Field(
+        default=8.0,
+        ge=1.0,
+        le=120.0,
+        description="Minimum buffered playback lead before a stream is marked ready",
+    )
+    request_wait_timeout_seconds: float = Field(
+        default=5.0,
+        ge=0.5,
+        le=60.0,
+        description="Maximum wait for a requested byte range to become available",
+    )
+    assumed_bitrate_bytes_per_second: int = Field(
+        default=1_000_000,
+        ge=16_384,
+        le=100_000_000,
+        description="Fallback bitrate estimate used for streaming prioritization",
+    )
+    stream_chunk_size_kib: int = Field(
+        default=256,
+        ge=16,
+        le=4096,
+        description="Chunk size used when serving HTTP byte ranges",
+    )
+    token_ttl_seconds: float = Field(
+        default=3600.0,
+        ge=60.0,
+        le=86400.0,
+        description="Lifetime for generated media stream access tokens",
+    )
+    vlc_executable_path: Optional[str] = Field(
+        default=None,
+        description="Optional absolute path to the VLC executable",
+    )
+    enable_inline_media_preview: bool = Field(
+        default=False,
+        description="Enable experimental inline terminal-native media preview features",
+    )
+    inline_media_preview_mode: str = Field(
+        default="disabled",
+        description="Preview mode for future inline media experiments",
+    )
+
+
 class IPFSConfig(BaseModel):
     """IPFS protocol configuration."""
 
@@ -3481,6 +3612,22 @@ class XetSyncConfig(BaseModel):
         default=True,
         description="Enable git integration for version tracking",
     )
+    allowlist_path: Optional[str] = Field(
+        None,
+        description="Default allowlist path for workspace authorization",
+    )
+    auth_scope: str = Field(
+        default="strict_workspace_auth",
+        description="Workspace auth scope (strict_workspace_auth/content_addressable_open)",
+    )
+    hash_algorithm_policy: str = Field(
+        default="negotiate",
+        description="Hash identity policy (negotiate/require_configured)",
+    )
+    require_signed_metadata: bool = Field(
+        default=True,
+        description="Require signed XET metadata and handshake identity when auth is enabled",
+    )
     enable_lpd: bool = Field(
         default=True,
         description="Enable Local Peer Discovery (BEP 14)",
@@ -3488,6 +3635,34 @@ class XetSyncConfig(BaseModel):
     enable_gossip: bool = Field(
         default=True,
         description="Enable gossip protocol for update propagation",
+    )
+    enable_dht: bool = Field(
+        default=True,
+        description="Enable DHT for XET chunk discovery",
+    )
+    enable_tracker: bool = Field(
+        default=True,
+        description="Enable tracker announce/lookup for XET chunks",
+    )
+    enable_pex: bool = Field(
+        default=True,
+        description="Enable PEX for XET chunk peer exchange",
+    )
+    enable_catalog: bool = Field(
+        default=True,
+        description="Enable local catalog for XET chunk-to-peer mapping",
+    )
+    enable_bloom: bool = Field(
+        default=True,
+        description="Enable bloom filter exchange for XET chunk availability",
+    )
+    enable_multicast: bool = Field(
+        default=True,
+        description="Enable multicast for XET chunk/folder announcements",
+    )
+    enable_flooding: bool = Field(
+        default=True,
+        description="Enable controlled flooding for XET propagation",
     )
     gossip_fanout: int = Field(
         default=3,
@@ -3578,6 +3753,36 @@ class XetSyncConfig(BaseModel):
         description="Path to allowlist encryption key file",
     )
 
+    @field_validator("auth_scope")
+    @classmethod
+    def validate_auth_scope(cls, v: str) -> str:
+        """Validate per-workspace XET auth scope."""
+        valid_scopes = {"strict_workspace_auth", "content_addressable_open"}
+        if v not in valid_scopes:
+            msg = f"Invalid auth_scope: {v}. Must be one of {valid_scopes}"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("hash_algorithm_policy")
+    @classmethod
+    def validate_hash_algorithm_policy(cls, v: str) -> str:
+        """Validate hash algorithm negotiation policy."""
+        valid_policies = {"negotiate", "require_configured"}
+        if v not in valid_policies:
+            msg = f"Invalid hash_algorithm_policy: {v}. Must be one of {valid_policies}"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("default_sync_mode")
+    @classmethod
+    def validate_default_sync_mode(cls, v: str) -> str:
+        """Validate default XET sync mode."""
+        valid_modes = {"designated", "best_effort", "broadcast", "consensus"}
+        if v not in valid_modes:
+            msg = f"Invalid default_sync_mode: {v}. Must be one of {valid_modes}"
+            raise ValueError(msg)
+        return v
+
 
 class Config(BaseModel):
     """Main configuration model."""
@@ -3645,6 +3850,10 @@ class Config(BaseModel):
     daemon: Optional[DaemonConfig] = Field(
         None,
         description="Daemon configuration",
+    )
+    media: MediaConfig = Field(
+        default_factory=MediaConfig,
+        description="Media streaming configuration",
     )
     per_torrent_defaults: PerTorrentDefaultsConfig = Field(
         default_factory=PerTorrentDefaultsConfig,

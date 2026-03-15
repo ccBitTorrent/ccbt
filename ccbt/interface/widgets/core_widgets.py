@@ -54,6 +54,11 @@ except ImportError:
         pass
 
 
+def _get_rate(stats: dict[str, Any], key: str) -> float:
+    """Read canonical or IPC-compatible rate fields."""
+    return float(stats.get(key, stats.get(f"total_{key}", 0.0)))
+
+
 class Overview(Static):  # type: ignore[misc]
     """Simple widget to render global stats."""
     
@@ -78,7 +83,7 @@ class Overview(Static):  # type: ignore[misc]
         seeding = str(stats.get("num_seeding", 0))
         
         # Format download rate
-        down_rate_val = float(stats.get("download_rate", 0.0))
+        down_rate_val = _get_rate(stats, "download_rate")
         if down_rate_val >= 1024 * 1024:
             down_rate = f"{down_rate_val / (1024 * 1024):.1f} MB/s"
         elif down_rate_val >= 1024:
@@ -87,7 +92,7 @@ class Overview(Static):  # type: ignore[misc]
             down_rate = f"{down_rate_val:.1f} B/s"
         
         # Format upload rate
-        up_rate_val = float(stats.get("upload_rate", 0.0))
+        up_rate_val = _get_rate(stats, "upload_rate")
         if up_rate_val >= 1024 * 1024:
             up_rate = f"{up_rate_val / (1024 * 1024):.1f} MB/s"
         elif up_rate_val >= 1024:
@@ -309,8 +314,8 @@ class SpeedSparklines(Static):  # type: ignore[misc]
 
     def update_from_stats(self, stats: dict[str, Any]) -> None:  # pragma: no cover
         """Update sparklines with current speed statistics."""
-        self._down_history.append(float(stats.get("download_rate", 0.0)))
-        self._up_history.append(float(stats.get("upload_rate", 0.0)))
+        self._down_history.append(_get_rate(stats, "download_rate"))
+        self._up_history.append(_get_rate(stats, "upload_rate"))
         # Keep last 120 samples (~2 minutes at 1s)
         self._down_history = self._down_history[-120:]
         self._up_history = self._up_history[-120:]
@@ -334,7 +339,7 @@ class SummaryCards(Static):  # type: ignore[misc]
             stats: Dictionary containing global statistics
         """
         # Format download speed
-        down_rate = float(stats.get("download_rate", 0.0))
+        down_rate = _get_rate(stats, "download_rate")
         if down_rate >= 1024 * 1024:
             down_str = f"{down_rate / (1024 * 1024):.2f} MB/s"
         elif down_rate >= 1024:
@@ -343,7 +348,7 @@ class SummaryCards(Static):  # type: ignore[misc]
             down_str = f"{down_rate:.2f} B/s"
 
         # Format upload speed
-        up_rate = float(stats.get("upload_rate", 0.0))
+        up_rate = _get_rate(stats, "upload_rate")
         if up_rate >= 1024 * 1024:
             up_str = f"{up_rate / (1024 * 1024):.2f} MB/s"
         elif up_rate >= 1024:
@@ -458,8 +463,8 @@ class GlobalTorrentMetricsPanel(Static):  # type: ignore[misc]
         paused = stats.get("num_paused", 0)
         seeding = stats.get("num_seeding", 0)
 
-        down_rate = self._format_rate(float(stats.get("download_rate", 0.0)))
-        up_rate = self._format_rate(float(stats.get("upload_rate", 0.0)))
+        down_rate = self._format_rate(_get_rate(stats, "download_rate"))
+        up_rate = self._format_rate(_get_rate(stats, "upload_rate"))
         total_down = self._format_bytes(int(stats.get("total_downloaded", 0)))
         total_up = self._format_bytes(int(stats.get("total_uploaded", 0)))
         avg_progress = stats.get("average_progress", 0.0) * 100

@@ -42,7 +42,7 @@ class XetRealtimeSync:
 
         self._sync_task: Optional[asyncio.Task] = None
         self._is_running = False
-        self._last_chunk_hashes: dict[str, bytes] = {}  # file_path -> chunk_hash
+        self._last_chunk_hashes: dict[str, bytes] = {}  # file_path -> file_hash
         self._last_git_ref: Optional[str] = None
 
         self.logger = logging.getLogger(__name__)
@@ -219,18 +219,20 @@ class XetRealtimeSync:
                 if file_path.is_file():
                     try:
                         relative_path = str(file_path.relative_to(folder_path))
-                        # Calculate chunk hash (simplified - in practice use XET chunking)
-                        import hashlib
-
-                        with open(file_path, "rb") as f:
-                            file_data = f.read()
-                            chunk_hash = hashlib.sha256(file_data).digest()
-
-                        current_hashes[relative_path] = chunk_hash
+                        relative_parts = file_path.relative_to(folder_path).parts
+                        if relative_parts and relative_parts[0] in {".git", ".xet"}:
+                            continue
+                        metadata = await self.folder._build_file_metadata(relative_path)  # noqa: SLF001
+                        if metadata is None:
+                            continue
+                        current_hashes[relative_path] = metadata.file_hash
 
                         # Check if hash changed
                         if relative_path in self._last_chunk_hashes:
-                            if self._last_chunk_hashes[relative_path] != chunk_hash:
+                            if (
+                                self._last_chunk_hashes[relative_path]
+                                != metadata.file_hash
+                            ):
                                 self.logger.debug(
                                     "Chunk hash changed for %s", relative_path
                                 )
@@ -250,9 +252,10 @@ class XetRealtimeSync:
                     # Queue deletion update
                     await self.folder.sync_manager.queue_update(
                         file_path=file_path,
-                        chunk_hash=b"",  # Empty hash for deletion
+                        chunk_hash=bytes(32),
                         git_ref=self._last_git_ref,
                         priority=2,  # High priority for deletions
+                        deleted=True,
                     )
 
             # Update hash cache
@@ -275,15 +278,14 @@ class XetRealtimeSync:
             try:
                 file_path_obj = self.folder.folder_path / file_path
                 if file_path_obj.exists() and file_path_obj.is_file():
-                    # Calculate chunk hash with timeout
-                    import hashlib
-
                     try:
-                        with open(file_path_obj, "rb") as f:
-                            file_data = f.read()
-                            chunk_hash = hashlib.sha256(file_data).digest()
+                        file_metadata = await self.folder._build_file_metadata(  # noqa: SLF001
+                            file_path
+                        )
                     except (OSError, PermissionError) as e:
                         self.logger.warning("Error reading file %s: %s", file_path, e)
+                        return
+                    if file_metadata is None:
                         return
 
                     # Get git ref with timeout
@@ -304,9 +306,10 @@ class XetRealtimeSync:
                         await asyncio.wait_for(
                             self.folder.sync_manager.queue_update(
                                 file_path=file_path,
-                                chunk_hash=chunk_hash,
+                                chunk_hash=file_metadata.file_hash,
                                 git_ref=git_ref,
                                 priority=1,
+                                file_metadata=file_metadata,
                             ),
                             timeout=5.0,
                         )
@@ -352,15 +355,61 @@ class XetRealtimeSync:
             return
 
         try:
-            # Get peers from session manager
-            # This is a simplified version - in practice would query DHT/trackers
-            # for peers that have specific chunks
+            pending_updates = (
+                await self.folder.sync_manager.get_pending_updates_snapshot()
+            )
+            if not pending_updates:
+                return
 
-            # For now, just log that we would discover peers
-            queue_size = self.folder.sync_manager.get_queue_size()
-            if queue_size > 0:
+            chunk_hashes: list[bytes] = []
+            for entry in pending_updates:
+                if entry.deleted:
+                    continue
+                if entry.file_metadata is not None:
+                    chunk_hashes.extend(entry.file_metadata.chunk_hashes)
+                elif entry.chunk_hash != bytes(32):
+                    chunk_hashes.append(entry.chunk_hash)
+
+            unique_hashes: list[bytes] = []
+            seen_hashes: set[bytes] = set()
+            for chunk_hash in chunk_hashes:
+                if len(chunk_hash) != 32 or chunk_hash == bytes(32):
+                    continue
+                if chunk_hash in seen_hashes:
+                    continue
+                seen_hashes.add(chunk_hash)
+                unique_hashes.append(chunk_hash)
+
+            if not unique_hashes:
+                return
+
+            peer_results: dict[bytes, list[Any]] = {}
+            if hasattr(self.folder.cas_client, "find_chunks_peers_batch"):
+                peer_results = await self.folder.cas_client.find_chunks_peers_batch(
+                    unique_hashes
+                )
+            else:
+                for chunk_hash in unique_hashes:
+                    peer_results[
+                        chunk_hash
+                    ] = await self.folder.cas_client.find_chunk_peers(chunk_hash)
+
+            discovered_peer_count = 0
+            current_git_ref = self.folder.sync_manager.get_current_git_ref()
+            for chunk_hash, peers in peer_results.items():
+                for peer in peers:
+                    await self.folder.sync_manager.register_discovered_peer(
+                        peer,
+                        chunk_hash=chunk_hash,
+                        git_ref=current_git_ref,
+                    )
+                    discovered_peer_count += 1
+
+            if discovered_peer_count:
                 self.logger.debug(
-                    "Would discover peers for %d queued updates", queue_size
+                    "Discovered %d candidate peers for %d queued chunks",
+                    discovered_peer_count,
+                    len(unique_hashes),
                 )
 
         except Exception:

@@ -153,6 +153,14 @@ class TestSessionManagerIntegration:
     async def test_session_manager_lifecycle(self):
         """Test session manager complete lifecycle."""
         # Test that we can start and stop the session manager
+        self.session_manager.config.nat.auto_map_ports = False
+        self.session_manager.config.discovery.enable_dht = False
+        self.session_manager.config.discovery.enable_pex = False
+        self.session_manager.config.discovery.enable_http_trackers = False
+        self.session_manager.config.discovery.enable_udp_trackers = False
+        self.session_manager.config.network.listen_port = 0
+        self.session_manager.config.network.listen_port_tcp = 0
+        self.session_manager.config.network.listen_port_udp = 0
         await self.session_manager.start()
         await self.session_manager.stop()
 

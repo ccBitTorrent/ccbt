@@ -70,12 +70,15 @@ class PeerManagerInitializer:
 
             piece_manager = getattr(download_manager, "piece_manager", None)
             our_peer_id = getattr(download_manager, "our_peer_id", None)
+            session_manager = getattr(session_ctx, "session_manager", None)
             pm = AsyncPeerConnectionManager(
                 td,
                 piece_manager,
                 our_peer_id,
+                key_manager=getattr(session_manager, "key_manager", None),
                 max_peers_per_torrent=max_peers_per_torrent,
             )
+            pm.session_manager = session_manager  # type: ignore[attr-defined]
 
             # Wire security/private flags if available
             if hasattr(download_manager, "security_manager"):
@@ -899,7 +902,7 @@ class PeerConnectionHelper:
                 # connect_to_peers doesn't guarantee all peers connect, so we check actual connections
                 if hasattr(peer_manager, "connections"):
                     actual_peers = len(peer_manager.connections)  # type: ignore[attr-defined]
-                    self.session._cached_status["peers"] = actual_peers  # noqa: SLF001
+                    self.session._cached_status["connected_peers"] = actual_peers  # noqa: SLF001
                     self.session.logger.debug(
                         "Updated peer count: %d actual connections (attempted %d)",
                         actual_peers,
@@ -907,9 +910,11 @@ class PeerConnectionHelper:
                     )
                 else:
                     # Fallback: increment by list length (less accurate)
-                    current_peers = self.session._cached_status.get("peers", 0)  # noqa: SLF001
-                    self.session._cached_status["peers"] = current_peers + len(  # noqa: SLF001
-                        peer_list
+                    current_peers = self.session._cached_status.get(  # noqa: SLF001
+                        "connected_peers", 0
+                    )
+                    self.session._cached_status["connected_peers"] = (  # noqa: SLF001
+                        current_peers + len(peer_list)
                     )
             except Exception as e:
                 self.session.logger.warning(

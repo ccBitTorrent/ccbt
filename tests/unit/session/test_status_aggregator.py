@@ -50,6 +50,8 @@ class TestStatusAggregator:
             "progress": 0.1,
         }
         mock_session.download_manager.get_status = AsyncMock(return_value=mock_status)
+        mock_session.output_dir = "."
+        mock_session.is_private = False
 
         status = await aggregator.get_torrent_status()
 
@@ -59,7 +61,8 @@ class TestStatusAggregator:
         assert status["downloaded"] == 1000
         assert status["uploaded"] == 500
         assert status["left"] == 9000
-        assert status["peers"] == 5
+        # Canonical key is connected_peers (peers normalized in aggregator)
+        assert status["connected_peers"] == 5
         assert "uptime" in status
         assert status["last_error"] is None
 
@@ -67,6 +70,8 @@ class TestStatusAggregator:
     async def test_get_torrent_status_without_download_manager(self, aggregator, mock_session):
         """Test getting status when download manager is not available."""
         mock_session.download_manager = None
+        mock_session.output_dir = "."
+        mock_session.is_private = False
 
         status = await aggregator.get_torrent_status()
 
@@ -82,10 +87,12 @@ class TestStatusAggregator:
         """Test getting status when get_status raises an error."""
         mock_session.download_manager.get_status = AsyncMock(side_effect=Exception("Error"))
         mock_session.logger.warning = Mock()
+        mock_session.output_dir = "."
+        mock_session.is_private = False
 
         status = await aggregator.get_torrent_status()
 
-        # Should return minimal status on error
+        # Should return minimal status on error (normalized)
         assert status["info_hash"] == (b"x" * 20).hex()
         assert status["name"] == "test_torrent"
         mock_session.logger.warning.assert_called()
@@ -95,6 +102,8 @@ class TestStatusAggregator:
         """Test getting status when get_status is synchronous."""
         mock_status = {"downloaded": 2000, "uploaded": 1000}
         mock_session.download_manager.get_status = Mock(return_value=mock_status)
+        mock_session.output_dir = "."
+        mock_session.is_private = False
 
         status = await aggregator.get_torrent_status()
 
@@ -106,6 +115,8 @@ class TestStatusAggregator:
         """Test getting status includes last_error."""
         mock_session._last_error = "Connection failed"
         mock_session.download_manager.get_status = AsyncMock(return_value={})
+        mock_session.output_dir = "."
+        mock_session.is_private = False
 
         status = await aggregator.get_torrent_status()
 
@@ -116,6 +127,8 @@ class TestStatusAggregator:
         """Test getting status includes tracker_status."""
         mock_session._tracker_connection_status = "connected"
         mock_session.download_manager.get_status = AsyncMock(return_value={})
+        mock_session.output_dir = "."
+        mock_session.is_private = False
 
         status = await aggregator.get_torrent_status()
 

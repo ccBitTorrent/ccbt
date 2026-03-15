@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import click
 from rich.console import Console
@@ -18,10 +17,9 @@ from rich.table import Table
 
 from ccbt.cli.tonic_generator import generate_tonic_from_folder, tonic_generate
 from ccbt.core.tonic import TonicFile
-from ccbt.core.tonic_link import generate_tonic_link, parse_tonic_link
+from ccbt.core.tonic_link import generate_tonic_link
 from ccbt.i18n import _
 from ccbt.security.xet_allowlist import XetAllowlist
-from ccbt.storage.xet_folder_manager import XetFolder
 
 logger = logging.getLogger(__name__)
 
@@ -200,65 +198,41 @@ def tonic_sync(
     console = Console()
 
     try:
-        # Determine if input is a link or file
-        if tonic_input.startswith("tonic?:"):
-            # Parse tonic link
-            link_info = parse_tonic_link(tonic_input)
-            console.print(
-                _("[cyan]Parsed tonic link: {name}[/cyan]").format(
-                    name=link_info.display_name or _("Unknown")
-                )
-            )
+        from ccbt.cli.main import _get_executor
 
-            # For now, just show that we would sync
-            # In full implementation, would:
-            # 1. Fetch .tonic file using info_hash
-            # 2. Create XetFolder instance
-            # 3. Start real-time sync
-            console.print(
-                _("[yellow]Tonic link sync not yet fully implemented[/yellow]")
-            )
-            console.print(_("  This would fetch the .tonic file and start syncing"))
-
-        else:
-            # Assume it's a .tonic file path
-            tonic_path = Path(tonic_input)
-            if not tonic_path.exists():
-                console.print(
-                    _("[red]Tonic file not found: {path}[/red]").format(path=tonic_path)
-                )
-                raise click.Abort
-
-            # Parse .tonic file
-            tonic_parser = TonicFile()
-            parsed_data = tonic_parser.parse(tonic_path)
-
-            folder_name = parsed_data["info"]["name"]
-            sync_mode = parsed_data.get("sync_mode", "best_effort")
-
-            # Determine output directory
-            if not output_dir:
-                output_dir = folder_name
-
-            console.print(
-                _("[cyan]Starting sync for: {name}[/cyan]").format(name=folder_name)
-            )
-            console.print(_("  Sync mode: {mode}").format(mode=sync_mode))
-            console.print(_("  Output directory: {dir}").format(dir=output_dir))
-
-            # Create folder manager and start sync
-            folder = XetFolder(
-                folder_path=output_dir,
-                sync_mode=sync_mode,
+        async def _start_sync() -> tuple[object, Any]:
+            executor, _ = await _get_executor()
+            if executor is None:
+                msg = "Unable to acquire XET executor"
+                raise RuntimeError(msg)
+            result = await executor.execute(
+                "xet.sync",
+                tonic_input=tonic_input,
+                output_dir=output_dir,
                 check_interval=check_interval,
             )
+            return executor, result
 
-            async def _start_sync() -> None:
-                await folder.start()
-                console.print(_("[green]✓[/green] Folder sync started"))
-                console.print(_("  Use 'ccbt tonic status' to check sync status"))
+        _executor, result = asyncio.run(_start_sync())
+        if not result.success:
+            msg = result.error or "Failed to start sync"
+            raise RuntimeError(msg)
 
-            asyncio.run(_start_sync())
+        data = result.data or {}
+        console.print(_("[green]✓[/green] Folder sync started"))
+        console.print(
+            _("  Folder key: {folder_key}").format(
+                folder_key=data.get("folder_key", "unknown")
+            )
+        )
+        console.print(
+            _("  Output directory: {dir}").format(
+                dir=data.get("folder_path", output_dir or "unknown")
+            )
+        )
+        if data.get("workspace_id"):
+            console.print(_("  Workspace ID: {id}").format(id=data.get("workspace_id")))
+        console.print(_("  Use 'ccbt tonic status' to check sync status"))
 
     except Exception as e:
         console.print(_("[red]Error starting sync: {e}[/red]").format(e=e))
@@ -267,17 +241,27 @@ def tonic_sync(
 
 
 @tonic.command("status")
-@click.argument(
-    "folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
-)
+@click.argument("folder_path", type=str)
 @click.pass_context
 def tonic_status(_ctx, folder_path: str) -> None:
     """Show sync status for a folder."""
     console = Console()
 
     try:
-        folder = XetFolder(folder_path=folder_path)
-        status = folder.get_status()
+        from ccbt.cli.main import _get_executor
+
+        async def _fetch_status() -> Any:
+            executor, _ = await _get_executor()
+            if executor is None:
+                msg = "Unable to acquire XET executor"
+                raise RuntimeError(msg)
+            return await executor.execute("xet.status", folder_path=folder_path)
+
+        result = asyncio.run(_fetch_status())
+        if not result.success:
+            msg = result.error or "Failed to fetch sync status"
+            raise RuntimeError(msg)
+        status = result.data or {}
 
         console.print(
             _("[bold]Sync Status for: {path}[/bold]\n").format(path=folder_path)
@@ -287,21 +271,29 @@ def tonic_status(_ctx, folder_path: str) -> None:
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="green")
 
-        table.add_row("Sync Mode", status.sync_mode)
-        table.add_row("Is Syncing", "Yes" if status.is_syncing else "No")
-        table.add_row("Pending Changes", str(status.pending_changes))
-        table.add_row("Connected Peers", str(status.connected_peers))
-        table.add_row("Synced Peers", str(status.synced_peers))
-        table.add_row("Sync Progress", f"{status.sync_progress * 100:.1f}%")
-        if status.current_git_ref:
-            table.add_row("Git Ref", status.current_git_ref[:16] + "...")
-        if status.last_sync_time:
+        if status.get("folder_key"):
+            table.add_row("Folder Key", str(status["folder_key"]))
+        if status.get("workspace_id"):
+            table.add_row("Workspace ID", str(status["workspace_id"]))
+        table.add_row("Sync Mode", str(status.get("sync_mode", "unknown")))
+        table.add_row("Is Syncing", "Yes" if status.get("is_syncing") else "No")
+        table.add_row("Pending Changes", str(status.get("pending_changes", 0)))
+        table.add_row("Connected Peers", str(status.get("connected_peers", 0)))
+        table.add_row("Synced Peers", str(status.get("synced_peers", 0)))
+        table.add_row(
+            "Sync Progress",
+            f"{float(status.get('sync_progress', 0.0)) * 100:.1f}%",
+        )
+        current_git_ref = status.get("current_git_ref")
+        if current_git_ref:
+            table.add_row("Git Ref", str(current_git_ref)[:16] + "...")
+        if status.get("last_sync_time"):
             import time
 
-            last_sync_ago = time.time() - status.last_sync_time
+            last_sync_ago = time.time() - float(status["last_sync_time"])
             table.add_row("Last Sync", f"{last_sync_ago:.1f}s ago")
-        if status.error:
-            table.add_row("Error", f"[red]{status.error}[/red]")
+        if status.get("error"):
+            table.add_row("Error", f"[red]{status['error']}[/red]")
 
         console.print(table)
 
@@ -478,9 +470,7 @@ def tonic_mode() -> None:
 
 
 @tonic_mode.command("set")
-@click.argument(
-    "folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
-)
+@click.argument("folder_path", type=str)
 @click.argument(
     "sync_mode",
     type=click.Choice(["designated", "best_effort", "broadcast", "consensus"]),
@@ -500,6 +490,8 @@ def tonic_mode_set(
     console = Console()
 
     try:
+        from ccbt.cli.main import _get_executor
+
         # Parse source peers
         source_peers_list: Optional[list[str]] = None
         if source_peers:
@@ -507,9 +499,22 @@ def tonic_mode_set(
                 p.strip() for p in source_peers.split(",") if p.strip()
             ]
 
-        # Update folder's sync mode
-        folder = XetFolder(folder_path=folder_path)
-        folder.set_sync_mode(sync_mode, source_peers_list)
+        async def _set_mode() -> Any:
+            executor, _ = await _get_executor()
+            if executor is None:
+                msg = "Unable to acquire XET executor"
+                raise RuntimeError(msg)
+            return await executor.execute(
+                "xet.set_sync_mode",
+                folder_path=folder_path,
+                sync_mode=sync_mode,
+                source_peers=source_peers_list,
+            )
+
+        result = asyncio.run(_set_mode())
+        if not result.success:
+            msg = result.error or "Failed to update sync mode"
+            raise RuntimeError(msg)
 
         console.print(_("[green]✓[/green] Sync mode updated"))
         console.print(_("  Mode: {mode}").format(mode=sync_mode))
@@ -525,22 +530,34 @@ def tonic_mode_set(
 
 
 @tonic_mode.command("get")
-@click.argument(
-    "folder_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
-)
+@click.argument("folder_path", type=str)
 @click.pass_context
 def tonic_mode_get(_ctx, folder_path: str) -> None:
     """Get current synchronization mode for folder."""
     console = Console()
 
     try:
-        folder = XetFolder(folder_path=folder_path)
-        status = folder.get_status()
+        from ccbt.cli.main import _get_executor
+
+        async def _get_mode() -> Any:
+            executor, _ = await _get_executor()
+            if executor is None:
+                msg = "Unable to acquire XET executor"
+                raise RuntimeError(msg)
+            return await executor.execute("xet.get_sync_mode", folder_path=folder_path)
+
+        result = asyncio.run(_get_mode())
+        if not result.success:
+            msg = result.error or "Failed to fetch sync mode"
+            raise RuntimeError(msg)
+        status = result.data or {}
 
         console.print(
             _("[bold]Sync Mode for: {path}[/bold]\n").format(path=folder_path)
         )
-        console.print(_("  Current mode: {mode}").format(mode=status.sync_mode))
+        console.print(
+            _("  Current mode: {mode}").format(mode=status.get("sync_mode", "unknown"))
+        )
 
     except Exception as e:
         console.print(_("[red]Error getting sync mode: {e}[/red]").format(e=e))

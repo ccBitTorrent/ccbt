@@ -78,6 +78,13 @@ class EventType(Enum):
     BANDWIDTH_UPDATE = "bandwidth_update"
     DISK_IO_UPDATE = "disk_io_update"
 
+    # Media events
+    MEDIA_STREAM_STARTED = "media_stream_started"
+    MEDIA_STREAM_BUFFERING = "media_stream_buffering"
+    MEDIA_STREAM_READY = "media_stream_ready"
+    MEDIA_STREAM_STOPPED = "media_stream_stopped"
+    MEDIA_STREAM_ERROR = "media_stream_error"
+
     # Fast Extension events
     PIECE_SUGGESTED = "piece_suggested"
     PEER_HAVE_ALL = "peer_have_all"
@@ -102,6 +109,9 @@ class EventType(Enum):
     XET_CHUNK_NOT_FOUND = "xet_chunk_not_found"
     XET_CHUNK_ERROR = "xet_chunk_error"
     XET_METADATA_RECEIVED = "xet_metadata_received"
+    XET_METADATA_READY = "xet_metadata_ready"
+    XET_FOLDER_ADDED = "xet_folder_added"
+    XET_FOLDER_REMOVED = "xet_folder_removed"
 
     # XET Folder Sync events
     FOLDER_CHANGED = "folder_changed"

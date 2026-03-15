@@ -31,7 +31,7 @@ SESSION_CREATION_FAILED_MSG = "Session creation failed"
 @click.option(
     "--no-daemon",
     is_flag=True,
-    help="Disable daemon auto-start and use local session (not recommended)",
+    help="[DEPRECATED] Dashboard requires daemon; option is ignored",
 )
 @click.option(
     "--no-splash",
@@ -75,55 +75,54 @@ def dashboard(
     )
 
     if no_daemon:
-        # User explicitly requested local session
         console.print(
             _(
-                "[yellow]Using local session (--no-daemon specified). "
-                "Session state will not persist.[/yellow]"
+                "[red]Dashboard requires daemon mode. "
+                "The --no-daemon option is deprecated and not supported.[/red]"
             )
         )
-        # CRITICAL FIX: Use safe local session creation helper
-        from ccbt.cli.main import _ensure_local_session_safe
-
-        session = asyncio.run(_ensure_local_session_safe(_force_local=True))
-    else:
-        # ALWAYS use daemon - try to ensure it's running
-        try:
-            success, ipc_client = asyncio.run(
-                _ensure_daemon_running(splash_manager=splash_manager)
-            )
-            if success and ipc_client:
-                # Create daemon interface adapter
-                session = DaemonInterfaceAdapter(ipc_client)
-                if not splash_manager:  # Only print if splash not shown
-                    console.print(_("[green]Connected to daemon[/green]"))
-            else:
-                # Daemon start failed - show error and exit
-                console.print(
-                    _(
-                        "[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n"
-                        "[yellow]Please check:[/yellow]\n"
-                        "  1. Daemon logs for startup errors\n"
-                        "  2. Port conflicts (check if port is already in use)\n"
-                        "  3. Permissions (ensure you have permission to start daemon)\n\n"
-                        "[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
-                        "[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]"
-                    )
-                )
-                raise click.ClickException(DAEMON_STARTUP_FAILED_MSG)
-        except click.ClickException:
-            raise
-        except Exception as e:
+        raise click.ClickException(DAEMON_STARTUP_FAILED_MSG)
+    # ALWAYS use daemon - try to ensure it's running
+    try:
+        success, ipc_client = asyncio.run(
+            _ensure_daemon_running(splash_manager=splash_manager)
+        )
+        if success and ipc_client:
+            # Create daemon interface adapter
+            session = DaemonInterfaceAdapter(ipc_client)
+            if not splash_manager:  # Only print if splash not shown
+                console.print(_("[green]Connected to daemon[/green]"))
+        else:
+            # Daemon start failed - show error and exit
             console.print(
-                _("[red]Error ensuring daemon is running: {e}[/red]").format(e=e)
+                _(
+                    "[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n"
+                    "[yellow]Please check:[/yellow]\n"
+                    "  1. Daemon logs for startup errors\n"
+                    "  2. Port conflicts (check if port is already in use)\n"
+                    "  3. Permissions (ensure you have permission to start daemon)\n\n"
+                    "[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
+                    "[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]"
+                )
             )
-            raise click.ClickException(DAEMON_STARTUP_FAILED_MSG) from e
+            raise click.ClickException(DAEMON_STARTUP_FAILED_MSG)
+    except click.ClickException:
+        raise
+    except Exception as e:
+        console.print(_("[red]Error ensuring daemon is running: {e}[/red]").format(e=e))
+        raise click.ClickException(DAEMON_STARTUP_FAILED_MSG) from e
 
     if session is None:
         console.print(_("[red]Failed to create session[/red]"))
         raise click.ClickException(SESSION_CREATION_FAILED_MSG)
 
     try:
+        # Ensure daemon adapter is connected before launching Textual app.
+        if hasattr(session, "start") and callable(session.start):
+            start_result = session.start()
+            if asyncio.iscoroutine(start_result):
+                asyncio.run(start_result)
+
         # If rules path provided, pre-load into global alert manager before launching
         if rules:
             try:

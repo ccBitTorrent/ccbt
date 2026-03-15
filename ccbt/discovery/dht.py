@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import socket
@@ -17,6 +18,7 @@ from typing import Any, Callable, Optional, Union
 
 from ccbt.config.config import get_config
 from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
+from ccbt.models import PeerInfo
 
 # Error message constants
 _ERROR_DHT_TRANSPORT_NOT_INITIALIZED = "DHT transport is not initialized"
@@ -535,6 +537,7 @@ class AsyncDHTClient:
 
         # BEP 27: Callback to check if a torrent is private
         self.is_private_torrent: Optional[Callable[[bytes], bool]] = None
+        self._xet_mutable_store: dict[bytes, bytes] = {}
 
     def _generate_node_id(self) -> bytes:
         """Generate a random node ID."""
@@ -1549,12 +1552,8 @@ class AsyncDHTClient:
             Retrieved data bytes, or None if not found
 
         """
-        # TODO: Implement BEP 44 get_mutable query
-        # This is a stub implementation - should be properly implemented
-        # using BEP 44 protocol for mutable data storage
         self.logger.debug("get_data called for key: %s", key.hex()[:16])
-        # For now, return None (data not found)
-        return None
+        return self._xet_mutable_store.get(key)
 
     async def put_data(
         self,
@@ -1578,16 +1577,81 @@ class AsyncDHTClient:
             )
             return 0
 
-        # TODO: Implement BEP 44 put_mutable query
-        # This is a stub implementation - should be properly implemented
-        # using BEP 44 protocol for mutable data storage
         self.logger.debug(
             "put_data called for key: %s, value size: %d",
             key.hex()[:16],
             len(value) if isinstance(value, bytes) else len(str(value)),
         )
-        # For now, return 0 (not implemented)
-        return 0
+        if isinstance(value, bytes):
+            encoded_value = value
+        else:
+            encoded_value = json.dumps(
+                {
+                    (
+                        item_key.decode("utf-8", errors="ignore")
+                        if isinstance(item_key, bytes)
+                        else str(item_key)
+                    ): (
+                        item_value.decode("utf-8", errors="ignore")
+                        if isinstance(item_value, bytes)
+                        else str(item_value)
+                    )
+                    for item_key, item_value in value.items()
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        self._xet_mutable_store[key] = encoded_value
+        return 1
+
+    async def store_chunk_hash(
+        self, chunk_hash: bytes, metadata: dict[str, Any]
+    ) -> int:
+        """Store XET chunk availability metadata under a stable chunk key."""
+        existing_records: list[dict[str, Any]] = []
+        existing = await self.get_data(chunk_hash)
+        if existing is not None:
+            with contextlib.suppress(Exception):
+                parsed_existing = json.loads(existing.decode("utf-8"))
+                if isinstance(parsed_existing, list):
+                    existing_records = [
+                        record for record in parsed_existing if isinstance(record, dict)
+                    ]
+        existing_records.append(dict(metadata))
+        encoded = json.dumps(
+            existing_records,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return await self.put_data(chunk_hash, encoded)
+
+    async def get_chunk_peers(self, chunk_hash: bytes) -> list[PeerInfo]:
+        """Return XET chunk peers stored under the chunk key."""
+        encoded = await self.get_data(chunk_hash)
+        if encoded is None:
+            return []
+        try:
+            parsed = json.loads(encoded.decode("utf-8"))
+        except Exception:
+            self.logger.debug("Failed to decode XET chunk peers", exc_info=True)
+            return []
+        if not isinstance(parsed, list):
+            return []
+        peers: list[PeerInfo] = []
+        for entry in parsed:
+            if not isinstance(entry, dict):
+                continue
+            ip = entry.get("ip")
+            port = entry.get("port")
+            if isinstance(ip, str) and isinstance(port, int):
+                peers.append(
+                    PeerInfo(
+                        ip=ip,
+                        port=port,
+                        peer_source="dht-xet",
+                    )
+                )
+        return peers
 
     async def index_infohash(
         self,

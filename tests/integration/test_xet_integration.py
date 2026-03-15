@@ -333,6 +333,7 @@ class TestXetIntegration:
         extension_protocol = extension_manager.get_extension("protocol")
         if extension_protocol:
             extension_protocol.peer_supports_extension = MagicMock(return_value=True)
+            extension_protocol.get_peer_message_id = MagicMock(return_value=5)
             extension_protocol.get_extension_info = MagicMock(
                 return_value=MagicMock(message_id=5)
             )
@@ -568,6 +569,7 @@ class TestXetIntegration:
         extension_protocol = extension_manager.get_extension("protocol")
         if extension_protocol:
             extension_protocol.peer_supports_extension = MagicMock(return_value=True)
+            extension_protocol.get_peer_message_id = MagicMock(return_value=5)
             extension_protocol.get_extension_info = MagicMock(
                 return_value=MagicMock(message_id=5)
             )
@@ -627,6 +629,7 @@ class TestXetIntegration:
         extension_protocol = extension_manager.get_extension("protocol")
         if extension_protocol:
             extension_protocol.peer_supports_extension = MagicMock(return_value=True)
+            extension_protocol.get_peer_message_id = MagicMock(return_value=5)
             extension_protocol.get_extension_info = MagicMock(
                 return_value=MagicMock(message_id=5)
             )
@@ -687,6 +690,7 @@ class TestXetIntegration:
         extension_protocol = extension_manager.get_extension("protocol")
         if extension_protocol:
             extension_protocol.peer_supports_extension = MagicMock(return_value=True)
+            extension_protocol.get_peer_message_id = MagicMock(return_value=5)
             extension_protocol.get_extension_info = MagicMock(
                 return_value=MagicMock(message_id=5)
             )

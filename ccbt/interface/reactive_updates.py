@@ -120,8 +120,16 @@ class ReactiveUpdateManager:
                 from ccbt.daemon.ipc_protocol import EventType
                 if hasattr(self._data_provider, "invalidate_on_event"):
                     info_hash = event.data.get("info_hash")
+                    event_name = event.data.get("event")
+                    event_type = (
+                        EventType(event_name)
+                        if isinstance(event_name, str)
+                        and event_name
+                        in {e.value for e in EventType}
+                        else EventType.TRACKER_ANNOUNCE_SUCCESS
+                    )
                     self._data_provider.invalidate_on_event(
-                        EventType.TRACKER_ANNOUNCE_SUCCESS,
+                        event_type,
                         info_hash,
                     )
             except ImportError:
@@ -132,10 +140,53 @@ class ReactiveUpdateManager:
                 from ccbt.daemon.ipc_protocol import EventType
                 if hasattr(self._data_provider, "invalidate_on_event"):
                     info_hash = event.data.get("info_hash")
+                    event_name = event.data.get("event")
+                    event_type = (
+                        EventType(event_name)
+                        if isinstance(event_name, str)
+                        and event_name
+                        in {e.value for e in EventType}
+                        else EventType.METADATA_FETCH_COMPLETED
+                    )
                     self._data_provider.invalidate_on_event(
-                        EventType.METADATA_FETCH_COMPLETED,
+                        event_type,
                         info_hash,
                     )
+            except ImportError:
+                pass
+
+        def _invalidate_xet(event: UpdateEvent) -> None:
+            try:
+                from ccbt.daemon.ipc_protocol import EventType
+
+                if hasattr(self._data_provider, "invalidate_on_event"):
+                    folder_key = event.data.get("folder_key")
+                    event_name = event.data.get("event")
+                    event_type = (
+                        EventType(event_name)
+                        if isinstance(event_name, str)
+                        and event_name
+                        in {e.value for e in EventType}
+                        else EventType.XET_SYNC_PROGRESS
+                    )
+                    self._data_provider.invalidate_on_event(event_type, folder_key)
+            except ImportError:
+                pass
+
+        def _invalidate_media(event: UpdateEvent) -> None:
+            try:
+                from ccbt.daemon.ipc_protocol import EventType
+
+                if hasattr(self._data_provider, "invalidate_on_event"):
+                    info_hash = event.data.get("info_hash")
+                    event_name = event.data.get("event")
+                    event_type = (
+                        EventType(event_name)
+                        if isinstance(event_name, str)
+                        and event_name in {e.value for e in EventType}
+                        else EventType.MEDIA_STREAM_READY
+                    )
+                    self._data_provider.invalidate_on_event(event_type, info_hash)
             except ImportError:
                 pass
 
@@ -143,6 +194,8 @@ class ReactiveUpdateManager:
         self.subscribe("torrent_delta", _invalidate_torrent)
         self.subscribe("tracker_event", _invalidate_tracker)
         self.subscribe("metadata_event", _invalidate_metadata)
+        self.subscribe("xet_event", _invalidate_xet)
+        self.subscribe("media_event", _invalidate_media)
 
     async def start(self) -> None:  # pragma: no cover
         """Start the reactive update manager."""
@@ -356,11 +409,19 @@ class ReactiveUpdateManager:
         async def _handle_metadata_event(payload: dict[str, Any]) -> None:
             await self.emit("metadata_event", payload, UpdatePriority.NORMAL)
 
+        async def _handle_xet_event(payload: dict[str, Any]) -> None:
+            await self.emit("xet_event", payload, UpdatePriority.HIGH)
+
+        async def _handle_media_event(payload: dict[str, Any]) -> None:
+            await self.emit("media_event", payload, UpdatePriority.HIGH)
+
         adapter.on_global_stats = _handle_global_stats
         adapter.on_torrent_list_delta = _handle_torrent_delta
         adapter.on_peer_metrics = _handle_peer_metrics
         adapter.on_tracker_event = _handle_tracker_event
         adapter.on_metadata_event = _handle_metadata_event
+        adapter.on_xet_event = _handle_xet_event
+        adapter.on_media_event = _handle_media_event
 
 
 

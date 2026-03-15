@@ -193,8 +193,8 @@ class TorrentInfoScreen(Container):  # type: ignore[misc]
             table.add_row(_("Upload Speed"), format_speed(upload_rate))
             
             # Peers
-            num_peers = status.get("num_peers", 0)
-            num_seeds = status.get("num_seeds", 0)
+            num_peers = status.get("connected_peers", status.get("num_peers", 0))
+            num_seeds = status.get("active_peers", status.get("num_seeds", 0))
             table.add_row(_("Peers"), str(num_peers))
             table.add_row(_("Seeds"), str(num_seeds))
             
@@ -208,17 +208,12 @@ class TorrentInfoScreen(Container):  # type: ignore[misc]
             
             # Update DHT aggressive mode switch state
             try:
-                # Try to get aggressive discovery status from data provider adapter
-                if hasattr(self._data_provider, "get_adapter"):
-                    adapter = self._data_provider.get_adapter()
-                    if adapter and hasattr(adapter, "_client"):
-                        ipc_client = adapter._client  # type: ignore[attr-defined]
-                        if ipc_client:
-                            aggressive_status = await ipc_client.get_aggressive_discovery_status(self._info_hash)
-                            if aggressive_status and isinstance(aggressive_status, dict):
-                                is_enabled = aggressive_status.get("enabled", False)
-                                if self._dht_aggressive_switch:
-                                    self._dht_aggressive_switch.value = bool(is_enabled)  # type: ignore[attr-defined]
+                aggressive_status = await self._data_provider.get_aggressive_discovery_status(
+                    self._info_hash,
+                )
+                if aggressive_status and self._dht_aggressive_switch:
+                    is_enabled = aggressive_status.get("enabled", False)
+                    self._dht_aggressive_switch.value = bool(is_enabled)  # type: ignore[attr-defined]
             except Exception as e:
                 logger.debug("Error getting DHT aggressive mode status: %s", e)
             
@@ -398,53 +393,32 @@ class TorrentInfoScreen(Container):  # type: ignore[misc]
             return
         
         try:
-            # Use executor's adapter's IPC client directly (same pattern as CLI command)
-            executor = self._command_executor._executor  # type: ignore[attr-defined]
-            if executor and hasattr(executor, "adapter"):
-                adapter = executor.adapter
-                if hasattr(adapter, "ipc_client") and hasattr(adapter.ipc_client, "set_dht_aggressive_mode"):
-                    result = await adapter.ipc_client.set_dht_aggressive_mode(self._info_hash, enabled)
-                    if result and result.get("success"):
-                        if hasattr(self, "app"):
-                            status_text = _("enabled") if enabled else _("disabled")
-                            self.app.notify(  # type: ignore[attr-defined]
-                                _("DHT aggressive mode {status}").format(status=status_text),
-                                severity="success",
-                            )
-                        return
-                    else:
-                        error_msg = result.get("error", _("Unknown error")) if result else _("Unknown error")
-                        if hasattr(self, "app"):
-                            self.app.notify(  # type: ignore[attr-defined]
-                                _("Failed to set DHT aggressive mode: {error}").format(error=error_msg),
-                                severity="error",
-                            )
-                        # Revert switch state on error
-                        if self._dht_aggressive_switch:
-                            self._dht_aggressive_switch.value = not enabled  # type: ignore[attr-defined]
-                        return
-            
-            # Fallback: try via executor command
-            if executor:
-                result = await executor.execute("torrent.set_dht_aggressive_mode", info_hash=self._info_hash, enabled=enabled)
-                if result and hasattr(result, "success") and result.success:
-                    if hasattr(self, "app"):
-                        status_text = _("enabled") if enabled else _("disabled")
-                        self.app.notify(  # type: ignore[attr-defined]
-                            _("DHT aggressive mode {status}").format(status=status_text),
-                            severity="success",
-                        )
-                    return
-                else:
-                    error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
-                    if hasattr(self, "app"):
-                        self.app.notify(  # type: ignore[attr-defined]
-                            _("Failed to set DHT aggressive mode: {error}").format(error=error_msg),
-                            severity="error",
-                        )
-                    # Revert switch state on error
-                    if self._dht_aggressive_switch:
-                        self._dht_aggressive_switch.value = not enabled  # type: ignore[attr-defined]
+            result = await self._command_executor.execute_command(
+                "torrent.set_dht_aggressive_mode",
+                info_hash=self._info_hash,
+                enabled=enabled,
+            )
+            if result and hasattr(result, "success") and result.success:
+                if hasattr(self, "app"):
+                    status_text = _("enabled") if enabled else _("disabled")
+                    self.app.notify(  # type: ignore[attr-defined]
+                        _("DHT aggressive mode {status}").format(status=status_text),
+                        severity="success",
+                    )
+                return
+
+            error_msg = (
+                result.error
+                if result and hasattr(result, "error")
+                else _("Unknown error")
+            )
+            if hasattr(self, "app"):
+                self.app.notify(  # type: ignore[attr-defined]
+                    _("Failed to set DHT aggressive mode: {error}").format(error=error_msg),
+                    severity="error",
+                )
+            if self._dht_aggressive_switch:
+                self._dht_aggressive_switch.value = not enabled  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error setting DHT aggressive mode: %s", e)
             if hasattr(self, "app"):

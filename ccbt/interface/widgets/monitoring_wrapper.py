@@ -411,8 +411,8 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
             total_peers = 0
             total_seeds = 0
             for status in all_status.values():
-                total_peers += status.get("num_peers", 0)
-                total_seeds += status.get("num_seeds", 0)
+                total_peers += status.get("connected_peers", status.get("num_peers", 0))
+                total_seeds += status.get("active_peers", status.get("num_seeds", 0))
             
             global_table.add_row("Total Peers", str(total_peers))
             global_table.add_row("Total Seeds", str(total_seeds))

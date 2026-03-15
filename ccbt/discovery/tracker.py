@@ -197,6 +197,7 @@ class AsyncTrackerClient:
 
         # Session metrics
         self._session_metrics: dict[str, dict[str, Any]] = {}
+        self._xet_chunk_registry: dict[tuple[bytes, Optional[str]], list[PeerInfo]] = {}
 
         self.logger = logging.getLogger(__name__)
 
@@ -206,6 +207,43 @@ class AsyncTrackerClient:
         self.on_peers_received: Optional[
             Callable[[Union[list[PeerInfo], list[dict[str, Any]]], str], None]
         ] = None
+
+    async def announce_chunk(
+        self,
+        chunk_hash: bytes,
+        peer_info: Optional[PeerInfo] = None,
+        workspace_id_hex: Optional[str] = None,
+    ) -> None:
+        """Record XET chunk availability for tracker-backed lookup."""
+        key = (chunk_hash, workspace_id_hex)
+        if peer_info is None:
+            self._xet_chunk_registry.setdefault(key, [])
+            return
+        peers = self._xet_chunk_registry.setdefault(key, [])
+        if not any(
+            existing.ip == peer_info.ip and existing.port == peer_info.port
+            for existing in peers
+        ):
+            peers.append(peer_info)
+
+    async def get_chunk_peers(
+        self, chunk_hash: bytes, workspace_id_hex: Optional[str] = None
+    ) -> list[PeerInfo]:
+        """Return peers recorded for an XET chunk."""
+        if workspace_id_hex is None:
+            # Return peers across workspace-scoped and legacy global entries.
+            peers: list[PeerInfo] = []
+            for (
+                stored_hash,
+                _stored_workspace,
+            ), stored_peers in self._xet_chunk_registry.items():
+                if stored_hash == chunk_hash:
+                    peers.extend(stored_peers)
+            return peers
+        scoped = list(self._xet_chunk_registry.get((chunk_hash, workspace_id_hex), []))
+        # Include global fallback entries if present.
+        scoped.extend(self._xet_chunk_registry.get((chunk_hash, None), []))
+        return scoped
 
     async def _call_immediate_connection(
         self, peers: list[dict[str, Any]], tracker_url: str

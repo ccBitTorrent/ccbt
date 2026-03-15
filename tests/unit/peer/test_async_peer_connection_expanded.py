@@ -366,6 +366,32 @@ class TestAsyncPeerConnectionManagerBasics:
         # Should still have only one connection
         assert len(async_peer_manager.connections) == 1
 
+    @pytest.mark.asyncio
+    async def test_connect_to_peers_mixed_batch_uses_per_peer_result(self, async_peer_manager):
+        """Regression: each peer's failure must be classified using its own conn_result, not stale result."""
+        async_peer_manager._running = True
+        peer_list = [
+            {"ip": "192.0.2.1", "port": 6881},
+            {"ip": "192.0.2.2", "port": 6882},
+        ]
+        # First peer: timeout, second peer: connection refused. Without the fix, second is misclassified.
+        with patch(
+            "asyncio.open_connection",
+            side_effect=[asyncio.TimeoutError("timed out"), ConnectionError("connection refused")],
+        ):
+            await async_peer_manager.connect_to_peers(peer_list)
+        # No exception means per-peer conn_result was used (UnboundLocalError or wrong type would raise)
+        assert len(async_peer_manager.connections) == 0
+
+    @pytest.mark.asyncio
+    async def test_connect_to_peers_all_fail_no_success_guard(self, async_peer_manager):
+        """Regression: when all peers fail, failure path must use conn_result (guards UnboundLocalError)."""
+        async_peer_manager._running = True
+        peer_list = [{"ip": "192.0.2.1", "port": 6881}]
+        with patch("asyncio.open_connection", side_effect=ConnectionError("refused")):
+            await async_peer_manager.connect_to_peers(peer_list)
+        assert len(async_peer_manager.connections) == 0
+
 
 class TestAsyncPeerConnectionManagerMessageHandling:
     """Test message handling in AsyncPeerConnectionManager."""

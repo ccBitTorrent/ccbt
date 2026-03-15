@@ -8,11 +8,13 @@ all BitTorrent protocol extensions.
 
 from __future__ import annotations
 
+import contextlib
+import json
 import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from ccbt.extensions.compact import CompactPeerLists
 from ccbt.extensions.dht import DHTExtension
@@ -58,6 +60,12 @@ class ExtensionManager:
         self.extension_states: dict[str, ExtensionState] = {}
         self.peer_extensions: dict[str, dict[str, Any]] = {}  # peer_id -> extensions
         self.logger = logging.getLogger(__name__)
+        self._xet_auth_check: Optional[Callable[[str, Optional[str]], bool]] = (
+            None  # (peer_id, workspace_id_hex) -> authorized
+        )
+        self._xet_gossip_received: Optional[
+            Callable[[str, dict[str, Any]], Awaitable[Optional[dict[str, Any]]]]
+        ] = None  # (peer_id, messages) -> response messages to send back
 
         # Initialize extensions
         self._initialize_extensions()
@@ -184,6 +192,22 @@ class ExtensionManager:
 
                 protocol_ext.register_message_handler(
                     ssl_ext_info.message_id, ssl_handler
+                )
+
+            xet_ext_info = protocol_ext.get_extension_info("xet")
+            if (
+                xet_ext_info
+                and xet_ext_info.message_id not in protocol_ext.message_handlers
+            ):
+
+                async def xet_handler(peer_id: str, payload: bytes) -> Optional[bytes]:
+                    """Handle XET extension messages using the manager dispatcher."""
+                    return await self.handle_xet_message(
+                        peer_id, xet_ext_info.message_id, payload
+                    )
+
+                protocol_ext.register_message_handler(
+                    xet_ext_info.message_id, xet_handler
                 )
 
         for name, extension in self.extensions.items():
@@ -534,6 +558,21 @@ class ExtensionManager:
             # Check message type from first byte
             msg_type = data[0]
 
+            # Require XET handshake authorization for sensitive message types
+            _xet_sensitive = (0x01, 0x02, 0x12, 0x20, 0x21, 0x22)
+            if msg_type in _xet_sensitive and self._xet_auth_check is not None:
+                workspace_id_hex: Optional[str] = None
+                if msg_type == 0x12 and len(data) >= 1:
+                    with contextlib.suppress(Exception):
+                        workspace_id_hex = xet_ext.decode_update_notify(data)[0]
+                if not self._xet_auth_check(peer_id, workspace_id_hex):
+                    self.logger.debug(
+                        "Dropping XET message type 0x%02x from peer %s (not authorized)",
+                        msg_type,
+                        peer_id,
+                    )
+                    return None
+
             if msg_type == 0x01:  # CHUNK_REQUEST
                 request_id, chunk_hash = xet_ext.decode_chunk_request(data)
                 response = await xet_ext.handle_chunk_request(
@@ -545,6 +584,105 @@ class ExtensionManager:
                 request_id, chunk_data = xet_ext.decode_chunk_response(data)
                 await xet_ext.handle_chunk_response(peer_id, request_id, chunk_data)
                 self.extension_states["xet"].last_activity = time.time()
+                return None
+            if msg_type == 0x10:  # FOLDER_VERSION_REQUEST
+                response = await xet_ext.handle_version_request(peer_id)
+                self.extension_states["xet"].last_activity = time.time()
+                return response
+            if msg_type == 0x11:  # FOLDER_VERSION_RESPONSE
+                xet_ext.decode_version_response(data)
+                self.extension_states["xet"].last_activity = time.time()
+                return None
+            if msg_type == 0x12:  # FOLDER_UPDATE_NOTIFY
+                (
+                    workspace_id_hex,
+                    file_path,
+                    chunk_hash,
+                    git_ref,
+                    operation,
+                    metadata_version,
+                    metadata_root,
+                ) = xet_ext.decode_update_notify(data)
+                await xet_ext.handle_update_notify(
+                    peer_id,
+                    workspace_id_hex,
+                    file_path,
+                    chunk_hash,
+                    git_ref,
+                    operation,
+                    metadata_version,
+                    metadata_root,
+                )
+                self.extension_states["xet"].last_activity = time.time()
+                return None
+            if msg_type == 0x13:  # FOLDER_SYNC_MODE_REQUEST
+                response = await xet_ext.handle_sync_mode_request(peer_id)
+                self.extension_states["xet"].last_activity = time.time()
+                return response
+            if msg_type == 0x14:  # FOLDER_SYNC_MODE_RESPONSE
+                xet_ext.decode_sync_mode_response(data)
+                self.extension_states["xet"].last_activity = time.time()
+                return None
+            if msg_type == 0x20 and xet_ext.metadata_exchange is not None:
+                info_hash, piece = xet_ext.metadata_exchange.decode_metadata_request(
+                    data
+                )
+                response = await xet_ext.metadata_exchange.handle_metadata_request(
+                    peer_id, info_hash, piece
+                )
+                self.extension_states["xet"].last_activity = time.time()
+                return response
+            if msg_type == 0x21 and xet_ext.metadata_exchange is not None:
+                info_hash, piece, total_pieces, payload = (
+                    xet_ext.metadata_exchange.decode_metadata_response(data)
+                )
+                await xet_ext.metadata_exchange.handle_metadata_response(
+                    peer_id, info_hash, piece, total_pieces, payload
+                )
+                self.extension_states["xet"].last_activity = time.time()
+                return None
+            if msg_type == 0x22 and xet_ext.metadata_exchange is not None:
+                info_hash = xet_ext.metadata_exchange.decode_metadata_not_found(data)
+                await xet_ext.metadata_exchange.handle_metadata_not_found(
+                    peer_id,
+                    info_hash,
+                )
+                self.extension_states["xet"].last_activity = time.time()
+                return None
+            if msg_type == 0x30:  # BLOOM_FILTER_REQUEST
+                response = await xet_ext.handle_bloom_request(peer_id)
+                self.extension_states["xet"].last_activity = time.time()
+                return response
+            if msg_type == 0x31:  # BLOOM_FILTER_RESPONSE
+                bloom_bytes = xet_ext.decode_bloom_response(data)
+                if getattr(xet_ext, "on_bloom_response", None) and bloom_bytes:
+                    try:
+                        xet_ext.on_bloom_response(peer_id, bloom_bytes)
+                    except Exception as e:
+                        self.logger.warning(
+                            "Error in XET bloom response callback: %s", e
+                        )
+                self.extension_states["xet"].last_activity = time.time()
+                return None
+            if msg_type == 0x40:  # GOSSIP_SYNC
+                if self._xet_gossip_received is not None and len(data) > 1:
+                    try:
+                        messages = json.loads(data[1:].decode("utf-8"))
+                        if isinstance(messages, dict):
+                            response = await self._xet_gossip_received(
+                                peer_id, messages
+                            )
+                            self.extension_states["xet"].last_activity = time.time()
+                            if response and isinstance(response, dict):
+                                return bytes([0x40]) + json.dumps(response).encode(
+                                    "utf-8"
+                                )
+                    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                        self.logger.debug(
+                            "Invalid GOSSIP_SYNC payload from %s: %s",
+                            peer_id,
+                            e,
+                        )
                 return None
 
             return None
@@ -607,11 +745,26 @@ class ExtensionManager:
 
     def get_peer_extensions(self, peer_id: str) -> dict[str, Any]:
         """Get extensions supported by peer."""
+        protocol_ext = self.extensions.get("protocol")
+        if protocol_ext is not None and hasattr(protocol_ext, "get_peer_extensions"):
+            peer_extensions = protocol_ext.get_peer_extensions(peer_id)
+            if isinstance(peer_extensions, dict):
+                self.peer_extensions[peer_id] = peer_extensions
+                return peer_extensions
         return self.peer_extensions.get(peer_id, {})
 
     def set_peer_extensions(self, peer_id: str, extensions: dict[str, Any]) -> None:
         """Set peer extensions."""
-        self.peer_extensions[peer_id] = extensions
+        protocol_ext = self.extensions.get("protocol")
+        if protocol_ext is not None and hasattr(
+            protocol_ext, "_build_peer_extension_state"
+        ):
+            normalized = protocol_ext._normalize_extension_dict(extensions)  # noqa: SLF001
+            self.peer_extensions[peer_id] = protocol_ext._build_peer_extension_state(  # noqa: SLF001
+                normalized
+            )
+        else:
+            self.peer_extensions[peer_id] = extensions
 
         # Extract SSL capability from extension handshake data
         if "ssl" in self.extensions:
@@ -624,13 +777,11 @@ class ExtensionManager:
 
                 # Check for SSL in extension message map (BEP 10 "m" field)
                 # Note: BEP 10 extensions can have bytes keys, but type annotation is dict[str, Any]
-                if isinstance(extensions, dict):
-                    m_dict = extensions.get("m") or extensions.get(b"m", {})  # type: ignore[no-matching-overload]
+                if isinstance(self.peer_extensions[peer_id], dict):
+                    m_dict = self.peer_extensions[peer_id].get("m", {})
                     # SSL extension may be registered with message ID
                     # Check if "ssl" is in the message map
-                    if isinstance(m_dict, dict) and (
-                        "ssl" in m_dict or b"ssl" in m_dict
-                    ):
+                    if isinstance(m_dict, dict) and "ssl" in m_dict:
                         ssl_supported = True
 
                     # Also check for direct SSL extension data in handshake
@@ -655,31 +806,20 @@ class ExtensionManager:
                     ssl_supported,
                 )
 
+        if protocol_ext is not None and hasattr(protocol_ext, "peer_extensions"):
+            protocol_ext.peer_extensions[peer_id] = self.peer_extensions[peer_id]
+
     def peer_supports_extension(self, peer_id: str, extension_name: str) -> bool:
         """Check if peer supports extension."""
+        protocol_ext = self.extensions.get("protocol")
+        if protocol_ext is not None and hasattr(
+            protocol_ext, "peer_supports_extension"
+        ):
+            return bool(protocol_ext.peer_supports_extension(peer_id, extension_name))
         peer_extensions = self.peer_extensions.get(peer_id, {})
         if not isinstance(peer_extensions, dict):
             return False
-
-        # For SSL, check if ssl capability is stored (boolean value)
-        if extension_name == "ssl":
-            ssl_capable = peer_extensions.get("ssl")
-            return ssl_capable is True
-
-        # For other extensions, check if extension name is in the dict
-        # or in the "m" message map
-        if extension_name in peer_extensions:
-            return True
-
-        # Check in "m" dict (BEP 10 message map)
-        # Note: BEP 10 extensions can have bytes keys, but type annotation is dict[str, Any]
-        m_dict = peer_extensions.get("m") or peer_extensions.get(b"m", {})  # type: ignore[call-overload]
-        if isinstance(m_dict, dict):
-            return extension_name in m_dict or (
-                isinstance(extension_name, str) and extension_name.encode() in m_dict
-            )
-
-        return False
+        return extension_name in peer_extensions
 
     def get_extension_capabilities(self, extension_name: str) -> dict[str, Any]:
         """Get extension capabilities."""

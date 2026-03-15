@@ -6,7 +6,9 @@ Provides adapters that abstract local session vs daemon session (IPC client).
 from __future__ import annotations
 
 import logging
+import mimetypes
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 try:
@@ -14,9 +16,17 @@ try:
 except ImportError:
     aiohttp = None  # type: ignore[assignment, misc]
 
+from ccbt.config.config import get_config
+from ccbt.daemon.ipc_protocol import (
+    FileInfo,
+    FileListResponse,
+    MediaStreamStartResponse,
+    MediaStreamStatusResponse,
+)
+from ccbt.utils.media_launcher import launch_media_player
+
 if TYPE_CHECKING:
     from ccbt.daemon.ipc_protocol import (
-        FileListResponse,
         NATStatusResponse,
         ProtocolInfo,
         QueueListResponse,
@@ -43,6 +53,34 @@ def _safe_error_str(exc: Exception) -> str:
             return repr(exc)
         except (AttributeError, Exception):
             return f"{type(exc).__name__} (unable to stringify)"
+
+
+_MEDIA_EXTENSIONS = {
+    ".avi",
+    ".flac",
+    ".m4a",
+    ".mkv",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".mpeg",
+    ".mpg",
+    ".ogg",
+    ".opus",
+    ".wav",
+    ".webm",
+}
+
+
+def _guess_media_metadata(file_path: str) -> tuple[Optional[str], bool]:
+    """Return a best-effort MIME type and media-file flag."""
+    mime_type, _encoding = mimetypes.guess_type(file_path)
+    suffix = Path(file_path).suffix.lower()
+    is_media = bool(
+        suffix in _MEDIA_EXTENSIONS
+        or (mime_type is not None and mime_type.startswith(("audio/", "video/")))
+    )
+    return mime_type, is_media
 
 
 class SessionAdapter(ABC):
@@ -526,6 +564,58 @@ class SessionAdapter(ABC):
         """
 
     @abstractmethod
+    async def set_xet_folder_sync_mode(
+        self,
+        folder_key: str,
+        sync_mode: str,
+        source_peers: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Update the live sync mode for an XET folder."""
+
+    @abstractmethod
+    async def get_xet_discovery_status(self) -> dict[str, Any]:
+        """Get shared XET discovery backend status."""
+
+    @abstractmethod
+    async def set_xet_workspace_policy(
+        self,
+        workspace_id_hex: str,
+        *,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        auth_scope: Optional[str] = None,
+        allowlist_path: Optional[str] = None,
+        require_signed_metadata: Optional[bool] = None,
+        hash_algorithm: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Update live policy for all runtimes in a workspace."""
+
+    @abstractmethod
+    async def start_media_stream(
+        self,
+        info_hash: str,
+        file_index: int,
+        port: Optional[int] = None,
+    ) -> MediaStreamStartResponse:
+        """Start a media stream for a specific torrent file."""
+
+    @abstractmethod
+    async def stop_media_stream(self, stream_id: str) -> bool:
+        """Stop an active media stream."""
+
+    @abstractmethod
+    async def get_media_stream_status(
+        self,
+        stream_id: Optional[str] = None,
+        info_hash: Optional[str] = None,
+    ) -> Optional[MediaStreamStatusResponse]:
+        """Get media stream status by stream id or torrent info hash."""
+
+    @abstractmethod
+    async def launch_media_player(self, stream_url: str) -> dict[str, Any]:
+        """Launch the local media player against a stream URL."""
+
+    @abstractmethod
     async def set_rate_limits(
         self,
         info_hash: str,
@@ -851,6 +941,9 @@ class LocalSessionAdapter(SessionAdapter):
         status_dict = await self.session_manager.get_status()
         torrents = []
         for info_hash_hex, status in status_dict.items():
+            # Canonical internal uses connected_peers/active_peers; IPC uses num_peers/num_seeds
+            num_peers = status.get("connected_peers", status.get("num_peers", 0))
+            num_seeds = status.get("active_peers", status.get("num_seeds", 0))
             torrents.append(
                 TorrentStatusResponse(
                     info_hash=info_hash_hex,
@@ -859,8 +952,8 @@ class LocalSessionAdapter(SessionAdapter):
                     progress=status.get("progress", 0.0),
                     download_rate=status.get("download_rate", 0.0),
                     upload_rate=status.get("upload_rate", 0.0),
-                    num_peers=status.get("num_peers", 0),
-                    num_seeds=status.get("num_seeds", 0),
+                    num_peers=num_peers,
+                    num_seeds=num_seeds,
                     total_size=status.get("total_size", 0),
                     downloaded=status.get("downloaded", 0),
                     uploaded=status.get("uploaded", 0),
@@ -870,6 +963,8 @@ class LocalSessionAdapter(SessionAdapter):
                     output_dir=status.get(
                         "output_dir"
                     ),  # Output directory where files are saved
+                    pieces_completed=status.get("pieces_completed", 0),
+                    pieces_total=status.get("pieces_total", 0),
                 ),
             )
         return torrents
@@ -884,6 +979,9 @@ class LocalSessionAdapter(SessionAdapter):
         if not status:
             return None
 
+        # Canonical internal uses connected_peers/active_peers; IPC uses num_peers/num_seeds
+        num_peers = status.get("connected_peers", status.get("num_peers", 0))
+        num_seeds = status.get("active_peers", status.get("num_seeds", 0))
         return TorrentStatusResponse(
             info_hash=info_hash,
             name=status.get("name", "Unknown"),
@@ -891,8 +989,8 @@ class LocalSessionAdapter(SessionAdapter):
             progress=status.get("progress", 0.0),
             download_rate=status.get("download_rate", 0.0),
             upload_rate=status.get("upload_rate", 0.0),
-            num_peers=status.get("num_peers", 0),
-            num_seeds=status.get("num_seeds", 0),
+            num_peers=num_peers,
+            num_seeds=num_seeds,
             total_size=status.get("total_size", 0),
             downloaded=status.get("downloaded", 0),
             uploaded=status.get("uploaded", 0),
@@ -922,8 +1020,6 @@ class LocalSessionAdapter(SessionAdapter):
 
     async def get_torrent_files(self, info_hash: str) -> FileListResponse:
         """Get file list for a torrent."""
-        from ccbt.daemon.ipc_protocol import FileInfo, FileListResponse
-
         try:
             info_hash_bytes = bytes.fromhex(info_hash)
         except ValueError:
@@ -950,6 +1046,9 @@ class LocalSessionAdapter(SessionAdapter):
             if file_info.is_padding:
                 continue
             state = manager.get_file_state(file_index)
+            relative_path = getattr(file_info, "full_path", None) or file_info.name
+            resolved_path = str(Path(torrent_session.output_dir) / relative_path)
+            mime_type, is_media = _guess_media_metadata(resolved_path)
             files.append(
                 FileInfo(
                     index=file_index,
@@ -959,6 +1058,9 @@ class LocalSessionAdapter(SessionAdapter):
                     priority=state.priority.name if state else "normal",
                     progress=state.progress if state else 0.0,
                     attributes=None,
+                    path=resolved_path,
+                    mime_type=mime_type,
+                    is_media=is_media,
                 ),
             )
 
@@ -1844,6 +1946,102 @@ class LocalSessionAdapter(SessionAdapter):
         status = folder.get_status()
         return status.model_dump()
 
+    async def set_xet_folder_sync_mode(
+        self,
+        folder_key: str,
+        sync_mode: str,
+        source_peers: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Update the live sync mode for an XET folder."""
+        result = await self.session_manager.set_xet_folder_sync_mode(
+            folder_key,
+            sync_mode,
+            source_peers=source_peers,
+        )
+        if result is None:
+            msg = f"XET folder not found: {folder_key}"
+            raise ValueError(msg)
+        return result
+
+    async def get_xet_discovery_status(self) -> dict[str, Any]:
+        """Get shared XET discovery backend status."""
+        getter = getattr(self.session_manager, "get_xet_discovery_status", None)
+        if callable(getter):
+            result = getter()
+            return result if isinstance(result, dict) else {}
+        return {}
+
+    async def set_xet_workspace_policy(
+        self,
+        workspace_id_hex: str,
+        *,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        auth_scope: Optional[str] = None,
+        allowlist_path: Optional[str] = None,
+        require_signed_metadata: Optional[bool] = None,
+        hash_algorithm: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Update live policy for all runtimes in a workspace."""
+        result = await self.session_manager.set_xet_workspace_policy(
+            workspace_id_hex=workspace_id_hex,
+            sync_mode=sync_mode,
+            source_peers=source_peers,
+            auth_scope=auth_scope,
+            allowlist_path=allowlist_path,
+            require_signed_metadata=require_signed_metadata,
+            hash_algorithm=hash_algorithm,
+        )
+        if result is None:
+            msg = f"XET workspace not found: {workspace_id_hex}"
+            raise ValueError(msg)
+        return result
+
+    async def start_media_stream(
+        self,
+        info_hash: str,
+        file_index: int,
+        port: Optional[int] = None,
+    ) -> MediaStreamStartResponse:
+        """Start a media stream for a torrent file."""
+        result = await self.session_manager.start_media_stream(
+            info_hash,
+            file_index=file_index,
+            port=port,
+        )
+        return MediaStreamStartResponse.model_validate(result)
+
+    async def stop_media_stream(self, stream_id: str) -> bool:
+        """Stop an active media stream."""
+        return await self.session_manager.stop_media_stream(stream_id)
+
+    async def get_media_stream_status(
+        self,
+        stream_id: Optional[str] = None,
+        info_hash: Optional[str] = None,
+    ) -> Optional[MediaStreamStatusResponse]:
+        """Get media stream status."""
+        status = await self.session_manager.get_media_stream_status(
+            stream_id=stream_id,
+            info_hash_hex=info_hash,
+        )
+        if status is None:
+            return None
+        return MediaStreamStatusResponse.model_validate(status)
+
+    async def launch_media_player(self, stream_url: str) -> dict[str, Any]:
+        """Launch the local media player against a stream URL."""
+        config = get_config()
+        media_config = getattr(config, "media", None)
+        return launch_media_player(
+            stream_url,
+            vlc_executable_path=(
+                getattr(media_config, "vlc_executable_path", None)
+                if media_config is not None
+                else None
+            ),
+        )
+
     async def set_rate_limits(
         self,
         info_hash: str,
@@ -2580,8 +2778,95 @@ class DaemonSessionAdapter(SessionAdapter):
         result = await self.ipc_client.get_xet_folder_status(folder_key)
         if not result:
             return None
-        # IPC client returns dict with status
+        if hasattr(result, "model_dump"):
+            payload = result.model_dump(mode="json")
+            status = payload.get("status")
+            return status if isinstance(status, dict) else payload
         return result if isinstance(result, dict) else None
+
+    async def set_xet_folder_sync_mode(
+        self,
+        folder_key: str,
+        sync_mode: str,
+        source_peers: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Update the live sync mode for an XET folder via daemon IPC."""
+        return await self.ipc_client.set_xet_folder_sync_mode(
+            folder_key,
+            sync_mode,
+            source_peers=source_peers,
+        )
+
+    async def get_xet_discovery_status(self) -> dict[str, Any]:
+        """Get shared XET discovery backend status via daemon IPC."""
+        return await self.ipc_client.get_xet_discovery_status()
+
+    async def set_xet_workspace_policy(
+        self,
+        workspace_id_hex: str,
+        *,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        auth_scope: Optional[str] = None,
+        allowlist_path: Optional[str] = None,
+        require_signed_metadata: Optional[bool] = None,
+        hash_algorithm: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Update live workspace policy via daemon IPC."""
+        return await self.ipc_client.set_xet_workspace_policy(
+            workspace_id_hex=workspace_id_hex,
+            sync_mode=sync_mode,
+            source_peers=source_peers,
+            auth_scope=auth_scope,
+            allowlist_path=allowlist_path,
+            require_signed_metadata=require_signed_metadata,
+            hash_algorithm=hash_algorithm,
+        )
+
+    async def start_media_stream(
+        self,
+        info_hash: str,
+        file_index: int,
+        port: Optional[int] = None,
+    ) -> MediaStreamStartResponse:
+        """Start a media stream via daemon IPC."""
+        return await self.ipc_client.start_media_stream(
+            info_hash,
+            file_index=file_index,
+            port=port,
+        )
+
+    async def stop_media_stream(self, stream_id: str) -> bool:
+        """Stop a media stream via daemon IPC."""
+        result = await self.ipc_client.stop_media_stream(stream_id)
+        return bool(result.get("stopped", result.get("success", False)))
+
+    async def get_media_stream_status(
+        self,
+        stream_id: Optional[str] = None,
+        info_hash: Optional[str] = None,
+    ) -> Optional[MediaStreamStatusResponse]:
+        """Get media stream status via daemon IPC."""
+        if stream_id is None and info_hash is None:
+            msg = "Either stream_id or info_hash is required"
+            raise ValueError(msg)
+        return await self.ipc_client.get_media_stream_status(
+            stream_id=stream_id,
+            info_hash=info_hash,
+        )
+
+    async def launch_media_player(self, stream_url: str) -> dict[str, Any]:
+        """Launch the local media player against a stream URL."""
+        config = get_config()
+        media_config = getattr(config, "media", None)
+        return launch_media_player(
+            stream_url,
+            vlc_executable_path=(
+                getattr(media_config, "vlc_executable_path", None)
+                if media_config is not None
+                else None
+            ),
+        )
 
     async def set_rate_limits(
         self,

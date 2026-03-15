@@ -193,6 +193,11 @@ class MetricsCollector:
             "nat_udp_mapped": False,
             "nat_dht_mapped": False,
             "nat_tracker_udp_mapped": False,
+            # XET workspace metrics
+            "xet_active_folders": 0,
+            "xet_pending_updates": 0,
+            "xet_syncing_folders": 0,
+            "xet_connected_peers": 0,
         }
 
         # Session reference for accessing DHT, queue, disk I/O, and tracker services
@@ -500,7 +505,14 @@ class MetricsCollector:
             - cross_torrent_sharing: Efficiency of peer sharing across torrents
 
         """
-        sessions = getattr(self._session, "_sessions", None) if self._session else None
+        # AsyncSessionManager uses .torrents; legacy code may use ._sessions
+        sessions = (
+            getattr(
+                self._session, "torrents", getattr(self._session, "_sessions", None)
+            )
+            if self._session
+            else None
+        )
         if not self._session or not sessions:
             return {
                 "total_peers": 0,
@@ -522,7 +534,9 @@ class MetricsCollector:
         peer_count = 0
 
         # Collect metrics from all torrent sessions
-        sessions = getattr(self._session, "_sessions", {})
+        sessions = getattr(
+            self._session, "torrents", getattr(self._session, "_sessions", {})
+        )
         for torrent_session in sessions.values():
             # Get peer manager
             peer_manager = getattr(
@@ -1101,42 +1115,50 @@ class MetricsCollector:
             logger = logging.getLogger(__name__)
             logger.debug("Network optimizer metrics not available: %s", e)
 
-        # Collect tracker metrics if session and tracker service are available
-        if (
-            self._session
-            and hasattr(self._session, "tracker_service")
-            and self._session.tracker_service
-        ):
+        # Collect tracker metrics from manager-compatible sources.
+        if self._session:
             try:
-                tracker_stats = await self._session.tracker_service.get_tracker_stats()
+                tracker_stats: dict[str, Any] = {}
+                scrape_manager = getattr(self._session, "scrape_manager", None)
+                if scrape_manager and hasattr(scrape_manager, "get_scrape_statistics"):
+                    stats_result = scrape_manager.get_scrape_statistics()
+                    if asyncio.iscoroutine(stats_result):
+                        stats_result = await stats_result
+                    if isinstance(stats_result, dict):
+                        tracker_stats = stats_result
+
                 self.performance_data["tracker_announce_success_rate"] = (
-                    tracker_stats.get("success_rate", 0.0) * 100.0
+                    float(tracker_stats.get("success_rate", 0.0)) * 100.0
                 )
                 self.performance_data["tracker_scrape_success_rate"] = (
-                    tracker_stats.get("scrape_success_rate", 0.0) * 100.0
+                    float(tracker_stats.get("scrape_success_rate", 0.0)) * 100.0
                 )
-                self.performance_data["tracker_average_response_time"] = (
+                self.performance_data["tracker_average_response_time"] = float(
                     tracker_stats.get("average_response_time", 0.0)
                 )
 
-                # Count total errors from all trackers
+                # Aggregate tracker errors from torrent tracker clients where available.
                 error_count = 0
-                if hasattr(self._session.tracker_service, "trackers"):
-                    for tracker_conn in self._session.tracker_service.trackers.values():
-                        error_count += tracker_conn.failure_count
+                sessions = getattr(self._session, "torrents", {})
+                if isinstance(sessions, dict):
+                    for torrent_session in sessions.values():
+                        tracker = getattr(torrent_session, "tracker", None)
+                        if tracker is None:
+                            continue
+                        error_count += int(getattr(tracker, "failure_count", 0))
                 self.performance_data["tracker_error_count"] = error_count
-            except (
-                Exception
-            ):  # pragma: no cover - Error handling for missing tracker service
-                # Tracker metrics not available, keep defaults
+            except Exception:  # pragma: no cover - keep defaults on failure
                 pass
 
         # CRITICAL FIX: Collect connection health metrics from all active sessions
-        if (
-            self._session
-            and hasattr(self._session, "_sessions")
-            and isinstance(getattr(self._session, "_sessions", None), dict)
-        ):
+        sessions = (
+            getattr(
+                self._session, "torrents", getattr(self._session, "_sessions", None)
+            )
+            if self._session
+            else None
+        )
+        if self._session and isinstance(sessions, dict):
             try:
                 total_connections = 0
                 total_queued_peers = 0
@@ -1144,7 +1166,6 @@ class MetricsCollector:
                 # Will track detailed connection statistics per session
 
                 # Aggregate connection stats from all sessions
-                sessions = getattr(self._session, "_sessions", {})
                 for torrent_session in sessions.values():
                     # Count active connections
                     peer_manager = getattr(
@@ -1189,6 +1210,29 @@ class MetricsCollector:
                         self.performance_data["connection_success_rate"] = 0.0
             except Exception:
                 # Connection metrics not available, keep defaults
+                pass
+
+        if self._session and hasattr(self._session, "list_xet_folders"):
+            try:
+                xet_folders = await self._session.list_xet_folders()
+                self.performance_data["xet_active_folders"] = len(xet_folders)
+                self.performance_data["xet_pending_updates"] = sum(
+                    int(folder.get("status", {}).get("pending_changes", 0))
+                    for folder in xet_folders
+                    if isinstance(folder, dict)
+                )
+                self.performance_data["xet_syncing_folders"] = sum(
+                    1
+                    for folder in xet_folders
+                    if isinstance(folder, dict)
+                    and bool(folder.get("status", {}).get("is_syncing"))
+                )
+                self.performance_data["xet_connected_peers"] = sum(
+                    int(folder.get("status", {}).get("connected_peers", 0))
+                    for folder in xet_folders
+                    if isinstance(folder, dict)
+                )
+            except Exception:
                 pass
 
         # CRITICAL FIX: Collect NAT mapping status metrics

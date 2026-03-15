@@ -486,6 +486,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
         self.session = session
         self._splash_manager = splash_manager
         self._splash_ended = False
+        self._adapter_ready = False
         
         # Initialize translations
         try:
@@ -532,6 +533,14 @@ class TerminalDashboard(App):  # type: ignore[misc]
         self.logs: Optional[RichLog] = None
         # New tabbed interface widgets
         self.graphs_section: Optional[GraphsSectionContainer] = None
+
+    async def _ensure_adapter_ready(self) -> None:
+        """Ensure daemon adapter is started before dashboard wiring."""
+        if self._adapter_ready:
+            return
+        if not getattr(self.session, "_websocket_connected", False):
+            await self.session.start()
+        self._adapter_ready = True
 
     def _format_bindings_display(self) -> Any:  # pragma: no cover
         """Format all key bindings grouped by category for display."""
@@ -706,6 +715,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the dashboard and start session polling."""
         # Textual lifecycle method - requires full app mount context to test
+        await self._ensure_adapter_ready()
         
         # Register rainbow theme
         try:
@@ -1387,7 +1397,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 "upload_rate": torrent_status.get("upload_rate", 0.0),
                 "total_downloaded_bytes": torrent_status.get("downloaded", 0),
                 "total_uploaded_bytes": torrent_status.get("uploaded", 0),
-                "connection_count": torrent_status.get("peers", 0),
+                "connection_count": torrent_status.get("connected_peers", 0),
             }
             
             # Piece stats would need to be added to DataProvider if needed
@@ -1417,9 +1427,13 @@ class TerminalDashboard(App):  # type: ignore[misc]
             try:
                 # CRITICAL: Use DataProvider for read operations
                 peers = await self._data_provider.get_torrent_peers(info_hash_hex)
-                metrics["connection_count"] = len(peers) if peers else 0
+                metrics["connection_count"] = len(peers) if peers else int(
+                    torrent_status.get("connected_peers", 0),
+                )
             except Exception:
-                metrics["connection_count"] = torrent_status.get("peer_count", 0)
+                metrics["connection_count"] = int(
+                    torrent_status.get("connected_peers", 0),
+                )
 
             # Piece availability is not currently used in the interface
             # If needed in the future, it can be added to DataProvider
