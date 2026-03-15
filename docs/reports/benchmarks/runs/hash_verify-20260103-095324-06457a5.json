@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "benchmark": "hash_verify",
+    "config": "performance",
+    "timestamp": "2026-01-03T09:53:24.480168+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "11",
+      "python": "3.13.3"
+    },
+    "git": {
+      "commit_hash": "06457a5396531522221c442c405f3fe2308b4336",
+      "commit_hash_short": "06457a5",
+      "branch": "addscom",
+      "author": "Joseph Pollack",
+      "is_dirty": false
+    }
+  },
+  "results": [
+    {
+      "size_bytes": 1048576,
+      "iterations": 64,
+      "elapsed_s": 0.00010100000008606003,
+      "bytes_processed": 67108864,
+      "throughput_bytes_per_s": 664444197453.6427
+    },
+    {
+      "size_bytes": 4194304,
+      "iterations": 64,
+      "elapsed_s": 9.829999999055872e-05,
+      "bytes_processed": 268435456,
+      "throughput_bytes_per_s": 2730777782561.364
+    },
+    {
+      "size_bytes": 16777216,
+      "iterations": 64,
+      "elapsed_s": 0.0001383000001169421,
+      "bytes_processed": 1073741824,
+      "throughput_bytes_per_s": 7763859892205.914
+    }
+  ]
+}
