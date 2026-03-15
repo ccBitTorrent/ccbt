@@ -152,7 +152,7 @@ jobs:
         run: |
           if [ -n "${{ steps.bump_version.outputs.version || steps.use_version.outputs.version }}" ]; then
             VERSION="${{ steps.bump_version.outputs.version || steps.use_version.outputs.version }}"
-          elif startsWith(github.ref, 'refs/tags/v'); then
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
           else
             VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
