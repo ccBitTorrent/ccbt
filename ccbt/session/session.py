@@ -1023,8 +1023,9 @@ class AsyncTorrentSession:
                 pex_binder = PexBinder()
                 await pex_binder.bind_and_start(self)
 
-            # DHT initialization: when config enables DHT, init for all torrents (fallback discovery).
-            # Explicit --enable-dht or magnet still force-enable; config.enable_dht allows DHT for .torrent files too.
+            # DHT initialization: init only when config enables DHT and either the user
+            # explicitly requested DHT (e.g. --enable-dht) or this is a magnet link.
+            # This avoids silently enabling DHT for every .torrent when enable_dht=True.
             dht_explicitly_requested = getattr(self, "options", {}).get(
                 "enable_dht", False
             )
@@ -1032,8 +1033,11 @@ class AsyncTorrentSession:
                 self.torrent_data, dict
             ) and self.torrent_data.get("is_magnet", False)
 
-            # Init DHT when config enables it (fallback for all torrents); explicit/magnet logged for clarity
-            should_init_dht = self.config.discovery.enable_dht and self.session_manager
+            should_init_dht = (
+                self.config.discovery.enable_dht
+                and self.session_manager
+                and (dht_explicitly_requested or is_magnet_link)
+            )
             if should_init_dht:
                 try:
                     from ccbt.session.dht_setup import DHTDiscoverySetup

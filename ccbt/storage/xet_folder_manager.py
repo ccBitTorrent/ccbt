@@ -112,16 +112,8 @@ class XetFolder:
             cache_db_path=xet_state_dir / "cache.db",
             dht_client=getattr(session_manager, "dht_client", None),
         )
-        shared_cas_client = getattr(session_manager, "xet_cas_client", None)
-        if shared_cas_client is not None:
-            self.cas_client = shared_cas_client
-        else:
-            msg = (
-                "XET discovery not initialized: session manager has no shared "
-                "P2PCASClient. Ensure the session creates the discovery graph "
-                "(e.g. _ensure_xet_discovery_graph) before adding XET folders."
-            )
-            raise RuntimeError(msg)
+        # CAS client may be None until start() when discovery graph is ready
+        self.cas_client = getattr(session_manager, "xet_cas_client", None)
 
         self.logger = logging.getLogger(__name__)
         self._is_syncing = False
@@ -146,6 +138,16 @@ class XetFolder:
     async def start(self) -> None:
         """Start folder synchronization."""
         self._loop = asyncio.get_running_loop()
+        # Require CAS client at start time (discovery graph must be initialized)
+        if self.cas_client is None and self.session_manager is not None:
+            self.cas_client = getattr(self.session_manager, "xet_cas_client", None)
+        if self.cas_client is None:
+            msg = (
+                "XET discovery not initialized: session manager has no shared "
+                "P2PCASClient. Ensure the session creates the discovery graph "
+                "(e.g. _ensure_xet_discovery_graph) before starting XET folders."
+            )
+            raise RuntimeError(msg)
         # Set up change callback
         self.folder_watcher.add_change_callback(self._on_folder_change)
         self.folder_path.mkdir(parents=True, exist_ok=True)

@@ -79,18 +79,14 @@ class MediaStreamManager:
             piece_manager=torrent_session.piece_manager,
             file_selection_manager=file_manager,
         )
+        try:
+            await runtime.start()
+        except Exception:
+            raise
         async with self._lock:
             self._streams[runtime.stream_id] = runtime
             self._stream_by_info_hash[info_hash_hex] = runtime.stream_id
-        try:
-            await runtime.start()
-            return await runtime.to_start_record()
-        except Exception:
-            async with self._lock:
-                self._streams.pop(runtime.stream_id, None)
-                self._stream_by_info_hash.pop(info_hash_hex, None)
-            await runtime.stop()
-            raise
+        return await runtime.to_start_record()
 
     async def stop_stream(self, stream_id: str) -> bool:
         """Stop an active stream by identifier."""

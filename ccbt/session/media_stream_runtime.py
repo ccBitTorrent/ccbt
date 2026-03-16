@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -261,8 +262,8 @@ class MediaStreamRuntime:
 
     def _validate_token(self, request: web.Request) -> None:
         """Reject requests with a missing or expired token."""
-        provided_token = request.query.get("token")
-        if provided_token != self.token:
+        provided_token = request.query.get("token") or ""
+        if not hmac.compare_digest(provided_token, self.token):
             raise web.HTTPUnauthorized(text="Invalid media stream token")
         if time.time() > self.token_expires_at:
             raise web.HTTPUnauthorized(text="Expired media stream token")
