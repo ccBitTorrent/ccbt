@@ -4739,7 +4739,11 @@ class IPCServer:
                     status=500,
                 )
             data = result.data
-            if not isinstance(data, dict) or "workspace_id" not in data or "sync_mode" not in data:
+            if (
+                not isinstance(data, dict)
+                or "workspace_id" not in data
+                or "sync_mode" not in data
+            ):
                 return web.json_response(  # type: ignore[attr-defined]
                     ErrorResponse(
                         error=result.error or "Workspace policy result is incomplete",

@@ -175,7 +175,10 @@ class TestHandlePutErrors:
         client.routing_table.add_node(DHTNode(b"\x01" * 20, "127.0.0.1", 6881))
         addr = ("1.2.3.4", 6881)
 
-        with patch("ccbt.discovery.dht.get_config", return_value=_mock_config(max_storage_size=10)):
+        with patch(
+            "ccbt.discovery.dht.get_config",
+            return_value=_mock_config(max_storage_size=10),
+        ):
             get_msg = _encode_query(b"get", {b"id": b"\x02" * 20, b"target": target})
             client.handle_datagram(get_msg, addr)
             get_resp = _decode_response(client.transport.sendto.call_args[0][0])
@@ -186,7 +189,10 @@ class TestHandlePutErrors:
             b"put",
             {b"id": b"\x02" * 20, b"token": token, b"v": big_value},
         )
-        with patch("ccbt.discovery.dht.get_config", return_value=_mock_config(max_storage_size=10)):
+        with patch(
+            "ccbt.discovery.dht.get_config",
+            return_value=_mock_config(max_storage_size=10),
+        ):
             client.handle_datagram(put_msg, addr)
 
         payload, _ = client.transport.sendto.call_args[0]
@@ -392,7 +398,10 @@ class TestHandleRequestStorageDisabled:
         client = AsyncDHTClient()
         client.transport = MagicMock()
 
-        with patch("ccbt.discovery.dht.get_config", return_value=_mock_config(storage_enabled=False)):
+        with patch(
+            "ccbt.discovery.dht.get_config",
+            return_value=_mock_config(storage_enabled=False),
+        ):
             msg = _encode_query(
                 b"get",
                 {b"id": b"\x02" * 20, b"target": b"\x00" * 20},

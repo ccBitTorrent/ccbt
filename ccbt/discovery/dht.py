@@ -1094,9 +1094,7 @@ class AsyncDHTClient:
         target_key: bytes,
         _public_key: Optional[bytes] = None,
         salt: Optional[bytes] = None,
-    ) -> Optional[
-        tuple[Optional[bytes], Optional[bytes], bytes, bytes]
-    ]:
+    ) -> Optional[tuple[Optional[bytes], Optional[bytes], bytes, bytes]]:
         """Parse BEP 44 get response and validate value.
 
         For mutable items, salt is not returned by the node (BEP 44); pass salt
@@ -1152,9 +1150,7 @@ class AsyncDHTClient:
         from ccbt.core.bencode import BencodeEncoder
         from ccbt.discovery.dht_storage import calculate_immutable_key
 
-        value_bytes = (
-            v if isinstance(v, bytes) else BencodeEncoder().encode(v)
-        )
+        value_bytes = v if isinstance(v, bytes) else BencodeEncoder().encode(v)
         key_calc = calculate_immutable_key(value_bytes)
         if key_calc != target_key:
             return None
@@ -1203,9 +1199,7 @@ class AsyncDHTClient:
         token_expires = time.time() + 900.0
 
         for _ in range(max_depth):
-            unqueried = [
-                n for n in closest_set if n.node_id not in queried_nodes
-            ]
+            unqueried = [n for n in closest_set if n.node_id not in queried_nodes]
             if not unqueried:
                 break
             query_nodes = unqueried[:alpha]
@@ -1219,9 +1213,7 @@ class AsyncDHTClient:
                 queried_nodes.add(node.node_id)
                 if response is None:
                     continue
-                parsed = self._parse_get_response(
-                    response, key, public_key, salt
-                )
+                parsed = self._parse_get_response(response, key, public_key, salt)
                 if parsed is None:
                     continue
                 value_bytes, token, nodes_b, _nodes6_b = parsed
@@ -1249,9 +1241,7 @@ class AsyncDHTClient:
                             )
                             if self.routing_table.distance(
                                 nid, key
-                            ) < self.routing_table.distance(
-                                farthest.node_id, key
-                            ):
+                            ) < self.routing_table.distance(farthest.node_id, key):
                                 closest_set.discard(farthest)
                                 closest_set.add(new_node)
             if found_value is not None:
@@ -1900,10 +1890,7 @@ class AsyncDHTClient:
         """
         self.logger.debug("get_data called for key: %s", key.hex()[:16])
         try:
-            if (
-                get_config().discovery.dht_enable_storage
-                and len(key) == 20
-            ):
+            if get_config().discovery.dht_enable_storage and len(key) == 20:
                 value, _ = await self._get_data_iterative(
                     key, public_key=_public_key, salt=_salt
                 )
@@ -1967,10 +1954,7 @@ class AsyncDHTClient:
         local_count = 1
 
         try:
-            if (
-                get_config().discovery.dht_enable_storage
-                and len(encoded_value) <= 1000
-            ):
+            if get_config().discovery.dht_enable_storage and len(encoded_value) <= 1000:
                 dht_count = await self._put_data_iterative(
                     key, encoded_value, is_mutable=False
                 )
@@ -2232,9 +2216,7 @@ class AsyncDHTClient:
                     future.set_result(message)
             return
 
-    def _handle_request(
-        self, message: dict[bytes, Any], addr: tuple[str, int]
-    ) -> None:
+    def _handle_request(self, message: dict[bytes, Any], addr: tuple[str, int]) -> None:
         """Dispatch incoming DHT query to get/put/find_node/get_peers/announce_peer."""
         a = message.get(b"a")
         t = message.get(b"t")
@@ -2244,12 +2226,8 @@ class AsyncDHTClient:
             return
         node_id = a.get(b"id")
         if node_id is not None and len(node_id) == 20:
-            try:
-                self.routing_table.add_node(
-                    DHTNode(node_id, addr[0], addr[1])
-                )
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                self.routing_table.add_node(DHTNode(node_id, addr[0], addr[1]))
         q = message.get(b"q")
         if q == b"get":
             self._handle_get_request(a, t, addr)
@@ -2282,14 +2260,10 @@ class AsyncDHTClient:
         except Exception as e:
             self.logger.debug("Failed to send DHT error: %s", e)
 
-    def _issue_storage_token(
-        self, addr: tuple[str, int], target: bytes
-    ) -> bytes:
+    def _issue_storage_token(self, addr: tuple[str, int], target: bytes) -> bytes:
         """Issue and store a BEP 44 write token for (addr, target)."""
         raw = (addr[0] + str(addr[1])).encode() + target
-        token = hmac.new(
-            self.token_secret, raw, digestmod="sha256"
-        ).digest()[:32]
+        token = hmac.new(self.token_secret, raw, digestmod="sha256").digest()[:32]
         self._storage_write_tokens[(addr, target)] = (
             token,
             time.time() + 900.0,
@@ -2303,30 +2277,28 @@ class AsyncDHTClient:
         closest = self.routing_table.get_closest_nodes(target_id, count)
         nodes_list: list[bytes] = []
         for n in closest:
-            try:
+            with contextlib.suppress(OSError, ValueError):
                 nodes_list.append(
                     n.node_id
                     + socket.inet_pton(socket.AF_INET, n.ip)
                     + n.port.to_bytes(2, "big")
                 )
-            except (OSError, ValueError):
-                pass
         nodes = b"".join(nodes_list)
         nodes6_list: list[bytes] = []
         for n in closest:
+            ipv6_str = getattr(n, "ipv6", None)
+            port6_val = getattr(n, "port6", None)
             if (
                 getattr(n, "has_ipv6", False)
-                and getattr(n, "ipv6", None)
-                and getattr(n, "port6", None)
+                and ipv6_str is not None
+                and port6_val is not None
             ):
-                try:
+                with contextlib.suppress(OSError, ValueError):
                     nodes6_list.append(
                         n.node_id
-                        + socket.inet_pton(socket.AF_INET6, n.ipv6)
-                        + n.port6.to_bytes(2, "big")
+                        + socket.inet_pton(socket.AF_INET6, ipv6_str)
+                        + port6_val.to_bytes(2, "big")
                     )
-                except (OSError, ValueError):
-                    pass
         nodes6 = b"".join(nodes6_list)
         return (nodes, nodes6)
 
@@ -2381,14 +2353,10 @@ class AsyncDHTClient:
             verify_mutable_data_signature,
         )
 
-        max_size = getattr(
-            get_config().discovery, "dht_max_storage_size", None
-        )
+        max_size = getattr(get_config().discovery, "dht_max_storage_size", None)
         if max_size is None:
             max_size = MAX_STORAGE_VALUE_SIZE
-        value_bytes = (
-            v if isinstance(v, bytes) else BencodeEncoder().encode(v)
-        )
+        value_bytes = v if isinstance(v, bytes) else BencodeEncoder().encode(v)
         if len(value_bytes) > max_size:
             self._send_error(t, addr, 205, b"message too big")
             return
@@ -2398,9 +2366,7 @@ class AsyncDHTClient:
             return
         is_mutable = a.get(b"k") is not None
         if is_mutable:
-            key = calculate_mutable_key(
-                a[b"k"], a.get(b"salt", b"")
-            )
+            key = calculate_mutable_key(a[b"k"], a.get(b"salt", b""))
         else:
             key = calculate_immutable_key(value_bytes)
         lookup_key = (addr, key)
@@ -2418,9 +2384,7 @@ class AsyncDHTClient:
             if k is None or seq is None or sig is None:
                 self._send_error(t, addr, 203, b"missing k/seq/sig")
                 return
-            if not verify_mutable_data_signature(
-                value_bytes, k, sig, seq, salt_b
-            ):
+            if not verify_mutable_data_signature(value_bytes, k, sig, seq, salt_b):
                 self._send_error(t, addr, 206, b"invalid signature")
                 return
             cas = a.get(b"cas")
@@ -2428,9 +2392,7 @@ class AsyncDHTClient:
                 self._send_error(t, addr, 301, b"cas mismatch")
                 return
             if seq <= self._storage_seq.get(key, 0):
-                self._send_error(
-                    t, addr, 302, b"sequence number less than current"
-                )
+                self._send_error(t, addr, 302, b"sequence number less than current")
                 return
         self._xet_mutable_store[key] = value_bytes
         if is_mutable:
@@ -2443,9 +2405,7 @@ class AsyncDHTClient:
                 b"y": b"r",
                 b"r": {b"id": self.node_id},
             }
-            self.transport.sendto(
-                BencodeEncoder().encode(success_msg), addr
-            )
+            self.transport.sendto(BencodeEncoder().encode(success_msg), addr)
         except Exception as e:
             self.logger.debug("Failed to send put response: %s", e)
 
@@ -2469,22 +2429,16 @@ class AsyncDHTClient:
             return
         try:
             self.transport.sendto(
-                BencodeEncoder().encode(
-                    {b"t": t, b"y": b"r", b"r": r}
-                ),
+                BencodeEncoder().encode({b"t": t, b"y": b"r", b"r": r}),
                 addr,
             )
         except Exception as e:
             self.logger.debug("Failed to send find_node response: %s", e)
 
-    def _issue_get_peers_token(
-        self, addr: tuple[str, int], info_hash: bytes
-    ) -> bytes:
+    def _issue_get_peers_token(self, addr: tuple[str, int], info_hash: bytes) -> bytes:
         """Issue and store a BEP 5 get_peers token for (addr, info_hash)."""
         raw = (addr[0] + str(addr[1])).encode() + info_hash
-        token = hmac.new(
-            self.token_secret, raw, digestmod="sha256"
-        ).digest()[:32]
+        token = hmac.new(self.token_secret, raw, digestmod="sha256").digest()[:32]
         self._get_peers_tokens[(addr, info_hash)] = (
             token,
             time.time() + 900.0,
@@ -2506,13 +2460,10 @@ class AsyncDHTClient:
         peers = self._peers_store.get(info_hash, [])[:50]
         values = []
         for ip, port in peers:
-            try:
+            with contextlib.suppress(OSError, ValueError):
                 values.append(
-                    socket.inet_pton(socket.AF_INET, ip)
-                    + port.to_bytes(2, "big")
+                    socket.inet_pton(socket.AF_INET, ip) + port.to_bytes(2, "big")
                 )
-            except (OSError, ValueError):
-                pass
         r: dict[bytes, Any] = {
             b"id": self.node_id,
             b"token": token,
@@ -2546,10 +2497,7 @@ class AsyncDHTClient:
         if not isinstance(port, int):
             return
         key = (addr, info_hash)
-        if (
-            key not in self._get_peers_tokens
-            or self._get_peers_tokens[key][0] != token
-        ):
+        if key not in self._get_peers_tokens or self._get_peers_tokens[key][0] != token:
             return
         peer = (addr[0], port)
         self._peers_store.setdefault(info_hash, [])
@@ -2683,9 +2631,7 @@ class AsyncDHTClient:
 
         # Clean up expired BEP 5 get_peers tokens
         expired_gp = [
-            k
-            for k, (_, exp) in self._get_peers_tokens.items()
-            if current_time > exp
+            k for k, (_, exp) in self._get_peers_tokens.items() if current_time > exp
         ]
         for k in expired_gp:
             del self._get_peers_tokens[k]
