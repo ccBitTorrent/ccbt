@@ -3155,17 +3155,20 @@ class AsyncTorrentSession:
         if not hasattr(self, "_recently_processed_peers"):
             return False
         data = getattr(self, "_recently_processed_peers", None)
-        if not isinstance(data, dict):
+        if data is None:
             return False
         key = (
             (peer[0], peer[1])
             if isinstance(peer, (list, tuple))
             else (peer.get("ip"), peer.get("port"))
         )
-        if key not in data:
-            return False
-        ttl = self._recently_processed_ttl_seconds()
-        return (time.time() - data[key]) <= ttl
+        if isinstance(data, dict):
+            if key not in data:
+                return False
+            ttl = self._recently_processed_ttl_seconds()
+            return (time.time() - data[key]) <= ttl
+        # Legacy set-based checkpoint: treat as non-expiring entries
+        return key in data
 
     def add_recently_processed_peer(self, peer: Any) -> None:
         """Add peer to recently processed map with current timestamp.

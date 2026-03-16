@@ -71,7 +71,7 @@ class XetMetadataResolver:
 
         if metadata_bytes is None:
             msg = f"No metadata is available for tonic link {workspace_id_hex}"
-            raise FileNotFoundError(msg)
+            raise RuntimeError(msg)
 
         parsed_metadata = self._tonic_file.parse_bytes(metadata_bytes)
         return ResolvedTonicMetadata(

@@ -122,6 +122,7 @@ class XetFolder:
         self._tonic_file = TonicFile()
         self._bootstrap_pending = bool(parsed_metadata)
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._stopped = False
 
         if self.parsed_metadata and self.workspace_id is None:
             self.workspace_id = self._tonic_file.get_info_hash(self.parsed_metadata)
@@ -132,6 +133,8 @@ class XetFolder:
 
     def __del__(self) -> None:
         """Best-effort cleanup for short-lived folder wrappers in tests/CLI paths."""
+        if getattr(self, "_stopped", False):
+            return
         with contextlib.suppress(Exception):
             self.dedup.close()
 
@@ -200,6 +203,7 @@ class XetFolder:
 
     async def stop(self) -> None:
         """Stop folder synchronization."""
+        self._stopped = True
         self._loop = None
         if self._realtime_sync is not None:
             await self._realtime_sync.stop()
@@ -613,7 +617,7 @@ class XetFolder:
                 msg = f"Missing chunk {chunk_hash.hex()[:16]} for {entry.file_path}"
                 self.sync_manager.set_last_error(msg)
                 raise FileNotFoundError(msg)
-            chunk_bytes = chunk_path.read_bytes()
+            chunk_bytes = await asyncio.to_thread(chunk_path.read_bytes)
             actual_chunk_hash = self.hasher.compute_chunk_hash(
                 chunk_bytes, algorithm=self.hash_algorithm
             )
@@ -753,10 +757,11 @@ class XetFolder:
     async def _build_file_metadata(self, file_path: str) -> Optional[XetFileMetadata]:
         """Build chunk manifest for a workspace file and persist its chunks."""
         file_path_obj = self.folder_path / file_path
-        if not file_path_obj.exists() or not file_path_obj.is_file():
+        exists = await asyncio.to_thread(file_path_obj.exists)
+        if not exists or not await asyncio.to_thread(file_path_obj.is_file):
             return None
 
-        file_data = file_path_obj.read_bytes()
+        file_data = await asyncio.to_thread(file_path_obj.read_bytes)
         chunk_hashes: list[bytes] = []
         offset = 0
         for chunk_data in self.chunker.chunk_buffer(file_data):
@@ -892,4 +897,4 @@ class XetFolder:
         chunk_path = await self.dedup.check_chunk_exists(chunk_hash)
         if chunk_path is None:
             return None
-        return chunk_path.read_bytes()
+        return await asyncio.to_thread(chunk_path.read_bytes)

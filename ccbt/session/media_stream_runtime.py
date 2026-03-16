@@ -266,9 +266,7 @@ class MediaStreamRuntime:
         expired = time.time() > self.token_expires_at
         match = hmac.compare_digest(provided, self.token)
         if not match or expired:
-            raise web.HTTPUnauthorized(
-                text="Invalid or expired media stream token"
-            )
+            raise web.HTTPUnauthorized(text="Invalid or expired media stream token")
 
     async def _write_stream_bytes(
         self,

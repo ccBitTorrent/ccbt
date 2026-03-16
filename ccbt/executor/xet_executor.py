@@ -686,7 +686,7 @@ class XetExecutor(CommandExecutor):
     async def _cache_info(self, limit: int = 10) -> CommandResult:
         """Return detailed XET cache information with sample chunks."""
         try:
-            import sqlite3
+            from ccbt.storage.xet_deduplication import XetDeduplication
 
             stats_result = await self._cache_stats()
             if not stats_result.success:
@@ -710,32 +710,25 @@ class XetExecutor(CommandExecutor):
                     },
                 )
 
-            conn = sqlite3.connect(dedup_path)
-            try:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT chunk_hash, size, ref_count, created_at, last_accessed "
-                    "FROM chunks ORDER BY last_accessed DESC LIMIT ?",
-                    (max(0, int(limit)),),
-                )
-                rows = cursor.fetchall()
-            finally:
-                conn.close()
-
+            async with XetDeduplication(dedup_path) as dedup:
+                stats = dedup.get_cache_stats()
+                raw_chunks = dedup.get_recent_chunks(limit=max(0, int(limit)))
             chunk_list = [
                 {
-                    "hash": row[0].hex() if isinstance(row[0], bytes) else str(row[0]),
-                    "size": row[1],
-                    "ref_count": row[2],
-                    "created_at": row[3],
-                    "last_accessed": row[4],
+                    "hash": c["hash"].hex()
+                    if isinstance(c["hash"], bytes)
+                    else str(c["hash"]),
+                    "size": c["size"],
+                    "ref_count": c["ref_count"],
+                    "created_at": c["created_at"],
+                    "last_accessed": c["last_accessed"],
                 }
-                for row in rows
+                for c in raw_chunks
             ]
             return CommandResult(
                 success=True,
                 data={
-                    "stats": stats_result.data.get("stats", {}),
+                    "stats": stats,
                     "sample_chunks": chunk_list,
                 },
             )
