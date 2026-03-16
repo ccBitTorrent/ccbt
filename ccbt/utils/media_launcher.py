@@ -23,7 +23,11 @@ def launch_media_player(
     if vlc_executable_path:
         executable = Path(vlc_executable_path)
         if executable.exists():
-            subprocess.Popen([str(executable), stream_url])
+            subprocess.Popen(
+                [str(executable), stream_url],
+                close_fds=True,
+                start_new_session=True,
+            )
             return {
                 "launched": True,
                 "method": "configured_vlc",
@@ -32,7 +36,11 @@ def launch_media_player(
 
     discovered_vlc = shutil.which("vlc")
     if discovered_vlc:
-        subprocess.Popen([discovered_vlc, stream_url])
+        subprocess.Popen(
+            [discovered_vlc, stream_url],
+            close_fds=True,
+            start_new_session=True,
+        )
         return {
             "launched": True,
             "method": "vlc",
@@ -43,7 +51,11 @@ def launch_media_player(
         os.startfile(stream_url)  # type: ignore[attr-defined]  # noqa: S606
         return {"launched": True, "method": "default_open", "command": [stream_url]}
     if sys.platform == "darwin":
-        subprocess.Popen(["open", stream_url])  # noqa: S607
+        subprocess.Popen(
+            ["open", stream_url],  # noqa: S607
+            close_fds=True,
+            start_new_session=True,
+        )
         return {
             "launched": True,
             "method": "default_open",
@@ -52,7 +64,11 @@ def launch_media_player(
 
     opener = shutil.which("xdg-open")
     if opener:
-        subprocess.Popen([opener, stream_url])
+        subprocess.Popen(
+            [opener, stream_url],
+            close_fds=True,
+            start_new_session=True,
+        )
         return {
             "launched": True,
             "method": "default_open",
