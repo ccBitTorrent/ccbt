@@ -72,9 +72,8 @@ class XetAllowlist:
     def _ensure_loaded(self) -> None:
         """Raise if allowlist has not been loaded (e.g. load() not awaited in async context)."""
         if not self._loaded:
-            raise XetAllowlistError(
-                "Allowlist must be loaded before use; call await load() first",
-            )
+            msg = "Allowlist must be loaded before use; call await load() first"
+            raise XetAllowlistError(msg)
 
     @property
     def _secret_path(self) -> Path:
