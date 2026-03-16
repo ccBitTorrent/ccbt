@@ -1,16 +1,18 @@
+# Security: manual, scheduled, or on PR to main with manual approval.
+# Configure environment "approval-required" in repo Settings > Environments with required reviewers.
 name: Security
 
 on:
   pull_request:
-    branches: [dev, main]  # Only run on PRs, not on push
+    branches: [main]
   schedule:
-    # Run weekly on Mondays at 00:00 UTC
     - cron: '0 0 * * 1'
   workflow_dispatch:
 
 jobs:
   bandit:
     name: bandit
+    environment: approval-required
     permissions:
       contents: read
       actions: read
@@ -52,6 +54,7 @@ jobs:
   safety:
     name: safety
     runs-on: ubuntu-latest
+    environment: approval-required
     permissions:
       contents: read
       actions: read

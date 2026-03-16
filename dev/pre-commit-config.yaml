@@ -71,9 +71,10 @@ repos:
         pass_filenames: false
         stages: [pre-push]
         require_serial: true
-      # Benchmark hooks - can be skipped by setting SKIP_BENCHMARKS=1 environment variable
-      # Usage: SKIP_BENCHMARKS=1 git commit
-      # Or: export SKIP_BENCHMARKS=1 (to skip for all commits in current shell)
+      # Benchmark hooks - skippable via no-verify or SKIP_BENCHMARKS:
+      # - To skip all hooks (including benchmarks): git commit --no-verify
+      # - To skip only benchmarks: SKIP_BENCHMARKS=1 git commit
+      #   Or: export SKIP_BENCHMARKS=1 (to skip benchmarks for all commits in current shell)
       - id: bench-smoke-hash
         name: bench-smoke-hash
         entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_hash_verify.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml

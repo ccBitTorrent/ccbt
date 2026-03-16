@@ -1,24 +1,15 @@
+# Nightly publish: manual only, or on PR to main with manual approval.
+# Configure environment "approval-required" in repo Settings > Environments with required reviewers.
 name: Publish Dev Branch to PyPI (Nightly)
 
 on:
   pull_request:
-    branches: [dev]  # Available on PRs but not automatic
+    branches: [main]
     paths:
       - 'pyproject.toml'
       - 'ccbt/**'
       - 'ccbt/__init__.py'
-  push:
-    branches: [dev]  # Available on pushes but not automatic
-    paths:
-      - 'pyproject.toml'
-      - 'ccbt/**'
-      - 'ccbt/__init__.py'
-  workflow_dispatch:  # Manual trigger
-  workflow_run:  # Trigger after validation workflows pass
-    workflows: ["CI/CD Pipeline", "Test", "Version Check"]
-    types:
-      - completed
-    branches: [dev]
+  workflow_dispatch:
 
 concurrency:
   group: publish-dev-pypi
@@ -28,28 +19,23 @@ jobs:
   check-validation:
     name: check-validation
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      github.event_name == 'pull_request' ||
-      github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     permissions:
       contents: read
       actions: read
       pull-requests: read
     steps:
-      - name: Check if validation workflows passed
+      - name: Check if validation workflows passed (PR to main only)
         uses: actions/github-script@v7
         with:
           script: |
-            // For PRs, check if required workflows have passed
             if (context.eventName === 'pull_request') {
               const { data: checks } = await github.rest.checks.listForRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 ref: context.payload.pull_request.head.sha,
               });
-              const requiredChecks = ['CI/CD Pipeline', 'Test', 'Version Check'];
+              const requiredChecks = ['CI/CD Pipeline', 'Test'];
               const passedChecks = checks.check_runs.filter(
                 check => requiredChecks.includes(check.name) && check.conclusion === 'success'
               );
@@ -57,18 +43,15 @@ jobs:
                 core.setFailed('Required validation workflows must pass first');
               }
             }
-            // For workflow_run, validation already passed
-            // For workflow_dispatch, allow manual override
   
   publish-nightly:
     name: publish-dev-to-pypi
     needs: check-validation
     runs-on: ubuntu-latest
+    environment: approval-required
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      (github.event_name == 'pull_request' && needs.check-validation.result == 'success') ||
-      (github.event_name == 'push' && needs.check-validation.result == 'success')
+      (github.event_name == 'pull_request' && needs.check-validation.result == 'success')
     permissions:
       contents: read
     

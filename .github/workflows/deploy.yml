@@ -14,7 +14,11 @@ jobs:
   deploy-pypi:
     name: deploy-pypi
     runs-on: ubuntu-latest
-    environment: production
+    # Use 'pypi' environment per PyPI trusted publishing and Python Packaging Guide.
+    # Create it under Settings → Environments and register it in PyPI trusted publishers.
+    environment:
+      name: pypi
+      url: https://pypi.org/project/ccbt/
     permissions:
       contents: read
       id-token: write  # For trusted publishing

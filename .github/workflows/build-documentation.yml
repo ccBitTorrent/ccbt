@@ -1,7 +1,9 @@
+# Docs build: manual only, or on PR to main with manual approval.
+# Configure environment "approval-required" in repo Settings > Environments with required reviewers.
 name: Build Documentation
 
 on:
-  push:
+  pull_request:
     branches: [main]
     paths:
       - 'docs/**'
@@ -9,22 +11,7 @@ on:
       - '.readthedocs.yaml'
       - 'dev/requirements-rtd.txt'
       - 'ccbt/**'
-  pull_request:
-    branches: [dev, main]  # Available on PRs but not automatic
-    paths:
-      - 'docs/**'
-      - 'dev/mkdocs.yml'
-      - '.readthedocs.yaml'
-      - 'dev/requirements-rtd.txt'
-      - 'ccbt/**'
   workflow_dispatch:
-    # Can be triggered manually from any branch for testing
-    # Documentation is automatically published to Read the Docs when changes are pushed
-  workflow_run:  # Trigger after validation workflows pass
-    workflows: ["CI/CD Pipeline", "Test"]
-    types:
-      - completed
-    branches: [dev, main]
 
 concurrency:
   group: docs-build-${{ github.ref }}
@@ -34,11 +21,7 @@ jobs:
   check-validation:
     name: check-validation
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      github.event_name == 'pull_request' ||
-      github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     permissions:
       contents: read
       actions: read
@@ -63,19 +46,16 @@ jobs:
                 core.setFailed('Required validation workflows must pass first');
               }
             }
-            // For workflow_run, validation already passed
             // For workflow_dispatch, allow manual override
-            // For push to main, allow automatic (no validation check needed)
   
   build-docs:
     name: build-docs
     needs: check-validation
     runs-on: ubuntu-latest
+    environment: approval-required
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      (github.event_name == 'pull_request' && needs.check-validation.result == 'success') ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      (github.event_name == 'pull_request' && needs.check-validation.result == 'success')
     permissions:
       contents: read
       actions: read
