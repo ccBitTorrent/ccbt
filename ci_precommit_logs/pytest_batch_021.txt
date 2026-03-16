@@ -1,0 +1,109 @@
+Batch 21 (tests 1001-1050)
+Exit code: 0
+--- stdout ---
+============================= test session starts =============================
+collected 50 items
+
+dev::TestTestCommand::test_test_integration PASSED                       [  2%]
+dev::TestTestCommand::test_test_performance PASSED                       [  4%]
+dev::TestTestCommand::test_test_security PASSED                          [  6%]
+dev::TestTestCommand::test_test_all_flags PASSED                         [  8%]
+dev::TestTestCommand::test_test_no_flags PASSED                          [ 10%]
+dev::TestAdvancedCommandsIntegration::test_performance_benchmark_integration PASSED [ 12%]
+dev::TestAdvancedCommandsIntegration::test_security_scan_integration PASSED [ 14%]
+dev::TestAdvancedCommandsIntegration::test_recover_checkpoint_integration PASSED [ 16%]
+dev::TestAdvancedCommandsIntegration::test_test_unit_integration PASSED  [ 18%]
+dev::TestQuickDiskBenchmark::test_quick_disk_benchmark_full PASSED       [ 20%]
+dev::TestQuickDiskBenchmark::test_quick_disk_benchmark_disk_stop_error PASSED [ 22%]
+dev::TestPerformanceCommandExpanded::test_performance_profile_with_exception PASSED [ 24%]
+dev::TestPerformanceCommandExpanded::test_performance_benchmark_with_exception PASSED [ 26%]
+dev::TestPerformanceCommandExpanded::test_performance_benchmark_coroutine_close_error PASSED [ 28%]
+dev::TestPerformanceCommandExpanded::test_performance_profile_coroutine_close_error PASSED [ 30%]
+dev::TestTestCommandExpanded::test_test_with_coverage PASSED             [ 32%]
+dev::TestTestCommandExpanded::test_test_with_exception PASSED            [ 34%]
+dev::TestTestCommandExpanded::test_test_all_flags_with_coverage PASSED   [ 36%]
+dev::TestAdvancedCommandsD401Fix::test_performance_docstring_imperative_mood PASSED [ 38%]
+dev::TestAdvancedCommandsD401Fix::test_performance_docstring_source_verification PASSED [ 40%]
+dev::TestAdvancedCommandsSIM102Fix::test_performance_optimize_with_save_and_confirm PASSED [ 42%]
+dev::TestAdvancedCommandsSIM102Fix::test_performance_optimize_with_save_and_cancel PASSED [ 44%]
+dev::TestAdvancedCommandsSIM102Fix::test_performance_optimize_without_save PASSED [ 46%]
+dev::TestAdvancedCommandsSIM102Fix::test_performance_sim102_fix_source_verification PASSED [ 48%]
+dev::TestAdvancedCommandsSIM102Fix::test_performance_sim102_logic_equivalence PASSED [ 50%]
+dev::TestAdvancedCommandsFunctionCompatibility::test_performance_function_signature PASSED [ 52%]
+dev::TestAdvancedCommandsFunctionCompatibility::test_performance_command_execution PASSED [ 54%]
+dev::TestCreateTorrentV2CLI::test_create_v2_torrent_command PASSED       [ 56%]
+dev::TestCreateTorrentV2CLI::test_create_hybrid_torrent_command PASSED   [ 58%]
+dev::TestCreateTorrentV2CLI::test_create_v2_torrent_with_directory PASSED [ 60%]
+dev::TestCreateTorrentV2CLI::test_create_torrent_with_piece_length PASSED [ 62%]
+dev::TestCreateTorrentV2CLI::test_create_torrent_with_private_flag PASSED [ 64%]
+dev::TestCreateTorrentV2CLI::test_create_torrent_with_comment PASSED     [ 66%]
+dev::TestCreateTorrentV2CLI::test_create_torrent_invalid_source PASSED   [ 68%]
+dev::TestCreateTorrentV2CLI::test_create_torrent_multiple_trackers PASSED [ 70%]
+dev::TestCreateTorrentV2CLI::test_create_torrent_without_output PASSED   [ 72%]
+dev::TestProtocolV2CLIFlags::test_protocol_v2_enable_flag PASSED         [ 74%]
+dev::TestProtocolV2CLIFlags::test_protocol_v2_prefer_flag PASSED         [ 76%]
+dev::TestProtocolV2CLIFlags::test_no_protocol_v2_flag PASSED             [ 78%]
+dev::TestProtocolV2CLIFlags::test_config_override_by_cli_flags PASSED    [ 80%]
+dev::TestProtocolV2CLIFlags::test_status_display_with_protocol_v2 PASSED [ 82%]
+dev::TestProtocolV2CLIFlags::test_v2_flag_with_magnet_link PASSED        [ 84%]
+dev::TestProtocolV2CLIFlags::test_hybrid_mode_cli_interaction PASSED     [ 86%]
+dev::TestProtocolV2CLIFlags::test_config_file_v2_settings PASSED         [ 88%]
+dev::TestProtocolV2CLIFlags::test_v2_torrent_creation_cli_workflow PASSED [ 90%]
+dev::TestCreateTorrentVerbose::test_create_torrent_with_verbose PASSED   [ 92%]
+dev::TestCreateTorrentVerbose::test_create_torrent_with_multiple_verbose PASSED [ 94%]
+dev::TestCheckpointsD100Fix::test_checkpoints_module_has_docstring PASSED [ 96%]
+dev::TestCheckpointsD100Fix::test_checkpoints_module_docstring_source_verification PASSED [ 98%]
+dev::TestCheckpointsTC001TC002Fixes::test_config_manager_in_type_checking_block PASSED [100%]
+
+============================== warnings summary ===============================
+ccbt\i18n\__init__.py:80
+  C:\Users\MeMyself\bittorrentclient\ccbt\i18n\__init__.py:80: DeprecationWarning: 'locale.getdefaultlocale' is deprecated and slated for removal in Python 3.15. Use setlocale(), getencoding() and getlocale() instead.
+    system_locale, _ = locale.getdefaultlocale()
+
+.venv\Lib\site-packages\click\core.py:1460
+.venv\Lib\site-packages\click\core.py:1460
+  C:\Users\MeMyself\bittorrentclient\.venv\Lib\site-packages\click\core.py:1460: PytestCollectionWarning: cannot collect 'test' because it is not a function.
+    def __call__(self, *args: t.Any, **kwargs: t.Any) -> t.Any:
+
+::TestTestCommand::test_test_integration
+  C:\Users\MeMyself\bittorrentclient\ccbt\__init__.py:26: DeprecationWarning: There is no current event loop
+    return self._base.get_event_loop()
+
+::TestQuickDiskBenchmark::test_quick_disk_benchmark_full
+::TestPerformanceCommandExpanded::test_performance_profile_coroutine_close_error
+  C:\Users\MeMyself\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\unittest\mock.py:2247: RuntimeWarning: coroutine '_quick_disk_benchmark' was never awaited
+    def __init__(self, name, parent):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+::TestQuickDiskBenchmark::test_quick_disk_benchmark_full
+  C:\Users\MeMyself\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\unittest\mock.py:1443: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    return await func(*newargs, **newkeywargs)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+::TestPerformanceCommandExpanded::test_performance_benchmark_coroutine_close_error
+  C:\Users\MeMyself\bittorrentclient\tests\conftest.py:810: RuntimeWarning: coroutine '_quick_disk_benchmark' was never awaited
+    import numpy as _np  # type: ignore
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+::TestPerformanceCommandExpanded::test_performance_profile_coroutine_close_error
+  C:\Users\MeMyself\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\unittest\mock.py:2247: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    def __init__(self, name, parent):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+::TestAdvancedCommandsD401Fix::test_performance_docstring_source_verification
+  C:\Users\MeMyself\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\typing.py:2371: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    def cast(typ, val):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+::TestProtocolV2CLIFlags::test_status_display_with_protocol_v2
+  C:\Users\MeMyself\bittorrentclient\ccbt\cli\status.py:200: DeprecationWarning: UTPSocketManager.get_instance() is deprecated. Use session_manager.utp_socket_manager instead. Singleton pattern removed to prevent socket recreation issues.
+    socket_manager = await UTPSocketManager.get_instance()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: C:\Users\MeMyself\bittorrentclient\site\reports\junit.xml -
+================= 50 passed, 11 warnings in 110.18s (0:01:50) =================

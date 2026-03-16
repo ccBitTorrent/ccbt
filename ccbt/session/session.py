@@ -2731,77 +2731,8 @@ class AsyncTorrentSession:
 
     async def _resume_from_checkpoint(self, checkpoint: TorrentCheckpoint) -> None:
         """Resume download from checkpoint."""
-        # #region agent log
-        import json
-
-        log_path = r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log"
-        try:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(
-                    json.dumps(
-                        {
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "SESSION",
-                            "location": "session.py:2680",
-                            "message": "_resume_from_checkpoint entry",
-                            "data": {
-                                "has_checkpoint_controller": self.checkpoint_controller
-                                is not None,
-                                "checkpoint_rate_limits": str(checkpoint.rate_limits)
-                                if hasattr(checkpoint, "rate_limits")
-                                else None,
-                            },
-                            "timestamp": __import__("time").time() * 1000,
-                        }
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion
         if self.checkpoint_controller:
-            # #region agent log
-            try:
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(
-                        json.dumps(
-                            {
-                                "sessionId": "debug-session",
-                                "runId": "run1",
-                                "hypothesisId": "SESSION",
-                                "location": "session.py:2683",
-                                "message": "About to call checkpoint_controller.resume_from_checkpoint",
-                                "data": {},
-                                "timestamp": __import__("time").time() * 1000,
-                            }
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                pass
-            # #endregion
             await self.checkpoint_controller.resume_from_checkpoint(checkpoint, self)
-            # #region agent log
-            try:
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(
-                        json.dumps(
-                            {
-                                "sessionId": "debug-session",
-                                "runId": "run1",
-                                "hypothesisId": "SESSION",
-                                "location": "session.py:2683",
-                                "message": "checkpoint_controller.resume_from_checkpoint completed",
-                                "data": {},
-                                "timestamp": __import__("time").time() * 1000,
-                            }
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                pass
-            # #endregion
         else:
             self.logger.error("Checkpoint controller not initialized")
             msg = "Checkpoint controller not initialized"

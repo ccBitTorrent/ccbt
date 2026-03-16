@@ -55,7 +55,7 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 htmlcov/
-.tox/git add -f docs/reports/benchmarks/
+.tox/
 .nox/
 .coverage
 .coverage.*

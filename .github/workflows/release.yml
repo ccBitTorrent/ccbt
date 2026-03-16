@@ -107,6 +107,7 @@ jobs:
           uv sync --dev
       
       - name: Bump version for main (if needed)
+        id: bump_version
         if: |
           github.ref == 'refs/heads/main' &&
           (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
@@ -132,6 +133,7 @@ jobs:
           echo "✅ Bumped version from $CURRENT to $NEW_VERSION"
       
       - name: Use provided version (if given)
+        id: use_version
         if: |
           github.event_name == 'workflow_dispatch' &&
           github.event.inputs.version != '' &&
@@ -150,20 +152,20 @@ jobs:
       - name: Extract version
         id: get_version
         run: |
-          if [ -n "${{ steps.bump_version.outputs.version || steps.use_version.outputs.version }}" ]; then
-            VERSION="${{ steps.bump_version.outputs.version || steps.use_version.outputs.version }}"
-          elif startsWith(github.ref, 'refs/tags/v'); then
-            VERSION=${GITHUB_REF#refs/tags/v}
+          BUMP_VER="${{ steps.bump_version.outputs.version }}"
+          USE_VER="${{ steps.use_version.outputs.version }}"
+          if [ -n "$BUMP_VER" ]; then
+            VERSION="$BUMP_VER"
+          elif [ -n "$USE_VER" ]; then
+            VERSION="$USE_VER"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Full history for version detection
-      
-      
+
       - name: Run linting
         run: |
           uv run ruff --config dev/ruff.toml check ccbt/
