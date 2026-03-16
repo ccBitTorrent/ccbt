@@ -258,3 +258,32 @@ async def test_resume_starts_background_tasks(monkeypatch, tmp_path):
     # Tasks should have been started (or at least attempted)
     # Note: actual task creation might be mocked differently
 
+
+@pytest.mark.asyncio
+async def test_is_peer_recently_processed_legacy_set_checkpoint(tmp_path):
+    """Legacy set-based _recently_processed_peers from checkpoint is supported."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "test",
+        "info_hash": b"1" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    # Simulate checkpoint that persisted the old set format
+    session._recently_processed_peers = {
+        ("1.2.3.4", 6881),
+        ("5.6.7.8", 6882),
+    }
+    assert session.is_peer_recently_processed(("1.2.3.4", 6881)) is True
+    assert session.is_peer_recently_processed(("5.6.7.8", 6882)) is True
+    assert session.is_peer_recently_processed(("9.9.9.9", 9999)) is False
+    assert session.is_peer_recently_processed({"ip": "1.2.3.4", "port": 6881}) is True
+    assert session.is_peer_recently_processed({"ip": "9.9.9.9", "port": 9999}) is False
+
