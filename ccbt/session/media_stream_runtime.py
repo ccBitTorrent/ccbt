@@ -18,6 +18,13 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+def _open_seek(path: Any, start: int) -> Any:
+    """Open path in binary read mode and seek to start (for use in asyncio.to_thread)."""
+    handle = path.open("rb")
+    handle.seek(start)
+    return handle
+
+
 def _parse_range_header(value: Optional[str], total_size: int) -> tuple[int, int, int]:
     """Parse a simple HTTP byte range header."""
     if total_size <= 0:
@@ -268,8 +275,8 @@ class MediaStreamRuntime:
     ) -> None:
         """Write the selected byte range to the client."""
         remaining = end - start + 1
-        with self.file_path.open("rb") as handle:
-            handle.seek(start)
+        handle = await asyncio.to_thread(_open_seek, self.file_path, start)
+        try:
             while remaining > 0:
                 read_size = min(self.chunk_size, remaining)
                 chunk = await asyncio.to_thread(handle.read, read_size)
@@ -279,6 +286,8 @@ class MediaStreamRuntime:
                 remaining -= len(chunk)
                 async with self._lock:
                     self.bytes_served += len(chunk)
+        finally:
+            await asyncio.to_thread(handle.close)
 
     async def _wait_for_requested_bytes(self, start_offset: int) -> int:
         """Wait briefly for the requested range to become locally readable."""
@@ -313,9 +322,11 @@ class MediaStreamRuntime:
 
     async def _estimate_available_bytes(self, start_offset: int) -> int:
         """Estimate how many contiguous bytes are locally readable."""
-        if not self.file_path.exists():
+        exists = await asyncio.to_thread(self.file_path.exists)
+        if not exists:
             return 0
-        on_disk_size = min(self.file_path.stat().st_size, self.file_size)
+        stat_result = await asyncio.to_thread(self.file_path.stat)
+        on_disk_size = min(stat_result.st_size, self.file_size)
         mapper = getattr(self.file_selection_manager, "mapper", None)
         pieces = getattr(self.piece_manager, "pieces", None)
         if mapper is None or pieces is None:

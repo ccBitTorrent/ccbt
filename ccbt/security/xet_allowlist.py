@@ -69,6 +69,13 @@ class XetAllowlist:
         self._allowlist: dict[str, dict[str, Any]] = {}
         self._loaded = False
 
+    def _ensure_loaded(self) -> None:
+        """Raise if allowlist has not been loaded (e.g. load() not awaited in async context)."""
+        if not self._loaded:
+            raise XetAllowlistError(
+                "Allowlist must be loaded before use; call await load() first",
+            )
+
     @property
     def _secret_path(self) -> Path:
         """Return the path for the local secret used by derived-key mode."""
@@ -250,11 +257,7 @@ class XetAllowlist:
             alias: Optional human-readable alias for the peer
 
         """
-        if not self._loaded:
-            import asyncio
-
-            asyncio.run(self.load())
-
+        self._ensure_loaded()
         # Get existing entry or create new one
         if peer_id in self._allowlist:
             peer_entry = self._allowlist[peer_id]
@@ -294,11 +297,7 @@ class XetAllowlist:
             True if alias was set, False if peer not found
 
         """
-        if not self._loaded:
-            import asyncio
-
-            asyncio.run(self.load())
-
+        self._ensure_loaded()
         if peer_id not in self._allowlist:
             return False
 
@@ -320,11 +319,7 @@ class XetAllowlist:
             Alias string or None if not found or not set
 
         """
-        if not self._loaded:
-            import asyncio
-
-            asyncio.run(self.load())
-
+        self._ensure_loaded()
         peer_entry = self._allowlist.get(peer_id)
         if not peer_entry:
             return None
@@ -342,11 +337,7 @@ class XetAllowlist:
             True if alias was removed, False if peer not found or no alias set
 
         """
-        if not self._loaded:
-            import asyncio
-
-            asyncio.run(self.load())
-
+        self._ensure_loaded()
         if peer_id not in self._allowlist:
             return False
 
@@ -373,11 +364,7 @@ class XetAllowlist:
             True if peer was removed, False if not found
 
         """
-        if not self._loaded:
-            import asyncio
-
-            asyncio.run(self.load())
-
+        self._ensure_loaded()
         if peer_id in self._allowlist:
             del self._allowlist[peer_id]
             self.logger.info("Removed peer %s from allowlist", peer_id)
@@ -395,20 +382,12 @@ class XetAllowlist:
             True if peer is allowed
 
         """
-        if not self._loaded:
-            import asyncio
-
-            asyncio.run(self.load())
-
+        self._ensure_loaded()
         return peer_id in self._allowlist
 
     def get_peer_id_by_public_key(self, public_key: bytes) -> Optional[str]:
         """Return the allowlisted peer ID that owns a public key."""
-        if not self._loaded:
-            import asyncio
-
-            asyncio.run(self.load())
-
+        self._ensure_loaded()
         public_key_hex = public_key.hex()
         for peer_id, peer_entry in self._allowlist.items():
             expected_key_hex = peer_entry.get("public_key")
@@ -517,11 +496,7 @@ class XetAllowlist:
             List of peer IDs
 
         """
-        if not self._loaded:
-            import asyncio
-
-            asyncio.run(self.load())
-
+        self._ensure_loaded()
         return list(self._allowlist.keys())
 
     def get_peer_info(self, peer_id: str) -> Optional[dict[str, Any]]:
@@ -534,11 +509,7 @@ class XetAllowlist:
             Peer information dictionary or None if not found
 
         """
-        if not self._loaded:
-            import asyncio
-
-            asyncio.run(self.load())
-
+        self._ensure_loaded()
         return self._allowlist.get(peer_id)
 
     def get_allowlist_hash(self) -> bytes:
@@ -548,11 +519,7 @@ class XetAllowlist:
             32-byte SHA-256 hash of allowlist
 
         """
-        if not self._loaded:
-            import asyncio
-
-            asyncio.run(self.load())
-
+        self._ensure_loaded()
         # Create deterministic representation
         peers_sorted = sorted(self._allowlist.items())
         data = json.dumps(peers_sorted, sort_keys=True).encode("utf-8")

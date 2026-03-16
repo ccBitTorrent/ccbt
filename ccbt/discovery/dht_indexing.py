@@ -257,14 +257,23 @@ async def query_index(
             logger.debug("No index entry found for query: %s", query)
             return []
 
-        # Decode retrieved mutable data
+        # Decode bencoded bytes to dict then to mutable data
+        from ccbt.core.bencode import BencodeDecoder
         from ccbt.discovery.dht_storage import (
             DHTMutableData,
             DHTStorageKeyType,
             decode_storage_value,
         )
 
-        decoded = decode_storage_value(existing_data, DHTStorageKeyType.MUTABLE)
+        try:
+            value_dict = BencodeDecoder(existing_data).decode()
+        except Exception as e:
+            logger.debug("Failed to decode index entry bytes: %s", e)
+            return []
+        if not isinstance(value_dict, dict):
+            logger.debug("Index entry is not a dict")
+            return []
+        decoded = decode_storage_value(value_dict, DHTStorageKeyType.MUTABLE)
         if not isinstance(decoded, DHTMutableData):
             logger.debug("Retrieved data is not a mutable DHT item")
             return []
