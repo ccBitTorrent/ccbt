@@ -1,12 +1,27 @@
+# Compatibility tests run only manually (workflow_dispatch). No automatic run on PR/push.
 name: Compatibility
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: compatibility-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  check-validation:
+    name: check-validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: Placeholder (manual run only)
+        run: echo "Compatibility workflow running manually"
   docker-test:
     name: docker-test
+    needs: check-validation
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -43,8 +58,12 @@ jobs:
 
   live-deployment-test:
     name: live-deployment-test
+    needs: check-validation
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.check-validation.result == 'success') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     permissions:
       contents: read
       actions: read
@@ -85,12 +104,13 @@ jobs:
 
   compatibility-tests:
     name: compatibility-tests
+    needs: check-validation
     runs-on: ubuntu-latest
-    # Run on push to main or manual trigger
     if: |
       github.event_name == 'workflow_dispatch' ||
-      contains(github.event.head_commit.message, '[compat]') ||
-      contains(join(github.event.commits.*.message, ' '), '[compat]')
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'pull_request' && needs.check-validation.result == 'success') ||
+      (github.event_name == 'push' && needs.check-validation.result == 'success')
     
     steps:
       - uses: actions/checkout@v4

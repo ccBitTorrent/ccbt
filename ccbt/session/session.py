@@ -8,28 +8,48 @@ DHT, PEX, and provides status aggregation with async event loop management.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import hashlib
 import logging
 import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Coroutine,
+    Optional,
+    TypedDict,
+    Union,
+    cast,
+)
 
 if TYPE_CHECKING:
     from ccbt.discovery.dht import AsyncDHTClient
-    from ccbt.discovery.pex import PEXManager
+    from ccbt.discovery.pex import AsyncPexManager
     from ccbt.session.types import PieceManagerProtocol, TrackerClientProtocol
     from ccbt.utils.di import DIContainer
-
-import contextlib
 
 from ccbt.config.config import get_config
 from ccbt.core.magnet import build_minimal_torrent_data, parse_magnet
 from ccbt.core.torrent import TorrentParser as _TorrentParser
+from ccbt.discovery.flooding import ControlledFlooding
+from ccbt.discovery.lpd import LocalPeerDiscovery
+from ccbt.discovery.pex import AsyncPexManager, PexPeer
 from ccbt.discovery.tracker import AsyncTrackerClient
+from ccbt.discovery.xet_bloom import XetChunkBloomFilter
+from ccbt.discovery.xet_cas import P2PCASClient
+from ccbt.discovery.xet_catalog import XetChunkCatalog
+from ccbt.discovery.xet_gossip import XetGossipManager
+from ccbt.discovery.xet_multicast import XetMulticastBroadcaster
+from ccbt.extensions.xet_metadata import XetMetadataExchange
 from ccbt.models import TorrentCheckpoint
 from ccbt.models import TorrentInfo as TorrentInfoModel
+from ccbt.monitoring import get_metrics_collector
 from ccbt.piece.file_selection import FileSelectionManager
+from ccbt.security.xet_allowlist import XetAllowlist
 from ccbt.services.peer_service import PeerService
 from ccbt.session.announce import AnnounceLoop
 from ccbt.session.checkpoint_operations import CheckpointOperations
@@ -38,6 +58,7 @@ from ccbt.session.download_manager import AsyncDownloadManager
 from ccbt.session.lifecycle import LifecycleController
 from ccbt.session.magnet_handling import MagnetHandler
 from ccbt.session.manager_background import ManagerBackgroundTasks
+from ccbt.session.media_stream_manager import MediaStreamManager
 from ccbt.session.metrics_status import StatusLoop
 from ccbt.session.models import SessionContext
 from ccbt.session.peer_events import PeerEventsBinder
@@ -47,7 +68,11 @@ from ccbt.session.status_aggregation import StatusAggregator
 from ccbt.session.tasks import TaskSupervisor
 from ccbt.session.torrent_addition import TorrentAdditionHandler
 from ccbt.session.torrent_utils import get_torrent_info
+from ccbt.session.xet_folder_runtime import XetFolderRuntime
+from ccbt.session.xet_metadata_resolver import XetMetadataResolver
 from ccbt.storage.checkpoint import CheckpointManager
+from ccbt.storage.xet_folder_manager import XetFolder
+from ccbt.utils.events import Event, EventType, emit_event
 from ccbt.utils.logging_config import get_logger
 from ccbt.utils.metrics import Metrics
 
@@ -56,6 +81,25 @@ TorrentParser = _TorrentParser
 
 # Constants
 INFO_HASH_LENGTH = 20  # SHA-1 hash length in bytes
+
+
+class XetTransportState(TypedDict, total=False):
+    """Typed structure for XET transport state used in handshake and IPC."""
+
+    workspace_id: Any
+    workspace_id_hex: str
+    sync_mode: str
+    git_ref: Optional[str]
+    allowlist_hash: Optional[str]
+    source_peers: list[tuple[str, int]]
+    hash_algorithm: str
+    auth_scope: str
+    allowlist_path: Optional[str]
+    require_signed_metadata: bool
+    backend_status: dict[str, Any]
+    allowlist: Optional[Any]
+    downgrade_reason: Optional[str]
+    backend_eligibility: dict[str, bool]
 
 
 @dataclass
@@ -116,7 +160,7 @@ class AsyncTorrentSession:
         # CRITICAL FIX: Register immediate connection callback for tracker responses
         # This connects peers IMMEDIATELY when tracker responses arrive, before announce loop
         # Note: Callback will be registered in start() after components are initialized
-        self.pex_manager: Optional[PEXManager] = None
+        self.pex_manager: Optional[AsyncPexManager] = None
         self.checkpoint_manager = CheckpointManager(self.config.disk)
 
         # Initialize checkpoint controller (will be fully initialized after ctx is created)
@@ -798,6 +842,15 @@ class AsyncTorrentSession:
                     self.logger.info(
                         "Peer manager initialized early (waiting for peers from tracker/DHT/PEX)"
                     )
+                    extension_manager = getattr(self, "extension_manager", None)
+                    if (
+                        extension_manager is not None
+                        and getattr(peer_manager, "is_peer_xet_authorized", None)
+                        is not None
+                    ):
+                        extension_manager._xet_auth_check = (
+                            peer_manager.is_peer_xet_authorized
+                        )
 
                     # CRITICAL FIX: Set up callbacks BEFORE starting download using PeerEventsBinder
                     # This ensures callbacks are available when download operations start
@@ -970,11 +1023,9 @@ class AsyncTorrentSession:
                 pex_binder = PexBinder()
                 await pex_binder.bind_and_start(self)
 
-            # CRITICAL FIX: Set up DHT peer discovery ONLY when explicitly requested
-            # DHT should not be initialized automatically just because enable_dht=True in config
-            # It should only initialize when:
-            # 1. Explicitly requested via CLI flag (--enable-dht)
-            # 2. For magnet links (which need DHT for peer discovery)
+            # DHT initialization: init only when config enables DHT and either the user
+            # explicitly requested DHT (e.g. --enable-dht) or this is a magnet link.
+            # This avoids silently enabling DHT for every .torrent when enable_dht=True.
             dht_explicitly_requested = getattr(self, "options", {}).get(
                 "enable_dht", False
             )
@@ -982,11 +1033,10 @@ class AsyncTorrentSession:
                 self.torrent_data, dict
             ) and self.torrent_data.get("is_magnet", False)
 
-            # Only initialize DHT if explicitly requested or for magnet links
             should_init_dht = (
-                (dht_explicitly_requested or is_magnet_link)
-                and self.config.discovery.enable_dht
+                self.config.discovery.enable_dht
                 and self.session_manager
+                and (dht_explicitly_requested or is_magnet_link)
             )
             if should_init_dht:
                 try:
@@ -1000,7 +1050,7 @@ class AsyncTorrentSession:
                     if self.session_manager and self.session_manager.dht_client:
                         self.ctx.dht_client = self.session_manager.dht_client
                     self.logger.info(
-                        "DHT discovery initialized (explicitly requested=%s, magnet link=%s)",
+                        "DHT discovery initialized (config enabled; explicit=%s, magnet=%s)",
                         dht_explicitly_requested,
                         is_magnet_link,
                     )
@@ -1011,14 +1061,7 @@ class AsyncTorrentSession:
                         dht_error,
                     )
                     self._dht_setup = None
-            elif self.config.discovery.enable_dht and self.session_manager:
-                # DHT is enabled in config but not explicitly requested - log and skip
-                self.logger.debug(
-                    "DHT is enabled in config but not explicitly requested (enable_dht=%s, is_magnet=%s). "
-                    "Skipping DHT initialization. Use --enable-dht flag to enable DHT discovery.",
-                    dht_explicitly_requested,
-                    is_magnet_link,
-                )
+            else:
                 self._dht_setup = None
 
             # CRITICAL FIX: Start incoming peer queue processor
@@ -1149,10 +1192,12 @@ class AsyncTorrentSession:
                                     )
                                     return  # Skip DHT if tracker peers connected successfully
 
-                        # CRITICAL FIX: Don't trigger immediate DHT if we have fewer than 50 peers
-                        # This prevents aggressive DHT queries that can cause blacklisting
-                        # EXCEPTION: Fail-fast mode - if active_peers == 0 for >30s, allow DHT even if <50 peers
-                        min_peers_before_dht = 50
+                        # Use configurable minimum; allow DHT as fallback when peer count is low for too long
+                        min_peers_before_dht = getattr(
+                            self.session.config.discovery,
+                            "min_peers_before_dht",
+                            10,
+                        )
                         enable_fail_fast = getattr(
                             self.session.config.network,
                             "enable_fail_fast_dht",
@@ -1164,36 +1209,38 @@ class AsyncTorrentSession:
                             30.0,
                         )
 
-                        # Check fail-fast condition: zero active peers for >30s
+                        # Degraded-state trigger: low peers (including zero) for > timeout => allow DHT
                         fail_fast_triggered = False
-                        if enable_fail_fast and active_peer_count == 0:
-                            # Check how long we've had zero peers
-                            zero_peers_since = getattr(
-                                self.session, "_zero_peers_since", None
+                        current_time = time.time()
+                        if (
+                            enable_fail_fast
+                            and active_peer_count < min_peers_before_dht
+                        ):
+                            low_peers_since = getattr(
+                                self.session, "_low_peers_since", None
                             )
-                            current_time = time.time()
-                            if zero_peers_since is None:
-                                # First time we see zero peers - record timestamp
-                                self.session._zero_peers_since = current_time
+                            if low_peers_since is None:
+                                self.session._low_peers_since = current_time
                                 self.session.logger.debug(
-                                    "Recording zero peers timestamp (fail-fast DHT will trigger after %.1fs if still zero)",
+                                    "Recording low peers timestamp (DHT will trigger after %.1fs if still < %d peers)",
                                     fail_fast_timeout,
+                                    min_peers_before_dht,
                                 )
                             else:
-                                # Check if we've been at zero for >30s
-                                time_at_zero = current_time - zero_peers_since
-                                if time_at_zero >= fail_fast_timeout:
+                                time_at_low = current_time - low_peers_since
+                                if time_at_low >= fail_fast_timeout:
                                     fail_fast_triggered = True
                                     self.session.logger.warning(
-                                        "🚨 FAIL-FAST DHT: Active peer count has been 0 for %.1fs (>= %.1fs timeout). "
-                                        "Triggering DHT discovery even though peer count < %d to prevent download stall.",
-                                        time_at_zero,
-                                        fail_fast_timeout,
+                                        "🚨 DEGRADED DHT: Active peers (%d) below minimum (%d) for %.1fs. "
+                                        "Triggering DHT discovery to prevent stall.",
+                                        active_peer_count,
                                         min_peers_before_dht,
+                                        time_at_low,
                                     )
-                        # We have peers now - clear zero_peers_since
-                        elif hasattr(self.session, "_zero_peers_since"):
-                            delattr(self.session, "_zero_peers_since")
+                        if active_peer_count >= min_peers_before_dht and hasattr(
+                            self.session, "_low_peers_since"
+                        ):
+                            delattr(self.session, "_low_peers_since")
 
                         if (
                             active_peer_count < min_peers_before_dht
@@ -1308,6 +1355,7 @@ class AsyncTorrentSession:
                                 )
 
                         # Trigger immediate tracker announce if trackers are available
+                        # Only schedule when announce loop is still running (task not done)
                         if (
                             hasattr(self.session, "_announce_task")
                             and self.session._announce_task
@@ -1380,6 +1428,14 @@ class AsyncTorrentSession:
                                     )
 
                             _ = asyncio.create_task(immediate_announce())  # noqa: RUF006
+                        elif (
+                            hasattr(self.session, "_announce_task")
+                            and self.session._announce_task
+                            and self.session._announce_task.done()
+                        ):
+                            self.session.logger.debug(
+                                "Skipping immediate tracker announce: announce loop task has completed (periodic announces no longer running)"
+                            )
 
                 # Register event handler
                 handler = PeerCountLowHandler(self)
@@ -2679,31 +2735,8 @@ class AsyncTorrentSession:
 
     async def _resume_from_checkpoint(self, checkpoint: TorrentCheckpoint) -> None:
         """Resume download from checkpoint."""
-        # #region agent log
-        import json
-        log_path = r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log"
-        try:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "SESSION", "location": "session.py:2680", "message": "_resume_from_checkpoint entry", "data": {"has_checkpoint_controller": self.checkpoint_controller is not None, "checkpoint_rate_limits": str(checkpoint.rate_limits) if hasattr(checkpoint, "rate_limits") else None}, "timestamp": __import__("time").time() * 1000}) + "\n")
-        except Exception:
-            pass
-        # #endregion
         if self.checkpoint_controller:
-            # #region agent log
-            try:
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "SESSION", "location": "session.py:2683", "message": "About to call checkpoint_controller.resume_from_checkpoint", "data": {}, "timestamp": __import__("time").time() * 1000}) + "\n")
-            except Exception:
-                pass
-            # #endregion
             await self.checkpoint_controller.resume_from_checkpoint(checkpoint, self)
-            # #region agent log
-            try:
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "SESSION", "location": "session.py:2683", "message": "checkpoint_controller.resume_from_checkpoint completed", "data": {}, "timestamp": __import__("time").time() * 1000}) + "\n")
-            except Exception:
-                pass
-            # #endregion
         else:
             self.logger.error("Checkpoint controller not initialized")
             msg = "Checkpoint controller not initialized"
@@ -3087,55 +3120,93 @@ class AsyncTorrentSession:
         """
         self._dht_download_starting = value
 
+    def _recently_processed_ttl_seconds(self) -> float:
+        """TTL in seconds for recently processed peers (default 5 minutes)."""
+        return getattr(
+            self.config.discovery,
+            "discovery_cache_ttl",
+            300,
+        )
+
     def get_recently_processed_peers(self) -> set[Any]:
-        """Get recently processed peers set.
+        """Get recently processed peers set (keys only; for backward compatibility).
 
         Returns:
-            Set of recently processed peers. Returns empty set if not initialized.
+            Set of recently processed peer keys. Returns empty set if not initialized.
 
         """
         if not hasattr(self, "_recently_processed_peers"):
             return set()
-        return getattr(self, "_recently_processed_peers", set()).copy()
+        data = getattr(self, "_recently_processed_peers", None)
+        if isinstance(data, dict):
+            return set(data.keys())
+        return set() if data is None else set(data)
 
     def is_peer_recently_processed(self, peer: Any) -> bool:
-        """Check if peer was recently processed.
+        """Check if peer was recently processed and not yet expired (TTL-based).
 
         Args:
-            peer: Peer to check.
+            peer: Peer to check (tuple (ip, port) or dict with ip/port).
 
         Returns:
-            True if peer was recently processed, False otherwise.
+            True if peer was recently processed and TTL has not expired.
 
         """
         if not hasattr(self, "_recently_processed_peers"):
             return False
-        return peer in getattr(self, "_recently_processed_peers", set())
+        data = getattr(self, "_recently_processed_peers", None)
+        if data is None:
+            return False
+        key = (
+            (peer[0], peer[1])
+            if isinstance(peer, (list, tuple))
+            else (peer.get("ip"), peer.get("port"))
+        )
+        if isinstance(data, dict):
+            if key not in data:
+                return False
+            ttl = self._recently_processed_ttl_seconds()
+            return (time.time() - data[key]) <= ttl
+        # Legacy set-based checkpoint: treat as non-expiring entries
+        return key in data
 
     def add_recently_processed_peer(self, peer: Any) -> None:
-        """Add peer to recently processed set.
+        """Add peer to recently processed map with current timestamp.
 
         Args:
-            peer: Peer to add.
+            peer: Peer to add (tuple (ip, port) or dict with ip/port).
 
         """
         if not hasattr(self, "_recently_processed_peers"):
-            self._recently_processed_peers: set[Any] = set()
-        self._recently_processed_peers.add(peer)
+            self._recently_processed_peers: dict[tuple[str, int], float] = {}
+        key = (
+            (peer[0], peer[1])
+            if isinstance(peer, (list, tuple))
+            else (str(peer.get("ip", "")), int(peer.get("port", 0)))
+        )
+        self._recently_processed_peers[key] = time.time()
 
     def cleanup_recently_processed_peers(self, keep_count: int = 500) -> None:
-        """Clean up recently processed peers, keeping only the most recent entries.
+        """Remove expired entries (TTL) and optionally trim by size (oldest first).
 
         Args:
-            keep_count: Number of recent entries to keep.
+            keep_count: Max number of entries to keep when trimming by size.
 
         """
-        if hasattr(self, "_recently_processed_peers"):
-            processed_set = getattr(self, "_recently_processed_peers", set())
-            if isinstance(processed_set, set) and len(processed_set) > 1000:
-                # Keep only the last keep_count entries
-                processed_list = list(processed_set)
-                self._recently_processed_peers = set(processed_list[-keep_count:])
+        if not hasattr(self, "_recently_processed_peers"):
+            return
+        data = getattr(self, "_recently_processed_peers", None)
+        if not isinstance(data, dict):
+            return
+        ttl = self._recently_processed_ttl_seconds()
+        now = time.time()
+        expired = [k for k, ts in data.items() if (now - ts) > ttl]
+        for k in expired:
+            del data[k]
+        if len(data) > 1000:
+            by_time = sorted(data.items(), key=lambda x: x[1])
+            for k, _ in by_time[: len(data) - keep_count]:
+                del data[k]
 
     def get_recently_processed_peers_lock(self) -> asyncio.Lock:
         """Get lock for recently processed peers.
@@ -3412,10 +3483,11 @@ class AsyncTorrentSession:
 class AsyncSessionManager:
     """High-performance async session manager for multiple torrents."""
 
-    def __init__(self, output_dir: str = "."):
+    def __init__(self, output_dir: str = ".", key_manager: Optional[Any] = None):
         """Initialize async session manager."""
         self.config = get_config()
         self.output_dir = output_dir
+        self.key_manager = key_manager
         self.torrents: dict[bytes, AsyncTorrentSession] = {}
         self.lock = asyncio.Lock()
 
@@ -3490,6 +3562,7 @@ class AsyncSessionManager:
         self.udp_tracker_client: Optional[Any] = None
         # Queue manager for priority-based torrent scheduling
         self.queue_manager: Optional[Any] = None
+        self.key_manager: Optional[Any] = None
 
         # CRITICAL FIX: Store executor initialized at daemon startup
         # This ensures executor uses the session manager's initialized components
@@ -3530,11 +3603,23 @@ class AsyncSessionManager:
         self.private_torrents: set[bytes] = set()
 
         # XET folder synchronization components
-        self._xet_sync_manager: Optional[Any] = None
+        self._xet_transport_registry: dict[str, dict[str, Any]] = {}
         self._xet_realtime_sync: Optional[Any] = None
+        self.xet_cas_client: Optional[P2PCASClient] = None
+        self.xet_catalog: Optional[XetChunkCatalog] = None
+        self.xet_bloom_filter: Optional[XetChunkBloomFilter] = None
+        self.xet_lpd_client: Optional[LocalPeerDiscovery] = None
+        self.xet_multicast_broadcaster: Optional[XetMulticastBroadcaster] = None
+        self.xet_gossip_manager: Optional[XetGossipManager] = None
+        self.xet_flooding_client: Optional[ControlledFlooding] = None
+        self._xet_discovery_status: dict[str, Any] = {}
         # XET folder sessions (keyed by info_hash or folder_path)
         self.xet_folders: dict[str, Any] = {}  # folder_path or info_hash -> XetFolder
         self._xet_folders_lock = asyncio.Lock()
+        self._xet_metadata_registry: dict[str, bytes] = {}
+        self._xet_metadata_version_registry: dict[str, str] = {}
+        self._xet_metadata_resolver = XetMetadataResolver()
+        self.media_stream_manager = MediaStreamManager(self)
 
         # Initialize checkpoint operations
         self.checkpoint_ops = CheckpointOperations(self)
@@ -3645,6 +3730,239 @@ class AsyncSessionManager:
         finally:
             await tracker_client.stop()
         return all_peers
+
+    def _build_xet_node_id(self) -> str:
+        """Build a stable-ish node identifier for XET propagation helpers."""
+        public_key_hex = None
+        if self.key_manager is not None and hasattr(
+            self.key_manager, "get_public_key_hex"
+        ):
+            with contextlib.suppress(Exception):
+                public_key_hex = self.key_manager.get_public_key_hex()
+        seed = public_key_hex or f"{self.output_dir}:{id(self)}"
+        return hashlib.sha1(seed.encode("utf-8"), usedforsecurity=False).hexdigest()[
+            :16
+        ]
+
+    def _on_lpd_peer_discovered(self, ip: str, port: int) -> None:
+        """Callback when LPD discovers a peer on the LAN; register for XET discovery."""
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(self._add_lpd_peer(ip, port))
+            task.add_done_callback(lambda _finished: None)
+        except RuntimeError:
+            pass
+
+    async def _add_lpd_peer(self, ip: str, port: int) -> None:
+        """Add an LPD-discovered peer to PEX known set for XET connection attempts."""
+        if not hasattr(self, "pex_manager") or self.pex_manager is None:
+            return
+        peer = PexPeer(ip=ip, port=port, source="lpd")
+        await self.pex_manager.add_peers([peer])
+
+    def _is_xet_peer_authorized(
+        self, peer_id: str, workspace_id_hex: Optional[str] = None
+    ) -> bool:
+        """Return whether any active peer manager recognizes peer_id as XET-authorized."""
+        for session in self.torrents.values():
+            peer_manager = getattr(session.download_manager, "peer_manager", None)
+            if peer_manager is not None and hasattr(
+                peer_manager, "is_peer_xet_authorized"
+            ):
+                with contextlib.suppress(Exception):
+                    if peer_manager.is_peer_xet_authorized(peer_id, workspace_id_hex):
+                        return True
+        return False
+
+    def _mark_xet_discovery_success(self, backend: str) -> None:
+        """Record successful use timestamp for a discovery backend."""
+        now = time.time()
+        last_success = getattr(self, "_xet_discovery_last_success", None)
+        if not isinstance(last_success, dict):
+            last_success = {}
+        last_success[backend] = now
+        self._xet_discovery_last_success = last_success
+
+    def _on_peer_bloom_response(self, peer_id: str, bloom_bytes: bytes) -> None:
+        """Merge a peer's bloom filter into discovery state (from BLOOM_FILTER_RESPONSE)."""
+        if self.xet_bloom_filter is not None:
+            self.xet_bloom_filter.merge_peer_bloom(peer_id, bloom_bytes)
+
+    def _on_xet_multicast_chunk(
+        self, chunk_hash: bytes, peer_ip: str, peer_port: int
+    ) -> None:
+        """Record chunk announcement from multicast into CAS catalog."""
+        if self.xet_cas_client is not None:
+            self.xet_cas_client.record_chunk_peer(chunk_hash, peer_ip, peer_port)
+
+    def _on_xet_multicast_update(
+        self,
+        update_data: dict[str, Any],
+        peer_ip: str,
+        peer_port: int,
+    ) -> None:
+        """Forward folder update from multicast into session XET update handler."""
+        peer_id = f"{peer_ip}:{peer_port}"
+        workspace_id_hex = update_data.get("workspace_id_hex") or update_data.get(
+            "workspace_id"
+        )
+        file_path = update_data.get("file_path") or update_data.get("path", "")
+        chunk_hex = update_data.get("chunk_hash")
+        chunk_hash = bytes(32)
+        if isinstance(chunk_hex, str):
+            with contextlib.suppress(ValueError):
+                chunk_hash = bytes.fromhex(chunk_hex)
+        git_ref = update_data.get("git_ref")
+        operation = update_data.get("operation", "upsert")
+        metadata_version = update_data.get("metadata_version")
+
+        async def _apply() -> None:
+            await self._handle_incoming_xet_update(
+                peer_id=peer_id,
+                workspace_id_hex=workspace_id_hex,
+                file_path=file_path,
+                chunk_hash=chunk_hash,
+                git_ref=git_ref,
+                operation=operation,
+                metadata_version=metadata_version,
+            )
+
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(_apply())
+            task.add_done_callback(lambda _finished: None)
+        except RuntimeError:
+            pass
+
+    def _update_xet_discovery_status(self) -> None:
+        """Refresh a lightweight session-owned XET discovery status snapshot.
+
+        Each backend has enabled, injected, health (True if enabled and no known
+        failure), and last_success (timestamp of last successful use, or None).
+        """
+        last_success = getattr(self, "_xet_discovery_last_success", None) or {}
+        if not isinstance(last_success, dict):
+            last_success = {}
+
+        self._xet_discovery_status = {
+            "dht": {
+                "enabled": self.dht_client is not None,
+                "injected": self.dht_client is not None,
+                "health": self.dht_client is not None,
+                "last_success": last_success.get("dht"),
+            },
+            "tracker": {
+                "enabled": getattr(self, "udp_tracker_client", None) is not None,
+                "injected": getattr(self, "udp_tracker_client", None) is not None,
+                "health": getattr(self, "udp_tracker_client", None) is not None,
+                "last_success": last_success.get("tracker"),
+            },
+            "catalog": {
+                "enabled": self.xet_catalog is not None,
+                "injected": self.xet_catalog is not None,
+                "health": self.xet_catalog is not None,
+                "last_success": last_success.get("catalog"),
+            },
+            "bloom": {
+                "enabled": self.xet_bloom_filter is not None,
+                "injected": self.xet_bloom_filter is not None,
+                "health": self.xet_bloom_filter is not None,
+                "last_success": last_success.get("bloom"),
+            },
+            "lpd": {
+                "enabled": self.xet_lpd_client is not None,
+                "injected": self.xet_lpd_client is not None,
+                "health": self.xet_lpd_client is not None,
+                "last_success": last_success.get("lpd"),
+            },
+            "multicast": {
+                "enabled": self.xet_multicast_broadcaster is not None,
+                "injected": self.xet_multicast_broadcaster is not None,
+                "health": self.xet_multicast_broadcaster is not None,
+                "last_success": last_success.get("multicast"),
+            },
+            "gossip": {
+                "enabled": self.xet_gossip_manager is not None,
+                "injected": self.xet_gossip_manager is not None,
+                "health": self.xet_gossip_manager is not None,
+                "last_success": last_success.get("gossip"),
+            },
+            "flooding": {
+                "enabled": self.xet_flooding_client is not None,
+                "injected": self.xet_flooding_client is not None,
+                "health": self.xet_flooding_client is not None,
+                "last_success": last_success.get("flooding"),
+            },
+            "pex": {
+                "enabled": hasattr(self, "pex_manager")
+                and self.pex_manager is not None,
+                "injected": self.xet_cas_client is not None
+                and hasattr(self.xet_cas_client, "pex_manager"),
+                "health": hasattr(self, "pex_manager")
+                and self.pex_manager is not None
+                and self.xet_cas_client is not None
+                and hasattr(self.xet_cas_client, "pex_manager"),
+                "last_success": last_success.get("pex"),
+            },
+        }
+
+    def _ensure_xet_discovery_graph(self) -> None:
+        """Initialize the shared XET discovery graph once per session manager."""
+        if self.xet_catalog is None:
+            self.xet_catalog = XetChunkCatalog()
+        if self.xet_bloom_filter is None:
+            self.xet_bloom_filter = XetChunkBloomFilter()
+        if self.pex_manager is None:
+            self.pex_manager = AsyncPexManager()
+        if self.xet_lpd_client is None:
+            xet_port = self.config.network.xet_port or self.config.network.listen_port
+            self.xet_lpd_client = LocalPeerDiscovery(listen_port=xet_port)
+        if self.xet_multicast_broadcaster is None:
+            self.xet_multicast_broadcaster = XetMulticastBroadcaster(
+                multicast_address=self.config.network.xet_multicast_address,
+                multicast_port=self.config.network.xet_multicast_port,
+            )
+        if self.xet_gossip_manager is None:
+            self.xet_gossip_manager = XetGossipManager(
+                node_id=self._build_xet_node_id()
+            )
+        if self.xet_flooding_client is None:
+            self.xet_flooding_client = ControlledFlooding(
+                node_id=self._build_xet_node_id()
+            )
+        if self.xet_cas_client is None:
+            self.xet_cas_client = P2PCASClient(
+                dht_client=getattr(self, "dht_client", None),
+                tracker_client=getattr(self, "udp_tracker_client", None),
+                key_manager=self.key_manager,
+                bloom_filter=self.xet_bloom_filter,
+                catalog=self.xet_catalog,
+            )
+        if hasattr(self, "pex_manager") and self.pex_manager is not None:
+            self.xet_cas_client.register_pex_manager(self.pex_manager)
+        if self.xet_cas_client is not None:
+            self.xet_cas_client.set_peer_authorizer(self._is_xet_peer_authorized)
+            self.xet_cas_client.set_discovery_backend_success_notifier(
+                self._mark_xet_discovery_success
+            )
+        if self.xet_lpd_client is not None:
+            self.xet_lpd_client.peer_callback = self._on_lpd_peer_discovered
+        if self.xet_multicast_broadcaster is not None:
+            self.xet_multicast_broadcaster.chunk_callback = self._on_xet_multicast_chunk
+            self.xet_multicast_broadcaster.update_callback = (
+                self._on_xet_multicast_update
+            )
+        if self.xet_gossip_manager is not None:
+            self.xet_gossip_manager.chunk_callbacks.append(self._on_xet_multicast_chunk)
+            self.xet_gossip_manager.folder_callbacks.append(
+                self._on_xet_multicast_update
+            )
+        self._update_xet_discovery_status()
+
+    def get_xet_discovery_status(self) -> dict[str, Any]:
+        """Return the current shared XET discovery status snapshot."""
+        self._update_xet_discovery_status()
+        return dict(self._xet_discovery_status)
 
     async def start(self) -> None:
         """Start the async session manager.
@@ -3823,6 +4141,71 @@ class AsyncSessionManager:
                 exc_info=True,
             )
 
+        try:
+            from ccbt.extensions.manager import get_extension_manager
+
+            self._ensure_xet_discovery_graph()
+            self.extension_manager = get_extension_manager()
+            xet_ext = self.extension_manager.extensions.get("xet")
+            if xet_ext is not None:
+                metadata_exchange = XetMetadataExchange(xet_ext)
+                metadata_exchange.set_metadata_provider(
+                    lambda info_hash: self._xet_metadata_registry.get(info_hash.hex())
+                )
+                metadata_exchange.set_piece_requester(self._request_xet_metadata_piece)
+                xet_ext.set_metadata_exchange(metadata_exchange)
+                xet_ext.set_chunk_provider(self._provide_any_xet_chunk)
+                xet_ext.set_version_provider(
+                    lambda _peer_id: self._get_any_xet_git_ref()
+                )
+                xet_ext.set_sync_mode_provider(
+                    lambda _peer_id: self.config.xet_sync.default_sync_mode
+                )
+                xet_ext.set_bloom_provider(
+                    lambda _peer_id: self.xet_bloom_filter.get_peer_bloom()
+                    if self.xet_bloom_filter is not None
+                    else b""
+                )
+                xet_ext.on_bloom_response = self._on_peer_bloom_response
+                if self.xet_gossip_manager is not None:
+                    self.extension_manager._xet_gossip_received = (
+                        self.xet_gossip_manager.handle_gossip_message
+                    )
+                xet_ext.set_message_sender(self._send_xet_message)
+                xet_ext.set_update_handler(self._handle_incoming_xet_update)
+        except Exception:
+            self.logger.warning(
+                "Failed to initialize XET extension transport hooks",
+                exc_info=True,
+            )
+
+        if self.protocol_manager is not None:
+            try:
+                from ccbt.protocols.base import ProtocolType
+                from ccbt.protocols.xet import XetProtocol
+
+                if self.protocol_manager.get_protocol(ProtocolType.XET) is None:
+                    xet_protocol = XetProtocol(
+                        cas_client=self.xet_cas_client,
+                        dht_client=getattr(self, "dht_client", None),
+                        tracker_client=getattr(self, "udp_tracker_client", None),
+                        pex_manager=self.pex_manager,
+                        lpd_client=self.xet_lpd_client,
+                        multicast_broadcaster=self.xet_multicast_broadcaster,
+                        gossip_manager=self.xet_gossip_manager,
+                        flooding_client=self.xet_flooding_client,
+                        catalog=self.xet_catalog,
+                        bloom_filter=self.xet_bloom_filter,
+                    )
+                    self.protocol_manager.register_protocol(xet_protocol)
+                    await self.protocol_manager.start_protocol(ProtocolType.XET)
+                    self.logger.info("XET protocol registered with protocol manager")
+            except Exception:
+                self.logger.warning(
+                    "Failed to register XET protocol with protocol manager",
+                    exc_info=True,
+                )
+
         # Initialize queue manager if enabled
         if self.config.queue.auto_manage_queue:
             try:
@@ -3946,6 +4329,18 @@ class AsyncSessionManager:
                 self.logger.info("Queue manager stopped")
             except Exception:
                 self.logger.warning("Error stopping queue manager", exc_info=True)
+
+        try:
+            await self.media_stream_manager.stop_all_streams()
+        except Exception:
+            self.logger.warning("Error stopping media streams", exc_info=True)
+
+        # Stop all XET folder runtimes
+        async with self._xet_folders_lock:
+            for runtime in list(self.xet_folders.values()):
+                if isinstance(runtime, XetFolderRuntime):
+                    with contextlib.suppress(Exception):
+                        await runtime.stop()
 
         # Stop all torrent sessions
         async with self.lock:
@@ -4321,6 +4716,9 @@ class AsyncSessionManager:
         except ValueError:
             self.logger.debug("Invalid info_hash format: %s", info_hash_hex)
             return False
+
+        with contextlib.suppress(Exception):
+            await self.media_stream_manager.stop_stream_for_torrent(info_hash_hex)
 
         async with self.lock:
             session = self.torrents.get(info_hash)
@@ -4714,6 +5112,875 @@ class AsyncSessionManager:
             self.logger.info("Torrent removed: %s", info_hash_hex)
             return True
 
+    async def start_media_stream(
+        self,
+        info_hash_hex: str,
+        file_index: int,
+        port: Optional[int] = None,
+    ) -> dict[str, Any]:
+        """Start a media stream for a torrent file."""
+        return await self.media_stream_manager.start_stream(
+            info_hash_hex,
+            file_index=file_index,
+            port=port,
+        )
+
+    async def stop_media_stream(self, stream_id: str) -> bool:
+        """Stop an active media stream."""
+        return await self.media_stream_manager.stop_stream(stream_id)
+
+    async def get_media_stream_status(
+        self,
+        *,
+        stream_id: Optional[str] = None,
+        info_hash_hex: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Return the status for an active media stream."""
+        return await self.media_stream_manager.get_status(
+            stream_id=stream_id,
+            info_hash_hex=info_hash_hex,
+        )
+
+    async def stop_all_media_streams(self) -> None:
+        """Stop all active media streams."""
+        await self.media_stream_manager.stop_all_streams()
+
+    async def register_xet_metadata(
+        self, workspace_id_hex: str, metadata_bytes: bytes
+    ) -> None:
+        """Register the latest metadata snapshot for a workspace."""
+        async with self._xet_folders_lock:
+            self._xet_metadata_registry[workspace_id_hex] = metadata_bytes
+            self._xet_metadata_version_registry[workspace_id_hex] = (
+                self._compute_xet_metadata_version(metadata_bytes)
+            )
+
+    async def get_registered_xet_metadata(
+        self, workspace_id_hex: str
+    ) -> Optional[bytes]:
+        """Return cached tonic metadata for a workspace."""
+        async with self._xet_folders_lock:
+            return self._xet_metadata_registry.get(workspace_id_hex)
+
+    def _compute_xet_metadata_version(self, metadata_bytes: bytes) -> str:
+        """Return a stable version string for a metadata snapshot."""
+        return hashlib.sha256(metadata_bytes).hexdigest()
+
+    async def get_registered_xet_metadata_version(
+        self, workspace_id_hex: str
+    ) -> Optional[str]:
+        """Return the current metadata version string for a workspace."""
+        async with self._xet_folders_lock:
+            return self._xet_metadata_version_registry.get(workspace_id_hex)
+
+    async def fetch_xet_metadata(
+        self, workspace_id_hex: str, expected_version: Optional[str] = None
+    ) -> Optional[bytes]:
+        """Fetch tonic metadata for a workspace.
+
+        Resolve against the live local registry first, then attempt transport-backed
+        retrieval from currently connected XET-capable peers.
+        """
+        async with self._xet_folders_lock:
+            cached = self._xet_metadata_registry.get(workspace_id_hex)
+            cached_version = self._xet_metadata_version_registry.get(workspace_id_hex)
+            if cached is not None and (
+                expected_version is None or cached_version == expected_version
+            ):
+                return cached
+            for runtime in self.xet_folders.values():
+                if (
+                    isinstance(runtime, XetFolderRuntime)
+                    and runtime.workspace_id.hex() == workspace_id_hex
+                    and runtime.folder is not None
+                    and runtime.folder.metadata_bytes
+                ):
+                    if expected_version is None:
+                        return runtime.folder.metadata_bytes
+                    runtime_version = self._compute_xet_metadata_version(
+                        runtime.folder.metadata_bytes
+                    )
+                    if runtime_version == expected_version:
+                        return runtime.folder.metadata_bytes
+        xet_ext = getattr(self, "extension_manager", None)
+        if xet_ext is None:
+            return None
+        xet_ext = (
+            self.extension_manager.extensions.get("xet")
+            if self.extension_manager
+            else None
+        )
+        if xet_ext is None or xet_ext.metadata_exchange is None:
+            return None
+
+        workspace_id = bytes.fromhex(workspace_id_hex)
+        peers = self._get_xet_peer_ids(workspace_id_hex)
+        if not peers:
+            return None
+
+        futures = [
+            xet_ext.metadata_exchange.request_metadata(peer_id, workspace_id)
+            for peer_id in peers
+        ]
+        if not futures:
+            return None
+
+        done, pending = await asyncio.wait(
+            [asyncio.create_task(future) for future in futures],
+            timeout=10.0,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+        for task in done:
+            with contextlib.suppress(Exception):
+                metadata_bytes = task.result()
+                if metadata_bytes:
+                    await self.register_xet_metadata(workspace_id_hex, metadata_bytes)
+                    return metadata_bytes
+        return None
+
+    def _get_any_xet_git_ref(self) -> Optional[str]:
+        """Return a representative git ref for XET transport responses."""
+        for runtime in self.xet_folders.values():
+            if isinstance(runtime, XetFolderRuntime) and runtime.folder is not None:
+                git_ref = runtime.folder.sync_manager.get_current_git_ref()
+                if git_ref:
+                    return git_ref
+        return None
+
+    def get_xet_transport_state(
+        self, workspace_id_hex: Optional[str] = None
+    ) -> Optional[XetTransportState]:
+        """Return live XET transport state for handshake construction.
+
+        When workspace_id_hex is None and multiple XET runtimes exist, returns
+        None and logs (caller must pass workspace_id_hex for multi-workspace).
+        """
+        from ccbt.storage.xet_hashing import XetHasher
+
+        if workspace_id_hex is not None:
+            state = self._xet_transport_registry.get(workspace_id_hex)
+            if state is not None:
+                return cast("XetTransportState", dict(state))
+
+        matching_runtimes = [
+            runtime
+            for runtime in self.xet_folders.values()
+            if isinstance(runtime, XetFolderRuntime)
+        ]
+        if len(matching_runtimes) == 0:
+            return None
+        if len(matching_runtimes) > 1:
+            self.logger.debug(
+                "get_xet_transport_state(workspace_id_hex=None) with %d runtimes: "
+                "returning None; pass workspace_id_hex for multi-workspace",
+                len(matching_runtimes),
+            )
+            return None
+        runtime = matching_runtimes[0]
+        folder = runtime.folder
+        git_ref = runtime.git_ref
+        allowlist_hash = runtime.allowlist_hash
+        if folder is not None:
+            git_ref = folder.sync_manager.get_current_git_ref() or git_ref
+            allowlist_hash = folder.sync_manager.get_allowlist_hash() or allowlist_hash
+        reg = self._xet_transport_registry.get(runtime.workspace_id.hex(), {})
+        result: XetTransportState = {
+            "workspace_id": runtime.workspace_id,
+            "workspace_id_hex": runtime.workspace_id.hex(),
+            "sync_mode": runtime.sync_mode,
+            "git_ref": git_ref,
+            "allowlist_hash": allowlist_hash,
+            "source_peers": list(runtime.source_peers),
+            "hash_algorithm": runtime.hash_algorithm or XetHasher.get_hash_algorithm(),
+            "auth_scope": runtime.auth_scope,
+            "allowlist_path": runtime.allowlist_path,
+            "require_signed_metadata": runtime.require_signed_metadata,
+            "backend_status": self.get_xet_discovery_status(),
+            "allowlist": reg.get("allowlist"),
+        }
+        if reg.get("downgrade_reason") is not None:
+            result["downgrade_reason"] = reg["downgrade_reason"]
+        if reg.get("backend_eligibility") is not None:
+            result["backend_eligibility"] = reg["backend_eligibility"]
+        return result
+
+    async def _load_xet_allowlist(
+        self, allowlist_path: Optional[str]
+    ) -> Optional[XetAllowlist]:
+        """Load a workspace allowlist when a path is configured."""
+        if not allowlist_path:
+            return None
+        allowlist = XetAllowlist(
+            allowlist_path=allowlist_path,
+            key_manager=self.key_manager,
+        )
+        await allowlist.load()
+        return allowlist
+
+    async def _handle_incoming_xet_update(
+        self,
+        peer_id: str,
+        workspace_id_hex: Optional[str],
+        file_path: str,
+        chunk_hash: bytes,
+        git_ref: Optional[str],
+        operation: str = "upsert",
+        metadata_version: Optional[str] = None,
+        metadata_root: Optional[str] = None,
+    ) -> None:
+        """Route an incoming XET update to the matching workspace runtime."""
+        runtimes: list[XetFolderRuntime] = []
+        async with self._xet_folders_lock:
+            if workspace_id_hex:
+                runtimes = [
+                    runtime
+                    for runtime in self.xet_folders.values()
+                    if isinstance(runtime, XetFolderRuntime)
+                    and runtime.workspace_id.hex() == workspace_id_hex
+                    and runtime.folder is not None
+                ]
+            else:
+                runtimes = [
+                    runtime
+                    for runtime in self.xet_folders.values()
+                    if isinstance(runtime, XetFolderRuntime)
+                    and runtime.folder is not None
+                ]
+        if workspace_id_hex is None and len(runtimes) > 1:
+            self.logger.warning(
+                "Ignoring legacy XET update without workspace id for %d runtimes",
+                len(runtimes),
+            )
+            return
+
+        metadata_bytes: Optional[bytes] = None
+        if workspace_id_hex is not None:
+            if metadata_version is not None:
+                current_version = await self.get_registered_xet_metadata_version(
+                    workspace_id_hex
+                )
+                if current_version != metadata_version:
+                    metadata_bytes = await self.fetch_xet_metadata(
+                        workspace_id_hex,
+                        expected_version=metadata_version,
+                    )
+                    refreshed_version = await self.get_registered_xet_metadata_version(
+                        workspace_id_hex
+                    )
+                    if refreshed_version != metadata_version:
+                        self.logger.warning(
+                            "Ignoring XET update for workspace %s due to metadata version mismatch (expected=%s got=%s)",
+                            workspace_id_hex,
+                            metadata_version,
+                            refreshed_version,
+                        )
+                        return
+            if metadata_root is not None:
+                # Reserved for future strict root checks once metadata root storage is
+                # persisted in session/runtime state.
+                self.logger.debug(
+                    "Received metadata_root=%s for workspace %s",
+                    metadata_root,
+                    workspace_id_hex,
+                )
+            metadata_bytes = await self.fetch_xet_metadata(workspace_id_hex)
+        for runtime in runtimes:
+            folder = runtime.folder
+            if folder is None:
+                continue
+            file_metadata = folder.sync_manager.get_file_metadata(file_path)
+            if file_metadata is None:
+                file_metadata = folder._get_file_metadata_from_snapshot(file_path)
+            if file_metadata is None and metadata_bytes is not None:
+                await folder.apply_remote_metadata_snapshot(metadata_bytes)
+                file_metadata = folder.sync_manager.get_file_metadata(file_path)
+                if file_metadata is None:
+                    file_metadata = folder._get_file_metadata_from_snapshot(file_path)
+            deleted = operation == "delete"
+            if file_metadata is None and not deleted and chunk_hash != bytes(32):
+                folder.sync_manager.set_last_error(
+                    f"Missing metadata for incoming update: {file_path}"
+                )
+                self.logger.warning(
+                    "Skipping XET update for %s in workspace %s because metadata is unavailable",
+                    file_path,
+                    workspace_id_hex or runtime.workspace_id.hex(),
+                )
+                continue
+            await folder.sync_manager.queue_update(
+                file_path=file_path,
+                chunk_hash=chunk_hash,
+                git_ref=git_ref,
+                source_peer=peer_id,
+                file_metadata=file_metadata,
+                deleted=deleted,
+            )
+
+    def _provide_any_xet_chunk(self, chunk_hash: bytes) -> Optional[bytes]:
+        """Serve chunk bytes from any active local XET workspace runtime."""
+        for runtime in self.xet_folders.values():
+            if not isinstance(runtime, XetFolderRuntime) or runtime.folder is None:
+                continue
+            with contextlib.suppress(Exception):
+                cursor = runtime.folder.dedup.db.execute(
+                    "SELECT storage_path FROM chunks WHERE hash = ?",
+                    (chunk_hash,),
+                )
+                row = cursor.fetchone()
+                if row:
+                    return Path(row[0]).read_bytes()
+        return None
+
+    def _get_xet_peer_ids(self, workspace_id_hex: Optional[str] = None) -> list[str]:
+        """Return currently connected peer identifiers that may carry XET messages."""
+        peer_ids: set[str] = set()
+        for session in self.torrents.values():
+            peer_manager = getattr(session, "peer_manager", None)
+            connections = getattr(peer_manager, "connections", None)
+            if not isinstance(connections, dict):
+                continue
+            for connection in connections.values():
+                peer_info = getattr(connection, "peer_info", None)
+                if peer_info is None:
+                    continue
+                peer_id = str(peer_info)
+                if hasattr(
+                    peer_manager, "is_peer_xet_authorized"
+                ) and not peer_manager.is_peer_xet_authorized(  # type: ignore[attr-defined]
+                    peer_id,
+                    workspace_id_hex=workspace_id_hex,
+                ):
+                    continue
+                if peer_info is not None:
+                    peer_ids.add(str(peer_info))
+        return sorted(peer_ids)
+
+    async def get_xet_connection_manager(self, peer: Any) -> Optional[Any]:
+        """Return the live peer manager for a matching connected peer if present."""
+        peer_ip = getattr(peer, "ip", None)
+        peer_port = getattr(peer, "port", None)
+        if peer_ip is None or peer_port is None:
+            return None
+        for session in self.torrents.values():
+            peer_manager = getattr(session, "peer_manager", None)
+            connections = getattr(peer_manager, "connections", None)
+            if peer_manager is None or not isinstance(connections, dict):
+                continue
+            for connection in connections.values():
+                peer_info = getattr(connection, "peer_info", None)
+                if (
+                    peer_info is not None
+                    and getattr(peer_info, "ip", None) == peer_ip
+                    and getattr(peer_info, "port", None) == peer_port
+                ):
+                    return peer_manager
+        return None
+
+    async def _send_xet_message(self, peer_id: str, payload: bytes) -> bool:
+        """Send an outbound XET BEP 10 message to an active peer connection."""
+        if self.extension_manager is None:
+            return False
+        protocol_ext = self.extension_manager.extensions.get("protocol")
+        if protocol_ext is None:
+            return False
+        peer_xet_message_id = protocol_ext.get_peer_message_id(peer_id, "xet")
+        if peer_xet_message_id is None:
+            return False
+        from ccbt.protocols.bittorrent_v2 import _send_extension_message
+
+        for session in self.torrents.values():
+            peer_manager = getattr(session, "peer_manager", None)
+            connections = getattr(peer_manager, "connections", None)
+            if not isinstance(connections, dict):
+                continue
+            for connection in connections.values():
+                peer_info = getattr(connection, "peer_info", None)
+                if peer_info is None or str(peer_info) != peer_id:
+                    continue
+                if getattr(connection, "writer", None) is None:
+                    continue
+                return await _send_extension_message(
+                    connection,
+                    peer_xet_message_id,
+                    payload,
+                )
+        return False
+
+    async def _request_xet_metadata_piece(
+        self, peer_id: str, info_hash: bytes, piece: int
+    ) -> bool:
+        """Request a single workspace metadata piece from an active peer."""
+        if self.extension_manager is None:
+            return False
+        xet_ext = self.extension_manager.extensions.get("xet")
+        if xet_ext is None:
+            return False
+        request = xet_ext.metadata_exchange.encode_metadata_request(info_hash, piece)
+        return await self._send_xet_message(peer_id, request)
+
+    async def fetch_xet_chunk(
+        self,
+        workspace_id_hex: str,
+        chunk_hash: bytes,
+        exclude_folder_key: Optional[str] = None,
+    ) -> Optional[bytes]:
+        """Return chunk bytes from another active runtime for the same workspace."""
+        async with self._xet_folders_lock:
+            runtimes = [
+                runtime
+                for runtime in self.xet_folders.values()
+                if isinstance(runtime, XetFolderRuntime)
+                and runtime.workspace_id.hex() == workspace_id_hex
+                and runtime.folder is not None
+                and runtime.folder_key != exclude_folder_key
+            ]
+        for runtime in runtimes:
+            with contextlib.suppress(Exception):
+                chunk_bytes = await runtime.folder.get_chunk_bytes(chunk_hash)
+                if chunk_bytes is not None:
+                    return chunk_bytes
+        return None
+
+    async def broadcast_xet_update(
+        self,
+        workspace_id_hex: str,
+        source_folder_key: Optional[str],
+        file_path: str,
+        chunk_hash: bytes,
+        git_ref: Optional[str],
+        file_metadata: Optional[Any] = None,
+        deleted: bool = False,
+    ) -> None:
+        """Broadcast a workspace update to sibling runtimes and active peers."""
+        async with self._xet_folders_lock:
+            runtimes = [
+                runtime
+                for runtime in self.xet_folders.values()
+                if isinstance(runtime, XetFolderRuntime)
+                and runtime.workspace_id.hex() == workspace_id_hex
+                and runtime.folder is not None
+                and runtime.folder_key != source_folder_key
+            ]
+        for runtime in runtimes:
+            await runtime.folder.sync_manager.queue_update(
+                file_path=file_path,
+                chunk_hash=chunk_hash,
+                git_ref=git_ref,
+                source_peer=source_folder_key,
+                file_metadata=file_metadata,
+                deleted=deleted,
+            )
+
+        if self.extension_manager is None:
+            return
+        xet_ext = self.extension_manager.extensions.get("xet")
+        if xet_ext is None:
+            return
+        payload = xet_ext.encode_update_notify(
+            file_path=file_path,
+            chunk_hash=chunk_hash,
+            git_ref=git_ref,
+            workspace_id=bytes.fromhex(workspace_id_hex),
+            operation="delete" if deleted else "upsert",
+            metadata_version=await self.get_registered_xet_metadata_version(
+                workspace_id_hex
+            ),
+        )
+        for peer_id in self._get_xet_peer_ids(workspace_id_hex):
+            with contextlib.suppress(Exception):
+                await self._send_xet_message(peer_id, payload)
+
+    async def add_xet_folder(
+        self,
+        folder_path: str,
+        tonic_file: Optional[str] = None,
+        tonic_link: Optional[str] = None,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        check_interval: Optional[float] = None,
+        folder_key: Optional[str] = None,
+        metadata_bytes: Optional[bytes] = None,
+        allowlist_path: Optional[str] = None,
+        auth_scope: Optional[str] = None,
+        require_signed_metadata: Optional[bool] = None,
+        hash_algorithm: Optional[str] = None,
+    ) -> str:
+        """Register and start an XET workspace runtime."""
+        from ccbt.storage.xet_hashing import XetHasher
+
+        resolved_folder_path = Path(folder_path).resolve()
+        tonic_input = tonic_link or tonic_file
+        if metadata_bytes is not None and folder_key is not None:
+            parsed_metadata = self._xet_metadata_resolver._tonic_file.parse_bytes(
+                metadata_bytes
+            )
+            workspace_id = bytes.fromhex(folder_key)
+            tonic_source = tonic_input or str(resolved_folder_path)
+        elif tonic_input:
+            resolved = await self._xet_metadata_resolver.resolve(
+                tonic_input, session_manager=self
+            )
+            workspace_id = resolved.workspace_id
+            metadata_bytes = resolved.metadata_bytes
+            parsed_metadata = resolved.parsed_metadata
+            tonic_source = resolved.tonic_source
+        else:
+            preview_folder = XetFolder(
+                folder_path=resolved_folder_path,
+                sync_mode=sync_mode or self.config.xet_sync.default_sync_mode,
+                source_peers=source_peers,
+                check_interval=check_interval or self.config.xet_sync.check_interval,
+                enable_git=self.config.xet_sync.enable_git_versioning,
+                session_manager=self,
+                tonic_source=str(resolved_folder_path),
+                allowlist_path=allowlist_path or self.config.xet_sync.allowlist_path,
+                auth_scope=auth_scope or self.config.xet_sync.auth_scope,
+                require_signed_metadata=(
+                    self.config.xet_sync.require_signed_metadata
+                    if require_signed_metadata is None
+                    else require_signed_metadata
+                ),
+            )
+            try:
+                await preview_folder._refresh_metadata_snapshot()
+                if preview_folder.workspace_id is None:
+                    msg = "Failed to derive canonical XET workspace id"
+                    raise RuntimeError(msg)
+                workspace_id = preview_folder.workspace_id
+                metadata_bytes = preview_folder.metadata_bytes or b""
+                parsed_metadata = preview_folder.parsed_metadata or {}
+            finally:
+                preview_folder.dedup.close()
+            tonic_source = str(resolved_folder_path)
+
+        workspace_id_hex = workspace_id.hex()
+        if folder_key is None:
+            path_suffix = hashlib.sha1(
+                str(resolved_folder_path).encode("utf-8"),
+                usedforsecurity=False,
+            ).hexdigest()[:12]
+            folder_key = workspace_id_hex
+            async with self._xet_folders_lock:
+                existing = self.xet_folders.get(folder_key)
+                if (
+                    isinstance(existing, XetFolderRuntime)
+                    and existing.folder_path != resolved_folder_path
+                ):
+                    folder_key = f"{workspace_id_hex}:{path_suffix}"
+        effective_allowlist_path = allowlist_path or self.config.xet_sync.allowlist_path
+        allowlist = await self._load_xet_allowlist(effective_allowlist_path)
+        allowlist_hash = parsed_metadata.get("allowlist_hash")
+        if allowlist is not None:
+            allowlist_hash = allowlist.get_allowlist_hash()
+
+        runtime = XetFolderRuntime(
+            folder_key=folder_key,
+            folder_path=resolved_folder_path,
+            sync_mode=sync_mode or parsed_metadata.get("sync_mode", "best_effort"),
+            workspace_id=workspace_id,
+            tonic_source=tonic_source,
+            metadata_bytes=metadata_bytes,
+            parsed_metadata=parsed_metadata,
+            source_peers=source_peers or parsed_metadata.get("source_peers") or [],
+            allowlist_hash=allowlist_hash,
+            allowlist_path=effective_allowlist_path,
+            auth_scope=auth_scope or self.config.xet_sync.auth_scope,
+            require_signed_metadata=(
+                self.config.xet_sync.require_signed_metadata
+                if require_signed_metadata is None
+                else require_signed_metadata
+            ),
+            hash_algorithm=hash_algorithm
+            or parsed_metadata.get("hash_algorithm")
+            or XetHasher.get_hash_algorithm(),
+            git_ref=(parsed_metadata.get("git_refs") or [None])[0],
+            bootstrap_pending=bool(parsed_metadata),
+            metadata_source=(
+                "tonic_link" if tonic_link else "tonic_file" if tonic_file else "local"
+            ),
+            backend_status=self.get_xet_discovery_status(),
+        )
+        runtime.folder = XetFolder(
+            folder_path=resolved_folder_path,
+            sync_mode=runtime.sync_mode,
+            source_peers=runtime.source_peers,
+            check_interval=check_interval or self.config.xet_sync.check_interval,
+            enable_git=self.config.xet_sync.enable_git_versioning,
+            session_manager=self,
+            workspace_id=workspace_id,
+            folder_key=folder_key,
+            metadata_bytes=metadata_bytes or None,
+            parsed_metadata=parsed_metadata or None,
+            tonic_source=tonic_source,
+            allowlist_path=runtime.allowlist_path,
+            auth_scope=runtime.auth_scope,
+            require_signed_metadata=runtime.require_signed_metadata,
+            hash_algorithm=runtime.hash_algorithm,
+        )
+
+        async with self._xet_folders_lock:
+            existing_runtime = self.xet_folders.get(folder_key)
+            if isinstance(existing_runtime, XetFolderRuntime):
+                return existing_runtime.folder_key
+            for other_runtime in self.xet_folders.values():
+                if (
+                    isinstance(other_runtime, XetFolderRuntime)
+                    and other_runtime.workspace_id == workspace_id
+                    and other_runtime.folder_path == resolved_folder_path
+                ):
+                    return other_runtime.folder_key
+            self.xet_folders[folder_key] = runtime
+            if metadata_bytes:
+                self._xet_metadata_registry[workspace_id_hex] = metadata_bytes
+            xet_sync = self.config.xet_sync
+            self._xet_transport_registry[workspace_id_hex] = {
+                "workspace_id": workspace_id,
+                "workspace_id_hex": workspace_id_hex,
+                "sync_mode": runtime.sync_mode,
+                "git_ref": runtime.git_ref,
+                "allowlist_hash": runtime.allowlist_hash,
+                "source_peers": list(runtime.source_peers),
+                "hash_algorithm": runtime.hash_algorithm,
+                "auth_scope": runtime.auth_scope,
+                "allowlist_path": runtime.allowlist_path,
+                "require_signed_metadata": runtime.require_signed_metadata,
+                "allowlist": allowlist,
+                "backend_status": self.get_xet_discovery_status(),
+                "backend_eligibility": {
+                    "enable_dht": xet_sync.enable_dht,
+                    "enable_tracker": xet_sync.enable_tracker,
+                    "enable_pex": xet_sync.enable_pex,
+                    "enable_catalog": xet_sync.enable_catalog,
+                    "enable_bloom": xet_sync.enable_bloom,
+                    "enable_lpd": xet_sync.enable_lpd,
+                    "enable_gossip": xet_sync.enable_gossip,
+                    "enable_multicast": xet_sync.enable_multicast,
+                    "enable_flooding": xet_sync.enable_flooding,
+                },
+                "downgrade_reason": None,
+            }
+
+        await runtime.start()
+        effective_sync_mode = runtime.folder.sync_manager.get_sync_mode()
+        downgrade_reason = runtime.folder.sync_manager.last_error
+        runtime.sync_mode = effective_sync_mode
+        async with self._xet_folders_lock:
+            transport_state = self._xet_transport_registry.get(workspace_id_hex)
+            if transport_state is not None:
+                transport_state["sync_mode"] = effective_sync_mode
+                transport_state["downgrade_reason"] = downgrade_reason
+        await self.register_xet_metadata(
+            workspace_id_hex,
+            runtime.folder.metadata_bytes or metadata_bytes,
+        )
+        await emit_event(
+            Event(
+                event_type=EventType.XET_FOLDER_ADDED.value,
+                data={
+                    "folder_key": folder_key,
+                    "folder_path": str(resolved_folder_path),
+                    "workspace_id": workspace_id_hex,
+                    "sync_mode": runtime.sync_mode,
+                    "tonic_source": tonic_source,
+                },
+            )
+        )
+        return folder_key
+
+    async def remove_xet_folder(self, folder_key: str) -> bool:
+        """Stop and remove an XET workspace runtime."""
+        async with self._xet_folders_lock:
+            runtime = self.xet_folders.get(folder_key)
+            if not isinstance(runtime, XetFolderRuntime):
+                return False
+            del self.xet_folders[folder_key]
+            remaining_workspace_runtimes = [
+                other_runtime
+                for other_runtime in self.xet_folders.values()
+                if isinstance(other_runtime, XetFolderRuntime)
+                and other_runtime.workspace_id == runtime.workspace_id
+            ]
+            if not remaining_workspace_runtimes:
+                self._xet_metadata_registry.pop(runtime.workspace_id.hex(), None)
+                self._xet_metadata_version_registry.pop(
+                    runtime.workspace_id.hex(), None
+                )
+                self._xet_transport_registry.pop(runtime.workspace_id.hex(), None)
+
+        await runtime.stop()
+        await emit_event(
+            Event(
+                event_type=EventType.XET_FOLDER_REMOVED.value,
+                data={
+                    "folder_key": folder_key,
+                    "folder_path": str(runtime.folder_path),
+                    "workspace_id": runtime.workspace_id.hex(),
+                },
+            )
+        )
+        return True
+
+    async def list_xet_folders(self) -> list[dict[str, Any]]:
+        """Return all active XET workspaces."""
+        async with self._xet_folders_lock:
+            runtimes = [
+                runtime
+                for runtime in self.xet_folders.values()
+                if isinstance(runtime, XetFolderRuntime)
+            ]
+        return [runtime.to_record() for runtime in runtimes]
+
+    async def get_xet_folder(self, folder_key: str) -> Optional[XetFolder]:
+        """Return the live folder object for a workspace key."""
+        async with self._xet_folders_lock:
+            runtime = self.xet_folders.get(folder_key)
+            if isinstance(runtime, XetFolderRuntime):
+                return runtime.folder
+        return None
+
+    async def get_xet_folder_status(self, folder_key: str) -> Optional[dict[str, Any]]:
+        """Return the live status snapshot for a workspace key."""
+        async with self._xet_folders_lock:
+            runtime = self.xet_folders.get(folder_key)
+            if not isinstance(runtime, XetFolderRuntime) or runtime.folder is None:
+                return None
+            status = runtime.folder.get_status().model_dump()
+            transport_state = self._xet_transport_registry.get(
+                runtime.workspace_id.hex()
+            )
+        if transport_state is not None:
+            status["downgrade_reason"] = transport_state.get("downgrade_reason")
+            status["backend_status"] = transport_state.get(
+                "backend_status", self.get_xet_discovery_status()
+            )
+        return status
+
+    async def set_xet_folder_sync_mode(
+        self,
+        folder_key: str,
+        sync_mode: str,
+        source_peers: Optional[list[str]] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Update the live sync mode for a registered XET workspace."""
+        async with self._xet_folders_lock:
+            runtime = self.xet_folders.get(folder_key)
+            if not isinstance(runtime, XetFolderRuntime) or runtime.folder is None:
+                return None
+            runtime.sync_mode = sync_mode
+            runtime.source_peers = list(source_peers or [])
+            transport_state = self._xet_transport_registry.get(
+                runtime.workspace_id.hex()
+            )
+            if transport_state is not None:
+                transport_state["sync_mode"] = sync_mode
+                transport_state["source_peers"] = list(runtime.source_peers)
+
+        runtime.folder.set_sync_mode(sync_mode, runtime.source_peers)
+        effective_sync_mode = runtime.folder.sync_manager.get_sync_mode()
+        downgrade_reason = runtime.folder.sync_manager.last_error
+        runtime.sync_mode = effective_sync_mode
+        async with self._xet_folders_lock:
+            transport_state = self._xet_transport_registry.get(
+                runtime.workspace_id.hex()
+            )
+            if transport_state is not None:
+                transport_state["sync_mode"] = effective_sync_mode
+                transport_state["source_peers"] = list(runtime.source_peers)
+                transport_state["downgrade_reason"] = downgrade_reason
+        return {
+            "folder_key": folder_key,
+            "workspace_id": runtime.workspace_id.hex(),
+            "sync_mode": effective_sync_mode,
+            "source_peers": list(runtime.source_peers),
+            "downgrade_reason": downgrade_reason,
+        }
+
+    async def set_xet_workspace_policy(
+        self,
+        workspace_id_hex: str,
+        *,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        auth_scope: Optional[str] = None,
+        allowlist_path: Optional[str] = None,
+        require_signed_metadata: Optional[bool] = None,
+        hash_algorithm: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Update live policy for all active runtimes in a workspace."""
+        from ccbt.storage.xet_hashing import XetHasher
+
+        normalized_hash_algorithm: Optional[str] = None
+        if hash_algorithm is not None:
+            normalized_hash_algorithm = XetHasher.normalize_hash_algorithm(
+                hash_algorithm
+            )
+
+        async with self._xet_folders_lock:
+            runtimes = [
+                runtime
+                for runtime in self.xet_folders.values()
+                if isinstance(runtime, XetFolderRuntime)
+                and runtime.workspace_id.hex() == workspace_id_hex
+                and runtime.folder is not None
+            ]
+            if not runtimes:
+                return None
+            transport_state = self._xet_transport_registry.get(workspace_id_hex)
+            for runtime in runtimes:
+                if sync_mode is not None:
+                    runtime.sync_mode = sync_mode
+                if source_peers is not None:
+                    runtime.source_peers = list(source_peers)
+                if auth_scope is not None:
+                    runtime.auth_scope = auth_scope
+                if allowlist_path is not None:
+                    runtime.allowlist_path = allowlist_path
+                if require_signed_metadata is not None:
+                    runtime.require_signed_metadata = require_signed_metadata
+                if normalized_hash_algorithm is not None:
+                    runtime.hash_algorithm = normalized_hash_algorithm
+
+            if transport_state is not None:
+                if sync_mode is not None:
+                    transport_state["sync_mode"] = sync_mode
+                if source_peers is not None:
+                    transport_state["source_peers"] = list(source_peers)
+                if auth_scope is not None:
+                    transport_state["auth_scope"] = auth_scope
+                if allowlist_path is not None:
+                    transport_state["allowlist_path"] = allowlist_path
+                if require_signed_metadata is not None:
+                    transport_state["require_signed_metadata"] = require_signed_metadata
+                if normalized_hash_algorithm is not None:
+                    transport_state["hash_algorithm"] = normalized_hash_algorithm
+
+        if sync_mode is not None or source_peers is not None:
+            for runtime in runtimes:
+                runtime.folder.set_sync_mode(runtime.sync_mode, runtime.source_peers)
+
+        effective_sync_mode = runtimes[0].folder.sync_manager.get_sync_mode()
+        downgrade_reason = runtimes[0].folder.sync_manager.last_error
+        async with self._xet_folders_lock:
+            updated_transport_state = self._xet_transport_registry.get(workspace_id_hex)
+            if updated_transport_state is not None:
+                updated_transport_state["sync_mode"] = effective_sync_mode
+                updated_transport_state["downgrade_reason"] = downgrade_reason
+            policy_snapshot = (
+                dict(updated_transport_state)
+                if isinstance(updated_transport_state, dict)
+                else {}
+            )
+
+        return {
+            "workspace_id": workspace_id_hex,
+            "sync_mode": effective_sync_mode,
+            "downgrade_reason": downgrade_reason,
+            "updated_folders": len(runtimes),
+            "policy": policy_snapshot,
+        }
+
     async def pause_torrent(self, info_hash_hex: str) -> bool:
         """Pause a torrent by info hash.
 
@@ -4784,6 +6051,102 @@ class AsyncSessionManager:
 
             self._rate_history = deque(maxlen=600)
         return self._rate_history
+
+    async def get_rate_samples(self, seconds: int = 120) -> list[dict[str, float]]:
+        """Get recent upload/download rate samples.
+
+        Args:
+            seconds: Lookback window in seconds.
+
+        Returns:
+            List of samples with timestamp/download_rate/upload_rate.
+        """
+        now = time.time()
+        window = max(1, int(seconds))
+        cutoff = now - float(window)
+        return [
+            {
+                "timestamp": float(sample.get("timestamp", 0.0)),
+                "download_rate": float(sample.get("download_rate", 0.0)),
+                "upload_rate": float(sample.get("upload_rate", 0.0)),
+            }
+            for sample in self.get_rate_history()
+            if float(sample.get("timestamp", 0.0)) >= cutoff
+        ]
+
+    def get_disk_io_metrics(self) -> dict[str, Any]:
+        """Get disk I/O metrics for IPC monitoring endpoints."""
+        manager = self.disk_io_manager
+        if manager is not None:
+            for attr in ("get_metrics", "get_disk_io_metrics", "get_stats"):
+                method = getattr(manager, attr, None)
+                if callable(method):
+                    with contextlib.suppress(Exception):
+                        data = method()
+                        if isinstance(data, dict):
+                            return data
+        return {
+            "read_bytes_per_sec": 0.0,
+            "write_bytes_per_sec": 0.0,
+            "queue_depth": 0,
+            "read_ops_per_sec": 0.0,
+            "write_ops_per_sec": 0.0,
+        }
+
+    async def get_network_timing_metrics(self) -> dict[str, Any]:
+        """Get network timing metrics for IPC monitoring endpoints."""
+        metrics_collector = get_metrics_collector()
+        if metrics_collector is not None:
+            with contextlib.suppress(Exception):
+                perf = metrics_collector.get_performance_metrics()
+                return {
+                    "rtt_ms": float(perf.get("network_rtt_ms", 0.0)),
+                    "rtt_min_ms": float(perf.get("network_rtt_min_ms", 0.0)),
+                    "rtt_max_ms": float(perf.get("network_rtt_max_ms", 0.0)),
+                    "rtt_avg_ms": float(perf.get("network_rtt_avg_ms", 0.0)),
+                    "bandwidth_bps": float(perf.get("network_bandwidth_bps", 0.0)),
+                    "bandwidth_mbps": float(perf.get("network_bandwidth_mbps", 0.0)),
+                    "bytes_sent": int(perf.get("network_bytes_sent", 0)),
+                    "bytes_received": int(perf.get("network_bytes_received", 0)),
+                    "total_connections": int(perf.get("network_total_connections", 0)),
+                    "active_connections": int(
+                        perf.get("network_active_connections", 0)
+                    ),
+                    "failed_connections": int(
+                        perf.get("network_failed_connections", 0)
+                    ),
+                    "bdp_bytes": int(perf.get("network_bdp_bytes", 0)),
+                }
+        return {
+            "rtt_ms": 0.0,
+            "rtt_min_ms": 0.0,
+            "rtt_max_ms": 0.0,
+            "rtt_avg_ms": 0.0,
+            "bandwidth_bps": 0.0,
+            "bandwidth_mbps": 0.0,
+            "bytes_sent": 0,
+            "bytes_received": 0,
+            "total_connections": 0,
+            "active_connections": 0,
+            "failed_connections": 0,
+            "bdp_bytes": 0,
+        }
+
+    async def get_global_peer_metrics(self) -> dict[str, Any]:
+        """Get aggregated global peer metrics across all torrents."""
+        metrics_collector = get_metrics_collector()
+        if metrics_collector is not None:
+            with contextlib.suppress(Exception):
+                return metrics_collector.get_global_peer_metrics()
+        return {
+            "total_peers": 0,
+            "active_peers": 0,
+            "peers": [],
+            "average_download_rate": 0.0,
+            "average_upload_rate": 0.0,
+            "total_bytes_downloaded": 0,
+            "total_bytes_uploaded": 0,
+        }
 
     @property
     def metrics_heartbeat_counter(self) -> int:
@@ -4954,9 +6317,10 @@ class AsyncSessionManager:
             total_progress = 0.0
             total_downloaded = 0
             total_uploaded = 0
+            total_left = 0
+            connected_peers = 0
 
             for torrent in self.torrents.values():
-                # Get status from torrent session
                 status = getattr(torrent.info, "status", "unknown")
                 if status == "paused":
                     num_paused += 1
@@ -4965,13 +6329,24 @@ class AsyncSessionManager:
                 elif status in ("downloading", "starting"):
                     num_active += 1
 
-                # Get rates and progress from cached status or torrent properties
                 total_download_rate += torrent.download_rate
                 total_upload_rate += torrent.upload_rate
                 progress = getattr(torrent, "_cached_status", {}).get("progress", 0.0)
                 total_progress += progress
                 total_downloaded += torrent.downloaded_bytes
                 total_uploaded += torrent.uploaded_bytes
+                total_left += torrent.left_bytes
+                cached_peer_count = getattr(torrent, "_cached_status", {}).get(
+                    "connected_peers",
+                    None,
+                )
+                if cached_peer_count is None:
+                    peer_state = getattr(torrent, "peers", None)
+                    if isinstance(peer_state, dict):
+                        cached_peer_count = peer_state.get("count", 0)
+                    else:
+                        cached_peer_count = len(peer_state) if peer_state else 0
+                connected_peers += int(cached_peer_count or 0)
 
             average_progress = (
                 total_progress / num_torrents if num_torrents > 0 else 0.0
@@ -4987,6 +6362,8 @@ class AsyncSessionManager:
                 "average_progress": average_progress,
                 "total_downloaded": total_downloaded,
                 "total_uploaded": total_uploaded,
+                "total_left": total_left,
+                "connected_peers": connected_peers,
             }
 
     async def get_status(self) -> dict[str, Any]:
@@ -4996,21 +6373,21 @@ class AsyncSessionManager:
             Dictionary mapping info_hash (hex) to status dict for each torrent
 
         """
-        status_dict: dict[str, Any] = {}
         async with self.lock:
-            for info_hash, session in self.torrents.items():
-                try:
-                    status = await session.get_status()
-                    status_dict[info_hash.hex()] = status
-                except Exception as e:
-                    self.logger.exception(
-                        "Error getting status for torrent %s", info_hash.hex()
-                    )
-                    # Include error in status
-                    status_dict[info_hash.hex()] = {
-                        "error": str(e),
-                        "status": "error",
-                    }
+            sessions = list(self.torrents.items())
+        status_dict: dict[str, Any] = {}
+        for info_hash, session in sessions:
+            try:
+                status = await session.get_status()
+                status_dict[info_hash.hex()] = status
+            except Exception as e:
+                self.logger.exception(
+                    "Error getting status for torrent %s", info_hash.hex()
+                )
+                status_dict[info_hash.hex()] = {
+                    "error": str(e),
+                    "status": "error",
+                }
         return status_dict
 
     async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:

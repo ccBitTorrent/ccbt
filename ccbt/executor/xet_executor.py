@@ -5,7 +5,7 @@ Handles XET folder synchronization commands (tonic.create, tonic.sync, etc.).
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Optional
 
 from ccbt.executor.base import CommandExecutor, CommandResult
@@ -13,6 +13,22 @@ from ccbt.executor.base import CommandExecutor, CommandResult
 
 class XetExecutor(CommandExecutor):
     """Executor for XET folder synchronization commands."""
+
+    async def _find_xet_folder_record_by_path(
+        self, folder_path: str
+    ) -> Optional[dict[str, Any]]:
+        """Return the live runtime record for a folder path if registered."""
+        resolved_folder_path = str(Path(folder_path).resolve())
+        folders = await self.adapter.list_xet_folders()
+        for record in folders:
+            if not isinstance(record, dict):
+                continue
+            record_path = record.get("folder_path")
+            if not isinstance(record_path, str):
+                continue
+            if str(Path(record_path).resolve()) == resolved_folder_path:
+                return record
+        return None
 
     async def execute(
         self,
@@ -45,6 +61,10 @@ class XetExecutor(CommandExecutor):
             return await self._list_xet_folders_session(*args, **kwargs)
         if command == "xet.get_xet_folder_status":
             return await self._get_xet_folder_status_session(*args, **kwargs)
+        if command == "xet.get_xet_discovery_status":
+            return await self._get_xet_discovery_status_session(*args, **kwargs)
+        if command == "xet.set_xet_workspace_policy":
+            return await self._set_xet_workspace_policy_session(*args, **kwargs)
         if command == "xet.status":
             return await self._get_status(*args, **kwargs)
         if command == "xet.allowlist_add":
@@ -63,6 +83,8 @@ class XetExecutor(CommandExecutor):
             return await self._allowlist_alias_set(*args, **kwargs)
         if command == "xet.set_sync_mode":
             return await self._set_sync_mode(*args, **kwargs)
+        if command == "xet.set_sync_mode_by_key":
+            return await self._set_sync_mode_by_key(*args, **kwargs)
         if command == "xet.get_sync_mode":
             return await self._get_sync_mode(*args, **kwargs)
         if command == "xet.get_file_tree":
@@ -75,6 +97,12 @@ class XetExecutor(CommandExecutor):
             return await self._set_port(*args, **kwargs)
         if command == "xet.get_config":
             return await self._get_config(*args, **kwargs)
+        if command == "xet.cache_stats":
+            return await self._cache_stats(*args, **kwargs)
+        if command == "xet.cache_info":
+            return await self._cache_info(*args, **kwargs)
+        if command == "xet.cache_cleanup":
+            return await self._cache_cleanup(*args, **kwargs)
         return CommandResult(
             success=False,
             error=f"Unknown XET command: {command}",
@@ -173,41 +201,34 @@ class XetExecutor(CommandExecutor):
     ) -> CommandResult:
         """Start syncing folder from .tonic file or tonic?: link."""
         try:
-            from ccbt.storage.xet_folder_manager import XetFolder
+            from ccbt.session.xet_metadata_resolver import XetMetadataResolver
 
-            if tonic_input.startswith("tonic?:"):
-                from ccbt.core.tonic_link import parse_tonic_link
-
-                link_info = parse_tonic_link(tonic_input)
-                # For now, just return that we would sync
-                # Full implementation would fetch .tonic file and start sync
-                return CommandResult(
-                    success=True,
-                    data={
-                        "status": "sync_started",
-                        "link_info": asdict(link_info),
-                    },
-                )
-            from ccbt.core.tonic import TonicFile
-
-            tonic_parser = TonicFile()
-            parsed_data = tonic_parser.parse(tonic_input)
-            folder_name = parsed_data["info"]["name"]
-            sync_mode = parsed_data.get("sync_mode", "best_effort")
-
+            resolver = XetMetadataResolver()
+            session_manager = getattr(self.adapter, "session_manager", None)
+            resolved = await resolver.resolve(
+                tonic_input, session_manager=session_manager
+            )
+            folder_name = resolved.parsed_metadata["info"]["name"]
             if not output_dir:
                 output_dir = folder_name
 
-            folder = XetFolder(
+            folder_key = await self.adapter.add_xet_folder(
                 folder_path=output_dir,
-                sync_mode=sync_mode,
+                tonic_file=None if tonic_input.startswith("tonic?:") else tonic_input,
+                tonic_link=tonic_input if tonic_input.startswith("tonic?:") else None,
+                sync_mode=resolved.parsed_metadata.get("sync_mode", "best_effort"),
+                source_peers=resolved.parsed_metadata.get("source_peers"),
                 check_interval=check_interval,
             )
-            await folder.start()
 
             return CommandResult(
                 success=True,
-                data={"status": "sync_started", "folder_path": output_dir},
+                data={
+                    "status": "sync_started",
+                    "folder_key": folder_key,
+                    "folder_path": output_dir,
+                    "workspace_id": resolved.workspace_id.hex(),
+                },
             )
         except Exception as e:
             return CommandResult(
@@ -218,13 +239,29 @@ class XetExecutor(CommandExecutor):
     async def _get_status(self, folder_path: str) -> CommandResult:
         """Get sync status for folder."""
         try:
-            from ccbt.storage.xet_folder_manager import XetFolder
-
-            folder = XetFolder(folder_path=folder_path)
-            status = folder.get_status()
+            record = await self._find_xet_folder_record_by_path(folder_path)
+            if record is None:
+                return CommandResult(
+                    success=False,
+                    error=f"XET folder is not registered: {folder_path}",
+                )
+            folder_key = record.get("folder_key")
+            if not isinstance(folder_key, str):
+                return CommandResult(
+                    success=False,
+                    error=f"XET folder has invalid runtime identity: {folder_path}",
+                )
+            status = await self.adapter.get_xet_folder_status(folder_key)
+            if status is None:
+                return CommandResult(
+                    success=False,
+                    error=f"Failed to resolve live status for {folder_path}",
+                )
+            status["folder_key"] = folder_key
+            status["workspace_id"] = record.get("workspace_id")
             return CommandResult(
                 success=True,
-                data=status.model_dump(),
+                data=status,
             )
         except Exception as e:
             return CommandResult(
@@ -315,7 +352,7 @@ class XetExecutor(CommandExecutor):
                     {
                         "peer_id": peer_id,
                         "alias": alias,
-                        "public_key": peer_info.get("public_key", "").hex()
+                        "public_key": peer_info.get("public_key")
                         if peer_info and peer_info.get("public_key")
                         else None,
                         "added_at": peer_info.get("added_at") if peer_info else None,
@@ -434,14 +471,41 @@ class XetExecutor(CommandExecutor):
     ) -> CommandResult:
         """Set synchronization mode for folder."""
         try:
-            from ccbt.storage.xet_folder_manager import XetFolder
-
-            folder = XetFolder(folder_path=folder_path)
-            folder.set_sync_mode(sync_mode, source_peers)
+            record = await self._find_xet_folder_record_by_path(folder_path)
+            if record is None:
+                return CommandResult(
+                    success=False,
+                    error=f"XET folder is not registered: {folder_path}",
+                )
+            result = await self.adapter.set_xet_folder_sync_mode(
+                record["folder_key"],
+                sync_mode,
+                source_peers=source_peers,
+            )
             return CommandResult(
                 success=True,
-                data={"sync_mode": sync_mode, "source_peers": source_peers},
+                data=result,
             )
+        except Exception as e:
+            return CommandResult(
+                success=False,
+                error=f"Failed to set sync mode: {e}",
+            )
+
+    async def _set_sync_mode_by_key(
+        self,
+        folder_key: str,
+        sync_mode: str,
+        source_peers: Optional[list[str]] = None,
+    ) -> CommandResult:
+        """Set synchronization mode using a canonical folder key."""
+        try:
+            result = await self.adapter.set_xet_folder_sync_mode(
+                folder_key,
+                sync_mode,
+                source_peers=source_peers,
+            )
+            return CommandResult(success=True, data=result)
         except Exception as e:
             return CommandResult(
                 success=False,
@@ -451,13 +515,24 @@ class XetExecutor(CommandExecutor):
     async def _get_sync_mode(self, folder_path: str) -> CommandResult:
         """Get current synchronization mode for folder."""
         try:
-            from ccbt.storage.xet_folder_manager import XetFolder
-
-            folder = XetFolder(folder_path=folder_path)
-            status = folder.get_status()
+            record = await self._find_xet_folder_record_by_path(folder_path)
+            if record is None:
+                return CommandResult(
+                    success=False,
+                    error=f"XET folder is not registered: {folder_path}",
+                )
+            status = await self.adapter.get_xet_folder_status(record["folder_key"])
+            if status is None:
+                return CommandResult(
+                    success=False,
+                    error=f"Live XET runtime not found for {folder_path}",
+                )
             return CommandResult(
                 success=True,
-                data={"sync_mode": status.sync_mode},
+                data={
+                    "folder_key": record["folder_key"],
+                    "sync_mode": status["sync_mode"],
+                },
             )
         except Exception as e:
             return CommandResult(
@@ -486,18 +561,22 @@ class XetExecutor(CommandExecutor):
     async def _enable_xet(self) -> CommandResult:
         """Enable XET globally."""
         try:
-            from ccbt.config.config import _config_manager, init_config
-
-            # Get or initialize config manager
-            if _config_manager is None:
-                config_manager = init_config()
-            else:
-                config_manager = _config_manager
-            config_manager.config.xet_sync.enable_xet = True
-            config_manager.save_config()
+            update_result = await self.adapter.update_config(
+                {
+                    "disk": {"xet_enabled": True},
+                    "xet_sync": {"enable_xet": True},
+                }
+            )
             return CommandResult(
                 success=True,
-                data={"enabled": True},
+                data={
+                    "enabled": True,
+                    "protocol_enabled": True,
+                    "workspace_sync_enabled": True,
+                    "restart_required": bool(
+                        update_result.get("restart_required", False)
+                    ),
+                },
             )
         except Exception as e:
             return CommandResult(
@@ -508,18 +587,22 @@ class XetExecutor(CommandExecutor):
     async def _disable_xet(self) -> CommandResult:
         """Disable XET globally."""
         try:
-            from ccbt.config.config import _config_manager, init_config
-
-            # Get or initialize config manager
-            if _config_manager is None:
-                config_manager = init_config()
-            else:
-                config_manager = _config_manager
-            config_manager.config.xet_sync.enable_xet = False
-            config_manager.save_config()
+            update_result = await self.adapter.update_config(
+                {
+                    "disk": {"xet_enabled": False},
+                    "xet_sync": {"enable_xet": False},
+                }
+            )
             return CommandResult(
                 success=True,
-                data={"enabled": False},
+                data={
+                    "enabled": False,
+                    "protocol_enabled": False,
+                    "workspace_sync_enabled": False,
+                    "restart_required": bool(
+                        update_result.get("restart_required", False)
+                    ),
+                },
             )
         except Exception as e:
             return CommandResult(
@@ -530,18 +613,17 @@ class XetExecutor(CommandExecutor):
     async def _set_port(self, port: int) -> CommandResult:
         """Set XET port."""
         try:
-            from ccbt.config.config import _config_manager, init_config
-
-            # Get or initialize config manager
-            if _config_manager is None:
-                config_manager = init_config()
-            else:
-                config_manager = _config_manager
-            config_manager.config.network.xet_port = port
-            config_manager.save_config()
+            update_result = await self.adapter.update_config(
+                {"network": {"xet_port": port}}
+            )
             return CommandResult(
                 success=True,
-                data={"port": port},
+                data={
+                    "port": port,
+                    "restart_required": bool(
+                        update_result.get("restart_required", False)
+                    ),
+                },
             )
         except Exception as e:
             return CommandResult(
@@ -552,23 +634,164 @@ class XetExecutor(CommandExecutor):
     async def _get_config(self) -> CommandResult:
         """Get XET configuration."""
         try:
-            from ccbt.config.config import get_config
-
-            config = get_config()
+            config = await self.adapter.get_config()
+            disk_config = config.get("disk", {})
+            xet_sync_config = config.get("xet_sync", {})
+            network_config = config.get("network", {})
             return CommandResult(
                 success=True,
                 data={
-                    "enable_xet": config.xet_sync.enable_xet,
-                    "check_interval": config.xet_sync.check_interval,
-                    "default_sync_mode": config.xet_sync.default_sync_mode,
-                    "enable_git_versioning": config.xet_sync.enable_git_versioning,
-                    "xet_port": config.network.xet_port,
+                    "protocol_enabled": disk_config.get("xet_enabled", False),
+                    "enable_xet": xet_sync_config.get("enable_xet", False),
+                    "workspace_sync_enabled": xet_sync_config.get("enable_xet", False),
+                    "check_interval": xet_sync_config.get("check_interval"),
+                    "default_sync_mode": xet_sync_config.get("default_sync_mode"),
+                    "enable_git_versioning": xet_sync_config.get(
+                        "enable_git_versioning"
+                    ),
+                    "xet_port": network_config.get("xet_port"),
                 },
             )
         except Exception as e:
             return CommandResult(
                 success=False,
                 error=f"Failed to get XET config: {e}",
+            )
+
+    async def _cache_stats(self) -> CommandResult:
+        """Return XET deduplication cache statistics."""
+        try:
+            from ccbt.storage.xet_deduplication import XetDeduplication
+
+            config = await self.adapter.get_config()
+            disk_config = config.get("disk", {})
+            cache_path = disk_config.get("xet_cache_db_path")
+            if not isinstance(cache_path, str) or not cache_path:
+                return CommandResult(
+                    success=False,
+                    error="XET cache database path is not configured",
+                )
+            dedup_path = Path(cache_path)
+            dedup_path.parent.mkdir(parents=True, exist_ok=True)
+
+            async with XetDeduplication(dedup_path) as dedup:
+                stats = dedup.get_cache_stats()
+            return CommandResult(success=True, data={"stats": stats})
+        except Exception as e:
+            return CommandResult(
+                success=False,
+                error=f"Failed to get XET cache stats: {e}",
+            )
+
+    async def _cache_info(self, limit: int = 10) -> CommandResult:
+        """Return detailed XET cache information with sample chunks."""
+        try:
+            from ccbt.storage.xet_deduplication import XetDeduplication
+
+            stats_result = await self._cache_stats()
+            if not stats_result.success:
+                return stats_result
+
+            config = await self.adapter.get_config()
+            disk_config = config.get("disk", {})
+            cache_path = disk_config.get("xet_cache_db_path")
+            if not isinstance(cache_path, str) or not cache_path:
+                return CommandResult(
+                    success=False,
+                    error="XET cache database path is not configured",
+                )
+            dedup_path = Path(cache_path)
+            if not dedup_path.exists():
+                return CommandResult(
+                    success=True,
+                    data={
+                        "stats": stats_result.data.get("stats", {}),
+                        "sample_chunks": [],
+                    },
+                )
+
+            async with XetDeduplication(dedup_path) as dedup:
+                stats = dedup.get_cache_stats()
+                raw_chunks = dedup.get_recent_chunks(limit=max(0, int(limit)))
+            chunk_list = [
+                {
+                    "hash": c["hash"].hex()
+                    if isinstance(c["hash"], bytes)
+                    else str(c["hash"]),
+                    "size": c["size"],
+                    "ref_count": c["ref_count"],
+                    "created_at": c["created_at"],
+                    "last_accessed": c["last_accessed"],
+                }
+                for c in raw_chunks
+            ]
+            return CommandResult(
+                success=True,
+                data={
+                    "stats": stats,
+                    "sample_chunks": chunk_list,
+                },
+            )
+        except Exception as e:
+            return CommandResult(
+                success=False,
+                error=f"Failed to get XET cache info: {e}",
+            )
+
+    async def _cache_cleanup(
+        self,
+        dry_run: bool = False,
+        max_age_days: int = 30,
+    ) -> CommandResult:
+        """Clean unused chunks from XET deduplication cache."""
+        try:
+            from ccbt.storage.xet_deduplication import XetDeduplication
+
+            config = await self.adapter.get_config()
+            disk_config = config.get("disk", {})
+            cache_path = disk_config.get("xet_cache_db_path")
+            if not isinstance(cache_path, str) or not cache_path:
+                return CommandResult(
+                    success=False,
+                    error="XET cache database path is not configured",
+                )
+
+            dedup_path = Path(cache_path)
+            dedup_path.parent.mkdir(parents=True, exist_ok=True)
+
+            async with XetDeduplication(dedup_path) as dedup:
+                stats_before = dedup.get_cache_stats()
+                if dry_run:
+                    return CommandResult(
+                        success=True,
+                        data={
+                            "dry_run": True,
+                            "max_age_days": int(max_age_days),
+                            "cleaned": 0,
+                            "stats_before": stats_before,
+                            "stats_after": stats_before,
+                        },
+                    )
+                max_age_seconds = max(0, int(max_age_days)) * 24 * 60 * 60
+                cleaned = await dedup.cleanup_unused_chunks(
+                    max_age_seconds=max_age_seconds
+                )
+                stats_after = dedup.get_cache_stats()
+
+            return CommandResult(
+                success=True,
+                data={
+                    "dry_run": False,
+                    "max_age_days": int(max_age_days),
+                    "cleaned": int(cleaned),
+                    "stats_before": stats_before,
+                    "stats_after": stats_after,
+                },
+            )
+        except Exception as e:
+            return CommandResult(
+                success=False,
+                error=f"Failed to cleanup XET cache: {e}",
             )
 
     async def _add_xet_folder_session(
@@ -651,4 +874,47 @@ class XetExecutor(CommandExecutor):
             return CommandResult(
                 success=False,
                 error=f"Failed to get XET folder status: {e}",
+            )
+
+    async def _get_xet_discovery_status_session(self) -> CommandResult:
+        """Get shared XET discovery status via session manager."""
+        try:
+            status = await self.adapter.get_xet_discovery_status()
+            return CommandResult(
+                success=True,
+                data={"backends": status},
+            )
+        except Exception as e:
+            return CommandResult(
+                success=False,
+                error=f"Failed to get XET discovery status: {e}",
+            )
+
+    async def _set_xet_workspace_policy_session(
+        self,
+        workspace_id_hex: str,
+        *,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        auth_scope: Optional[str] = None,
+        allowlist_path: Optional[str] = None,
+        require_signed_metadata: Optional[bool] = None,
+        hash_algorithm: Optional[str] = None,
+    ) -> CommandResult:
+        """Set live workspace policy via session manager."""
+        try:
+            policy = await self.adapter.set_xet_workspace_policy(
+                workspace_id_hex=workspace_id_hex,
+                sync_mode=sync_mode,
+                source_peers=source_peers,
+                auth_scope=auth_scope,
+                allowlist_path=allowlist_path,
+                require_signed_metadata=require_signed_metadata,
+                hash_algorithm=hash_algorithm,
+            )
+            return CommandResult(success=True, data=policy)
+        except Exception as e:
+            return CommandResult(
+                success=False,
+                error=f"Failed to set XET workspace policy: {e}",
             )

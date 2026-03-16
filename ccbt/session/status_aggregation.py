@@ -6,6 +6,31 @@ import asyncio
 import time
 from typing import Any
 
+# Canonical internal field names. Translate to num_peers/num_seeds at IPC boundary only.
+CANONICAL_TORRENT_STATUS_KEYS = (
+    "info_hash",
+    "name",
+    "status",
+    "progress",
+    "download_rate",
+    "upload_rate",
+    "connected_peers",
+    "active_peers",
+    "downloaded",
+    "uploaded",
+    "left",
+    "total_size",
+    "pieces_completed",
+    "pieces_total",
+    "is_private",
+    "output_dir",
+    "tracker_status",
+    "last_error",
+    "uptime",
+    "added_time",
+    "download_complete",
+)
+
 
 class StatusAggregator:
     """Aggregates and validates status information from download manager."""
@@ -19,22 +44,71 @@ class StatusAggregator:
         """
         self.session = session
 
+    def _normalize_canonical_status(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """Fill canonical torrent status with optional fields from session/piece_manager."""
+        out: dict[str, Any] = dict(raw)
+        pm = getattr(self.session, "piece_manager", None)
+        if pm and hasattr(pm, "num_pieces") and hasattr(pm, "piece_length"):
+            try:
+                num_pieces = int(getattr(pm, "num_pieces", 0) or 0)
+                piece_length = int(getattr(pm, "piece_length", 16384) or 16384)
+            except (TypeError, ValueError):
+                num_pieces = 0
+                piece_length = 16384
+            vp = getattr(pm, "verified_pieces", set())
+            try:
+                verified = len(vp) if isinstance(vp, (set, list, tuple)) else 0
+            except (TypeError, AttributeError):
+                verified = 0
+            out.setdefault("pieces_total", num_pieces)
+            out.setdefault("pieces_completed", verified)
+            if num_pieces > 0:
+                last_piece_len = piece_length
+                pieces_list = getattr(pm, "pieces", None)
+                if isinstance(pieces_list, (list, tuple)) and pieces_list:
+                    last_idx = num_pieces - 1
+                    if last_idx < len(pieces_list):
+                        last_piece_len = getattr(
+                            pieces_list[last_idx], "length", piece_length
+                        )
+                total_size = (num_pieces - 1) * piece_length + last_piece_len
+                downloaded = verified * piece_length
+                if verified == num_pieces:
+                    downloaded = total_size
+                out.setdefault("total_size", total_size)
+                out.setdefault("downloaded", downloaded)
+                out.setdefault("left", max(0, total_size - downloaded))
+            else:
+                out.setdefault("total_size", 0)
+                out.setdefault("downloaded", 0)
+                out.setdefault("left", 0)
+        else:
+            out.setdefault("pieces_total", 0)
+            out.setdefault("pieces_completed", 0)
+            out.setdefault("total_size", 0)
+            out.setdefault("downloaded", out.get("downloaded", 0))
+            out.setdefault("left", out.get("left", 0))
+        out.setdefault("uploaded", out.get("uploaded", 0))
+        # Canonical peer counters stay internal as connected_peers/active_peers.
+        # Accept legacy transport/source aliases only while normalizing snapshots.
+        out.setdefault("connected_peers", out.get("peers", 0))
+        out.setdefault("active_peers", out.get("num_seeds", 0))
+        out.setdefault("output_dir", str(getattr(self.session, "output_dir", "")))
+        out.setdefault("is_private", getattr(self.session, "is_private", False))
+        return out
+
     async def get_torrent_status(self) -> dict[str, Any]:
-        """Get current torrent status with validation.
+        """Get current torrent status as canonical snapshot.
 
         Returns:
-            Dictionary with torrent status information
-
+            Dictionary with canonical torrent status (all optional fields filled).
         """
-        # Check if download_manager is available
         if not self.session.download_manager:
-            return self._get_minimal_status()
+            minimal = self._get_minimal_status()
+            return self._normalize_canonical_status(minimal)
 
-        # Get status from download manager
         download_status = await self._get_download_status()
-
-        # Validate and merge with session info
-        status = dict(download_status)  # Create a copy to avoid mutating the original
+        status = dict(download_status)
         status.update(
             {
                 "info_hash": self.session.info.info_hash.hex(),
@@ -51,15 +125,10 @@ class StatusAggregator:
                 ),
             },
         )
-        return status
+        return self._normalize_canonical_status(status)
 
     def _get_minimal_status(self) -> dict[str, Any]:
-        """Get minimal status when download manager is not available.
-
-        Returns:
-            Dictionary with minimal status information
-
-        """
+        """Get minimal status when download manager is not available."""
         return {
             "info_hash": self.session.info.info_hash.hex(),
             "name": self.session.info.name,

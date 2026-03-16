@@ -24,6 +24,7 @@ class TestXetAllowlist:
         # Cleanup
         try:
             Path(f.name).unlink(missing_ok=True)
+            Path(f"{f.name}.key").unlink(missing_ok=True)
         except Exception:
             pass
 
@@ -123,6 +124,24 @@ class TestXetAllowlist:
         assert b"peer_1" not in file_data or len(file_data) > 100  # Encrypted
 
     @pytest.mark.asyncio
+    async def test_allowlist_round_trip_uses_versioned_envelope(self, temp_allowlist_path):
+        """Saved allowlists should use the new salted envelope format and reload cleanly."""
+        from ccbt.security.xet_allowlist import XetAllowlist
+
+        allowlist = XetAllowlist(allowlist_path=temp_allowlist_path)
+        await allowlist.load()
+        allowlist.add_peer(peer_id="peer_1", public_key=b"1" * 32, alias="Alice")
+        await allowlist.save()
+
+        reloaded = XetAllowlist(allowlist_path=temp_allowlist_path)
+        await reloaded.load()
+
+        assert reloaded.is_allowed("peer_1") is True
+        assert reloaded.get_alias("peer_1") == "Alice"
+        file_text = temp_allowlist_path.read_text(encoding="utf-8")
+        assert '"version": 2' in file_text
+
+    @pytest.mark.asyncio
     async def test_allowlist_verify_peer(self, allowlist):
         """Test peer verification with Ed25519."""
         await allowlist.load()
@@ -177,6 +196,19 @@ class TestXetAllowlist:
         metadata = peer_info.get("metadata", {})
         if isinstance(metadata, dict):
             assert metadata.get("alias") == "Alice"
+
+    @pytest.mark.asyncio
+    async def test_allowlist_public_key_lookup(self, allowlist):
+        """Allowlist should support direct public-key membership lookups."""
+        await allowlist.load()
+
+        public_key = b"K" * 32
+        allowlist.add_peer(peer_id="peer_keyed", public_key=public_key)
+        await allowlist.save()
+
+        assert allowlist.get_peer_id_by_public_key(public_key) == "peer_keyed"
+        assert allowlist.is_public_key_allowed(public_key) is True
+        assert allowlist.is_public_key_allowed(b"Z" * 32) is False
 
 
 

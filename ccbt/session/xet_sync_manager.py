@@ -20,7 +20,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
-from ccbt.models import PeerInfo, XetSyncStatus
+from ccbt.models import PeerInfo, XetFileMetadata, XetSyncStatus
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,8 @@ class UpdateEntry:
     source_peer: Optional[str] = None
     retry_count: int = 0
     max_retries: int = 3
+    file_metadata: Optional[XetFileMetadata] = None
+    deleted: bool = False
 
 
 @dataclass
@@ -110,6 +112,7 @@ class XetSyncManager:
 
         # Peer states
         self.peer_states: dict[str, PeerSyncState] = {}
+        self.file_metadata_by_path: dict[str, XetFileMetadata] = {}
 
         # Consensus tracking
         self.consensus_votes: dict[
@@ -136,14 +139,90 @@ class XetSyncManager:
         # Allowlist and git tracking
         self.allowlist_hash: Optional[bytes] = None
         self.current_git_ref: Optional[str] = None
+        self.last_error: Optional[str] = None
         self._running = False
 
         self.logger = logging.getLogger(__name__)
+
+    def _has_healthy_propagation_backend(self) -> bool:
+        """Return True when at least one propagation backend is healthy."""
+        if self.session_manager is None:
+            return False
+        getter = getattr(self.session_manager, "get_xet_discovery_status", None)
+        if not callable(getter):
+            return False
+        try:
+            status = getter()
+        except Exception:
+            return False
+        if not isinstance(status, dict):
+            return False
+        for backend in ("lpd", "multicast", "gossip", "flooding"):
+            backend_state = status.get(backend)
+            if isinstance(backend_state, dict) and backend_state.get("health"):
+                return True
+        return False
+
+    def _has_verified_designated_source(self) -> bool:
+        """Return True if at least one designated source is XET-authorized."""
+        if self.session_manager is None or not self.source_peers:
+            return False
+        torrents = getattr(self.session_manager, "torrents", {})
+        if not isinstance(torrents, dict):
+            return False
+        for session in torrents.values():
+            peer_manager = getattr(
+                getattr(session, "download_manager", None), "peer_manager", None
+            )
+            if peer_manager is None or not hasattr(
+                peer_manager, "is_peer_xet_authorized"
+            ):
+                continue
+            for peer_id in self.source_peers:
+                with contextlib.suppress(Exception):
+                    if peer_manager.is_peer_xet_authorized(peer_id, None):
+                        return True
+        return False
 
     async def start(self) -> None:
         """Start the sync manager."""
         if self._running:
             return
+
+        if self.sync_mode == SyncMode.CONSENSUS:
+            self.logger.warning(
+                "Consensus mode is not transport-backed yet; downgrading to best_effort"
+            )
+            self.sync_mode = SyncMode.BEST_EFFORT
+            self.set_last_error(
+                "Consensus mode is disabled until transport-backed RPCs exist"
+            )
+        elif self.sync_mode == SyncMode.BROADCAST:
+            if not self._has_healthy_propagation_backend():
+                self.logger.warning(
+                    "Broadcast mode has no healthy propagation backend; downgrading to best_effort"
+                )
+                self.sync_mode = SyncMode.BEST_EFFORT
+                self.set_last_error(
+                    "Broadcast mode requires at least one healthy propagation backend"
+                )
+        elif self.sync_mode == SyncMode.DESIGNATED and not self.source_peers:
+            self.logger.warning(
+                "Designated mode requires source peers; downgrading to best_effort"
+            )
+            self.sync_mode = SyncMode.BEST_EFFORT
+            self.set_last_error(
+                "Designated mode requires at least one configured source peer"
+            )
+        elif self.sync_mode == SyncMode.DESIGNATED:
+            if not self._has_verified_designated_source():
+                self.logger.warning(
+                    "Designated mode source peers are not XET-authorized; downgrading to best_effort"
+                )
+                self.sync_mode = SyncMode.BEST_EFFORT
+                self.set_last_error(
+                    "Designated mode requires at least one verified source peer"
+                )
 
         self._running = True
 
@@ -233,6 +312,10 @@ class XetSyncManager:
         """
         self.current_git_ref = git_ref
 
+    def set_last_error(self, error: Optional[str]) -> None:
+        """Record the most recent sync/runtime error for status surfaces."""
+        self.last_error = error
+
     async def add_peer(self, peer_info: PeerInfo, is_source: bool = False) -> None:
         """Add peer to sync manager.
 
@@ -274,6 +357,37 @@ class XetSyncManager:
             self.source_peers.discard(peer_id)
             self.logger.info("Removed peer %s from sync manager", peer_id)
 
+    async def register_discovered_peer(
+        self,
+        peer_info: PeerInfo,
+        *,
+        chunk_hash: Optional[bytes] = None,
+        git_ref: Optional[str] = None,
+    ) -> None:
+        """Record a peer discovered during workspace or chunk lookup.
+
+        This keeps best-effort runtime state aligned with discovery results so the
+        status model reflects actual remote availability even before a file transfer
+        occurs.
+        """
+        peer_id = peer_info.peer_id.hex() if peer_info.peer_id else str(peer_info)
+        peer_state = self.peer_states.get(peer_id)
+        if peer_state is None:
+            peer_state = PeerSyncState(peer_id=peer_id, peer_info=peer_info)
+            self.peer_states[peer_id] = peer_state
+        else:
+            peer_state.peer_info = peer_info
+        peer_state.last_contact = time.time()
+        if git_ref is not None:
+            peer_state.current_git_ref = git_ref
+        if chunk_hash is not None:
+            peer_state.chunk_hashes.add(chunk_hash)
+
+    async def get_pending_updates_snapshot(self) -> list[UpdateEntry]:
+        """Return a stable snapshot of queued updates for discovery/inspection."""
+        async with self.queue_lock:
+            return list(self.update_queue)
+
     async def queue_update(
         self,
         file_path: str,
@@ -281,6 +395,8 @@ class XetSyncManager:
         git_ref: Optional[str] = None,
         priority: int = 0,
         source_peer: Optional[str] = None,
+        file_metadata: Optional[XetFileMetadata] = None,
+        deleted: bool = False,
     ) -> bool:
         """Queue an update for synchronization.
 
@@ -290,6 +406,8 @@ class XetSyncManager:
             git_ref: Git commit reference
             priority: Update priority (higher = processed first)
             source_peer: Peer that originated the update
+            file_metadata: Optional file metadata snapshot for sync application
+            deleted: Whether this update represents a deletion
 
         Returns:
             True if queued successfully, False if queue is full
@@ -307,7 +425,14 @@ class XetSyncManager:
                 timestamp=time.time(),
                 priority=priority,
                 source_peer=source_peer,
+                file_metadata=file_metadata,
+                deleted=deleted,
             )
+
+            if file_metadata is not None:
+                self.file_metadata_by_path[file_path] = file_metadata
+            elif deleted:
+                self.file_metadata_by_path.pop(file_path, None)
 
             # Insert based on priority
             inserted = False
@@ -328,6 +453,10 @@ class XetSyncManager:
             )
 
             return True
+
+    def get_file_metadata(self, file_path: str) -> Optional[XetFileMetadata]:
+        """Return the latest known file manifest for a workspace path."""
+        return self.file_metadata_by_path.get(file_path)
 
     async def process_updates(
         self,
@@ -351,6 +480,8 @@ class XetSyncManager:
             async with self.queue_lock:
                 if not self.update_queue:
                     return 0
+
+                queue_len = len(self.update_queue)
 
                 # Process based on sync mode with timeout
                 if self.sync_mode == SyncMode.DESIGNATED:
@@ -378,6 +509,11 @@ class XetSyncManager:
                     return 0
 
             self.stats["updates_processed"] += processed
+            if queue_len > 0 and processed == 0:
+                self.logger.warning(
+                    "process_updates had %d queued update(s) but processed 0 (handler may have raised)",
+                    queue_len,
+                )
             return processed
 
         except asyncio.TimeoutError:
@@ -1127,7 +1263,7 @@ class XetSyncManager:
             sync_progress=(
                 synced_peers / len(self.peer_states) if self.peer_states else 0.0
             ),
-            error=None,
+            error=self.last_error,
             last_check_time=time.time(),
         )
 

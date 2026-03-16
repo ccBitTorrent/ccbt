@@ -986,10 +986,40 @@ class XetDeduplication:
             "avg_size": row[3] or 0,
         }
 
+    def get_recent_chunks(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Return recent chunks ordered by last_accessed for cache info.
+
+        Args:
+            limit: Maximum number of chunks to return.
+
+        Returns:
+            List of dicts with hash, size, ref_count, created_at, last_accessed.
+
+        """
+        if not self.db:
+            return []
+        cursor = self.db.execute(
+            "SELECT hash, size, ref_count, created_at, last_accessed "
+            "FROM chunks ORDER BY last_accessed DESC LIMIT ?",
+            (max(0, limit),),
+        )
+        rows = cursor.fetchall()
+        return [
+            {
+                "hash": row[0],
+                "size": row[1],
+                "ref_count": row[2],
+                "created_at": row[3],
+                "last_accessed": row[4],
+            }
+            for row in rows
+        ]
+
     def close(self) -> None:
-        """Close database connection."""
-        if self.db:
+        """Close database connection (idempotent)."""
+        if self.db is not None:
             self.db.close()
+            self.db = None
 
     def __enter__(self):
         """Context manager entry."""

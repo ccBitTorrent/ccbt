@@ -744,7 +744,10 @@ class AnnounceLoop:
                                     len(peer_list),
                                     len(queued_peers),
                                 )
-                            return  # Exit early since peers are queued
+                            # CRITICAL: Do not exit the loop - keep periodic announces alive so tracker
+                            # discovery continues and queued peers can be drained when peer_manager is ready
+                            await asyncio.sleep(announce_interval)
+                            continue
 
                     # CRITICAL FIX: If peer manager exists (or became ready after retry), connect peers directly
                     if has_peer_manager:

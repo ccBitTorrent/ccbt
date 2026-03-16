@@ -133,6 +133,26 @@ class XetChunkBloomFilter:
 
         return XetChunkBloomFilter(bloom_filter=merged, chunk_size=self.chunk_size)
 
+    def merge_peer_bloom(self, peer_id: str, bloom_bytes: bytes) -> None:
+        """Store a peer's bloom filter for later chunk lookups.
+
+        Used when we receive a BLOOM_FILTER_RESPONSE from a peer so we can
+        consider them when resolving chunk hashes (peers that might have a chunk).
+
+        Args:
+            peer_id: Peer identifier (e.g. ip:port or connection id)
+            bloom_bytes: Serialized bloom filter from the peer
+
+        """
+        if not bloom_bytes:
+            return
+        try:
+            if not hasattr(self, "_peer_blooms"):
+                self._peer_blooms: dict[str, bytes] = {}
+            self._peer_blooms[peer_id] = bloom_bytes
+        except Exception:
+            logger.debug("Failed to store peer bloom for %s", peer_id, exc_info=True)
+
     def get_false_positive_rate(self) -> float:
         """Get false positive rate for current chunk count.
 

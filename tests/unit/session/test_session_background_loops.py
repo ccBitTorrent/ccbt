@@ -241,3 +241,69 @@ async def test_status_loop_calls_on_status_update(monkeypatch):
 
     assert len(callback_called) > 0
 
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
+async def test_announce_loop_stays_alive_when_peers_queued_no_peer_manager(monkeypatch):
+    """When tracker returns peers but peer_manager is not ready, loop queues peers and continues (does not exit)."""
+    from ccbt.session.announce import AnnounceController, AnnounceLoop
+    from ccbt.session.session import AsyncTorrentSession, TorrentSessionInfo
+
+    td = {
+        "name": "test",
+        "info_hash": b"1" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {"num_pieces": 0, "piece_length": 0, "piece_hashes": [], "total_length": 0},
+        "file_info": {"total_length": 0},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session._stop_event = asyncio.Event()
+    session.config.network.announce_interval = 0.05
+    if not hasattr(session, "info") or session.info is None:
+        session.info = TorrentSessionInfo(
+            info_hash=b"1" * 20,
+            name="test",
+            status="downloading",
+        )
+    # download_manager exists but peer_manager is missing / None so peers get queued
+    session.download_manager = type("DM", (), {})()
+    session.download_manager.peer_manager = None
+    session.download_manager._download_started = False
+    # Tracker returns one response with peers
+    peer_obj = type("P", (), {"ip": "192.0.2.1", "port": 6881, "ssl_capable": None})()
+    response_with_peers = type("R", (), {"peers": [peer_obj]})()
+    call_count = []
+
+    async def announce_to_multiple(_td, _urls, port=None, event=""):
+        call_count.append(1)
+        return [response_with_peers]
+
+    session.tracker = type("T", (), {"announce_to_multiple": announce_to_multiple})()
+    # Ensure collect_trackers returns a URL so the loop reaches announce_to_multiple
+    def collect_trackers(_td):
+        return ["http://tracker.example.com/announce"]
+
+    monkeypatch.setattr(
+        AnnounceController,
+        "collect_trackers",
+        collect_trackers,
+    )
+    # Speed up the "wait for peer_manager" retries (4 * 0.5s) so test finishes quickly
+    original_sleep = asyncio.sleep
+    async def fast_sleep(secs):
+        await original_sleep(min(secs, 0.01))
+    monkeypatch.setattr("ccbt.session.announce.asyncio.sleep", fast_sleep)
+
+    loop = AnnounceLoop(session)
+    task = asyncio.create_task(loop.run())
+    # Allow time for one full iteration: announce -> get peers -> wait for peer_manager -> queue -> sleep(interval) -> continue
+    await asyncio.sleep(0.3)
+    # Loop must still be running (not exited) - main regression: loop no longer returns after queuing peers
+    assert not task.done(), "Announce loop must stay alive after queuing peers when peer_manager not ready"
+    session._stop_event.set()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+

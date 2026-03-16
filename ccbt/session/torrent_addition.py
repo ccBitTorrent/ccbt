@@ -190,62 +190,7 @@ class TorrentAdditionHandler:
                 "About to await session.start() for %s",
                 session.info.name,
             )
-            # #region agent log
-            import json
-            import time
-
-            try:
-                with open(
-                    r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a"
-                ) as f:
-                    f.write(
-                        json.dumps(
-                            {
-                                "sessionId": "debug-session",
-                                "runId": "pre-fix",
-                                "hypothesisId": "C",
-                                "location": "torrent_addition.py:192",
-                                "message": "About to await session.start()",
-                                "data": {
-                                    "torrent_name": session.info.name
-                                    if hasattr(session, "info")
-                                    else "unknown"
-                                },
-                                "timestamp": int(time.time() * 1000),
-                            }
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                pass
-            # #endregion
             await asyncio.wait_for(session.start(resume=resume), timeout=60.0)
-            # #region agent log
-            try:
-                with open(
-                    r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a"
-                ) as f:
-                    f.write(
-                        json.dumps(
-                            {
-                                "sessionId": "debug-session",
-                                "runId": "pre-fix",
-                                "hypothesisId": "C",
-                                "location": "torrent_addition.py:192",
-                                "message": "session.start() completed",
-                                "data": {
-                                    "torrent_name": session.info.name
-                                    if hasattr(session, "info")
-                                    else "unknown"
-                                },
-                                "timestamp": int(time.time() * 1000),
-                            }
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                pass
-            # #endregion
             self.logger.info("Session started successfully for %s", session.info.name)
         except asyncio.TimeoutError:
             self.logger.warning(

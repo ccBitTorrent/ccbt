@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Optional
 
 from ccbt.config import get_config
+from ccbt.models import PeerInfo
 
 
 @dataclass
@@ -89,15 +90,18 @@ class AsyncPexManager:
             set
         )
 
-        # XET chunk tracking
-        self.known_chunks: dict[bytes, set[tuple[str, int]]] = {}  # chunk_hash -> peers
+        # XET chunk tracking: chunk_hash -> set of (ip, port)
+        self.known_chunks: dict[bytes, set[tuple[str, int]]] = {}
         self.previous_known_chunks: dict[str, set[bytes]] = defaultdict(
             set
         )  # peer_key -> chunks
         self.chunks_sent_to_session: dict[str, set[bytes]] = defaultdict(
             set
         )  # peer_key -> chunks
-        self.chunk_callbacks: list[Callable[[list[bytes]], None]] = []
+        # (chunk_hashes, optional peer_ip, optional peer_port) for discovery
+        self.chunk_callbacks: list[
+            Callable[[list[bytes], Optional[str], Optional[int]], None]
+        ] = []
 
         self.logger = logging.getLogger(__name__)
 
@@ -409,6 +413,61 @@ class AsyncPexManager:
             del self.known_peers[peer_key]
             if peer_key in self.peer_sources:
                 del self.peer_sources[peer_key]
+
+    def add_chunks_from_peer(
+        self,
+        peer_ip: str,
+        peer_port: int,
+        chunk_hashes: list[bytes],
+    ) -> None:
+        """Record chunk hashes reported by a peer (e.g. from XET extension).
+
+        Updates known_chunks so get_peers_with_chunks() can return this peer
+        for those chunks, and invokes chunk_callbacks with (chunk_hashes, peer_ip, peer_port).
+
+        Args:
+            peer_ip: Peer IP address
+            peer_port: Peer port
+            chunk_hashes: List of 32-byte chunk hashes the peer has
+
+        """
+        peer_addr = (peer_ip, peer_port)
+        for ch in chunk_hashes:
+            if len(ch) != 32:
+                continue
+            self.known_chunks.setdefault(ch, set()).add(peer_addr)
+        for cb in self.chunk_callbacks:
+            try:
+                cb(chunk_hashes, peer_ip, peer_port)
+            except Exception as e:
+                self.logger.debug("Error in XET chunk callback: %s", e)
+
+    def get_peers_with_chunks(
+        self, chunk_hashes: list[bytes]
+    ) -> dict[bytes, list[PeerInfo]]:
+        """Return peers known to have each chunk (from PEX/XET chunk exchange).
+
+        Args:
+            chunk_hashes: List of 32-byte chunk hashes to look up
+
+        Returns:
+            Dict mapping each chunk_hash to list of PeerInfo for peers that have it
+
+        """
+        result: dict[bytes, list[PeerInfo]] = {h: [] for h in chunk_hashes}
+        for ch in chunk_hashes:
+            if len(ch) != 32:
+                continue
+            addrs = self.known_chunks.get(ch, set())
+            for ip, port in addrs:
+                try:
+                    result[ch].append(PeerInfo(ip=ip, port=port, peer_source="pex"))
+                except Exception as e:
+                    self.logger.debug(
+                        "Skipping invalid peer info from chunk registry: %s", e
+                    )
+                    continue
+        return result
 
     def add_peer_callback(self, callback: Callable[[list[PexPeer]], None]) -> None:
         """Add callback for new peers discovered via PEX."""

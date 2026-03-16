@@ -1,15 +1,17 @@
+# CI runs only on PR to main (with manual approval) or via workflow_dispatch.
+# Configure environment "approval-required" in repo Settings > Environments with required reviewers.
 name: CI/CD Pipeline
 
 on:
-  push:
-    branches: [main, dev]
   pull_request:
-    branches: [main, dev]
+    branches: [main]  # PRs to dev do not run CI; use workflow_dispatch for other branches
+  workflow_dispatch:
 
 jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    environment: approval-required
     permissions:
       contents: read
       actions: read
@@ -46,6 +48,7 @@ jobs:
   type-check:
     name: type-check
     runs-on: ubuntu-latest
+    environment: approval-required
     permissions:
       contents: read
       actions: read

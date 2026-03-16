@@ -1,14 +1,8 @@
+# Docs build: manual only, or on PR to main with manual approval.
+# Configure environment "approval-required" in repo Settings > Environments with required reviewers.
 name: Build Documentation
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'docs/**'
-      - 'dev/mkdocs.yml'
-      - '.readthedocs.yaml'
-      - 'dev/requirements-rtd.txt'
-      - 'ccbt/**'
   pull_request:
     branches: [main]
     paths:
@@ -16,14 +10,52 @@ on:
       - 'dev/mkdocs.yml'
       - '.readthedocs.yaml'
       - 'dev/requirements-rtd.txt'
+      - 'ccbt/**'
   workflow_dispatch:
-    # Can be triggered manually from any branch for testing
-    # Documentation is automatically published to Read the Docs when changes are pushed
+
+concurrency:
+  group: docs-build-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  check-validation:
+    name: check-validation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: Check if validation workflows passed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // For PRs, check if ci.yml and test.yml have passed
+            if (context.eventName === 'pull_request') {
+              const { data: checks } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.payload.pull_request.head.sha,
+              });
+              const requiredChecks = ['CI/CD Pipeline', 'Test'];
+              const passedChecks = checks.check_runs.filter(
+                check => requiredChecks.includes(check.name) && check.conclusion === 'success'
+              );
+              if (passedChecks.length < requiredChecks.length) {
+                core.setFailed('Required validation workflows must pass first');
+              }
+            }
+            // For workflow_dispatch, allow manual override
+  
   build-docs:
     name: build-docs
+    needs: check-validation
     runs-on: ubuntu-latest
+    environment: approval-required
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && needs.check-validation.result == 'success')
     permissions:
       contents: read
       actions: read

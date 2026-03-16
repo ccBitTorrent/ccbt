@@ -1,18 +1,57 @@
+# Nightly publish: manual only, or on PR to main with manual approval.
+# Configure environment "approval-required" in repo Settings > Environments with required reviewers.
 name: Publish Dev Branch to PyPI (Nightly)
 
 on:
-  push:
-    branches: [dev]
+  pull_request:
+    branches: [main]
     paths:
       - 'pyproject.toml'
       - 'ccbt/**'
       - 'ccbt/__init__.py'
   workflow_dispatch:
 
+concurrency:
+  group: publish-dev-pypi
+  cancel-in-progress: false
+
 jobs:
+  check-validation:
+    name: check-validation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: Check if validation workflows passed (PR to main only)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (context.eventName === 'pull_request') {
+              const { data: checks } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.payload.pull_request.head.sha,
+              });
+              const requiredChecks = ['CI/CD Pipeline', 'Test'];
+              const passedChecks = checks.check_runs.filter(
+                check => requiredChecks.includes(check.name) && check.conclusion === 'success'
+              );
+              if (passedChecks.length < requiredChecks.length) {
+                core.setFailed('Required validation workflows must pass first');
+              }
+            }
+  
   publish-nightly:
     name: publish-dev-to-pypi
+    needs: check-validation
     runs-on: ubuntu-latest
+    environment: approval-required
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && needs.check-validation.result == 'success')
     permissions:
       contents: read
     
@@ -39,19 +78,9 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Dev branch version: $VERSION"
       
-      - name: Validate version for dev branch
+      - name: Validate version using script
         run: |
-          VERSION="${{ steps.get_version.outputs.version }}"
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          PATCH=$(echo "$VERSION" | cut -d. -f3)
-          
-          # Dev branch: allow 0.0.1 or any valid semver
-          if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -eq 0 ] && [ "$PATCH" -eq 0 ]; then
-            echo "❌ Dev branch version must be > 0.0.0, got $VERSION"
-            exit 1
-          fi
-          echo "✅ Version validation passed: $VERSION"
+          uv run python dev/scripts/validate_version.py || exit 1
       
       - name: Install project dependencies
         run: |

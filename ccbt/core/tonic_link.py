@@ -63,6 +63,35 @@ def _hex_or_base32_to_bytes(value: str) -> bytes:
         raise ValueError(msg) from e
 
 
+def _extract_tonic_query(uri: str) -> str:
+    """Extract query payload from a tonic URI.
+
+    Python's standard URL parser does not treat ``tonic?:...`` as having a
+    scheme named ``tonic?``; instead it treats ``tonic`` as the path and keeps
+    the leading ``:`` in the query. Parse the custom scheme manually so the
+    generated links round-trip reliably.
+
+    Args:
+        uri: Tonic URI string
+
+    Returns:
+        Raw query string without the leading ``?``
+
+    Raises:
+        ValueError: If the URI is not a tonic URI
+    """
+    prefix = "tonic?:"
+    if uri.startswith(prefix):
+        return uri[len(prefix) :]
+
+    parsed = urllib.parse.urlparse(uri)
+    if parsed.scheme == "tonic":
+        return parsed.query
+
+    msg = "Not a tonic?: URI"
+    raise ValueError(msg)
+
+
 def parse_tonic_link(uri: str) -> TonicLinkInfo:
     """Parse a tonic?: link and return TonicLinkInfo.
 
@@ -78,12 +107,8 @@ def parse_tonic_link(uri: str) -> TonicLinkInfo:
         ValueError: If URI is not a valid tonic?: link
 
     """
-    parsed = urllib.parse.urlparse(uri)
-    if parsed.scheme != "tonic?":
-        msg = "Not a tonic?: URI"
-        raise ValueError(msg)
-
-    qs = urllib.parse.parse_qs(parsed.query)
+    raw_query = _extract_tonic_query(uri)
+    qs = urllib.parse.parse_qs(raw_query)
 
     # Extract info hash from xt parameter
     xts = qs.get("xt", [])

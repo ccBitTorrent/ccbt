@@ -43,6 +43,68 @@ class ExtensionProtocol:
         self.next_message_id = 1
         self.peer_extensions: dict[str, dict[str, Any]] = {}
 
+    @staticmethod
+    def _normalize_key(key: Any) -> str:
+        """Normalize bencoded keys to text for internal lookups."""
+        if isinstance(key, bytes):
+            try:
+                return key.decode("utf-8")
+            except UnicodeDecodeError:
+                return key.decode("utf-8", errors="replace")
+        return str(key)
+
+    @classmethod
+    def _normalize_extension_dict(cls, data: dict[Any, Any]) -> dict[str, Any]:
+        """Normalize a BEP 10 handshake dictionary for internal use."""
+        normalized: dict[str, Any] = {}
+        for key, value in data.items():
+            key_str = cls._normalize_key(key)
+            if isinstance(value, dict):
+                normalized[key_str] = {
+                    cls._normalize_key(nested_key): nested_value
+                    for nested_key, nested_value in value.items()
+                }
+            else:
+                normalized[key_str] = value
+        return normalized
+
+    @staticmethod
+    def _coerce_message_id(value: Any) -> Optional[int]:
+        """Convert peer-advertised extension IDs to integers when possible."""
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, bytes):
+            try:
+                return int(value.decode("ascii"))
+            except (UnicodeDecodeError, ValueError):
+                return None
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return None
+        return None
+
+    def _build_peer_extension_state(self, extensions: dict[str, Any]) -> dict[str, Any]:
+        """Create a canonical peer capability record from a handshake dictionary."""
+        state = dict(extensions)
+        message_map_raw = state.get("m", {})
+        message_map: dict[str, int] = {}
+        if isinstance(message_map_raw, dict):
+            for name, message_id in message_map_raw.items():
+                normalized_name = self._normalize_key(name)
+                normalized_id = self._coerce_message_id(message_id)
+                if normalized_id is not None:
+                    message_map[normalized_name] = normalized_id
+        state["m"] = message_map
+        state["message_map"] = message_map
+        state["reverse_message_map"] = {
+            message_id: name for name, message_id in message_map.items()
+        }
+        return state
+
     def register_extension(
         self,
         name: str,
@@ -89,6 +151,14 @@ class ExtensionProtocol:
     def list_extensions(self) -> dict[str, ExtensionInfo]:
         """List all registered extensions."""
         return self.extensions.copy()
+
+    def get_local_message_map(self) -> dict[str, int]:
+        """Return the local BEP 10 message map."""
+        return {
+            name: info.message_id
+            for name, info in self.extensions.items()
+            if info.message_id > 0
+        }
 
     def encode_handshake(self) -> bytes:
         """Encode extension handshake (BEP 10).
@@ -226,16 +296,19 @@ class ExtensionProtocol:
         extensions: dict[str, Any],
     ) -> None:
         """Handle extension handshake from peer."""
-        self.peer_extensions[peer_id] = extensions
+        normalized_extensions = self._normalize_extension_dict(extensions)
+        self.peer_extensions[peer_id] = self._build_peer_extension_state(
+            normalized_extensions
+        )
 
         # Extract SSL capability from extension handshake data
         # Check if SSL extension is registered in message map (BEP 10 "m" field)
         # Note: BEP 10 extensions can have bytes keys, but type annotation is dict[str, Any]
         ssl_supported = False
-        if isinstance(extensions, dict):
-            m_dict = extensions.get("m") or extensions.get(b"m", {})  # type: ignore[no-matching-overload]
+        if isinstance(self.peer_extensions[peer_id], dict):
+            m_dict = self.peer_extensions[peer_id].get("m", {})
             # SSL extension may be registered with message ID
-            if isinstance(m_dict, dict) and ("ssl" in m_dict or b"ssl" in m_dict):
+            if isinstance(m_dict, dict) and "ssl" in m_dict:
                 ssl_supported = True
 
         # Store SSL capability in peer_extensions
@@ -249,7 +322,7 @@ class ExtensionProtocol:
                 event_type=EventType.EXTENSION_HANDSHAKE.value,
                 data={
                     "peer_id": peer_id,
-                    "extensions": extensions,
+                    "extensions": self.peer_extensions[peer_id],
                     "ssl_capable": ssl_supported,
                     "timestamp": time.time(),
                 },
@@ -309,7 +382,36 @@ class ExtensionProtocol:
     def peer_supports_extension(self, peer_id: str, extension_name: str) -> bool:
         """Check if peer supports specific extension."""
         peer_extensions = self.peer_extensions.get(peer_id, {})
+        if not isinstance(peer_extensions, dict):
+            return False
+        if extension_name == "ssl":
+            return peer_extensions.get("ssl") is True
+        message_map = peer_extensions.get("message_map")
+        if isinstance(message_map, dict):
+            return extension_name in message_map
         return extension_name in peer_extensions
+
+    def get_peer_message_id(self, peer_id: str, extension_name: str) -> Optional[int]:
+        """Return the peer-advertised message ID for an extension."""
+        peer_extensions = self.peer_extensions.get(peer_id, {})
+        if not isinstance(peer_extensions, dict):
+            return None
+        message_map = peer_extensions.get("message_map")
+        if not isinstance(message_map, dict):
+            return None
+        message_id = message_map.get(extension_name)
+        return message_id if isinstance(message_id, int) else None
+
+    def get_peer_extension_name(self, peer_id: str, message_id: int) -> Optional[str]:
+        """Return the peer extension name for a message ID."""
+        peer_extensions = self.peer_extensions.get(peer_id, {})
+        if not isinstance(peer_extensions, dict):
+            return None
+        reverse_map = peer_extensions.get("reverse_message_map")
+        if not isinstance(reverse_map, dict):
+            return None
+        extension_name = reverse_map.get(message_id)
+        return extension_name if isinstance(extension_name, str) else None
 
     def get_peer_extension_info(
         self,
@@ -318,7 +420,12 @@ class ExtensionProtocol:
     ) -> Optional[dict[str, Any]]:
         """Get peer extension information."""
         peer_extensions = self.peer_extensions.get(peer_id, {})
-        return peer_extensions.get(extension_name)
+        if not isinstance(peer_extensions, dict):
+            return None
+        message_id = self.get_peer_message_id(peer_id, extension_name)
+        if message_id is None:
+            return None
+        return {"name": extension_name, "message_id": message_id}
 
     def send_extension_message(
         self,

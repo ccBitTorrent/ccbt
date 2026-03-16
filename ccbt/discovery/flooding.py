@@ -66,6 +66,7 @@ class ControlledFlooding:
         message: dict[str, Any],
         priority: int = 0,
         target_peers: Optional[list[str]] = None,
+        ttl: Optional[int] = None,
     ) -> None:
         """Flood a message to peers.
 
@@ -73,17 +74,30 @@ class ControlledFlooding:
             message: Message data to flood
             priority: Message priority (higher = more urgent)
             target_peers: Optional list of peer IDs to flood to
+            ttl: Optional TTL (max hops). If None, uses self.max_hops.
+                 Stored in _flood_metadata for receive_flood().
 
         """
         message_id = self._generate_message_id(message)
+        effective_ttl = self.max_hops if ttl is None else ttl
 
         # Add to seen messages
         self.seen_messages.add(message_id)
         self._message_timestamps[message_id] = time.time()
 
-        # Add flooding metadata
+        # Add flooding metadata so receive_flood() can use ttl and deduplicate
+        metadata = message.setdefault("_flood_metadata", {})
+        metadata["message_id"] = message_id
+        metadata["ttl"] = effective_ttl
+        metadata["hops"] = 0
+        metadata["sender"] = self.node_id
 
-        logger.debug("Flooding message %s (priority: %d)", message_id[:8], priority)
+        logger.debug(
+            "Flooding message %s (priority: %d, ttl: %d)",
+            message_id[:8],
+            priority,
+            effective_ttl,
+        )
 
         # Forward to target peers (this would typically call network methods)
         if target_peers:

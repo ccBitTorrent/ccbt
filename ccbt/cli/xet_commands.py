@@ -5,90 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from pathlib import Path
 from typing import Any, Optional
 
 import click
 from rich.console import Console
 from rich.table import Table
 
-from ccbt.config.config import ConfigManager
 from ccbt.i18n import _
-from ccbt.protocols.base import ProtocolType
-from ccbt.protocols.xet import XetProtocol
-from ccbt.storage.xet_deduplication import XetDeduplication
 
 logger = logging.getLogger(__name__)
-
-
-async def _get_xet_protocol() -> Optional[Any]:  # Optional[XetProtocol]
-    """Get Xet protocol instance from session manager.
-
-    Note: If daemon is running, this will check via IPC but cannot return
-    the actual protocol instance. Commands using this should handle None
-    and route operations via IPC instead.
-    """
-    from ccbt.cli.main import _get_executor
-    from ccbt.executor.session_adapter import LocalSessionAdapter
-
-    # Get executor (daemon or local)
-    executor, is_daemon = await _get_executor()
-
-    if is_daemon and executor:
-        # Daemon mode - use executor to get protocol info
-        result = await executor.execute("protocol.get_xet")
-        if result.success and result.data.get("protocol"):
-            protocol_info = result.data["protocol"]
-            # Protocol is enabled in daemon, but we can't return the instance
-            # Commands should use executor for operations instead
-            if protocol_info.enabled:
-                return (
-                    None  # Protocol enabled but instance not available in daemon mode
-                )
-        return None
-
-    # Local mode - get protocol from session
-    if executor and isinstance(executor.adapter, LocalSessionAdapter):
-        session = executor.adapter.session_manager
-        try:
-            # Find Xet protocol in session's protocols list
-            protocols = getattr(session, "protocols", [])
-            for protocol in protocols:
-                if isinstance(protocol, XetProtocol):
-                    return protocol
-            # Also try protocol manager if protocols list is empty
-            protocol_manager = getattr(session, "protocol_manager", None)
-            if protocol_manager:
-                xet_protocol = protocol_manager.get_protocol(ProtocolType.XET)
-                if isinstance(xet_protocol, XetProtocol):
-                    return xet_protocol
-        except Exception:  # pragma: no cover - CLI error handler
-            logger.exception("Failed to get Xet protocol from session")
-
-    # Fallback: create temporary session if executor not available
-    # CRITICAL FIX: Use safe local session creation helper
-    try:
-        from ccbt.cli.main import _ensure_local_session_safe
-
-        session = await _ensure_local_session_safe(_force_local=True)
-        try:
-            # Find Xet protocol in session's protocols list
-            protocols = getattr(session, "protocols", [])
-            for protocol in protocols:
-                if isinstance(protocol, XetProtocol):
-                    return protocol
-            # Also try protocol manager if protocols list is empty
-            protocol_manager = getattr(session, "protocol_manager", None)
-            if protocol_manager:
-                xet_protocol = protocol_manager.get_protocol(ProtocolType.XET)
-                if isinstance(xet_protocol, XetProtocol):
-                    return xet_protocol
-            return None
-        finally:
-            await session.stop()
-    except Exception:  # pragma: no cover - CLI error handler
-        logger.exception("Failed to get Xet protocol")
-        return None
 
 
 @click.group()
@@ -102,40 +27,26 @@ def xet() -> None:
 def xet_enable(_ctx, config_file: Optional[str]) -> None:
     """Enable Xet protocol in configuration."""
     console = Console()
-    from ccbt.cli.main import _get_config_from_context
-    from ccbt.config.config import init_config
-
-    # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
-        from ccbt.cli.main import _get_config_from_context
+        logger.debug("Ignoring --config for executor-backed xet enable command")
+    try:
+        from ccbt.cli.main import _get_executor
 
-    # Use config_file if provided, otherwise try context, fall back to init_config
-    if config_file:
-        cm = ConfigManager(config_file)
-    else:
-        try:
-            cm = _get_config_from_context(_ctx) if _ctx else init_config()
-        except Exception:
-            cm = init_config()
-    cm.config.disk.xet_enabled = True
+        async def _enable() -> Any:
+            executor, _is_daemon = await _get_executor()
+            if executor is None:
+                msg = "Unable to acquire XET executor"
+                raise RuntimeError(msg)
+            return await executor.execute("xet.enable")
 
-    # Save to config file
-    if cm.config_file:
-        cm.config_file.parent.mkdir(parents=True, exist_ok=True)
-        import toml
-
-        config_dict = cm.config.model_dump(mode="json")
-        if cm.config_file.exists():
-            existing = toml.load(str(cm.config_file))
-            config_dict.update(existing)
-        cm.config_file.write_text(toml.dumps(config_dict), encoding="utf-8")
-
-    console.print(_("[green]✓[/green] Xet protocol enabled"))
-    console.print(
-        _("  Configuration saved to: {location}").format(
-            location=cm.config_file or "default location"
-        )
-    )
+        result = asyncio.run(_enable())
+        if not result.success:
+            msg = result.error or "Failed to enable XET"
+            raise RuntimeError(msg)
+        console.print(_("[green]✓[/green] Xet protocol enabled"))
+    except Exception as e:
+        console.print(_("[red]Error enabling Xet protocol: {e}[/red]").format(e=e))
+        raise click.Abort from e
 
 
 @xet.command("disable")
@@ -144,36 +55,26 @@ def xet_enable(_ctx, config_file: Optional[str]) -> None:
 def xet_disable(_ctx, config_file: Optional[str]) -> None:
     """Disable Xet protocol in configuration."""
     console = Console()
-    from ccbt.cli.main import _get_config_from_context
-    from ccbt.config.config import init_config
-
-    # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
-        cm = ConfigManager(config_file)
-    else:
-        try:
-            cm = _get_config_from_context(_ctx) if _ctx else init_config()
-        except Exception:
-            cm = init_config()
-    cm.config.disk.xet_enabled = False
+        logger.debug("Ignoring --config for executor-backed xet disable command")
+    try:
+        from ccbt.cli.main import _get_executor
 
-    # Save to config file
-    if cm.config_file:
-        cm.config_file.parent.mkdir(parents=True, exist_ok=True)
-        import toml
+        async def _disable() -> Any:
+            executor, _is_daemon = await _get_executor()
+            if executor is None:
+                msg = "Unable to acquire XET executor"
+                raise RuntimeError(msg)
+            return await executor.execute("xet.disable")
 
-        config_dict = cm.config.model_dump(mode="json")
-        if cm.config_file.exists():
-            existing = toml.load(str(cm.config_file))
-            config_dict.update(existing)
-        cm.config_file.write_text(toml.dumps(config_dict), encoding="utf-8")
-
-    console.print(_("[yellow]✓[/yellow] Xet protocol disabled"))
-    console.print(
-        _("  Configuration saved to: {location}").format(
-            location=cm.config_file or "default location"
-        )
-    )
+        result = asyncio.run(_disable())
+        if not result.success:
+            msg = result.error or "Failed to disable XET"
+            raise RuntimeError(msg)
+        console.print(_("[yellow]✓[/yellow] Xet protocol disabled"))
+    except Exception as e:
+        console.print(_("[red]Error disabling Xet protocol: {e}[/red]").format(e=e))
+        raise click.Abort from e
 
 
 @xet.command("status")
@@ -182,72 +83,76 @@ def xet_disable(_ctx, config_file: Optional[str]) -> None:
 def xet_status(_ctx, config_file: Optional[str]) -> None:
     """Show Xet protocol status and configuration."""
     console = Console()
-    from ccbt.cli.main import _get_config_from_context
-    from ccbt.config.config import init_config
-
-    # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
-        cm = ConfigManager(config_file)
-    else:
-        try:
-            cm = _get_config_from_context(_ctx) if _ctx else init_config()
-        except Exception:
-            cm = init_config()
-    config = cm.config
+        logger.debug("Ignoring --config for executor-backed xet status command")
+    try:
+        from ccbt.cli.main import _get_executor
 
-    console.print(_("[bold]Xet Protocol Status[/bold]\n"))
+        async def _load_status() -> tuple[Any, Any]:
+            executor, _is_daemon = await _get_executor()
+            if executor is None:
+                msg = "Unable to acquire XET executor"
+                raise RuntimeError(msg)
+            config_result = await executor.execute("xet.get_config")
+            protocol_result = await executor.execute("protocol.get_xet")
+            return config_result, protocol_result
 
-    # Configuration status
-    xet_config = config.disk
-    console.print(_("[bold]Configuration:[/bold]"))
-    console.print(_("  Enabled: {enabled}").format(enabled=xet_config.xet_enabled))
-    console.print(
-        _("  Deduplication: {enabled}").format(
-            enabled=xet_config.xet_deduplication_enabled
+        config_result, protocol_result = asyncio.run(_load_status())
+        if not config_result.success:
+            msg = config_result.error or "Failed to get XET config"
+            raise RuntimeError(msg)
+
+        config_data = config_result.data or {}
+        console.print(_("[bold]Xet Protocol Status[/bold]\n"))
+        console.print(_("[bold]Configuration:[/bold]"))
+        console.print(
+            _("  Enabled: {enabled}").format(
+                enabled=config_data.get("protocol_enabled", False)
+            )
         )
-    )
-    console.print(_("  P2P CAS: {enabled}").format(enabled=xet_config.xet_use_p2p_cas))
-    console.print(
-        _("  Compression: {enabled}").format(enabled=xet_config.xet_compression_enabled)
-    )
-    console.print(
-        _("  Chunk size range: {min}-{max} bytes").format(
-            min=xet_config.xet_chunk_min_size, max=xet_config.xet_chunk_max_size
+        console.print(
+            _("  Workspace sync enabled: {enabled}").format(
+                enabled=config_data.get("workspace_sync_enabled", False)
+            )
         )
-    )
-    console.print(
-        _("  Target chunk size: {size} bytes").format(
-            size=xet_config.xet_chunk_target_size
+        console.print(
+            _("  Default sync mode: {mode}").format(
+                mode=config_data.get("default_sync_mode", "unknown")
+            )
         )
-    )
-    console.print(_("  Cache DB: {path}").format(path=xet_config.xet_cache_db_path))
-    console.print(
-        _("  Chunk store: {path}").format(path=xet_config.xet_chunk_store_path)
-    )
+        console.print(
+            _("  Check interval: {seconds}").format(
+                seconds=config_data.get("check_interval", "unknown")
+            )
+        )
+        console.print(
+            _("  XET port: {port}").format(port=config_data.get("xet_port", "auto"))
+        )
 
-    # Runtime status (if session is available)
-    async def _show_runtime_status() -> None:
-        """Show runtime status from active session."""
-        try:
-            protocol = await _get_xet_protocol()
-            if protocol:
-                console.print(_("\n[bold]Runtime Status:[/bold]"))
-                console.print(
-                    _("  Protocol state: {state}").format(state=protocol.state)
-                )
-                if protocol.cas_client:
-                    console.print(_("  P2P CAS client: Active"))
-                else:
-                    console.print(_("  P2P CAS client: Not initialized"))
-            else:
-                console.print(_("\n[yellow]Runtime Status:[/yellow]"))
-                console.print(_("  Protocol not active (session may not be running)"))
-        except Exception as e:
-            logger.debug(_("Failed to get runtime status: %s"), e)
-            console.print(_("\n[yellow]Runtime Status:[/yellow]"))
-            console.print(_("  Unable to connect to active session"))
-
-    asyncio.run(_show_runtime_status())
+        console.print(_("\n[bold]Runtime Status:[/bold]"))
+        protocol = (
+            (protocol_result.data or {}).get("protocol")
+            if protocol_result.success
+            else None
+        )
+        if protocol is None:
+            console.print(_("  Protocol not active (session may not be running)"))
+        else:
+            console.print(
+                _("  Protocol enabled: {enabled}").format(enabled=protocol.enabled)
+            )
+            console.print(
+                _("  Supports XET: {enabled}").format(enabled=protocol.supports_xet)
+            )
+            console.print(
+                _("  Supports DHT: {enabled}").format(enabled=protocol.supports_dht)
+            )
+            console.print(
+                _("  Supports PEX: {enabled}").format(enabled=protocol.supports_pex)
+            )
+    except Exception as e:
+        console.print(_("[red]Error getting Xet status: {e}[/red]").format(e=e))
+        raise click.Abort from e
 
 
 @xet.command("stats")
@@ -257,56 +162,37 @@ def xet_status(_ctx, config_file: Optional[str]) -> None:
 def xet_stats(_ctx, config_file: Optional[str], json_output: bool) -> None:
     """Show Xet deduplication cache statistics."""
     console = Console()
-    from ccbt.cli.main import _get_config_from_context
-    from ccbt.config.config import init_config
-
-    # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
-        cm = ConfigManager(config_file)
-    else:
-        try:
-            cm = _get_config_from_context(_ctx) if _ctx else init_config()
-        except Exception:
-            cm = init_config()
-    config = cm.config
-
-    if not config.disk.xet_enabled:
-        console.print(_("[yellow]Xet protocol is disabled[/yellow]"))
-        return
+        logger.debug("Ignoring --config for executor-backed xet stats command")
 
     async def _show_stats() -> None:
         """Show deduplication cache statistics."""
         try:
-            # Open deduplication cache
-            dedup_path = Path(config.disk.xet_cache_db_path)
-            dedup_path.parent.mkdir(parents=True, exist_ok=True)
+            from ccbt.cli.main import _get_executor
 
-            async with XetDeduplication(dedup_path) as dedup:
-                stats = dedup.get_cache_stats()
+            executor, _is_daemon = await _get_executor()
+            if executor is None:
+                msg = "Unable to acquire XET executor"
+                raise RuntimeError(msg)
+            result = await executor.execute("xet.cache_stats")
+            if not result.success:
+                raise RuntimeError(result.error or "Failed to retrieve XET stats")
+            stats = (result.data or {}).get("stats", {})
 
-                if json_output:
-                    click.echo(json.dumps(stats, indent=2))
-                else:
-                    console.print(
-                        _("[bold]Xet Deduplication Cache Statistics[/bold]\n")
-                    )
-
-                    table = Table(show_header=True, header_style="bold")
-                    table.add_column("Metric", style="cyan")
-                    table.add_column("Value", style="green")
-
-                    table.add_row("Total chunks", str(stats.get("total_chunks", 0)))
-                    table.add_row("Unique chunks", str(stats.get("unique_chunks", 0)))
-                    table.add_row("Total size (bytes)", str(stats.get("total_size", 0)))
-                    table.add_row("Cache size (bytes)", str(stats.get("cache_size", 0)))
-                    table.add_row(
-                        "Average chunk size", str(stats.get("avg_chunk_size", 0))
-                    )
-                    table.add_row(
-                        "Deduplication ratio", f"{stats.get('dedup_ratio', 0.0):.2f}"
-                    )
-
-                    console.print(table)
+            if json_output:
+                click.echo(json.dumps(stats, indent=2))
+                return
+            console.print(_("[bold]Xet Deduplication Cache Statistics[/bold]\n"))
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
+            table.add_row("Total chunks", str(stats.get("total_chunks", 0)))
+            table.add_row("Unique chunks", str(stats.get("unique_chunks", 0)))
+            table.add_row("Total size (bytes)", str(stats.get("total_size", 0)))
+            table.add_row("Cache size (bytes)", str(stats.get("cache_size", 0)))
+            table.add_row("Average chunk size", str(stats.get("avg_chunk_size", 0)))
+            table.add_row("Deduplication ratio", f"{stats.get('dedup_ratio', 0.0):.2f}")
+            console.print(table)
 
         except Exception as e:
             console.print(_("[red]Error retrieving stats: {e}[/red]").format(e=e))
@@ -325,116 +211,63 @@ def xet_cache_info(
 ) -> None:
     """Show detailed information about cached chunks."""
     console = Console()
-    from ccbt.cli.main import _get_config_from_context
-    from ccbt.config.config import init_config
-
-    # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
-        cm = ConfigManager(config_file)
-    else:
-        try:
-            cm = _get_config_from_context(_ctx) if _ctx else init_config()
-        except Exception:
-            cm = init_config()
-    config = cm.config
-
-    if not config.disk.xet_enabled:
-        console.print(_("[yellow]Xet protocol is disabled[/yellow]"))
-        return
+        logger.debug("Ignoring --config for executor-backed xet cache-info command")
 
     async def _show_cache_info() -> None:
         """Show cache information."""
         try:
-            dedup_path = Path(config.disk.xet_cache_db_path)
-            dedup_path.parent.mkdir(parents=True, exist_ok=True)
+            from ccbt.cli.main import _get_executor
 
-            async with XetDeduplication(dedup_path) as dedup:
-                stats = dedup.get_cache_stats()
+            executor, _is_daemon = await _get_executor()
+            if executor is None:
+                msg = "Unable to acquire XET executor"
+                raise RuntimeError(msg)
+            result = await executor.execute("xet.cache_info", limit=limit)
+            if not result.success:
+                raise RuntimeError(result.error or "Failed to retrieve cache info")
+            payload = result.data or {}
+            stats = payload.get("stats", {})
+            chunks = payload.get("sample_chunks", [])
 
-                if json_output:
-                    # Get sample chunks
-                    import sqlite3
+            if json_output:
+                click.echo(
+                    json.dumps({"stats": stats, "sample_chunks": chunks}, indent=2)
+                )
+                return
 
-                    conn = sqlite3.connect(dedup_path)
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT chunk_hash, size, ref_count, created_at, last_accessed FROM chunks ORDER BY last_accessed DESC LIMIT ?",
-                        (limit,),
+            console.print(_("[bold]Xet Cache Information[/bold]\n"))
+            console.print(
+                _("Total chunks: {count}").format(count=stats.get("total_chunks", 0))
+            )
+            console.print(
+                _("Cache size: {size} bytes").format(size=stats.get("cache_size", 0))
+            )
+            console.print(
+                _("\n[bold]Sample chunks (last {limit} accessed):[/bold]\n").format(
+                    limit=limit
+                )
+            )
+
+            if chunks:
+                table = Table(show_header=True, header_style="bold")
+                table.add_column("Hash", style="cyan", max_width=20)
+                table.add_column("Size", style="green")
+                table.add_column("Ref Count", style="yellow")
+                table.add_column("Created", style="blue")
+                table.add_column("Last Accessed", style="magenta")
+                for chunk in chunks:
+                    hash_value = str(chunk.get("hash", ""))
+                    table.add_row(
+                        f"{hash_value[:16]}..." if hash_value else "",
+                        str(chunk.get("size", 0)),
+                        str(chunk.get("ref_count", 0)),
+                        str(chunk.get("created_at", "")),
+                        str(chunk.get("last_accessed", "")),
                     )
-                    chunks = cursor.fetchall()
-                    conn.close()
-
-                    chunk_list = [
-                        {
-                            "hash": row[0].hex()
-                            if isinstance(row[0], bytes)
-                            else row[0],
-                            "size": row[1],
-                            "ref_count": row[2],
-                            "created_at": row[3],
-                            "last_accessed": row[4],
-                        }
-                        for row in chunks
-                    ]
-                    click.echo(
-                        json.dumps(
-                            {"stats": stats, "sample_chunks": chunk_list}, indent=2
-                        )
-                    )
-                else:
-                    console.print(_("[bold]Xet Cache Information[/bold]\n"))
-                    console.print(
-                        _("Total chunks: {count}").format(
-                            count=stats.get("total_chunks", 0)
-                        )
-                    )
-                    console.print(
-                        _("Cache size: {size} bytes").format(
-                            size=stats.get("cache_size", 0)
-                        )
-                    )
-                    console.print(
-                        _(
-                            "\n[bold]Sample chunks (last {limit} accessed):[/bold]\n"
-                        ).format(limit=limit)
-                    )
-
-                    import sqlite3
-
-                    conn = sqlite3.connect(dedup_path)
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT chunk_hash, size, ref_count, created_at, last_accessed FROM chunks ORDER BY last_accessed DESC LIMIT ?",
-                        (limit,),
-                    )
-                    chunks = cursor.fetchall()
-                    conn.close()
-
-                    if chunks:
-                        table = Table(show_header=True, header_style="bold")
-                        table.add_column("Hash", style="cyan", max_width=20)
-                        table.add_column("Size", style="green")
-                        table.add_column("Ref Count", style="yellow")
-                        table.add_column("Created", style="blue")
-                        table.add_column("Last Accessed", style="magenta")
-
-                        for row in chunks:
-                            chunk_hash = row[0]
-                            hash_str = (
-                                chunk_hash.hex()[:16] + "..."
-                                if isinstance(chunk_hash, bytes)
-                                else str(chunk_hash)[:16]
-                            )
-                            table.add_row(
-                                hash_str,
-                                str(row[1]),
-                                str(row[2]),
-                                str(row[3]),
-                                str(row[4]),
-                            )
-                        console.print(table)
-                    else:
-                        console.print(_("[yellow]No chunks in cache[/yellow]"))
+                console.print(table)
+            else:
+                console.print(_("[yellow]No chunks in cache[/yellow]"))
 
         except Exception as e:
             console.print(_("[red]Error retrieving cache info: {e}[/red]").format(e=e))
@@ -459,62 +292,52 @@ def xet_cleanup(
 ) -> None:
     """Clean up unused chunks from the deduplication cache."""
     console = Console()
-    from ccbt.cli.main import _get_config_from_context
-    from ccbt.config.config import init_config
-
-    # Use config_file if provided, otherwise try context, fall back to init_config
     if config_file:
-        cm = ConfigManager(config_file)
-    else:
-        try:
-            cm = _get_config_from_context(_ctx) if _ctx else init_config()
-        except Exception:
-            cm = init_config()
-    config = cm.config
-
-    if not config.disk.xet_enabled:
-        console.print(_("[yellow]Xet protocol is disabled[/yellow]"))
-        return
+        logger.debug("Ignoring --config for executor-backed xet cleanup command")
 
     async def _cleanup() -> None:
         """Clean up unused chunks."""
         try:
-            dedup_path = Path(config.disk.xet_cache_db_path)
-            dedup_path.parent.mkdir(parents=True, exist_ok=True)
+            from ccbt.cli.main import _get_executor
 
-            async with XetDeduplication(dedup_path) as dedup:
-                if dry_run:
-                    console.print(
-                        _(
-                            "[yellow]Dry run: Would clean chunks older than {days} days[/yellow]"
-                        ).format(days=max_age_days)
-                    )
-                    # Get stats before cleanup
-                    stats_before = dedup.get_cache_stats()
-                    console.print(
-                        _("Current chunks: {count}").format(
-                            count=stats_before.get("total_chunks", 0)
-                        )
-                    )
-                else:
-                    max_age_seconds = max_age_days * 24 * 60 * 60
+            executor, _is_daemon = await _get_executor()
+            if executor is None:
+                msg = "Unable to acquire XET executor"
+                raise RuntimeError(msg)
+            result = await executor.execute(
+                "xet.cache_cleanup",
+                dry_run=dry_run,
+                max_age_days=max_age_days,
+            )
+            if not result.success:
+                raise RuntimeError(result.error or "Failed to cleanup XET cache")
 
-                    # Clean up unused chunks
-                    cleaned = await dedup.cleanup_unused_chunks(
-                        max_age_seconds=max_age_seconds
+            payload = result.data or {}
+            if payload.get("dry_run"):
+                console.print(
+                    _(
+                        "[yellow]Dry run: Would clean chunks older than {days} days[/yellow]"
+                    ).format(days=payload.get("max_age_days", max_age_days))
+                )
+                stats_before = payload.get("stats_before", {})
+                console.print(
+                    _("Current chunks: {count}").format(
+                        count=stats_before.get("total_chunks", 0)
                     )
+                )
+                return
 
-                    console.print(
-                        _("[green]✓[/green] Cleaned {cleaned} unused chunks").format(
-                            cleaned=cleaned
-                        )
-                    )
-                    stats_after = dedup.get_cache_stats()
-                    console.print(
-                        _("Remaining chunks: {count}").format(
-                            count=stats_after.get("total_chunks", 0)
-                        )
-                    )
+            console.print(
+                _("[green]✓[/green] Cleaned {cleaned} unused chunks").format(
+                    cleaned=payload.get("cleaned", 0)
+                )
+            )
+            stats_after = payload.get("stats_after", {})
+            console.print(
+                _("Remaining chunks: {count}").format(
+                    count=stats_after.get("total_chunks", 0)
+                )
+            )
 
         except Exception as e:
             console.print(_("[red]Error during cleanup: {e}[/red]").format(e=e))

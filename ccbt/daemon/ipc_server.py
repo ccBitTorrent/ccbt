@@ -61,6 +61,7 @@ from ccbt.daemon.ipc_protocol import (
     GlobalStatsResponse,
     ImportStateRequest,
     IPFilterStatsResponse,
+    MediaStreamStartRequest,
     NATMapRequest,
     NetworkTimingMetricsResponse,
     PeerListResponse,
@@ -84,6 +85,12 @@ from ccbt.daemon.ipc_protocol import (
     WebSocketSubscribeRequest,
     WhitelistAddRequest,
     WhitelistResponse,
+    XetDiscoveryStatusResponse,
+    XetFolderEventData,
+    XetFolderStatusResponse,
+    XetSyncModeRequest,
+    XetWorkspacePolicyRequest,
+    XetWorkspacePolicyResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -170,6 +177,7 @@ class IPCServer:
         # WebSocket connections
         self._websocket_connections: set[web.WebSocketResponse] = set()  # type: ignore[attr-defined]
         self._websocket_subscriptions: dict[web.WebSocketResponse, set[EventType]] = {}  # type: ignore[attr-defined]
+        self._websocket_filters: dict[web.WebSocketResponse, dict[str, Any]] = {}  # type: ignore[attr-defined]
         self._websocket_heartbeat_tasks: dict[web.WebSocketResponse, asyncio.Task] = {}  # type: ignore[attr-defined]
 
         # Setup routes and middleware
@@ -449,6 +457,14 @@ class IPCServer:
             self._handle_get_torrent_status,
         )
         self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/media/start",
+            self._handle_start_media_stream,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/media/status",
+            self._handle_get_media_stream_status_for_torrent,
+        )
+        self.app.router.add_post(
             f"{API_BASE_PATH}/torrents/{{info_hash}}/pause",
             self._handle_pause_torrent,
         )
@@ -618,6 +634,14 @@ class IPCServer:
             f"{API_BASE_PATH}/torrents/{{info_hash}}/metadata/status",
             self._handle_get_metadata_status,
         )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/media/{{stream_id}}/stop",
+            self._handle_stop_media_stream,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/media/{{stream_id}}/status",
+            self._handle_get_media_stream_status,
+        )
 
         # Queue endpoints
         self.app.router.add_get(f"{API_BASE_PATH}/queue", self._handle_get_queue)
@@ -714,6 +738,18 @@ class IPCServer:
         self.app.router.add_get(
             f"{API_BASE_PATH}/xet/folders/{{folder_key}}",
             self._handle_get_xet_folder_status,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/xet/folders/{{folder_key}}/sync-mode",
+            self._handle_set_xet_folder_sync_mode,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/xet/discovery-status",
+            self._handle_get_xet_discovery_status,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/xet/workspace-policy/{{workspace_id_hex}}",
+            self._handle_set_xet_workspace_policy,
         )
 
         # Security endpoints
@@ -1058,8 +1094,10 @@ class IPCServer:
                     progress=status.get("progress", 0.0),
                     pieces_completed=status.get("pieces_completed", 0),
                     pieces_total=status.get("pieces_total", 0),
-                    connected_peers=status.get("num_peers", 0),
-                    active_peers=status.get("num_seeds", 0),
+                    connected_peers=status.get(
+                        "connected_peers", status.get("num_peers", 0)
+                    ),
+                    active_peers=status.get("active_peers", status.get("num_seeds", 0)),
                     top_peers=top_peers,
                     bytes_downloaded=status.get("downloaded", 0),
                     bytes_uploaded=status.get("uploaded", 0),
@@ -1381,18 +1419,26 @@ class IPCServer:
                                 getattr(peer.stats, "download_rate", 0.0)
                             )
 
-                # Build response with enhanced metrics
+                # Build response (canonical status uses downloaded/uploaded; API exposes bytes_*)
                 response_data = {
                     "info_hash": info_hash_hex,
-                    "bytes_downloaded": status.get("bytes_downloaded", 0),
-                    "bytes_uploaded": status.get("bytes_uploaded", 0),
+                    "bytes_downloaded": status.get(
+                        "downloaded", status.get("bytes_downloaded", 0)
+                    ),
+                    "bytes_uploaded": status.get(
+                        "uploaded", status.get("bytes_uploaded", 0)
+                    ),
                     "download_rate": status.get("download_rate", 0.0),
                     "upload_rate": status.get("upload_rate", 0.0),
                     "pieces_completed": status.get("pieces_completed", 0),
                     "pieces_total": status.get("pieces_total", 0),
                     "progress": status.get("progress", 0.0),
-                    "connected_peers": status.get("connected_peers", 0),
-                    "active_peers": status.get("active_peers", 0),
+                    "connected_peers": status.get(
+                        "connected_peers", status.get("num_peers", 0)
+                    ),
+                    "active_peers": status.get(
+                        "active_peers", status.get("num_seeds", 0)
+                    ),
                 }
 
                 # Add enhanced metrics if available
@@ -1971,7 +2017,11 @@ class IPCServer:
                             swarm_availability=swarm_availability,
                             download_rate=float(status.get("download_rate", 0.0)),
                             upload_rate=float(status.get("upload_rate", 0.0)),
-                            connected_peers=int(status.get("num_peers", 0)),
+                            connected_peers=int(
+                                status.get(
+                                    "connected_peers", status.get("num_peers", 0)
+                                ),
+                            ),
                             active_peers=active_peers,
                             progress=float(status.get("progress", 0.0)),
                         )
@@ -2367,7 +2417,7 @@ class IPCServer:
             logger.exception("Error removing torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to remove torrent",
+                    error=str(e),
                     code="REMOVE_TORRENT_ERROR",
                 ).model_dump(),
                 status=500,
@@ -2394,7 +2444,7 @@ class IPCServer:
             logger.exception("Error listing torrents")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to list torrents",
+                    error=str(e),
                     code="LIST_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2421,8 +2471,117 @@ class IPCServer:
             logger.exception("Error getting torrent status for %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get torrent status",
+                    error=str(e),
                     code="GET_STATUS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_start_media_stream(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/media/start."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            payload = MediaStreamStartRequest.model_validate(await request.json())
+            result = await self.executor.execute(
+                "media.start",
+                info_hash=info_hash,
+                file_index=payload.file_index,
+                port=payload.port,
+            )
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to start media stream",
+                        code="MEDIA_STREAM_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            return web.json_response(result.data)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error starting media stream for %s", info_hash)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="MEDIA_STREAM_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_media_stream_status_for_torrent(
+        self,
+        request: Request,
+    ) -> Response:
+        """Handle GET /api/v1/torrents/{info_hash}/media/status."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            result = await self.executor.execute("media.status", info_hash=info_hash)
+            status = result.data.get("status") if result.data else None
+            if not result.success or status is None:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Media stream not found",
+                        code="NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            return web.json_response(status)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error getting media status for %s", info_hash)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="MEDIA_STREAM_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_stop_media_stream(self, request: Request) -> Response:
+        """Handle POST /api/v1/media/{stream_id}/stop."""
+        stream_id = request.match_info["stream_id"]
+        try:
+            result = await self.executor.execute("media.stop", stream_id=stream_id)
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Media stream not found",
+                        code="NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                {"status": "stopped", "stopped": True, "stream_id": stream_id}
+            )
+        except Exception as e:
+            logger.exception("Error stopping media stream %s", stream_id)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="MEDIA_STREAM_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_media_stream_status(self, request: Request) -> Response:
+        """Handle GET /api/v1/media/{stream_id}/status."""
+        stream_id = request.match_info["stream_id"]
+        try:
+            result = await self.executor.execute("media.status", stream_id=stream_id)
+            status = result.data.get("status") if result.data else None
+            if not result.success or status is None:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Media stream not found",
+                        code="NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            return web.json_response(status)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error getting media stream status %s", stream_id)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="MEDIA_STREAM_ERROR",
                 ).model_dump(),
                 status=500,
             )
@@ -2447,7 +2606,7 @@ class IPCServer:
             logger.exception("Error pausing torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to pause torrent",
+                    error=str(e),
                     code="PAUSE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2473,7 +2632,7 @@ class IPCServer:
             logger.exception("Error resuming torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to resume torrent",
+                    error=str(e),
                     code="RESUME_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2516,7 +2675,7 @@ class IPCServer:
             logger.exception("Error restarting torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to restart torrent",
+                    error=str(e),
                     code="RESTART_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2543,7 +2702,7 @@ class IPCServer:
             logger.exception("Error cancelling torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to cancel torrent",
+                    error=str(e),
                     code="CANCEL_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2572,7 +2731,7 @@ class IPCServer:
             logger.exception("Error force starting torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to force start torrent",
+                    error=str(e),
                     code="FORCE_START_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2602,7 +2761,7 @@ class IPCServer:
             logger.exception("Error in batch pause")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to batch pause",
+                    error=str(e),
                     code="BATCH_PAUSE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2632,7 +2791,7 @@ class IPCServer:
             logger.exception("Error in batch resume")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to batch resume",
+                    error=str(e),
                     code="BATCH_RESUME_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2670,7 +2829,7 @@ class IPCServer:
             logger.exception("Error in batch restart")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to batch restart",
+                    error=str(e),
                     code="BATCH_RESTART_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2701,7 +2860,7 @@ class IPCServer:
             logger.exception("Error in batch remove")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to batch remove",
+                    error=str(e),
                     code="BATCH_REMOVE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2955,7 +3114,7 @@ class IPCServer:
             logger.exception("Error adding tracker")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to add tracker",
+                    error=str(e),
                     code="ADD_TRACKER_FAILED",
                 ).model_dump(),
                 status=500,
@@ -3015,7 +3174,7 @@ class IPCServer:
             logger.exception("Error removing tracker")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to remove tracker",
+                    error=str(e),
                     code="REMOVE_TRACKER_FAILED",
                 ).model_dump(),
                 status=500,
@@ -3168,7 +3327,7 @@ class IPCServer:
             logger.exception("Error refreshing PEX for torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to refresh PEX",
+                    error=str(e),
                     code="PEX_REFRESH_ERROR",
                 ).model_dump(),
                 status=500,
@@ -3385,7 +3544,7 @@ class IPCServer:
             )
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to set DHT aggressive mode",
+                    error=str(e),
                     code="DHT_AGGRESSIVE_ERROR",
                 ).model_dump(),
                 status=500,
@@ -3628,7 +3787,7 @@ class IPCServer:
             logger.exception("Error restarting service %s", service_name)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or f"Failed to restart service {service_name}",
+                    error=str(e),
                     code="RESTART_SERVICE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -3675,7 +3834,7 @@ class IPCServer:
             logger.exception("Error getting services status")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get services status",
+                    error=str(e),
                     code="GET_SERVICES_STATUS_FAILED",
                 ).model_dump(),
                 status=500,
@@ -3923,7 +4082,7 @@ class IPCServer:
             logger.exception("Error getting metadata status for %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get metadata status",
+                    error=str(e),
                     code="METADATA_STATUS_ERROR",
                 ).model_dump(),
                 status=500,
@@ -4389,12 +4548,19 @@ class IPCServer:
                     status=500,
                 )
 
-            return web.json_response(  # type: ignore[attr-defined]
-                {
-                    "status": "added",
-                    "folder_key": result.data.get("folder_key", folder_path),
-                }
+            response_data = {
+                "status": "added",
+                "folder_key": result.data.get("folder_key", folder_path),
+            }
+            await self.emit_websocket_event(
+                EventType.XET_FOLDER_ADDED,
+                XetFolderEventData(
+                    folder_key=response_data["folder_key"],
+                    folder_path=folder_path,
+                    status="added",
+                ).model_dump(mode="json"),
             )
+            return web.json_response(response_data)  # type: ignore[attr-defined]
         except Exception as e:
             logger.exception("Error adding XET folder")
             return web.json_response(  # type: ignore[attr-defined]
@@ -4424,6 +4590,13 @@ class IPCServer:
                     status=500,
                 )
 
+            await self.emit_websocket_event(
+                EventType.XET_FOLDER_REMOVED,
+                XetFolderEventData(
+                    folder_key=folder_key,
+                    status="removed",
+                ).model_dump(mode="json"),
+            )
             return web.json_response(  # type: ignore[attr-defined]
                 {"status": "removed", "folder_key": folder_key}
             )
@@ -4492,9 +4665,126 @@ class IPCServer:
                     status=404,
                 )
 
-            return web.json_response(status)  # type: ignore[attr-defined]
+            typed = XetFolderStatusResponse.model_validate(
+                {
+                    "folder_key": folder_key,
+                    "downgrade_reason": status.get("downgrade_reason")
+                    if isinstance(status, dict)
+                    else None,
+                    "status": status,
+                }
+            )
+            return web.json_response(typed.model_dump(mode="json"))  # type: ignore[attr-defined]
         except Exception as e:
             logger.exception("Error getting XET folder status")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_FOLDER_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_xet_discovery_status(self, _request: Request) -> Response:
+        """Handle GET /api/v1/xet/discovery-status."""
+        try:
+            result = await self.executor.execute("xet.get_xet_discovery_status")
+
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to get XET discovery status",
+                        code="XET_DISCOVERY_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+
+            backends = (
+                result.data.get("backends", {}) if isinstance(result.data, dict) else {}
+            )
+            typed = XetDiscoveryStatusResponse.model_validate({"backends": backends})
+            return web.json_response(typed.model_dump(mode="json"))  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error getting XET discovery status")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_DISCOVERY_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_set_xet_workspace_policy(self, request: Request) -> Response:
+        """Handle POST /api/v1/xet/workspace-policy/{workspace_id_hex}."""
+        try:
+            workspace_id_hex = request.match_info["workspace_id_hex"]
+            payload = XetWorkspacePolicyRequest.model_validate(await request.json())
+            result = await self.executor.execute(
+                "xet.set_xet_workspace_policy",
+                workspace_id_hex=workspace_id_hex,
+                sync_mode=payload.sync_mode,
+                source_peers=payload.source_peers,
+                auth_scope=payload.auth_scope,
+                allowlist_path=payload.allowlist_path,
+                require_signed_metadata=payload.require_signed_metadata,
+                hash_algorithm=payload.hash_algorithm,
+            )
+
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to set XET workspace policy",
+                        code="XET_WORKSPACE_POLICY_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            data = result.data
+            if (
+                not isinstance(data, dict)
+                or "workspace_id" not in data
+                or "sync_mode" not in data
+            ):
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Workspace policy result is incomplete",
+                        code="XET_WORKSPACE_POLICY_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            typed = XetWorkspacePolicyResponse.model_validate(data)
+            return web.json_response(typed.model_dump(mode="json"))  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error setting XET workspace policy")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_WORKSPACE_POLICY_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_set_xet_folder_sync_mode(self, request: Request) -> Response:
+        """Handle POST /api/v1/xet/folders/{folder_key}/sync-mode."""
+        try:
+            folder_key = request.match_info["folder_key"]
+            payload = XetSyncModeRequest.model_validate(await request.json())
+            result = await self.executor.execute(
+                "xet.set_sync_mode_by_key",
+                folder_key=folder_key,
+                sync_mode=payload.sync_mode,
+                source_peers=payload.source_peers,
+            )
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to update XET sync mode",
+                        code="XET_FOLDER_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            return web.json_response(result.data or {})  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error updating XET sync mode")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=str(e),
@@ -4519,12 +4809,17 @@ class IPCServer:
             )
 
         stats = result.data.get("stats", {})
+        # Canonical manager returns download_rate/upload_rate; IPC exposes total_* for API
         response = GlobalStatsResponse(
             num_torrents=stats.get("num_torrents", 0),
             num_active=stats.get("num_active", 0),
             num_paused=stats.get("num_paused", 0),
-            total_download_rate=stats.get("total_download_rate", 0.0),
-            total_upload_rate=stats.get("total_upload_rate", 0.0),
+            total_download_rate=stats.get(
+                "download_rate", stats.get("total_download_rate", 0.0)
+            ),
+            total_upload_rate=stats.get(
+                "upload_rate", stats.get("total_upload_rate", 0.0)
+            ),
             total_downloaded=stats.get("total_downloaded", 0),
             total_uploaded=stats.get("total_uploaded", 0),
             stats=stats,
@@ -4549,7 +4844,7 @@ class IPCServer:
             logger.exception("Error pausing all torrents")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to pause all torrents",
+                    error=str(e),
                     code="GLOBAL_PAUSE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4573,7 +4868,7 @@ class IPCServer:
             logger.exception("Error resuming all torrents")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to resume all torrents",
+                    error=str(e),
                     code="GLOBAL_RESUME_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4597,7 +4892,7 @@ class IPCServer:
             logger.exception("Error force starting all torrents")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to force start all torrents",
+                    error=str(e),
                     code="GLOBAL_FORCE_START_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4629,7 +4924,7 @@ class IPCServer:
             logger.exception("Error setting global rate limits")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to set global rate limits",
+                    error=str(e),
                     code="GLOBAL_RATE_LIMITS_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4673,7 +4968,7 @@ class IPCServer:
             logger.exception("Error setting per-peer rate limit")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to set per-peer rate limit",
+                    error=str(e),
                     code="PER_PEER_RATE_LIMIT_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4713,7 +5008,7 @@ class IPCServer:
             logger.exception("Error getting per-peer rate limit")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get per-peer rate limit",
+                    error=str(e),
                     code="PER_PEER_RATE_LIMIT_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4749,7 +5044,7 @@ class IPCServer:
             logger.exception("Error setting all peers rate limit")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to set all peers rate limit",
+                    error=str(e),
                     code="ALL_PEERS_RATE_LIMIT_FAILED",
                 ).model_dump(),
                 status=500,
@@ -5007,6 +5302,12 @@ class IPCServer:
         # Add to connections
         self._websocket_connections.add(ws)
         self._websocket_subscriptions[ws] = set()
+        self._websocket_filters[ws] = {
+            "info_hash": None,
+            "priority_filter": None,
+            "rate_limit": None,
+            "last_sent_by_stream": {},
+        }
 
         # Start heartbeat task
         heartbeat_task = asyncio.create_task(
@@ -5027,12 +5328,22 @@ class IPCServer:
                             self._websocket_subscriptions[ws].update(
                                 sub_req.event_types
                             )
+                            self._websocket_filters[ws].update(
+                                {
+                                    "info_hash": sub_req.info_hash,
+                                    "priority_filter": sub_req.priority_filter,
+                                    "rate_limit": sub_req.rate_limit,
+                                }
+                            )
                             await ws.send_json(
                                 {
                                     "action": "subscribed",
                                     "event_types": [
                                         e.value for e in sub_req.event_types
                                     ],
+                                    "info_hash": sub_req.info_hash,
+                                    "priority_filter": sub_req.priority_filter,
+                                    "rate_limit": sub_req.rate_limit,
                                 }
                             )
 
@@ -5063,6 +5374,7 @@ class IPCServer:
             # Cleanup
             self._websocket_connections.discard(ws)
             self._websocket_subscriptions.pop(ws, None)
+            self._websocket_filters.pop(ws, None)
             if ws in self._websocket_heartbeat_tasks:
                 task = self._websocket_heartbeat_tasks.pop(ws)
                 task.cancel()
@@ -5120,6 +5432,12 @@ class IPCServer:
                 "torrent_started": EventType.TORRENT_STATUS_CHANGED,
                 "torrent_stopped": EventType.TORRENT_STATUS_CHANGED,
                 "torrent_completed": EventType.TORRENT_COMPLETED,
+                # Media events
+                "media_stream_started": EventType.MEDIA_STREAM_STARTED,
+                "media_stream_buffering": EventType.MEDIA_STREAM_BUFFERING,
+                "media_stream_ready": EventType.MEDIA_STREAM_READY,
+                "media_stream_stopped": EventType.MEDIA_STREAM_STOPPED,
+                "media_stream_error": EventType.MEDIA_STREAM_ERROR,
                 # Seeding events
                 "seeding_started": EventType.SEEDING_STARTED,
                 "seeding_stopped": EventType.SEEDING_STOPPED,
@@ -5147,6 +5465,16 @@ class IPCServer:
                 "service_restarted": EventType.SERVICE_RESTARTED,
                 "component_started": EventType.COMPONENT_STARTED,
                 "component_stopped": EventType.COMPONENT_STOPPED,
+                # XET folder events
+                "xet_folder_added": EventType.XET_FOLDER_ADDED,
+                "xet_folder_removed": EventType.XET_FOLDER_REMOVED,
+                "xet_metadata_received": EventType.XET_METADATA_READY,
+                "xet_metadata_ready": EventType.XET_METADATA_READY,
+                "folder_changed": EventType.XET_FOLDER_CHANGED,
+                "folder_sync_check": EventType.XET_SYNC_PROGRESS,
+                "folder_sync_started": EventType.XET_SYNC_PROGRESS,
+                "folder_sync_completed": EventType.XET_SYNC_PROGRESS,
+                "folder_sync_error": EventType.XET_SYNC_ERROR,
                 # System events
                 "system_start": EventType.SERVICE_STARTED,
                 "system_stop": EventType.SERVICE_STOPPED,
@@ -5174,7 +5502,22 @@ class IPCServer:
                                 for k, v in event.__dict__.items()
                                 if not k.startswith("_") and k != "event_type"
                             }
-                        await self.emit_websocket_event(ipc_event_type, event_data)
+                        event_data = self._normalize_xet_event_data(
+                            ipc_event_type, event_data
+                        )
+                        await self.emit_websocket_event(
+                            ipc_event_type,
+                            event_data,
+                            raw_type=event.event_type,
+                            event_id=getattr(event, "event_id", None),
+                            source=getattr(event, "source", None),
+                            priority=(
+                                event.priority.value
+                                if getattr(event, "priority", None) is not None
+                                else None
+                            ),
+                            correlation_id=getattr(event, "correlation_id", None),
+                        )
                 except Exception as e:
                     logger.debug(
                         "Error bridging event %s to IPC WebSocket: %s",
@@ -5211,10 +5554,34 @@ class IPCServer:
         except Exception as e:
             logger.warning("Failed to set up event bridge: %s", e)
 
+    def _normalize_xet_event_data(
+        self,
+        event_type: EventType,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return typed payload for XET websocket events."""
+        if event_type not in {
+            EventType.XET_FOLDER_ADDED,
+            EventType.XET_FOLDER_REMOVED,
+            EventType.XET_FOLDER_CHANGED,
+            EventType.XET_SYNC_PROGRESS,
+            EventType.XET_SYNC_ERROR,
+            EventType.XET_METADATA_READY,
+        }:
+            return data
+        typed = XetFolderEventData.model_validate(data or {})
+        return typed.model_dump(mode="json")
+
     async def emit_websocket_event(
         self,
         event_type: EventType,
         data: dict[str, Any],
+        *,
+        raw_type: Optional[str] = None,
+        event_id: Optional[str] = None,
+        source: Optional[str] = None,
+        priority: Optional[str] = None,
+        correlation_id: Optional[str] = None,
     ) -> None:
         """Emit event to all subscribed WebSocket connections."""
         if not self.websocket_enabled:
@@ -5223,6 +5590,11 @@ class IPCServer:
         event = WebSocketEvent(
             type=event_type,
             timestamp=time.time(),
+            raw_type=raw_type or event_type.value,
+            event_id=event_id,
+            source=source,
+            priority=priority,
+            correlation_id=correlation_id,
             data=data,
         )
 
@@ -5235,17 +5607,43 @@ class IPCServer:
 
             # Check if connection is subscribed to this event type
             subscriptions = self._websocket_subscriptions.get(ws, set())
-            if not subscriptions or event_type in subscriptions:
-                try:
-                    await ws.send_json(event.model_dump())
-                except Exception as e:
-                    logger.debug("Error sending WebSocket event: %s", e)
-                    disconnected.append(ws)
+            if subscriptions and event_type not in subscriptions:
+                continue
+
+            # Apply optional subscription filters (info_hash/priority/rate limit)
+            ws_filter = self._websocket_filters.get(ws, {})
+            info_hash_filter = ws_filter.get("info_hash")
+            if info_hash_filter and data.get("info_hash") != info_hash_filter:
+                continue
+
+            priority_filter = ws_filter.get("priority_filter")
+            if priority_filter and event.priority != priority_filter:
+                continue
+
+            rate_limit = ws_filter.get("rate_limit")
+            if isinstance(rate_limit, (int, float)) and rate_limit > 0:
+                now = time.time()
+                stream_key = (
+                    f"{event.raw_type or event.type.value}:{data.get('info_hash', '*')}"
+                )
+                last_sent_by_stream = ws_filter.setdefault("last_sent_by_stream", {})
+                last_sent = float(last_sent_by_stream.get(stream_key, 0.0))
+                min_interval = 1.0 / float(rate_limit)
+                if (now - last_sent) < min_interval:
+                    continue
+                last_sent_by_stream[stream_key] = now
+
+            try:
+                await ws.send_json(event.model_dump())
+            except Exception as e:
+                logger.debug("Error sending WebSocket event: %s", e)
+                disconnected.append(ws)
 
         # Cleanup disconnected connections
         for ws in disconnected:
             self._websocket_connections.discard(ws)
             self._websocket_subscriptions.pop(ws, None)
+            self._websocket_filters.pop(ws, None)
             if ws in self._websocket_heartbeat_tasks:
                 task = self._websocket_heartbeat_tasks.pop(ws)
                 task.cancel()
@@ -5332,6 +5730,11 @@ class IPCServer:
                     self.host,
                     self.port,
                 )
+            except RuntimeError:
+                # Verification failed (_server None or no sockets); clean up runner
+                if self.runner:
+                    await self.runner.cleanup()
+                raise
             except OSError as e:
                 # Handle binding errors (port in use, permission denied, etc.)
                 error_code = e.errno if hasattr(e, "errno") else None
@@ -5522,6 +5925,7 @@ class IPCServer:
 
         self._websocket_connections.clear()
         self._websocket_subscriptions.clear()
+        self._websocket_filters.clear()
         self._websocket_heartbeat_tasks.clear()
 
         # Stop server

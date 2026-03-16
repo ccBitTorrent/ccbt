@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
+import json
 import logging
 import os
 import socket
@@ -17,6 +19,7 @@ from typing import Any, Callable, Optional, Union
 
 from ccbt.config.config import get_config
 from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
+from ccbt.models import PeerInfo
 
 # Error message constants
 _ERROR_DHT_TRANSPORT_NOT_INITIALIZED = "DHT transport is not initialized"
@@ -535,6 +538,23 @@ class AsyncDHTClient:
 
         # BEP 27: Callback to check if a torrent is private
         self.is_private_torrent: Optional[Callable[[bytes], bool]] = None
+        self._xet_mutable_store: dict[bytes, bytes] = {}
+        # BEP 44: storage write tokens from get responses: key -> ([(token, addr), ...], expires_at)
+        self._storage_tokens: dict[
+            bytes, tuple[list[tuple[bytes, tuple[str, int]]], float]
+        ] = {}
+        # BEP 44 server: (addr, target_key) -> (token, expires_at) for put validation
+        self._storage_write_tokens: dict[
+            tuple[tuple[str, int], bytes], tuple[bytes, float]
+        ] = {}
+        # BEP 44 server: key -> seq for mutable put seq check
+        self._storage_seq: dict[bytes, int] = {}
+        # BEP 5 server: (addr, info_hash) -> (token, expires_at) for announce_peer
+        self._get_peers_tokens: dict[
+            tuple[tuple[str, int], bytes], tuple[bytes, float]
+        ] = {}
+        # BEP 5 server: info_hash -> list of (ip, port)
+        self._peers_store: dict[bytes, list[tuple[str, int]]] = {}
 
     def _generate_node_id(self) -> bytes:
         """Generate a random node ID."""
@@ -1023,6 +1043,119 @@ class AsyncDHTClient:
             self.routing_table.mark_node_bad(node.node_id)
             return None
 
+    async def _query_node_for_get(
+        self,
+        node: DHTNode,
+        key: bytes,
+        _public_key: Optional[bytes] = None,
+        seq: Optional[int] = None,
+    ) -> Optional[dict[bytes, Any]]:
+        """Query a single node for BEP 44 get (find_value).
+
+        Args:
+            node: DHT node to query
+            key: 20-byte target key (SHA-1 of value for immutable, SHA-1(pubkey+salt) for mutable)
+            public_key: Optional public key for mutable get (seq filter not yet used)
+            seq: Optional sequence number for mutable get (only return if stored seq > seq)
+
+        Returns:
+            Response dict or None on failure
+        """
+        try:
+            args: dict[bytes, Any] = {
+                b"id": self.node_id,
+                b"target": key,
+            }
+            if seq is not None:
+                args[b"seq"] = seq
+            response = await self._send_query(
+                (node.ip, node.port),
+                "get",
+                args,
+            )
+            if response and response.get(b"y") == b"r":
+                self.routing_table.mark_node_good(node.node_id)
+                return response
+            self.routing_table.mark_node_bad(node.node_id)
+            return None
+        except Exception as e:
+            self.logger.debug(
+                "get (BEP 44) query failed for %s:%s: %s",
+                node.ip,
+                node.port,
+                e,
+            )
+            self.routing_table.mark_node_bad(node.node_id)
+            return None
+
+    def _parse_get_response(
+        self,
+        response: dict[bytes, Any],
+        target_key: bytes,
+        _public_key: Optional[bytes] = None,
+        salt: Optional[bytes] = None,
+    ) -> Optional[tuple[Optional[bytes], Optional[bytes], bytes, bytes]]:
+        """Parse BEP 44 get response and validate value.
+
+        For mutable items, salt is not returned by the node (BEP 44); pass salt
+        if the item was stored with salt so signature verification can succeed.
+
+        Returns:
+            (value_bytes, token, nodes, nodes6) or None if invalid.
+            value_bytes may be None if node had no value but returned token and nodes.
+        """
+        if response.get(b"y") != b"r":
+            return None
+        r = response.get(b"r", {})
+        if not isinstance(r, dict):
+            return None
+        token = r.get(b"token")
+        nodes = r.get(b"nodes", b"")
+        nodes6 = r.get(b"nodes6", b"")
+        if not isinstance(nodes, bytes):
+            nodes = b""
+        if not isinstance(nodes6, bytes):
+            nodes6 = b""
+
+        v = r.get(b"v")
+        if v is None:
+            return (None, token, nodes, nodes6)
+
+        # Mutable: response has top-level k, v, seq, sig (salt not in response)
+        k = r.get(b"k")
+        if k is not None:
+            from ccbt.core.bencode import BencodeEncoder
+            from ccbt.discovery.dht_storage import (
+                calculate_mutable_key,
+                verify_mutable_data_signature,
+            )
+
+            seq = r.get(b"seq")
+            sig = r.get(b"sig")
+            data = v if isinstance(v, bytes) else BencodeEncoder().encode(v)
+            if not isinstance(data, bytes):
+                return None
+            salt_b = salt if salt is not None else b""
+            key_calc = calculate_mutable_key(k, salt_b)
+            if key_calc != target_key:
+                return None
+            if seq is None or not sig:
+                return None
+            if not verify_mutable_data_signature(data, k, sig, seq, salt_b):
+                return None
+            value_bytes = data if isinstance(v, bytes) else BencodeEncoder().encode(v)
+            return (value_bytes, token, nodes, nodes6)
+
+        # Immutable: key = SHA-1(v)
+        from ccbt.core.bencode import BencodeEncoder
+        from ccbt.discovery.dht_storage import calculate_immutable_key
+
+        value_bytes = v if isinstance(v, bytes) else BencodeEncoder().encode(v)
+        key_calc = calculate_immutable_key(value_bytes)
+        if key_calc != target_key:
+            return None
+        return (value_bytes, token, nodes, nodes6)
+
     def _is_closer(
         self,
         node_id1: bytes,
@@ -1043,6 +1176,197 @@ class AsyncDHTClient:
         dist1 = self.routing_table.distance(node_id1, target_id)
         dist2 = self.routing_table.distance(node_id2, target_id)
         return dist1 < dist2
+
+    async def _get_data_iterative(
+        self,
+        key: bytes,
+        public_key: Optional[bytes] = None,
+        salt: Optional[bytes] = None,
+        alpha: int = 3,
+        k: int = 8,
+        max_depth: int = 10,
+    ) -> tuple[Optional[bytes], list[tuple[bytes, tuple[str, int]]]]:
+        """Iterative BEP 44 get (find_value): find key in DHT and collect tokens for put.
+
+        Returns:
+            (value_bytes or None, list of (token, (ip, port)) for nodes that responded)
+        """
+        queried_nodes: set[bytes] = set()
+        closest_nodes = self.routing_table.get_closest_nodes(key, k)
+        closest_set: set[DHTNode] = set(closest_nodes)
+        found_value: Optional[bytes] = None
+        tokens_with_addr: list[tuple[bytes, tuple[str, int]]] = []
+        token_expires = time.time() + 900.0
+
+        for _ in range(max_depth):
+            unqueried = [n for n in closest_set if n.node_id not in queried_nodes]
+            if not unqueried:
+                break
+            query_nodes = unqueried[:alpha]
+            responses = await asyncio.gather(
+                *[
+                    self._query_node_for_get(node, key, public_key, None)
+                    for node in query_nodes
+                ]
+            )
+            for node, response in zip(query_nodes, responses):
+                queried_nodes.add(node.node_id)
+                if response is None:
+                    continue
+                parsed = self._parse_get_response(response, key, public_key, salt)
+                if parsed is None:
+                    continue
+                value_bytes, token, nodes_b, _nodes6_b = parsed
+                if token:
+                    tokens_with_addr.append((token, (node.ip, node.port)))
+                if value_bytes is not None:
+                    found_value = value_bytes
+                # Merge nodes from response into routing table and closest set
+                for i in range(0, len(nodes_b), 26):
+                    if i + 26 <= len(nodes_b):
+                        node_data = nodes_b[i : i + 26]
+                        nid = node_data[:20]
+                        ip_str = ".".join(str(b) for b in node_data[20:24])
+                        port_val = int.from_bytes(node_data[24:26], "big")
+                        new_node = DHTNode(nid, ip_str, port_val)
+                        self.routing_table.add_node(new_node)
+                        if len(closest_set) < k * 2:
+                            closest_set.add(new_node)
+                        else:
+                            farthest = max(
+                                list(closest_set),
+                                key=lambda n: self.routing_table.distance(
+                                    n.node_id, key
+                                ),
+                            )
+                            if self.routing_table.distance(
+                                nid, key
+                            ) < self.routing_table.distance(farthest.node_id, key):
+                                closest_set.discard(farthest)
+                                closest_set.add(new_node)
+            if found_value is not None:
+                break
+            if len(queried_nodes) >= k * 2:
+                break
+
+        if tokens_with_addr:
+            self._storage_tokens[key] = (tokens_with_addr, token_expires)
+        return (found_value, tokens_with_addr)
+
+    async def _get_storage_tokens_for_key(
+        self,
+        key: bytes,
+        min_count: int = 1,
+        public_key: Optional[bytes] = None,
+        salt: Optional[bytes] = None,
+    ) -> list[tuple[bytes, tuple[str, int]]]:
+        """Get write tokens for key by running BEP 44 get if needed.
+
+        Returns list of (token, (ip, port)) for nodes that responded (for put).
+        """
+        if key in self._storage_tokens:
+            tokens_list, expires_at = self._storage_tokens[key]
+            if time.time() < expires_at and len(tokens_list) >= min_count:
+                return tokens_list[:8]
+        _value, tokens_with_addr = await self._get_data_iterative(
+            key, public_key=public_key, salt=salt
+        )
+        return tokens_with_addr[:8]
+
+    async def _send_put(
+        self,
+        addr: tuple[str, int],
+        _key: bytes,  # unused for BEP 44 message; used by caller for token lookup
+        token: bytes,
+        value: bytes,
+        is_mutable: bool = False,
+        public_key: Optional[bytes] = None,
+        seq: int = 0,
+        signature: Optional[bytes] = None,
+        salt: Optional[bytes] = None,
+    ) -> bool:
+        """Send BEP 44 put request to one node. Returns True if stored successfully."""
+        if len(value) > 1000:
+            self.logger.debug("BEP 44 put: value too large (%d > 1000)", len(value))
+            return False
+        args: dict[bytes, Any] = {
+            b"id": self.node_id,
+            b"token": token,
+            b"v": value,
+        }
+        if is_mutable and public_key is not None and signature is not None:
+            args[b"k"] = public_key
+            args[b"seq"] = seq
+            args[b"sig"] = signature
+            if salt:
+                args[b"salt"] = salt
+        try:
+            response = await self._send_query(addr, "put", args)
+            if response is None:
+                return False
+            if response.get(b"y") == b"e":
+                err = response.get(b"e", [])
+                code = err[0] if isinstance(err, (list, tuple)) and err else None
+                self.logger.debug(
+                    "BEP 44 put error from %s:%s: %s", addr[0], addr[1], code
+                )
+                return False
+            return response.get(b"y") == b"r"
+        except Exception as e:
+            self.logger.debug("BEP 44 put failed for %s:%s: %s", addr[0], addr[1], e)
+            return False
+
+    async def _put_data_iterative(
+        self,
+        key: bytes,
+        value: bytes,
+        is_mutable: bool = False,
+        public_key: Optional[bytes] = None,
+        seq: int = 0,
+        signature: Optional[bytes] = None,
+        salt: Optional[bytes] = None,
+    ) -> int:
+        """Replicate value to DHT via BEP 44 put to nodes that returned tokens for key.
+
+        For immutable, key is ignored for token lookup; tokens are for target=SHA-1(value).
+        Returns number of nodes that accepted the put.
+        """
+        if len(value) > 1000:
+            self.logger.debug("BEP 44 put_data_iterative: value too large")
+            return 0
+        if is_mutable and (public_key is None or signature is None):
+            self.logger.debug("BEP 44 mutable put requires public_key and signature")
+            return 0
+
+        if is_mutable:
+            token_keys = await self._get_storage_tokens_for_key(
+                key, min_count=1, public_key=public_key, salt=salt
+            )
+        else:
+            from ccbt.discovery.dht_storage import calculate_immutable_key
+
+            target = calculate_immutable_key(value)
+            token_keys = await self._get_storage_tokens_for_key(target, min_count=1)
+        if not token_keys:
+            self.logger.debug("BEP 44 put_data_iterative: no tokens for key")
+            return 0
+
+        success = 0
+        for token, addr in token_keys:
+            ok = await self._send_put(
+                addr,
+                key,
+                token,
+                value,
+                is_mutable=is_mutable,
+                public_key=public_key,
+                seq=seq,
+                signature=signature,
+                salt=salt,
+            )
+            if ok:
+                success += 1
+        return success
 
     async def get_peers(
         self,
@@ -1534,41 +1858,65 @@ class AsyncDHTClient:
 
         return success_count
 
+    def _xet_chunk_dht_key(self, chunk_hash: bytes) -> bytes:
+        """Derive 20-byte DHT key from XET chunk hash (32 bytes).
+
+        Uses first 20 bytes of chunk_hash so store_chunk_hash and get_chunk_peers
+        use the same key for DHT and local store.
+        """
+        if len(chunk_hash) >= 20:
+            return chunk_hash[:20]
+        return chunk_hash + b"\x00" * (20 - len(chunk_hash))
+
     async def get_data(
         self,
         key: bytes,
         _public_key: Optional[bytes] = None,
+        _salt: Optional[bytes] = None,
     ) -> Optional[bytes]:
-        """Get data from DHT using BEP 44 get_mutable query.
+        """Get data from DHT (BEP 44) or local XET mutable store.
+
+        When dht_enable_storage is True, performs iterative BEP 44 get in the DHT
+        and returns the value if found; otherwise falls back to local store.
 
         Args:
             key: Data key (20 bytes)
-            _public_key: Optional public key for mutable data verification (unused in stub)
+            _public_key: Optional public key for mutable data verification
+            _salt: Optional salt for mutable items (not returned by nodes per BEP 44)
 
         Returns:
             Retrieved data bytes, or None if not found
 
         """
-        # TODO: Implement BEP 44 get_mutable query
-        # This is a stub implementation - should be properly implemented
-        # using BEP 44 protocol for mutable data storage
         self.logger.debug("get_data called for key: %s", key.hex()[:16])
-        # For now, return None (data not found)
-        return None
+        try:
+            if get_config().discovery.dht_enable_storage and len(key) == 20:
+                value, _ = await self._get_data_iterative(
+                    key, public_key=_public_key, salt=_salt
+                )
+                if value is not None:
+                    self._xet_mutable_store[key] = value
+                    return value
+        except Exception as e:
+            self.logger.debug("DHT get_data iterative failed: %s", e)
+        return self._xet_mutable_store.get(key)
 
     async def put_data(
         self,
         key: bytes,
         value: Union[bytes, dict[bytes, bytes]],
     ) -> int:
-        """Put data to DHT using BEP 44 put_mutable query.
+        """Put data into local store and optionally replicate via BEP 44 DHT put.
+
+        When dht_enable_storage is True and not read-only, also performs BEP 44
+        immutable put to the DHT (get tokens for SHA-1(value), then put to nodes).
 
         Args:
-            key: Data key (20 bytes)
+            key: Data key (20 bytes) for local store
             value: Data value to store (bytes or dict for BEP 44 format)
 
         Returns:
-            Number of successful storage operations (0 if failed or read-only)
+            Number of successful storage operations (1 if stored locally, plus DHT count)
 
         """
         # BEP 43: Read-only nodes skip put_data
@@ -1578,16 +1926,86 @@ class AsyncDHTClient:
             )
             return 0
 
-        # TODO: Implement BEP 44 put_mutable query
-        # This is a stub implementation - should be properly implemented
-        # using BEP 44 protocol for mutable data storage
         self.logger.debug(
             "put_data called for key: %s, value size: %d",
             key.hex()[:16],
             len(value) if isinstance(value, bytes) else len(str(value)),
         )
-        # For now, return 0 (not implemented)
-        return 0
+        if isinstance(value, bytes):
+            encoded_value = value
+        else:
+            # BEP 44: immutable key is SHA-1(bencode(v)); use bencoding for
+            # cross-node interoperability (JSON would yield a different key).
+            encoded_value = BencodeEncoder().encode(value)
+        self._xet_mutable_store[key] = encoded_value
+        local_count = 1
+
+        try:
+            if get_config().discovery.dht_enable_storage and len(encoded_value) <= 1000:
+                dht_count = await self._put_data_iterative(
+                    key, encoded_value, is_mutable=False
+                )
+                return local_count + dht_count
+        except Exception as e:
+            self.logger.debug("DHT put_data iterative failed: %s", e)
+
+        self.logger.debug(
+            "put_data stored locally only (no DHT replication): dht_enable_storage=%s, value_size=%d (BEP 44 limit 1000)",
+            get_config().discovery.dht_enable_storage,
+            len(encoded_value),
+        )
+        return local_count
+
+    async def store_chunk_hash(
+        self, chunk_hash: bytes, metadata: dict[str, Any]
+    ) -> int:
+        """Store XET chunk availability metadata under a stable chunk key."""
+        key = self._xet_chunk_dht_key(chunk_hash)
+        existing_records: list[dict[str, Any]] = []
+        existing = await self.get_data(key)
+        if existing is not None:
+            with contextlib.suppress(Exception):
+                parsed_existing = json.loads(existing.decode("utf-8"))
+                if isinstance(parsed_existing, list):
+                    existing_records = [
+                        record for record in parsed_existing if isinstance(record, dict)
+                    ]
+        existing_records.append(dict(metadata))
+        encoded = json.dumps(
+            existing_records,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return await self.put_data(key, encoded)
+
+    async def get_chunk_peers(self, chunk_hash: bytes) -> list[PeerInfo]:
+        """Return XET chunk peers stored under the chunk key."""
+        key = self._xet_chunk_dht_key(chunk_hash)
+        encoded = await self.get_data(key)
+        if encoded is None:
+            return []
+        try:
+            parsed = json.loads(encoded.decode("utf-8"))
+        except Exception:
+            self.logger.debug("Failed to decode XET chunk peers", exc_info=True)
+            return []
+        if not isinstance(parsed, list):
+            return []
+        peers: list[PeerInfo] = []
+        for entry in parsed:
+            if not isinstance(entry, dict):
+                continue
+            ip = entry.get("ip")
+            port = entry.get("port")
+            if isinstance(ip, str) and isinstance(port, int):
+                peers.append(
+                    PeerInfo(
+                        ip=ip,
+                        port=port,
+                        peer_source="dht-xet",
+                    )
+                )
+        return peers
 
     async def index_infohash(
         self,
@@ -1769,28 +2187,331 @@ class AsyncDHTClient:
             self.pending_queries.pop(tid, None)
 
     def handle_response(self, data: bytes, _addr: tuple[str, int]) -> None:
-        """Handle incoming DHT response."""
+        """Handle incoming DHT response (legacy; use handle_datagram)."""
+        self.handle_datagram(data, _addr)
+
+    def handle_datagram(self, data: bytes, addr: tuple[str, int]) -> None:
+        """Handle incoming UDP datagram: dispatch query (y=q) or response (y=r/e)."""
         try:
-            # Decode message
-            decoder = BencodeDecoder(data)
-            message = decoder.decode()
-
-            # Check if it's a response
-            if message.get(b"y") != b"r":
-                return
-
-            # Get transaction ID
-            tid = message.get(b"t")
-            if not tid or tid not in self.pending_queries:
-                return
-
-            # Set response
-            future = self.pending_queries[tid]
-            if not future.done():
-                future.set_result(message)
-
+            message = BencodeDecoder(data).decode()
         except Exception as e:
-            self.logger.debug("Failed to parse DHT response: %s", e)
+            self.logger.debug("Failed to parse DHT datagram: %s", e)
+            return
+        y = message.get(b"y")
+        if y == b"q":
+            self._handle_request(message, addr)
+            return
+        if y in (b"r", b"e"):
+            tid = message.get(b"t")
+            if tid and tid in self.pending_queries:
+                future = self.pending_queries[tid]
+                if not future.done():
+                    future.set_result(message)
+            return
+
+    def _handle_request(self, message: dict[bytes, Any], addr: tuple[str, int]) -> None:
+        """Dispatch incoming DHT query to get/put/find_node/get_peers/announce_peer."""
+        a = message.get(b"a")
+        t = message.get(b"t")
+        if not isinstance(a, dict) or t is None:
+            return
+        if not get_config().discovery.dht_enable_storage:
+            return
+        node_id = a.get(b"id")
+        if node_id is not None and len(node_id) == 20:
+            with contextlib.suppress(Exception):
+                self.routing_table.add_node(DHTNode(node_id, addr[0], addr[1]))
+        q = message.get(b"q")
+        if q == b"get":
+            self._handle_get_request(a, t, addr)
+        elif q == b"put":
+            self._handle_put_request(a, t, addr)
+        elif q == b"find_node":
+            self._handle_find_node_request(a, t, addr)
+        elif q == b"get_peers":
+            self._handle_get_peers_request(a, t, addr)
+        elif q == b"announce_peer":
+            self._handle_announce_peer_request(a, t, addr)
+
+    def _send_error(
+        self,
+        t: Any,
+        addr: tuple[str, int],
+        code: int,
+        msg: bytes,
+    ) -> None:
+        """Send BEP 44/5 error response (y=e, e=[code, msg])."""
+        if self.transport is None:
+            return
+        try:
+            err_msg = {
+                b"t": t,
+                b"y": b"e",
+                b"e": [code, msg],
+            }
+            self.transport.sendto(BencodeEncoder().encode(err_msg), addr)
+        except Exception as e:
+            self.logger.debug("Failed to send DHT error: %s", e)
+
+    def _issue_storage_token(self, addr: tuple[str, int], target: bytes) -> bytes:
+        """Issue and store a BEP 44 write token for (addr, target)."""
+        raw = (addr[0] + str(addr[1])).encode() + target
+        token = hmac.new(self.token_secret, raw, digestmod="sha256").digest()[:32]
+        self._storage_write_tokens[(addr, target)] = (
+            token,
+            time.time() + 900.0,
+        )
+        return token
+
+    def _build_compact_nodes(
+        self, target_id: bytes, count: int = 8
+    ) -> tuple[bytes, bytes]:
+        """Build compact nodes (26 bytes/node) and nodes6 (38 bytes/node) for target."""
+        closest = self.routing_table.get_closest_nodes(target_id, count)
+        nodes_list: list[bytes] = []
+        for n in closest:
+            with contextlib.suppress(OSError, ValueError):
+                nodes_list.append(
+                    n.node_id
+                    + socket.inet_pton(socket.AF_INET, n.ip)
+                    + n.port.to_bytes(2, "big")
+                )
+        nodes = b"".join(nodes_list)
+        nodes6_list: list[bytes] = []
+        for n in closest:
+            ipv6_str = getattr(n, "ipv6", None)
+            port6_val = getattr(n, "port6", None)
+            if (
+                getattr(n, "has_ipv6", False)
+                and ipv6_str is not None
+                and port6_val is not None
+            ):
+                with contextlib.suppress(OSError, ValueError):
+                    nodes6_list.append(
+                        n.node_id
+                        + socket.inet_pton(socket.AF_INET6, ipv6_str)
+                        + port6_val.to_bytes(2, "big")
+                    )
+        nodes6 = b"".join(nodes6_list)
+        return (nodes, nodes6)
+
+    def _handle_get_request(
+        self,
+        a: dict[bytes, Any],
+        t: Any,
+        addr: tuple[str, int],
+    ) -> None:
+        """Handle BEP 44 get: return token, nodes, nodes6, and value if stored."""
+        target = a.get(b"target")
+        if not target or len(target) != 20:
+            self._send_error(t, addr, 203, b"invalid target")
+            return
+        token = self._issue_storage_token(addr, target)
+        nodes, nodes6 = self._build_compact_nodes(target)
+        r: dict[bytes, Any] = {
+            b"id": self.node_id,
+            b"token": token,
+            b"nodes": nodes,
+            b"nodes6": nodes6,
+        }
+        if target in self._xet_mutable_store:
+            r[b"v"] = self._xet_mutable_store[target]
+        if self.transport is None:
+            return
+        try:
+            msg = {b"t": t, b"y": b"r", b"r": r}
+            self.transport.sendto(BencodeEncoder().encode(msg), addr)
+        except Exception as e:
+            self.logger.debug("Failed to send get response: %s", e)
+
+    def _handle_put_request(
+        self,
+        a: dict[bytes, Any],
+        t: Any,
+        addr: tuple[str, int],
+    ) -> None:
+        """Handle BEP 44 put: verify token/size/signature/seq, store value, send success or error."""
+        if self.read_only:
+            self._send_error(t, addr, 203, b"read-only node")
+            return
+        token = a.get(b"token")
+        v = a.get(b"v")
+        if token is None or v is None:
+            self._send_error(t, addr, 203, b"missing token or value")
+            return
+        from ccbt.discovery.dht_storage import (
+            MAX_STORAGE_VALUE_SIZE,
+            calculate_immutable_key,
+            calculate_mutable_key,
+            verify_mutable_data_signature,
+        )
+
+        max_size = getattr(get_config().discovery, "dht_max_storage_size", None)
+        if max_size is None:
+            max_size = MAX_STORAGE_VALUE_SIZE
+        value_bytes = v if isinstance(v, bytes) else BencodeEncoder().encode(v)
+        if len(value_bytes) > max_size:
+            self._send_error(t, addr, 205, b"message too big")
+            return
+        salt_val = a.get(b"salt")
+        if salt_val is not None and len(salt_val) > 64:
+            self._send_error(t, addr, 207, b"salt too big")
+            return
+        is_mutable = a.get(b"k") is not None
+        if is_mutable:
+            key = calculate_mutable_key(a[b"k"], a.get(b"salt", b""))
+        else:
+            key = calculate_immutable_key(value_bytes)
+        lookup_key = (addr, key)
+        if (
+            lookup_key not in self._storage_write_tokens
+            or self._storage_write_tokens[lookup_key][0] != token
+        ):
+            self._send_error(t, addr, 203, b"invalid token")
+            return
+        if is_mutable:
+            k = a.get(b"k")
+            seq = a.get(b"seq")
+            sig = a.get(b"sig")
+            salt_b = a.get(b"salt", b"")
+            if k is None or seq is None or sig is None:
+                self._send_error(t, addr, 203, b"missing k/seq/sig")
+                return
+            if not verify_mutable_data_signature(value_bytes, k, sig, seq, salt_b):
+                self._send_error(t, addr, 206, b"invalid signature")
+                return
+            cas = a.get(b"cas")
+            if cas is not None and self._storage_seq.get(key, 0) != cas:
+                self._send_error(t, addr, 301, b"cas mismatch")
+                return
+            if seq <= self._storage_seq.get(key, 0):
+                self._send_error(t, addr, 302, b"sequence number less than current")
+                return
+        self._xet_mutable_store[key] = value_bytes
+        if is_mutable:
+            self._storage_seq[key] = seq
+        if self.transport is None:
+            return
+        try:
+            success_msg = {
+                b"t": t,
+                b"y": b"r",
+                b"r": {b"id": self.node_id},
+            }
+            self.transport.sendto(BencodeEncoder().encode(success_msg), addr)
+        except Exception as e:
+            self.logger.debug("Failed to send put response: %s", e)
+
+    def _handle_find_node_request(
+        self,
+        a: dict[bytes, Any],
+        t: Any,
+        addr: tuple[str, int],
+    ) -> None:
+        """Handle BEP 5 find_node: return nodes and nodes6."""
+        target = a.get(b"target")
+        if not target or len(target) != 20:
+            return
+        nodes, nodes6 = self._build_compact_nodes(target)
+        r = {
+            b"id": self.node_id,
+            b"nodes": nodes,
+            b"nodes6": nodes6,
+        }
+        if self.transport is None:
+            return
+        try:
+            self.transport.sendto(
+                BencodeEncoder().encode({b"t": t, b"y": b"r", b"r": r}),
+                addr,
+            )
+        except Exception as e:
+            self.logger.debug("Failed to send find_node response: %s", e)
+
+    def _issue_get_peers_token(self, addr: tuple[str, int], info_hash: bytes) -> bytes:
+        """Issue and store a BEP 5 get_peers token for (addr, info_hash)."""
+        raw = (addr[0] + str(addr[1])).encode() + info_hash
+        token = hmac.new(self.token_secret, raw, digestmod="sha256").digest()[:32]
+        self._get_peers_tokens[(addr, info_hash)] = (
+            token,
+            time.time() + 900.0,
+        )
+        return token
+
+    def _handle_get_peers_request(
+        self,
+        a: dict[bytes, Any],
+        t: Any,
+        addr: tuple[str, int],
+    ) -> None:
+        """Handle BEP 5 get_peers: return token, nodes, nodes6, and values if stored."""
+        info_hash = a.get(b"info_hash")
+        if not info_hash or len(info_hash) != 20:
+            return
+        token = self._issue_get_peers_token(addr, info_hash)
+        nodes, nodes6 = self._build_compact_nodes(info_hash)
+        peers = self._peers_store.get(info_hash, [])[:50]
+        values = []
+        for ip, port in peers:
+            with contextlib.suppress(OSError, ValueError):
+                values.append(
+                    socket.inet_pton(socket.AF_INET, ip) + port.to_bytes(2, "big")
+                )
+        r: dict[bytes, Any] = {
+            b"id": self.node_id,
+            b"token": token,
+            b"nodes": nodes,
+            b"nodes6": nodes6,
+        }
+        if values:
+            r[b"values"] = values
+        if self.transport is None:
+            return
+        try:
+            self.transport.sendto(
+                BencodeEncoder().encode({b"t": t, b"y": b"r", b"r": r}),
+                addr,
+            )
+        except Exception as e:
+            self.logger.debug("Failed to send get_peers response: %s", e)
+
+    def _handle_announce_peer_request(
+        self,
+        a: dict[bytes, Any],
+        t: Any,
+        addr: tuple[str, int],
+    ) -> None:
+        """Handle BEP 5 announce_peer: verify token, store peer, send success."""
+        info_hash = a.get(b"info_hash")
+        token = a.get(b"token")
+        port = a.get(b"port")
+        if not info_hash or len(info_hash) != 20 or not token:
+            return
+        if not isinstance(port, int):
+            return
+        key = (addr, info_hash)
+        if key not in self._get_peers_tokens or self._get_peers_tokens[key][0] != token:
+            return
+        peer = (addr[0], port)
+        self._peers_store.setdefault(info_hash, [])
+        if peer not in self._peers_store[info_hash]:
+            self._peers_store[info_hash].append(peer)
+        self._peers_store[info_hash] = self._peers_store[info_hash][-100:]
+        if self.transport is None:
+            return
+        try:
+            self.transport.sendto(
+                BencodeEncoder().encode(
+                    {
+                        b"t": t,
+                        b"y": b"r",
+                        b"r": {b"id": self.node_id},
+                    }
+                ),
+                addr,
+            )
+        except Exception as e:
+            self.logger.debug("Failed to send announce_peer response: %s", e)
 
     def _calculate_adaptive_interval(self) -> float:
         """Calculate adaptive lookup interval based on peer count and swarm health.
@@ -1882,6 +2603,31 @@ class AsyncDHTClient:
         ]
         for info_hash in expired_tokens:
             del self.tokens[info_hash]
+
+        # Clean up expired BEP 44 storage tokens
+        expired_storage = [
+            key
+            for key, (_, expires_at) in self._storage_tokens.items()
+            if current_time > expires_at
+        ]
+        for key in expired_storage:
+            del self._storage_tokens[key]
+
+        # Clean up expired BEP 44 server write tokens
+        expired_write = [
+            k
+            for k, (_, exp) in self._storage_write_tokens.items()
+            if current_time > exp
+        ]
+        for k in expired_write:
+            del self._storage_write_tokens[k]
+
+        # Clean up expired BEP 5 get_peers tokens
+        expired_gp = [
+            k for k, (_, exp) in self._get_peers_tokens.items() if current_time > exp
+        ]
+        for k in expired_gp:
+            del self._get_peers_tokens[k]
 
         # Remove bad nodes
         bad_nodes = [
@@ -2055,7 +2801,7 @@ class DHTProtocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         """Handle incoming UDP datagram."""
-        self.client.handle_response(data, addr)
+        self.client.handle_datagram(data, addr)
 
     def error_received(self, exc: Exception) -> None:
         """Handle UDP error."""

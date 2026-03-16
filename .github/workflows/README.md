@@ -2,57 +2,60 @@
 
 This document provides a comprehensive overview of all GitHub Actions workflows in the ccBitTorrent project.
 
+**Policy**: All testing and builds run **manually** (via `workflow_dispatch`) for anything not targeting `main`. PRs to `main` run the same checks but **require manual approval** (environment `approval-required`) before jobs execute. See [Manual approval (approval-required)](#manual-approval-approval-required).
+
 ## Table of Contents
 
+- [Manual approval (approval-required)](#manual-approval-approval-required)
 - [Testing & Quality Assurance](#testing--quality-assurance)
 - [Build & Packaging](#build--packaging)
 - [Release & Deployment](#release--deployment)
 
 ---
 
+## Manual approval (approval-required)
+
+Workflows that run on **PR to main** use the environment **`approval-required`**. Before those jobs run, a configured reviewer must approve the run in the Actions UI.
+
+**Setup**: In the repository go to **Settings → Environments → New environment** → name it `approval-required` → enable **Required reviewers** and add the users or teams who may approve runs. Jobs that reference this environment will then wait for approval before executing.
+
+---
+
 ## Testing & Quality Assurance
 
 ### Test Workflow (test.yml)
-- **Triggers**: Push/PR to `dev` branch, `workflow_dispatch`
+- **Triggers**: PR to `main` (runs after approval), `workflow_dispatch`
 - **Purpose**: Run full test suite with coverage across multiple platforms and Python versions
 - **Runs**:
   - All tests except compatibility tests (excluded with `-m "not compatibility"`)
   - Coverage reporting (XML, HTML, terminal)
   - Test matrix: Ubuntu, Windows, macOS × Python 3.8-3.12 (reduced matrix for Windows/macOS)
 - **Rationale**:
-  - Tests run on `dev` branch (development branch), avoiding duplicate runs when merging to main
-  - Excludes compatibility tests which run separately on schedule/manual trigger
-  - Windows tests use `shell: bash` to handle line continuation correctly
+  - For branches other than `main`, run tests manually via **Actions → Test → Run workflow**
+  - PRs to `main` trigger the workflow but require manual approval before jobs run
 
 ### CI/CD Pipeline (ci.yml)
-- **Triggers**: Push/PR to `main` and `dev` branches
+- **Triggers**: PR to `main` (runs after approval), `workflow_dispatch`
 - **Purpose**: Code quality checks (linting and type checking)
 - **Runs**:
   - **Lint job**: Ruff linting with auto-fix and formatting checks
   - **Type-check job**: Ty type checking with concise output
 - **Rationale**:
-  - Ensures code quality before merging
-  - Runs on both main and dev to catch issues early
-  - Fast feedback loop for developers
+  - For branches other than `main`, run CI manually via **Actions → CI/CD Pipeline → Run workflow**
+  - PRs to `main` require approval before lint/type-check jobs run
 
 ### Compatibility Workflow (compatibility.yml)
-- **Triggers**: 
-  - Push to `main` branch
-  - `workflow_dispatch` (manual)
+- **Triggers**: `workflow_dispatch` only (no PR/push triggers)
 - **Purpose**: Test compatibility across different environments and Python versions
 - **Runs**:
   - **docker-test job**: Tests in Docker containers across Python 3.8-3.12 and OS variants (Ubuntu, Debian, Alpine)
   - **live-deployment-test job**: Builds package from wheel, tests installation, runs smoke tests (main branch only)
   - **compatibility-tests job**: Runs compatibility test suite (network tests, may be flaky)
 - **Rationale**:
-  - Ensures compatibility across different OS environments
-  - Tests package installation and basic functionality
-  - Compatibility tests are marked `continue-on-error: true` due to potential network flakiness
+  - Run manually when needed from **Actions → Compatibility → Run workflow**
 
 ### Benchmark Workflow (benchmark.yml)
-- **Triggers**:
-  - Push to `main` branch (when code or performance tests change)
-  - `workflow_dispatch` (manual)
+- **Triggers**: `workflow_dispatch` only (manual)
 - **Purpose**: Performance benchmarking and trend tracking
 - **Runs**:
   - Hash verification benchmark
@@ -61,45 +64,32 @@ This document provides a comprehensive overview of all GitHub Actions workflows 
   - Loopback throughput benchmark
   - Encryption benchmark
 - **Rationale**:
-  - Tracks performance trends over time
-  - Runs in `--quick` mode for CI speed
-  - Automatically commits benchmark results to repository (main branch only)
-  - Results stored in `docs/reports/benchmarks/`
+  - Run manually when needed; can commit results to the repo when run from `main`
 
 ### Security Workflow (security.yml)
-- **Triggers**:
-  - Push/PR to `main` branch
-  - Weekly schedule
-  - `workflow_dispatch` (manual)
+- **Triggers**: PR to `main` (runs after approval), weekly schedule, `workflow_dispatch`
 - **Purpose**: Security scanning and vulnerability detection
 - **Runs**:
   - Bandit security scanning (medium severity threshold)
   - Safety dependency vulnerability checking
 - **Rationale**:
-  - Regular security audits
-  - Detects known vulnerabilities in dependencies
-  - Weekly schedule ensures ongoing security monitoring
+  - PRs to `main` and scheduled runs use the `approval-required` environment
 
 ---
 
 ## Build & Packaging
 
 ### Build Workflow (build.yml)
-- **Triggers**:
-  - Push/PR to `main` branch
-  - Tag push (`v*`)
-  - `workflow_dispatch` (manual)
+- **Triggers**: `workflow_dispatch` only (all builds are manual)
 - **Purpose**: Build packages and executables
 - **Runs**:
   - **build-package job**: Builds wheel and source distribution across Ubuntu, Windows, macOS
-  - **build-windows-exe job**: Builds Windows executable (`bitonic.exe`) using PyInstaller (main branch or tags only)
+  - **build-windows-exe job**: Builds Windows executable (`bitonic.exe`) using PyInstaller when run from `main`
 - **Rationale**:
-  - Validates package builds on all platforms
-  - Creates distributable artifacts
-  - Windows executable only built for releases (main branch or version tags)
+  - No automatic build on push or tags; run from **Actions → Build → Run workflow** when needed
 
 ### Documentation Workflow (build-documentation.yml)
-- **Triggers**: `workflow_dispatch` (manual only)
+- **Triggers**: PR to `main` (runs after approval), `workflow_dispatch`
 - **Purpose**: Build documentation for testing and verification
 - **Runs**:
   - Generate coverage report (for docs embedding)
@@ -107,10 +97,7 @@ This document provides a comprehensive overview of all GitHub Actions workflows 
   - Build documentation using patched build script
   - Upload documentation artifacts
 - **Rationale**:
-  - Manual trigger allows testing documentation builds from any branch
-  - Documentation is automatically published to Read the Docs when changes are pushed
-  - Coverage and Bandit reports are embedded in documentation
-  - No GitHub Pages deployment (Read the Docs handles publishing)
+  - PRs to `main` trigger the workflow but require approval; or run manually from any branch
 
 ---
 
@@ -130,11 +117,8 @@ This document provides a comprehensive overview of all GitHub Actions workflows 
   - Reminds maintainers of release checklist items
 
 ### Version Check Workflow (version-check.yml)
-- **Triggers**: 
-  - Pull request to `main` branch only (when version files change) - **NOT on PRs to dev**
-  - Push to `main` or `dev` branches (when version files change)
-  - Merge group events on `dev` branch
-- **Purpose**: Continuous version consistency validation
+- **Triggers**: PR to `main` (when version files change, runs after approval), `workflow_dispatch`
+- **Purpose**: Version consistency validation
 - **Runs**:
   - Extracts version from `pyproject.toml` and `ccbt/__init__.py`
   - Verifies version consistency
@@ -179,19 +163,15 @@ This document provides a comprehensive overview of all GitHub Actions workflows 
   - Automated release notes generation
 
 ### Publish Dev Branch to PyPI (publish-pypi-dev.yml)
-- **Triggers**:
-  - Push to `dev` branch (when code or version files change)
-  - `workflow_dispatch` (manual)
-- **Purpose**: Publish dev branch versions to PyPI as nightly builds
+- **Triggers**: PR to `main` (runs after approval), `workflow_dispatch`
+- **Purpose**: Publish to PyPI as nightly builds
 - **Runs**:
-  - Validates version for dev branch (must be > 0.0.0)
-  - Builds package
-  - Publishes to PyPI using `uv publish`
+  - Validates CI/CD Pipeline and Test checks have passed (for PR to main)
+  - Builds package and publishes to PyPI using `uv publish`
   - Requires `PYPI_API_TOKEN` secret
 - **Rationale**:
-  - Allows users to test latest dev branch features
-  - Nightly builds for continuous integration testing
-  - Dev branch versions are marked as pre-release/nightly
+  - Nightly publish is manual by default; on PR to main it can run after approval
+  - Requires `approval-required` environment to be configured
 
 ### Publish to PyPI (publish-pypi.yml)
 - **Triggers**:
@@ -218,7 +198,7 @@ This document provides a comprehensive overview of all GitHub Actions workflows 
   - **deploy-pypi job**:
     - Builds package
     - Publishes to PyPI using trusted publishing (OIDC)
-    - Runs in `production` environment
+    - Runs in `pypi` environment (GitHub Environment for trusted publishing)
   - **create-release-assets job**:
     - Downloads Windows executable artifact
     - Uploads package files and executable to GitHub Release
@@ -226,6 +206,7 @@ This document provides a comprehensive overview of all GitHub Actions workflows 
   - Production deployment with trusted publishing (no tokens needed)
   - Creates complete release with all assets
   - Environment protection ensures only authorized deployments
+- **Setup**: Create the **`pypi`** environment so the deploy job can run and IDE validation passes: **Settings → Environments → New environment** → name it `pypi`. Configure [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) with this repository and environment name. Optionally enable **Required reviewers** for the `pypi` environment to gate production publishes.
 
 ---
 
@@ -233,27 +214,26 @@ This document provides a comprehensive overview of all GitHub Actions workflows 
 
 ### Typical Release Flow
 
-1. **Development** → Code changes on `dev` branch
-2. **Testing** → `test.yml` runs on `dev` branch
-3. **Version Check** → `version-check.yml` validates version consistency
-4. **Release to Main** → `release-to-main.yml` bumps version and creates tag
+1. **Development** → Code changes on `dev` (or feature branches)
+2. **Testing** → Run `test.yml` and `ci.yml` manually, or open PR to `main` and get approval to run checks
+3. **Version Check** → Run `version-check.yml` manually or as part of PR to `main` (after approval)
+4. **Release to Main** → `release-to-main.yml` bumps version and creates tag (manual)
 5. **Release Validation** → `release.yml` runs comprehensive checks
-6. **Build** → `build.yml` creates packages and executables
+6. **Build** → `build.yml` run manually to create packages and executables
 7. **Deploy** → `deploy.yml` publishes to PyPI and creates GitHub Release
 
 ### Documentation Flow
 
 1. **Code Changes** → Documentation source files updated
-2. **Manual Build** → `build-documentation.yml` can be triggered for testing
-3. **Automatic Publish** → Read the Docs automatically builds and publishes when changes are pushed
+2. **Build** → Run `build-documentation.yml` manually or via PR to `main` (after approval)
+3. **Publish** → Read the Docs builds from the repository when configured
 
 ### Continuous Quality
 
-- **CI Pipeline** (`ci.yml`) runs on every push/PR for fast feedback
-- **Version Check** (`version-check.yml`) ensures version consistency
-- **Security** (`security.yml`) runs weekly and on main branch changes
-- **Compatibility** (`compatibility.yml`) runs weekly and on main branch changes
-- **Benchmarks** (`benchmark.yml`) track performance trends
+- **CI Pipeline** (`ci.yml`) and **Test** (`test.yml`): PR to `main` (with approval) or manual run
+- **Version Check** (`version-check.yml`): PR to `main` (with approval) or manual run
+- **Security** (`security.yml`): PR to `main` (with approval), weekly schedule, or manual run
+- **Compatibility** (`compatibility.yml`) and **Benchmarks** (`benchmark.yml`): manual run only
 
 ---
 
@@ -267,7 +247,7 @@ All workflows now use explicit `permissions` blocks following the principle of l
 - **release-to-main.yml**: `contents: write` (to commit version bumps and create tags)
 - **release.yml** (create-release job): `contents: write` (to create GitHub releases)
 - **deploy.yml**:
-  - `deploy-pypi` job: `id-token: write` (for PyPI trusted publishing via OIDC), `production` environment
+  - `deploy-pypi` job: `id-token: write` (for PyPI trusted publishing via OIDC), `pypi` environment
   - `create-release-assets` job: `contents: write` (to upload release assets)
 
 ### Workflows with Read-Only Permissions

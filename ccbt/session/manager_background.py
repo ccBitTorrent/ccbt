@@ -123,7 +123,17 @@ class ManagerBackgroundTasks:
             total_downloaded += torrent.downloaded_bytes
             total_uploaded += torrent.uploaded_bytes
             total_left += torrent.left_bytes
-            total_peers += len(torrent.peers)
+            cached_peer_count = getattr(torrent, "_cached_status", {}).get(
+                "connected_peers",
+                None,
+            )
+            if cached_peer_count is None:
+                peer_state = getattr(torrent, "peers", None)
+                if isinstance(peer_state, dict):
+                    cached_peer_count = peer_state.get("count", 0)
+                else:
+                    cached_peer_count = len(peer_state) if peer_state else 0
+            total_peers += int(cached_peer_count or 0)
             total_download_rate += torrent.download_rate
             total_upload_rate += torrent.upload_rate
 

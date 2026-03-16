@@ -798,6 +798,30 @@ class TestDaemonSessionAdapterXETOps:
 
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_set_xet_folder_sync_mode_delegates(self, adapter, mock_ipc_client):
+        """Test set_xet_folder_sync_mode delegates to IPC client."""
+        folder_key = "/test/folder"
+        expected = {
+            "folder_key": folder_key,
+            "sync_mode": "designated",
+            "source_peers": ["peer-a"],
+        }
+        mock_ipc_client.set_xet_folder_sync_mode = AsyncMock(return_value=expected)
+
+        result = await adapter.set_xet_folder_sync_mode(
+            folder_key,
+            "designated",
+            source_peers=["peer-a"],
+        )
+
+        assert result == expected
+        mock_ipc_client.set_xet_folder_sync_mode.assert_called_once_with(
+            folder_key,
+            "designated",
+            source_peers=["peer-a"],
+        )
+
 
 class TestDaemonSessionAdapterRateLimitOps:
     """Test rate limit operations."""
