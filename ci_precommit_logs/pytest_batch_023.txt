@@ -1,0 +1,75 @@
+Batch 23 (tests 1101-1150)
+Exit code: 0
+--- stdout ---
+============================= test session starts =============================
+collected 50 items
+
+dev::TestDownloadsFunctionUniqueness::test_no_duplicate_start_interactive_magnet_download PASSED [  2%]
+dev::test_download_parses_network_and_disk_options PASSED                [  4%]
+dev::test_magnet_parses_options PASSED                                   [  6%]
+dev::test___main___daemon_status_quick_exit PASSED                       [  8%]
+dev::test_async_main_sync_wrapper_daemon_status PASSED                   [ 10%]
+dev::TestFileCommandsARG001Fixes::test_files_list_command_with_ctx PASSED [ 12%]
+dev::TestFileCommandsARG001Fixes::test_files_select_command_with_ctx PASSED [ 14%]
+dev::TestFileCommandsARG001Fixes::test_files_deselect_command_with_ctx PASSED [ 16%]
+dev::TestFileCommandsARG001Fixes::test_files_select_all_command_with_ctx PASSED [ 18%]
+dev::TestFileCommandsARG001Fixes::test_files_deselect_all_command_with_ctx PASSED [ 20%]
+dev::TestFileCommandsARG001Fixes::test_files_priority_command_with_ctx PASSED [ 22%]
+dev::TestFileCommandsClickCompatibility::test_files_group_exists PASSED  [ 24%]
+dev::TestFileCommandsClickCompatibility::test_files_list_help PASSED     [ 26%]
+dev::TestFileCommandsClickCompatibility::test_files_select_help PASSED   [ 28%]
+dev::TestFileCommandsClickCompatibility::test_files_priority_help PASSED [ 30%]
+dev::TestFileCommandsErrorHandling::test_files_list_invalid_info_hash PASSED [ 32%]
+dev::TestFileCommandsErrorHandling::test_files_select_invalid_info_hash PASSED [ 34%]
+dev::TestFileCommandsCoverage::test_files_list_shows_hidden_attribute PASSED [ 36%]
+dev::TestFileCommandsCoverage::test_files_list_invalid_info_hash PASSED  [ 38%]
+dev::TestFileCommandsCoverage::test_files_selection_invalid_info_hash PASSED [ 40%]
+dev::TestFileCommandsCoverage::test_files_deselect_all_invalid_info_hash PASSED [ 42%]
+dev::TestFileCommandsCoverage::test_files_priority_invalid_info_hash PASSED [ 44%]
+dev::TestFilterAdd::test_filter_add_with_block_mode PASSED               [ 46%]
+dev::TestFilterAdd::test_filter_add_with_allow_mode PASSED               [ 48%]
+dev::TestFilterAdd::test_filter_add_with_priority PASSED                 [ 50%]
+dev::TestFilterAdd::test_filter_add_with_invalid_ip_range PASSED         [ 52%]
+dev::TestFilterAdd::test_filter_add_with_no_ip_filter PASSED             [ 54%]
+dev::TestFilterRemove::test_filter_remove_with_existing_rule PASSED      [ 56%]
+dev::TestFilterRemove::test_filter_remove_with_non_existent_rule PASSED  [ 58%]
+dev::TestFilterList::test_filter_list_with_rules_table PASSED            [ 60%]
+dev::TestFilterList::test_filter_list_empty PASSED                       [ 62%]
+dev::TestFilterList::test_filter_list_json_format PASSED                 [ 64%]
+dev::TestFilterLoad::test_filter_load_success PASSED                     [ 66%]
+dev::TestFilterLoad::test_filter_load_with_errors PASSED                 [ 68%]
+dev::TestFilterLoad::test_filter_load_with_mode PASSED                   [ 70%]
+dev::TestFilterUpdate::test_filter_update_success PASSED                 [ 72%]
+dev::TestFilterStats::test_filter_stats_display PASSED                   [ 74%]
+dev::TestFilterStats::test_filter_stats_with_last_update PASSED          [ 76%]
+dev::TestFilterStats::test_filter_stats_exception_handling PASSED        [ 78%]
+dev::TestFilterTest::test_filter_test_blocked_ip PASSED                  [ 80%]
+dev::TestFilterTest::test_filter_test_invalid_ip PASSED                  [ 82%]
+dev::TestFilterTest::test_filter_test_exception_handling PASSED          [ 84%]
+dev::TestFilterListCoverage::test_filter_list_json_format_coverage PASSED [ 86%]
+dev::TestFilterListCoverage::test_filter_list_no_rules_coverage PASSED   [ 88%]
+dev::TestInteractiveComprehensive::test_download_torrent_with_file_selection PASSED [ 90%]
+dev::TestInteractiveComprehensive::test_download_torrent_completes PASSED [ 92%]
+dev::TestInteractiveComprehensive::test_setup_layout PASSED              [ 94%]
+dev::TestInteractiveComprehensive::test_show_welcome PASSED              [ 96%]
+dev::TestInteractiveComprehensive::test_show_download_interface_no_torrent PASSED [ 98%]
+dev::TestInteractiveComprehensive::test_show_download_interface_with_torrent PASSED [100%]
+
+============================== warnings summary ===============================
+ccbt\i18n\__init__.py:80
+  C:\Users\MeMyself\bittorrentclient\ccbt\i18n\__init__.py:80: DeprecationWarning: 'locale.getdefaultlocale' is deprecated and slated for removal in Python 3.15. Use setlocale(), getencoding() and getlocale() instead.
+    system_locale, _ = locale.getdefaultlocale()
+
+::TestDownloadsFunctionUniqueness::test_no_duplicate_start_interactive_magnet_download
+  C:\Users\MeMyself\bittorrentclient\ccbt\__init__.py:26: DeprecationWarning: There is no current event loop
+    return self._base.get_event_loop()
+
+::TestFileCommandsARG001Fixes::test_files_list_command_with_ctx
+  C:\Users\MeMyself\AppData\Roaming\uv\python\cpython-3.13.3-windows-x86_64-none\Lib\unittest\mock.py:2247: RuntimeWarning: coroutine 'status.<locals>._get_status_async' was never awaited
+    def __init__(self, name, parent):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: C:\Users\MeMyself\bittorrentclient\site\reports\junit.xml -
+================= 50 passed, 3 warnings in 114.35s (0:01:54) ==================
