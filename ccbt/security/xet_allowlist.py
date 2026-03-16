@@ -6,6 +6,7 @@ encrypted allowlist storage for XET folder sync.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -145,13 +146,14 @@ class XetAllowlist:
         if self._loaded:
             return
 
-        if not self.allowlist_path.exists():
+        exists = await asyncio.to_thread(self.allowlist_path.exists)
+        if not exists:
             self._allowlist = {}
             self._loaded = True
             return
 
         try:
-            encrypted_data = self.allowlist_path.read_bytes()
+            encrypted_data = await asyncio.to_thread(self.allowlist_path.read_bytes)
             if not encrypted_data:
                 self._allowlist = {}
                 self._loaded = True
@@ -166,6 +168,9 @@ class XetAllowlist:
                     salt = self._decode_bytes(envelope["salt"])
                     nonce = self._decode_bytes(envelope["nonce"])
                     ciphertext = self._decode_bytes(envelope["ciphertext"])
+                    await asyncio.to_thread(
+                        lambda: self._load_or_create_local_secret(create=False)
+                    )
                     aes_gcm = AESGCM(self._derive_encryption_key(salt, create=False))
                     plaintext = aes_gcm.decrypt(nonce, ciphertext, None)
                     data = json.loads(plaintext.decode("utf-8"))
@@ -205,6 +210,10 @@ class XetAllowlist:
             if not self._loaded:
                 await self.load()
 
+            await asyncio.to_thread(
+                lambda: self._load_or_create_local_secret(create=True)
+            )
+
             # Prepare data
             data = {
                 "peers": self._allowlist,
@@ -227,11 +236,14 @@ class XetAllowlist:
                 "version": 2,
             }
 
-            self.allowlist_path.parent.mkdir(parents=True, exist_ok=True)
-            self.allowlist_path.write_text(
-                json.dumps(envelope, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
+            def _write_envelope() -> None:
+                self.allowlist_path.parent.mkdir(parents=True, exist_ok=True)
+                self.allowlist_path.write_text(
+                    json.dumps(envelope, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
+
+            await asyncio.to_thread(_write_envelope)
             self._migrate_on_next_save = False
 
             self.logger.info("Saved allowlist with %d peers", len(self._allowlist))

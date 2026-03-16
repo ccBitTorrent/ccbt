@@ -213,53 +213,64 @@ class XetFolder:
         self.dedup.close()
         self.logger.info("Stopped XET folder sync for %s", self.folder_path)
 
-    async def sync(self) -> bool:
+    async def sync(self) -> tuple[bool, int]:
         """Trigger manual synchronization.
 
         Returns:
-            True if sync started successfully
-
+            Tuple of (started_successfully, number_of_updates_processed).
+            When started_successfully is False (e.g. already syncing or exception),
+            number_of_updates_processed is 0.
         """
         if self._is_syncing:
             self.logger.warning("Sync already in progress")
-            return False
+            return (False, 0)
 
         self._is_syncing = True
 
         try:
             # Process queued updates
             processed = await self.sync_manager.process_updates(self._handle_update)
-            await emit_event(
-                Event(
-                    event_type=EventType.FOLDER_SYNC_COMPLETED.value,
-                    data={
-                        "folder_key": self.folder_key,
-                        "folder_path": str(self.folder_path),
-                        "processed_updates": processed,
-                        "workspace_id": self.workspace_id.hex()
-                        if self.workspace_id is not None
-                        else None,
-                    },
+            try:
+                await emit_event(
+                    Event(
+                        event_type=EventType.FOLDER_SYNC_COMPLETED.value,
+                        data={
+                            "folder_key": self.folder_key,
+                            "folder_path": str(self.folder_path),
+                            "processed_updates": processed,
+                            "workspace_id": self.workspace_id.hex()
+                            if self.workspace_id is not None
+                            else None,
+                        },
+                    )
                 )
-            )
+            except Exception:
+                self.logger.debug(
+                    "Failed to emit FOLDER_SYNC_COMPLETED (non-fatal)", exc_info=True
+                )
             self.logger.info("Processed %d updates", processed)
-            return True
+            return (True, processed)
         except Exception:
             self.sync_manager.set_last_error("Sync failed")
-            await emit_event(
-                Event(
-                    event_type=EventType.FOLDER_SYNC_ERROR.value,
-                    data={
-                        "folder_key": self.folder_key,
-                        "folder_path": str(self.folder_path),
-                        "workspace_id": self.workspace_id.hex()
-                        if self.workspace_id is not None
-                        else None,
-                    },
+            try:
+                await emit_event(
+                    Event(
+                        event_type=EventType.FOLDER_SYNC_ERROR.value,
+                        data={
+                            "folder_key": self.folder_key,
+                            "folder_path": str(self.folder_path),
+                            "workspace_id": self.workspace_id.hex()
+                            if self.workspace_id is not None
+                            else None,
+                        },
+                    )
                 )
-            )
+            except Exception:
+                self.logger.debug(
+                    "Failed to emit FOLDER_SYNC_ERROR (non-fatal)", exc_info=True
+                )
             self.logger.exception("Error during sync")
-            return False
+            return (False, 0)
         finally:
             self._is_syncing = False
 
@@ -479,8 +490,8 @@ class XetFolder:
                 file_metadata=metadata,
             )
 
-        synced = await self.sync()
-        if synced and self._workspace_has_user_files():
+        started, _ = await self.sync()
+        if started and self._workspace_has_user_files():
             self._bootstrap_pending = False
 
     def _on_folder_change(self, event_type: str, file_path: str) -> None:
@@ -571,8 +582,9 @@ class XetFolder:
         target_path = self.folder_path / entry.file_path
 
         if entry.deleted:
-            if target_path.exists():
-                target_path.unlink(missing_ok=True)
+            exists = await asyncio.to_thread(target_path.exists)
+            if exists:
+                await asyncio.to_thread(lambda: target_path.unlink(missing_ok=True))
             await self._refresh_metadata_snapshot()
             self.sync_manager.set_last_error(None)
             self.logger.info("Deleted synced file: %s", entry.file_path)
@@ -637,8 +649,11 @@ class XetFolder:
             self.sync_manager.set_last_error(msg)
             raise ValueError(msg)
 
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(rebuilt_data[: file_metadata.total_size])
+        def _write_materialized_file() -> None:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(rebuilt_data[: file_metadata.total_size])
+
+        await asyncio.to_thread(_write_materialized_file)
 
         # Update git ref in sync manager if changed
         if self.git_versioning:
@@ -831,6 +846,7 @@ class XetFolder:
                         continue
                     out.append(p)
                 return out
+
             workspace_files = await asyncio.to_thread(_list_workspace_files)
 
             for file_path_obj in workspace_files:

@@ -165,9 +165,22 @@ async def test_best_effort_updates_propagate_between_workspace_runtimes(tmp_path
     assert source_folder is not None
     assert destination_folder is not None
 
+    # Stop destination realtime sync so it does not re-queue notes.txt; clear queue so only
+    # the broadcast update is applied (avoids bootstrap/leftover updates for the same file).
+    if destination_folder._realtime_sync is not None:
+        await destination_folder._realtime_sync.stop()
+        destination_folder._realtime_sync = None
+    async with destination_folder.sync_manager.queue_lock:
+        destination_folder.sync_manager.update_queue.clear()
+
     (source / "notes.txt").write_text("version two", encoding="utf-8")
     await source_folder._queue_folder_change("modified", "notes.txt")
-    await destination_folder.sync()
+    started, processed = await destination_folder.sync()
+    assert started, "sync() should start successfully"
+    assert processed >= 1, (
+        f"expected at least one update processed, got {processed}; "
+        f"last_error={destination_folder.sync_manager.last_error!r}"
+    )
     assert (destination / "notes.txt").read_text(encoding="utf-8") == "version two"
 
     (source / "extra.txt").write_text("new file", encoding="utf-8")
@@ -182,8 +195,15 @@ async def test_best_effort_updates_propagate_between_workspace_runtimes(tmp_path
         await destination_folder._realtime_sync.stop()
         destination_folder._realtime_sync = None
     await destination_folder.folder_watcher.stop()
+    async with destination_folder.sync_manager.queue_lock:
+        destination_folder.sync_manager.update_queue.clear()
     await source_folder._queue_folder_change("deleted", "notes.txt")
-    await destination_folder.sync()
+    started_del, processed_del = await destination_folder.sync()
+    assert started_del, "sync() for delete should start successfully"
+    assert processed_del >= 1, (
+        f"expected at least one update (delete) processed, got {processed_del}; "
+        f"last_error={destination_folder.sync_manager.last_error!r}"
+    )
     assert not (destination / "notes.txt").exists(), "notes.txt should be removed after delete sync"
 
     assert await manager.remove_xet_folder(destination_key) is True
@@ -219,6 +239,12 @@ async def test_workspace_scoped_updates_do_not_cross_runtimes(tmp_path) -> None:
     assert folder_a is not None
     assert folder_b is not None
 
+    # Stop realtime sync (and watcher) on both so queue sizes are stable between capture and assert.
+    for folder in (folder_a, folder_b):
+        if folder._realtime_sync is not None:
+            await folder._realtime_sync.stop()
+            folder._realtime_sync = None
+        await folder.folder_watcher.stop()
     queue_size_before_a = folder_a.sync_manager.get_queue_size()
     queue_size_before_b = folder_b.sync_manager.get_queue_size()
     metadata_a = folder_a.sync_manager.get_file_metadata("shared.txt")
@@ -283,6 +309,42 @@ async def test_incoming_update_fetches_metadata_before_materialization(tmp_path)
     parsed_snapshot["xet_metadata"] = xet_metadata
     destination_folder.parsed_metadata = parsed_snapshot
 
+    # Stop destination realtime sync and watcher first, then clear queue, so no updates
+    # are added during the registry wait below (ensures only our incoming update is applied).
+    if destination_folder._realtime_sync is not None:
+        await destination_folder._realtime_sync.stop()
+        destination_folder._realtime_sync = None
+    await destination_folder.folder_watcher.stop()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    async with destination_folder.sync_manager.queue_lock:
+        destination_folder.sync_manager.update_queue.clear()
+
+    # Ensure session registry has the updated metadata before we simulate incoming (avoids
+    # handler applying stale metadata when run under load / after other tests).
+    tf = TonicFile()
+    registry_ready = False
+    for _ in range(30):
+        reg = await manager.get_registered_xet_metadata(source_record["workspace_id"])
+        if reg is not None:
+            parsed = tf.parse_bytes(reg)
+            xet = (parsed or {}).get("xet_metadata") or {}
+            for fm in xet.get("file_metadata", []):
+                if isinstance(fm, dict) and fm.get("file_path") == "notes.txt":
+                    h = fm.get("file_hash")
+                    if h is not None and h == updated_metadata.file_hash:
+                        registry_ready = True
+                        break
+            if registry_ready:
+                break
+        await asyncio.sleep(0.02)
+    if not registry_ready:
+        await asyncio.sleep(0.15)
+
+    # Ensure only our incoming update is in the queue (clear again right before enqueue).
+    async with destination_folder.sync_manager.queue_lock:
+        destination_folder.sync_manager.update_queue.clear()
+
     await manager._handle_incoming_xet_update(
         peer_id="peer-source",
         workspace_id_hex=source_record["workspace_id"],
@@ -290,7 +352,12 @@ async def test_incoming_update_fetches_metadata_before_materialization(tmp_path)
         chunk_hash=updated_metadata.file_hash,
         git_ref=None,
     )
-    await destination_folder.sync()
+    started, processed = await destination_folder.sync()
+    assert started, "sync() should start successfully"
+    assert processed >= 1, (
+        f"expected at least one update processed, got {processed}; "
+        f"last_error={destination_folder.sync_manager.last_error!r}"
+    )
     # Allow materialization and event processing to complete
     for _ in range(15):
         await asyncio.sleep(0.1)
@@ -298,7 +365,11 @@ async def test_incoming_update_fetches_metadata_before_materialization(tmp_path)
             content = (destination / "notes.txt").read_text(encoding="utf-8")
             if content == "version two":
                 break
-    assert (destination / "notes.txt").read_text(encoding="utf-8") == "version two"
+    content = (destination / "notes.txt").read_text(encoding="utf-8")
+    assert content == "version two", (
+        f"expected notes.txt content 'version two', got {content!r}; "
+        f"processed={processed}, last_error={destination_folder.sync_manager.last_error!r}"
+    )
     assert destination_folder.sync_manager.get_file_metadata("notes.txt") is not None
 
     assert await manager.remove_xet_folder(destination_key) is True

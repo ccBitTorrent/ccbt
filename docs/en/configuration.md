@@ -87,6 +87,8 @@ Strategy config model: [ccbt/models.py:StrategyConfig](https://github.com/ccBitt
 Discovery settings: [ccbt.toml:116-136](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L116-L136)
 
 - DHT settings: [ccbt.toml:118-125](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L118-L125)
+  - `min_peers_before_dht`: Minimum active peers before starting DHT discovery (default: **10**, range: 0–100). Set to 0 to allow DHT immediately as a fallback. Reduced from a previous default of 50 to allow DHT discovery to start earlier when peer count is low. Environment variable: `CCBT_MIN_PEERS_BEFORE_DHT`.
+  - `dht_enable_storage`: When true, BEP 44 DHT storage is enabled so that data written via `put_data()` is replicated to the DHT (in addition to local store). When false (default), data is stored locally only and not propagated to the network. Values larger than 1000 bytes (BEP 44 limit) are always stored locally only. Environment variable: `CCBT_DHT_ENABLE_STORAGE`.
 - PEX settings: [ccbt.toml:128-129](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L128-L129)
 - Tracker settings: [ccbt.toml:132-135](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L132-L135)
   - `tracker_announce_interval`: Tracker announce interval in seconds (default: 1800.0, range: 60.0-86400.0)

@@ -481,6 +481,8 @@ class XetSyncManager:
                 if not self.update_queue:
                     return 0
 
+                queue_len = len(self.update_queue)
+
                 # Process based on sync mode with timeout
                 if self.sync_mode == SyncMode.DESIGNATED:
                     processed = await asyncio.wait_for(
@@ -507,6 +509,11 @@ class XetSyncManager:
                     return 0
 
             self.stats["updates_processed"] += processed
+            if queue_len > 0 and processed == 0:
+                self.logger.warning(
+                    "process_updates had %d queued update(s) but processed 0 (handler may have raised)",
+                    queue_len,
+                )
             return processed
 
         except asyncio.TimeoutError:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -37,18 +38,24 @@ class XetMetadataResolver:
             return await self._resolve_link(
                 tonic_input, session_manager=session_manager
             )
-        return self._resolve_file(tonic_input)
+        return await self._resolve_file(tonic_input)
 
-    def _resolve_file(self, tonic_input: str) -> ResolvedTonicMetadata:
+    async def _resolve_file(self, tonic_input: str) -> ResolvedTonicMetadata:
         tonic_path = Path(tonic_input)
-        metadata_bytes = tonic_path.read_bytes()
+
+        def _read_and_resolve() -> tuple[bytes, str]:
+            data = tonic_path.read_bytes()
+            resolved = str(tonic_path.resolve())
+            return data, resolved
+
+        metadata_bytes, resolved_str = await asyncio.to_thread(_read_and_resolve)
         parsed_metadata = self._tonic_file.parse_bytes(metadata_bytes)
         workspace_id = self._tonic_file.get_info_hash(parsed_metadata)
         return ResolvedTonicMetadata(
             workspace_id=workspace_id,
             metadata_bytes=metadata_bytes,
             parsed_metadata=parsed_metadata,
-            tonic_source=str(tonic_path.resolve()),
+            tonic_source=resolved_str,
         )
 
     async def _resolve_link(
