@@ -1934,22 +1934,9 @@ class AsyncDHTClient:
         if isinstance(value, bytes):
             encoded_value = value
         else:
-            encoded_value = json.dumps(
-                {
-                    (
-                        item_key.decode("utf-8", errors="ignore")
-                        if isinstance(item_key, bytes)
-                        else str(item_key)
-                    ): (
-                        item_value.decode("utf-8", errors="ignore")
-                        if isinstance(item_value, bytes)
-                        else str(item_value)
-                    )
-                    for item_key, item_value in value.items()
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
+            # BEP 44: immutable key is SHA-1(bencode(v)); use bencoding for
+            # cross-node interoperability (JSON would yield a different key).
+            encoded_value = BencodeEncoder().encode(value)
         self._xet_mutable_store[key] = encoded_value
         local_count = 1
 

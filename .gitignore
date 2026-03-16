@@ -1,10 +1,7 @@
 # Project Ignores
-.pre-commit-cache/
-.pre-commit-home/
 bandit-*.json
 tests/.reports
 .ccbt
-.benchmarks
 ccbt_tuned.toml 
 .cursor
 *.mdc 
@@ -13,8 +10,27 @@ MagicMock
 .cursor
 scripts
 compatibility_tests/
-lint_outputs/   
+lint_outputs/
+
+# Pre-commit, pre-push, and benchmark outputs (CI force-adds when committing reports)
+.pre-commit-cache/
+.pre-commit-home/
+.pre-commit-config.yaml.bak
+ci_precommit_logs/
+pre-commit.log
+pre-push.log
+site/
+site/reports/
+.benchmarks
+benchmarks/output/
+benchmarks/results/
+benchmark_results/
 docs/reports/
+docs/reports/coverage/
+docs/reports/bandit/
+docs/reports/benchmarks/artifacts/
+docs/reports/benchmarks/runs/
+docs/reports/benchmarks/timeseries/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -190,9 +206,6 @@ cython_debug/
 # Bandit security linter
 bandit-report.json
 
-# Pre-commit
-.pre-commit-config.yaml.bak
-
 # Commitizen
 .cz.json
 
@@ -210,7 +223,6 @@ demo_output_*/
 # Test outputs
 test_output/
 test_results/
-benchmark_results/
 
 # Temporary files
 *.tmp
@@ -310,9 +322,7 @@ test-reports/
 tests/.reports/
 tests/.dependency_cache.json
 
-# Benchmark outputs
-benchmarks/output/
-benchmarks/results/
+# Benchmark outputs (see also Pre-commit section)
 *.benchmark
 
 # Linter outputs
@@ -323,20 +333,10 @@ mypy-report/
 # Security scan outputs
 safety-report.json
 bandit-report.json
-docs/reports/bandit/bandit-report.json
 
 # Documentation builds
 docs/build/
 docs/_build/
-site/
-docs/reports/coverage/
-# Benchmark tracking files are now tracked in git
-# docs/reports/benchmarks/runs/ (tracked)
-# docs/reports/benchmarks/timeseries/ (tracked)
-# Legacy artifacts directory (deprecated but kept for compatibility)
-docs/reports/benchmarks/artifacts/
-# Local benchmark run reports (CI/CD will force-add its own)
-docs/reports/benchmarks/runs/*.json
 
 # Package builds
 *.tar.gz

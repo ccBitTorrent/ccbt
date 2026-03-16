@@ -115,7 +115,8 @@ jobs:
           git config --local user.name "GitHub Action"
       - name: Commit reports
         run: |
-          git add site/reports/htmlcov/ docs/reports/bandit/ docs/reports/benchmarks/
+          # Force-add so reports are committed even though paths are in .gitignore
+          git add -f site/reports/htmlcov/ docs/reports/bandit/ docs/reports/benchmarks/
           git diff --staged --quiet || (git commit -m "ci: update reports for documentation [skip ci]" && git push)
       - name: Trigger documentation build
         uses: actions/github-script@v7

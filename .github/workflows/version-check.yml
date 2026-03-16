@@ -1,18 +1,19 @@
+# Version check: manual only, or on PR to main with approval (same as other checks).
 name: Version Check
 
 on:
   pull_request:
-    branches: [dev]  # Only check versions on PRs to dev
+    branches: [main]
     paths:
       - 'pyproject.toml'
       - 'ccbt/__init__.py'
+  workflow_dispatch:
 
 jobs:
   check-version-consistency:
     name: check-version-consistency
     runs-on: ubuntu-latest
-    # Only run on PRs to dev
-    if: github.event_name == 'pull_request'
+    environment: approval-required
     permissions:
       contents: read
       actions: read

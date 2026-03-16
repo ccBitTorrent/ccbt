@@ -1,11 +1,8 @@
+# Builds run only manually (workflow_dispatch). No automatic build on push or tags.
 name: Build
 
 on:
-  push:
-    branches: [main]
-    tags:
-      - 'v*'
-  workflow_dispatch:  # Manual only, no PR trigger
+  workflow_dispatch:
 
 concurrency:
   group: build-${{ github.ref }}

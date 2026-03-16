@@ -119,3 +119,25 @@ class TestDHTParseGetResponse:
         # Target key that doesn't match SHA-1(b"wrong")
         target = b"\x00" * 20
         assert client._parse_get_response(msg, target) is None
+
+
+class TestDHTPutDataBencode:
+    """Test put_data encodes dict values with bencode for BEP 44 interoperability."""
+
+    @pytest.mark.asyncio
+    async def test_put_data_dict_stores_bencoded_value(self):
+        """put_data with dict[bytes, bytes] stores bencoded bytes, not JSON."""
+        from ccbt.core.bencode import BencodeDecoder
+
+        client = AsyncDHTClient()
+        key = b"\x01" * 20
+        value_dict = {b"v": b"test data", b"k": b"extra"}
+        result = await client.put_data(key=key, value=value_dict)
+        assert result >= 1
+        stored = client._xet_mutable_store.get(key)
+        assert stored is not None
+        # Must be bencoded (BEP 44): round-trip via BencodeDecoder
+        decoded = BencodeDecoder(stored).decode()
+        assert decoded == value_dict
+        # Must not be JSON (would break cross-node key compatibility)
+        assert not stored.lstrip().startswith(b"{")

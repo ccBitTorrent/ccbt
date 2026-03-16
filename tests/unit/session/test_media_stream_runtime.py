@@ -13,6 +13,8 @@ from ccbt.session.media_stream_runtime import MediaStreamRuntime
 
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 HTTP_PARTIAL_CONTENT = 206
+HTTP_UNAUTHORIZED = 401
+TOKEN_ERROR_MESSAGE = "Invalid or expired media stream token"
 
 
 @pytest.mark.asyncio
@@ -99,3 +101,67 @@ async def test_media_stream_runtime_serves_http_ranges(
     piece_manager.handle_streaming_seek.assert_awaited_once_with(0)
     assert strategy.streaming_mode is False
     assert strategy.piece_selection == PieceSelectionStrategy.RAREST_FIRST
+
+
+@pytest.mark.asyncio
+async def test_media_stream_validate_token_single_message(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Invalid or expired token returns one message (no information leak)."""
+    media_file = tmp_path / "clip.mp4"
+    media_file.write_bytes(b"x")
+    strategy = SimpleNamespace(
+        streaming_mode=False,
+        piece_selection=PieceSelectionStrategy.RAREST_FIRST,
+    )
+    piece_manager = SimpleNamespace(
+        piece_length=1,
+        config=SimpleNamespace(strategy=strategy),
+        pieces=[SimpleNamespace(state=PieceState.VERIFIED)],
+        handle_streaming_seek=AsyncMock(),
+    )
+    mapper = SimpleNamespace(
+        piece_to_files={0: [(0, 0, 1)]},
+        get_pieces_for_file=lambda _: [0],
+    )
+    monkeypatch.setattr(
+        "ccbt.session.media_stream_runtime.emit_event",
+        AsyncMock(),
+    )
+    runtime = MediaStreamRuntime(
+        stream_id="s1",
+        info_hash_hex="a" * 40,
+        file_index=0,
+        file_name="clip.mp4",
+        file_path=media_file,
+        file_size=1,
+        file_offset=0,
+        bind_host="127.0.0.1",
+        requested_port=0,
+        token_ttl_seconds=60.0,
+        startup_buffer_seconds=0.1,
+        request_wait_timeout_seconds=0.1,
+        assumed_bitrate_bytes_per_second=1,
+        chunk_size=1,
+        torrent_session=SimpleNamespace(),
+        session_manager=SimpleNamespace(),
+        piece_manager=piece_manager,
+        file_selection_manager=SimpleNamespace(
+            mapper=mapper, get_pieces_for_file=lambda _: [0]
+        ),
+    )
+    await runtime.start()
+    base_url = runtime.stream_url.split("?")[0]
+
+    async with aiohttp.ClientSession() as session:
+        # Missing token: same message as wrong token (no leak)
+        resp = await session.get(base_url)
+        assert resp.status == HTTP_UNAUTHORIZED
+        assert (await resp.text()) == TOKEN_ERROR_MESSAGE
+        # Wrong token: same message
+        resp2 = await session.get(f"{base_url}?token=wrong")
+        assert resp2.status == HTTP_UNAUTHORIZED
+        assert (await resp2.text()) == TOKEN_ERROR_MESSAGE
+
+    await runtime.stop()
