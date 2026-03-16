@@ -444,15 +444,12 @@ class TestXetDeduplication:
         with XetDeduplication(cache_db_path=str(db_path)) as dedup:
             assert dedup.db is not None
 
-        # After context exit, db should be closed (checking if it's closed)
-        # The connection object may still exist but should be closed
+        # After context exit, db is closed and set to None (idempotent close)
         try:
-            dedup.db.execute("SELECT 1")
-            # If we get here, connection is still open (which is fine for SQLite)
-            # SQLite connections don't always close immediately
-            pass
-        except sqlite3.ProgrammingError:
-            # Connection is closed, which is expected
+            if dedup.db is not None:
+                dedup.db.execute("SELECT 1")
+        except (sqlite3.ProgrammingError, AttributeError):
+            # Connection closed or db is None, which is expected
             pass
 
     @pytest.mark.asyncio
@@ -466,15 +463,12 @@ class TestXetDeduplication:
             stats = dedup.get_cache_stats()
             assert isinstance(stats, dict)
 
-        # After context exit, db should be closed (checking if it's closed)
-        # The connection object may still exist but should be closed
+        # After context exit, db is closed and set to None (idempotent close)
         try:
-            dedup.db.execute("SELECT 1")
-            # If we get here, connection is still open (which is fine for SQLite)
-            # SQLite connections don't always close immediately
-            pass
-        except sqlite3.ProgrammingError:
-            # Connection is closed, which is expected
+            if dedup.db is not None:
+                dedup.db.execute("SELECT 1")
+        except (sqlite3.ProgrammingError, AttributeError):
+            # Connection closed or db is None, which is expected
             pass
 
     @pytest.mark.asyncio
@@ -491,13 +485,12 @@ class TestXetDeduplication:
             # Exception should be propagated
             pass
 
-        # Database should still be closed even after exception
+        # Database should still be closed even after exception (db set to None)
         try:
-            dedup.db.execute("SELECT 1")
-            # If we get here, connection might still be open (SQLite behavior)
-            pass
-        except sqlite3.ProgrammingError:
-            # Connection is closed, which is expected
+            if dedup.db is not None:
+                dedup.db.execute("SELECT 1")
+        except (sqlite3.ProgrammingError, AttributeError):
+            # Connection closed or db is None, which is expected
             pass
 
     @pytest.mark.asyncio

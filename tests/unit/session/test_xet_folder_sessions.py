@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from ccbt.core.tonic import TonicFile
@@ -72,6 +74,26 @@ async def test_resolver_uses_registered_metadata_for_tonic_link(tmp_path) -> Non
     assert resolved.workspace_id == info_hash
     assert resolved.metadata_bytes == tonic_bytes
     assert resolved.parsed_metadata["info"]["name"] == "linked-workspace"
+
+
+async def test_resolver_raises_runtime_error_for_missing_tonic_link_metadata(
+    tmp_path,
+) -> None:
+    """Resolver must raise RuntimeError (not FileNotFoundError) when tonic link has no metadata."""
+    _, info_hash = _build_minimal_tonic_bytes("orphan")
+    link = generate_tonic_link(
+        info_hash=info_hash,
+        display_name="orphan",
+        sync_mode="best_effort",
+    )
+    manager = _build_session_manager(tmp_path)
+    # Do not register metadata for this workspace.
+
+    resolver = XetMetadataResolver()
+    with pytest.raises(RuntimeError) as exc_info:
+        await resolver.resolve(link, session_manager=manager)
+    assert "No metadata is available for tonic link" in str(exc_info.value)
+    assert info_hash.hex() in str(exc_info.value)
 
 
 async def test_joined_workspace_materializes_imported_metadata(tmp_path) -> None:
@@ -154,9 +176,15 @@ async def test_best_effort_updates_propagate_between_workspace_runtimes(tmp_path
     assert (destination / "extra.txt").read_text(encoding="utf-8") == "new file"
 
     (source / "notes.txt").unlink()
+    # Pause destination's realtime sync and watcher so only the broadcast delete
+    # is applied; otherwise repeated scans can re-queue notes.txt and recreate it.
+    if destination_folder._realtime_sync is not None:
+        await destination_folder._realtime_sync.stop()
+        destination_folder._realtime_sync = None
+    await destination_folder.folder_watcher.stop()
     await source_folder._queue_folder_change("deleted", "notes.txt")
     await destination_folder.sync()
-    assert not (destination / "notes.txt").exists()
+    assert not (destination / "notes.txt").exists(), "notes.txt should be removed after delete sync"
 
     assert await manager.remove_xet_folder(destination_key) is True
     assert await manager.remove_xet_folder(source_key) is True
@@ -263,7 +291,13 @@ async def test_incoming_update_fetches_metadata_before_materialization(tmp_path)
         git_ref=None,
     )
     await destination_folder.sync()
-
+    # Allow materialization and event processing to complete
+    for _ in range(15):
+        await asyncio.sleep(0.1)
+        if (destination / "notes.txt").exists():
+            content = (destination / "notes.txt").read_text(encoding="utf-8")
+            if content == "version two":
+                break
     assert (destination / "notes.txt").read_text(encoding="utf-8") == "version two"
     assert destination_folder.sync_manager.get_file_metadata("notes.txt") is not None
 

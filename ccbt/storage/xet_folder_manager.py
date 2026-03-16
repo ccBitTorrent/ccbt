@@ -816,12 +816,24 @@ class XetFolder:
         async with self._metadata_lock:
             file_metadata: list[XetFileMetadata] = []
             all_chunk_hashes: set[bytes] = set()
-            for file_path_obj in self.folder_path.rglob("*"):
-                if not file_path_obj.is_file():
-                    continue
-                relative_parts = file_path_obj.relative_to(self.folder_path).parts
-                if relative_parts and relative_parts[0] in {".git", ".xet"}:
-                    continue
+
+            def _list_workspace_files() -> list[Path]:
+                out: list[Path] = []
+                for p in self.folder_path.rglob("*"):
+                    if not p.is_file():
+                        continue
+                    try:
+                        rel = p.relative_to(self.folder_path)
+                    except ValueError:
+                        continue
+                    parts = rel.parts
+                    if parts and parts[0] in {".git", ".xet"}:
+                        continue
+                    out.append(p)
+                return out
+            workspace_files = await asyncio.to_thread(_list_workspace_files)
+
+            for file_path_obj in workspace_files:
                 relative_path = str(file_path_obj.relative_to(self.folder_path))
                 metadata = await self._build_file_metadata(relative_path)
                 if metadata is None:
