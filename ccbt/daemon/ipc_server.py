@@ -2417,7 +2417,7 @@ class IPCServer:
             logger.exception("Error removing torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to remove torrent",
+                    error=str(e),
                     code="REMOVE_TORRENT_ERROR",
                 ).model_dump(),
                 status=500,
@@ -2444,7 +2444,7 @@ class IPCServer:
             logger.exception("Error listing torrents")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to list torrents",
+                    error=str(e),
                     code="LIST_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2471,7 +2471,7 @@ class IPCServer:
             logger.exception("Error getting torrent status for %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get torrent status",
+                    error=str(e),
                     code="GET_STATUS_ERROR",
                 ).model_dump(),
                 status=500,
@@ -2501,7 +2501,7 @@ class IPCServer:
             logger.exception("Error starting media stream for %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to start media stream",
+                    error=str(e),
                     code="MEDIA_STREAM_ERROR",
                 ).model_dump(),
                 status=500,
@@ -2529,7 +2529,7 @@ class IPCServer:
             logger.exception("Error getting media status for %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get media status",
+                    error=str(e),
                     code="MEDIA_STREAM_ERROR",
                 ).model_dump(),
                 status=500,
@@ -2555,7 +2555,7 @@ class IPCServer:
             logger.exception("Error stopping media stream %s", stream_id)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to stop media stream",
+                    error=str(e),
                     code="MEDIA_STREAM_ERROR",
                 ).model_dump(),
                 status=500,
@@ -2580,7 +2580,7 @@ class IPCServer:
             logger.exception("Error getting media stream status %s", stream_id)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get media stream status",
+                    error=str(e),
                     code="MEDIA_STREAM_ERROR",
                 ).model_dump(),
                 status=500,
@@ -2606,7 +2606,7 @@ class IPCServer:
             logger.exception("Error pausing torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to pause torrent",
+                    error=str(e),
                     code="PAUSE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2632,7 +2632,7 @@ class IPCServer:
             logger.exception("Error resuming torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to resume torrent",
+                    error=str(e),
                     code="RESUME_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2675,7 +2675,7 @@ class IPCServer:
             logger.exception("Error restarting torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to restart torrent",
+                    error=str(e),
                     code="RESTART_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2702,7 +2702,7 @@ class IPCServer:
             logger.exception("Error cancelling torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to cancel torrent",
+                    error=str(e),
                     code="CANCEL_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2731,7 +2731,7 @@ class IPCServer:
             logger.exception("Error force starting torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to force start torrent",
+                    error=str(e),
                     code="FORCE_START_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2761,7 +2761,7 @@ class IPCServer:
             logger.exception("Error in batch pause")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to batch pause",
+                    error=str(e),
                     code="BATCH_PAUSE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2791,7 +2791,7 @@ class IPCServer:
             logger.exception("Error in batch resume")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to batch resume",
+                    error=str(e),
                     code="BATCH_RESUME_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2829,7 +2829,7 @@ class IPCServer:
             logger.exception("Error in batch restart")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to batch restart",
+                    error=str(e),
                     code="BATCH_RESTART_FAILED",
                 ).model_dump(),
                 status=500,
@@ -2860,7 +2860,7 @@ class IPCServer:
             logger.exception("Error in batch remove")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to batch remove",
+                    error=str(e),
                     code="BATCH_REMOVE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -3114,7 +3114,7 @@ class IPCServer:
             logger.exception("Error adding tracker")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to add tracker",
+                    error=str(e),
                     code="ADD_TRACKER_FAILED",
                 ).model_dump(),
                 status=500,
@@ -3174,7 +3174,7 @@ class IPCServer:
             logger.exception("Error removing tracker")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to remove tracker",
+                    error=str(e),
                     code="REMOVE_TRACKER_FAILED",
                 ).model_dump(),
                 status=500,
@@ -3327,7 +3327,7 @@ class IPCServer:
             logger.exception("Error refreshing PEX for torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to refresh PEX",
+                    error=str(e),
                     code="PEX_REFRESH_ERROR",
                 ).model_dump(),
                 status=500,
@@ -3544,7 +3544,7 @@ class IPCServer:
             )
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to set DHT aggressive mode",
+                    error=str(e),
                     code="DHT_AGGRESSIVE_ERROR",
                 ).model_dump(),
                 status=500,
@@ -3787,7 +3787,7 @@ class IPCServer:
             logger.exception("Error restarting service %s", service_name)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or f"Failed to restart service {service_name}",
+                    error=str(e),
                     code="RESTART_SERVICE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -3834,7 +3834,7 @@ class IPCServer:
             logger.exception("Error getting services status")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get services status",
+                    error=str(e),
                     code="GET_SERVICES_STATUS_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4082,7 +4082,7 @@ class IPCServer:
             logger.exception("Error getting metadata status for %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get metadata status",
+                    error=str(e),
                     code="METADATA_STATUS_ERROR",
                 ).model_dump(),
                 status=500,
@@ -4738,7 +4738,16 @@ class IPCServer:
                     ).model_dump(),
                     status=500,
                 )
-            typed = XetWorkspacePolicyResponse.model_validate(result.data or {})
+            data = result.data
+            if not isinstance(data, dict) or "workspace_id" not in data or "sync_mode" not in data:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Workspace policy result is incomplete",
+                        code="XET_WORKSPACE_POLICY_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            typed = XetWorkspacePolicyResponse.model_validate(data)
             return web.json_response(typed.model_dump(mode="json"))  # type: ignore[attr-defined]
         except Exception as e:
             logger.exception("Error setting XET workspace policy")
@@ -4831,7 +4840,7 @@ class IPCServer:
             logger.exception("Error pausing all torrents")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to pause all torrents",
+                    error=str(e),
                     code="GLOBAL_PAUSE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4855,7 +4864,7 @@ class IPCServer:
             logger.exception("Error resuming all torrents")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to resume all torrents",
+                    error=str(e),
                     code="GLOBAL_RESUME_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4879,7 +4888,7 @@ class IPCServer:
             logger.exception("Error force starting all torrents")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to force start all torrents",
+                    error=str(e),
                     code="GLOBAL_FORCE_START_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4911,7 +4920,7 @@ class IPCServer:
             logger.exception("Error setting global rate limits")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to set global rate limits",
+                    error=str(e),
                     code="GLOBAL_RATE_LIMITS_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4955,7 +4964,7 @@ class IPCServer:
             logger.exception("Error setting per-peer rate limit")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to set per-peer rate limit",
+                    error=str(e),
                     code="PER_PEER_RATE_LIMIT_FAILED",
                 ).model_dump(),
                 status=500,
@@ -4995,7 +5004,7 @@ class IPCServer:
             logger.exception("Error getting per-peer rate limit")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get per-peer rate limit",
+                    error=str(e),
                     code="PER_PEER_RATE_LIMIT_FAILED",
                 ).model_dump(),
                 status=500,
@@ -5031,7 +5040,7 @@ class IPCServer:
             logger.exception("Error setting all peers rate limit")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to set all peers rate limit",
+                    error=str(e),
                     code="ALL_PEERS_RATE_LIMIT_FAILED",
                 ).model_dump(),
                 status=500,
