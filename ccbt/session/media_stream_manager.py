@@ -79,10 +79,7 @@ class MediaStreamManager:
             piece_manager=torrent_session.piece_manager,
             file_selection_manager=file_manager,
         )
-        try:
-            await runtime.start()
-        except Exception:
-            raise
+        await runtime.start()
         async with self._lock:
             self._streams[runtime.stream_id] = runtime
             self._stream_by_info_hash[info_hash_hex] = runtime.stream_id

@@ -1948,6 +1948,12 @@ class AsyncDHTClient:
                 return local_count + dht_count
         except Exception as e:
             self.logger.debug("DHT put_data iterative failed: %s", e)
+
+        self.logger.debug(
+            "put_data stored locally only (no DHT replication): dht_enable_storage=%s, value_size=%d (BEP 44 limit 1000)",
+            get_config().discovery.dht_enable_storage,
+            len(encoded_value),
+        )
         return local_count
 
     async def store_chunk_hash(

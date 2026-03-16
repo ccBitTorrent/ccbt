@@ -24,6 +24,80 @@ from ccbt.security.xet_allowlist import XetAllowlist
 logger = logging.getLogger(__name__)
 
 
+async def _allowlist_add(
+    allowlist_path: str,
+    peer_id: str,
+    public_key: Optional[str],
+    alias: Optional[str],
+) -> None:
+    """Async helper: load allowlist, add peer, save."""
+    allowlist = XetAllowlist(allowlist_path=allowlist_path)
+    await allowlist.load()
+    public_key_bytes = None
+    if public_key:
+        public_key_bytes = bytes.fromhex(public_key)
+        if len(public_key_bytes) != 32:
+            msg = _("Public key must be 32 bytes (64 hex characters)")
+            raise ValueError(msg)
+    allowlist.add_peer(peer_id=peer_id, public_key=public_key_bytes, alias=alias)
+    await allowlist.save()
+
+
+async def _allowlist_remove(allowlist_path: str, peer_id: str) -> bool:
+    """Async helper: load allowlist, remove peer, save if changed. Returns True if removed."""
+    allowlist = XetAllowlist(allowlist_path=allowlist_path)
+    await allowlist.load()
+    removed = allowlist.remove_peer(peer_id)
+    if removed:
+        await allowlist.save()
+    return removed
+
+
+async def _allowlist_list(
+    allowlist_path: str,
+) -> tuple[list[str], XetAllowlist]:
+    """Async helper: load allowlist, return (peer_ids, allowlist)."""
+    allowlist = XetAllowlist(allowlist_path=allowlist_path)
+    await allowlist.load()
+    return (allowlist.get_peers(), allowlist)
+
+
+async def _allowlist_alias_add(allowlist_path: str, peer_id: str, alias: str) -> bool:
+    """Async helper: load, set alias, save. Returns True on success."""
+    allowlist = XetAllowlist(allowlist_path=allowlist_path)
+    await allowlist.load()
+    if not allowlist.is_allowed(peer_id):
+        return False
+    success = allowlist.set_alias(peer_id, alias)
+    if success:
+        await allowlist.save()
+    return success
+
+
+async def _allowlist_alias_remove(allowlist_path: str, peer_id: str) -> bool:
+    """Async helper: load, remove alias, save if changed. Returns True if removed."""
+    allowlist = XetAllowlist(allowlist_path=allowlist_path)
+    await allowlist.load()
+    removed = allowlist.remove_alias(peer_id)
+    if removed:
+        await allowlist.save()
+    return removed
+
+
+async def _allowlist_alias_list(
+    allowlist_path: str,
+) -> list[tuple[str, str]]:
+    """Async helper: load allowlist, return list of (peer_id, alias)."""
+    allowlist = XetAllowlist(allowlist_path=allowlist_path)
+    await allowlist.load()
+    peers = allowlist.get_peers()
+    return [
+        (pid, allowlist.get_alias(pid) or "")
+        for pid in peers
+        if allowlist.get_alias(pid)
+    ]
+
+
 @click.group()
 def tonic() -> None:
     """Manage .tonic files and XET folder synchronization."""
@@ -331,23 +405,14 @@ def tonic_allowlist_add(
     console = Console()
 
     try:
-        allowlist = XetAllowlist(allowlist_path=allowlist_path)
-        asyncio.run(allowlist.load())
-
-        public_key_bytes = None
-        if public_key:
-            try:
-                public_key_bytes = bytes.fromhex(public_key)
-                if len(public_key_bytes) != 32:
-                    msg = _("Public key must be 32 bytes (64 hex characters)")
-                    raise ValueError(msg)
-            except ValueError as e:
-                console.print(_("[red]Invalid public key: {e}[/red]").format(e=e))
-                raise click.Abort from e
-
-        allowlist.add_peer(peer_id=peer_id, public_key=public_key_bytes, alias=alias)
-        asyncio.run(allowlist.save())
-
+        asyncio.run(
+            _allowlist_add(
+                allowlist_path=allowlist_path,
+                peer_id=peer_id,
+                public_key=public_key,
+                alias=alias,
+            )
+        )
         msg = _("[green]✓[/green] Added peer {peer_id} to allowlist").format(
             peer_id=peer_id
         )
@@ -357,6 +422,10 @@ def tonic_allowlist_add(
             ).format(peer_id=peer_id, alias=alias)
         console.print(msg)
 
+    except ValueError as e:
+        console.print(_("[red]Invalid public key: {e}[/red]").format(e=e))
+        logger.exception(_("Failed to add peer to allowlist"))
+        raise click.Abort from e
     except Exception as e:
         console.print(_("[red]Error adding peer to allowlist: {e}[/red]").format(e=e))
         logger.exception(_("Failed to add peer to allowlist"))
@@ -376,12 +445,8 @@ def tonic_allowlist_remove(
     console = Console()
 
     try:
-        allowlist = XetAllowlist(allowlist_path=allowlist_path)
-        asyncio.run(allowlist.load())
-
-        removed = allowlist.remove_peer(peer_id)
+        removed = asyncio.run(_allowlist_remove(allowlist_path, peer_id))
         if removed:
-            asyncio.run(allowlist.save())
             console.print(
                 _("[green]✓[/green] Removed peer {peer_id} from allowlist").format(
                     peer_id=peer_id
@@ -410,10 +475,7 @@ def tonic_allowlist_list(_ctx, allowlist_path: str) -> None:
     console = Console()
 
     try:
-        allowlist = XetAllowlist(allowlist_path=allowlist_path)
-        asyncio.run(allowlist.load())
-
-        peers = allowlist.get_peers()
+        peers, allowlist = asyncio.run(_allowlist_list(allowlist_path))
 
         if not peers:
             console.print(_("[yellow]Allowlist is empty[/yellow]"))
@@ -585,21 +647,8 @@ def tonic_allowlist_alias_add(
     console = Console()
 
     try:
-        allowlist = XetAllowlist(allowlist_path=allowlist_path)
-        asyncio.run(allowlist.load())
-
-        if not allowlist.is_allowed(peer_id):
-            console.print(
-                _("[red]Peer {peer_id} not found in allowlist[/red]").format(
-                    peer_id=peer_id
-                )
-            )
-            console.print(_("  Add the peer first using 'tonic allowlist add'"))
-            raise click.Abort
-
-        success = allowlist.set_alias(peer_id, alias)
+        success = asyncio.run(_allowlist_alias_add(allowlist_path, peer_id, alias))
         if success:
-            asyncio.run(allowlist.save())
             console.print(
                 _("[green]✓[/green] Set alias '{alias}' for peer {peer_id}").format(
                     alias=alias, peer_id=peer_id
@@ -607,10 +656,11 @@ def tonic_allowlist_alias_add(
             )
         else:
             console.print(
-                _("[red]Failed to set alias for peer {peer_id}[/red]").format(
+                _("[red]Peer {peer_id} not found in allowlist[/red]").format(
                     peer_id=peer_id
                 )
             )
+            console.print(_("  Add the peer first using 'tonic allowlist add'"))
             raise click.Abort
 
     except Exception as e:
@@ -632,12 +682,8 @@ def tonic_allowlist_alias_remove(
     console = Console()
 
     try:
-        allowlist = XetAllowlist(allowlist_path=allowlist_path)
-        asyncio.run(allowlist.load())
-
-        removed = allowlist.remove_alias(peer_id)
+        removed = asyncio.run(_allowlist_alias_remove(allowlist_path, peer_id))
         if removed:
-            asyncio.run(allowlist.save())
             console.print(
                 _("[green]✓[/green] Removed alias for peer {peer_id}").format(
                     peer_id=peer_id
@@ -664,16 +710,7 @@ def tonic_allowlist_alias_list(_ctx, allowlist_path: str) -> None:
     console = Console()
 
     try:
-        allowlist = XetAllowlist(allowlist_path=allowlist_path)
-        asyncio.run(allowlist.load())
-
-        peers = allowlist.get_peers()
-        aliases = []
-
-        for peer_id in peers:
-            alias = allowlist.get_alias(peer_id)
-            if alias:
-                aliases.append((peer_id, alias))
+        aliases = asyncio.run(_allowlist_alias_list(allowlist_path))
 
         if not aliases:
             console.print(_("[yellow]No aliases found in allowlist[/yellow]"))

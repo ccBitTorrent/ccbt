@@ -2481,7 +2481,7 @@ class IPCServer:
         """Handle POST /api/v1/torrents/{info_hash}/media/start."""
         info_hash = request.match_info["info_hash"]
         try:
-            payload = MediaStreamStartRequest(**(await request.json()))
+            payload = MediaStreamStartRequest.model_validate(await request.json())
             result = await self.executor.execute(
                 "media.start",
                 info_hash=info_hash,
@@ -5730,6 +5730,11 @@ class IPCServer:
                     self.host,
                     self.port,
                 )
+            except RuntimeError:
+                # Verification failed (_server None or no sockets); clean up runner
+                if self.runner:
+                    await self.runner.cleanup()
+                raise
             except OSError as e:
                 # Handle binding errors (port in use, permission denied, etc.)
                 error_code = e.errno if hasattr(e, "errno") else None

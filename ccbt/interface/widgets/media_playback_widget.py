@@ -120,6 +120,8 @@ class MediaPlaybackWidget(Container):  # type: ignore[misc]
 
         def schedule_refresh() -> None:
             with contextlib.suppress(Exception):
+                if self._refresh_work_task is not None and not self._refresh_work_task.done():
+                    self._refresh_work_task.cancel()
                 self._refresh_work_task = asyncio.create_task(
                     self.refresh_media_state()
                 )
@@ -128,10 +130,13 @@ class MediaPlaybackWidget(Container):  # type: ignore[misc]
         await self.refresh_media_state()
 
     def on_unmount(self) -> None:  # pragma: no cover
-        """Clean up event subscriptions."""
+        """Clean up event subscriptions and refresh task."""
         if self._refresh_task is not None:
             with contextlib.suppress(Exception):
                 self._refresh_task.stop()
+        if self._refresh_work_task is not None and not self._refresh_work_task.done():
+            with contextlib.suppress(Exception):
+                self._refresh_work_task.cancel()
         if self._adapter is not None and hasattr(self._adapter, "unregister_widget"):
             with contextlib.suppress(Exception):
                 self._adapter.unregister_widget(self)
@@ -170,10 +175,10 @@ class MediaPlaybackWidget(Container):  # type: ignore[misc]
             options.append((label, int(file_info.get("index", 0))))
         selector.set_options(options)  # type: ignore[attr-defined]
         if self._selected_file_index is not None:
-            for idx, (_label, value) in enumerate(options):
+            for _label, value in options:
                 if value == self._selected_file_index:
                     with contextlib.suppress(Exception):
-                        selector.value = idx  # type: ignore[attr-defined]
+                        selector.value = value  # type: ignore[attr-defined]
                     break
 
     def _render_status(self) -> None:
@@ -316,6 +321,8 @@ class MediaPlaybackWidget(Container):  # type: ignore[misc]
         if event_data.get("info_hash") != self._info_hash_hex:
             return
         with contextlib.suppress(Exception):
+            if self._refresh_work_task is not None and not self._refresh_work_task.done():
+                self._refresh_work_task.cancel()
             self._refresh_work_task = asyncio.create_task(self.refresh_media_state())
 
     def _set_launch_status(self, text: str) -> None:

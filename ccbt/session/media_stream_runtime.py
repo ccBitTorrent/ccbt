@@ -123,10 +123,19 @@ class MediaStreamRuntime:
             self.bind_host,
             self.requested_port,
         )
-        await self.site.start()
-        await self._capture_bound_port()
-        await self._emit_event("media_stream_started")
-        await self.refresh_readiness()
+        try:
+            await self.site.start()
+            await self._capture_bound_port()
+            await self._emit_event("media_stream_started")
+            await self.refresh_readiness()
+        except Exception:
+            if self.site is not None:
+                with contextlib.suppress(Exception):
+                    await self.site.stop()
+            if self.runner is not None:
+                with contextlib.suppress(Exception):
+                    await self.runner.cleanup()
+            raise
 
     async def stop(self) -> None:
         """Stop the stream and restore piece-selection settings."""
@@ -206,15 +215,21 @@ class MediaStreamRuntime:
         }
 
     async def _capture_bound_port(self) -> None:
-        """Resolve the bound port after the server starts."""
-        server = getattr(self.site, "_server", None)
-        sockets = getattr(server, "sockets", None)
-        if not sockets:
-            return
-        socket = sockets[0]
-        address = socket.getsockname()
-        if isinstance(address, tuple) and len(address) >= 2:
-            self.bound_port = int(address[1])
+        """Resolve the bound port after the server starts.
+
+        Uses the runner's public ``addresses`` attribute (aiohttp 3.3+), which
+        holds the result of socket.getsockname() for each served socket.
+        Falls back to requested_port when it was explicitly set (non-zero).
+        """
+        if self.runner is not None:
+            addresses = getattr(self.runner, "addresses", None)
+            if addresses and len(addresses) >= 1:
+                addr = addresses[0]
+                if isinstance(addr, tuple) and len(addr) >= 2:
+                    self.bound_port = int(addr[1])
+                    return
+        if self.requested_port and self.requested_port != 0:
+            self.bound_port = self.requested_port
 
     async def _handle_stream_request(self, request: web.Request) -> web.StreamResponse:
         """Serve a HEAD/GET request with byte-range support."""
