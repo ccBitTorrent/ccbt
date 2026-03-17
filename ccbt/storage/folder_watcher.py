@@ -7,7 +7,6 @@ periodic polling fallback for detecting changes in XET folders.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import time
 from pathlib import Path
@@ -234,9 +233,8 @@ class FolderWatcher:
                 self._loop.call_soon_threadsafe(
                     lambda: asyncio.create_task(_emit_folder_changed())
                 )
-            else:
-                with contextlib.suppress(RuntimeError):
-                    asyncio.create_task(_emit_folder_changed())  # noqa: RUF006
+            # When loop is not running (e.g. during teardown), skip emit to avoid
+            # "coroutine was never awaited" and to avoid scheduling on a dead loop.
 
             # Call all callbacks
             for callback in self.change_callbacks:

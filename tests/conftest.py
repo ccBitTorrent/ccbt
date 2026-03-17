@@ -660,19 +660,18 @@ def cleanup_network_ports():
     This fixture provides best-effort cleanup by waiting for ports to be released.
     Actual port cleanup happens in component stop() methods.
     
-    CRITICAL FIX: Increased wait time from 0.1s to 2.0s to ensure ports are released
-    before next test starts. This prevents "Address already in use" errors.
+    Wait time is 0.2s by default so integration runs don't appear to hang (2s per
+    test was causing 762 tests to take 25+ minutes in teardown alone). Set
+    CCBT_TEST_PORT_RELEASE_DELAY=2.0 in CI if "Address already in use" appears.
     
     Also releases ports from port pool manager to prevent pool exhaustion.
     """
     yield
     
     import time
-    # CRITICAL FIX: Increased from 0.1s to 2.0s to ensure ports are fully released
-    # Ports can take time to be released by the OS, especially on CI/CD systems
-    # Note: Actual port cleanup happens in component stop() methods
-    # This fixture just ensures we wait for cleanup to complete
-    time.sleep(2.0)
+    delay = float(os.environ.get("CCBT_TEST_PORT_RELEASE_DELAY", "0.2"))
+    if delay > 0:
+        time.sleep(delay)
     
     # Release all ports from port pool after each test
     # This ensures the pool doesn't get exhausted over many tests
@@ -771,27 +770,30 @@ def verify_test_isolation():
     except Exception:
         pass  # Thread enumeration may fail, ignore
     
-    # Check for open file handles (if psutil available)
-    try:
-        import psutil
-        import os as os_module
-        process = psutil.Process(os_module.getpid())
-        open_files = process.open_files()
-        # Filter out known system files and pytest files
-        suspicious_files = [
-            f.path for f in open_files
-            if not any(
-                skip in f.path.lower()
-                for skip in ["/dev/", "/proc/", "pytest", ".pyc", "__pycache__", ".cursor"]
-            )
-        ]
-        if suspicious_files and len(suspicious_files) > 5:  # Allow some files, warn on many
-            warnings.append(f"Many open file handles detected: {len(suspicious_files)} files")
-    except ImportError:
-        # psutil not available, skip file handle check
-        pass
-    except Exception:
-        pass  # File handle check may fail, ignore
+    # Check for open file handles (if psutil available).
+    # Skip on Windows: psutil.Process.open_files() is very slow there (~2s per call)
+    # and causes integration runs to appear to hang during teardown.
+    if sys.platform != "win32":
+        try:
+            import psutil
+            import os as os_module
+            process = psutil.Process(os_module.getpid())
+            open_files = process.open_files()
+            # Filter out known system files and pytest files
+            suspicious_files = [
+                f.path for f in open_files
+                if not any(
+                    skip in f.path.lower()
+                    for skip in ["/dev/", "/proc/", "pytest", ".pyc", "__pycache__", ".cursor"]
+                )
+            ]
+            if suspicious_files and len(suspicious_files) > 5:  # Allow some files, warn on many
+                warnings.append(f"Many open file handles detected: {len(suspicious_files)} files")
+        except ImportError:
+            # psutil not available, skip file handle check
+            pass
+        except Exception:
+            pass  # File handle check may fail, ignore
     
     # Log warnings if any found
     if warnings:
