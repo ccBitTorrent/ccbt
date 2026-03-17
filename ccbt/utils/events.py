@@ -485,6 +485,7 @@ class EventBus:
                 "dht_node_added": 0.1,
                 "monitoring_heartbeat": 1.0,
                 "global_metrics_update": 0.5,
+                "folder_changed": 0.5,
             }
 
         # Statistics
@@ -854,12 +855,13 @@ def get_event_bus() -> EventBus:
             config = get_config()
             obs_config = config.observability
 
-            # Build throttle intervals from config
+            # Build throttle intervals from config (folder_changed not in config, use default)
             throttle_intervals = {
                 "dht_node_found": obs_config.event_bus_throttle_dht_node_found,
                 "dht_node_added": obs_config.event_bus_throttle_dht_node_added,
                 "monitoring_heartbeat": obs_config.event_bus_throttle_monitoring_heartbeat,
                 "global_metrics_update": obs_config.event_bus_throttle_global_metrics_update,
+                "folder_changed": 0.5,
             }
 
             _event_bus = EventBus(

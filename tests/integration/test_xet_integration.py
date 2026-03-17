@@ -288,19 +288,20 @@ class TestXetIntegration:
     async def test_xet_cas_download_chunk_with_existing_connection(self):
         """Test downloading chunk with existing connection from connection manager."""
         from ccbt.discovery.xet_cas import P2PCASClient
-        from ccbt.extensions.manager import get_extension_manager
+        from ccbt.extensions.manager import ExtensionManager
         from ccbt.extensions.xet import XetExtension
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
         from ccbt.storage.xet_hashing import XetHasher
 
-        # Create CAS client
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
-
-        # Xet extension is already registered
-        extension_manager = get_extension_manager()
+        extension_manager = ExtensionManager()
         xet_ext = extension_manager.get_extension("xet")
         assert xet_ext is not None
+
+        # Create CAS client with extension manager (avoids deprecated get_extension_manager())
+        cas_client = P2PCASClient(
+            dht_client=None, tracker_client=None, extension_manager=extension_manager
+        )
 
         # Create mock connection
         chunk_hash = b"DOWNLOAD" * 4  # 32 bytes
@@ -372,42 +373,40 @@ class TestXetIntegration:
         from ccbt.discovery.xet_cas import P2PCASClient
         from ccbt.models import PeerInfo
 
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
+        mock_manager = MagicMock()
+        mock_manager.get_extension = MagicMock(
+            side_effect=lambda name: None if name == "protocol" else MagicMock()
+        )
+        cas_client = P2PCASClient(
+            dht_client=None,
+            tracker_client=None,
+            extension_manager=mock_manager,
+        )
         chunk_hash = b"EXTENSION" * 4  # 32 bytes
         peer = PeerInfo(ip="192.168.1.1", port=6881)
 
-        # Mock extension manager to return None for extension protocol
-        with patch("ccbt.extensions.manager.get_extension_manager") as mock_get_manager:
-            mock_manager = MagicMock()
-            # Make get_extension return None for "protocol"
-            def mock_get_ext(name):
-                if name == "protocol":
-                    return None
-                return MagicMock()
-            mock_manager.get_extension = MagicMock(side_effect=mock_get_ext)
-            mock_get_manager.return_value = mock_manager
-
-            with pytest.raises((NotImplementedError, ValueError)):
-                await cas_client.download_chunk(
-                    chunk_hash, peer, {"info_hash": b"X" * 20}, None
-                )
+        with pytest.raises((NotImplementedError, ValueError)):
+            await cas_client.download_chunk(
+                chunk_hash, peer, {"info_hash": b"X" * 20}, None
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.slow
     async def test_xet_cas_download_chunk_peer_not_support_xet(self):
         """Test downloading chunk when peer doesn't support Xet extension."""
         from ccbt.discovery.xet_cas import P2PCASClient
-        from ccbt.extensions.manager import get_extension_manager
+        from ccbt.extensions.manager import ExtensionManager
         from ccbt.extensions.xet import XetExtension
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
-
-        # Xet extension is already registered
-        extension_manager = get_extension_manager()
+        extension_manager = ExtensionManager()
         xet_ext = extension_manager.get_extension("xet")
         assert xet_ext is not None
+
+        cas_client = P2PCASClient(
+            dht_client=None, tracker_client=None, extension_manager=extension_manager
+        )
 
         chunk_hash = b"0" * 32  # 32 bytes
         peer = PeerInfo(ip="192.168.1.1", port=6881)
@@ -510,9 +509,14 @@ class TestXetIntegration:
         peer = PeerInfo(ip="127.0.0.1", port=6881)
         torrent_data = {"info_hash": b"X" * 20}
 
-        # Mock asyncio.open_connection
+        # Mock asyncio.open_connection. StreamWriter.write() is sync (buffers only);
+        # drain() is async. Use MagicMock base so .write is not AsyncMock (avoids
+        # "coroutine was never awaited" when production code correctly does not
+        # await writer.write()).
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.write = MagicMock()
+        mock_writer.drain = AsyncMock()
         mock_writer.close = MagicMock()
         mock_writer.wait_closed = AsyncMock()
 
@@ -533,17 +537,18 @@ class TestXetIntegration:
     async def test_xet_cas_download_chunk_chunk_not_found(self):
         """Test downloading chunk when peer responds with CHUNK_NOT_FOUND."""
         from ccbt.discovery.xet_cas import P2PCASClient
-        from ccbt.extensions.manager import get_extension_manager
+        from ccbt.extensions.manager import ExtensionManager
         from ccbt.extensions.xet import XetExtension, XetMessageType
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
-
-        # Xet extension is already registered
-        extension_manager = get_extension_manager()
+        extension_manager = ExtensionManager()
         xet_ext = extension_manager.get_extension("xet")
         assert xet_ext is not None
+
+        cas_client = P2PCASClient(
+            dht_client=None, tracker_client=None, extension_manager=extension_manager
+        )
 
         chunk_hash = b"NOTFOUND" * 4  # 32 bytes
         peer = PeerInfo(ip="192.168.1.1", port=6881)
@@ -595,17 +600,18 @@ class TestXetIntegration:
     async def test_xet_cas_download_chunk_chunk_error(self):
         """Test downloading chunk when peer responds with CHUNK_ERROR."""
         from ccbt.discovery.xet_cas import P2PCASClient
-        from ccbt.extensions.manager import get_extension_manager
+        from ccbt.extensions.manager import ExtensionManager
         from ccbt.extensions.xet import XetExtension, XetMessageType
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
-
-        # Xet extension is already registered
-        extension_manager = get_extension_manager()
+        extension_manager = ExtensionManager()
         xet_ext = extension_manager.get_extension("xet")
         assert xet_ext is not None
+
+        cas_client = P2PCASClient(
+            dht_client=None, tracker_client=None, extension_manager=extension_manager
+        )
 
         chunk_hash = b"CHUNKERR" * 4  # 32 bytes
         peer = PeerInfo(ip="192.168.1.1", port=6881)
@@ -655,17 +661,18 @@ class TestXetIntegration:
     async def test_xet_cas_download_chunk_hash_mismatch(self):
         """Test downloading chunk when hash doesn't match."""
         from ccbt.discovery.xet_cas import P2PCASClient
-        from ccbt.extensions.manager import get_extension_manager
+        from ccbt.extensions.manager import ExtensionManager
         from ccbt.extensions.xet import XetExtension
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
-
-        # Xet extension is already registered
-        extension_manager = get_extension_manager()
+        extension_manager = ExtensionManager()
         xet_ext = extension_manager.get_extension("xet")
         assert xet_ext is not None
+
+        cas_client = P2PCASClient(
+            dht_client=None, tracker_client=None, extension_manager=extension_manager
+        )
 
         chunk_hash = b"HASHMISMATCH" * 2 + b"XXXXXXXX"  # 32 bytes (12*2=24, +8=32)
         wrong_chunk_data = b"Wrong chunk data"

@@ -3937,6 +3937,7 @@ class AsyncSessionManager:
                 key_manager=self.key_manager,
                 bloom_filter=self.xet_bloom_filter,
                 catalog=self.xet_catalog,
+                extension_manager=self.extension_manager,
             )
         if hasattr(self, "pex_manager") and self.pex_manager is not None:
             self.xet_cas_client.register_pex_manager(self.pex_manager)
@@ -4144,8 +4145,11 @@ class AsyncSessionManager:
         try:
             from ccbt.extensions.manager import get_extension_manager
 
-            self._ensure_xet_discovery_graph()
+            # Set extension_manager before _ensure_xet_discovery_graph so P2PCASClient
+            # receives it via injection (avoids deprecated get_extension_manager() in
+            # download_chunk) and uses the same lifecycle-bound instance.
             self.extension_manager = get_extension_manager()
+            self._ensure_xet_discovery_graph()
             xet_ext = self.extension_manager.extensions.get("xet")
             if xet_ext is not None:
                 metadata_exchange = XetMetadataExchange(xet_ext)

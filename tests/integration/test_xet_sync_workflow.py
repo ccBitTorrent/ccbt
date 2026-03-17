@@ -93,29 +93,49 @@ class TestXetSyncWorkflow:
     @pytest.mark.slow
     async def test_folder_change_detection(self, folder_path):
         """Test folder change detection and queuing."""
+        from ccbt.utils.events import get_event_bus
         from ccbt.storage.xet_folder_manager import XetFolder
 
-        folder = XetFolder(
-            folder_path=folder_path,
-            sync_mode="best_effort",
-            check_interval=0.5,
-            session_manager=_build_session_manager_stub(),
-        )
+        # Start event bus so FOLDER_CHANGED events are consumed; otherwise the queue
+        # fills (watchdog can emit many events on Windows), emit blocks time out
+        # repeatedly, and the test can hit the global timeout.
+        event_bus = get_event_bus()
+        bus_was_running = event_bus.running
+        if not bus_was_running:
+            await event_bus.start()
+        try:
+            folder = XetFolder(
+                folder_path=folder_path,
+                sync_mode="best_effort",
+                check_interval=0.5,
+                session_manager=_build_session_manager_stub(),
+            )
 
-        await folder.start()
+            await folder.start()
 
-        # Create new file
-        new_file = folder_path / "new_file.txt"
-        new_file.write_text("new content")
+            # Create new file
+            new_file = folder_path / "new_file.txt"
+            new_file.write_text("new content")
 
-        # Wait for change detection
-        await asyncio.sleep(1.0)
+            # Wait for change detection (realtime sync runs every check_interval=0.5s).
+            await asyncio.sleep(1.5)
 
-        # Trigger sync
-        synced = await folder.sync()
-        assert synced is True
+            # Trigger sync; retry if realtime sync has already started one.
+            success = False
+            for _ in range(6):
+                ok, _ = await folder.sync()
+                if ok:
+                    success = True
+                    break
+                await asyncio.sleep(0.5)
+            assert success, "folder.sync() did not succeed within retries"
 
-        await folder.stop()
+            await folder.stop()
+            # Give Windows time to release db file handle before temp_dir teardown.
+            await asyncio.sleep(0.25)
+        finally:
+            if not bus_was_running and event_bus.running:
+                await event_bus.stop()
 
     @pytest.mark.asyncio
     @pytest.mark.slow

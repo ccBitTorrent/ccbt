@@ -6,7 +6,6 @@ Provides translation functions and locale management.
 from __future__ import annotations
 
 import gettext
-import locale
 import logging
 import os
 from pathlib import Path
@@ -75,16 +74,17 @@ def get_locale() -> str:
             locale_code,
         )
 
-    # Fall back to system locale
-    try:
-        system_locale, _ = locale.getdefaultlocale()
+    # Fall back to system locale (same env order as getdefaultlocale; avoid deprecated getdefaultlocale())
+    for env_var in ("LC_ALL", "LC_CTYPE", "LANG", "LANGUAGE"):
+        raw = os.environ.get(env_var)
+        if not raw:
+            continue
+        # Take first language if LANGUAGE is a colon-separated list
+        system_locale = raw.split(":")[0].split(".")[0].strip()
         if system_locale:
             locale_code = system_locale.split("_")[0].lower()
             if _is_valid_locale(locale_code):
                 return locale_code
-    except Exception:
-        pass
-
     return DEFAULT_LOCALE
 
 
