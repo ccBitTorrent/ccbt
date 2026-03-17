@@ -54,6 +54,7 @@ class P2PCASClient:
         key_manager: Any = None,  # Ed25519KeyManager
         bloom_filter: Optional[Any] = None,  # XetChunkBloomFilter
         catalog: Optional[Any] = None,  # XetChunkCatalog
+        extension_manager: Optional[Any] = None,  # ExtensionManager
     ):
         """Initialize P2P CAS with DHT and tracker clients.
 
@@ -63,6 +64,7 @@ class P2PCASClient:
             key_manager: Optional Ed25519KeyManager for signing chunks
             bloom_filter: Optional bloom filter for chunk availability
             catalog: Optional chunk catalog for bulk queries
+            extension_manager: Optional ExtensionManager (preferred over get_extension_manager())
 
         """
         self.dht = dht_client
@@ -70,6 +72,7 @@ class P2PCASClient:
         self.key_manager = key_manager
         self.bloom_filter = bloom_filter
         self.catalog = catalog
+        self.extension_manager = extension_manager
         self.pex_manager: Optional[Any] = None
         self.peer_authorizer: Optional[Any] = None
         self.discovery_backend_success_notifier: Optional[Any] = None
@@ -592,10 +595,13 @@ class P2PCASClient:
             msg = f"Chunk hash must be 32 bytes, got {len(chunk_hash)}"
             raise ValueError(msg)
 
-        # Get extension manager and Xet extension
-        from ccbt.extensions.manager import get_extension_manager
+        # Get extension manager and Xet extension (prefer injected manager)
+        if self.extension_manager is None:
+            from ccbt.extensions.manager import get_extension_manager
 
-        extension_manager = get_extension_manager()
+            extension_manager = get_extension_manager()
+        else:
+            extension_manager = self.extension_manager
         extension_protocol = extension_manager.get_extension("protocol")
         xet_ext = extension_manager.get_extension("xet")
 
