@@ -7,6 +7,7 @@ periodic polling fallback for detecting changes in XET folders.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from pathlib import Path
