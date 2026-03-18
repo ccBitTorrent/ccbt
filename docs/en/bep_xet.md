@@ -67,8 +67,7 @@ The Xet protocol extension is fully implemented in ccBitTorrent:
 - ✅ Configuration management
 - ✅ Folder session/runtime management
 - ✅ Best-effort folder synchronization runtime
-- ✅ Tonic file format (`.tonic`), `tonic?:` link parsing, and remote .tonic URL (http/https) ingestion
-- ✅ Cold tonic link: joining from a link only (no .tonic file); discovery uses DHT and optional trackers/source peers from the link; metadata is fetched via XET metadata exchange from discovered peers
+- ✅ Tonic file format (`.tonic`) and `tonic?:` link parsing
 - ✅ Imported metadata bootstrap without empty-workspace overwrite
 - ✅ Materialization of joined workspaces into an explicit output directory
 - ✅ Workspace-scoped update routing inside the active session/daemon runtime
