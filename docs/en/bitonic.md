@@ -2,15 +2,26 @@
 
 **Bitonic** is the main entrypoint for ccBitTorrent, providing a live, interactive terminal dashboard for monitoring and managing torrents, peers, speeds, and system metrics.
 
-> Dashboard mode is daemon-backed. Local session mode is not supported for Bitonic/UI startup.
+- Entry point: [ccbt/interface/terminal_dashboard.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py) — `main`
+- Defined in: [pyproject.toml](https://github.com/ccBittorrent/ccbt/blob/main/pyproject.toml) (project.scripts)
+- Main class: **TerminalDashboard** — use the reference below for source links.
 
-> XET workspace joins from `.tonic` files or `tonic?:` links now require an explicit output directory. The dashboard prompts for the source first, then the destination folder to materialize into.
+::: ccbt.interface.terminal_dashboard.TerminalDashboard
+    options:
+      show_source: true
+      show_root_heading: false
+      heading_level: 3
+      filters:
+        - "!^_"
 
-> The XET monitoring screen reads live daemon/runtime state through the shared data-provider path. It no longer constructs ad hoc folder wrappers for status reads.
+## Quick start
 
-- Entry point: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3914)
-- Defined in: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbt/blob/main/pyproject.toml#L81)
-- Main class: [ccbt/interface/terminal_dashboard.py:TerminalDashboard](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3009)
+1. **Launch:** `uv run bitonic` or `uv run ccbt dashboard`. Dashboard is daemon-backed; start the daemon first if needed (`uv run btbt daemon start`).
+2. **Main tabs:** Torrents (list and per-torrent view), Preferences, and monitoring views. Use tab keys or the header to switch.
+3. **Essential keys:** `o` — Advanced Add (magnet/file); `Enter` — open selected torrent; `q` / `Esc` — back or close; `?` — help; `r` — refresh.
+4. **Add a torrent (short):** Press `o` → enter magnet or path → choose output directory → (optional) select files, set limits, options → Submit. For the full 11-step flow with all options, see [Complete User Journey Example](#complete-user-journey-example) and [Add a Torrent](#add-a-torrent) below.
+
+> XET workspace joins from `.tonic` files or `tonic?:` links require an explicit output directory. The XET monitoring screen reads live daemon state via the shared data-provider path.
 
 ## Launching Bitonic
 
@@ -35,7 +46,7 @@ uv run ccbt dashboard --rules /path/to/alert-rules.json
 
 `--no-daemon` is deprecated for dashboard startup and intentionally not supported.
 
-Implementation: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/monitoring_commands.py#L20)
+Implementation: [ccbt/cli/monitoring_commands.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/monitoring_commands.py) — `dashboard`
 
 ## Complete User Journey Example
 
@@ -205,6 +216,8 @@ The graphs section is always displayed in the top half of the screen and include
   - **DHT**: DHT metrics and routing table
 
 ### Key Bindings
+
+Summary of main bindings; for the full list and details see [Keyboard Shortcuts](#keyboard-shortcuts).
 
 #### Main Dashboard Actions
 - `p` - Pause torrent
@@ -1604,22 +1617,22 @@ Step 11: NAT Options
 ## Features
 
 ### Real-time Updates
-Live torrent status and progress tracking, updated at configurable intervals. See [ccbt/interface/terminal_dashboard.py:_poll_once](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L389).
+Live torrent status and progress tracking, updated at configurable intervals. See [ccbt/interface/terminal_dashboard.py:_poll_once](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py).
 
 ### Peer Monitoring
-View connected peers, their speeds, and client information. See [ccbt/interface/terminal_dashboard.py:PeersTable](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L228).
+View connected peers, their speeds, and client information. See [ccbt/interface/terminal_dashboard.py:PeersTable](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py).
 
 ### Speed Visualization
-Download/upload speed graphs with sparklines. See [ccbt/interface/terminal_dashboard.py:SpeedSparklines](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L250).
+Download/upload speed graphs with sparklines. See [ccbt/interface/terminal_dashboard.py:SpeedSparklines](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py).
 
 ### Alert System
-Real-time notifications for important events. See [ccbt/interface/terminal_dashboard.py:491](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L491) for alert display.
+Real-time notifications for important events. See [ccbt/interface/terminal_dashboard.py:491](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py) for alert display.
 
 ### Interactive Controls
-Keyboard shortcuts for common operations. See [ccbt/interface/terminal_dashboard.py:on_key](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3240).
+Keyboard shortcuts for common operations. See [ccbt/interface/terminal_dashboard.py:on_key](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py).
 
 ### Multi-torrent Support
-Monitor multiple downloads simultaneously. See [ccbt/interface/terminal_dashboard.py:TorrentsTable](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L221).
+Monitor multiple downloads simultaneously. See [ccbt/interface/terminal_dashboard.py:TorrentsTable](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py).
 
 ### Piece Availability Monitoring
 Visual health monitoring with colored progress bars showing piece availability from peers. The health bar displays:
@@ -1759,7 +1772,7 @@ Bitonic provides specialized monitoring screens accessible from the main dashboa
 - Process count
 - Network I/O statistics (bytes sent/received)
 
-**Implementation**: [ccbt/interface/terminal_dashboard.py:SystemResourcesScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L690)
+**Implementation**: [ccbt/interface/terminal_dashboard.py:SystemResourcesScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 **Navigation**: Press `Escape` or `q` to return to main dashboard
 
@@ -1777,7 +1790,7 @@ Bitonic provides specialized monitoring screens accessible from the main dashboa
 - Event-driven metrics from MetricsPlugin (if available)
 - Metrics collection statistics
 
-**Implementation**: [ccbt/interface/terminal_dashboard.py:PerformanceMetricsScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L811)
+**Implementation**: [ccbt/interface/terminal_dashboard.py:PerformanceMetricsScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 **Data Sources**:
 - `MetricsCollector.get_performance_metrics()`
@@ -1798,7 +1811,7 @@ Bitonic provides specialized monitoring screens accessible from the main dashboa
 - Peer connection quality metrics with visual indicators
 - Connection quality scoring (0-100)
 
-**Implementation**: [ccbt/interface/terminal_dashboard.py:NetworkQualityScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L889)
+**Implementation**: [ccbt/interface/terminal_dashboard.py:NetworkQualityScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 **Quality Calculation**:
 - Based on peer speeds and choke status
@@ -1824,7 +1837,7 @@ Bitonic provides specialized monitoring screens accessible from the main dashboa
 - Memory usage
 - Peer connections
 
-**Implementation**: [ccbt/interface/terminal_dashboard.py:HistoricalTrendsScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L1059)
+**Implementation**: [ccbt/interface/terminal_dashboard.py:HistoricalTrendsScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 **Navigation**: Press `Escape` or `q` to return to main dashboard
 
@@ -1840,7 +1853,7 @@ Bitonic provides specialized monitoring screens accessible from the main dashboa
 - Alert history (last 50 alerts with resolution status)
 - Alert statistics (triggered, resolved, notifications sent)
 
-**Implementation**: [ccbt/interface/terminal_dashboard.py:AlertsDashboardScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L1201)
+**Implementation**: [ccbt/interface/terminal_dashboard.py:AlertsDashboardScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 **Severity Formatting**:
 - **CRITICAL**: Bold red
@@ -1864,7 +1877,7 @@ Bitonic provides specialized monitoring screens accessible from the main dashboa
 - Current and aggregated values
 - Labels and metadata
 
-**Implementation**: [ccbt/interface/terminal_dashboard.py:MetricsExplorerScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L1376)
+**Implementation**: [ccbt/interface/terminal_dashboard.py:MetricsExplorerScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 **Usage**:
 - Type in filter input and press `Enter` to filter metrics
@@ -1889,7 +1902,7 @@ Bitonic provides configuration screens for managing global and per-torrent setti
 - Save to runtime or file
 - Unsaved changes detection with confirmation dialog
 
-**Implementation**: [ccbt/interface/terminal_dashboard.py:GlobalConfigMainScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L1793)
+**Implementation**: [ccbt/interface/terminal_dashboard.py:GlobalConfigMainScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 **Sections Available**:
 - Network configuration
@@ -1914,7 +1927,7 @@ Bitonic provides configuration screens for managing global and per-torrent setti
 - File selection status
 - Torrent operations (announce, scrape, pause, resume, etc.)
 
-**Implementation**: [ccbt/interface/terminal_dashboard.py:PerTorrentConfigMainScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L2241)
+**Implementation**: [ccbt/interface/terminal_dashboard.py:PerTorrentConfigMainScreen](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 **Operations Available**:
 - Set rate limits (KiB/s, 0 = unlimited)
@@ -1930,65 +1943,65 @@ Bitonic provides configuration screens for managing global and per-torrent setti
 
 ## Keyboard Shortcuts
 
-All keyboard shortcuts are defined in [ccbt/interface/terminal_dashboard.py:on_key](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L505) and [ccbt/interface/terminal_dashboard.py:BINDINGS](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L337).
+All keyboard shortcuts are defined in [ccbt/interface/terminal_dashboard.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py) (`on_key`, `BINDINGS`, and action handlers).
 
 ### Navigation
 - `↑/↓` - Navigate torrent list (DataTable navigation)
-- `Enter` - Handle file browser selection. See [ccbt/interface/terminal_dashboard.py:714](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L714)
+- `Enter` - Handle file browser selection.
 
 ### Torrent Control
-- `P` / `p` - Pause selected torrent. See [ccbt/interface/terminal_dashboard.py:534](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L534)
-- `R` / `r` - Resume selected torrent. See [ccbt/interface/terminal_dashboard.py:541](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L541)
-- `Delete` - Delete selected torrent (with confirmation). See [ccbt/interface/terminal_dashboard.py:510](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L510)
-- `y` - Confirm deletion. See [ccbt/interface/terminal_dashboard.py:523](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L523)
-- `n` - Cancel deletion. See [ccbt/interface/terminal_dashboard.py:530](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L530)
+- `P` / `p` - Pause selected torrent.
+- `R` / `r` - Resume selected torrent.
+- `Delete` - Delete selected torrent (with confirmation).
+- `y` - Confirm deletion.
+- `n` - Cancel deletion.
 
 ### Advanced Actions
-- `a` / `A` - Force announce (when torrent selected). See [ccbt/interface/terminal_dashboard.py:3182](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3182)
-- `s` / `S` - Force scrape (when torrent selected). See [ccbt/interface/terminal_dashboard.py:3197](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3197)
-- `e` / `E` - Refresh PEX (when torrent selected). See [ccbt/interface/terminal_dashboard.py:3207](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3207)
-- `h` / `H` - Rehash torrent (when torrent selected). See [ccbt/interface/terminal_dashboard.py:3217](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3217)
-- `x` / `X` - Export session snapshot. See [ccbt/interface/terminal_dashboard.py:3227](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3227)
+- `a` / `A` - Force announce (when torrent selected).
+- `s` / `S` - Force scrape (when torrent selected).
+- `e` / `E` - Refresh PEX (when torrent selected).
+- `h` / `H` - Rehash torrent (when torrent selected).
+- `x` / `X` - Export session snapshot.
 
 ### Monitoring Screens Navigation
-- `s` - Open System Resources screen. See [ccbt/interface/terminal_dashboard.py:action_system_resources](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3880)
-- `m` - Open Performance Metrics screen. See [ccbt/interface/terminal_dashboard.py:action_performance_metrics](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3884)
-- `n` - Open Network Quality screen. See [ccbt/interface/terminal_dashboard.py:action_network_quality](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3888)
-- `h` - Open Historical Trends screen. See [ccbt/interface/terminal_dashboard.py:action_historical_trends](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3892)
-- `a` - Open Alerts Dashboard screen. See [ccbt/interface/terminal_dashboard.py:action_alerts_dashboard](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3896)
-- `e` - Open Metrics Explorer screen. See [ccbt/interface/terminal_dashboard.py:action_metrics_explorer](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3900)
+- `s` - Open System Resources screen.
+- `m` - Open Performance Metrics screen.
+- `n` - Open Network Quality screen.
+- `h` - Open Historical Trends screen.
+- `a` - Open Alerts Dashboard screen.
+- `e` - Open Metrics Explorer screen.
 
 ### Configuration Screens
-- `g` - Open Global Configuration screen. See [ccbt/interface/terminal_dashboard.py:action_global_config](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3870)
-- `t` - Open Per-Torrent Configuration screen. See [ccbt/interface/terminal_dashboard.py:action_torrent_config](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3875)
+- `g` - Open Global Configuration screen.
+- `t` - Open Per-Torrent Configuration screen.
 
 ### Rate Limiting
-- `1` - Disable rate limits. See [ccbt/interface/terminal_dashboard.py:627](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L627)
-- `2` - Set rate limits to 1024 KiB/s. See [ccbt/interface/terminal_dashboard.py:635](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L635)
+- `1` - Disable rate limits.
+- `2` - Set rate limits to 1024 KiB/s.
 
 ### Dashboard Control
-- `Q` / `q` - Quit dashboard. See [ccbt/interface/terminal_dashboard.py:507](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L507)
-- `/` - Open filter input. See [ccbt/interface/terminal_dashboard.py:548](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L548)
-- `:` - Open command palette. See [ccbt/interface/terminal_dashboard.py:561](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L561)
-- `m` / `M` - Toggle metrics collection interval. See [ccbt/interface/terminal_dashboard.py:645](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L645)
-- `R` - Toggle dashboard refresh interval. See [ccbt/interface/terminal_dashboard.py:659](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L659)
-- `t` / `T` - Toggle light/dark theme. See [ccbt/interface/terminal_dashboard.py:673](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L673)
-- `c` / `C` - Toggle compact mode. See [ccbt/interface/terminal_dashboard.py:681](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L681)
-- `k` / `K` - Acknowledge all active alerts. See [ccbt/interface/terminal_dashboard.py:723](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L723)
+- `Q` / `q` - Quit dashboard.
+- `/` - Open filter input.
+- `:` - Open command palette. See [ccbt/interface/terminal_dashboard.py:561](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
+- `m` / `M` - Toggle metrics collection interval. See [ccbt/interface/terminal_dashboard.py:645](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
+- `R` - Toggle dashboard refresh interval. See [ccbt/interface/terminal_dashboard.py:659](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
+- `t` / `T` - Toggle light/dark theme. See [ccbt/interface/terminal_dashboard.py:673](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
+- `c` / `C` - Toggle compact mode. See [ccbt/interface/terminal_dashboard.py:681](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
+- `k` / `K` - Acknowledge all active alerts. See [ccbt/interface/terminal_dashboard.py:723](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 ### Adding Torrents
-- `i` / `I` - Quick add torrent. See [ccbt/interface/terminal_dashboard.py:702](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L702)
-- `o` / `O` - Advanced add torrent. See [ccbt/interface/terminal_dashboard.py:706](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L706)
-- `b` / `B` - Browse for torrent file. See [ccbt/interface/terminal_dashboard.py:710](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L710)
+- `i` / `I` - Quick add torrent. See [ccbt/interface/terminal_dashboard.py:702](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
+- `o` / `O` - Advanced add torrent. See [ccbt/interface/terminal_dashboard.py:706](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
+- `b` / `B` - Browse for torrent file. See [ccbt/interface/terminal_dashboard.py:710](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 ## Configuration
 
-Dashboard settings are configured in [ccbt.toml:185-191](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L185-L191):
+Dashboard settings are configured in [ccbt.toml:185-191](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml):
 
 - `refresh_interval`: UI refresh interval in seconds (default: 1.0)
 - `default_view`: Default dashboard view
 
-Alert rules are loaded from the path specified in [ccbt.toml:170](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L170) (`alerts_rules_path`). See [ccbt/interface/terminal_dashboard.py:363-381](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L363-L381) for automatic loading.
+Alert rules are loaded from the path specified in [ccbt.toml:170](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml) (`alerts_rules_path`). See [ccbt/interface/terminal_dashboard.py:363-381](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py) for automatic loading.
 
 ## Command Palette
 
@@ -2004,11 +2017,11 @@ Press `:` to open the command palette. Available commands:
 - `backup <path>` - Backup checkpoint
 - `restore <path>` - Restore checkpoint
 
-Implementation: [ccbt/interface/terminal_dashboard.py:_run_command](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L776)
+Implementation: [ccbt/interface/terminal_dashboard.py:_run_command](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 ## Filtering
 
-Press `/` to filter torrents by name or status. Implementation: [ccbt/interface/terminal_dashboard.py:_apply_filter_and_update](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L762)
+Press `/` to filter torrents by name or status. Implementation: [ccbt/interface/terminal_dashboard.py:_apply_filter_and_update](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 ## Integration with Monitoring
 
@@ -2016,8 +2029,8 @@ Bitonic integrates with ccBitTorrent's monitoring system:
 - Metrics collection via [ccbt/monitoring/metrics_collector.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/metrics_collector.py)
 - Alert management via [ccbt/monitoring/alert_manager.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/alert_manager.py)
 - Plugin system via [ccbt/plugins/base.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/plugins/base.py)
-- MetricsPlugin integration for event-driven metrics. See [ccbt/interface/terminal_dashboard.py:_get_metrics_plugin](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L626)
-- System metrics tracking. See [ccbt/interface/terminal_dashboard.py:3001-3019](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L3001-L3019)
+- MetricsPlugin integration for event-driven metrics. See [ccbt/interface/terminal_dashboard.py:_get_metrics_plugin](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
+- System metrics tracking. See [ccbt/interface/terminal_dashboard.py:3001-3019](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 ### Metrics Sources
 
@@ -2041,7 +2054,7 @@ Bitonic displays metrics from multiple sources:
 ### Plugin Manager Integration
 
 Bitonic uses the global plugin manager singleton to access plugins:
-- Access via `get_plugin_manager()` function. See [ccbt/plugins/base.py:get_plugin_manager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/plugins/base.py#L403)
+- Access via `get_plugin_manager()` function. See [ccbt/plugins/base.py:get_plugin_manager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/plugins/base.py)
 - MetricsPlugin discovery through multiple methods (PluginManager, event bus, session attributes)
 - Graceful handling when plugins are not available
 
@@ -2052,7 +2065,7 @@ Bitonic uses the global plugin manager singleton to access plugins:
 2. Verify terminal supports Unicode and colors
 3. Check error messages in the terminal
 
-Implementation handles Textual availability: [ccbt/interface/terminal_dashboard.py:46-172](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L46-L172)
+Implementation handles Textual availability: [ccbt/interface/terminal_dashboard.py:46-172](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 ### Performance Issues
 1. Increase refresh interval: `--refresh 2.0` or press `R` to cycle intervals
@@ -2067,7 +2080,7 @@ Implementation handles Textual availability: [ccbt/interface/terminal_dashboard.
 ## Architecture
 
 Bitonic uses:
-- **Textual**: Terminal UI framework. See [ccbt/interface/terminal_dashboard.py:47-60](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L47-L60)
+- **Textual**: Terminal UI framework. See [ccbt/interface/terminal_dashboard.py:47-60](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 - **Rich**: Rich text and beautiful formatting
 - **DataProvider**: Unified data access interface for daemon IPC or local session
   - Implementation: [ccbt/interface/data_provider.py](mdc:ccbt/interface/data_provider.py)
@@ -2076,7 +2089,7 @@ Bitonic uses:
 - **CommandExecutor**: Unified command execution interface
   - Implementation: [ccbt/interface/commands/executor.py](mdc:ccbt/interface/commands/executor.py)
   - Routes commands through executor pattern (consistent with CLI)
-- **AsyncSessionManager**: Session management. See [ccbt/session/session.py:AsyncSessionManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L605)
+- **AsyncSessionManager**: Session management. See [ccbt/session/session.py:AsyncSessionManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py)
 - **DaemonInterfaceAdapter**: Adapter for daemon IPC communication
   - Implementation: [ccbt/interface/daemon_session_adapter.py](mdc:ccbt/interface/daemon_session_adapter.py)
 - **MetricsCollector**: Metrics collection (singleton via `get_metrics_collector()`)

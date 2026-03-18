@@ -45,7 +45,7 @@ from ccbt.discovery.xet_catalog import XetChunkCatalog
 from ccbt.discovery.xet_gossip import XetGossipManager
 from ccbt.discovery.xet_multicast import XetMulticastBroadcaster
 from ccbt.extensions.xet_metadata import XetMetadataExchange
-from ccbt.models import TorrentCheckpoint
+from ccbt.models import AddXetFolderResult, TorrentCheckpoint
 from ccbt.models import TorrentInfo as TorrentInfoModel
 from ccbt.monitoring import get_metrics_collector
 from ccbt.piece.file_selection import FileSelectionManager
@@ -110,7 +110,7 @@ class TorrentSessionInfo:
     name: str
     output_dir: str
     added_time: float
-    status: str = "starting"  # starting, downloading, seeding, stopped, error
+    status: str = "stopped"  # starting, downloading, seeding, stopped, error
     priority: Optional[str] = (
         None  # Queue priority (TorrentPriority enum value as string)
     )
@@ -170,6 +170,8 @@ class AsyncTorrentSession:
         # This prevents DHT from starting until tracker connections complete
         # Use timestamp instead of boolean to handle multiple concurrent callbacks
         self._tracker_peers_connecting_until: Optional[float] = None  # type: ignore[attr-defined]
+        self._last_tracker_metadata_fallback_at: float = 0.0
+        self._tracker_metadata_fallback_in_progress: bool = False
 
         # Task tracking for piece verification and download completion
         # These are sets to track asyncio tasks and prevent garbage collection
@@ -272,6 +274,25 @@ class AsyncTorrentSession:
         # Cached status for synchronous property access
         # Updated periodically by _status_loop
         self._cached_status: dict[str, Any] = {}
+
+        # Peer discovery metrics used by PeerConnectionHelper and diagnostics.
+        self._peer_discovery_metrics: dict[str, Any] = {
+            "peers_discovered_by_source": {
+                "tracker": 0,
+                "dht": 0,
+                "pex": 0,
+                "lsd": 0,
+                "incoming": 0,
+                "unknown": 0,
+            },
+            "connection_attempts": 0,
+            "connection_successes": 0,
+            "connection_failures": 0,
+            "last_peer_discovery_time": 0.0,
+        }
+
+        # Discovery controller is initialized lazily by DHT setup.
+        self.discovery_controller = None
 
         # Extract is_private flag for DHT discovery (BEP 27)
         # Use extract_is_private utility to handle both dict and TorrentInfoModel,
@@ -521,6 +542,10 @@ class AsyncTorrentSession:
 
         magnet_handler = MagnetHandler(self)
         await magnet_handler.apply_file_selection()
+
+    async def apply_magnet_file_selection_if_needed(self) -> None:
+        """Apply file selection from magnet URI (BEP 53). Public API for DHT/session callers."""
+        await self._apply_magnet_file_selection_if_needed()
 
     def _normalize_torrent_data(
         self,
@@ -940,6 +965,10 @@ class AsyncTorrentSession:
                     # This is intentional - allows piece selector to be ready when metadata arrives
                     self.logger.debug("Starting piece manager download")
                     await self.piece_manager.start_download(peer_manager)
+                    setattr(self.download_manager, "_started", True)  # noqa: B010
+                    setattr(self.download_manager, "_download_started", True)  # noqa: B010
+                    if self.info.status == "starting":
+                        self.info.status = "downloading"
                     self.logger.info(
                         "Piece manager download started (is_downloading=%s, num_pieces=%d, waiting for peers)",
                         self.piece_manager.is_downloading,
@@ -1033,36 +1062,52 @@ class AsyncTorrentSession:
                 self.torrent_data, dict
             ) and self.torrent_data.get("is_magnet", False)
 
+            # CRITICAL: Hydrate from trackers first - run DHT setup in background so we don't
+            # block session start. Tracker announces can start immediately and peers connect
+            # while DHT bootstraps; status transitions to "downloading" without waiting for DHT.
             should_init_dht = (
                 self.config.discovery.enable_dht
                 and self.session_manager
                 and (dht_explicitly_requested or is_magnet_link)
             )
             if should_init_dht:
-                try:
-                    from ccbt.session.dht_setup import DHTDiscoverySetup
 
-                    dht_setup = DHTDiscoverySetup(self)
-                    await dht_setup.setup_dht_discovery()
-                    # CRITICAL FIX: Store dht_setup reference so announce loop can use it for metadata exchange
-                    self._dht_setup = dht_setup
-                    # Update session context with DHT client if available
-                    if self.session_manager and self.session_manager.dht_client:
-                        self.ctx.dht_client = self.session_manager.dht_client
-                    self.logger.info(
-                        "DHT discovery initialized (config enabled; explicit=%s, magnet=%s)",
-                        dht_explicitly_requested,
-                        is_magnet_link,
-                    )
-                except Exception as dht_error:
-                    # Log but don't fail session start - DHT is best-effort
-                    self.logger.warning(
-                        "Failed to set up DHT peer discovery: %s (peer discovery may be limited)",
-                        dht_error,
-                    )
-                    self._dht_setup = None
+                async def _dht_setup_background() -> None:
+                    try:
+                        from ccbt.session.dht_setup import DHTDiscoverySetup
+
+                        dht_setup = DHTDiscoverySetup(self)
+                        await dht_setup.setup_dht_discovery()
+                        self._dht_setup = dht_setup
+                        self._handle_magnet_metadata_exchange = (
+                            dht_setup._handle_magnet_metadata_exchange
+                        )
+                        if self.session_manager and self.session_manager.dht_client:
+                            self.ctx.dht_client = self.session_manager.dht_client
+                        self.logger.info(
+                            "DHT discovery initialized (config enabled; explicit=%s, magnet=%s)",
+                            dht_explicitly_requested,
+                            is_magnet_link,
+                        )
+                    except Exception as dht_error:
+                        self.logger.warning(
+                            "Failed to set up DHT peer discovery: %s (peer discovery may be limited)",
+                            dht_error,
+                        )
+                        self._dht_setup = None
+                        self._handle_magnet_metadata_exchange = None
+
+                self._dht_setup = None
+                self._handle_magnet_metadata_exchange = None
+                self._task_supervisor.create_task(
+                    _dht_setup_background(), name="dht_setup_background"
+                )
+                self.logger.info(
+                    "DHT setup running in background (tracker-first: download ready, announces will start immediately)"
+                )
             else:
                 self._dht_setup = None
+                self._handle_magnet_metadata_exchange = None
 
             # CRITICAL FIX: Start incoming peer queue processor
             # This processes queued incoming connections when peer manager isn't ready yet
@@ -1105,6 +1150,22 @@ class AsyncTorrentSession:
                             "Received peer_count_low event (active peers: %d). Checking if tracker peers are connecting before starting DHT...",
                             active_peer_count,
                         )
+
+                        metadata_incomplete = bool(
+                            getattr(
+                                getattr(self.session, "piece_manager", None),
+                                "_metadata_incomplete",
+                                False,
+                            )
+                        )
+                        if not metadata_incomplete and isinstance(
+                            self.session.torrent_data, dict
+                        ):
+                            file_info = self.session.torrent_data.get("file_info")
+                            metadata_incomplete = file_info is None or (
+                                isinstance(file_info, dict)
+                                and file_info.get("total_length", 0) == 0
+                            )
 
                         # CRITICAL FIX: Wait for connection batches to complete before starting DHT
                         # User requirement: "peer count low checks should only start basically after the first batches of connections are exhausted"
@@ -1177,6 +1238,7 @@ class AsyncTorrentSession:
                             hasattr(self.session, "download_manager")
                             and self.session.download_manager
                         ):
+                            current_active = active_peer_count
                             peer_manager = getattr(
                                 self.session.download_manager, "peer_manager", None
                             )
@@ -1184,13 +1246,26 @@ class AsyncTorrentSession:
                                 peer_manager, "get_active_peers"
                             ):
                                 current_active = len(peer_manager.get_active_peers())
-                                if current_active > active_peer_count:
+                                if (
+                                    current_active > active_peer_count
+                                    and not metadata_incomplete
+                                ):
                                     self.session.logger.info(
                                         "✅ DHT SKIP: Active peer count increased from %d to %d (tracker connections succeeded). Skipping DHT for now.",
                                         active_peer_count,
                                         current_active,
                                     )
                                     return  # Skip DHT if tracker peers connected successfully
+                                if (
+                                    current_active > active_peer_count
+                                    and metadata_incomplete
+                                ):
+                                    self.session.logger.info(
+                                        "🧲 DHT CONTINUE: Active peer count increased from %d to %d, but metadata is still incomplete. Continuing DHT evaluation.",
+                                        active_peer_count,
+                                        current_active,
+                                    )
+                                active_peer_count = current_active
 
                         # Use configurable minimum; allow DHT as fallback when peer count is low for too long
                         min_peers_before_dht = getattr(
@@ -1216,17 +1291,25 @@ class AsyncTorrentSession:
                             enable_fail_fast
                             and active_peer_count < min_peers_before_dht
                         ):
+                            if metadata_incomplete:
+                                fail_fast_triggered = True
+                                self.session.logger.info(
+                                    "🧲 DHT FALLBACK: Metadata is still incomplete with only %d active peer(s). Allowing immediate DHT discovery.",
+                                    active_peer_count,
+                                )
                             low_peers_since = getattr(
                                 self.session, "_low_peers_since", None
                             )
-                            if low_peers_since is None:
+                            if low_peers_since is None and not fail_fast_triggered:
                                 self.session._low_peers_since = current_time
                                 self.session.logger.debug(
                                     "Recording low peers timestamp (DHT will trigger after %.1fs if still < %d peers)",
                                     fail_fast_timeout,
                                     min_peers_before_dht,
                                 )
-                            else:
+                            elif (
+                                not fail_fast_triggered and low_peers_since is not None
+                            ):
                                 time_at_low = current_time - low_peers_since
                                 if time_at_low >= fail_fast_timeout:
                                     fail_fast_triggered = True
@@ -1942,6 +2025,59 @@ class AsyncTorrentSession:
                                 len(unique_peer_list),
                                 self.info.name,
                             )
+
+                            metadata_incomplete = bool(
+                                getattr(
+                                    getattr(self, "piece_manager", None),
+                                    "_metadata_incomplete",
+                                    False,
+                                )
+                            )
+                            if not metadata_incomplete and isinstance(
+                                self.torrent_data, dict
+                            ):
+                                file_info = self.torrent_data.get("file_info")
+                                metadata_incomplete = file_info is None or (
+                                    isinstance(file_info, dict)
+                                    and file_info.get("total_length", 0) == 0
+                                )
+
+                            now = time_module.time()
+                            fallback_cooldown = 15.0
+                            if (
+                                metadata_incomplete
+                                and not self._tracker_metadata_fallback_in_progress
+                                and now - self._last_tracker_metadata_fallback_at
+                                >= fallback_cooldown
+                            ):
+                                peer_subset = unique_peer_list[
+                                    : min(50, len(unique_peer_list))
+                                ]
+                                self._last_tracker_metadata_fallback_at = now
+                                self._tracker_metadata_fallback_in_progress = True
+
+                                async def tracker_metadata_fallback() -> None:
+                                    try:
+                                        self.logger.info(
+                                            "🧲 TRACKER METADATA FALLBACK: Starting standalone metadata fetch against %d tracker peer(s) for %s",
+                                            len(peer_subset),
+                                            self.info.name,
+                                        )
+                                        await self.handle_magnet_metadata_exchange(
+                                            peer_subset
+                                        )
+                                    finally:
+                                        self._tracker_metadata_fallback_in_progress = (
+                                            False
+                                        )
+
+                                metadata_task = asyncio.create_task(
+                                    tracker_metadata_fallback()
+                                )
+                                self.add_metadata_task(metadata_task)
+                                metadata_task.add_done_callback(
+                                    self.remove_metadata_task
+                                )
 
                             # CRITICAL FIX: Ensure download starts immediately after connecting peers
                             # This ensures piece requests are sent as soon as connections are established
@@ -3009,6 +3145,13 @@ class AsyncTorrentSession:
         """
         return getattr(self, "_dht_setup", None)
 
+    @property
+    def magnet_info(self) -> Any:
+        """Get MagnetInfo from torrent_data when present (BEP 53)."""
+        if isinstance(self.torrent_data, dict):
+            return self.torrent_data.get("magnet_info")
+        return getattr(self.torrent_data, "magnet_info", None)
+
     def invoke_peer_callbacks(self, *args: Any, **kwargs: Any) -> None:
         """Invoke peer callbacks (public API wrapper).
 
@@ -3021,17 +3164,24 @@ class AsyncTorrentSession:
         if invoke_cb:
             invoke_cb(*args, **kwargs)
 
-    def handle_magnet_metadata_exchange(self, *args: Any, **kwargs: Any) -> None:
+    async def handle_magnet_metadata_exchange(self, *args: Any, **kwargs: Any) -> Any:
         """Handle magnet metadata exchange (public API wrapper).
 
+        Delegates to DHT setup's handler when set so announce loop can run
+        the same metadata exchange logic. Returns handler result (e.g. bool).
+
         Args:
-            *args: Positional arguments
+            *args: Positional arguments (e.g. peer_list)
             **kwargs: Keyword arguments
+
+        Returns:
+            Result from handler (e.g. True if metadata fetched), or None if no handler.
 
         """
         handler = getattr(self, "_handle_magnet_metadata_exchange", None)
         if handler:
-            handler(*args, **kwargs)
+            return await handler(*args, **kwargs)
+        return None
 
     def get_queued_dht_peers(self) -> list[Any]:
         """Get queued DHT peers.
@@ -3612,6 +3762,8 @@ class AsyncSessionManager:
         self.xet_multicast_broadcaster: Optional[XetMulticastBroadcaster] = None
         self.xet_gossip_manager: Optional[XetGossipManager] = None
         self.xet_flooding_client: Optional[ControlledFlooding] = None
+        # Shared PEX manager for XET discovery (created in _ensure_xet_discovery_graph if needed)
+        self.pex_manager: Optional[AsyncPexManager] = None
         self._xet_discovery_status: dict[str, Any] = {}
         # XET folder sessions (keyed by info_hash or folder_path)
         self.xet_folders: dict[str, Any] = {}  # folder_path or info_hash -> XetFolder
@@ -3964,6 +4116,10 @@ class AsyncSessionManager:
         """Return the current shared XET discovery status snapshot."""
         self._update_xet_discovery_status()
         return dict(self._xet_discovery_status)
+
+    def get_dht_client_for_xet(self) -> Optional[Any]:
+        """Return the session DHT client for cold tonic link discovery, or None."""
+        return getattr(self, "dht_client", None)
 
     async def start(self) -> None:
         """Start the async session manager.
@@ -4481,6 +4637,23 @@ class AsyncSessionManager:
         # Parse torrent file or use provided data
         if isinstance(torrent_path, dict):
             torrent_data = torrent_path
+            # When dict has is_magnet but no magnet_info, set it so BEP 53 can apply after metadata
+            if (
+                isinstance(torrent_data, dict)
+                and torrent_data.get("is_magnet")
+                and not torrent_data.get("magnet_info")
+            ):
+                from ccbt.core.magnet import magnet_info_from_minimal_torrent_data
+
+                try:
+                    torrent_data["magnet_info"] = magnet_info_from_minimal_torrent_data(
+                        torrent_data
+                    )
+                except (ValueError, KeyError) as e:
+                    self.logger.debug(
+                        "Could not build magnet_info from minimal torrent_data: %s",
+                        e,
+                    )
         else:
             parser = TorrentParser()
             torrent_data = parser.parse(torrent_path)
@@ -5610,7 +5783,7 @@ class AsyncSessionManager:
         auth_scope: Optional[str] = None,
         require_signed_metadata: Optional[bool] = None,
         hash_algorithm: Optional[str] = None,
-    ) -> str:
+    ) -> AddXetFolderResult:
         """Register and start an XET workspace runtime."""
         from ccbt.storage.xet_hashing import XetHasher
 
@@ -5724,17 +5897,26 @@ class AsyncSessionManager:
             hash_algorithm=runtime.hash_algorithm,
         )
 
+        def _make_add_result(rt: XetFolderRuntime) -> AddXetFolderResult:
+            return AddXetFolderResult(
+                folder_key=rt.folder_key,
+                workspace_id=rt.workspace_id.hex(),
+                sync_mode=rt.sync_mode,
+                folder_name=rt.folder_path.name,
+                allowlist_hash=rt.allowlist_hash.hex() if rt.allowlist_hash else None,
+            )
+
         async with self._xet_folders_lock:
             existing_runtime = self.xet_folders.get(folder_key)
             if isinstance(existing_runtime, XetFolderRuntime):
-                return existing_runtime.folder_key
+                return _make_add_result(existing_runtime)
             for other_runtime in self.xet_folders.values():
                 if (
                     isinstance(other_runtime, XetFolderRuntime)
                     and other_runtime.workspace_id == workspace_id
                     and other_runtime.folder_path == resolved_folder_path
                 ):
-                    return other_runtime.folder_key
+                    return _make_add_result(other_runtime)
             self.xet_folders[folder_key] = runtime
             if metadata_bytes:
                 self._xet_metadata_registry[workspace_id_hex] = metadata_bytes
@@ -5791,7 +5973,25 @@ class AsyncSessionManager:
                 },
             )
         )
-        return folder_key
+        return AddXetFolderResult(
+            folder_key=folder_key,
+            workspace_id=workspace_id_hex,
+            sync_mode=runtime.sync_mode,
+            folder_name=resolved_folder_path.name,
+            allowlist_hash=runtime.allowlist_hash.hex()
+            if runtime.allowlist_hash
+            else None,
+        )
+
+    async def get_xet_folder_metadata_bytes(self, folder_key: str) -> Optional[bytes]:
+        """Return metadata bytes for a registered XET folder, or None if unknown."""
+        async with self._xet_folders_lock:
+            runtime = self.xet_folders.get(folder_key)
+            if not isinstance(runtime, XetFolderRuntime):
+                return None
+            if runtime.metadata_bytes:
+                return runtime.metadata_bytes
+            return self._xet_metadata_registry.get(runtime.workspace_id.hex())
 
     async def remove_xet_folder(self, folder_key: str) -> bool:
         """Stop and remove an XET workspace runtime."""
@@ -6335,22 +6535,28 @@ class AsyncSessionManager:
 
                 total_download_rate += torrent.download_rate
                 total_upload_rate += torrent.upload_rate
-                progress = getattr(torrent, "_cached_status", {}).get("progress", 0.0)
+                cached_status = getattr(torrent, "_cached_status", None)
+                progress = (
+                    cached_status.get("progress", 0.0)
+                    if isinstance(cached_status, dict)
+                    else 0.0
+                )
                 total_progress += progress
                 total_downloaded += torrent.downloaded_bytes
                 total_uploaded += torrent.uploaded_bytes
                 total_left += torrent.left_bytes
-                cached_peer_count = getattr(torrent, "_cached_status", {}).get(
-                    "connected_peers",
-                    None,
-                )
+                if isinstance(cached_status, dict):
+                    cached_peer_count = cached_status.get("connected_peers", None)
+                else:
+                    cached_peer_count = None
                 if cached_peer_count is None:
                     peer_state = getattr(torrent, "peers", None)
                     if isinstance(peer_state, dict):
                         cached_peer_count = peer_state.get("count", 0)
                     else:
                         cached_peer_count = len(peer_state) if peer_state else 0
-                connected_peers += int(cached_peer_count or 0)
+                if isinstance(cached_peer_count, (int, float)):
+                    connected_peers += int(cached_peer_count)
 
             average_progress = (
                 total_progress / num_torrents if num_torrents > 0 else 0.0
@@ -6421,6 +6627,24 @@ class AsyncSessionManager:
         except Exception as e:
             self.logger.exception("Error getting status for torrent %s", info_hash_hex)
             return {"error": str(e), "status": "error"}
+
+    async def get_session_for_info_hash(
+        self, info_hash: bytes
+    ) -> Optional[AsyncTorrentSession]:
+        """Return the torrent session for the given info hash, or None.
+
+        Used by the TCP server (and other inbound connection handlers) to resolve
+        an incoming peer connection to the correct session. Safe to call from
+        any task; uses the manager lock for consistency.
+
+        Args:
+            info_hash: 20-byte info hash (v1) or 32-byte (v2) as bytes.
+
+        Returns:
+            The AsyncTorrentSession for that torrent, or None if not found.
+        """
+        async with self.lock:
+            return self.torrents.get(info_hash)
 
     async def rehash_torrent(self, info_hash: str) -> bool:
         """Rehash all pieces for a torrent.

@@ -92,20 +92,15 @@ class TestGetMetricsCollector:
         })
         mock_session.queue_manager = mock_queue_manager
         
-        # Mock tracker service - get_tracker_stats is async
-        mock_tracker_service = MagicMock()
+        # Collector uses scrape_manager.get_scrape_statistics() for tracker stats
+        mock_scrape_manager = MagicMock()
         # The code expects "success_rate" (not "announce_success_rate") and multiplies by 100
-        # So we provide 0.955 which will become 95.5
-        mock_tracker_service.get_tracker_stats = AsyncMock(return_value={
+        mock_scrape_manager.get_scrape_statistics = Mock(return_value={
             "success_rate": 0.955,  # Will be multiplied by 100 to get 95.5
             "scrape_success_rate": 0.98,  # Will be multiplied by 100 to get 98.0
             "average_response_time": 0.5,
         })
-        # Mock trackers dict for error count
-        mock_tracker_conn = MagicMock()
-        mock_tracker_conn.failure_count = 2
-        mock_tracker_service.trackers = {"tracker1": mock_tracker_conn}
-        mock_session.tracker_service = mock_tracker_service
+        mock_session.scrape_manager = mock_scrape_manager
         
         collector.set_session(mock_session)
         

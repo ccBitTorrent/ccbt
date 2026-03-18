@@ -6,6 +6,7 @@ using SQLite for local caching and DHT for peer-to-peer chunk discovery.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -17,6 +18,8 @@ from typing import Any, Optional, Union
 from ccbt.models import PeerInfo, XetFileMetadata
 
 logger = logging.getLogger(__name__)
+
+_DB_CLOSED_MSG = "XetDeduplication database is closed"
 
 
 class XetDeduplication:
@@ -54,6 +57,9 @@ class XetDeduplication:
 
         self.db = self._init_database()
         self.dht_client = dht_client
+        # Serialize DB access: SQLite connection is not thread-safe; run blocking
+        # DB and disk I/O in thread pool so the event loop stays responsive.
+        self._db_lock = asyncio.Lock()
 
     def _init_database(self) -> sqlite3.Connection:
         """Initialize SQLite cache database.
@@ -78,7 +84,11 @@ class XetDeduplication:
 
         for attempt in range(max_retries):
             try:
-                db = sqlite3.connect(str(self.cache_path), timeout=5.0)
+                db = sqlite3.connect(
+                    str(self.cache_path),
+                    timeout=5.0,
+                    check_same_thread=False,
+                )
                 break
             except sqlite3.OperationalError as e:
                 if "locked" in str(e).lower() or "database is locked" in str(e).lower():
@@ -210,6 +220,24 @@ class XetDeduplication:
 
         return db
 
+    def _check_chunk_exists_sync(self, chunk_hash: bytes) -> Optional[Path]:
+        """Synchronous DB read for chunk existence (run in thread)."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        cursor = self.db.execute(
+            "SELECT storage_path FROM chunks WHERE hash = ?",
+            (chunk_hash,),
+        )
+        row = cursor.fetchone()
+        if row:
+            self.db.execute(
+                "UPDATE chunks SET last_accessed = ? WHERE hash = ?",
+                (time.time(), chunk_hash),
+            )
+            self.db.commit()
+            return Path(row[0])
+        return None
+
     async def check_chunk_exists(self, chunk_hash: bytes) -> Optional[Path]:
         """Check if chunk exists locally.
 
@@ -223,20 +251,42 @@ class XetDeduplication:
             Path to stored chunk if exists, None otherwise
 
         """
-        cursor = self.db.execute(
-            "SELECT storage_path FROM chunks WHERE hash = ?",
+        async with self._db_lock:
+            return await asyncio.to_thread(
+                self._check_chunk_exists_sync,
+                chunk_hash,
+            )
+
+    def _increment_chunk_ref_sync(self, chunk_hash: bytes) -> None:
+        """Synchronous DB update for existing chunk (run in thread)."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        self.db.execute(
+            "UPDATE chunks SET ref_count = ref_count + 1 WHERE hash = ?",
             (chunk_hash,),
         )
-        row = cursor.fetchone()
-        if row:
-            # Update last accessed timestamp
-            self.db.execute(
-                "UPDATE chunks SET last_accessed = ? WHERE hash = ?",
-                (time.time(), chunk_hash),
-            )
-            self.db.commit()
-            return Path(row[0])
-        return None
+        self.db.commit()
+
+    def _store_new_chunk_sync(self, chunk_hash: bytes, chunk_data: bytes) -> Path:
+        """Synchronous write and DB insert for new chunk (run in thread)."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        storage_file = self.chunk_store_path / chunk_hash.hex()
+        storage_file.write_bytes(chunk_data)
+        current_time = time.time()
+        self.db.execute(
+            """INSERT INTO chunks (hash, size, storage_path, created_at, last_accessed)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                chunk_hash,
+                len(chunk_data),
+                str(storage_file),
+                current_time,
+                current_time,
+            ),
+        )
+        self.db.commit()
+        return storage_file
 
     async def store_chunk(
         self,
@@ -261,60 +311,69 @@ class XetDeduplication:
             Path to stored chunk (may be existing or new)
 
         """
-        # Check if already exists
         existing = await self.check_chunk_exists(chunk_hash)
         if existing:
-            # Increment reference count
-            self.db.execute(
-                "UPDATE chunks SET ref_count = ref_count + 1 WHERE hash = ?",
-                (chunk_hash,),
-            )
-            self.db.commit()
+            async with self._db_lock:
+                await asyncio.to_thread(
+                    self._increment_chunk_ref_sync,
+                    chunk_hash,
+                )
             self.logger.debug(
                 "Chunk %s already exists, incremented ref count",
                 chunk_hash.hex()[:16],
             )
-
-            # If file context provided, add file-to-chunk reference
             if file_path is not None and file_offset is not None:
                 await self.add_file_chunk_reference(
                     file_path, chunk_hash, file_offset, len(chunk_data)
                 )
-
             return existing
 
-        # Store new chunk
-        storage_file = self.chunk_store_path / chunk_hash.hex()
-        storage_file.write_bytes(chunk_data)
-
-        # Update database
-        current_time = time.time()
-        self.db.execute(
-            """INSERT INTO chunks (hash, size, storage_path, created_at, last_accessed)
-               VALUES (?, ?, ?, ?, ?)""",
-            (
+        async with self._db_lock:
+            storage_file = await asyncio.to_thread(
+                self._store_new_chunk_sync,
                 chunk_hash,
-                len(chunk_data),
-                str(storage_file),
-                current_time,
-                current_time,
-            ),
-        )
-        self.db.commit()
-
-        # If file context provided, add file-to-chunk reference
-        if file_path is not None and file_offset is not None:
-            await self.add_file_chunk_reference(
-                file_path, chunk_hash, file_offset, len(chunk_data)
+                chunk_data,
             )
-
         self.logger.debug(
             "Stored new chunk %s (%d bytes)",
             chunk_hash.hex()[:16],
             len(chunk_data),
         )
-
+        if file_path is not None and file_offset is not None:
+            await self.add_file_chunk_reference(
+                file_path, chunk_hash, file_offset, len(chunk_data)
+            )
         return storage_file
+
+    def _add_file_chunk_reference_sync(
+        self,
+        file_path: str,
+        chunk_hash: bytes,
+        offset: int,
+        chunk_size: int,
+    ) -> bool:
+        """Synchronous DB insert for file-chunk reference (run in thread).
+
+        Returns True if reference already existed (skipped), False if inserted.
+        """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        current_time = time.time()
+        cursor = self.db.execute(
+            """SELECT 1 FROM file_chunks
+               WHERE file_path = ? AND chunk_hash = ? AND offset = ?""",
+            (file_path, chunk_hash, offset),
+        )
+        if cursor.fetchone():
+            return True
+        self.db.execute(
+            """INSERT INTO file_chunks
+               (file_path, chunk_hash, offset, chunk_size, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (file_path, chunk_hash, offset, chunk_size, current_time),
+        )
+        self.db.commit()
+        return False
 
     async def add_file_chunk_reference(
         self,
@@ -336,38 +395,27 @@ class XetDeduplication:
 
         """
         try:
-            current_time = time.time()
-
-            # Check if reference already exists
-            cursor = self.db.execute(
-                """SELECT 1 FROM file_chunks
-                   WHERE file_path = ? AND chunk_hash = ? AND offset = ?""",
-                (file_path, chunk_hash, offset),
-            )
-            if cursor.fetchone():
-                # Reference already exists, skip
+            async with self._db_lock:
+                skipped = await asyncio.to_thread(
+                    self._add_file_chunk_reference_sync,
+                    file_path,
+                    chunk_hash,
+                    offset,
+                    chunk_size,
+                )
+            if skipped:
                 self.logger.debug(
                     "File chunk reference already exists: %s @ offset %d",
                     file_path,
                     offset,
                 )
-                return
-
-            # Insert file-to-chunk reference
-            self.db.execute(
-                """INSERT INTO file_chunks
-                   (file_path, chunk_hash, offset, chunk_size, created_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (file_path, chunk_hash, offset, chunk_size, current_time),
-            )
-            self.db.commit()
-
-            self.logger.debug(
-                "Added file chunk reference: %s -> %s @ offset %d",
-                file_path,
-                chunk_hash.hex()[:16],
-                offset,
-            )
+            else:
+                self.logger.debug(
+                    "Added file chunk reference: %s -> %s @ offset %d",
+                    file_path,
+                    chunk_hash.hex()[:16],
+                    offset,
+                )
         except sqlite3.IntegrityError as e:
             # Handle duplicate key errors gracefully
             self.logger.debug(
@@ -398,6 +446,8 @@ class XetDeduplication:
             True if chunk was deleted (ref_count reached 0), False otherwise
 
         """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
         try:
             # Delete file-to-chunk reference
             cursor = self.db.execute(
@@ -439,6 +489,8 @@ class XetDeduplication:
             List of tuples (chunk_hash, offset, chunk_size) ordered by offset
 
         """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
         try:
             cursor = self.db.execute(
                 """SELECT chunk_hash, offset, chunk_size
@@ -550,6 +602,29 @@ class XetDeduplication:
 
         return output_path
 
+    def _store_file_metadata_sync(
+        self, metadata: XetFileMetadata, metadata_json: str, current_time: float
+    ) -> None:
+        """Synchronous DB insert for file metadata (run in thread)."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        self.db.execute(
+            """INSERT OR REPLACE INTO file_metadata
+               (file_path, file_hash, total_size, chunk_count,
+                created_at, last_modified, metadata_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                metadata.file_path,
+                metadata.file_hash,
+                metadata.total_size,
+                len(metadata.chunk_hashes),
+                current_time,
+                current_time,
+                metadata_json,
+            ),
+        )
+        self.db.commit()
+
     async def store_file_metadata(self, metadata: XetFileMetadata) -> None:
         """Store file metadata persistently.
 
@@ -562,33 +637,19 @@ class XetDeduplication:
         """
         try:
             current_time = time.time()
-
-            # Serialize metadata to JSON
             metadata_dict = metadata.model_dump()
-            # Convert bytes to hex strings for JSON serialization
             metadata_dict["file_hash"] = metadata.file_hash.hex()
             metadata_dict["chunk_hashes"] = [h.hex() for h in metadata.chunk_hashes]
             metadata_dict["xorb_refs"] = [h.hex() for h in metadata.xorb_refs]
             metadata_json = json.dumps(metadata_dict)
 
-            # Insert or update file metadata
-            self.db.execute(
-                """INSERT OR REPLACE INTO file_metadata
-                   (file_path, file_hash, total_size, chunk_count,
-                    created_at, last_modified, metadata_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    metadata.file_path,
-                    metadata.file_hash,
-                    metadata.total_size,
-                    len(metadata.chunk_hashes),
-                    current_time,
-                    current_time,
+            async with self._db_lock:
+                await asyncio.to_thread(
+                    self._store_file_metadata_sync,
+                    metadata,
                     metadata_json,
-                ),
-            )
-            self.db.commit()
-
+                    current_time,
+                )
             self.logger.debug(
                 "Stored file metadata for %s (%d chunks)",
                 metadata.file_path,
@@ -596,6 +657,20 @@ class XetDeduplication:
             )
         except Exception as e:
             self.logger.warning("Failed to store file metadata: %s", e, exc_info=True)
+
+    def _get_file_metadata_sync(self, file_path: str) -> Optional[dict[str, Any]]:
+        """Synchronous DB read for file metadata (run in thread). Returns raw dict or None."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        cursor = self.db.execute(
+            """SELECT metadata_json FROM file_metadata
+               WHERE file_path = ?""",
+            (file_path,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return json.loads(row[0])
 
     async def get_file_metadata(self, file_path: str) -> Optional[XetFileMetadata]:
         """Get file metadata from persistent storage.
@@ -610,18 +685,13 @@ class XetDeduplication:
 
         """
         try:
-            cursor = self.db.execute(
-                """SELECT metadata_json FROM file_metadata
-                   WHERE file_path = ?""",
-                (file_path,),
-            )
-            row = cursor.fetchone()
-            if not row:
+            async with self._db_lock:
+                metadata_dict = await asyncio.to_thread(
+                    self._get_file_metadata_sync,
+                    file_path,
+                )
+            if not metadata_dict:
                 return None
-
-            # Deserialize JSON to XetFileMetadata
-            metadata_dict = json.loads(row[0])
-            # Convert hex strings back to bytes
             metadata_dict["file_hash"] = bytes.fromhex(metadata_dict["file_hash"])
             metadata_dict["chunk_hashes"] = [
                 bytes.fromhex(h) for h in metadata_dict["chunk_hashes"]
@@ -629,7 +699,6 @@ class XetDeduplication:
             metadata_dict["xorb_refs"] = [
                 bytes.fromhex(h) for h in metadata_dict.get("xorb_refs", [])
             ]
-
             return XetFileMetadata(**metadata_dict)
         except Exception as e:
             self.logger.warning("Failed to get file metadata: %s", e, exc_info=True)
@@ -857,6 +926,8 @@ class XetDeduplication:
             Dictionary with chunk information or None if not found
 
         """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
         cursor = self.db.execute(
             """SELECT hash, size, storage_path, ref_count, created_at, last_accessed
                FROM chunks WHERE hash = ?""",
@@ -887,6 +958,8 @@ class XetDeduplication:
             True if chunk was removed, False otherwise
 
         """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
         # Get current ref count
         cursor = self.db.execute(
             "SELECT ref_count, storage_path FROM chunks WHERE hash = ?",
@@ -935,7 +1008,8 @@ class XetDeduplication:
 
         """
         cutoff_time = time.time() - max_age_seconds
-
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
         cursor = self.db.execute(
             """SELECT hash, storage_path FROM chunks
                WHERE last_accessed < ? AND ref_count <= 1""",
@@ -969,6 +1043,8 @@ class XetDeduplication:
             Dictionary with cache statistics
 
         """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
         cursor = self.db.execute(
             """SELECT
                 COUNT(*) as total_chunks,

@@ -906,34 +906,45 @@ class UPnPClient:
             raise UPnPError(msg)
 
         try:
-            # Some routers require deleting existing mapping first
-            # Try to delete any existing mapping for this port/protocol
-            # Try with empty remote_host first (most common case)
-            deleted = await self.delete_port_mapping(
-                external_port,
-                protocol,
-                "",  # Empty remote_host (wildcard)
-            )
-            if deleted:
-                self.logger.debug(
-                    "Deleted existing port mapping for %s:%s before adding new one",
-                    protocol,
-                    external_port,
-                )
-            # If that didn't work and we have a specific remote_host, try with it
-            elif remote_host:
+            # Some routers require deleting existing mapping first.
+            # Best-effort: if DeletePortMapping fails with 501 (Action Failed), many
+            # routers use that when no mapping exists or they reject the delete;
+            # proceed to AddPortMapping anyway.
+            try:
                 deleted = await self.delete_port_mapping(
                     external_port,
                     protocol,
-                    remote_host,
+                    "",  # Empty remote_host (wildcard)
                 )
                 if deleted:
                     self.logger.debug(
-                        "Deleted existing port mapping for %s:%s (remote_host=%s) before adding new one",
+                        "Deleted existing port mapping for %s:%s before adding new one",
                         protocol,
                         external_port,
+                    )
+                elif remote_host:
+                    deleted = await self.delete_port_mapping(
+                        external_port,
+                        protocol,
                         remote_host,
                     )
+                    if deleted:
+                        self.logger.debug(
+                            "Deleted existing port mapping for %s:%s (remote_host=%s) before adding new one",
+                            protocol,
+                            external_port,
+                            remote_host,
+                        )
+            except UPnPError as e:
+                err_msg = str(e)
+                # 501 = Action Failed (router rejected delete, or no mapping exists)
+                if "501" in err_msg or "714" in err_msg:
+                    self.logger.debug(
+                        "DeletePortMapping failed (code 501/714), proceeding to AddPortMapping: %s",
+                        err_msg[:200],
+                    )
+                else:
+                    raise
 
             response = await send_soap_action(
                 self.control_url,

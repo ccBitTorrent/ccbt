@@ -68,6 +68,10 @@ class XetDefragPrevention:
                 }
 
             # Analyze chunk access patterns
+            if self.dedup.db is None:
+                from ccbt.storage.xet_deduplication import _DB_CLOSED_MSG
+
+                raise RuntimeError(_DB_CLOSED_MSG)
             cursor = self.dedup.db.execute(
                 """SELECT
                     COUNT(*) as total,

@@ -344,6 +344,7 @@ docs/_build/
 *.zip
 
 # Local configuration
+.env copy
 .env.local
 .env.development.local
 .env.test.local

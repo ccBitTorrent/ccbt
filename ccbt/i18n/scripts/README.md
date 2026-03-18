@@ -18,7 +18,27 @@ python -m ccbt.i18n.scripts.generate_translations_hi_ur_fa_arc
 - Creates/updates .po files for hi, ur, fa, arc
 - Preserves Rich markup and format strings
 
-### 2. `update_translations.py`
+### 2. `check_string_coverage.py`
+Checks that every translatable string in the source (`_()`, `_n()`, `_p()`) appears in the .pot template. Used by pre-commit on `ccbt/cli/*.py` to avoid committing new strings without updating the template.
+
+**Usage:**
+```bash
+# From repo root (default: source ccbt, template ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot)
+uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt
+
+# Fail CI if any string is missing from template
+uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt --fail-on-gap
+
+# Custom paths
+uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt --pot path/to/ccbt.pot
+
+# Show strings in template that are no longer in code (obsolete)
+uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt --show-obsolete
+```
+
+**What it reports:** Counts of strings in code, in template, covered; list of uncovered (first 20). With `--fail-on-gap`, exit code 1 if any uncovered. Run `extract` then `update_translations` to fix gaps.
+
+### 3. `update_translations.py`
 Updates translation files when new strings are added to the codebase.
 
 **Usage:**
@@ -41,7 +61,7 @@ python -m ccbt.i18n.scripts.update_translations --source-dir /path/to/ccbt
   - Linux: `sudo apt-get install gettext`
   - macOS: `brew install gettext`
 
-### 3. `check_completeness.py`
+### 4. `check_completeness.py`
 Checks translation completeness for all languages.
 
 **Usage:**
@@ -60,7 +80,7 @@ python -m ccbt.i18n.scripts.check_completeness --lang hi
 - Fuzzy translations (need review)
 - Completion percentage
 
-### 4. `validate_po.py`
+### 5. `validate_po.py`
 Validates .po file format.
 
 **Usage:**
@@ -74,7 +94,7 @@ python -m ccbt.i18n.scripts.validate_po
 - Proper string escaping
 - No syntax errors
 
-### 5. `compile_all.py`
+### 6. `compile_all.py`
 Compiles all .po files to .mo files.
 
 **Usage:**
@@ -88,8 +108,13 @@ python -m ccbt.i18n.scripts.compile_all
 
 **Requirements:**
 - GNU gettext tools (`msgfmt` command)
+  - Windows: https://mlocati.github.io/articles/gettext-iconv-windows.html
+  - Linux: `sudo apt-get install gettext`
+  - macOS: `brew install gettext`
 
-### 6. `translation_workflow.py`
+**.mo and version control:** The project ignores `*.mo` in `.gitignore`. Run `compile_all` after pulling or after updating .po files so the app can use translations. For source distributions (sdist), include .po (and optionally .mo) so installed apps can use translations without gettext tools.
+
+### 7. `translation_workflow.py`
 Orchestrates the complete translation workflow.
 
 **Usage:**
@@ -111,18 +136,22 @@ python -m ccbt.i18n.scripts.translation_workflow --step check
 4. Validate .po files
 5. Compile .mo files
 
-### 7. `setup_language.py`
-Sets up a new language translation.
+### 8. `setup_language.py`
+Creates a new locale from the template: creates `locales/<lang_code>/LC_MESSAGES/`, copies `locales/en/LC_MESSAGES/ccbt.pot` to `locales/<lang_code>/LC_MESSAGES/ccbt.po`, and sets the header `Language:` and `Plural-Forms` (from a built-in table for common languages).
 
 **Usage:**
 ```bash
-python -m ccbt.i18n.scripts.setup_language <lang_code> [language_name] [team_name]
+uv run python -m ccbt.i18n.scripts.setup_language <lang_code> [language_name] [team_name]
 ```
 
-**Example:**
+**Examples:**
 ```bash
-python -m ccbt.i18n.scripts.setup_language hi Hindi
+uv run python -m ccbt.i18n.scripts.setup_language de
+uv run python -m ccbt.i18n.scripts.setup_language hi Hindi
+uv run python -m ccbt.i18n.scripts.setup_language fr French "French team"
 ```
+
+**Requirements:** The template `ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot` must exist (run extract first).
 
 ## Translation Workflow
 
@@ -199,10 +228,19 @@ Plural forms are handled automatically by gettext based on the `Plural-Forms` he
 
 ### RTL Languages
 
-For right-to-left languages (Urdu, Persian, Aramaic):
-- Test terminal RTL rendering
-- Verify table alignment
-- Check interactive prompts
+RTL locales in scope: **ur** (Urdu), **fa** (Persian), **arc** (Aramaic). For these:
+- Terminal may not reverse layout; text may display LTR in some terminals.
+- Rich/Textual widgets may need testing for alignment and prompts.
+- Preserve markup and placeholders in translations; run `check_completeness` and visual QA.
+
+### Per-language setup
+
+Supported locales: en, es, eu, fr, ja, ko, hi, ur, fa, th, zh, arc, sw, ha, yo. For each language:
+- Use `setup_language.py` to create a new locale from the template.
+- Run the appropriate generator if available: `generate_translations.py` (es, eu), `comprehensive_translations.py` (ja, ko, th, zh), `generate_hi_ur_fa_arc_translations.py` (hi, ur, fa, arc), `generate_african_translations.py` (sw, ha, yo).
+- After code changes: `update_translations.py` then re-run generator or translate new msgids manually.
+- Ensure `Language:` and `Plural-Forms` headers are correct (see `setup_language.py` PLURAL_FORMS table).
+- Run `check_completeness --lang <code>` for QA. See `docs/en/implementation-plans/i18n-implementation-plan.md` for full per-language tasks.
 
 ## Troubleshooting
 
@@ -223,6 +261,10 @@ Install GNU gettext tools:
 
 All .po files use UTF-8 encoding. Ensure your editor is configured for UTF-8.
 
+## Template (.pot) location
+
+All scripts use the single path `ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`. The project may have `*.pot` in `.gitignore`; if so, run the extract step (or full workflow) before running `update_translations` or `check_string_coverage`.
+
 ## File Structure
 
 ```
@@ -230,7 +272,7 @@ ccbt/i18n/
 ├── locales/
 │   ├── en/LC_MESSAGES/
 │   │   ├── ccbt.po      # English (source)
-│   │   └── ccbt.pot     # Template
+│   │   └── ccbt.pot     # Template (generate with extract)
 │   ├── hi/LC_MESSAGES/
 │   │   ├── ccbt.po      # Hindi translations
 │   │   └── ccbt.mo      # Compiled binary
@@ -239,7 +281,8 @@ ccbt/i18n/
 │   │   └── ccbt.mo      # Compiled binary
 │   └── ...
 └── scripts/
-    ├── generate_translations_hi_ur_fa_arc.py
+    ├── check_string_coverage.py
+    ├── generate_hi_ur_fa_arc_translations.py
     ├── update_translations.py
     ├── check_completeness.py
     ├── validate_po.py

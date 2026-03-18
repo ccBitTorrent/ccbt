@@ -9,9 +9,14 @@ if TYPE_CHECKING:
 else:
     try:
         from textual.widgets import Input, Static
-    except ImportError:
-        Input = None  # type: ignore[assignment, misc]
-        Static = None  # type: ignore[assignment, misc]
+    except ImportError:  # pragma: no cover - fallback when textual unavailable
+        # Fallback base classes so the module can be imported without Textual.
+        # Subclasses remain valid; instantiation without Textual will fail at runtime.
+        class Input:  # type: ignore[no-redef,misc]
+            """Fallback when textual is not available."""
+
+        class Static:  # type: ignore[no-redef,misc]
+            """Fallback when textual is not available."""
 
 
 class ConfigValueEditor(Input):  # type: ignore[misc]

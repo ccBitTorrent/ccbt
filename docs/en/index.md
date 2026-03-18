@@ -17,8 +17,8 @@ A modern, high-performance BitTorrent client built with Python asyncio, featurin
 ### Advanced Configuration
 - **TOML Configuration**: Comprehensive config system with hot-reload. See [ccbt/config/config.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/config/config.py)
 - **Per-Torrent Settings**: Individual torrent configuration overrides
-- **Rate Limiting**: Global and per-torrent upload/download limits. See [ccbt.toml:38-42](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L38-L42)
-- **Strategy Selection**: Round-robin, rarest-first, or sequential piece selection. See [ccbt.toml:100-114](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L100-L114)
+- **Rate Limiting**: Global and per-torrent upload/download limits. See [ccbt.toml:38-42](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
+- **Strategy Selection**: Round-robin, rarest-first, or sequential piece selection. See [ccbt.toml:100-114](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 - **Streaming Mode**: Priority-based piece selection for media files
 
 ### Network Features
@@ -55,29 +55,7 @@ The Xet Protocol Extension is a key differentiator that transforms BitTorrent in
 
 Install UV from [astral.sh/uv](https://astral.sh/uv), then install ccBitTorrent:
 
-Reference: [pyproject.toml:79-81](https://github.com/ccBittorrent/ccbt/blob/main/pyproject.toml#L79-L81) for entry points
-
-### Main Entry Points
-
-**Bitonic** - The main terminal dashboard interface (recommended):
-- Entry point: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- Defined in: [pyproject.toml:81](https://github.com/ccBittorrent/ccbt/blob/main/pyproject.toml#L81)
-- Launch: `uv run bitonic` or `uv run ccbt dashboard`
-
-**btbt CLI** - Enhanced command-line interface:
-- Entry point: [ccbt/cli/main.py:main](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/main.py#L1463)
-- Defined in: [pyproject.toml:80](https://github.com/ccBittorrent/ccbt/blob/main/pyproject.toml#L80)
-- Launch: `uv run btbt`
-
-**ccbt** - Basic CLI interface:
-- Entry point: [ccbt/__main__.py:main](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/__main__.py#L18)
-- Defined in: [pyproject.toml:79](https://github.com/ccBittorrent/ccbt/blob/main/pyproject.toml#L79)
-- Launch: `uv run ccbt`
-
-For detailed usage, see:
-- [Getting Started Guide](getting-started.md) - Step-by-step tutorial
-- [Bitonic](bitonic.md) - Terminal dashboard guide
-- [btbt CLI](btbt-cli.md) - Complete command reference
+Entry points are defined in [pyproject.toml](https://github.com/ccBittorrent/ccbt/blob/main/pyproject.toml) (project.scripts). **Bitonic:** `uv run bitonic` or `uv run ccbt dashboard`. **btbt CLI:** `uv run btbt`. **ccbt:** `uv run ccbt`. See [Getting Started](getting-started.md) for details.
 
 ## Documentation
 

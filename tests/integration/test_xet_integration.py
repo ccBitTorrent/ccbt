@@ -858,6 +858,53 @@ class TestXetIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.slow
+    async def test_write_xet_chunk_stores_file_reference_for_new_chunk(self, temp_dir):
+        """New chunk stored via write_xet_chunk gets file reference in file_chunks."""
+        from ccbt.config.config import Config
+        from ccbt.storage.disk_io import DiskIOManager
+
+        config = Config()
+        config.disk.xet_enabled = True
+        config.disk.download_dir = str(temp_dir)
+
+        with patch("ccbt.storage.disk_io.get_config", return_value=config):
+            disk_io = DiskIOManager()
+
+        dedup = disk_io._get_xet_deduplication()
+        assert dedup is not None
+
+        # Use a unique chunk hash so this is a "new" chunk (not existing)
+        import hashlib
+        chunk_data = b"new chunk data for file reference test"
+        chunk_hash = hashlib.sha256(chunk_data).digest()
+        file_path = temp_dir / "target_file.txt"
+        offset = 0
+
+        ok = await disk_io.write_xet_chunk(
+            chunk_hash=chunk_hash,
+            chunk_data=chunk_data,
+            file_path=file_path,
+            offset=offset,
+        )
+        assert ok is True
+
+        # File-to-chunk reference must be stored so get_file_chunks returns it
+        file_chunks = await dedup.get_file_chunks(str(file_path))
+        assert len(file_chunks) == 1
+        assert file_chunks[0][0] == chunk_hash
+        assert file_chunks[0][1] == offset
+        assert file_chunks[0][2] == len(chunk_data)
+
+        if dedup:
+            dedup.close()
+        if hasattr(disk_io, "stop"):
+            try:
+                await disk_io.stop()
+            except Exception:
+                pass
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
     async def test_file_reconstruction_with_missing_chunks(self, temp_dir):
         """Test file reconstruction when some chunks are missing."""
         from ccbt.storage.xet_deduplication import XetDeduplication

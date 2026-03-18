@@ -428,7 +428,14 @@ def start(
                 splash_thread.start()
 
         try:
-            pid = daemon_manager.start(foreground=False)
+            # Pass config file to daemon so it uses the same config as CLI
+            extra_args: list[str] = []
+            if config_manager.config_file and config_manager.config_file.exists():
+                extra_args.extend(["--config", str(config_manager.config_file)])
+            pid = daemon_manager.start(
+                foreground=False,
+                extra_args=extra_args if extra_args else None,
+            )
 
             # Give the process a moment to initialize before checking
             time.sleep(0.2)
@@ -549,6 +556,18 @@ def start(
 
         except RuntimeError as e:
             console.print(_("[red]✗[/red] Failed to start daemon: {e}").format(e=e))
+            # Point user to log file and foreground for debugging
+            log_file = daemon_manager.state_dir / "daemon_startup.log"
+            if log_file.exists():
+                console.print(
+                    _("[dim]See daemon log: {path}[/dim]").format(path=log_file)
+                )
+            console.print(
+                _(
+                    "[yellow]To see errors in the terminal, run:[/yellow] "
+                    "[dim]uv run btbt daemon start --foreground[/dim]"
+                )
+            )
             raise click.Abort from e
 
 

@@ -79,7 +79,7 @@ async def test_resolver_uses_registered_metadata_for_tonic_link(tmp_path) -> Non
 async def test_resolver_raises_runtime_error_for_missing_tonic_link_metadata(
     tmp_path,
 ) -> None:
-    """Resolver must raise RuntimeError (not FileNotFoundError) when tonic link has no metadata."""
+    """Resolver must raise RuntimeError when cold link cannot discover peers or fetch metadata."""
     _, info_hash = _build_minimal_tonic_bytes("orphan")
     link = generate_tonic_link(
         info_hash=info_hash,
@@ -87,13 +87,13 @@ async def test_resolver_raises_runtime_error_for_missing_tonic_link_metadata(
         sync_mode="best_effort",
     )
     manager = _build_session_manager(tmp_path)
-    # Do not register metadata for this workspace.
+    # Do not register metadata; cold path runs but finds no peers / no metadata.
 
     resolver = XetMetadataResolver()
     with pytest.raises(RuntimeError) as exc_info:
         await resolver.resolve(link, session_manager=manager)
-    assert "No metadata is available for tonic link" in str(exc_info.value)
-    assert info_hash.hex() in str(exc_info.value)
+    assert "Could not discover peers or fetch metadata" in str(exc_info.value)
+    assert ".tonic file" in str(exc_info.value)
 
 
 async def test_joined_workspace_materializes_imported_metadata(tmp_path) -> None:

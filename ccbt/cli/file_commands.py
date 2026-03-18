@@ -70,7 +70,7 @@ def files_list(_ctx, info_hash: str) -> None:
             result = await executor.execute("file.list", info_hash=info_hash)
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to list files")
+                raise click.ClickException(result.error or _("Failed to list files"))
 
             file_list = result.data["files"]
 

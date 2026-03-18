@@ -22,6 +22,9 @@ from ccbt.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Default IPC port; must match DaemonConfig.ipc_port default (models.py) for reconnect consistency
+DEFAULT_IPC_PORT = 64124
+
 
 def _get_daemon_home_dir() -> Path:
     """Get daemon home directory with consistent path resolution.
@@ -81,6 +84,30 @@ def _get_daemon_home_dir() -> Path:
 
     # Fallback to expanduser if all else fails
     return Path(os.path.expanduser("~")).resolve()
+
+
+def get_daemon_config_path() -> Path:
+    """Return path to daemon config.json (state_dir/config.json).
+
+    Uses _get_daemon_home_dir() for consistent path resolution with daemon process.
+    """
+    home_dir = _get_daemon_home_dir()
+    return home_dir / ".ccbt" / "daemon" / "config.json"
+
+
+def read_daemon_config() -> Optional[dict[str, Any]]:
+    """Read daemon config.json if present; return dict with ipc_port, api_key, etc. or None."""
+    path = get_daemon_config_path()
+    if not path.exists():
+        return None
+    try:
+        import json
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        logger.debug("Could not read daemon config file %s: %s", path, e)
+        return None
 
 
 class DaemonManager:
@@ -314,6 +341,13 @@ class DaemonManager:
                         ).strip()
                         if lock_pid_text.isdigit():
                             lock_pid = int(lock_pid_text)
+                            # Same process holds the lock (e.g. CLI started foreground daemon)
+                            if lock_pid == os.getpid():
+                                logger.debug(
+                                    "Lock file held by current process (PID %d), treating as acquired",
+                                    lock_pid,
+                                )
+                                return True
                             # Check if process is running
                             try:
                                 # On Windows, signal 0 doesn't work the same way
@@ -470,6 +504,20 @@ class DaemonManager:
                         return False
                 return False
             # Unix: use fcntl for file locking
+            # If lock file exists and is held by current process (foreground mode), treat as acquired
+            if self.lock_file.exists():
+                try:
+                    lock_pid_text = self.lock_file.read_text(encoding="utf-8").strip()
+                    if lock_pid_text.isdigit():
+                        lock_pid = int(lock_pid_text)
+                        if lock_pid == os.getpid():
+                            logger.debug(
+                                "Lock file held by current process (PID %d), treating as acquired",
+                                lock_pid,
+                            )
+                            return True
+                except Exception:
+                    pass
             try:
                 import fcntl
             except ImportError:
@@ -576,10 +624,15 @@ class DaemonManager:
             raise
 
     def remove_pid(self) -> None:
-        """Remove PID file and release lock."""
+        """Remove PID file, daemon config.json, and release lock."""
         if self.pid_file.exists():
             self.pid_file.unlink()
             logger.debug("Removed PID file: %s", self.pid_file)
+        config_json = self.state_dir / "config.json"
+        if config_json.exists():
+            with contextlib.suppress(OSError):
+                config_json.unlink()
+            logger.debug("Removed daemon config: %s", config_json)
         # Release lock file
         self.release_lock()
 
@@ -587,12 +640,14 @@ class DaemonManager:
         self,
         script_path: Optional[str] = None,
         foreground: bool = False,
+        extra_args: Optional[list[str]] = None,
     ) -> int:
         """Start daemon process.
 
         Args:
             script_path: Path to daemon script (if None, uses current Python)
             foreground: Run in foreground (for debugging)
+            extra_args: Optional list of CLI args to pass to daemon (e.g. --config path)
 
         Returns:
             Process PID
@@ -616,6 +671,8 @@ class DaemonManager:
             args = [script_path, "-m", daemon_module]
         else:
             args = [script_path]
+        if extra_args:
+            args.extend(extra_args)
 
         # Start process
         try:

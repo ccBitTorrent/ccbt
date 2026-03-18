@@ -55,6 +55,12 @@ class XetExecutor(CommandExecutor):
             return await self._sync_folder(*args, **kwargs)
         if command == "xet.add_xet_folder":
             return await self._add_xet_folder_session(*args, **kwargs)
+        if command == "xet.get_xet_folder_metadata_bytes":
+            return await self._get_xet_folder_metadata_bytes(*args, **kwargs)
+        if command == "xet.share_folder":
+            return await self._share_folder(*args, **kwargs)
+        if command == "xet.get_share_link":
+            return await self._get_share_link(*args, **kwargs)
         if command == "xet.remove_xet_folder":
             return await self._remove_xet_folder_session(*args, **kwargs)
         if command == "xet.list_xet_folders":
@@ -212,13 +218,18 @@ class XetExecutor(CommandExecutor):
             if not output_dir:
                 output_dir = folder_name
 
-            folder_key = await self.adapter.add_xet_folder(
+            add_result = await self.adapter.add_xet_folder(
                 folder_path=output_dir,
                 tonic_file=None if tonic_input.startswith("tonic?:") else tonic_input,
                 tonic_link=tonic_input if tonic_input.startswith("tonic?:") else None,
                 sync_mode=resolved.parsed_metadata.get("sync_mode", "best_effort"),
                 source_peers=resolved.parsed_metadata.get("source_peers"),
                 check_interval=check_interval,
+            )
+            folder_key = (
+                add_result.get("folder_key", output_dir)
+                if isinstance(add_result, dict)
+                else add_result
             )
 
             return CommandResult(
@@ -805,7 +816,7 @@ class XetExecutor(CommandExecutor):
     ) -> CommandResult:
         """Add XET folder session via session manager."""
         try:
-            folder_key = await self.adapter.add_xet_folder(
+            adapter_result = await self.adapter.add_xet_folder(
                 folder_path=folder_path,
                 tonic_file=tonic_file,
                 tonic_link=tonic_link,
@@ -813,14 +824,160 @@ class XetExecutor(CommandExecutor):
                 source_peers=source_peers,
                 check_interval=check_interval,
             )
-            return CommandResult(
-                success=True,
-                data={"folder_key": folder_key, "folder_path": folder_path},
-            )
+            data = {
+                **(
+                    adapter_result
+                    if isinstance(adapter_result, dict)
+                    else {"folder_key": adapter_result}
+                ),
+                "folder_path": folder_path,
+            }
+            return CommandResult(success=True, data=data)
         except Exception as e:
             return CommandResult(
                 success=False,
                 error=f"Failed to add XET folder session: {e}",
+            )
+
+    async def _get_xet_folder_metadata_bytes(self, folder_key: str) -> CommandResult:
+        """Get raw metadata bytes for a registered XET folder (for .tonic save)."""
+        try:
+            raw = await self.adapter.get_xet_folder_metadata_bytes(folder_key)
+            return CommandResult(
+                success=True,
+                data={"metadata_bytes": raw}
+                if raw is not None
+                else {"metadata_bytes": None},
+            )
+        except Exception as e:
+            return CommandResult(
+                success=False,
+                error=f"Failed to get XET folder metadata bytes: {e}",
+            )
+
+    async def _share_folder(
+        self,
+        folder_path: str,
+        sync_mode: Optional[str] = None,
+        check_interval: Optional[float] = None,
+        allowlist_path: Optional[str] = None,  # noqa: ARG002 (reserved for future use)
+        output_tonic: Optional[str] = None,
+    ) -> CommandResult:
+        """Add folder, generate share link, optionally write .tonic file."""
+        from ccbt.core.tonic_link import generate_tonic_link
+
+        try:
+            add_result = await self.adapter.add_xet_folder(
+                folder_path=folder_path,
+                sync_mode=sync_mode,
+                check_interval=check_interval,
+            )
+            if not isinstance(add_result, dict):
+                add_result = {"folder_key": add_result}
+            folder_key = add_result.get("folder_key", folder_path)
+            workspace_id_hex = add_result.get("workspace_id")
+            if not workspace_id_hex:
+                folders = await self.adapter.list_xet_folders()
+                record = next(
+                    (
+                        r
+                        for r in folders
+                        if isinstance(r, dict) and r.get("folder_key") == folder_key
+                    ),
+                    None,
+                )
+                if record:
+                    workspace_id_hex = record.get("workspace_id")
+                if not workspace_id_hex:
+                    return CommandResult(
+                        success=False,
+                        error="Could not determine workspace_id for share link",
+                    )
+            if not isinstance(workspace_id_hex, str):
+                return CommandResult(
+                    success=False,
+                    error="Could not determine workspace_id for share link",
+                )
+            workspace_id_bytes = bytes.fromhex(workspace_id_hex)
+            sync_mode_val = add_result.get("sync_mode", "best_effort")
+            folder_name = add_result.get("folder_name") or Path(folder_path).name
+            allowlist_hash_hex = add_result.get("allowlist_hash")
+            allowlist_hash_bytes = (
+                bytes.fromhex(allowlist_hash_hex) if allowlist_hash_hex else None
+            )
+            link = generate_tonic_link(
+                info_hash=workspace_id_bytes,
+                display_name=folder_name,
+                sync_mode=sync_mode_val,
+                allowlist_hash=allowlist_hash_bytes,
+            )
+            tonic_path: Optional[str] = None
+            if output_tonic:
+                raw = await self.adapter.get_xet_folder_metadata_bytes(folder_key)
+                if raw:
+                    Path(output_tonic).parent.mkdir(parents=True, exist_ok=True)
+                    Path(output_tonic).write_bytes(raw)
+                    tonic_path = output_tonic
+            return CommandResult(
+                success=True,
+                data={
+                    "folder_key": folder_key,
+                    "workspace_id": workspace_id_hex,
+                    "link": link,
+                    "folder_path": folder_path,
+                    **({"tonic_path": tonic_path} if tonic_path else {}),
+                },
+            )
+        except Exception as e:
+            return CommandResult(
+                success=False,
+                error=f"Failed to share folder: {e}",
+            )
+
+    async def _get_share_link(self, folder_key: str) -> CommandResult:
+        """Get share link for an already-registered XET folder."""
+        from ccbt.core.tonic_link import generate_tonic_link
+
+        try:
+            folders = await self.adapter.list_xet_folders()
+            record = next(
+                (
+                    r
+                    for r in folders
+                    if isinstance(r, dict) and r.get("folder_key") == folder_key
+                ),
+                None,
+            )
+            if not record:
+                return CommandResult(
+                    success=False,
+                    error=f"XET folder not found: {folder_key}",
+                )
+            workspace_id_hex = record.get("workspace_id")
+            if not workspace_id_hex:
+                return CommandResult(
+                    success=False,
+                    error="Workspace ID not available for folder",
+                )
+            workspace_id_bytes = bytes.fromhex(workspace_id_hex)
+            sync_mode_val = record.get("sync_mode", "best_effort")
+            folder_path_str = record.get("folder_path", "")
+            folder_name = Path(folder_path_str).name if folder_path_str else folder_key
+            allowlist_hash_hex = record.get("allowlist_hash")
+            allowlist_hash_bytes = (
+                bytes.fromhex(allowlist_hash_hex) if allowlist_hash_hex else None
+            )
+            link = generate_tonic_link(
+                info_hash=workspace_id_bytes,
+                display_name=folder_name,
+                sync_mode=sync_mode_val,
+                allowlist_hash=allowlist_hash_bytes,
+            )
+            return CommandResult(success=True, data={"link": link})
+        except Exception as e:
+            return CommandResult(
+                success=False,
+                error=f"Failed to get share link: {e}",
             )
 
     async def _remove_xet_folder_session(

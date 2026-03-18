@@ -346,6 +346,12 @@ class DHTDiscoverySetup:
 
         return on_dht_peers_discovered
 
+    async def handle_magnet_metadata_exchange(
+        self, peer_list: list[dict[str, Any]]
+    ) -> bool:
+        """Handle metadata exchange for magnet links. Public API for torrent_addition."""
+        return await self._handle_magnet_metadata_exchange(peer_list)
+
     async def _handle_magnet_metadata_exchange(
         self, peer_list: list[dict[str, Any]]
     ) -> bool:
@@ -591,6 +597,8 @@ class DHTDiscoverySetup:
                                     "Error calling on_metadata_available: %s",
                                     e,
                                 )
+                        # Apply BEP 53 file selection from magnet URI (so / x.pe) if present
+                        await self._apply_bep53_after_metadata()
                     else:
                         self.logger.warning(
                             "Metadata exchange failed with DHT-discovered peers for %s (will retry later)",
@@ -605,6 +613,16 @@ class DHTDiscoverySetup:
                     )
 
         return metadata_fetched
+
+    async def _apply_bep53_after_metadata(self) -> None:
+        """Apply BEP 53 file selection from magnet URI (so / x.pe) after metadata merge."""
+        try:
+            await self.session.apply_magnet_file_selection_if_needed()
+        except Exception as e:
+            self.logger.debug(
+                "Could not apply magnet file selection after metadata: %s",
+                e,
+            )
 
     async def _start_download_with_dht_peers(
         self, peer_list: list[dict[str, Any]], metadata_fetched: bool
@@ -908,11 +926,13 @@ class DHTDiscoverySetup:
             from ccbt.session.discovery import DiscoveryController
             from ccbt.session.models import SessionContext
             from ccbt.session.tasks import TaskSupervisor
+
+            discovery_controller_cls = DiscoveryController
         except Exception:
-            discovery_controller = None  # type: ignore[assignment]
+            discovery_controller_cls = None  # type: ignore[assignment]
 
         if (
-            discovery_controller
+            discovery_controller_cls
             and self.session.session_manager
             and self.session.session_manager.dht_client
         ):
@@ -951,7 +971,7 @@ class DHTDiscoverySetup:
 
             # Lazily create discovery controller
             if self.session.discovery_controller is None:
-                self.session.discovery_controller = DiscoveryController(
+                self.session.discovery_controller = discovery_controller_cls(
                     session_ctx, task_supervisor
                 )
             self.session.discovery_controller.register_dht_callback(
@@ -1092,6 +1112,32 @@ class DHTDiscoverySetup:
                             "(routing table empty but will query anyway - magnet links need DHT)",
                             self.session.info.name,
                         )
+                        try:
+                            self.logger.info(
+                                "Routing table is empty for %s, attempting DHT re-bootstrap before get_peers",
+                                self.session.info.name,
+                            )
+                            await asyncio.wait_for(
+                                dht_client._bootstrap(),  # noqa: SLF001
+                                timeout=20.0,
+                            )
+                            routing_table_size = len(dht_client.routing_table.nodes)
+                            self.logger.info(
+                                "DHT re-bootstrap finished for %s (routing table: %d nodes)",
+                                self.session.info.name,
+                                routing_table_size,
+                            )
+                        except asyncio.TimeoutError:
+                            self.logger.warning(
+                                "DHT re-bootstrap timed out for %s; continuing with empty routing table",
+                                self.session.info.name,
+                            )
+                        except Exception as bootstrap_error:
+                            self.logger.warning(
+                                "DHT re-bootstrap failed for %s: %s",
+                                self.session.info.name,
+                                bootstrap_error,
+                            )
                     else:
                         self.logger.info(
                             "Triggering immediate DHT get_peers query for %s (routing table: %d nodes)",
@@ -1371,8 +1417,32 @@ class DHTDiscoverySetup:
                             if hasattr(stats, "download_rate"):
                                 current_download_rate = stats.download_rate
 
+                # Allow magnet metadata bootstrap to use DHT immediately when tracker peers
+                # have not produced any active connections yet.
+                is_magnet_bootstrap = (
+                    isinstance(self.session.torrent_data, dict)
+                    and self.session.torrent_data.get("file_info", {}).get(
+                        "total_length", 0
+                    )
+                    == 0
+                )
+                metadata_incomplete = (
+                    bool(
+                        getattr(
+                            getattr(self.session, "piece_manager", None),
+                            "_metadata_incomplete",
+                            False,
+                        )
+                    )
+                    or is_magnet_bootstrap
+                )
+
                 # Allow DHT to start when we have at least min_peers_before_dht (configurable, default 10)
-                if not dht_started and current_peer_count < min_peers_before_dht:
+                if (
+                    not dht_started
+                    and current_peer_count < min_peers_before_dht
+                    and not metadata_incomplete
+                ):
                     self.logger.info(
                         "⏸️ DHT DISCOVERY: Waiting for minimum peers (%d/%d). Sleeping 30s before recheck...",
                         current_peer_count,
@@ -1381,6 +1451,16 @@ class DHTDiscoverySetup:
                     await asyncio.sleep(30.0)
                     continue
 
+                if (
+                    not dht_started
+                    and metadata_incomplete
+                    and current_peer_count < min_peers_before_dht
+                ):
+                    self.logger.info(
+                        "🧲 DHT DISCOVERY: Metadata is still incomplete with only %d peer(s). Starting DHT discovery immediately.",
+                        current_peer_count,
+                    )
+
                 if not dht_started and current_peer_count >= min_peers_before_dht:
                     dht_started = True
                     self.logger.info(
@@ -1388,6 +1468,12 @@ class DHTDiscoverySetup:
                         current_peer_count,
                         min_peers_before_dht,
                     )
+                elif (
+                    not dht_started
+                    and metadata_incomplete
+                    and current_peer_count < min_peers_before_dht
+                ):
+                    dht_started = True
 
                 # CRITICAL FIX: Use conservative DHT settings to avoid blacklisting
                 # Reduced query frequency and parameters

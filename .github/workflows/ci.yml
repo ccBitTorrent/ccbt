@@ -73,3 +73,45 @@ jobs:
       - name: Run Ty type checking
         run: |
           uv run ty check --config-file=dev/ty.toml --output-format=concise
+
+  i18n:
+    name: i18n
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    environment: approval-required
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+
+      - name: Extract translatable strings
+        run: |
+          uv run python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot
+
+      - name: Check string coverage
+        run: |
+          uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt --fail-on-gap
+
+      - name: Validate .po files
+        run: |
+          uv run python -m ccbt.i18n.scripts.validate_po
+
+      - name: Check translation completeness
+        run: |
+          uv run python -m ccbt.i18n.scripts.check_completeness

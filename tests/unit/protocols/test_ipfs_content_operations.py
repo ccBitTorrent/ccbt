@@ -30,14 +30,14 @@ def mock_ipfs_client():
 def ipfs_protocol(mock_ipfs_client):
     """Create IPFS protocol instance."""
     protocol = IPFSProtocol()
-    
+
     with patch(
         "ccbt.protocols.ipfs.ipfshttpclient.connect",
         return_value=mock_ipfs_client,
     ):
         protocol._ipfs_client = mock_ipfs_client
         protocol._ipfs_connected = True
-    
+
     return protocol
 
 
@@ -63,15 +63,84 @@ def sample_torrent_info():
 
 
 @pytest.mark.asyncio
+async def test_extract_blocks_and_links_not_connected(ipfs_protocol):
+    """Test _extract_blocks_and_links returns empty when not connected."""
+    ipfs_protocol._ipfs_connected = False
+    ipfs_protocol._ipfs_client = None
+    blocks, links = await ipfs_protocol._extract_blocks_and_links("QmAny")
+    assert blocks == []
+    assert links == []
+
+
+@pytest.mark.asyncio
+async def test_extract_blocks_and_links_with_links(ipfs_protocol, mock_ipfs_client):
+    """Test _extract_blocks_and_links when object.get returns Links."""
+    mock_ipfs_client.object.get.return_value = {
+        "Links": [
+            {"Hash": "QmBlock1", "Name": "block1"},
+            {"Hash": "QmBlock2", "Name": "block2"},
+        ]
+    }
+    blocks, links = await ipfs_protocol._extract_blocks_and_links("QmRoot")
+    assert blocks == ["QmBlock1", "QmBlock2"]
+    assert len(links) == 2
+    assert links[0]["Hash"] == "QmBlock1"
+    assert links[1]["Hash"] == "QmBlock2"
+
+
+@pytest.mark.asyncio
+async def test_extract_blocks_and_links_no_links(ipfs_protocol, mock_ipfs_client):
+    """Test _extract_blocks_and_links when object has no Links."""
+    mock_ipfs_client.object.get.return_value = {}
+    blocks, links = await ipfs_protocol._extract_blocks_and_links("QmRoot")
+    assert blocks == []
+    assert links == []
+
+
+@pytest.mark.asyncio
+async def test_extract_blocks_and_links_object_get_raises(
+    ipfs_protocol, mock_ipfs_client
+):
+    """Test _extract_blocks_and_links when object.get raises."""
+    mock_ipfs_client.object.get.side_effect = Exception("object.get failed")
+    blocks, links = await ipfs_protocol._extract_blocks_and_links("QmRoot")
+    assert blocks == []
+    assert links == []
+
+
+@pytest.mark.asyncio
 async def test_add_content_basic(ipfs_protocol, mock_ipfs_client):
     """Test basic content addition."""
     data = b"test content"
     mock_ipfs_client.add_bytes.return_value = "QmNewCID123456789"
-    
+    mock_ipfs_client.object.get.return_value = {}
     cid = await ipfs_protocol.add_content(data)
-    
     assert cid == "QmNewCID123456789"
     mock_ipfs_client.add_bytes.assert_called_once_with(data, cid_version=1)
+    content = ipfs_protocol.ipfs_content[cid]
+    assert content.blocks == []
+    assert content.links == []
+
+
+@pytest.mark.asyncio
+async def test_add_content_populates_blocks_and_links(ipfs_protocol, mock_ipfs_client):
+    """Test add_content populates IPFSContent.blocks and .links from object.get."""
+    data = b"test content"
+    cid = "QmNewCID123456789"
+    mock_ipfs_client.add_bytes.return_value = cid
+    mock_ipfs_client.object.get.return_value = {
+        "Links": [
+            {"Hash": "QmBlock1", "Name": "block1"},
+            {"Hash": "QmBlock2", "Name": "block2"},
+        ]
+    }
+    result = await ipfs_protocol.add_content(data)
+    assert result == cid
+    content = ipfs_protocol.ipfs_content[cid]
+    assert content.blocks == ["QmBlock1", "QmBlock2"]
+    assert len(content.links) == 2
+    assert content.links[0]["Hash"] == "QmBlock1"
+    assert content.links[1]["Hash"] == "QmBlock2"
 
 
 @pytest.mark.asyncio
@@ -79,7 +148,7 @@ async def test_add_content_not_connected(ipfs_protocol):
     """Test content addition when not connected."""
     ipfs_protocol._ipfs_connected = False
     ipfs_protocol._ipfs_client = None
-    
+
     cid = await ipfs_protocol.add_content(b"test")
     assert cid == ""
 
@@ -88,9 +157,9 @@ async def test_add_content_not_connected(ipfs_protocol):
 async def test_add_content_error_handling(ipfs_protocol, mock_ipfs_client):
     """Test error handling in content addition."""
     import ipfshttpclient.exceptions
-    
+
     mock_ipfs_client.add_bytes.side_effect = ipfshttpclient.exceptions.Error("Failed")
-    
+
     cid = await ipfs_protocol.add_content(b"test")
     assert cid == ""
 
@@ -99,9 +168,9 @@ async def test_add_content_error_handling(ipfs_protocol, mock_ipfs_client):
 async def test_pin_content_basic(ipfs_protocol, mock_ipfs_client):
     """Test basic content pinning."""
     cid = "QmTestCID"
-    
+
     result = await ipfs_protocol.pin_content(cid)
-    
+
     assert result is True
     mock_ipfs_client.pin.add.assert_called_once_with(cid)
     assert cid in ipfs_protocol._pinned_cids
@@ -112,7 +181,7 @@ async def test_pin_content_not_connected(ipfs_protocol):
     """Test content pinning when not connected."""
     ipfs_protocol._ipfs_connected = False
     ipfs_protocol._ipfs_client = None
-    
+
     result = await ipfs_protocol.pin_content("QmTestCID")
     assert result is False
 
@@ -121,9 +190,9 @@ async def test_pin_content_not_connected(ipfs_protocol):
 async def test_pin_content_error_handling(ipfs_protocol, mock_ipfs_client):
     """Test error handling in content pinning."""
     import ipfshttpclient.exceptions
-    
+
     mock_ipfs_client.pin.add.side_effect = ipfshttpclient.exceptions.Error("Failed")
-    
+
     result = await ipfs_protocol.pin_content("QmTestCID")
     assert result is False
 
@@ -133,9 +202,9 @@ async def test_unpin_content_basic(ipfs_protocol, mock_ipfs_client):
     """Test basic content unpinning."""
     cid = "QmTestCID"
     ipfs_protocol._pinned_cids.add(cid)
-    
+
     result = await ipfs_protocol.unpin_content(cid)
-    
+
     assert result is True
     mock_ipfs_client.pin.rm.assert_called_once_with(cid)
     assert cid not in ipfs_protocol._pinned_cids
@@ -146,7 +215,7 @@ async def test_unpin_content_not_connected(ipfs_protocol):
     """Test content unpinning when not connected."""
     ipfs_protocol._ipfs_connected = False
     ipfs_protocol._ipfs_client = None
-    
+
     result = await ipfs_protocol.unpin_content("QmTestCID")
     assert result is False
 
@@ -155,9 +224,9 @@ async def test_unpin_content_not_connected(ipfs_protocol):
 async def test_unpin_content_error_handling(ipfs_protocol, mock_ipfs_client):
     """Test error handling in content unpinning."""
     import ipfshttpclient.exceptions
-    
+
     mock_ipfs_client.pin.rm.side_effect = ipfshttpclient.exceptions.Error("Failed")
-    
+
     result = await ipfs_protocol.unpin_content("QmTestCID")
     assert result is False
 
@@ -166,9 +235,9 @@ async def test_unpin_content_error_handling(ipfs_protocol, mock_ipfs_client):
 async def test_get_content_stats_basic(ipfs_protocol, mock_ipfs_client):
     """Test basic content statistics."""
     cid = "QmTestCID"
-    
+
     stats = await ipfs_protocol._get_content_stats(cid)
-    
+
     assert "seeders" in stats
     assert "leechers" in stats
     assert "completed" in stats
@@ -180,13 +249,13 @@ async def test_get_content_stats_basic(ipfs_protocol, mock_ipfs_client):
 async def test_get_content_stats_with_seeders(ipfs_protocol, mock_ipfs_client):
     """Test content statistics with seeder count."""
     cid = "QmTestCID"
-    
+
     # Mock peer discovery to return providers
     with patch.object(
         ipfs_protocol, "_find_content_peers", return_value=["QmPeer1", "QmPeer2"]
     ):
         stats = await ipfs_protocol._get_content_stats(cid)
-        
+
         assert stats["seeders"] == 2
 
 
@@ -194,31 +263,31 @@ async def test_get_content_stats_with_seeders(ipfs_protocol, mock_ipfs_client):
 async def test_get_content_stats_caching(ipfs_protocol, mock_ipfs_client):
     """Test content statistics caching."""
     cid = "QmTestCID"
-    
+
     # Ensure mock returns proper stats structure
     mock_ipfs_client.object.stat.return_value = {
         "CumulativeSize": 1000,
         "NumLinks": 5,
     }
-    
+
     # Mock peer discovery to return consistent results for both calls
     mock_find_peers = AsyncMock(return_value=["QmPeer1"])
-    
+
     with patch.object(ipfs_protocol, "_find_content_peers", mock_find_peers):
         # First call
         stats1 = await ipfs_protocol._get_content_stats(cid)
         call_count_1 = mock_ipfs_client.object.stat.call_count
-        
+
         # Second call (should use cache - within 60 seconds)
         stats2 = await ipfs_protocol._get_content_stats(cid)
         call_count_2 = mock_ipfs_client.object.stat.call_count
-        
+
         # Results should be same (cached) - check all expected keys exist
         assert "seeders" in stats1
         assert "seeders" in stats2
         assert "leechers" in stats1
         assert "completed" in stats1
-        
+
         # If size is present, it should match
         if "size" in stats1 and "size" in stats2:
             assert stats1["size"] == stats2["size"]
@@ -231,7 +300,7 @@ async def test_get_content_stats_not_connected(ipfs_protocol):
     """Test content statistics when not connected."""
     ipfs_protocol._ipfs_connected = False
     ipfs_protocol._ipfs_client = None
-    
+
     stats = await ipfs_protocol._get_content_stats("QmTestCID")
     assert stats == {"seeders": 0, "leechers": 0, "completed": 0}
 
@@ -240,9 +309,9 @@ async def test_get_content_stats_not_connected(ipfs_protocol):
 async def test_get_content_stats_error_handling(ipfs_protocol, mock_ipfs_client):
     """Test error handling in content statistics."""
     import ipfshttpclient.exceptions
-    
+
     mock_ipfs_client.object.stat.side_effect = ipfshttpclient.exceptions.Error("Failed")
-    
+
     stats = await ipfs_protocol._get_content_stats("QmTestCID")
     assert stats == {"seeders": 0, "leechers": 0, "completed": 0}
 
@@ -251,10 +320,9 @@ async def test_get_content_stats_error_handling(ipfs_protocol, mock_ipfs_client)
 async def test_scrape_torrent(ipfs_protocol, sample_torrent_info, mock_ipfs_client):
     """Test torrent scraping."""
     mock_ipfs_client.add_bytes.return_value = "QmMetadataCID"
-    
+
     stats = await ipfs_protocol.scrape_torrent(sample_torrent_info)
-    
+
     assert "seeders" in stats
     assert "leechers" in stats
     assert "completed" in stats
-

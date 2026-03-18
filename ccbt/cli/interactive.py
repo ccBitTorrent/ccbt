@@ -243,12 +243,15 @@ class InteractiveCLI:
         self,
         torrent_data: dict[str, Any],
         resume: bool = False,
+        already_added_info_hash: Optional[str] = None,
     ) -> None:
         """Download a torrent interactively."""
         self.current_torrent = torrent_data
 
-        # Add torrent using executor
-        if isinstance(torrent_data, dict) and "path" in torrent_data:
+        if already_added_info_hash:
+            # Magnet (or other) already added via executor; skip add step
+            info_hash_hex = already_added_info_hash
+        elif isinstance(torrent_data, dict) and "path" in torrent_data:
             torrent_path = torrent_data["path"]
             result = await self.executor.execute(
                 "torrent.add",

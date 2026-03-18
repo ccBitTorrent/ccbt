@@ -46,6 +46,7 @@ class TestDownloadsF811Fix:
         # Verify expected parameters
         assert "session" in params
         assert "magnet_link" in params
+        assert "info_hash_hex" in params
         assert "console" in params
         assert "resume" in params
 
@@ -66,23 +67,23 @@ class TestDownloadsF811Fix:
         mock_result.error = None
         mock_executor.execute = AsyncMock(return_value=mock_result)
 
-        # Mock LocalSessionAdapter and UnifiedCommandExecutor
+        # Mock LocalSessionAdapter, UnifiedCommandExecutor, and InteractiveCLI (avoid real UI)
         mock_adapter = MagicMock()
+        mock_interactive = MagicMock()
+        mock_interactive.download_torrent = AsyncMock(return_value=None)
         with patch("ccbt.cli.downloads.LocalSessionAdapter", return_value=mock_adapter), \
              patch("ccbt.cli.downloads.UnifiedCommandExecutor", return_value=mock_executor), \
-             patch("ccbt.interface.terminal_dashboard.TerminalDashboard") as mock_dashboard_class:
-            mock_dashboard = MagicMock()
-            mock_dashboard.run = MagicMock()
-            mock_dashboard_class.return_value = mock_dashboard
-
+             patch("ccbt.cli.downloads.InteractiveCLI", return_value=mock_interactive):
             console = Console()
             magnet_link = "magnet:?xt=urn:btih:test"
+            info_hash_hex = "a" * 40
 
             # Test that function can be called (may raise KeyboardInterrupt or other expected errors)
             try:
                 await downloads.start_interactive_magnet_download(
                     mock_session,
                     magnet_link,
+                    info_hash_hex,
                     console,
                     resume=False,
                 )
@@ -111,23 +112,23 @@ class TestDownloadsF811Fix:
         mock_result.error = None
         mock_executor.execute = AsyncMock(return_value=mock_result)
 
-        # Mock LocalSessionAdapter and UnifiedCommandExecutor
+        # Mock LocalSessionAdapter, UnifiedCommandExecutor, and InteractiveCLI (avoid real UI)
         mock_adapter = MagicMock()
+        mock_interactive = MagicMock()
+        mock_interactive.download_torrent = AsyncMock(return_value=None)
         with patch("ccbt.cli.downloads.LocalSessionAdapter", return_value=mock_adapter), \
              patch("ccbt.cli.downloads.UnifiedCommandExecutor", return_value=mock_executor), \
-             patch("ccbt.interface.terminal_dashboard.TerminalDashboard") as mock_dashboard_class:
-            mock_dashboard = MagicMock()
-            mock_dashboard.run = MagicMock()
-            mock_dashboard_class.return_value = mock_dashboard
-
+             patch("ccbt.cli.downloads.InteractiveCLI", return_value=mock_interactive):
             console = Console()
             magnet_link = "magnet:?xt=urn:btih:test"
+            info_hash_hex = "a" * 40
 
             # Test that function can be called
             try:
                 await downloads.start_interactive_magnet_download(
                     mock_session,
                     magnet_link,
+                    info_hash_hex,
                     console,
                     resume=False,
                 )
@@ -155,19 +156,25 @@ class TestDownloadsF811Fix:
         mock_result.error = "Test error"
         mock_executor.execute = AsyncMock(return_value=mock_result)
 
-        # Mock LocalSessionAdapter and UnifiedCommandExecutor
+        # Mock LocalSessionAdapter, UnifiedCommandExecutor, and InteractiveCLI to raise on download_torrent
         mock_adapter = MagicMock()
+        mock_interactive = MagicMock()
+        mock_interactive.download_torrent = AsyncMock(
+            side_effect=RuntimeError("Test error")
+        )
         with patch("ccbt.cli.downloads.LocalSessionAdapter", return_value=mock_adapter), \
-             patch("ccbt.cli.downloads.UnifiedCommandExecutor", return_value=mock_executor):
-
+             patch("ccbt.cli.downloads.UnifiedCommandExecutor", return_value=mock_executor), \
+             patch("ccbt.cli.downloads.InteractiveCLI", return_value=mock_interactive):
             console = Console()
             magnet_link = "magnet:?xt=urn:btih:test"
+            info_hash_hex = "a" * 40
 
-            # Test that function raises RuntimeError on executor failure
-            with pytest.raises(RuntimeError, match="Failed to add magnet link|Test error"):
+            # Function calls InteractiveCLI.download_torrent which we mock to raise RuntimeError
+            with pytest.raises(RuntimeError, match="Test error"):
                 await downloads.start_interactive_magnet_download(
                     mock_session,
                     magnet_link,
+                    info_hash_hex,
                     console,
                     resume=False,
                 )

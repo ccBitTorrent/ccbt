@@ -2,6 +2,14 @@
 
 The `ccbt.utils.di.DIContainer` provides optional factories for wiring core services (security manager, DHT, NAT, TCP server, etc.). All DI is optional and non-breaking. When DI is not provided, the code falls back to the existing constructions using `get_config()` and concrete classes.
 
+::: ccbt.utils.di.DIContainer
+    options:
+      show_source: true
+      show_root_heading: false
+      heading_level: 2
+      filters:
+        - "!^_"
+
 ## Quick start
 
 ```python

@@ -654,18 +654,29 @@ class TorrentQueueManager:
                             session.resume(), timeout=30.0
                         )  # pragma: no cover - edge case: paused torrent being started requires specific state
                     elif torrent_status == "stopped":
-                        # Start with timeout to prevent UI blocking
+                        # Start with timeout; use shield() so timeout does NOT cancel
+                        # session.start() (magnet/tracker/DHT can take >30s).
                         self.logger.info(
                             "Queue manager: Calling session.start() for %s",
                             info_hash.hex()[:8],
                         )
-                        await asyncio.wait_for(
-                            session.start(resume=resume), timeout=30.0
-                        )
-                        self.logger.info(
-                            "Queue manager: session.start() completed for %s",
-                            info_hash.hex()[:8],
-                        )
+                        start_task = asyncio.create_task(session.start(resume=resume))
+                        if hasattr(session, "background_start_task"):
+                            session.background_start_task = start_task
+                        try:
+                            await asyncio.wait_for(
+                                asyncio.shield(start_task), timeout=90.0
+                            )
+                            self.logger.info(
+                                "Queue manager: session.start() completed for %s",
+                                info_hash.hex()[:8],
+                            )
+                        except asyncio.TimeoutError:
+                            # Shield ensures start_task is NOT cancelled - it keeps running
+                            self.logger.warning(
+                                "Session start for %s still in progress after 90s (continuing in background)",
+                                info_hash.hex()[:8],
+                            )
                 except asyncio.TimeoutError:
                     self.logger.warning(
                         "Timeout starting torrent %s - it may still be initializing",

@@ -123,6 +123,10 @@ class XetFileDeduplication:
             Path to duplicate file if found, None otherwise
 
         """
+        if self.dedup.db is None:
+            from ccbt.storage.xet_deduplication import _DB_CLOSED_MSG
+
+            raise RuntimeError(_DB_CLOSED_MSG)
         try:
             # Query database for files with matching hash
             cursor = self.dedup.db.execute(
@@ -152,6 +156,10 @@ class XetFileDeduplication:
             - deduplication_ratio: float
 
         """
+        if self.dedup.db is None:
+            from ccbt.storage.xet_deduplication import _DB_CLOSED_MSG
+
+            raise RuntimeError(_DB_CLOSED_MSG)
         try:
             cursor = self.dedup.db.execute(
                 """SELECT
@@ -227,6 +235,10 @@ class XetFileDeduplication:
             that have the same hash
 
         """
+        if self.dedup.db is None:
+            from ccbt.storage.xet_deduplication import _DB_CLOSED_MSG
+
+            raise RuntimeError(_DB_CLOSED_MSG)
         try:
             if file_hash:
                 # Find duplicates for specific hash

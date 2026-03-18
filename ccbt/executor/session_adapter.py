@@ -23,6 +23,7 @@ from ccbt.daemon.ipc_protocol import (
     MediaStreamStartResponse,
     MediaStreamStatusResponse,
 )
+from ccbt.models import AddXetFolderResult
 from ccbt.utils.media_launcher import launch_media_player
 
 if TYPE_CHECKING:
@@ -514,7 +515,7 @@ class SessionAdapter(ABC):
         sync_mode: Optional[str] = None,
         source_peers: Optional[list[str]] = None,
         check_interval: Optional[float] = None,
-    ) -> str:
+    ) -> AddXetFolderResult:
         """Add XET folder for synchronization.
 
         Args:
@@ -526,7 +527,7 @@ class SessionAdapter(ABC):
             check_interval: Check interval in seconds (optional)
 
         Returns:
-            Folder identifier (folder_path or info_hash)
+            Dict with folder_key, workspace_id (hex), sync_mode, folder_name, allowlist_hash (optional).
 
         """
 
@@ -564,6 +565,18 @@ class SessionAdapter(ABC):
         """
 
     @abstractmethod
+    async def get_xet_folder_metadata_bytes(self, folder_key: str) -> Optional[bytes]:
+        """Get raw metadata bytes for a registered XET folder (e.g. for .tonic save).
+
+        Args:
+            folder_key: Folder identifier (folder_path or info_hash)
+
+        Returns:
+            Metadata bytes or None if not found
+
+        """
+
+    @abstractmethod
     async def set_xet_folder_sync_mode(
         self,
         folder_key: str,
@@ -575,6 +588,10 @@ class SessionAdapter(ABC):
     @abstractmethod
     async def get_xet_discovery_status(self) -> dict[str, Any]:
         """Get shared XET discovery backend status."""
+
+    def get_dht_client_for_xet(self) -> Optional[Any]:
+        """Return DHT client for cold tonic link discovery, or None (e.g. when using daemon)."""
+        return None
 
     @abstractmethod
     async def set_xet_workspace_policy(
@@ -1501,7 +1518,6 @@ class LocalSessionAdapter(SessionAdapter):
                     # Log error and mark as failed
                     self.logger.exception("Error verifying file %s", file_path)
                     failed_files.append(str(file_path))
-                    failed_files.append(str(file_path))
 
             return {
                 "status": "completed",
@@ -1918,7 +1934,7 @@ class LocalSessionAdapter(SessionAdapter):
         sync_mode: Optional[str] = None,
         source_peers: Optional[list[str]] = None,
         check_interval: Optional[float] = None,
-    ) -> str:
+    ) -> AddXetFolderResult:
         """Add XET folder for synchronization."""
         return await self.session_manager.add_xet_folder(
             folder_path=folder_path,
@@ -1928,6 +1944,10 @@ class LocalSessionAdapter(SessionAdapter):
             source_peers=source_peers,
             check_interval=check_interval,
         )
+
+    async def get_xet_folder_metadata_bytes(self, folder_key: str) -> Optional[bytes]:
+        """Get raw metadata bytes for a registered XET folder."""
+        return await self.session_manager.get_xet_folder_metadata_bytes(folder_key)
 
     async def remove_xet_folder(self, folder_key: str) -> bool:
         """Remove XET folder from synchronization."""
@@ -1970,6 +1990,11 @@ class LocalSessionAdapter(SessionAdapter):
             result = getter()
             return result if isinstance(result, dict) else {}
         return {}
+
+    def get_dht_client_for_xet(self) -> Optional[Any]:
+        """Return DHT client for cold tonic link discovery."""
+        getter = getattr(self.session_manager, "get_dht_client_for_xet", None)
+        return getter() if callable(getter) else None
 
     async def set_xet_workspace_policy(
         self,
@@ -2746,7 +2771,7 @@ class DaemonSessionAdapter(SessionAdapter):
         sync_mode: Optional[str] = None,
         source_peers: Optional[list[str]] = None,
         check_interval: Optional[float] = None,
-    ) -> str:
+    ) -> AddXetFolderResult:
         """Add XET folder for synchronization."""
         result = await self.ipc_client.add_xet_folder(
             folder_path=folder_path,
@@ -2756,8 +2781,21 @@ class DaemonSessionAdapter(SessionAdapter):
             source_peers=source_peers,
             check_interval=check_interval,
         )
-        # IPC client returns dict with folder_key or info_hash
-        return result.get("folder_key", result.get("info_hash", folder_path))
+        folder_key = result.get("folder_key", result.get("info_hash", folder_path))
+        return AddXetFolderResult(
+            folder_key=str(folder_key),
+            workspace_id=result.get("workspace_id", ""),
+            sync_mode=result.get("sync_mode", "best_effort"),
+            folder_name=result.get("folder_name", Path(folder_path).name),
+            allowlist_hash=result.get("allowlist_hash"),
+        )
+
+    async def get_xet_folder_metadata_bytes(self, folder_key: str) -> Optional[bytes]:
+        """Get raw metadata bytes; returns None if IPC endpoint not implemented."""
+        getter = getattr(self.ipc_client, "get_xet_folder_metadata_bytes", None)
+        if getter is not None:
+            return await getter(folder_key)
+        return None
 
     async def remove_xet_folder(self, folder_key: str) -> bool:
         """Remove XET folder from synchronization."""

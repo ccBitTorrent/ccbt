@@ -1,5 +1,7 @@
 # License Information
 
+**Summary:** Dual license — **GPL-2.0** and **ccBT RAIL-AMS**. Both apply. Key points: (1) GPL-2.0 grants use, modification, and distribution with source and copyleft; (2) ccBT RAIL-AMS adds use restrictions (e.g. acceptable use, attribution, no warranty); (3) you must comply with both. Full texts below.
+
 ccBitTorrent is licensed under a **dual-license** arrangement. Both licenses apply to this software, and you must comply with all terms and restrictions in both licenses.
 
 !!! warning "Important"

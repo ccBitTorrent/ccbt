@@ -114,6 +114,8 @@ class AsyncDownloadManager:
         self._metadata_fetching = False
         self._metadata_fetched = False
         self._metadata_fetch_attempts = 0
+        self._started = False
+        self._download_started = False
 
         # Rate tracking
         self._bytes_downloaded_history: deque[tuple[float, int]] = deque(maxlen=60)
@@ -139,6 +141,7 @@ class AsyncDownloadManager:
             msg = "Piece manager not initialized"
             raise RuntimeError(msg)
         await self.piece_manager.start()
+        self._started = True
         self.logger.info("Async download manager started")
 
     async def stop(self) -> None:
@@ -200,6 +203,7 @@ class AsyncDownloadManager:
                 existing_connections,
             )
             await self.piece_manager.start_download(self.peer_manager)
+            self._download_started = True
             if peers:
                 await self.peer_manager.connect_to_peers(peers)
             self.logger.info(
@@ -294,6 +298,7 @@ class AsyncDownloadManager:
         # LOGGING OPTIMIZATION: Changed to DEBUG - use -vv to see piece download start
         self.logger.debug("Starting piece download...")
         await self.piece_manager.start_download(self.peer_manager)
+        self._download_started = True
         self.logger.info("Download started successfully!")
 
     def _calculate_rates(self) -> tuple[float, float]:

@@ -134,19 +134,13 @@ BitTorrent 协议的 Bencode 编解码器 (BEP 3)。
 
 #### 初始化
 
-构造函数: [ccbt/session/session.py:608](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L608)
-
---8<-- "ccbt/session/session.py:608:620"
+构造函数: [ccbt/session/session.py:608](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L608)。详见上文 API 与源代码。
 
 #### 生命周期方法
 
 - `start()`: [ccbt/session/session.py:637](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L637) - 启动异步会话管理器
 
-  --8<-- "ccbt/session/session.py:637:655"
-
-- `stop()`: [ccbt/session/session.py:657](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L657) - 停止异步会话管理器
-
-  --8<-- "ccbt/session/session.py:657:682"
+- `stop()`: [ccbt/session/session.py:657](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L657) - 停止异步会话管理器。详见上文与源代码。
 
 #### Torrent 管理
 

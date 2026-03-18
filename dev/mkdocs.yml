@@ -109,9 +109,8 @@ plugins:
         - locale: arc
           name: ܐܪܡܝܐ (Aramaic)
           build: true  # Custom language template in docs/overrides/partials/languages/arc.html (RTL)
-          # Note: 'arc' is ISO-639-2 (three-letter), not ISO-639-1. The build script patches
-          # Locale.run_validation to allow 'arc' as a special case. Also patches
-          # git-revision-date-localized plugin to fall back to 'en' for date formatting.
+          # Workaround: mkdocs-i18n accepts only ISO-639-1 or territory codes. 'arc' is
+          # ISO-639-2. Use the patched build: uv run python dev/build_docs_patched_clean.py --strict
   - autorefs:
       # Note: Multiple primary URLs warnings are expected with i18n plugin
       # The same Python objects are documented in multiple languages (en, es, etc.)
@@ -144,7 +143,6 @@ plugins:
               anchor_links: true
               source_link_template: "https://github.com/ccBittorrent/ccbt/blob/main/{path}#L{start_line}-L{end_line}"
   - git-revision-date-localized
-  - codeinclude
   - blog:
       blog_dir: en/blog
       post_date_format: YYYY-MM-DD
@@ -230,12 +228,6 @@ nav:
       - API Reference: en/API.md
       - Architecture: en/architecture.md
       - Contributing: en/contributing.md
-      - CI/CD: en/CI_CD.md
-      - Release Checklist: en/RELEASE_CHECKLIST.md
-      - Unimplemented Methods: en/unimplemented-methods.md
-      - Appendices:
-          - BEP 52: en/bep52.md
-          - Encryption Benchmarks: en/performance/encryption_benchmark_report.md
       - Reports:
           - Coverage: en/reports/coverage.md
           - Bandit: en/reports/bandit/index.md
