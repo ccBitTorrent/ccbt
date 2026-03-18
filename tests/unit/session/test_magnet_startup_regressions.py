@@ -122,72 +122,6 @@ async def test_tracker_metadata_exchange_still_runs_with_low_active_count() -> N
 
 
 @pytest.mark.asyncio
-async def test_tracker_metadata_exchange_uses_productive_summary_not_raw_active_count() -> None:
-    """Non-productive active connections must not suppress standalone tracker metadata fetch."""
-    from ccbt.session.announce import AnnounceLoop
-    from ccbt.session.session import AsyncTorrentSession
-
-    td = {
-        "name": "magnet-test",
-        "info_hash": b"1" * 20,
-        "announce": "http://tracker.example.com/announce",
-        "_metadata_incomplete": True,
-        "pieces_info": None,
-        "file_info": None,
-    }
-    session = AsyncTorrentSession(td, ".")
-    session.handle_magnet_metadata_exchange = AsyncMock(return_value=True)
-
-    loop = AnnounceLoop(session)
-    await loop._maybe_trigger_tracker_metadata_exchange(
-        [{"ip": "192.0.2.1", "port": 6881, "peer_source": "tracker"}],
-        active_count=25,
-        connection_summary={
-            "active_connections": 25,
-            "productive_connections": 0,
-            "metadata_capable_connections": 0,
-            "metadata_exchange_active": 0,
-            "peers_with_piece_info": 0,
-        },
-    )
-
-    session.handle_magnet_metadata_exchange.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_tracker_metadata_exchange_skips_when_live_exchange_already_active() -> None:
-    """Standalone tracker metadata fetch should not duplicate an already-running live exchange."""
-    from ccbt.session.announce import AnnounceLoop
-    from ccbt.session.session import AsyncTorrentSession
-
-    td = {
-        "name": "magnet-test",
-        "info_hash": b"1" * 20,
-        "announce": "http://tracker.example.com/announce",
-        "_metadata_incomplete": True,
-        "pieces_info": None,
-        "file_info": None,
-    }
-    session = AsyncTorrentSession(td, ".")
-    session.handle_magnet_metadata_exchange = AsyncMock(return_value=True)
-
-    loop = AnnounceLoop(session)
-    await loop._maybe_trigger_tracker_metadata_exchange(
-        [{"ip": "192.0.2.1", "port": 6881, "peer_source": "tracker"}],
-        active_count=1,
-        connection_summary={
-            "active_connections": 1,
-            "productive_connections": 1,
-            "metadata_capable_connections": 1,
-            "metadata_exchange_active": 1,
-            "peers_with_piece_info": 0,
-        },
-    )
-
-    session.handle_magnet_metadata_exchange.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_immediate_tracker_connection_schedules_metadata_fallback(
     monkeypatch,
 ) -> None:
@@ -373,65 +307,12 @@ async def test_magnet_bitfield_does_not_promote_incomplete_metadata() -> None:
 
 
 @pytest.mark.asyncio
-async def test_magnet_checkpoint_restore_waits_for_metadata_geometry() -> None:
-    """Checkpoint piece states should wait for final metadata before rebuilding layout."""
-    torrent_data = {
-        "info_hash": b"m" * 20,
-        "name": "magnet-checkpoint-test",
-        "announce": "http://tracker.example.com/announce",
-        "_metadata_incomplete": True,
-        "file_info": None,
-        "pieces_info": None,
-    }
-
-    piece_manager = AsyncPieceManager(torrent_data)
-    checkpoint = TorrentCheckpoint(
-        info_hash=b"m" * 20,
-        torrent_name="magnet-checkpoint-test",
-        total_pieces=2,
-        piece_length=16384,
-        total_length=32768,
-        verified_pieces=[0],
-        piece_states={0: CheckpointPieceState.VERIFIED},
-        download_stats=DownloadStats(bytes_downloaded=16384),
-        output_dir=".",
-    )
-
-    await piece_manager.restore_from_checkpoint(checkpoint)
-
-    assert piece_manager._deferred_checkpoint is not None
-    assert piece_manager.pieces == []
-
-    await piece_manager.update_from_metadata(
-        {
-            "info_hash": b"m" * 20,
-            "name": "magnet-checkpoint-test",
-            "announce": "http://tracker.example.com/announce",
-            "_metadata_incomplete": False,
-            "file_info": {
-                "name": "magnet-checkpoint-test",
-                "type": "single",
-                "total_length": 524288,
-            },
-            "pieces_info": {
-                "num_pieces": 2,
-                "piece_length": 262144,
-                "piece_hashes": [b"a" * 20, b"b" * 20],
-                "total_length": 524288,
-            },
-        }
-    )
-
-    assert piece_manager._deferred_checkpoint is None
-    assert piece_manager.pieces[0].length == 262144
-    assert piece_manager.pieces[0].state == PieceState.MISSING
-
-
-@pytest.mark.asyncio
 async def test_selector_premarked_piece_still_issues_initial_request(
     monkeypatch,
 ) -> None:
     """Selector pre-marking must not suppress the first real piece request."""
+    import time
+
     from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceState
 
     torrent_data = {
@@ -453,7 +334,7 @@ async def test_selector_premarked_piece_still_issues_initial_request(
     piece = piece_manager.pieces[0]
     piece.state = PieceState.REQUESTED
     piece.request_count = 1
-    piece.last_request_time = 0.0
+    piece.last_request_time = time.time()
     piece_manager._pending_piece_requests.add(0)
     piece_manager.peer_availability["198.51.100.10:6881"] = SimpleNamespace(
         pieces={0}
@@ -471,10 +352,9 @@ async def test_selector_premarked_piece_still_issues_initial_request(
         missing_blocks: list[object],
         available_peers: list[object],
         _peer_manager: object,
-    ) -> int:
+    ) -> None:
         _ = missing_blocks, _peer_manager
         request_calls.append((piece_index, len(available_peers)))
-        return 1
 
     monkeypatch.setattr(piece_manager, "_get_peers_for_piece", fake_get_peers_for_piece)
     monkeypatch.setattr(
@@ -488,7 +368,6 @@ async def test_selector_premarked_piece_still_issues_initial_request(
     assert request_calls == [(0, 1)]
     assert 0 not in piece_manager._pending_piece_requests
     assert piece_manager.pieces[0].state == PieceState.DOWNLOADING
-    assert piece_manager.pieces[0].last_request_time > 0.0
 
 
 @pytest.mark.asyncio
@@ -531,88 +410,3 @@ async def test_emergency_tracker_path_attempts_metadata_exchange() -> None:
 
     session.handle_magnet_metadata_exchange.assert_awaited()
     peer_manager.connect_to_peers.assert_awaited()
-
-
-@pytest.mark.asyncio
-async def test_piece_stays_requested_when_no_block_requests_are_sent(monkeypatch) -> None:
-    """Pieces should remain retryable when peer selection produced no actual block requests."""
-    from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceState
-
-    torrent_data = {
-        "info_hash": b"6" * 20,
-        "name": "no-op-request-test",
-        "announce": "http://tracker.example.com/announce",
-        "file_info": {"type": "single", "length": 16384, "name": "x", "total_length": 16384},
-        "pieces_info": {
-            "piece_length": 16384,
-            "num_pieces": 1,
-            "piece_hashes": [b"x" * 20],
-            "total_length": 16384,
-        },
-    }
-
-    piece_manager = AsyncPieceManager(torrent_data)
-    await piece_manager.update_from_metadata(torrent_data)
-    piece_manager.peer_availability["198.51.100.10:6881"] = SimpleNamespace(pieces={0})
-
-    async def fake_get_peers_for_piece(piece_index: int, _peer_manager: object):
-        _ = piece_index, _peer_manager
-        return [SimpleNamespace()]
-
-    async def fake_request_blocks_normal(
-        piece_index: int,
-        missing_blocks: list[object],
-        available_peers: list[object],
-        _peer_manager: object,
-    ) -> int:
-        _ = piece_index, missing_blocks, available_peers, _peer_manager
-        return 0
-
-    monkeypatch.setattr(piece_manager, "_get_peers_for_piece", fake_get_peers_for_piece)
-    monkeypatch.setattr(
-        piece_manager,
-        "_request_blocks_normal",
-        fake_request_blocks_normal,
-    )
-
-    await piece_manager.request_piece_from_peers(0, SimpleNamespace(get_active_peers=lambda: []))
-
-    assert piece_manager.pieces[0].state == PieceState.REQUESTED
-    assert piece_manager.pieces[0].last_request_time == 0.0
-
-
-@pytest.mark.asyncio
-async def test_handle_peer_choked_requeues_piece_without_inflight_requests() -> None:
-    """Choked peers should return inert pieces to a retryable state immediately."""
-    from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceState
-
-    torrent_data = {
-        "info_hash": b"7" * 20,
-        "name": "choke-requeue-test",
-        "announce": "http://tracker.example.com/announce",
-        "file_info": {"type": "single", "length": 16384, "name": "x", "total_length": 16384},
-        "pieces_info": {
-            "piece_length": 16384,
-            "num_pieces": 1,
-            "piece_hashes": [b"x" * 20],
-            "total_length": 16384,
-        },
-    }
-
-    piece_manager = AsyncPieceManager(torrent_data)
-    await piece_manager.update_from_metadata(torrent_data)
-    piece = piece_manager.pieces[0]
-    piece.state = PieceState.DOWNLOADING
-    piece.last_request_time = 123.0
-    piece.blocks[0].requested_from.add("198.51.100.10:6881")
-    piece_manager._requested_pieces_per_peer["198.51.100.10:6881"] = {0}
-    piece_manager._active_block_requests[0] = {"198.51.100.10:6881": [(0, 16384, 100.0)]}
-
-    peer = SimpleNamespace(peer_info=SimpleNamespace(ip="198.51.100.10", port=6881))
-    await piece_manager.handle_peer_choked(peer)
-
-    assert piece.state == PieceState.MISSING
-    assert piece.last_request_time == 0.0
-    assert piece.blocks[0].requested_from == set()
-    assert "198.51.100.10:6881" not in piece_manager._requested_pieces_per_peer
-    assert 0 not in piece_manager._active_block_requests

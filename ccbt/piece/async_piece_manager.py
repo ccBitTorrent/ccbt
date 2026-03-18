@@ -3567,9 +3567,18 @@ class AsyncPieceManager:
                         piece_index, piece
                     )
 
-                    # Schedule hash verification and keep a strong reference
-                    _task = asyncio.create_task(
-                        self._verify_piece_hash(piece_index, piece),
+            # Select pieces within window
+            window_pieces = [
+                idx for idx in missing_pieces if window_start <= idx < window_end
+            ]
+
+            if window_pieces:
+                # CRITICAL FIX: Check if we have any peers with bitfields before requesting pieces
+                if self._peer_manager:
+                    active_peers = (
+                        self._peer_manager.get_active_peers()
+                        if hasattr(self._peer_manager, "get_active_peers")
+                        else []
                     )
                     self._background_tasks.add(_task)
                     _task.add_done_callback(self._background_tasks.discard)

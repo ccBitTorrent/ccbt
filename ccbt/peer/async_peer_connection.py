@@ -13883,6 +13883,7 @@ class AsyncPeerConnectionManager:
                 "Rejected ut_metadata request for piece %d from %s because metadata is not available locally",
                 piece_index,
                 connection.peer_info,
+                num_pieces,
             )
             return
 
