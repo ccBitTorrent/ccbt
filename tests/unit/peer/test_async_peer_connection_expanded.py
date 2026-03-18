@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -256,6 +257,36 @@ class TestAsyncPeerConnectionManagerBasics:
         assert choking_task is not None and choking_task.done(), "Choking task should be done after stop"
         assert stats_task is not None and stats_task.done(), "Stats task should be done after stop"
         assert async_peer_manager._running is False
+
+    def test_connection_has_piece_info_uses_piece_manager_availability(
+        self, async_peer_manager, peer_info
+    ):
+        """Connection summary should treat piece-manager availability as real piece info."""
+        connection = AsyncPeerConnection(peer_info, async_peer_manager.torrent_data)
+        async_peer_manager.piece_manager.peer_availability = {
+            f"{peer_info.ip}:{peer_info.port}": SimpleNamespace(pieces={0, 1, 2})
+        }
+
+        assert async_peer_manager._connection_has_piece_info(connection) is True
+
+    @pytest.mark.asyncio
+    async def test_disconnect_peer_removes_piece_manager_peer_and_clears_batch_flag(
+        self, async_peer_manager, peer_info
+    ):
+        """Disconnect cleanup should remove stale peer availability and unblock recovery."""
+        connection = AsyncPeerConnection(peer_info, async_peer_manager.torrent_data)
+        connection.state = ConnectionState.ACTIVE
+        async_peer_manager.connections[str(peer_info)] = connection
+        async_peer_manager._connection_batches_in_progress = True
+        async_peer_manager._pending_peer_queue.clear()
+        async_peer_manager.piece_manager._remove_peer = AsyncMock()
+
+        await async_peer_manager._disconnect_peer(connection)
+
+        async_peer_manager.piece_manager._remove_peer.assert_awaited_once_with(
+            connection
+        )
+        assert async_peer_manager._connection_batches_in_progress is False
 
     @pytest.mark.asyncio
     async def test_connect_to_peers_success(self, async_peer_manager, peer_info):

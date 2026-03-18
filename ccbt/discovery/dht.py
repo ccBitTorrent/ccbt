@@ -528,6 +528,7 @@ class AsyncDHTClient:
         # Background tasks
         self._refresh_task: Optional[asyncio.Task] = None
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._bootstrap_task: Optional[asyncio.Task] = None
 
         # Callbacks with info_hash filtering
         # Maps info_hash -> list of callbacks, or None for global callbacks
@@ -635,8 +636,8 @@ class AsyncDHTClient:
         self._refresh_task = asyncio.create_task(self._refresh_loop())
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
-        # Bootstrap
-        await self._bootstrap()
+        # Bootstrap in background so daemon startup is not blocked (up to 30s when nodes unreachable)
+        self._bootstrap_task = asyncio.create_task(self._bootstrap())
 
         self.logger.info("DHT client started on %s:%s", self.bind_ip, self.bind_port)
 
@@ -659,6 +660,12 @@ class AsyncDHTClient:
             self._cleanup_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
+
+        if self._bootstrap_task:
+            self._bootstrap_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._bootstrap_task
+            self._bootstrap_task = None
 
         # Proper cleanup order: close transport first, then handle socket
         if self.transport:

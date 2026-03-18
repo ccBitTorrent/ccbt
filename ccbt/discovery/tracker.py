@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import logging
 import re
 import time
@@ -591,10 +592,76 @@ class AsyncTrackerClient:
                         metrics.get("connection_reuse_count", 0) / request_count * 100
                     ),
                     "error_rate": (metrics.get("error_count", 0) / request_count * 100),
+                    "resolution_anomaly_count": metrics.get(
+                        "resolution_anomaly_count", 0
+                    ),
+                    "udp_timeout_count": metrics.get("udp_timeout_count", 0),
+                    "udp_connect_failure_count": metrics.get(
+                        "udp_connect_failure_count", 0
+                    ),
+                    "http_fallback_attempt_count": metrics.get(
+                        "http_fallback_attempt_count", 0
+                    ),
+                    "http_fallback_failure_count": metrics.get(
+                        "http_fallback_failure_count", 0
+                    ),
                 }
             else:  # pragma: no cover - Zero request count path, tested via stats with requests
                 stats[host] = metrics
         return stats
+
+    def _ensure_session_metric_bucket(self, tracker_host: str) -> dict[str, Any]:
+        """Return the metric bucket for a tracker host, creating it if needed."""
+        if tracker_host not in self._session_metrics:
+            self._session_metrics[tracker_host] = {
+                "request_count": 0,
+                "total_request_time": 0.0,
+                "total_dns_time": 0.0,
+                "connection_reuse_count": 0,
+                "error_count": 0,
+                "resolution_anomaly_count": 0,
+                "udp_timeout_count": 0,
+                "udp_connect_failure_count": 0,
+                "http_fallback_attempt_count": 0,
+                "http_fallback_failure_count": 0,
+            }
+        return self._session_metrics[tracker_host]
+
+    def _increment_session_metric(
+        self, tracker_host: str, metric_name: str, amount: int = 1
+    ) -> None:
+        """Increment a tracker session metric."""
+        metrics = self._ensure_session_metric_bucket(tracker_host)
+        metrics[metric_name] = int(metrics.get(metric_name, 0) or 0) + amount
+
+    def _record_tracker_resolution_anomaly(
+        self,
+        tracker_host: str,
+        scheme: str,
+        error: Exception,
+    ) -> None:
+        """Record when a public tracker resolves to a loopback/private address."""
+        error_text = str(error)
+        resolved_matches = re.findall(
+            r"\('([^']+)',\s*\d+\)",
+            error_text,
+        )
+        if not resolved_matches:
+            return
+        resolved_host = resolved_matches[-1]
+        try:
+            parsed_ip = ipaddress.ip_address(resolved_host)
+        except ValueError:
+            return
+        if not (parsed_ip.is_loopback or parsed_ip.is_private):
+            return
+        self._increment_session_metric(tracker_host, "resolution_anomaly_count")
+        self.logger.warning(
+            "TRACKER_RESOLUTION_ANOMALY: %s tracker %s resolved to %s during connect/fallback. This usually indicates hosts-file overrides, DNS filtering, proxy interception, or endpoint security software.",
+            scheme.upper(),
+            tracker_host,
+            resolved_host,
+        )
 
     def rank_trackers(self, tracker_urls: list[str]) -> list[str]:
         """Rank trackers by performance metrics.
@@ -1092,6 +1159,8 @@ class AsyncTrackerClient:
             )
 
             is_udp = normalized_url.startswith("udp://")
+            fallback_url: Optional[str] = None
+            tracker_host = urllib.parse.urlparse(normalized_url).hostname or ""
 
             # BEP 15 (UDP) uses 20-byte info_hash; BEP 41 extends UDP with URLData only. Skip UDP for 32-byte (XET).
             if is_udp and len(info_hash) == 32:
@@ -1210,17 +1279,19 @@ class AsyncTrackerClient:
                     )
 
                     if udp_result is None:
-                        # CRITICAL FIX: When UDP tracker fails, try HTTP fallback
-                        # Convert udp:// to http:// and try HTTP tracker
-                        http_url = normalized_url.replace("udp://", "http://", 1)
+                        self._increment_session_metric(
+                            tracker_host, "udp_timeout_count"
+                        )
+                        fallback_url = announce_url.replace("udp://", "http://", 1)
+                        self._increment_session_metric(
+                            tracker_host, "http_fallback_attempt_count"
+                        )
                         self.logger.info(
                             "UDP tracker announce failed for %s, trying HTTP fallback: %s",
                             normalized_url,
-                            http_url,
+                            fallback_url,
                         )
-                        # Fall through to HTTP tracker logic below
-                        # Update normalized_url to HTTP version for HTTP tracker processing
-                        normalized_url = http_url
+                        normalized_url = fallback_url
                         is_udp = False
                     else:
                         # UDP announce succeeded - return result
@@ -1234,17 +1305,21 @@ class AsyncTrackerClient:
                             incomplete=leechers,  # Use 'incomplete' instead of 'leechers'
                         )
                 except Exception as udp_error:
-                    # CRITICAL FIX: When UDP tracker fails with exception, try HTTP fallback
+                    self._increment_session_metric(
+                        tracker_host, "udp_connect_failure_count"
+                    )
+                    fallback_url = announce_url.replace("udp://", "http://", 1)
+                    self._increment_session_metric(
+                        tracker_host, "http_fallback_attempt_count"
+                    )
                     self.logger.debug(
-                        "UDP tracker announce failed for %s: %s, trying HTTP fallback",
+                        "UDP tracker announce failed for %s: %s, trying HTTP fallback %s",
                         normalized_url,
                         udp_error,
+                        fallback_url,
                     )
-                    # Convert udp:// to http:// and try HTTP tracker
-                    http_url = normalized_url.replace("udp://", "http://", 1)
-                    normalized_url = http_url
+                    normalized_url = fallback_url
                     is_udp = False
-                    # Continue with HTTP tracker logic below
 
             if not is_udp:
                 # HTTP tracker announce (including fallback from UDP)
@@ -1663,6 +1738,10 @@ class AsyncTrackerClient:
         successful_responses = []
         failed_trackers = []
         total_peers = 0
+        timeout_count = 0
+        connection_error_count = 0
+        invalid_payload_count = 0
+        skipped_count = 0
 
         for task, result in zip(tasks, results):
             url = url_to_task.get(task, "unknown")
@@ -1691,6 +1770,7 @@ class AsyncTrackerClient:
             elif result is None:
                 # CRITICAL FIX: Handle None result (UDP tracker skipped due to missing client)
                 tracker_type = "UDP" if url.startswith("udp://") else "HTTP/HTTPS"
+                skipped_count += 1
                 self.logger.debug(
                     "%s tracker %s skipped (UDP tracker client unavailable)",
                     tracker_type,
@@ -1706,6 +1786,7 @@ class AsyncTrackerClient:
 
                 # Enhanced error messages for common failure types
                 if "timeout" in error_msg.lower() or "TimeoutError" in error_type:
+                    timeout_count += 1
                     self.logger.warning(
                         "%s tracker %s timed out: %s (tracker may be slow or unreachable)",
                         tracker_type,
@@ -1715,8 +1796,20 @@ class AsyncTrackerClient:
                 elif (
                     "connection" in error_msg.lower() or "ConnectionError" in error_type
                 ):
+                    connection_error_count += 1
                     self.logger.warning(
                         "%s tracker %s connection failed: %s (network issue or tracker down)",
+                        tracker_type,
+                        url[:80] + "..." if len(url) > 80 else url,
+                        error_msg,
+                    )
+                elif (
+                    "parse tracker response" in error_msg.lower()
+                    or "invalid bencode" in error_msg.lower()
+                ):
+                    invalid_payload_count += 1
+                    self.logger.warning(
+                        "%s tracker %s returned invalid payload: %s",
                         tracker_type,
                         url[:80] + "..." if len(url) > 80 else url,
                         error_msg,
@@ -1731,11 +1824,15 @@ class AsyncTrackerClient:
                     )
 
         self.logger.info(
-            "✅ ANNOUNCE_TO_MULTIPLE: Multi-tracker announce completed: %d/%d successful, %d total peer(s) discovered (returning %d response(s))",
+            "✅ ANNOUNCE_TO_MULTIPLE: Multi-tracker announce completed: %d/%d successful, %d total peer(s) discovered (returning %d response(s), timeouts=%d, connection_errors=%d, invalid_payloads=%d, skipped=%d)",
             len(successful_responses),
             len(tracker_urls),
             total_peers,
             len(successful_responses),
+            timeout_count,
+            connection_error_count,
+            invalid_payload_count,
+            skipped_count,
         )
 
         # CRITICAL FIX: Log each successful response's peer count for diagnostics
@@ -1821,13 +1918,34 @@ class AsyncTrackerClient:
             normalized_url = self._normalize_tracker_url(announce_url)
             is_udp = normalized_url.startswith("udp://")
             tracker_type = "UDP" if is_udp else "HTTP/HTTPS"
+            tracker_host = urllib.parse.urlparse(normalized_url).hostname or ""
+            error_text = str(e)
+            if is_udp and (
+                "HTTP tracker" in error_text or "HTTP fallback" in error_text
+            ):
+                self._increment_session_metric(
+                    tracker_host, "http_fallback_failure_count"
+                )
 
-            self.logger.warning(
-                "%s tracker announce failed for %s: %s",
-                tracker_type,
-                normalized_url[:100] if len(normalized_url) > 100 else normalized_url,
-                str(e),
-            )
+            if is_udp and (
+                "HTTP tracker" in error_text or "HTTP fallback" in error_text
+            ):
+                self.logger.warning(
+                    "UDP tracker announce failed for %s after HTTP fallback attempt: %s",
+                    normalized_url[:100]
+                    if len(normalized_url) > 100
+                    else normalized_url,
+                    error_text,
+                )
+            else:
+                self.logger.warning(
+                    "%s tracker announce failed for %s: %s",
+                    tracker_type,
+                    normalized_url[:100]
+                    if len(normalized_url) > 100
+                    else normalized_url,
+                    error_text,
+                )
             raise
         except Exception as e:
             # Generic exception - add tracker type context
@@ -2183,16 +2301,7 @@ class AsyncTrackerClient:
                 connection_reused = getattr(response, "_connection", None) is not None
 
                 # Update metrics
-                if tracker_host not in self._session_metrics:
-                    self._session_metrics[tracker_host] = {
-                        "request_count": 0,
-                        "total_request_time": 0.0,
-                        "total_dns_time": 0.0,
-                        "connection_reuse_count": 0,
-                        "error_count": 0,
-                    }
-
-                metrics = self._session_metrics[tracker_host]
+                metrics = self._ensure_session_metric_bucket(tracker_host)
                 metrics["request_count"] += 1
                 metrics["total_request_time"] += request_time
                 metrics["total_dns_time"] += dns_time
@@ -2214,23 +2323,18 @@ class AsyncTrackerClient:
                 return await response.read()
 
         except aiohttp.ClientSSLError as e:  # pragma: no cover - SSL error path tested via exception injection in test_make_request_ssl_error_updates_metrics, but coverage tool may not track exception handler execution perfectly
-            if tracker_host in self._session_metrics:
-                self._session_metrics[tracker_host]["error_count"] += (
-                    1  # pragma: no cover - Same context
-                )
+            self._increment_session_metric(tracker_host, "error_count")
             self.logger.exception("SSL error connecting to tracker %s", url)
             msg = f"SSL handshake failed: {e}"
             raise TrackerError(msg) from e
         except aiohttp.ClientError as e:  # pragma: no cover - ClientError path tested via exception injection, but coverage tool may not track exception handler execution perfectly
-            if tracker_host in self._session_metrics:
-                self._session_metrics[tracker_host]["error_count"] += (
-                    1  # pragma: no cover - Same context
-                )
+            self._increment_session_metric(tracker_host, "error_count")
             # CRITICAL FIX: Provide specific error messages instead of generic "Network error"
             # Enhanced error messages to distinguish HTTP vs UDP tracker failures
             error_type = type(e).__name__
             parsed_url = urllib.parse.urlparse(url)
             scheme = parsed_url.scheme
+            self._record_tracker_resolution_anomaly(tracker_host, scheme, e)
 
             if isinstance(e, aiohttp.ClientConnectorError):
                 msg = f"HTTP tracker connection failed ({scheme}://{tracker_host}): {e}"
@@ -2247,8 +2351,7 @@ class AsyncTrackerClient:
                 msg = f"HTTP tracker client error ({scheme}://{tracker_host}, {error_type}): {e}"
             raise TrackerError(msg) from e
         except Exception as e:
-            if tracker_host in self._session_metrics:
-                self._session_metrics[tracker_host]["error_count"] += 1
+            self._increment_session_metric(tracker_host, "error_count")
             msg = f"Request failed: {e}"
             raise TrackerError(msg) from e
 

@@ -43,6 +43,39 @@ class DHTDiscoverySetup:
             15.0  # Minimum 15 seconds between DHT queries (prevents peer blacklisting)
         )
 
+    async def _get_swarm_recovery_state(self) -> dict[str, Any]:
+        """Return swarm recovery state, even for lightweight session stubs used in tests."""
+        if hasattr(self.session, "get_swarm_recovery_state"):
+            return await self.session.get_swarm_recovery_state()
+
+        metadata_incomplete = bool(
+            getattr(
+                getattr(self.session, "piece_manager", None),
+                "_metadata_incomplete",
+                False,
+            )
+        )
+        peer_manager = getattr(
+            getattr(self.session, "download_manager", None), "peer_manager", None
+        )
+        active_peers = 0
+        if peer_manager and hasattr(peer_manager, "get_active_peers"):
+            with contextlib.suppress(Exception):
+                active_peers = len(peer_manager.get_active_peers())
+        elif peer_manager and hasattr(peer_manager, "connections"):
+            with contextlib.suppress(Exception):
+                active_peers = len(peer_manager.connections)
+
+        return {
+            "metadata_incomplete": metadata_incomplete,
+            "active_peers": active_peers,
+            "productive_peers": 0,
+            "requestable_peers": 0,
+            "peers_with_piece_info": 0,
+            "active_block_requests": 0,
+            "download_rate": 0.0,
+        }
+
     async def setup_dht_discovery(self) -> None:
         """Set up DHT peer discovery if enabled and torrent is not private."""
         self.logger.info(
@@ -1034,7 +1067,7 @@ class DHTDiscoverySetup:
                             )
                             await asyncio.wait_for(
                                 dht_client._bootstrap(),  # noqa: SLF001
-                                timeout=20.0,
+                                timeout=10.0,
                             )
                             routing_table_size = len(dht_client.routing_table.nodes)
                             self.logger.info(
@@ -1062,12 +1095,24 @@ class DHTDiscoverySetup:
 
                     # For magnet links, wait a bit longer for bootstrap if routing table is empty
                     if routing_table_size == 0 and is_magnet:
+                        recovery_wait_budget = getattr(
+                            self.session,
+                            "recovery_wait_budget",
+                            lambda *_args, **kwargs: kwargs.get("fast_wait", 0.5),
+                        )
+                        wait_budget = recovery_wait_budget(
+                            await self._get_swarm_recovery_state(),
+                            base_wait=2.0,
+                            fast_wait=0.5,
+                        )
                         self.logger.debug(
-                            "Waiting up to 5s for DHT bootstrap before querying magnet link %s",
+                            "Waiting up to %.1fs for DHT bootstrap before querying magnet link %s",
+                            wait_budget,
                             self.session.info.name,
                         )
-                        # Wait for bootstrap with timeout
-                        for _ in range(10):  # Check every 0.5s for 5s
+                        checks = max(1, int(wait_budget / 0.5))
+                        # Wait briefly for bootstrap, but don't let empty routing tables stall recovery.
+                        for _ in range(checks):
                             await asyncio.sleep(0.5)
                             routing_table_size = len(dht_client.routing_table.nodes)
                             if routing_table_size > 0:
@@ -1269,10 +1314,16 @@ class DHTDiscoverySetup:
                             self.logger.info(
                                 "⏸️ DHT DISCOVERY: Connection batches are in progress. Waiting for batches to complete before starting DHT query..."
                             )
-                            # CRITICAL FIX: Always wait for batches to complete - don't proceed immediately
-                            # This ensures DHT starts only after batches are fully processed
-                            max_wait = (
-                                60.0  # Increased wait time to ensure batches complete
+                            swarm_state = await self._get_swarm_recovery_state()
+                            recovery_wait_budget = getattr(
+                                self.session,
+                                "recovery_wait_budget",
+                                lambda *_args, **kwargs: kwargs.get("fast_wait", 2.0),
+                            )
+                            max_wait = recovery_wait_budget(
+                                swarm_state,
+                                base_wait=15.0,
+                                fast_wait=2.0,
                             )
                             check_interval = 1.0  # Check every 1 second
                             waited = 0.0
@@ -1290,6 +1341,33 @@ class DHTDiscoverySetup:
                                         active_peer_count_during_wait = len(
                                             peer_manager.get_active_peers()
                                         )
+                                swarm_state = await self._get_swarm_recovery_state()
+                                fast_recovery_fn = getattr(
+                                    self.session,
+                                    "swarm_requires_fast_recovery",
+                                    lambda state: bool(
+                                        state.get("metadata_incomplete", False)
+                                    )
+                                    or bool(state.get("degraded_swarm", False))
+                                    or not bool(
+                                        state.get("has_usable_download_path", False)
+                                    )
+                                    or int(state.get("active_peers", 0) or 0) == 0,
+                                )
+                                if connection_batches_in_progress and fast_recovery_fn(
+                                    swarm_state
+                                ):
+                                    self.logger.warning(
+                                        "⏸️ DHT DISCOVERY: Connection batches remain active after %.1fs but swarm is degraded (active=%d, productive=%d, requestable=%d, piece_info=%d). Proceeding with DHT evaluation now.",
+                                        waited,
+                                        int(swarm_state.get("active_peers", 0)),
+                                        int(swarm_state.get("productive_peers", 0)),
+                                        int(swarm_state.get("requestable_peers", 0)),
+                                        int(
+                                            swarm_state.get("peers_with_piece_info", 0)
+                                        ),
+                                    )
+                                    break
                                 if (
                                     connection_batches_in_progress
                                     and active_peer_count_during_wait == 0
@@ -1336,37 +1414,38 @@ class DHTDiscoverySetup:
                     and time_module.time() < tracker_peers_connecting_until
                 ):
                     wait_time = tracker_peers_connecting_until - time_module.time()
+                    swarm_state = await self._get_swarm_recovery_state()
+                    fast_recovery_fn = getattr(
+                        self.session,
+                        "swarm_requires_fast_recovery",
+                        lambda state: bool(state.get("metadata_incomplete", False))
+                        or bool(state.get("degraded_swarm", False))
+                        or not bool(state.get("has_usable_download_path", False))
+                        or int(state.get("active_peers", 0) or 0) == 0,
+                    )
+                    capped_wait = (
+                        min(wait_time, 1.0)
+                        if fast_recovery_fn(swarm_state)
+                        else min(wait_time, 5.0)
+                    )
                     self.logger.info(
                         "⏸️ DHT DISCOVERY: Tracker peers are currently being connected. Waiting %.1fs before starting DHT query to allow tracker connections to complete...",
-                        wait_time,
+                        capped_wait,
                     )
-                    await asyncio.sleep(
-                        min(wait_time, 5.0)
-                    )  # Wait up to 5 seconds or until timestamp expires
+                    await asyncio.sleep(capped_wait)
 
                 # CRITICAL FIX: Wait until we have minimum peers before starting DHT
                 # This prevents aggressive DHT queries that can cause blacklisting
                 current_peer_count = 0
                 current_download_rate = 0.0
 
-                # Get current peer count and download rate
-                if self.session.download_manager and hasattr(
-                    self.session.download_manager, "peer_manager"
-                ):
-                    peer_manager = self.session.download_manager.peer_manager
-                    if peer_manager:
-                        if hasattr(peer_manager, "get_active_peers"):
-                            current_peer_count = len(peer_manager.get_active_peers())
-                        elif hasattr(peer_manager, "connections"):
-                            current_peer_count = len(peer_manager.connections)
-
-                    # Get download rate from piece manager
-                    if hasattr(self.session, "piece_manager"):
-                        piece_manager = self.session.piece_manager
-                        if hasattr(piece_manager, "stats"):
-                            stats = piece_manager.stats
-                            if hasattr(stats, "download_rate"):
-                                current_download_rate = stats.download_rate
+                swarm_state = await self._get_swarm_recovery_state()
+                current_peer_count = int(swarm_state["active_peers"])
+                current_requestable_peers = int(swarm_state["requestable_peers"])
+                current_productive_peers = int(swarm_state["productive_peers"])
+                peers_with_piece_info = int(swarm_state["peers_with_piece_info"])
+                active_block_requests = int(swarm_state["active_block_requests"])
+                current_download_rate = float(swarm_state["download_rate"])
 
                 # Allow magnet metadata bootstrap to use DHT immediately when tracker peers
                 # have not produced any active connections yet.
@@ -1378,20 +1457,26 @@ class DHTDiscoverySetup:
                     == 0
                 )
                 metadata_incomplete = (
-                    bool(
-                        getattr(
-                            getattr(self.session, "piece_manager", None),
-                            "_metadata_incomplete",
-                            False,
-                        )
-                    )
-                    or is_magnet_bootstrap
+                    bool(swarm_state["metadata_incomplete"]) or is_magnet_bootstrap
                 )
                 fail_fast_low_peers = False
                 if current_peer_count == 0 and not metadata_incomplete:
                     fail_fast_low_peers = True
                     self.logger.warning(
                         "🧭 DHT DISCOVERY: No active peers remain. Bypassing low-peer grace period and starting DHT recovery immediately."
+                    )
+                elif (
+                    not metadata_incomplete
+                    and peers_with_piece_info == 0
+                    and active_block_requests == 0
+                ):
+                    fail_fast_low_peers = True
+                    self.logger.warning(
+                        "🧭 DHT DISCOVERY: Connected peers are not payload-capable (active=%d, productive=%d, requestable=%d, piece_info=%d). Starting DHT recovery immediately.",
+                        current_peer_count,
+                        current_productive_peers,
+                        current_requestable_peers,
+                        peers_with_piece_info,
                     )
                 low_peers_since = getattr(self.session, "_low_peers_since", None)
                 if (
@@ -1418,9 +1503,12 @@ class DHTDiscoverySetup:
                     and not fail_fast_low_peers
                 ):
                     self.logger.info(
-                        "⏸️ DHT DISCOVERY: Waiting for minimum peers (%d/%d). Sleeping 30s before recheck...",
+                        "⏸️ DHT DISCOVERY: Waiting for minimum peers (%d/%d) with usable swarm state (productive=%d, requestable=%d, piece_info=%d). Sleeping 30s before recheck...",
                         current_peer_count,
                         min_peers_before_dht,
+                        current_productive_peers,
+                        current_requestable_peers,
+                        peers_with_piece_info,
                     )
                     await asyncio.sleep(30.0)
                     continue

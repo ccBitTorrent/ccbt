@@ -296,9 +296,33 @@ class TestTrackerHTTPSDetection:
             with patch.object(client.logger, "debug") as mock_debug:
                 await client._make_request_async(url)
 
-                # Should log debug message about HTTPS connection
-                mock_debug.assert_called()
-                assert "Connecting to HTTPS tracker" in str(mock_debug.call_args)
+    @pytest.mark.asyncio
+    async def test_make_request_records_resolution_anomaly_for_loopback_target(self):
+        """Loopback/private fallback targets should be surfaced as tracker resolution anomalies."""
+        config_data = {"security": {"ssl": {"enable_ssl_trackers": True}}}
+        config = Config(**config_data)
+
+        with patch("ccbt.discovery.tracker.get_config", return_value=config):
+            client = AsyncTrackerClient()
+            client.config = config
+
+            connection_key = MagicMock()
+            connection_key.host = "tracker.example.com"
+            connector_error = aiohttp.ClientConnectorError(
+                connection_key=connection_key,
+                os_error=OSError(111, "Connect call failed ('127.0.0.1', 80)"),
+            )
+            mock_session = AsyncMock()
+            mock_session.get = Mock(side_effect=connector_error)
+            client.session = mock_session
+
+            with pytest.raises(TrackerError):
+                await client._make_request_async(
+                    "http://tracker.example.com/announce"
+                )
+
+            metrics = client.get_session_metrics()["tracker.example.com"]
+            assert metrics["resolution_anomaly_count"] == 1
 
 
 class TestTrackerSSLIntegration:

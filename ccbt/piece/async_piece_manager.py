@@ -460,6 +460,7 @@ class AsyncPieceManager:
         # Download state
         self.is_downloading = False
         self.download_complete = False
+        self._stopping = False
         self.download_start_time = time.time()
         self.bytes_downloaded = 0
         self._current_sequential_piece: int = 0  # Track current sequential position
@@ -710,12 +711,14 @@ class AsyncPieceManager:
 
     async def start(self) -> None:
         """Start background tasks."""
+        self._stopping = False
         # No hash worker; schedule verifications per piece completion
         self._piece_selector_task = asyncio.create_task(self._piece_selector())
         self.logger.info("Async piece manager started")
 
     async def stop(self) -> None:
         """Stop background tasks."""
+        self._stopping = True
         if self._piece_selector_task:
             self._piece_selector_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -3920,9 +3923,6 @@ class AsyncPieceManager:
                         self.logger.debug(
                             "Failed to emit torrent_completed event: %s", e
                         )
-
-                    if self.on_download_complete:  # pragma: no cover - Completion callback, tested via download_complete test
-                        self.on_download_complete()
             else:
                 # CRITICAL FIX: Reset piece state when hash verification fails
                 # This ensures the piece will be re-downloaded from another peer
@@ -4947,7 +4947,7 @@ class AsyncPieceManager:
         base_interval = 1.0
         max_interval = 5.0
 
-        while True:  # pragma: no cover - Infinite background loop, cancellation tested via selector_cancellation test
+        while not self._stopping:  # pragma: no cover - Infinite background loop, cancellation tested via selector_cancellation test
             try:
                 # Dynamic interval: faster when stuck, slower when working
                 await asyncio.sleep(base_interval)
@@ -4995,6 +4995,9 @@ class AsyncPieceManager:
 
     async def _select_pieces(self) -> None:
         """Select pieces to download based on strategy."""
+        if self._stopping:
+            self.logger.debug("Piece selector skipping: piece manager is stopping")
+            return
         self.logger.info(
             "🔍 PIECE_SELECTOR: Called (is_downloading=%s, download_complete=%s, num_pieces=%d, pieces_count=%d, _peer_manager=%s)",
             self.is_downloading,
@@ -5157,6 +5160,16 @@ class AsyncPieceManager:
                     # This ensures pieces are selected and ready when peers unchoke
                     # Only return if we have NO peers with bitfields at all
                     if not peers_with_bitfield:
+                        if not self._metadata_incomplete:
+                            self.logger.warning(
+                                "PIECE_SELECTOR_DEGRADED: %d active peer(s) but none have advertised bitfield/HAVE availability after metadata completion. Triggering connection recovery.",
+                                len(active_peers),
+                            )
+                            if hasattr(self._peer_manager, "_schedule_pending_resume"):
+                                with contextlib.suppress(Exception):
+                                    self._peer_manager._schedule_pending_resume(  # noqa: SLF001
+                                        reason="piece_selector_no_piece_info"
+                                    )
                         self.logger.debug(
                             "No peers with bitfields - skipping piece selection until bitfields arrive"
                         )
@@ -5283,8 +5296,13 @@ class AsyncPieceManager:
                         len(stale_peers),
                     )
                     for peer_key in stale_peers:
-                        if peer_key in self.peer_availability:
-                            del self.peer_availability[peer_key]
+                        peer_availability = self.peer_availability.pop(peer_key, None)
+                        if peer_availability is None:
+                            continue
+                        for piece_idx in peer_availability.pieces:
+                            self.piece_frequency[piece_idx] -= 1
+                            if self.piece_frequency[piece_idx] <= 0:
+                                del self.piece_frequency[piece_idx]
 
         # CRITICAL FIX: Also check for pieces that are COMPLETE but not VERIFIED
         # These should transition to verification, not stay stuck

@@ -1155,21 +1155,29 @@ class AsyncTorrentSession:
                             active_peer_count,
                         )
 
-                        metadata_incomplete = bool(
-                            getattr(
-                                getattr(self.session, "piece_manager", None),
-                                "_metadata_incomplete",
-                                False,
-                            )
+                        swarm_state = await self.session._get_swarm_recovery_state()
+                        metadata_incomplete = bool(swarm_state["metadata_incomplete"])
+                        active_peer_count = int(swarm_state["active_peers"])
+                        productive_peers = int(swarm_state["productive_peers"])
+                        requestable_peers = int(swarm_state["requestable_peers"])
+                        peers_with_piece_info = int(
+                            swarm_state["peers_with_piece_info"]
                         )
-                        if not metadata_incomplete and isinstance(
-                            self.session.torrent_data, dict
-                        ):
-                            file_info = self.session.torrent_data.get("file_info")
-                            metadata_incomplete = file_info is None or (
-                                isinstance(file_info, dict)
-                                and file_info.get("total_length", 0) == 0
-                            )
+                        active_block_requests = int(
+                            swarm_state["active_block_requests"]
+                        )
+                        self.session.logger.info(
+                            "peer_count_low recovery state: active=%d, productive=%d, requestable=%d, piece_info=%d, active_requests=%d, metadata_incomplete=%s",
+                            active_peer_count,
+                            productive_peers,
+                            requestable_peers,
+                            peers_with_piece_info,
+                            active_block_requests,
+                            metadata_incomplete,
+                        )
+                        fast_recovery = self.session._swarm_requires_fast_recovery(
+                            swarm_state
+                        )
 
                         min_peers_before_dht = getattr(
                             self.session.config.discovery,
@@ -1222,12 +1230,10 @@ class AsyncTorrentSession:
                                     self.session.logger.info(
                                         "⏸️ DHT DELAY: Connection batches are in progress. Waiting for batches to complete before starting DHT..."
                                     )
-                                    # Wait less aggressively when peer count is already zero so recovery
-                                    # can fall through to DHT instead of idling behind tracker batches.
-                                    max_wait = (
-                                        min(fail_fast_timeout, 5.0)
-                                        if active_peer_count == 0
-                                        else 30.0
+                                    max_wait = self.session._recovery_wait_budget(
+                                        swarm_state,
+                                        base_wait=15.0,
+                                        fast_wait=min(fail_fast_timeout, 2.0),
                                     )
                                     check_interval = 2.0
                                     waited = 0.0
@@ -1247,6 +1253,12 @@ class AsyncTorrentSession:
                                                 active_peer_count_during_wait = len(
                                                     peer_manager.get_active_peers()
                                                 )
+                                        swarm_state = await self.session._get_swarm_recovery_state()
+                                        fast_recovery = (
+                                            self.session._swarm_requires_fast_recovery(
+                                                swarm_state
+                                            )
+                                        )
                                         if (
                                             connection_batches_in_progress
                                             and active_peer_count_during_wait == 0
@@ -1254,6 +1266,31 @@ class AsyncTorrentSession:
                                             self.session.logger.warning(
                                                 "⏸️ DHT DELAY: Connection batches are still marked in progress but no active peers remain after %.1fs. Proceeding with DHT recovery now.",
                                                 waited,
+                                            )
+                                            break
+                                        if (
+                                            connection_batches_in_progress
+                                            and fast_recovery
+                                        ):
+                                            self.session.logger.warning(
+                                                "⏸️ DHT DELAY: Connection batches still in progress after %.1fs but swarm remains degraded (active=%d, productive=%d, requestable=%d, piece_info=%d). Proceeding with DHT recovery now.",
+                                                waited,
+                                                int(swarm_state.get("active_peers", 0)),
+                                                int(
+                                                    swarm_state.get(
+                                                        "productive_peers", 0
+                                                    )
+                                                ),
+                                                int(
+                                                    swarm_state.get(
+                                                        "requestable_peers", 0
+                                                    )
+                                                ),
+                                                int(
+                                                    swarm_state.get(
+                                                        "peers_with_piece_info", 0
+                                                    )
+                                                ),
                                             )
                                             break
                                         if not connection_batches_in_progress:
@@ -1282,13 +1319,16 @@ class AsyncTorrentSession:
                             wait_time = (
                                 tracker_peers_connecting_until - time_module.time()
                             )
+                            capped_wait = (
+                                min(wait_time, 1.0)
+                                if fast_recovery
+                                else min(wait_time, 5.0)
+                            )
                             self.session.logger.info(
                                 "⏸️ DHT DELAY: Tracker peers are currently being connected. Waiting %.1fs before starting DHT to allow tracker connections to complete...",
-                                wait_time,
+                                capped_wait,
                             )
-                            await asyncio.sleep(
-                                min(wait_time, 5.0)
-                            )  # Wait up to 5 seconds or until timestamp expires
+                            await asyncio.sleep(capped_wait)
 
                         # Check if we have active peers now (tracker connections may have succeeded)
                         if (
@@ -1296,39 +1336,94 @@ class AsyncTorrentSession:
                             and self.session.download_manager
                         ):
                             current_active = active_peer_count
+                            current_requestable = requestable_peers
+                            current_productive = productive_peers
+                            current_piece_info = peers_with_piece_info
                             peer_manager = getattr(
                                 self.session.download_manager, "peer_manager", None
                             )
                             if peer_manager and hasattr(
+                                peer_manager, "get_connection_summary"
+                            ):
+                                with contextlib.suppress(Exception):
+                                    connection_summary = (
+                                        await peer_manager.get_connection_summary()
+                                    )
+                                    current_active = int(
+                                        connection_summary.get("active_connections", 0)
+                                        or 0
+                                    )
+                                    current_requestable = int(
+                                        connection_summary.get(
+                                            "requestable_connections", 0
+                                        )
+                                        or 0
+                                    )
+                                    current_productive = int(
+                                        connection_summary.get(
+                                            "productive_connections", 0
+                                        )
+                                        or 0
+                                    )
+                                    current_piece_info = int(
+                                        connection_summary.get(
+                                            "peers_with_piece_info", 0
+                                        )
+                                        or 0
+                                    )
+                            elif peer_manager and hasattr(
                                 peer_manager, "get_active_peers"
                             ):
                                 current_active = len(peer_manager.get_active_peers())
-                                if (
-                                    current_active > active_peer_count
-                                    and not metadata_incomplete
-                                ):
-                                    self.session.logger.info(
-                                        "✅ DHT SKIP: Active peer count increased from %d to %d (tracker connections succeeded). Skipping DHT for now.",
-                                        active_peer_count,
-                                        current_active,
-                                    )
-                                    return  # Skip DHT if tracker peers connected successfully
-                                if (
-                                    current_active > active_peer_count
-                                    and metadata_incomplete
-                                ):
-                                    self.session.logger.info(
-                                        "🧲 DHT CONTINUE: Active peer count increased from %d to %d, but metadata is still incomplete. Continuing DHT evaluation.",
-                                        active_peer_count,
-                                        current_active,
-                                    )
-                                active_peer_count = current_active
+                            if (
+                                current_active > active_peer_count
+                                and not metadata_incomplete
+                                and (
+                                    current_requestable > 0
+                                    or current_productive > 0
+                                    or current_piece_info > 0
+                                )
+                            ):
+                                self.session.logger.info(
+                                    "✅ DHT SKIP: Swarm became more usable after tracker connections (active=%d->%d, requestable=%d, productive=%d, piece_info=%d). Skipping DHT for now.",
+                                    active_peer_count,
+                                    current_active,
+                                    current_requestable,
+                                    current_productive,
+                                    current_piece_info,
+                                )
+                                return  # Skip DHT if tracker peers connected successfully
+                            if (
+                                current_active > active_peer_count
+                                and metadata_incomplete
+                            ):
+                                self.session.logger.info(
+                                    "🧲 DHT CONTINUE: Active peer count increased from %d to %d, but metadata is still incomplete. Continuing DHT evaluation.",
+                                    active_peer_count,
+                                    current_active,
+                                )
+                            active_peer_count = current_active
+                            requestable_peers = current_requestable
+                            productive_peers = current_productive
+                            peers_with_piece_info = current_piece_info
 
                         # Degraded-state trigger: low peers (including zero) for > timeout => allow DHT
                         if active_peer_count == 0 and not metadata_incomplete:
                             fail_fast_triggered = True
                             self.session.logger.warning(
                                 "🚨 ZERO-PEER DHT: No active peers remain. Bypassing low-peer grace period and triggering immediate DHT recovery."
+                            )
+                        elif (
+                            not metadata_incomplete
+                            and peers_with_piece_info == 0
+                            and active_block_requests == 0
+                        ):
+                            fail_fast_triggered = True
+                            self.session.logger.warning(
+                                "🚨 PIECE-INFO DHT: Active peers exist but none have advertised piece availability (active=%d, productive=%d, requestable=%d). Triggering DHT recovery immediately.",
+                                active_peer_count,
+                                productive_peers,
+                                requestable_peers,
                             )
                         if (
                             enable_fail_fast
@@ -1365,9 +1460,12 @@ class AsyncTorrentSession:
                             and not fail_fast_triggered
                         ):
                             self.session.logger.info(
-                                "⏸️ DHT SKIP: Active peer count (%d) is below minimum (%d). Skipping immediate DHT discovery to avoid blacklisting. "
-                                "DHT will start automatically once minimum peer count is reached.",
+                                "⏸️ DHT SKIP: Swarm still below DHT threshold (active=%d, productive=%d, requestable=%d, piece_info=%d; minimum=%d). "
+                                "Skipping immediate DHT discovery to avoid blacklisting.",
                                 active_peer_count,
+                                productive_peers,
+                                requestable_peers,
+                                peers_with_piece_info,
                                 min_peers_before_dht,
                             )
                             return  # Skip DHT until we have minimum peers
@@ -1377,14 +1475,20 @@ class AsyncTorrentSession:
                             and active_peer_count < min_peers_before_dht
                         ):
                             self.session.logger.info(
-                                "Triggering immediate DHT discovery via fail-fast recovery (active peers: %d < %d, tracker connections completed or timed out)...",
+                                "Triggering immediate DHT discovery via fail-fast recovery (active=%d, productive=%d, requestable=%d, piece_info=%d, threshold=%d)...",
                                 active_peer_count,
+                                productive_peers,
+                                requestable_peers,
+                                peers_with_piece_info,
                                 min_peers_before_dht,
                             )
                         else:
                             self.session.logger.info(
-                                "Triggering immediate DHT discovery (active peers: %d >= %d, tracker connections completed)...",
+                                "Triggering immediate DHT discovery (active=%d, productive=%d, requestable=%d, piece_info=%d, threshold=%d)...",
                                 active_peer_count,
+                                productive_peers,
+                                requestable_peers,
+                                peers_with_piece_info,
                                 min_peers_before_dht,
                             )
 
@@ -1711,6 +1815,11 @@ class AsyncTorrentSession:
         if self._incoming_queue_task:
             self._incoming_queue_task.cancel()
             tasks_to_cancel.append(self._incoming_queue_task)
+        if hasattr(self, "_metadata_tasks"):
+            for metadata_task in list(self._metadata_tasks):
+                if metadata_task and not metadata_task.done():
+                    metadata_task.cancel()
+                    tasks_to_cancel.append(metadata_task)
         # CRITICAL FIX: Cancel DHT discovery task to prevent it from continuing during shutdown
         if (
             hasattr(self, "_dht_discovery_task")
@@ -1729,6 +1838,9 @@ class AsyncTorrentSession:
 
         # Use lifecycle controller for task cancellation sequencing
         await self.lifecycle_controller.on_stop(self)
+
+        self._tracker_peers_connecting_until = None
+        self._tracker_metadata_fallback_in_progress = False
 
         # Await other tasks (incoming queue, DHT discovery) with timeout to prevent hanging
         if tasks_to_cancel:
@@ -1991,7 +2103,7 @@ class AsyncTorrentSession:
             peers: list[dict[str, Any]], tracker_url: str
         ) -> None:
             """Immediate peer connection callback - connects peers as soon as they arrive."""
-            if not peers:
+            if not peers or self.is_stopped():
                 return
 
             # CRITICAL FIX: Set timestamp to indicate tracker peers are being connected
@@ -2000,7 +2112,7 @@ class AsyncTorrentSession:
             import time as time_module
 
             connection_start_time = time_module.time()
-            max_wait_time = 10.0  # Maximum 10 seconds wait (reduced from 15)
+            max_wait_time = 4.0 if self._metadata_is_incomplete() else 2.0
 
             # If flag is already set, extend it if this callback started later
             if self._tracker_peers_connecting_until is None:  # type: ignore[attr-defined]
@@ -2071,21 +2183,7 @@ class AsyncTorrentSession:
                                 self.info.name,
                             )
 
-                            metadata_incomplete = bool(
-                                getattr(
-                                    getattr(self, "piece_manager", None),
-                                    "_metadata_incomplete",
-                                    False,
-                                )
-                            )
-                            if not metadata_incomplete and isinstance(
-                                self.torrent_data, dict
-                            ):
-                                file_info = self.torrent_data.get("file_info")
-                                metadata_incomplete = file_info is None or (
-                                    isinstance(file_info, dict)
-                                    and file_info.get("total_length", 0) == 0
-                                )
+                            metadata_incomplete = self._metadata_is_incomplete()
 
                             now = time_module.time()
                             fallback_cooldown = 15.0
@@ -2172,17 +2270,24 @@ class AsyncTorrentSession:
                                         exc_info=True,
                                     )
 
-                            # CRITICAL FIX: Wait until the timestamp expires (or shorter if connections complete)
-                            # This prevents DHT from starting too early while allowing multiple callbacks
-                            wait_until = self._tracker_peers_connecting_until  # type: ignore[attr-defined]
-                            if wait_until:
-                                wait_time = max(0.0, wait_until - time_module.time())
-                                if wait_time > 0:
-                                    self.logger.info(
-                                        "⏸️ IMMEDIATE CONNECTION: Keeping DHT blocked for %.1fs to allow tracker connections to complete...",
-                                        wait_time,
+                            swarm_state = await self._get_swarm_recovery_state()
+                            if self._swarm_requires_fast_recovery(swarm_state):
+                                accelerated_until = time_module.time() + 0.25
+                                current_until = self._tracker_peers_connecting_until  # type: ignore[attr-defined]
+                                if (
+                                    current_until is not None
+                                    and accelerated_until < current_until
+                                ):
+                                    self._tracker_peers_connecting_until = (
+                                        accelerated_until  # type: ignore[attr-defined]
                                     )
-                                    await asyncio.sleep(wait_time)
+                                self.logger.info(
+                                    "⚡ IMMEDIATE CONNECTION: Tracker peers connected but swarm is still not payload-capable (active=%d, productive=%d, requestable=%d, piece_info=%d). Shortening DHT delay.",
+                                    int(swarm_state["active_peers"]),
+                                    int(swarm_state["productive_peers"]),
+                                    int(swarm_state["requestable_peers"]),
+                                    int(swarm_state["peers_with_piece_info"]),
+                                )
 
                         except Exception as e:
                             self.logger.warning(
@@ -3570,6 +3675,135 @@ class AsyncTorrentSession:
         """
         if hasattr(self, "_metadata_tasks"):
             self._metadata_tasks.discard(task)
+
+    def _metadata_is_incomplete(self) -> bool:
+        """Return True when torrent metadata is still incomplete."""
+        if bool(
+            getattr(getattr(self, "piece_manager", None), "_metadata_incomplete", False)
+        ):
+            return True
+
+        if not isinstance(self.torrent_data, dict):
+            return False
+
+        file_info = self.torrent_data.get("file_info")
+        if file_info is None:
+            return True
+        return bool(
+            isinstance(file_info, dict)
+            and int(file_info.get("total_length", 0) or 0) == 0
+        )
+
+    async def _get_swarm_recovery_state(self) -> dict[str, Any]:
+        """Summarize swarm usefulness for recovery and stall decisions."""
+        metadata_incomplete = self._metadata_is_incomplete()
+        state: dict[str, Any] = {
+            "metadata_incomplete": metadata_incomplete,
+            "active_peers": 0,
+            "productive_peers": 0,
+            "requestable_peers": 0,
+            "peers_with_piece_info": 0,
+            "active_block_requests": 0,
+            "download_rate": 0.0,
+        }
+
+        peer_manager = getattr(
+            getattr(self, "download_manager", None), "peer_manager", None
+        ) or getattr(self, "peer_manager", None)
+        if peer_manager and hasattr(peer_manager, "get_connection_summary"):
+            with contextlib.suppress(Exception):
+                summary = await peer_manager.get_connection_summary()
+                state["active_peers"] = int(summary.get("active_connections", 0) or 0)
+                state["productive_peers"] = int(
+                    summary.get("productive_connections", 0) or 0
+                )
+                state["requestable_peers"] = int(
+                    summary.get("requestable_connections", 0) or 0
+                )
+                state["peers_with_piece_info"] = int(
+                    summary.get("peers_with_piece_info", 0) or 0
+                )
+
+        if (
+            state["active_peers"] == 0
+            and peer_manager
+            and hasattr(peer_manager, "get_active_peers")
+        ):
+            with contextlib.suppress(Exception):
+                state["active_peers"] = len(peer_manager.get_active_peers())
+
+        piece_manager = getattr(self, "piece_manager", None)
+        if piece_manager:
+            with contextlib.suppress(Exception):
+                state["peers_with_piece_info"] = max(
+                    state["peers_with_piece_info"],
+                    len(getattr(piece_manager, "peer_availability", {})),
+                )
+            with contextlib.suppress(Exception):
+                piece_metrics = piece_manager.get_piece_selection_metrics()
+                state["active_block_requests"] = int(
+                    piece_metrics.get("active_block_requests", 0) or 0
+                )
+            with contextlib.suppress(Exception):
+                stats = getattr(piece_manager, "stats", None)
+                state["download_rate"] = float(
+                    getattr(stats, "download_rate", 0.0) or 0.0
+                )
+
+        state["has_usable_download_path"] = bool(
+            metadata_incomplete
+            or state["download_rate"] > 0.0
+            or state["active_block_requests"] > 0
+            or (state["requestable_peers"] > 0 and state["peers_with_piece_info"] > 0)
+        )
+        state["degraded_swarm"] = bool(
+            not metadata_incomplete
+            and state["active_peers"] > 0
+            and not state["has_usable_download_path"]
+        )
+        return state
+
+    async def get_swarm_recovery_state(self) -> dict[str, Any]:
+        """Public wrapper for swarm recovery state."""
+        return await self._get_swarm_recovery_state()
+
+    def _swarm_requires_fast_recovery(self, state: dict[str, Any]) -> bool:
+        """Return whether recovery paths should bypass tracker-first delays."""
+        if bool(state.get("metadata_incomplete", False)):
+            return True
+        if bool(state.get("degraded_swarm", False)):
+            return True
+        if not bool(state.get("has_usable_download_path", False)):
+            return True
+        return int(state.get("active_peers", 0) or 0) == 0
+
+    def swarm_requires_fast_recovery(self, state: dict[str, Any]) -> bool:
+        """Public wrapper for fast-recovery classification."""
+        return self._swarm_requires_fast_recovery(state)
+
+    def _recovery_wait_budget(
+        self,
+        state: dict[str, Any],
+        *,
+        base_wait: float,
+        fast_wait: float,
+    ) -> float:
+        """Return the maximum delay to tolerate before forcing recovery."""
+        return fast_wait if self._swarm_requires_fast_recovery(state) else base_wait
+
+    def recovery_wait_budget(
+        self,
+        state: dict[str, Any],
+        *,
+        base_wait: float,
+        fast_wait: float,
+    ) -> float:
+        """Public wrapper for recovery wait budgeting."""
+        return self._recovery_wait_budget(
+            state,
+            base_wait=base_wait,
+            fast_wait=fast_wait,
+        )
 
     @property
     def dht_discovery_task(self) -> Optional[asyncio.Task]:

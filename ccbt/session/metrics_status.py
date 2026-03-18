@@ -188,12 +188,56 @@ class StatusLoop:
                         piece_metrics = (
                             self.s.piece_manager.get_piece_selection_metrics()
                         )
+                if hasattr(self.s, "_get_swarm_recovery_state"):
+                    with contextlib.suppress(Exception):
+                        swarm_state = await self.s._get_swarm_recovery_state()  # noqa: SLF001
+                        connected_from_swarm = int(
+                            swarm_state.get("active_peers", 0) or 0
+                        )
+                        productive_from_swarm = int(
+                            swarm_state.get("productive_peers", 0) or 0
+                        )
+                        requestable_from_swarm = int(
+                            swarm_state.get("requestable_peers", 0) or 0
+                        )
+                        piece_info_from_swarm = int(
+                            swarm_state.get("peers_with_piece_info", 0) or 0
+                        )
+                        if connected_from_swarm > 0 or connected_peers == 0:
+                            connected_peers = connected_from_swarm
+                        if productive_from_swarm > 0 or productive_peers == 0:
+                            productive_peers = productive_from_swarm
+                        if requestable_from_swarm > 0 or requestable_peers == 0:
+                            requestable_peers = requestable_from_swarm
+                        if piece_info_from_swarm > 0 or peers_with_piece_info == 0:
+                            peers_with_piece_info = piece_info_from_swarm
                 active_block_requests = int(
                     piece_metrics.get("active_block_requests", 0) or 0
                 )
                 hash_verification_failures = int(
                     piece_metrics.get("hash_verification_failures", 0) or 0
                 )
+                tracker_anomalies = 0
+                tracker = getattr(self.s, "tracker", None)
+                if tracker and hasattr(tracker, "get_session_metrics"):
+                    with contextlib.suppress(Exception):
+                        tracker_metrics = tracker.get_session_metrics()
+                        tracker_anomalies = sum(
+                            int(metrics.get("resolution_anomaly_count", 0) or 0)
+                            for metrics in tracker_metrics.values()
+                            if isinstance(metrics, dict)
+                        )
+                if tracker_anomalies > 0 and (
+                    getattr(self.s, "_last_tracker_resolution_anomalies", None)
+                    != tracker_anomalies
+                ):
+                    vars(self.s)["_last_tracker_resolution_anomalies"] = (
+                        tracker_anomalies
+                    )
+                    self.s.logger.warning(
+                        "TRACKER_RESOLUTION_ANOMALY: Detected %d tracker resolution anomaly/anomalies (public tracker hostname resolved to loopback/private address during fallback or connect).",
+                        tracker_anomalies,
+                    )
 
                 if hasattr(self.s.download_manager, "download_complete"):
                     try:
@@ -273,6 +317,29 @@ class StatusLoop:
                         self.s.info.name,
                         progress * 100,
                     )
+                    if connected_peers > 0 and peers_with_piece_info == 0:
+                        no_piece_info_marker = (
+                            connected_peers,
+                            requestable_peers,
+                            active_block_requests,
+                            hash_verification_failures,
+                        )
+                        if (
+                            getattr(self.s, "_last_no_piece_info_marker", None)
+                            != no_piece_info_marker
+                        ):
+                            vars(self.s)["_last_no_piece_info_marker"] = (
+                                no_piece_info_marker
+                            )
+                            self.s.logger.warning(
+                                "STALL_MARKER: metadata is complete but connected peers still have no piece availability "
+                                "(connected=%d, requestable=%d, active_requests=%d, hash_failures=%d): %s",
+                                connected_peers,
+                                requestable_peers,
+                                active_block_requests,
+                                hash_verification_failures,
+                                self.s.info.name,
+                            )
                     if active_block_requests > 0:
                         stall_marker = (
                             connected_peers,
@@ -311,10 +378,12 @@ class StatusLoop:
                     "connected_peers": connected_peers,
                     "productive_peers": productive_peers,
                     "requestable_peers": requestable_peers,
+                    "peers_with_piece_info": peers_with_piece_info,
                     "download_rate": download_rate,
                     "upload_rate": upload_rate,
                     "progress": progress,
                     "download_complete": download_complete,
+                    "tracker_resolution_anomalies": tracker_anomalies,
                 }
                 self.s._cached_status = cached_status  # noqa: SLF001
 

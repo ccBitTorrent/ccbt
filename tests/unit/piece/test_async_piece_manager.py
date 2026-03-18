@@ -312,6 +312,45 @@ class TestAsyncPieceManagerPieceSelector:
         assert True
 
     @pytest.mark.asyncio
+    async def test_select_pieces_skips_when_stopping(self, piece_manager):
+        """Selector should stop issuing work once shutdown begins."""
+        piece_manager._stopping = True
+        piece_manager.is_downloading = True
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=MagicMock(return_value=[]),
+            connections={},
+        )
+
+        await piece_manager._select_pieces()
+
+        piece_manager._peer_manager.get_active_peers.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_select_pieces_triggers_recovery_without_piece_info(
+        self, piece_manager
+    ):
+        """Metadata-complete swarms with active peers but no availability should trigger recovery."""
+        schedule_pending_resume = MagicMock()
+        fake_peer = SimpleNamespace(
+            peer_info=SimpleNamespace(ip="203.0.113.10", port=6881),
+            can_request=lambda: True,
+        )
+        piece_manager.is_downloading = True
+        piece_manager._metadata_incomplete = False
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=MagicMock(return_value=[fake_peer]),
+            _schedule_pending_resume=schedule_pending_resume,
+            connections={"203.0.113.10:6881": fake_peer},
+        )
+        piece_manager.peer_availability.clear()
+
+        await piece_manager._select_pieces()
+
+        schedule_pending_resume.assert_called_once_with(
+            reason="piece_selector_no_piece_info"
+        )
+
+    @pytest.mark.asyncio
     async def test_endgame_mode_activation(self, piece_manager):
         """Test endgame mode activation."""
         piece_manager.is_downloading = True
@@ -458,6 +497,32 @@ class TestAsyncPieceManagerBackpressure:
             await piece_manager._verify_piece_hash(i, piece)
 
         assert callback_called
+        assert piece_manager.download_complete is True
+
+    @pytest.mark.asyncio
+    async def test_download_complete_callback_only_once(self, piece_manager):
+        """Completion callback should fire once even after the final piece verifies."""
+        callback_count = 0
+
+        def mock_callback():
+            nonlocal callback_count
+            callback_count += 1
+
+        piece_manager.on_download_complete = mock_callback
+
+        for i in range(piece_manager.num_pieces):
+            piece = piece_manager.pieces[i]
+            piece_data = (f"piece-{i}".encode() * 4096)[:16384]
+            piece_manager.piece_hashes[i] = hashlib.sha1(piece_data).digest()  # nosec B324
+
+            for block in piece.blocks:
+                piece.add_block(
+                    block.begin, piece_data[block.begin : block.begin + block.length]
+                )
+
+            await piece_manager._verify_piece_hash(i, piece)
+
+        assert callback_count == 1
         assert piece_manager.download_complete is True
 
 

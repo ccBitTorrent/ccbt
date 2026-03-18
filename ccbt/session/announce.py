@@ -626,6 +626,17 @@ class AnnounceLoop:
                     total_peers = sum(
                         len(getattr(r, "peers", []) or []) for r in successful_responses
                     )
+                    swarm_state = await self.s.get_swarm_recovery_state()
+                    self.s.logger.info(
+                        "TRACKER_SWARM_STATE: trackers=%d, successful=%d, discovered_peers=%d, active=%d, productive=%d, requestable=%d, piece_info=%d",
+                        len(tracker_urls),
+                        len(successful_responses),
+                        total_peers,
+                        int(swarm_state["active_peers"]),
+                        int(swarm_state["productive_peers"]),
+                        int(swarm_state["requestable_peers"]),
+                        int(swarm_state["peers_with_piece_info"]),
+                    )
 
                     if not successful_responses:
                         self.s.logger.warning(

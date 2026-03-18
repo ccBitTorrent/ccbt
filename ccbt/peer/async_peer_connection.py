@@ -1070,7 +1070,20 @@ class AsyncPeerConnectionManager:
         if bitfield is not None and len(bitfield) > 0:
             return True
         pieces_we_have = getattr(connection.peer_state, "pieces_we_have", None)
-        return pieces_we_have is not None and len(pieces_we_have) > 0
+        if pieces_we_have is not None and len(pieces_we_have) > 0:
+            return True
+        piece_manager = getattr(self, "piece_manager", None)
+        if piece_manager and hasattr(connection, "peer_info"):
+            peer_key = self._get_peer_key(connection)
+            peer_availability = getattr(piece_manager, "peer_availability", {})
+            if not isinstance(peer_availability, dict):
+                return False
+            availability_entry = peer_availability.get(peer_key)
+            return bool(
+                availability_entry is not None
+                and getattr(availability_entry, "pieces", None)
+            )
+        return False
 
     def _connection_supports_metadata(self, connection: AsyncPeerConnection) -> bool:
         """Return whether a connection advertised ut_metadata support."""
@@ -1097,6 +1110,9 @@ class AsyncPeerConnectionManager:
 
     async def get_connection_summary(self) -> dict[str, int]:
         """Return a summary of connection states useful for recovery logic."""
+        metadata_incomplete = bool(
+            getattr(getattr(self, "piece_manager", None), "_metadata_incomplete", False)
+        )
         summary = {
             "total_connections": 0,
             "connecting_connections": 0,
@@ -1141,11 +1157,10 @@ class AsyncPeerConnectionManager:
                 if peer_key in self._metadata_exchange_state:
                     summary["metadata_exchange_active"] += 1
                 if (
-                    connection.can_request()
-                    or has_piece_info
-                    or metadata_capable
-                    or getattr(connection.stats, "blocks_delivered", 0) > 0
+                    getattr(connection.stats, "blocks_delivered", 0) > 0
                     or getattr(connection.stats, "bytes_downloaded", 0) > 0
+                    or has_piece_info
+                    or (metadata_capable and metadata_incomplete)
                 ):
                     summary["productive_connections"] += 1
         return summary
@@ -2320,6 +2335,8 @@ class AsyncPeerConnectionManager:
 
         # Mark as not running immediately to prevent new operations
         self._running = False
+        self._connection_batches_in_progress = False
+        self._pending_resume_in_progress = False
 
         # LOGGING OPTIMIZATION: Keep as INFO - important lifecycle event
         self.logger.info("Stopping async peer connection manager...")
@@ -2552,8 +2569,6 @@ class AsyncPeerConnectionManager:
 
         self._ensure_pending_queue_initialized()
         self._ensure_quality_tracking_initialized()
-        if not _from_pending_queue:
-            await self._clear_pending_peer_queue("new_peer_batch")
         await self._prune_probation_peers("pre_batch")
 
         # CRITICAL FIX: Set flag to indicate connection batches are in progress
@@ -9838,11 +9853,27 @@ class AsyncPeerConnectionManager:
         peer_id = f"{connection.peer_info.ip}:{connection.peer_info.port}"
         await self.connection_pool.release(peer_id, connection)
 
+        if self.piece_manager and hasattr(self.piece_manager, "_remove_peer"):
+            with contextlib.suppress(Exception):
+                await self.piece_manager._remove_peer(connection)  # noqa: SLF001
+
         # Remove from upload slots
         if (
             connection in self.upload_slots
         ):  # pragma: no cover - Edge case: removing peer from upload slots
             self.upload_slots.remove(connection)  # pragma: no cover - Same context
+
+        if lock_held:
+            active_remaining = sum(
+                1 for conn in self.connections.values() if conn.is_active()
+            )
+        else:
+            async with self.connection_lock:
+                active_remaining = sum(
+                    1 for conn in self.connections.values() if conn.is_active()
+                )
+        if active_remaining == 0 and not self._pending_peer_queue:
+            self._connection_batches_in_progress = False
 
         # Clear optimistic unchoke if this peer
         if (
@@ -11164,6 +11195,37 @@ class AsyncPeerConnectionManager:
                                             )
                                             peers_to_recycle.append(connection)
                                             continue
+                        elif (
+                            connection.is_active()
+                            and connection.can_request()
+                            and not self._connection_has_piece_info(connection)
+                        ):
+                            metadata_incomplete = bool(
+                                getattr(
+                                    getattr(self, "piece_manager", None),
+                                    "_metadata_incomplete",
+                                    False,
+                                )
+                            )
+                            if not metadata_incomplete:
+                                connection_age = max(
+                                    0.0,
+                                    time.time()
+                                    - getattr(
+                                        connection.stats,
+                                        "last_activity",
+                                        time.time(),
+                                    ),
+                                )
+                                grace_period = 12.0
+                                if connection_age > grace_period:
+                                    self.logger.info(
+                                        "Disconnecting %s: peer stayed requestable for %.1fs without advertising any piece availability",
+                                        connection.peer_info,
+                                        connection_age,
+                                    )
+                                    peers_to_recycle.append(connection)
+                                    continue
 
                         # Only recycle if at connection limit or peer is very bad
                         if self._should_recycle_peer(
