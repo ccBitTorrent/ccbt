@@ -166,9 +166,7 @@ class TestUPnPDeviceDescription:
         """Test fetch_device_description no WANIPConnection service (lines 199-201)."""
         import aiohttp
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.text = AsyncMock(return_value="""<?xml version="1.0"?>
+        no_service_xml = """<?xml version="1.0"?>
 <root>
     <device>
         <serviceList>
@@ -177,10 +175,13 @@ class TestUPnPDeviceDescription:
             </service>
         </serviceList>
     </device>
-</root>""")
+</root>"""
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.read = AsyncMock(return_value=no_service_xml.encode("utf-8"))
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
-        
+
         mock_session = MagicMock()
         mock_session.get = MagicMock(return_value=mock_response)
 
@@ -200,10 +201,10 @@ class TestUPnPDeviceDescription:
 
         mock_response = MagicMock()
         mock_response.status = 200
-        mock_response.text = AsyncMock(return_value="<invalid xml")
+        mock_response.read = AsyncMock(return_value=b"<invalid xml")
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
-        
+
         mock_session = MagicMock()
         mock_session.get = MagicMock(return_value=mock_response)
 
@@ -247,10 +248,10 @@ class TestUPnPSOAPAction:
 
         mock_response = MagicMock()
         mock_response.status = 500
-        mock_response.text = AsyncMock(return_value="<xml>Error</xml>")  # Return string for XML parsing
+        mock_response.read = AsyncMock(return_value=b"<xml>Error</xml>")
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
-        
+
         mock_session = MagicMock()
         mock_session.post = MagicMock(return_value=mock_response)
 
@@ -272,9 +273,7 @@ class TestUPnPSOAPAction:
         """Test send_soap_action SOAP fault handling (lines 308-320)."""
         import aiohttp
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.text = AsyncMock(return_value="""<?xml version="1.0"?>
+        fault_xml = """<?xml version="1.0"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
   <s:Body>
     <s:Fault>
@@ -282,10 +281,13 @@ class TestUPnPSOAPAction:
       <faultstring>Invalid Args</faultstring>
     </s:Fault>
   </s:Body>
-</s:Envelope>""")
+</s:Envelope>"""
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.read = AsyncMock(return_value=fault_xml.encode("utf-8"))
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
-        
+
         mock_session = MagicMock()
         mock_session.post = MagicMock(return_value=mock_response)
 
@@ -310,10 +312,10 @@ class TestUPnPSOAPAction:
 
         mock_response = MagicMock()
         mock_response.status = 200
-        mock_response.text = AsyncMock(return_value="<invalid xml")
+        mock_response.read = AsyncMock(return_value=b"<invalid xml")
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
-        
+
         mock_session = MagicMock()
         mock_session.post = MagicMock(return_value=mock_response)
 
@@ -344,6 +346,49 @@ class TestUPnPSOAPAction:
                     "AddPortMapping",
                     "urn:schemas-upnp-org:service:WANIPConnection:1",
                     {},
+                )
+
+    @pytest.mark.asyncio
+    async def test_send_soap_action_non_utf8_response_body(self):
+        """Test send_soap_action with non-UTF-8 SOAP body (byte 0x84); no UnicodeDecodeError."""
+        import aiohttp
+
+        # Body with byte 0x84 (invalid UTF-8 start byte); would break resp.text() with UTF-8
+        soap_with_invalid_utf8 = (
+            b'<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">'
+            b"<s:Body><s:Fault><faultcode>714</faultcode><faultstring>NoSuchEntry</faultstring>"
+            b"</s:Fault></s:Body></s:Envelope>"[:100]
+            + bytes([0x84])
+            + b"</s:Fault></s:Body></s:Envelope>"[15:]
+        )
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.read = AsyncMock(return_value=soap_with_invalid_utf8)
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_response)
+
+        mock_client_session = MagicMock()
+        mock_client_session.__aenter__ = AsyncMock(return_value=mock_client_session)
+        mock_client_session.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("ccbt.nat.upnp.aiohttp.ClientSession", return_value=mock_client_session):
+            # Must not raise UnicodeDecodeError; may raise UPnPError (parse/fault) or succeed
+            try:
+                await send_soap_action(
+                    "http://example.com/control",
+                    "DeletePortMapping",
+                    "urn:schemas-upnp-org:service:WANIPConnection:1",
+                    {"NewRemoteHost": "", "NewExternalPort": "64122", "NewProtocol": "TCP"},
+                )
+            except UnicodeDecodeError:
+                pytest.fail("send_soap_action must not raise UnicodeDecodeError for non-UTF-8 body")
+            except UPnPError as e:
+                err = str(e)
+                assert "SOAP" in err or "parse" in err.lower() or "fault" in err.lower(), (
+                    f"Expected SOAP/parse/fault in UPnPError message, got: {err}"
                 )
 
 
@@ -504,6 +549,31 @@ class TestUPnPClient:
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
         with patch.object(
             client, "delete_port_mapping", side_effect=UPnPError("SOAP fault (UPnP error code: 501, hint: Action Failed)")
+        ), patch("ccbt.nat.upnp.send_soap_action", new_callable=AsyncMock, return_value={}) as mock_soap:
+            with patch("socket.socket") as mock_sock:
+                mock_sock.return_value.__enter__ = mock_sock
+                mock_sock.return_value.__exit__ = MagicMock(return_value=False)
+                mock_sock.return_value.connect = MagicMock()
+                mock_sock.return_value.getsockname = MagicMock(return_value=("192.168.1.2", 0))
+                mock_sock.return_value.close = MagicMock()
+                result = await client.add_port_mapping(6881, 6881, "tcp")
+        assert result is True
+        mock_soap.assert_called_once()
+        call_args = mock_soap.call_args
+        assert call_args[0][1] == "AddPortMapping"
+
+    @pytest.mark.asyncio
+    async def test_add_port_mapping_proceeds_when_delete_fails_with_decode_error(self):
+        """When DeletePortMapping fails with decode/parse error, add_port_mapping still calls AddPortMapping."""
+        client = UPnPClient()
+        client.control_url = "http://example.com/control"
+        client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
+        with patch.object(
+            client,
+            "delete_port_mapping",
+            side_effect=UPnPError(
+                "Error sending SOAP action: 'utf-8' codec can't decode byte 0x84 in position 400: invalid start byte"
+            ),
         ), patch("ccbt.nat.upnp.send_soap_action", new_callable=AsyncMock, return_value={}) as mock_soap:
             with patch("socket.socket") as mock_sock:
                 mock_sock.return_value.__enter__ = mock_sock

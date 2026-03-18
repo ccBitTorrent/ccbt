@@ -835,11 +835,20 @@ class PeerConnectionHelper:
                 # Check actual connection count to see if any peers actually connected
                 actual_peers = 0
                 active_peers = 0
+                connection_summary: Optional[dict[str, int]] = None
+                batches_in_progress = bool(
+                    getattr(peer_manager, "_connection_batches_in_progress", False)
+                )
                 if hasattr(peer_manager, "connections"):
                     connections = peer_manager.connections  # type: ignore[attr-defined]
                     actual_peers = len(connections)
+                    if hasattr(peer_manager, "get_connection_summary"):
+                        connection_summary = await peer_manager.get_connection_summary()  # type: ignore[attr-defined]
+                        active_peers = connection_summary.get(
+                            "active_connections", actual_peers
+                        )
                     # Count active connections (handshake completed)
-                    if hasattr(peer_manager, "get_active_peers"):
+                    elif hasattr(peer_manager, "get_active_peers"):
                         active_peers = len(peer_manager.get_active_peers())  # type: ignore[attr-defined]
                     else:
                         # Fallback: count connections that are not in DISCONNECTED state
@@ -861,12 +870,13 @@ class PeerConnectionHelper:
                 # Enhanced logging for connection results
                 if active_peers > 0:
                     self.session.logger.info(
-                        "Successfully connected to %d/%d peer(s) (%d active, %d total connections, %d errors)",
+                        "Successfully connected to %d/%d peer(s) (%d active, %d total connections, %d errors, summary=%s)",
                         active_peers,
                         len(peer_list),
                         active_peers,
                         actual_peers,
                         connection_errors,
+                        connection_summary,
                     )
                     # Update connection success metrics
                     self.session._peer_discovery_metrics["connection_successes"] += (  # noqa: SLF001
@@ -877,22 +887,31 @@ class PeerConnectionHelper:
                     ] = time.time()
                 elif actual_peers > 0:
                     self.session.logger.warning(
-                        "Connected to %d peer(s) but none are active yet (total connections: %d, errors: %d). "
+                        "Connected to %d peer(s) but none are active yet (total connections: %d, errors: %d, batches_in_progress=%s, summary=%s). "
                         "This may be normal if handshakes are still in progress.",
                         actual_peers,
                         actual_peers,
                         connection_errors,
+                        batches_in_progress,
+                        connection_summary,
                     )
                     # Partial success - count as successes for now (may become active later)
                     self.session._peer_discovery_metrics["connection_successes"] += (  # noqa: SLF001
                         actual_peers
                     )
+                elif batches_in_progress:
+                    self.session.logger.info(
+                        "Peer connection batches are still in progress for %s after scheduling %d peer(s); deferring failure classification",
+                        peer_manager_source,
+                        len(peer_list),
+                    )
                 else:
                     self.session.logger.warning(
-                        "Failed to connect to any of %d peer(s) (attempted via %s peer_manager). "
+                        "Failed to connect to any of %d peer(s) (attempted via %s peer_manager, summary=%s). "
                         "This may indicate network issues, firewall blocking, or peers being unreachable.",
                         len(peer_list),
                         peer_manager_source,
+                        connection_summary,
                     )
                     # Update connection failure metrics
                     self.session._peer_discovery_metrics["connection_failures"] += len(  # noqa: SLF001

@@ -44,7 +44,7 @@ class AnnounceController:
             List of successful tracker responses.
 
         """
-        td = self._prepare_torrent_dict(self._ctx.torrent_data)
+        td = self.prepare_torrent_dict(self._ctx.torrent_data)
         tracker_urls = self.collect_trackers(td)
 
         # CRITICAL FIX: Log collected trackers for debugging
@@ -209,7 +209,21 @@ class AnnounceController:
                 )
             return []
 
-    def _prepare_torrent_dict(self, td: Union[dict[str, Any], Any]) -> dict[str, Any]:
+    def get_or_create_peer_id(self, torrent_data: dict[str, Any]) -> Optional[bytes]:
+        """Return a stable tracker peer ID for this torrent dict."""
+        peer_id = torrent_data.get("peer_id")
+        if isinstance(peer_id, bytes) and peer_id:
+            return peer_id
+
+        generate_peer_id = getattr(self._tracker, "_generate_peer_id", None)
+        if callable(generate_peer_id):
+            peer_id = generate_peer_id()
+            if isinstance(peer_id, bytes) and peer_id:
+                torrent_data["peer_id"] = peer_id
+                return peer_id
+        return None
+
+    def prepare_torrent_dict(self, td: Union[dict[str, Any], Any]) -> dict[str, Any]:
         """Normalize torrent_data to a dict that tracker client expects."""
         if isinstance(td, dict):
             result = dict(td)
@@ -231,6 +245,7 @@ class AnnounceController:
             result["file_info"] = {"total_length": 0}
         if not isinstance(result["file_info"], dict):
             result["file_info"] = {"total_length": 0}
+        self.get_or_create_peer_id(result)
         return result
 
     def collect_trackers(self, td: dict[str, Any]) -> list[str]:
@@ -356,11 +371,29 @@ class AnnounceLoop:
         """
         self.s = session  # AsyncTorrentSession instance
 
+    def _get_tracker_peer_id(self) -> Optional[bytes]:
+        """Return the stable tracker peer ID cached on the session, if any."""
+        peer_id = getattr(self.s, "_tracker_peer_id", None)
+        return peer_id if isinstance(peer_id, bytes) else None
+
+    def _cache_tracker_peer_id(self, peer_id: bytes) -> None:
+        """Cache the stable tracker peer ID on the session."""
+        vars(self.s)["_tracker_peer_id"] = peer_id
+
+    def _initial_announce_sent(self) -> bool:
+        """Return whether the initial tracker announce was already sent."""
+        return bool(getattr(self.s, "_initial_tracker_announce_sent", False))
+
+    def _mark_initial_announce_sent(self) -> None:
+        """Record that the initial tracker announce has been sent."""
+        vars(self.s)["_initial_tracker_announce_sent"] = True
+
     async def _maybe_trigger_tracker_metadata_exchange(
         self,
         peer_list: list[dict[str, Any]],
         *,
         active_count: Optional[int] = None,
+        connection_summary: Optional[dict[str, int]] = None,
     ) -> None:
         """Attempt magnet metadata exchange from tracker peers when startup is stalled."""
         if not peer_list:
@@ -384,16 +417,31 @@ class AnnounceLoop:
         if metadata_available:
             return
 
-        min_peers_before_dht = getattr(
-            self.s.config.discovery,
-            "min_peers_before_dht",
-            10,
+        summary = connection_summary or {}
+        active_connections = summary.get("active_connections", active_count or 0)
+        productive_connections = summary.get(
+            "productive_connections", active_count or 0
         )
-        if active_count is not None and active_count >= min_peers_before_dht:
-            self.s.logger.debug(
-                "Skipping direct tracker metadata exchange for %s because %d active tracker connection(s) already exist",
+        metadata_capable_connections = summary.get("metadata_capable_connections", 0)
+        metadata_exchange_active = summary.get("metadata_exchange_active", 0)
+        peers_with_piece_info = summary.get("peers_with_piece_info", 0)
+
+        self.s.logger.info(
+            "TRACKER_METADATA_STATUS: %s tracker_peers_added=%d active_connections=%d productive_connections=%d "
+            "metadata_capable_connections=%d metadata_exchange_active=%d peers_with_piece_info=%d",
+            self.s.info.name,
+            len(peer_list),
+            active_connections,
+            productive_connections,
+            metadata_capable_connections,
+            metadata_exchange_active,
+            peers_with_piece_info,
+        )
+        if metadata_exchange_active > 0:
+            self.s.logger.info(
+                "Skipping standalone tracker metadata fetch for %s because %d live metadata exchange(s) already started",
                 self.s.info.name,
-                active_count,
+                metadata_exchange_active,
             )
             return
 
@@ -406,12 +454,18 @@ class AnnounceLoop:
             metadata_fetched = await self.s.handle_magnet_metadata_exchange(peer_list)
             if metadata_fetched:
                 self.s.logger.info(
-                    "Successfully fetched metadata from tracker-discovered peers for %s",
+                    "TRACKER_METADATA_COMPLETE: Successfully fetched metadata from tracker-discovered peers for %s",
                     self.s.info.name,
                 )
             else:
-                self.s.logger.debug(
-                    "Metadata exchange with tracker-discovered peers did not complete (will retry with DHT or later)"
+                self.s.logger.warning(
+                    "TRACKER_METADATA_INCOMPLETE: Metadata exchange with tracker-discovered peers did not complete for %s "
+                    "(active=%d productive=%d metadata_capable=%d peers_with_piece_info=%d)",
+                    self.s.info.name,
+                    active_connections,
+                    productive_connections,
+                    metadata_capable_connections,
+                    peers_with_piece_info,
                 )
         except Exception as metadata_error:
             self.s.logger.debug(
@@ -423,37 +477,30 @@ class AnnounceLoop:
 
     async def run(self) -> None:
         """Run the announce loop."""
-        announce_interval = self.s.config.network.announce_interval
+        base_announce_interval = float(self.s.config.network.announce_interval)
         while not self.s.is_stopped():
             # Set connecting state
             self.s.tracker_connection_status = "connecting"
+            next_announce_interval = base_announce_interval
             try:
-                # Normalize torrent_data for tracker usage
-                if isinstance(self.s.torrent_data, dict):
-                    td: dict[str, Any] = dict(self.s.torrent_data)
-                    if "file_info" not in td:
-                        if hasattr(self.s.torrent_data, "file_info"):
-                            td["file_info"] = getattr(
-                                self.s.torrent_data, "file_info", {}
-                            )
-                        elif hasattr(self.s.torrent_data, "total_length"):
-                            td["file_info"] = {
-                                "total_length": getattr(
-                                    self.s.torrent_data, "total_length", 0
-                                )
-                            }
-                else:
-                    # Minimal mapping for non-dict types
-                    td = {
-                        "info_hash": getattr(self.s.torrent_data, "info_hash", b""),
-                        "name": getattr(self.s.torrent_data, "name", "unknown"),
-                        "announce": getattr(self.s.torrent_data, "announce", ""),
-                        "file_info": {
-                            "total_length": getattr(
-                                self.s.torrent_data, "total_length", 0
-                            ),
-                        },
-                    }
+                announce_controller = AnnounceController(
+                    SessionContext(  # type: ignore[missing-argument]
+                        config=self.s.config,
+                        torrent_data=self.s.torrent_data,
+                        output_dir=self.s.output_dir,
+                        info=self.s.info,
+                        logger=self.s.logger,
+                    ),
+                    self.s.tracker,
+                )
+                td = announce_controller.prepare_torrent_dict(self.s.torrent_data)
+                tracker_peer_id = self._get_tracker_peer_id()
+                if tracker_peer_id:
+                    td["peer_id"] = tracker_peer_id
+                elif td.get("peer_id"):
+                    peer_id = td["peer_id"]
+                    if isinstance(peer_id, bytes):
+                        self._cache_tracker_peer_id(peer_id)
 
                 # Normalize tracker URL if available
                 if (
@@ -476,32 +523,25 @@ class AnnounceLoop:
                 # Validate required fields
                 if not td or (isinstance(td, dict) and not td.get("info_hash")):
                     self.s.logger.warning("Invalid torrent_data for announce, skipping")
-                    await asyncio.sleep(announce_interval)
+                    await asyncio.sleep(base_announce_interval)
                     continue
 
                 # CRITICAL FIX: Collect all trackers (not just single announce URL)
                 # This ensures all trackers from magnet links are used
-                announce_controller = AnnounceController(
-                    SessionContext(  # type: ignore[missing-argument]
-                        config=self.s.config,
-                        torrent_data=td,
-                        output_dir=self.s.output_dir,
-                        info=self.s.info,
-                        logger=self.s.logger,
-                    ),
-                    self.s.tracker,
-                )
                 tracker_urls = announce_controller.collect_trackers(td)
 
                 if not tracker_urls:
                     self.s.logger.debug(
                         "No tracker URLs available, skipping announce (using DHT/PEX)"
                     )
-                    await asyncio.sleep(announce_interval)
+                    await asyncio.sleep(base_announce_interval)
                     continue
 
                 # Keep single announce_url for backward compatibility with events
                 announce_url = tracker_urls[0] if tracker_urls else ""
+                announce_event = "started" if not self._initial_announce_sent() else ""
+                if announce_event == "started":
+                    self._mark_initial_announce_sent()
 
                 # CRITICAL FIX: Use external port if NAT mapping exists, otherwise use internal port
                 # Use listen_port_tcp (or listen_port as fallback) to match actual configured port
@@ -579,7 +619,7 @@ class AnnounceLoop:
                 # This ensures all trackers from magnet links are used for peer discovery
                 if hasattr(self.s.tracker, "announce_to_multiple"):
                     responses = await self.s.tracker.announce_to_multiple(
-                        td, tracker_urls, port=announce_port, event=""
+                        td, tracker_urls, port=announce_port, event=announce_event
                     )
                     # Check if any tracker responded successfully
                     successful_responses = [r for r in responses if r is not None]
@@ -622,7 +662,7 @@ class AnnounceLoop:
                             self.s.logger.debug(
                                 "Failed to emit TRACKER_ANNOUNCE_ERROR event: %s", e
                             )
-                        await asyncio.sleep(announce_interval)
+                        await asyncio.sleep(min(base_announce_interval, 120.0))
                         continue
 
                     # Success - at least one tracker responded
@@ -657,12 +697,59 @@ class AnnounceLoop:
                         self.s.logger.warning("Tracker announce returned None response")
                         self.s.tracker_connection_status = "error"
                         self.s.last_tracker_error = "Tracker returned None response"
-                        await asyncio.sleep(announce_interval)
+                        await asyncio.sleep(min(base_announce_interval, 120.0))
                         continue
 
-                # Success
-                self.s.tracker_connection_status = "connected"
-                self.s.last_tracker_error = None
+                usable_peer_count = (
+                    len(response.peers)
+                    if response and hasattr(response, "peers") and response.peers
+                    else 0
+                )
+                tracker_interval = getattr(response, "interval", None)
+                if isinstance(tracker_interval, (int, float)) and tracker_interval > 0:
+                    next_announce_interval = max(
+                        30.0,
+                        min(float(tracker_interval), base_announce_interval),
+                    )
+                cached_status = getattr(self.s, "_cached_status", {})
+                if not isinstance(cached_status, dict):
+                    cached_status = {}
+                connected_peers = int(cached_status.get("connected_peers", 0) or 0)
+                productive_peers = int(
+                    cached_status.get("productive_peers", connected_peers) or 0
+                )
+                requestable_peers = int(
+                    cached_status.get("requestable_peers", connected_peers) or 0
+                )
+                if usable_peer_count == 0:
+                    self.s.tracker_connection_status = "degraded"
+                    self.s.last_tracker_error = (
+                        "Tracker responses contained no usable peers"
+                    )
+                    next_announce_interval = min(next_announce_interval, 60.0)
+                    self.s.logger.warning(
+                        "Tracker announce returned %d successful response(s) but no usable peers; marking tracker state degraded and retrying in %.1fs",
+                        len(successful_responses)
+                        if "successful_responses" in locals()
+                        else 1,
+                        next_announce_interval,
+                    )
+                else:
+                    self.s.tracker_connection_status = "connected"
+                    self.s.last_tracker_error = None
+                    if (
+                        connected_peers == 0
+                        or productive_peers == 0
+                        or requestable_peers == 0
+                    ):
+                        next_announce_interval = min(next_announce_interval, 120.0)
+                        self.s.logger.info(
+                            "Tracker announce produced peers but swarm remains weak (connected=%d, productive=%d, requestable=%d); using accelerated reannounce interval %.1fs",
+                            connected_peers,
+                            productive_peers,
+                            requestable_peers,
+                            next_announce_interval,
+                        )
 
                 # Emit TRACKER_ANNOUNCE_SUCCESS event
                 try:
@@ -676,17 +763,17 @@ class AnnounceLoop:
                         else:
                             info_hash_hex = str(info_hash)
 
-                    peer_count = 0
-                    if response and hasattr(response, "peers") and response.peers:
-                        peer_count = len(response.peers)
-
                     await emit_event(
                         Event(
                             event_type="tracker_announce_success",
                             data={
                                 "info_hash": info_hash_hex,
                                 "tracker_url": announce_url,
-                                "peer_count": peer_count,
+                                "peer_count": usable_peer_count,
+                                "usable_peer_count": usable_peer_count,
+                                "response_count": len(successful_responses)
+                                if "successful_responses" in locals()
+                                else 1,
                             },
                         )
                     )
@@ -811,7 +898,7 @@ class AnnounceLoop:
                                 )
                             # CRITICAL: Do not exit the loop - keep periodic announces alive so tracker
                             # discovery continues and queued peers can be drained when peer_manager is ready
-                            await asyncio.sleep(announce_interval)
+                            await asyncio.sleep(next_announce_interval)
                             continue
 
                     # CRITICAL FIX: If peer manager exists (or became ready after retry), connect peers directly
@@ -988,28 +1075,43 @@ class AnnounceLoop:
                                 await asyncio.sleep(1.0)
                                 peer_manager = self.s.download_manager.peer_manager
                                 active_count = None
+                                connection_summary = None
                                 if peer_manager and hasattr(
                                     peer_manager, "connections"
                                 ):
-                                    active_count = len(
-                                        [
-                                            c
-                                            for c in peer_manager.connections.values()
-                                            if c.is_active()
-                                        ]
-                                    )
-                                    self.s.logger.info(
-                                        "Tracker peer connection status for %s: %d active connections after adding %d peers (success rate: %.1f%%)",
-                                        self.s.info.name,
-                                        active_count,
-                                        len(unique_peer_list),
-                                        (active_count / len(unique_peer_list) * 100)
-                                        if unique_peer_list
-                                        else 0.0,
-                                    )
+                                    if hasattr(peer_manager, "get_connection_summary"):
+                                        connection_summary = (
+                                            await peer_manager.get_connection_summary()
+                                        )
+                                        active_count = connection_summary.get(
+                                            "active_connections"
+                                        )
+                                        self.s.logger.info(
+                                            "Tracker peer connection status for %s: %s",
+                                            self.s.info.name,
+                                            connection_summary,
+                                        )
+                                    else:
+                                        active_count = len(
+                                            [
+                                                c
+                                                for c in peer_manager.connections.values()
+                                                if c.is_active()
+                                            ]
+                                        )
+                                        self.s.logger.info(
+                                            "Tracker peer connection status for %s: %d active connections after adding %d peers (success rate: %.1f%%)",
+                                            self.s.info.name,
+                                            active_count,
+                                            len(unique_peer_list),
+                                            (active_count / len(unique_peer_list) * 100)
+                                            if unique_peer_list
+                                            else 0.0,
+                                        )
                                 await self._maybe_trigger_tracker_metadata_exchange(
                                     unique_peer_list,
                                     active_count=active_count,
+                                    connection_summary=connection_summary,
                                 )
                             except Exception as connect_error:
                                 self.s.logger.warning(
@@ -1022,28 +1124,44 @@ class AnnounceLoop:
                                     1.0
                                 )  # Give connections time to establish
                                 peer_manager = self.s.download_manager.peer_manager
+                                active_count = None
+                                connection_summary = None
                                 if peer_manager and hasattr(
                                     peer_manager, "connections"
                                 ):
-                                    active_count = len(
-                                        [
-                                            c
-                                            for c in peer_manager.connections.values()
-                                            if c.is_active()
-                                        ]
-                                    )
-                                    self.s.logger.info(
-                                        "Tracker peer connection status for %s: %d active connections after adding %d peers (success rate: %.1f%%)",
-                                        self.s.info.name,
-                                        active_count,
-                                        len(unique_peer_list),
-                                        (active_count / len(unique_peer_list) * 100)
-                                        if unique_peer_list
-                                        else 0.0,
-                                    )
+                                    if hasattr(peer_manager, "get_connection_summary"):
+                                        connection_summary = (
+                                            await peer_manager.get_connection_summary()
+                                        )
+                                        active_count = connection_summary.get(
+                                            "active_connections"
+                                        )
+                                        self.s.logger.info(
+                                            "Tracker peer connection status for %s after connect error: %s",
+                                            self.s.info.name,
+                                            connection_summary,
+                                        )
+                                    else:
+                                        active_count = len(
+                                            [
+                                                c
+                                                for c in peer_manager.connections.values()
+                                                if c.is_active()
+                                            ]
+                                        )
+                                        self.s.logger.info(
+                                            "Tracker peer connection status for %s: %d active connections after adding %d peers (success rate: %.1f%%)",
+                                            self.s.info.name,
+                                            active_count,
+                                            len(unique_peer_list),
+                                            (active_count / len(unique_peer_list) * 100)
+                                            if unique_peer_list
+                                            else 0.0,
+                                        )
                                 await self._maybe_trigger_tracker_metadata_exchange(
                                     unique_peer_list,
                                     active_count=active_count,
+                                    connection_summary=connection_summary,
                                 )
                         else:
                             self.s.logger.debug(
@@ -1083,7 +1201,7 @@ class AnnounceLoop:
                             add_peers_method(response.peers)  # type: ignore[misc]
 
                 # Wait until next tick
-                await asyncio.sleep(announce_interval)
+                await asyncio.sleep(next_announce_interval)
             except asyncio.CancelledError:
                 break
             except Exception as e:

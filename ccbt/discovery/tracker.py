@@ -884,7 +884,9 @@ class AsyncTrackerClient:
                     raise TrackerError(error_msg)
 
             # Generate peer ID if not already present (only if dict)
-            if isinstance(torrent_data, dict) and "peer_id" not in torrent_data:
+            if isinstance(torrent_data, dict) and (
+                "peer_id" not in torrent_data or not torrent_data.get("peer_id")
+            ):
                 torrent_data["peer_id"] = self._generate_peer_id()
 
             # Set left to total file size if not specified
@@ -909,23 +911,28 @@ class AsyncTrackerClient:
             # 1TB (1099511627776 bytes) is large enough to indicate "unknown size, downloading full file"
             # but not so large that it causes issues with tracker implementations
             if isinstance(torrent_data, dict):
-                file_info = torrent_data.get("file_info", {})
+                file_info = torrent_data.get("file_info")
+                total_length = 0
                 if isinstance(file_info, dict):
-                    total_length = file_info.get("total_length", 0)
-                    # If total_length is 0, this is a magnet link without metadata
-                    # Use a large but reasonable value to indicate "unknown size, need full file" (not "completed")
-                    if total_length == 0:
-                        # Use 1TB (1099511627776 bytes) - large enough to indicate "unknown size"
-                        # but reasonable enough that trackers won't reject it
-                        # This is better than max int64 which some trackers may not handle correctly
-                        large_left = 1099511627776  # 1 TB
-                        if left != large_left:
-                            self.logger.debug(
-                                "Magnet link without metadata detected (total_length=0), using left=%d (1TB) to indicate 'unknown size, need full file' (was %d)",
-                                large_left,
-                                left,
-                            )
-                        left = large_left
+                    total_length = int(file_info.get("total_length", 0) or 0)
+                metadata_incomplete = bool(
+                    torrent_data.get("_metadata_incomplete", False)
+                )
+                is_magnet = bool(torrent_data.get("is_magnet", False))
+                if (
+                    metadata_incomplete or is_magnet or file_info is None
+                ) and total_length == 0:
+                    # Use 1TB (1099511627776 bytes) - large enough to indicate "unknown size"
+                    # but reasonable enough that trackers won't reject it
+                    # This is better than max int64 which some trackers may not handle correctly
+                    large_left = 1099511627776  # 1 TB
+                    if left != large_left:
+                        self.logger.debug(
+                            "Metadata-incomplete torrent detected, using left=%d (1TB) to indicate 'unknown size, need full file' (was %d)",
+                            large_left,
+                            left,
+                        )
+                    left = large_left
 
             # CRITICAL FIX: Validate required fields before building URL
             # Handle both dict and object access patterns
@@ -1607,9 +1614,14 @@ class AsyncTrackerClient:
         # Create announce tasks for all trackers
         tasks = []
         url_to_task = {}  # Map URL to task for better error reporting
+        shared_torrent_data = torrent_data.copy()
+        if "peer_id" not in shared_torrent_data or not shared_torrent_data.get(
+            "peer_id"
+        ):
+            shared_torrent_data["peer_id"] = self._generate_peer_id()
         for url in tracker_urls:
             # Create a copy of torrent data with this tracker URL
-            torrent_copy = torrent_data.copy()
+            torrent_copy = shared_torrent_data.copy()
             torrent_copy["announce"] = url
 
             task = asyncio.create_task(

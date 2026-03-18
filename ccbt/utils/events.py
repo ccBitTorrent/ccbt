@@ -342,6 +342,7 @@ class PeerCountLowEvent(Event):
         self.event_type = EventType.PEER_COUNT_LOW.value
         data: dict[str, Any] = {
             "active_peers": self.active_peers,
+            "active_peer_count": self.active_peers,
             "total_peers": self.total_peers,
         }
         if self.info_hash is not None:

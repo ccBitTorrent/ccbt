@@ -46,6 +46,31 @@ UPNP_IGD2_SERVICE_TYPE = "urn:schemas-upnp-org:service:WANIPConnection:2"
 UPNP_IGD_DEVICE_TYPE = "urn:schemas-upnp-org:device:InternetGatewayDevice:1"
 
 
+def _decode_response_bytes(body: bytes, max_len: int = 0) -> tuple[str, bool]:
+    """Decode HTTP response bytes to string for logging; tolerate non-UTF-8.
+
+    Some routers return SOAP with wrong or missing charset (e.g. Windows-1252).
+    Try UTF-8 first, then fall back to latin-1 with replace to avoid UnicodeDecodeError.
+
+    Args:
+        body: Raw response bytes.
+        max_len: If > 0, cap decoded string to this length for logging.
+
+    Returns:
+        Tuple of (decoded string, used_fallback). used_fallback is True if UTF-8 failed.
+    """
+    try:
+        text = body.decode("utf-8")
+        if max_len > 0 and len(text) > max_len:
+            text = text[:max_len] + "..."
+        return text, False
+    except UnicodeDecodeError:
+        text = body.decode("latin-1", errors="replace")
+        if max_len > 0 and len(text) > max_len:
+            text = text[:max_len] + "..."
+        return text, True
+
+
 def build_msearch_request(search_target: Optional[str] = None) -> bytes:
     """Build SSDP M-SEARCH request (UPnP Device Architecture 1.1).
 
@@ -454,7 +479,8 @@ async def fetch_device_description(location_url: str) -> dict[str, str]:
                         await asyncio.sleep(0.5)
                         continue
                     raise last_error
-                xml_content = await response.text()
+                response_bytes = await response.read()
+                xml_content, _ = _decode_response_bytes(response_bytes)
                 break
         except asyncio.TimeoutError as e:
             last_error = UPnPError(f"Timeout fetching device description: {e}")
@@ -502,6 +528,7 @@ async def fetch_device_description(location_url: str) -> dict[str, str]:
 
     # Parse XML (UPnP device description from trusted local network)
     # Uses defusedxml.ElementTree for secure parsing (imported above)
+    # xml_content was safe-decoded from response bytes to avoid UnicodeDecodeError
     try:
         root = ET.fromstring(xml_content)  # noqa: S314  # nosec B314 - defusedxml.ElementTree.fromstring
 
@@ -616,14 +643,24 @@ async def send_soap_action(
             headers=headers,
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
-            response_xml = await resp.text()
+            response_bytes = await resp.read()
             http_status = resp.status
 
+        # Decode for logging only; parse from bytes so XML encoding declaration is honored
+        response_xml, used_fallback = _decode_response_bytes(response_bytes)
+        if used_fallback:
+            content_type = ""
+            if getattr(resp, "headers", None) is not None:
+                content_type = resp.headers.get("Content-Type", "")
+            logger.debug(
+                "UPnP SOAP response decoded with fallback (UTF-8 failed); Content-Type: %s",
+                content_type,
+            )
+
         # Parse SOAP response (from trusted local network UPnP device)
-        # Uses defusedxml.ElementTree for secure parsing (imported above)
-        # Even on HTTP 500, the response body may contain useful SOAP fault information
+        # ET.fromstring accepts bytes and respects XML encoding declaration
         try:
-            root = ET.fromstring(response_xml)  # noqa: S314  # nosec B314 - defusedxml.ElementTree.fromstring
+            root = ET.fromstring(response_bytes)  # noqa: S314  # nosec B314 - defusedxml.ElementTree.fromstring
         except ET.ParseError as e:
             # If we can't parse XML and status is not 200, raise HTTP error
             if http_status != 200:
@@ -938,9 +975,21 @@ class UPnPClient:
             except UPnPError as e:
                 err_msg = str(e)
                 # 501 = Action Failed (router rejected delete, or no mapping exists)
+                # 714 = NoSuchEntryInArray (mapping not found)
                 if "501" in err_msg or "714" in err_msg:
                     self.logger.debug(
                         "DeletePortMapping failed (code 501/714), proceeding to AddPortMapping: %s",
+                        err_msg[:200],
+                    )
+                # Response decode/parse failure: router sent non-UTF-8 or unparseable SOAP
+                elif (
+                    "decode" in err_msg.lower()
+                    or "parse" in err_msg.lower()
+                    or "UnicodeDecodeError" in err_msg
+                    or "invalid start byte" in err_msg
+                ):
+                    self.logger.debug(
+                        "DeletePortMapping response unreadable, proceeding to AddPortMapping: %s",
                         err_msg[:200],
                     )
                 else:

@@ -13,7 +13,6 @@ def test_imports():
         ('mkdocs_static_i18n', 'mkdocs_static_i18n', True),
         ('mkdocstrings', 'mkdocstrings', True),
         ('mkdocs_git_revision_date_localized', 'mkdocs_git_revision_date_localized_plugin', True),
-        ('mkdocs_codeinclude', 'mkdocs_codeinclude_plugin', False),  # Plugin, not directly importable
         ('mkdocs_blog', 'mkdocs_blog', True),
         ('mkdocs_coverage', 'mkdocs_coverage', True),
         ('pymdownx', 'pymdownx', True),

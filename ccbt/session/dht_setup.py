@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import time
 from typing import Any
 
 
@@ -352,6 +354,80 @@ class DHTDiscoverySetup:
         """Handle metadata exchange for magnet links. Public API for torrent_addition."""
         return await self._handle_magnet_metadata_exchange(peer_list)
 
+    async def _merge_fetched_metadata(
+        self, updated_torrent_data: dict[str, Any]
+    ) -> None:
+        """Merge fetched metadata into session state using the canonical update path."""
+        if not isinstance(self.session.torrent_data, dict):
+            return
+
+        self.session.torrent_data.update(updated_torrent_data)
+        if hasattr(self.session.download_manager, "torrent_data"):
+            self.session.download_manager.torrent_data = self.session.torrent_data
+
+        file_assembler = getattr(self.session.download_manager, "file_assembler", None)
+        if file_assembler is not None:
+            try:
+                file_assembler.update_from_metadata(self.session.torrent_data)
+                self.logger.info(
+                    "Updated file assembler with new metadata for %s",
+                    self.session.info.name,
+                )
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to update file assembler with metadata: %s",
+                    e,
+                )
+
+        piece_manager = getattr(self.session.download_manager, "piece_manager", None)
+        if piece_manager is None:
+            return
+
+        if hasattr(piece_manager, "torrent_data"):
+            piece_manager.torrent_data = self.session.torrent_data
+
+        if hasattr(piece_manager, "update_from_metadata"):
+            await piece_manager.update_from_metadata(updated_torrent_data)
+        elif "pieces_info" in updated_torrent_data:
+            pieces_info = updated_torrent_data["pieces_info"]
+            if "num_pieces" in pieces_info:
+                piece_manager.num_pieces = int(pieces_info["num_pieces"])
+            if "piece_length" in pieces_info:
+                piece_manager.piece_length = int(pieces_info["piece_length"])
+
+        peer_manager_for_restart = getattr(
+            self.session.download_manager, "peer_manager", None
+        )
+        if hasattr(piece_manager, "start_download"):
+            try:
+                await piece_manager.start_download(peer_manager_for_restart)
+                self.logger.info(
+                    "Restarted piece manager after metadata fetch for %s (num_pieces=%d, pieces_count=%d)",
+                    self.session.info.name,
+                    getattr(piece_manager, "num_pieces", 0),
+                    len(getattr(piece_manager, "pieces", [])),
+                )
+            except Exception as e:
+                self.logger.warning(
+                    "Error restarting piece manager download after metadata fetch: %s",
+                    e,
+                    exc_info=True,
+                )
+
+        num_pieces = int(getattr(piece_manager, "num_pieces", 0) or 0)
+        pieces_count = len(getattr(piece_manager, "pieces", []))
+        metadata_incomplete = bool(
+            getattr(piece_manager, "_metadata_incomplete", False)
+        )
+        if num_pieces <= 0 or pieces_count != num_pieces or metadata_incomplete:
+            self.logger.warning(
+                "Metadata merge invariants not satisfied for %s (num_pieces=%d, pieces_count=%d, metadata_incomplete=%s)",
+                self.session.info.name,
+                num_pieces,
+                pieces_count,
+                metadata_incomplete,
+            )
+
     async def _handle_magnet_metadata_exchange(
         self, peer_list: list[dict[str, Any]]
     ) -> bool:
@@ -421,168 +497,7 @@ class DHTDiscoverySetup:
                             self.session.info.info_hash,
                             cast("dict[bytes | str, Any]", metadata),
                         )
-                        # Merge with existing torrent_data
-                        if isinstance(self.session.torrent_data, dict):
-                            self.session.torrent_data.update(updated_torrent_data)
-                            # CRITICAL FIX: Update download manager's torrent_data and piece_manager
-                            if hasattr(self.session.download_manager, "torrent_data"):
-                                self.session.download_manager.torrent_data = (
-                                    self.session.torrent_data
-                                )
-
-                            # CRITICAL FIX: Update file assembler if it exists (rebuild file segments)
-                            if (
-                                hasattr(self.session.download_manager, "file_assembler")
-                                and self.session.download_manager.file_assembler
-                                is not None
-                            ):
-                                try:
-                                    self.session.download_manager.file_assembler.update_from_metadata(
-                                        self.session.torrent_data
-                                    )
-                                    self.logger.info(
-                                        "Updated file assembler with new metadata for %s",
-                                        self.session.info.name,
-                                    )
-                                except Exception as e:
-                                    self.logger.warning(
-                                        "Failed to update file assembler with metadata: %s",
-                                        e,
-                                    )
-
-                            # CRITICAL FIX: Update piece_manager with new metadata
-                            if (
-                                hasattr(self.session.download_manager, "piece_manager")
-                                and self.session.download_manager.piece_manager
-                            ):
-                                piece_manager = (
-                                    self.session.download_manager.piece_manager
-                                )
-                                # Update num_pieces from metadata
-                                if "pieces_info" in updated_torrent_data:
-                                    pieces_info = updated_torrent_data["pieces_info"]
-                                    if "num_pieces" in pieces_info:
-                                        piece_manager.num_pieces = int(
-                                            pieces_info["num_pieces"]
-                                        )
-                                        self.logger.info(
-                                            "Updated piece_manager.num_pieces to %d from metadata",
-                                            piece_manager.num_pieces,
-                                        )
-                                    if "piece_length" in pieces_info:
-                                        piece_manager.piece_length = int(
-                                            pieces_info["piece_length"]
-                                        )
-                                        self.logger.info(
-                                            "Updated piece_manager.piece_length to %d from metadata",
-                                            piece_manager.piece_length,
-                                        )
-
-                                # Update torrent_data in piece_manager
-                                if hasattr(piece_manager, "torrent_data"):
-                                    piece_manager.torrent_data = (
-                                        self.session.torrent_data
-                                    )
-
-                                # CRITICAL FIX: Restart download now that metadata is available
-                                if not piece_manager.is_downloading:
-                                    self.logger.info(
-                                        "Restarting piece manager download now that metadata is available (num_pieces=%d)",
-                                        piece_manager.num_pieces,
-                                    )
-                                    # Get peer_manager from download_manager if available
-                                    peer_manager_for_restart = None
-                                    if hasattr(
-                                        self.session.download_manager, "peer_manager"
-                                    ):
-                                        peer_manager_for_restart = (
-                                            self.session.download_manager.peer_manager
-                                        )
-
-                                    if hasattr(piece_manager, "start_download"):
-                                        try:
-                                            await piece_manager.start_download(
-                                                peer_manager=peer_manager_for_restart
-                                            )
-                                            self.logger.info(
-                                                "Successfully restarted piece manager download after metadata fetch (num_pieces=%d)",
-                                                piece_manager.num_pieces,
-                                            )
-                                        except Exception as e:
-                                            self.logger.warning(
-                                                "Error restarting piece manager download after metadata fetch: %s",
-                                                e,
-                                                exc_info=True,
-                                            )
-
-                                # CRITICAL FIX: If download was started but num_pieces was 0, reinitialize pieces
-                                if (
-                                    piece_manager.num_pieces > 0
-                                    and len(piece_manager.pieces) == 0
-                                ):
-                                    self.logger.info(
-                                        "Reinitializing pieces in piece_manager after metadata fetch (num_pieces=%d)",
-                                        piece_manager.num_pieces,
-                                    )
-                                    # Trigger piece initialization by calling start_download again
-                                    # CRITICAL FIX: Get peer_manager from download_manager if available
-                                    peer_manager_for_restart = None
-                                    if hasattr(
-                                        self.session.download_manager, "peer_manager"
-                                    ):
-                                        peer_manager_for_restart = (
-                                            self.session.download_manager.peer_manager
-                                        )
-
-                                    if hasattr(piece_manager, "start_download"):
-                                        try:
-                                            await piece_manager.start_download(
-                                                peer_manager=peer_manager_for_restart
-                                            )
-                                            self.logger.info(
-                                                "Successfully reinitialized pieces after metadata fetch (num_pieces=%d, pieces_count=%d)",
-                                                piece_manager.num_pieces,
-                                                len(piece_manager.pieces),
-                                            )
-                                        except Exception as e:
-                                            self.logger.warning(
-                                                "Error reinitializing pieces after metadata fetch: %s",
-                                                e,
-                                                exc_info=True,
-                                            )
-                                elif (
-                                    piece_manager.num_pieces > 0
-                                    and len(piece_manager.pieces) > 0
-                                ):
-                                    # Pieces already initialized, just verify they match num_pieces
-                                    if (
-                                        len(piece_manager.pieces)
-                                        != piece_manager.num_pieces
-                                    ):
-                                        self.logger.warning(
-                                            "Piece count mismatch after metadata fetch: num_pieces=%d, pieces_count=%d. "
-                                            "Reinitializing pieces.",
-                                            piece_manager.num_pieces,
-                                            len(piece_manager.pieces),
-                                        )
-                                        # Reinitialize pieces to match num_pieces
-                                        peer_manager_for_restart = None
-                                        if hasattr(
-                                            self.session.download_manager,
-                                            "peer_manager",
-                                        ):
-                                            peer_manager_for_restart = self.session.download_manager.peer_manager
-                                        if hasattr(piece_manager, "start_download"):
-                                            try:
-                                                await piece_manager.start_download(
-                                                    peer_manager=peer_manager_for_restart
-                                                )
-                                            except Exception as e:
-                                                self.logger.warning(
-                                                    "Error reinitializing pieces after metadata fetch: %s",
-                                                    e,
-                                                    exc_info=True,
-                                                )
+                        await self._merge_fetched_metadata(updated_torrent_data)
                         metadata_fetched = True
 
                         # CRITICAL FIX: Notify download manager that metadata is now available
@@ -1325,6 +1240,16 @@ class DHTDiscoverySetup:
             "min_peers_before_dht",
             10,
         )
+        enable_fail_fast = getattr(
+            self.session.config.network,
+            "enable_fail_fast_dht",
+            True,
+        )
+        fail_fast_timeout = getattr(
+            self.session.config.network,
+            "fail_fast_dht_timeout",
+            30.0,
+        )
         dht_started = False
 
         while not self.session.stopped:
@@ -1359,6 +1284,21 @@ class DHTDiscoverySetup:
                                     "_connection_batches_in_progress",
                                     False,
                                 )
+                                active_peer_count_during_wait = 0
+                                if hasattr(peer_manager, "get_active_peers"):
+                                    with contextlib.suppress(Exception):
+                                        active_peer_count_during_wait = len(
+                                            peer_manager.get_active_peers()
+                                        )
+                                if (
+                                    connection_batches_in_progress
+                                    and active_peer_count_during_wait == 0
+                                ):
+                                    self.logger.warning(
+                                        "⏸️ DHT DISCOVERY: Connection batches are still marked in progress after %.1fs but no active peers remain. Proceeding with DHT evaluation immediately.",
+                                        waited,
+                                    )
+                                    break
                                 if not connection_batches_in_progress:
                                     self.logger.info(
                                         "✅ DHT DISCOVERY: Connection batches completed after %.1fs. Checking peer count before starting DHT...",
@@ -1366,12 +1306,23 @@ class DHTDiscoverySetup:
                                     )
                                     break
                             else:
+                                active_peer_count_during_wait = 0
+                                if hasattr(peer_manager, "get_active_peers"):
+                                    with contextlib.suppress(Exception):
+                                        active_peer_count_during_wait = len(
+                                            peer_manager.get_active_peers()
+                                        )
                                 self.logger.warning(
                                     "⏸️ DHT DISCOVERY: Connection batches still in progress after %.1fs wait. Waiting longer...",
                                     max_wait,
                                 )
-                                # Continue waiting - don't proceed until batches complete
-                                continue
+                                if active_peer_count_during_wait == 0:
+                                    self.logger.warning(
+                                        "⏸️ DHT DISCOVERY: No active peers remain while batches are still marked in progress. Proceeding with DHT evaluation anyway.",
+                                    )
+                                else:
+                                    # Continue waiting - don't proceed until batches complete
+                                    continue
 
                 # CRITICAL FIX: Also check tracker peer connection timestamp (secondary check)
                 # This ensures we wait for tracker responses to be processed
@@ -1436,12 +1387,35 @@ class DHTDiscoverySetup:
                     )
                     or is_magnet_bootstrap
                 )
+                fail_fast_low_peers = False
+                if current_peer_count == 0 and not metadata_incomplete:
+                    fail_fast_low_peers = True
+                    self.logger.warning(
+                        "🧭 DHT DISCOVERY: No active peers remain. Bypassing low-peer grace period and starting DHT recovery immediately."
+                    )
+                low_peers_since = getattr(self.session, "_low_peers_since", None)
+                if (
+                    enable_fail_fast
+                    and not metadata_incomplete
+                    and current_peer_count < min_peers_before_dht
+                    and low_peers_since is not None
+                ):
+                    time_at_low = time.monotonic() - low_peers_since
+                    if time_at_low >= fail_fast_timeout:
+                        fail_fast_low_peers = True
+                        self.logger.warning(
+                            "🧭 DHT DISCOVERY: Active peers (%d) below minimum (%d) for %.1fs. Starting DHT to recover swarm health.",
+                            current_peer_count,
+                            min_peers_before_dht,
+                            time_at_low,
+                        )
 
                 # Allow DHT to start when we have at least min_peers_before_dht (configurable, default 10)
                 if (
                     not dht_started
                     and current_peer_count < min_peers_before_dht
                     and not metadata_incomplete
+                    and not fail_fast_low_peers
                 ):
                     self.logger.info(
                         "⏸️ DHT DISCOVERY: Waiting for minimum peers (%d/%d). Sleeping 30s before recheck...",
@@ -1472,7 +1446,7 @@ class DHTDiscoverySetup:
                     not dht_started
                     and metadata_incomplete
                     and current_peer_count < min_peers_before_dht
-                ):
+                ) or (not dht_started and fail_fast_low_peers):
                     dht_started = True
 
                 # CRITICAL FIX: Use conservative DHT settings to avoid blacklisting

@@ -214,6 +214,31 @@ class TestAsyncTrackerClient:
         await client.stop()
 
     @pytest.mark.asyncio
+    async def test_announce_uses_large_left_for_metadata_incomplete_without_file_info(
+        self, client
+    ):
+        """Metadata-incomplete magnets must not announce left=0 when file_info is None."""
+        await client.start()
+        torrent_data = {
+            "announce": "http://tracker.example.com:6969/announce",
+            "info_hash": b"m" * 20,
+            "_metadata_incomplete": True,
+            "is_magnet": True,
+            "file_info": None,
+            "pieces_info": None,
+        }
+
+        with patch.object(client, "_make_request_async") as mock_request:
+            mock_request.return_value = encode({b"interval": 1800, b"peers": b""})
+
+            await client.announce(torrent_data, left=None)
+
+            request_url = mock_request.await_args.args[0]
+            assert "left=1099511627776" in request_url
+
+        await client.stop()
+
+    @pytest.mark.asyncio
     async def test_announce_success(self, client, torrent_data):
         """Test successful announce."""
         await client.start()
@@ -326,6 +351,32 @@ class TestAsyncTrackerClient:
 
             assert len(responses) == 1
             assert isinstance(responses[0], TrackerResponse)
+
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_announce_to_multiple_reuses_generated_peer_id(self, client, torrent_data):
+        """A generated peer_id should be reused across all trackers in the same batch."""
+        await client.start()
+        assert "peer_id" not in torrent_data
+        seen_peer_ids: list[bytes] = []
+
+        async def fake_announce(
+            torrent_copy, port, uploaded, downloaded, left, event
+        ) -> TrackerResponse:
+            _ = port, uploaded, downloaded, left, event
+            seen_peer_ids.append(torrent_copy["peer_id"])
+            return TrackerResponse(interval=1800, peers=[])
+
+        with patch.object(client, "_announce_to_tracker", side_effect=fake_announce):
+            await client.announce_to_multiple(
+                torrent_data,
+                ["http://tracker1.com/announce", "http://tracker2.com/announce"],
+            )
+
+        assert len(seen_peer_ids) == 2
+        assert seen_peer_ids[0] == seen_peer_ids[1]
+        assert len(seen_peer_ids[0]) == 20
 
         await client.stop()
 

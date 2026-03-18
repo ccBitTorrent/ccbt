@@ -172,6 +172,8 @@ class AsyncTorrentSession:
         self._tracker_peers_connecting_until: Optional[float] = None  # type: ignore[attr-defined]
         self._last_tracker_metadata_fallback_at: float = 0.0
         self._tracker_metadata_fallback_in_progress: bool = False
+        self._low_peers_since: Optional[float] = None
+        self._low_peers_lock = asyncio.Lock()
 
         # Task tracking for piece verification and download completion
         # These are sets to track asyncio tasks and prevent garbage collection
@@ -1136,7 +1138,9 @@ class AsyncTorrentSession:
                         """
                         event_data = event.data if hasattr(event, "data") else {}
                         info_hash = event_data.get("info_hash", "")
-                        active_peer_count = event_data.get("active_peer_count", 0)
+                        active_peer_count = event_data.get("active_peer_count")
+                        if active_peer_count is None:
+                            active_peer_count = event_data.get("active_peers", 0)
 
                         # Only handle events for this torrent
                         if (
@@ -1167,6 +1171,37 @@ class AsyncTorrentSession:
                                 and file_info.get("total_length", 0) == 0
                             )
 
+                        min_peers_before_dht = getattr(
+                            self.session.config.discovery,
+                            "min_peers_before_dht",
+                            10,
+                        )
+                        enable_fail_fast = getattr(
+                            self.session.config.network,
+                            "enable_fail_fast_dht",
+                            True,
+                        )
+                        fail_fast_timeout = getattr(
+                            self.session.config.network,
+                            "fail_fast_dht_timeout",
+                            30.0,
+                        )
+                        fail_fast_triggered = False
+                        current_time = time.monotonic()
+                        if (
+                            enable_fail_fast
+                            and active_peer_count < min_peers_before_dht
+                            and not metadata_incomplete
+                        ):
+                            async with self.session._low_peers_lock:
+                                if self.session._low_peers_since is None:
+                                    self.session._low_peers_since = current_time
+                                    self.session.logger.debug(
+                                        "Recording low peers timestamp (DHT will trigger after %.1fs if still < %d peers)",
+                                        fail_fast_timeout,
+                                        min_peers_before_dht,
+                                    )
+
                         # CRITICAL FIX: Wait for connection batches to complete before starting DHT
                         # User requirement: "peer count low checks should only start basically after the first batches of connections are exhausted"
                         # Check if connection batches are currently in progress
@@ -1187,8 +1222,13 @@ class AsyncTorrentSession:
                                     self.session.logger.info(
                                         "⏸️ DHT DELAY: Connection batches are in progress. Waiting for batches to complete before starting DHT..."
                                     )
-                                    # Wait up to 30 seconds for batches to complete, checking every 2 seconds
-                                    max_wait = 30.0
+                                    # Wait less aggressively when peer count is already zero so recovery
+                                    # can fall through to DHT instead of idling behind tracker batches.
+                                    max_wait = (
+                                        min(fail_fast_timeout, 5.0)
+                                        if active_peer_count == 0
+                                        else 30.0
+                                    )
                                     check_interval = 2.0
                                     waited = 0.0
                                     while waited < max_wait:
@@ -1199,6 +1239,23 @@ class AsyncTorrentSession:
                                             "_connection_batches_in_progress",
                                             False,
                                         )
+                                        active_peer_count_during_wait = (
+                                            active_peer_count
+                                        )
+                                        if hasattr(peer_manager, "get_active_peers"):
+                                            with contextlib.suppress(Exception):
+                                                active_peer_count_during_wait = len(
+                                                    peer_manager.get_active_peers()
+                                                )
+                                        if (
+                                            connection_batches_in_progress
+                                            and active_peer_count_during_wait == 0
+                                        ):
+                                            self.session.logger.warning(
+                                                "⏸️ DHT DELAY: Connection batches are still marked in progress but no active peers remain after %.1fs. Proceeding with DHT recovery now.",
+                                                waited,
+                                            )
+                                            break
                                         if not connection_batches_in_progress:
                                             self.session.logger.info(
                                                 "✅ DHT DELAY: Connection batches completed after %.1fs. Proceeding with DHT discovery...",
@@ -1267,26 +1324,12 @@ class AsyncTorrentSession:
                                     )
                                 active_peer_count = current_active
 
-                        # Use configurable minimum; allow DHT as fallback when peer count is low for too long
-                        min_peers_before_dht = getattr(
-                            self.session.config.discovery,
-                            "min_peers_before_dht",
-                            10,
-                        )
-                        enable_fail_fast = getattr(
-                            self.session.config.network,
-                            "enable_fail_fast_dht",
-                            True,
-                        )
-                        fail_fast_timeout = getattr(
-                            self.session.config.network,
-                            "fail_fast_dht_timeout",
-                            30.0,
-                        )
-
                         # Degraded-state trigger: low peers (including zero) for > timeout => allow DHT
-                        fail_fast_triggered = False
-                        current_time = time.time()
+                        if active_peer_count == 0 and not metadata_incomplete:
+                            fail_fast_triggered = True
+                            self.session.logger.warning(
+                                "🚨 ZERO-PEER DHT: No active peers remain. Bypassing low-peer grace period and triggering immediate DHT recovery."
+                            )
                         if (
                             enable_fail_fast
                             and active_peer_count < min_peers_before_dht
@@ -1297,33 +1340,25 @@ class AsyncTorrentSession:
                                     "🧲 DHT FALLBACK: Metadata is still incomplete with only %d active peer(s). Allowing immediate DHT discovery.",
                                     active_peer_count,
                                 )
-                            low_peers_since = getattr(
-                                self.session, "_low_peers_since", None
-                            )
-                            if low_peers_since is None and not fail_fast_triggered:
-                                self.session._low_peers_since = current_time
-                                self.session.logger.debug(
-                                    "Recording low peers timestamp (DHT will trigger after %.1fs if still < %d peers)",
-                                    fail_fast_timeout,
-                                    min_peers_before_dht,
-                                )
-                            elif (
-                                not fail_fast_triggered and low_peers_since is not None
-                            ):
-                                time_at_low = current_time - low_peers_since
-                                if time_at_low >= fail_fast_timeout:
-                                    fail_fast_triggered = True
-                                    self.session.logger.warning(
-                                        "🚨 DEGRADED DHT: Active peers (%d) below minimum (%d) for %.1fs. "
-                                        "Triggering DHT discovery to prevent stall.",
-                                        active_peer_count,
-                                        min_peers_before_dht,
-                                        time_at_low,
-                                    )
-                        if active_peer_count >= min_peers_before_dht and hasattr(
-                            self.session, "_low_peers_since"
-                        ):
-                            delattr(self.session, "_low_peers_since")
+                            elif not fail_fast_triggered:
+                                async with self.session._low_peers_lock:
+                                    low_peers_since = self.session._low_peers_since
+                                    if low_peers_since is None:
+                                        self.session._low_peers_since = current_time
+                                    else:
+                                        time_at_low = current_time - low_peers_since
+                                        if time_at_low >= fail_fast_timeout:
+                                            fail_fast_triggered = True
+                                            self.session.logger.warning(
+                                                "🚨 DEGRADED DHT: Active peers (%d) below minimum (%d) for %.1fs. "
+                                                "Triggering DHT discovery to prevent stall.",
+                                                active_peer_count,
+                                                min_peers_before_dht,
+                                                time_at_low,
+                                            )
+                        elif active_peer_count >= min_peers_before_dht:
+                            async with self.session._low_peers_lock:
+                                self.session._low_peers_since = None
 
                         if (
                             active_peer_count < min_peers_before_dht
@@ -1337,11 +1372,21 @@ class AsyncTorrentSession:
                             )
                             return  # Skip DHT until we have minimum peers
 
-                        self.session.logger.info(
-                            "Triggering immediate DHT discovery (active peers: %d >= %d, tracker connections completed)...",
-                            active_peer_count,
-                            min_peers_before_dht,
-                        )
+                        if (
+                            fail_fast_triggered
+                            and active_peer_count < min_peers_before_dht
+                        ):
+                            self.session.logger.info(
+                                "Triggering immediate DHT discovery via fail-fast recovery (active peers: %d < %d, tracker connections completed or timed out)...",
+                                active_peer_count,
+                                min_peers_before_dht,
+                            )
+                        else:
+                            self.session.logger.info(
+                                "Triggering immediate DHT discovery (active peers: %d >= %d, tracker connections completed)...",
+                                active_peer_count,
+                                min_peers_before_dht,
+                            )
 
                         # Trigger immediate DHT query if DHT is enabled
                         # CRITICAL FIX: Rate limit immediate DHT queries to prevent peer disconnections

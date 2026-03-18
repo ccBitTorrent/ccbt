@@ -427,6 +427,27 @@ class TestAsyncPeerConnectionManagerMessageHandling:
         assert connection.state == ConnectionState.ACTIVE
 
     @pytest.mark.asyncio
+    async def test_handle_unchoke_triggers_piece_retry(self, async_peer_manager):
+        """Unchoke should trigger both piece selection and retry of queued pieces."""
+        connection = AsyncPeerConnection(
+            PeerInfo(ip="127.0.0.1", port=6881),
+            async_peer_manager.torrent_data,
+        )
+        connection.state = ConnectionState.CHOKED
+        connection.peer_choking = True
+        connection.am_interested = False
+        async_peer_manager._send_interested = AsyncMock()
+        async_peer_manager.piece_manager._select_pieces = AsyncMock()
+        async_peer_manager.piece_manager._retry_requested_pieces = AsyncMock()
+
+        await async_peer_manager._handle_unchoke(connection, UnchokeMessage())
+        await asyncio.sleep(0.05)
+
+        async_peer_manager._send_interested.assert_awaited_once_with(connection)
+        async_peer_manager.piece_manager._select_pieces.assert_awaited()
+        async_peer_manager.piece_manager._retry_requested_pieces.assert_awaited()
+
+    @pytest.mark.asyncio
     async def test_handle_interested(self, async_peer_manager):
         """Test handling interested message."""
         connection = AsyncPeerConnection(
@@ -506,6 +527,30 @@ class TestAsyncPeerConnectionManagerMessageHandling:
         # State may be BITFIELD_RECEIVED or ACTIVE depending on implementation
         assert connection.state in (ConnectionState.BITFIELD_RECEIVED, ConnectionState.ACTIVE)
         assert callback_called
+
+    @pytest.mark.asyncio
+    async def test_reprocess_stored_bitfields_retries_piece_selection(self, async_peer_manager):
+        """Metadata bitfield reprocessing should refresh availability and trigger retries."""
+        connection = AsyncPeerConnection(
+            PeerInfo(ip="127.0.0.1", port=6882),
+            async_peer_manager.torrent_data,
+        )
+        connection.state = ConnectionState.ACTIVE
+        connection.peer_state.bitfield = b"\x80"
+        connection.is_connected = MagicMock(return_value=True)
+        async_peer_manager.connections[str(connection.peer_info)] = connection
+
+        if async_peer_manager.piece_manager:
+            async_peer_manager.piece_manager.num_pieces = 8
+            async_peer_manager.piece_manager.update_peer_availability = AsyncMock()
+            async_peer_manager.piece_manager._retry_requested_pieces = AsyncMock()
+            async_peer_manager.piece_manager._select_pieces = AsyncMock()
+
+        await async_peer_manager._reprocess_stored_bitfields()
+
+        async_peer_manager.piece_manager.update_peer_availability.assert_awaited_once()
+        async_peer_manager.piece_manager._retry_requested_pieces.assert_awaited_once()
+        async_peer_manager.piece_manager._select_pieces.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_handle_bitfield_state_transition(self, async_peer_manager):
@@ -854,3 +899,86 @@ class TestAsyncPeerConnectionManagerChoking:
         await async_peer_manager._unchoke_peer(connection)
 
         assert connection.am_choking is False
+
+
+@pytest.mark.asyncio
+async def test_get_connection_summary_counts_productive_and_metadata_capable_peers(
+    async_peer_manager,
+):
+    """Connection summaries should distinguish active, productive, requestable, and metadata-capable peers."""
+    peer_a = AsyncPeerConnection(PeerInfo(ip="127.0.0.1", port=6881), {"info_hash": b"x" * 20})
+    peer_a.state = ConnectionState.ACTIVE
+    peer_a.peer_choking = False
+    peer_a.max_pipeline_depth = 4
+    peer_a.outstanding_requests = {}
+    peer_a.peer_state.bitfield = b"\xff"
+    peer_a.ut_metadata_id = 3
+    peer_a.metadata_size = 16384
+
+    peer_b = AsyncPeerConnection(PeerInfo(ip="127.0.0.1", port=6882), {"info_hash": b"x" * 20})
+    peer_b.state = ConnectionState.BITFIELD_SENT
+    peer_b.peer_choking = True
+
+    async_peer_manager.connections[str(peer_a.peer_info)] = peer_a
+    async_peer_manager.connections[str(peer_b.peer_info)] = peer_b
+    async_peer_manager._metadata_exchange_state[str(peer_a.peer_info)] = {
+        "ut_metadata_id": 3,
+        "metadata_size": 16384,
+    }
+
+    summary = await async_peer_manager.get_connection_summary()
+
+    assert summary["total_connections"] == 2
+    assert summary["active_connections"] == 2
+    assert summary["requestable_connections"] == 1
+    assert summary["productive_connections"] >= 1
+    assert summary["metadata_capable_connections"] == 1
+    assert summary["metadata_exchange_active"] == 1
+    assert summary["peers_with_piece_info"] == 1
+
+
+@pytest.mark.asyncio
+async def test_update_peer_stats_preserves_last_activity(async_peer_manager):
+    """Stats sampling should not rewrite the true network-activity timestamp."""
+    connection = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.1", port=6881),
+        {"info_hash": b"x" * 20},
+    )
+    connection.state = ConnectionState.ACTIVE
+    connection.peer_choking = False
+    connection.stats.last_activity = time.time() - 30
+    connection.stats.last_rate_sample_time = time.time() - 5
+    connection.stats.bytes_downloaded = 1024
+    connection.stats.bytes_uploaded = 256
+    async_peer_manager.connections[str(connection.peer_info)] = connection
+
+    last_activity_before = connection.stats.last_activity
+    await async_peer_manager._update_peer_stats()
+
+    assert connection.stats.last_activity == pytest.approx(last_activity_before)
+    assert connection.stats.last_rate_sample_time >= last_activity_before
+
+
+@pytest.mark.asyncio
+async def test_handle_choke_clears_requests_and_notifies_piece_manager(async_peer_manager):
+    """Choke handling should clear outstanding requests and delegate piece requeueing."""
+    connection = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.1", port=6881),
+        {"info_hash": b"x" * 20},
+    )
+    connection.state = ConnectionState.ACTIVE
+    connection.peer_choking = False
+    connection.max_pipeline_depth = 4
+    connection.outstanding_requests[(0, 0, 16384)] = RequestInfo(
+        0, 0, 16384, time.time()
+    )
+    async_peer_manager.piece_manager.handle_peer_choked = AsyncMock()
+
+    await async_peer_manager._handle_choke(connection, ChokeMessage())
+
+    assert connection.peer_choking is True
+    assert connection.state == ConnectionState.CHOKED
+    assert connection.outstanding_requests == {}
+    async_peer_manager.piece_manager.handle_peer_choked.assert_awaited_once_with(
+        connection
+    )

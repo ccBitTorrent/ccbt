@@ -139,20 +139,61 @@ class StatusLoop:
                     getattr(self.s.download_manager, "peer_manager", None)
                     or self.s.peer_manager
                 )
+                connection_summary: Optional[dict[str, int]] = None
                 if peer_manager and hasattr(peer_manager, "connections"):
                     try:
-                        actual_peer_count = len(peer_manager.connections)  # type: ignore[attr-defined]
-                        status["connected_peers"] = actual_peer_count
+                        if hasattr(peer_manager, "get_connection_summary"):
+                            connection_summary = (
+                                await peer_manager.get_connection_summary()
+                            )  # type: ignore[attr-defined]
+                            status["connected_peers"] = connection_summary.get(
+                                "active_connections", 0
+                            )
+                            status["total_connections"] = connection_summary.get(
+                                "total_connections", 0
+                            )
+                            status["requestable_peers"] = connection_summary.get(
+                                "requestable_connections", 0
+                            )
+                            status["productive_peers"] = connection_summary.get(
+                                "productive_connections", 0
+                            )
+                            status["metadata_capable_peers"] = connection_summary.get(
+                                "metadata_capable_connections", 0
+                            )
+                        else:
+                            actual_peer_count = len(peer_manager.connections)  # type: ignore[attr-defined]
+                            status["connected_peers"] = actual_peer_count
+                            status["total_connections"] = actual_peer_count
                     except Exception:
                         pass
 
                 connected_peers = status.get("connected_peers", 0)
+                productive_peers = status.get("productive_peers", connected_peers)
+                requestable_peers = status.get("requestable_peers", 0)
                 download_rate = status.get("download_rate", 0.0)
                 upload_rate = status.get("upload_rate", 0.0)
                 download_complete = status.get(
                     "download_complete", status.get("completed", False)
                 )
                 progress = status.get("progress", 0.0)
+                peers_with_piece_info = 0
+                piece_metrics: dict[str, Any] = {}
+                if self.s.piece_manager:
+                    with contextlib.suppress(Exception):
+                        peers_with_piece_info = len(
+                            getattr(self.s.piece_manager, "peer_availability", {})
+                        )
+                    with contextlib.suppress(Exception):
+                        piece_metrics = (
+                            self.s.piece_manager.get_piece_selection_metrics()
+                        )
+                active_block_requests = int(
+                    piece_metrics.get("active_block_requests", 0) or 0
+                )
+                hash_verification_failures = int(
+                    piece_metrics.get("hash_verification_failures", 0) or 0
+                )
 
                 if hasattr(self.s.download_manager, "download_complete"):
                     try:
@@ -216,14 +257,50 @@ class StatusLoop:
                         )
                 elif (
                     self.s.info.status == "downloading"
-                    and connected_peers == 0
+                    and productive_peers == 0
                     and download_rate == 0.0
                 ):
-                    self.s.logger.debug(
-                        "Download appears idle (no peers, no rate): %s. Progress: %.1f%%",
+                    self.s.logger.warning(
+                        "Download appears stalled (connected=%d, productive=%d, requestable=%d, piece_info=%d, active_requests=%d, hash_failures=%d, rate=%.1f, summary=%s): %s. Progress: %.1f%%",
+                        connected_peers,
+                        productive_peers,
+                        requestable_peers,
+                        peers_with_piece_info,
+                        active_block_requests,
+                        hash_verification_failures,
+                        download_rate,
+                        connection_summary,
                         self.s.info.name,
                         progress * 100,
                     )
+                    if active_block_requests > 0:
+                        stall_marker = (
+                            connected_peers,
+                            productive_peers,
+                            requestable_peers,
+                            peers_with_piece_info,
+                            active_block_requests,
+                            hash_verification_failures,
+                        )
+                        if getattr(self.s, "_last_stall_marker", None) != stall_marker:
+                            vars(self.s)["_last_stall_marker"] = stall_marker
+                            self.s.logger.warning(
+                                "STALL_MARKER: downloading with outstanding requests but zero productive peers "
+                                "(connected=%d, requestable=%d, piece_info=%d, active_requests=%d, hash_failures=%d): %s",
+                                connected_peers,
+                                requestable_peers,
+                                peers_with_piece_info,
+                                active_block_requests,
+                                hash_verification_failures,
+                                self.s.info.name,
+                            )
+                    if peer_manager and hasattr(
+                        peer_manager, "_schedule_pending_resume"
+                    ):
+                        with contextlib.suppress(Exception):
+                            peer_manager._schedule_pending_resume(  # noqa: SLF001
+                                reason="status_loop_stall"
+                            )
 
                 # Update cached status (canonical keys; preserve byte counters)
                 # Use setattr to avoid SLF001 for internal cache
@@ -232,6 +309,8 @@ class StatusLoop:
                     "uploaded": status.get("uploaded", 0),
                     "left": status.get("left", 0),
                     "connected_peers": connected_peers,
+                    "productive_peers": productive_peers,
+                    "requestable_peers": requestable_peers,
                     "download_rate": download_rate,
                     "upload_rate": upload_rate,
                     "progress": progress,

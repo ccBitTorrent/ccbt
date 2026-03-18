@@ -426,6 +426,15 @@ class NATManager:
                             f"This may indicate insufficient permissions or router security restrictions. "
                             f"Try manually forwarding port {internal_port} ({protocol.upper()}) in your router settings."
                         )
+                    elif (
+                        "decode" in error_msg.lower()
+                        or "encoding" in error_msg.lower()
+                        or "UnicodeDecodeError" in error_msg
+                    ):
+                        user_msg = (
+                            f"UPnP port mapping failed: Router sent a response that could not be decoded (non-UTF-8 or invalid encoding). "
+                            f"Consider manually forwarding port {internal_port} ({protocol.upper()}) in your router settings."
+                        )
                     else:
                         user_msg = (
                             f"UPnP port mapping failed for port {internal_port} ({protocol.upper()}): {error_msg}. "

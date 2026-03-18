@@ -369,13 +369,13 @@ class TestAsyncMetadataExchange:
         session = PeerMetadataSession(peer_info=("192.168.1.1", 6881))
         session.ut_metadata_id = 1
         session.writer = AsyncMock()
+        session.writer.write = Mock()
 
-        with patch.object(exchange, "_wait_for_piece_response") as mock_wait:
-            await exchange._request_metadata_piece(session, 0)
+        await exchange._request_metadata_piece(session, 0)
 
-            assert session.writer.write.called
-            assert session.writer.drain.called
-            mock_wait.assert_called_once_with(session, 0)
+        session.writer.write.assert_called_once()
+        session.writer.drain.assert_awaited_once()
+        assert 0 not in session.pieces_failed
 
     @pytest.mark.asyncio
     async def test_request_metadata_piece_exception(self, exchange):
@@ -383,11 +383,11 @@ class TestAsyncMetadataExchange:
         session = PeerMetadataSession(peer_info=("192.168.1.1", 6881))
         session.ut_metadata_id = 1
         session.writer = AsyncMock()
+        session.writer.write = Mock(side_effect=RuntimeError("Error"))
 
-        with patch.object(exchange, "_wait_for_piece_response", side_effect=Exception("Error")):
-            await exchange._request_metadata_piece(session, 0)
+        await exchange._request_metadata_piece(session, 0)
 
-            assert 0 in session.pieces_failed
+        assert 0 in session.pieces_failed
 
     @pytest.mark.asyncio
     async def test_wait_for_piece_response_no_reader(self, exchange):
@@ -1090,4 +1090,32 @@ class TestMetadataMetrics:
         metrics.record_piece_received()
 
         assert metrics.get_completion_rate() == 0.5
+
+
+@pytest.mark.asyncio
+async def test_receive_extended_handshake_skips_non_extension_message():
+    """Handshake parsing should tolerate an initial non-extension message before the ut_metadata handshake."""
+    info_hash = hashlib.sha1(b"skip-non-extension").digest()
+    exchange = AsyncMetadataExchange(info_hash)
+    session = PeerMetadataSession(peer_info=("192.168.1.1", 6881))
+
+    interested_msg = struct.pack("!IB", 1, 2)
+    payload = BencodeEncoder().encode({b"m": {b"ut_metadata": 7}, b"metadata_size": 8192})
+    handshake_len = len(payload) + 2
+    handshake_msg = struct.pack("!IBB", handshake_len, 20, 0) + payload
+
+    session.reader = AsyncMock()
+    session.reader.readexactly = AsyncMock(
+        side_effect=[
+            struct.pack("!I", 1),
+            interested_msg[4:],
+            struct.pack("!I", handshake_len),
+            handshake_msg[4:],
+        ]
+    )
+
+    await exchange._receive_extended_handshake(session)
+
+    assert session.ut_metadata_id == 7
+    assert session.metadata_size == 8192
 

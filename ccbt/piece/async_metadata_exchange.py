@@ -377,6 +377,12 @@ class AsyncMetadataExchange:
                 peer_info[0],
                 peer_info[1],
             )
+            self.logger.info(
+                "METADATA_PEER_OUTCOME: peer=%s:%d connect_ok=True bt_handshake_ok=False extended_handshake_ok=False "
+                "ut_metadata_supported=False piece_count_received=0 metadata_validated=False",
+                peer_info[0],
+                peer_info[1],
+            )
 
             # CRITICAL FIX: Add timeout for handshake exchange
             handshake_timeout = 10.0
@@ -419,6 +425,12 @@ class AsyncMetadataExchange:
 
             self.logger.info(
                 "METADATA_EXCHANGE: Handshake validated with %s:%d, state=NEGOTIATING",
+                peer_info[0],
+                peer_info[1],
+            )
+            self.logger.info(
+                "METADATA_PEER_OUTCOME: peer=%s:%d connect_ok=True bt_handshake_ok=True extended_handshake_ok=False "
+                "ut_metadata_supported=False piece_count_received=0 metadata_validated=False",
                 peer_info[0],
                 peer_info[1],
             )
@@ -474,12 +486,27 @@ class AsyncMetadataExchange:
                 session.metadata_size,
                 session.num_pieces,
             )
+            self.logger.info(
+                "METADATA_PEER_OUTCOME: peer=%s:%d connect_ok=True bt_handshake_ok=True extended_handshake_ok=True "
+                "ut_metadata_supported=True piece_count_received=%d metadata_validated=False",
+                peer_info[0],
+                peer_info[1],
+                session.num_pieces,
+            )
             session.state = MetadataState.REQUESTING  # pragma: no cover - Same context
 
             # Start requesting metadata pieces
             await self._request_metadata_pieces(
                 session
             )  # pragma: no cover - Same context
+            if self.completed and self.metadata_dict is not None:
+                self.logger.info(
+                    "METADATA_PEER_OUTCOME: peer=%s:%d connect_ok=True bt_handshake_ok=True extended_handshake_ok=True "
+                    "ut_metadata_supported=True piece_count_received=%d metadata_validated=True",
+                    peer_info[0],
+                    peer_info[1],
+                    len(session.pieces_received),
+                )
 
         except asyncio.TimeoutError:
             # CRITICAL FIX: Better error messages for different error types
@@ -586,8 +613,11 @@ class AsyncMetadataExchange:
         if session.reader is None:
             msg = _ERROR_READER_NOT_INITIALIZED
             raise RuntimeError(msg)
-        # Read messages until we get extended handshake
-        for _ in range(10):
+        deadline = time.time() + 15.0
+        attempts = 0
+        # Read messages until we get extended handshake, tolerating keepalives and regular peer chatter.
+        while time.time() < deadline and attempts < 25:
+            attempts += 1
             try:
                 length_data = await asyncio.wait_for(
                     session.reader.readexactly(4),
@@ -603,24 +633,53 @@ class AsyncMetadataExchange:
                     timeout=5.0,
                 )
                 msg_id = payload[0] if payload else 0
+                if msg_id != 20:
+                    self.logger.debug(
+                        "METADATA_EXCHANGE: Ignoring pre-handshake message id=%d from %s:%d while waiting for extended handshake",
+                        msg_id,
+                        session.peer_info[0],
+                        session.peer_info[1],
+                    )
+                    continue
 
-                if msg_id == 20:  # Extended message
-                    ext_id = payload[1] if len(payload) > 1 else 0
-                    if ext_id == 0:  # Extended handshake
-                        decoder = BencodeDecoder(payload[2:])
-                        data = decoder.decode()
+                ext_id = payload[1] if len(payload) > 1 else 0
+                if ext_id != 0:
+                    self.logger.debug(
+                        "METADATA_EXCHANGE: Ignoring extended message ext_id=%d from %s:%d while waiting for handshake",
+                        ext_id,
+                        session.peer_info[0],
+                        session.peer_info[1],
+                    )
+                    continue
 
-                        # Extract ut_metadata support
-                        m = data.get(b"m", {})
-                        session.ut_metadata_id = m.get(b"ut_metadata")
-                        session.metadata_size = data.get(b"metadata_size")
-                        break
+                decoder = BencodeDecoder(payload[2:])
+                data = decoder.decode()
+                if not isinstance(data, dict):
+                    continue
+
+                m_dict = data.get(b"m") or data.get("m") or {}
+                if isinstance(m_dict, dict):
+                    session.ut_metadata_id = m_dict.get(b"ut_metadata") or m_dict.get(
+                        "ut_metadata"
+                    )
+                session.metadata_size = data.get(b"metadata_size") or data.get(
+                    "metadata_size"
+                )
+                if session.metadata_size:
+                    session.num_pieces = math.ceil(int(session.metadata_size) / 16384)
+                break
             except asyncio.TimeoutError:
-                break  # pragma: no cover - Timeout handling in extended handshake loop
+                continue  # pragma: no cover - Timeout handling in extended handshake loop
             except (
                 Exception
             ):  # pragma: no cover - Exception handling in extended handshake loop
-                break  # pragma: no cover - Same context
+                self.logger.debug(
+                    "METADATA_EXCHANGE: Error while waiting for extended handshake from %s:%d",
+                    session.peer_info[0],
+                    session.peer_info[1],
+                    exc_info=True,
+                )
+                continue  # pragma: no cover - Same context
 
     async def _request_metadata_pieces(self, session: PeerMetadataSession) -> None:
         """Request metadata pieces from a peer."""
@@ -655,7 +714,8 @@ class AsyncMetadataExchange:
                 )
                 await self._request_metadata_piece(session, piece_idx)
                 session.pieces_requested.add(piece_idx)
-                await asyncio.sleep(0.1)  # Small delay between requests
+                await asyncio.sleep(0.05)  # Small delay between requests
+        await self._receive_metadata_responses(session)
 
     async def _request_metadata_piece(
         self,
@@ -677,9 +737,6 @@ class AsyncMetadataExchange:
             session.writer.write(req_msg)
             await session.writer.drain()
 
-            # Wait for response
-            await self._wait_for_piece_response(session, piece_idx)
-
         except Exception as e:
             self.logger.debug(
                 "Failed to request piece %s from %s: %s",
@@ -688,6 +745,79 @@ class AsyncMetadataExchange:
                 e,
             )
             session.pieces_failed.add(piece_idx)
+
+    async def _receive_metadata_responses(
+        self,
+        session: PeerMetadataSession,
+        timeout: float = 20.0,
+    ) -> None:
+        """Receive metadata responses for a session without blocking per piece."""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if self.completed or len(session.pieces_received) >= session.num_pieces:
+                return
+            try:
+                if session.reader is None:
+                    msg = _ERROR_READER_NOT_INITIALIZED
+                    raise RuntimeError(msg)
+                remaining_timeout = max(0.5, timeout - (time.time() - start_time))
+                length_data = await asyncio.wait_for(
+                    session.reader.readexactly(4),
+                    timeout=min(1.0, remaining_timeout),
+                )
+                length = struct.unpack("!I", length_data)[0]
+                if length == 0:
+                    continue
+
+                payload = await asyncio.wait_for(
+                    session.reader.readexactly(length),
+                    timeout=min(1.0, remaining_timeout),
+                )
+                msg_id = payload[0] if payload else 0
+                if msg_id != 20:
+                    continue
+                ext_id = payload[1] if len(payload) > 1 else 0
+                if ext_id != session.ut_metadata_id:
+                    continue
+
+                decoder = BencodeDecoder(payload[2:])
+                header = decoder.decode()
+                if not isinstance(header, dict):
+                    continue
+
+                msg_type = header.get(b"msg_type")
+                if msg_type is None:
+                    msg_type = header.get("msg_type")
+                piece_index = header.get(b"piece")
+                if piece_index is None:
+                    piece_index = header.get("piece")
+
+                if msg_type == 1 and isinstance(piece_index, int):
+                    header_len = decoder.pos
+                    piece_data = payload[2 + header_len :]
+                    await self._handle_metadata_piece(
+                        session,
+                        piece_index,
+                        piece_data,
+                    )
+                    continue
+                if msg_type == 2 and isinstance(piece_index, int):
+                    self.logger.debug(
+                        "Peer %s rejected metadata piece %s",
+                        session.peer_info,
+                        piece_index,
+                    )
+                    session.pieces_failed.add(piece_index)
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                self.logger.debug(
+                    "Error receiving metadata response from %s:%d: %s",
+                    session.peer_info[0],
+                    session.peer_info[1],
+                    e,
+                )
+                break
 
     async def _wait_for_piece_response(
         self,

@@ -390,6 +390,7 @@ class AsyncPieceManager:
             "duplicate_requests_prevented": 0,  # Count of duplicate requests prevented
             "pipeline_full_rejections": 0,  # Count of requests rejected due to full pipeline
             "stuck_pieces_recovered": 0,  # Count of stuck pieces recovered
+            "unknown_peer_probes": 0,  # Count of single-block probes sent to peers without piece availability
             "pipeline_utilization_samples": deque(
                 maxlen=100
             ),  # Recent pipeline utilization samples
@@ -397,6 +398,7 @@ class AsyncPieceManager:
             "total_piece_requests": 0,  # Total piece requests made
             "successful_piece_requests": 0,  # Successful piece requests
             "failed_piece_requests": 0,  # Failed piece requests
+            "hash_verification_failures": 0,  # Pieces that completed but failed hash verification
             "average_pipeline_utilization": 0.0,  # Average pipeline utilization across peers
             "peer_selection_attempts": 0,  # Total peer selection attempts
             "peer_selection_successes": 0,  # Successful peer selections
@@ -414,6 +416,8 @@ class AsyncPieceManager:
 
         # Selector-created request claims that have not yet issued the first block request.
         self._pending_piece_requests: set[int] = set()
+        self._deferred_checkpoint: Optional[TorrentCheckpoint] = None
+        self._piece_layout_provisional = False
 
         # Endgame mode
         self.endgame_mode = False
@@ -450,46 +454,8 @@ class AsyncPieceManager:
         # No background queue; verify hashes via scheduled tasks on completion
         self.hash_queue = None  # kept for backward compatibility, not used
 
-        # Initialize pieces
-        for i in range(self.num_pieces):
-            # Calculate actual piece length (last piece may be shorter)
-            if i == self.num_pieces - 1:
-                # Get total_length safely - handle different torrent_data structures
-                total_length = 0
-                if "file_info" in torrent_data and torrent_data.get("file_info"):
-                    total_length = torrent_data["file_info"].get("total_length", 0)
-                elif "total_length" in torrent_data:
-                    total_length = torrent_data["total_length"]
-                else:
-                    # Fallback: calculate from pieces (approximation)
-                    total_length = self.num_pieces * self.piece_length
-
-                piece_length = total_length - (i * self.piece_length)
-                # Ensure piece_length is positive
-                if piece_length <= 0:
-                    piece_length = self.piece_length
-            else:
-                piece_length = self.piece_length
-
-            piece = PieceData(i, piece_length)
-
-            # Set priorities for streaming mode
-            if self.config.strategy.streaming_mode:
-                if i == 0:
-                    piece.priority = 1000  # First piece highest priority
-                elif i == self.num_pieces - 1:
-                    # Fallback: boost last piece modestly
-                    piece.priority = 100
-                else:
-                    piece.priority = max(0, 1000 - i)  # Decreasing priority
-
-            # Apply file-based priorities if file selection manager exists
-            if self.file_selection_manager:
-                file_priority = self.file_selection_manager.get_piece_priority(i)
-                # Scale file priority to piece priority (multiply by 100 to match streaming mode scale)
-                piece.priority = max(piece.priority, file_priority * 100)
-
-            self.pieces.append(piece)
+        if self.num_pieces > 0:
+            self._build_piece_layout()
 
         # Download state
         self.is_downloading = False
@@ -517,6 +483,230 @@ class AsyncPieceManager:
         self._background_tasks: set[asyncio.Task] = set()
 
         self.logger = logging.getLogger(__name__)
+
+    def _get_total_length(self, torrent_data: Optional[dict[str, Any]] = None) -> int:
+        """Return the torrent's total length when known."""
+        data = torrent_data if torrent_data is not None else self.torrent_data
+        if not isinstance(data, dict):
+            return 0
+
+        file_info = data.get("file_info")
+        if isinstance(file_info, dict):
+            total_length = file_info.get("total_length", file_info.get("length", 0))
+            if isinstance(total_length, (int, float)) and total_length > 0:
+                return int(total_length)
+
+        total_length = data.get("total_length", 0)
+        if isinstance(total_length, (int, float)) and total_length > 0:
+            return int(total_length)
+
+        pieces_info = data.get("pieces_info")
+        if isinstance(pieces_info, dict):
+            total_length = pieces_info.get("total_length", 0)
+            if isinstance(total_length, (int, float)) and total_length > 0:
+                return int(total_length)
+
+        if self.num_pieces > 0 and self.piece_length > 0:
+            return self.num_pieces * self.piece_length
+        return 0
+
+    def _expected_piece_length(
+        self, piece_index: int, total_length: Optional[int] = None
+    ) -> int:
+        """Return the expected length for a piece under current geometry."""
+        if self.piece_length <= 0:
+            return 0
+        if total_length is None:
+            total_length = self._get_total_length()
+        if piece_index == self.num_pieces - 1 and total_length > 0:
+            last_piece_length = total_length - (piece_index * self.piece_length)
+            if last_piece_length > 0:
+                return last_piece_length
+        return self.piece_length
+
+    def _make_piece(
+        self, piece_index: int, total_length: Optional[int] = None
+    ) -> PieceData:
+        """Create a piece using the current metadata-backed geometry."""
+        piece = PieceData(
+            piece_index,
+            self._expected_piece_length(piece_index, total_length),
+        )
+
+        if self.config.strategy.streaming_mode:
+            if piece_index == 0:
+                piece.priority = 1000
+            elif piece_index == self.num_pieces - 1:
+                piece.priority = 100
+            else:
+                piece.priority = max(0, 1000 - piece_index)
+
+        if self.file_selection_manager:
+            file_priority = self.file_selection_manager.get_piece_priority(piece_index)
+            piece.priority = max(piece.priority, file_priority * 100)
+
+        return piece
+
+    def _build_piece_layout(self) -> None:
+        """Build piece objects using the current metadata-backed geometry."""
+        total_length = self._get_total_length()
+        self.pieces = [
+            self._make_piece(piece_index, total_length)
+            for piece_index in range(self.num_pieces)
+        ]
+        self._piece_layout_provisional = False
+
+    def _clear_piece_runtime_tracking(self, *, clear_verified: bool = True) -> None:
+        """Reset runtime request bookkeeping tied to a piece layout."""
+        self._requested_pieces_per_peer.clear()
+        self._active_block_requests.clear()
+        self._pending_piece_requests.clear()
+        self._stuck_pieces.clear()
+        self.completed_pieces.clear()
+        if clear_verified:
+            self.verified_pieces.clear()
+
+    def _restore_verified_piece_markers(self, verified_piece_indices: set[int]) -> None:
+        """Mark verified pieces on a freshly rebuilt layout."""
+        validated_verified: set[int] = set()
+        for piece_index in verified_piece_indices:
+            if 0 <= piece_index < len(self.pieces):
+                piece = self.pieces[piece_index]
+                piece.state = PieceState.VERIFIED
+                piece.hash_verified = True
+                for block in piece.blocks:
+                    block.received = True
+                validated_verified.add(piece_index)
+        self.verified_pieces = validated_verified
+
+    def _piece_layout_matches_geometry(self) -> bool:
+        """Return True when in-memory pieces match current geometry."""
+        if len(self.pieces) != self.num_pieces:
+            return False
+
+        total_length = self._get_total_length()
+        for piece_index, piece in enumerate(self.pieces):
+            expected_length = self._expected_piece_length(piece_index, total_length)
+            if piece.length != expected_length:
+                return False
+            if sum(block.length for block in piece.blocks) != expected_length:
+                return False
+        return True
+
+    def _rebuild_piece_layout_from_metadata(self, *, preserve_verified: bool) -> None:
+        """Rebuild piece objects after metadata confirms final geometry."""
+        trusted_verified = set(self.verified_pieces) if preserve_verified else set()
+        self._clear_piece_runtime_tracking(clear_verified=True)
+        self._build_piece_layout()
+        self._restore_verified_piece_markers(trusted_verified)
+
+    def _piece_has_real_request_history(
+        self, piece_index: int, piece: PieceData
+    ) -> bool:
+        """Return True once at least one real outbound block request was issued."""
+        if getattr(piece, "last_request_time", 0.0) > 0:
+            return True
+        if any(block.requested_from for block in piece.blocks if not block.received):
+            return True
+        active_requests = self._active_block_requests.get(piece_index, {})
+        return any(requests for requests in active_requests.values())
+
+    def _checkpoint_geometry_matches_current_layout(
+        self, checkpoint: TorrentCheckpoint
+    ) -> bool:
+        """Return True when checkpoint geometry matches current metadata-backed layout."""
+        if checkpoint.total_pieces != self.num_pieces:
+            return False
+        if checkpoint.piece_length != self.piece_length:
+            return False
+
+        current_total_length = self._get_total_length()
+        checkpoint_total_length = int(getattr(checkpoint, "total_length", 0) or 0)
+        if (
+            checkpoint_total_length > 0
+            and current_total_length > 0
+            and checkpoint_total_length != current_total_length
+        ):
+            return False
+        return self._piece_layout_matches_geometry()
+
+    def _apply_checkpoint_piece_states(
+        self, checkpoint: TorrentCheckpoint
+    ) -> tuple[int, int, int]:
+        """Apply checkpoint piece states to the current piece layout."""
+        restored_count = 0
+        skipped_count = 0
+        state_corrected_count = 0
+        verified_pieces_set = set(checkpoint.verified_pieces)
+
+        for piece_idx, piece_state in checkpoint.piece_states.items():
+            if 0 <= piece_idx < len(self.pieces):
+                piece = self.pieces[piece_idx]
+                is_verified = piece_idx in verified_pieces_set
+
+                if is_verified:
+                    for block in piece.blocks:
+                        block.received = True
+
+                if piece_state == PieceStateModel.VERIFIED:
+                    if not is_verified:
+                        self.logger.warning(
+                            "Checkpoint piece_states marks piece %d as VERIFIED but not in verified_pieces - "
+                            "marking as COMPLETE instead",
+                            piece_idx,
+                        )
+                        piece.state = PieceState.COMPLETE
+                        piece.hash_verified = False
+                    else:
+                        piece.state = PieceState.VERIFIED
+                        piece.hash_verified = True
+                else:
+                    piece.state = PieceState(piece_state.value)
+                    piece.hash_verified = piece_state == PieceStateModel.VERIFIED
+
+                if (
+                    not is_verified
+                    and piece_state
+                    in (PieceStateModel.COMPLETE, PieceStateModel.VERIFIED)
+                    and not piece.is_complete()
+                ):
+                    self.logger.warning(
+                        "Checkpoint marks piece %d as %s but blocks are not complete - "
+                        "resetting to MISSING (possible checkpoint corruption)",
+                        piece_idx,
+                        piece_state.value,
+                    )
+                    piece.state = PieceState.MISSING
+                    piece.hash_verified = False
+                    state_corrected_count += 1
+
+                restored_count += 1
+            else:
+                skipped_count += 1
+                if skipped_count <= 5:
+                    self.logger.debug(
+                        "Skipping checkpoint piece state for index %d (out of range: 0-%d)",
+                        piece_idx,
+                        len(self.pieces) - 1,
+                    )
+
+        if skipped_count > 5:
+            self.logger.debug(
+                "Skipped %d additional checkpoint piece states (out of range)",
+                skipped_count - 5,
+            )
+
+        self._restore_verified_piece_markers(verified_pieces_set)
+        self.completed_pieces = {
+            piece_index
+            for piece_index, piece in enumerate(self.pieces)
+            if piece.state == PieceState.COMPLETE
+        }
+
+        if checkpoint.peer_info and "piece_frequency" in checkpoint.peer_info:
+            self.piece_frequency = Counter(checkpoint.peer_info["piece_frequency"])
+
+        return restored_count, skipped_count, state_corrected_count
 
     async def start(self) -> None:
         """Start background tasks."""
@@ -546,17 +736,19 @@ class AsyncPieceManager:
 
         """
         async with self.lock:
-            # Update torrent_data
+            old_metadata_incomplete = self._metadata_incomplete
+            old_num_pieces = self.num_pieces
+            old_piece_length = self.piece_length
+            old_total_length = self._get_total_length()
+            had_piece_layout = len(self.pieces) > 0
+
             if isinstance(self.torrent_data, dict):
                 self.torrent_data.update(updated_torrent_data)
 
             self._metadata_incomplete = False
 
-            # Update pieces_info if available
-            if "pieces_info" in updated_torrent_data:
-                pieces_info = updated_torrent_data["pieces_info"]
-
-                # Update num_pieces
+            pieces_info = updated_torrent_data.get("pieces_info")
+            if isinstance(pieces_info, dict):
                 if "num_pieces" in pieces_info:
                     new_num_pieces = int(pieces_info["num_pieces"])
                     if new_num_pieces != self.num_pieces:
@@ -565,18 +757,8 @@ class AsyncPieceManager:
                             self.num_pieces,
                             new_num_pieces,
                         )
-                        # CRITICAL FIX: Clear pieces list BEFORE updating num_pieces
-                        # This prevents length mismatch issues when metadata is updated
-                        if len(self.pieces) != new_num_pieces:
-                            self.logger.info(
-                                "Clearing pieces list (length=%d) before updating num_pieces to %d",
-                                len(self.pieces),
-                                new_num_pieces,
-                            )
-                            self.pieces.clear()
                         self.num_pieces = new_num_pieces
 
-                # Update piece_length
                 if "piece_length" in pieces_info:
                     new_piece_length = int(pieces_info["piece_length"])
                     if new_piece_length != self.piece_length:
@@ -587,10 +769,8 @@ class AsyncPieceManager:
                         )
                         self.piece_length = new_piece_length
 
-                # Update piece_hashes
                 if "piece_hashes" in pieces_info:
                     new_piece_hashes = pieces_info["piece_hashes"]
-                    # CRITICAL FIX: Validate piece_hashes before assigning
                     if not isinstance(new_piece_hashes, (list, tuple)):
                         self.logger.error(
                             "Invalid piece_hashes type: %s (expected list/tuple)",
@@ -601,74 +781,77 @@ class AsyncPieceManager:
                             "piece_hashes is empty - cannot verify pieces!"
                         )
                     else:
-                        # Validate each hash is 20 bytes (SHA-1)
                         invalid_hashes = [
                             i
-                            for i, h in enumerate(new_piece_hashes)
-                            if not h or len(h) != 20
+                            for i, hash_value in enumerate(new_piece_hashes)
+                            if not hash_value or len(hash_value) != 20
                         ]
                         if invalid_hashes:
                             self.logger.error(
                                 "Invalid piece hashes at indices %s (expected 20 bytes each)",
-                                invalid_hashes[:10],  # Log first 10
+                                invalid_hashes[:10],
                             )
                         else:
                             self.piece_hashes = list(new_piece_hashes)
-                    self.logger.info(
-                        "Updated piece_hashes: %d hashes (all valid 20-byte SHA-1)",
-                        len(self.piece_hashes),
-                    )
+                            self.logger.info(
+                                "Updated piece_hashes: %d hashes (all valid 20-byte SHA-1)",
+                                len(self.piece_hashes),
+                            )
 
-            # Initialize pieces if not already initialized
-            if self.num_pieces > 0 and len(self.pieces) == 0:
+            new_total_length = self._get_total_length()
+            geometry_changed = (
+                old_num_pieces != self.num_pieces
+                or old_piece_length != self.piece_length
+                or old_total_length != new_total_length
+            )
+            layout_matches_geometry = self._piece_layout_matches_geometry()
+            should_rebuild = self.num_pieces > 0 and (
+                len(self.pieces) != self.num_pieces
+                or not layout_matches_geometry
+                or (had_piece_layout and geometry_changed)
+                or self._piece_layout_provisional
+                or (old_metadata_incomplete and had_piece_layout)
+            )
+
+            preserve_verified = (
+                had_piece_layout
+                and not old_metadata_incomplete
+                and not geometry_changed
+                and layout_matches_geometry
+            )
+
+            if should_rebuild:
+                reasons: list[str] = []
+                if len(self.pieces) != self.num_pieces:
+                    reasons.append("count mismatch")
+                if not layout_matches_geometry:
+                    reasons.append("stale block geometry")
+                if had_piece_layout and geometry_changed:
+                    reasons.append("metadata geometry changed")
+                if self._piece_layout_provisional:
+                    reasons.append("provisional checkpoint layout")
+                if old_metadata_incomplete and had_piece_layout:
+                    reasons.append("layout created before metadata")
+
+                self.logger.warning(
+                    "Rebuilding piece layout from metadata (%s)",
+                    ", ".join(reasons) if reasons else "unknown reason",
+                )
+                self._rebuild_piece_layout_from_metadata(
+                    preserve_verified=preserve_verified
+                )
+                self.logger.info(
+                    "✅ METADATA_UPDATE: Rebuilt %d pieces from metadata (num_pieces=%d, piece_length=%d)",
+                    len(self.pieces),
+                    self.num_pieces,
+                    self.piece_length,
+                )
+            elif self.num_pieces > 0 and len(self.pieces) == 0:
                 self.logger.info(
                     "Initializing %d pieces from metadata (update_from_metadata)",
                     self.num_pieces,
                 )
-
-                # Get total_length for last piece calculation
-                total_length = 0
-                if "file_info" in self.torrent_data and self.torrent_data.get(
-                    "file_info"
-                ):
-                    total_length = self.torrent_data["file_info"].get("total_length", 0)
-                elif "total_length" in self.torrent_data:
-                    total_length = self.torrent_data["total_length"]
-                else:
-                    # Fallback: calculate from pieces (approximation)
-                    total_length = self.num_pieces * self.piece_length
-
-                for i in range(self.num_pieces):
-                    # Calculate actual piece length (last piece may be shorter)
-                    if i == self.num_pieces - 1:
-                        piece_length = total_length - (i * self.piece_length)
-                        # Ensure piece_length is positive
-                        if piece_length <= 0:
-                            piece_length = self.piece_length
-                    else:
-                        piece_length = self.piece_length
-
-                    piece = PieceData(i, piece_length)
-
-                    # Set priorities for streaming mode
-                    if self.config.strategy.streaming_mode:
-                        if i == 0:
-                            piece.priority = 1000  # First piece highest priority
-                        elif i == self.num_pieces - 1:
-                            piece.priority = 100
-                        else:
-                            piece.priority = max(0, 1000 - i)  # Decreasing priority
-
-                    # Apply file-based priorities if file selection manager exists
-                    if self.file_selection_manager:
-                        file_priority = self.file_selection_manager.get_piece_priority(
-                            i
-                        )
-                        # Scale file priority to piece priority
-                        piece.priority = max(piece.priority, file_priority * 100)
-
-                    self.pieces.append(piece)
-
+                self._rebuild_piece_layout_from_metadata(preserve_verified=False)
                 self.logger.info(
                     "✅ METADATA_UPDATE: Successfully initialized %d pieces from metadata (num_pieces=%d, piece_length=%d)",
                     len(self.pieces),
@@ -676,76 +859,39 @@ class AsyncPieceManager:
                     self.piece_length,
                 )
 
-                # CRITICAL FIX: After initializing pieces from metadata, ensure is_downloading is True
-                # This allows piece selection to proceed immediately after metadata is available
-                if not self.is_downloading:
-                    self.logger.info(
-                        "✅ METADATA_UPDATE: Setting is_downloading=True after metadata initialization (was False)"
+            if self._deferred_checkpoint is not None:
+                deferred_checkpoint = self._deferred_checkpoint
+                self._deferred_checkpoint = None
+                if self._checkpoint_geometry_matches_current_layout(
+                    deferred_checkpoint
+                ):
+                    restored_count, skipped_count, state_corrected_count = (
+                        self._apply_checkpoint_piece_states(deferred_checkpoint)
                     )
-                    self.is_downloading = True
-            elif self.num_pieces > 0 and len(self.pieces) != self.num_pieces:
-                # CRITICAL FIX: This should not happen if we clear pieces before updating num_pieces
-                # But handle it defensively to prevent infinite recursion
-                self.logger.warning(
-                    "Pieces list length (%d) doesn't match num_pieces (%d) after metadata update - clearing and reinitializing",
-                    len(self.pieces),
-                    self.num_pieces,
-                )
-                # Clear pieces and reinitialize
-                self.pieces.clear()
-                # Re-initialize pieces using the same logic as above
-                # Don't recursively call to avoid potential infinite loops
-                if self.num_pieces > 0:
                     self.logger.info(
-                        "Reinitializing %d pieces after length mismatch correction",
+                        "Applied deferred checkpoint after metadata reconciliation: %d piece states, %d verified pieces, %d completed pieces, %d skipped states, %d state corrections",
+                        restored_count,
+                        len(self.verified_pieces),
+                        len(self.completed_pieces),
+                        skipped_count,
+                        state_corrected_count,
+                    )
+                else:
+                    self.logger.warning(
+                        "Deferred checkpoint geometry does not match metadata-backed layout "
+                        "(checkpoint pieces=%d, piece_length=%d, current pieces=%d, piece_length=%d). "
+                        "Skipping checkpoint piece-state restore.",
+                        deferred_checkpoint.total_pieces,
+                        deferred_checkpoint.piece_length,
                         self.num_pieces,
+                        self.piece_length,
                     )
-                    # Get total_length for last piece calculation
-                    total_length = 0
-                    if "file_info" in self.torrent_data and self.torrent_data.get(
-                        "file_info"
-                    ):
-                        total_length = self.torrent_data["file_info"].get(
-                            "total_length", 0
-                        )
-                    elif "total_length" in self.torrent_data:
-                        total_length = self.torrent_data["total_length"]
-                    else:
-                        total_length = self.num_pieces * self.piece_length
 
-                    for i in range(self.num_pieces):
-                        # Calculate actual piece length (last piece may be shorter)
-                        if i == self.num_pieces - 1:
-                            piece_length = total_length - (i * self.piece_length)
-                            if piece_length <= 0:
-                                piece_length = self.piece_length
-                        else:
-                            piece_length = self.piece_length
-
-                        piece = PieceData(i, piece_length)
-
-                        # Set priorities for streaming mode
-                        if self.config.strategy.streaming_mode:
-                            if i == 0:
-                                piece.priority = 1000
-                            elif i == self.num_pieces - 1:
-                                piece.priority = 100
-                            else:
-                                piece.priority = max(0, 1000 - i)
-
-                        # Apply file-based priorities if file selection manager exists
-                        if self.file_selection_manager:
-                            file_priority = (
-                                self.file_selection_manager.get_piece_priority(i)
-                            )
-                            piece.priority = max(piece.priority, file_priority * 100)
-
-                        self.pieces.append(piece)
-
-                    self.logger.info(
-                        "Successfully reinitialized %d pieces after length mismatch correction",
-                        len(self.pieces),
-                    )
+            if not self.is_downloading and self.num_pieces > 0:
+                self.logger.info(
+                    "✅ METADATA_UPDATE: Setting is_downloading=True after metadata initialization (was False)"
+                )
+                self.is_downloading = True
 
     def get_missing_pieces(self) -> list[int]:
         """Get list of missing piece indices."""
@@ -949,6 +1095,7 @@ class AsyncPieceManager:
             - total_piece_requests: Total piece requests made
             - successful_piece_requests: Successful piece requests
             - failed_piece_requests: Failed piece requests
+            - hash_verification_failures: Pieces that completed but failed verification
             - peer_selection_success_rate: Success rate of peer selection
             - pipeline_utilization_samples: Recent pipeline utilization samples
 
@@ -987,6 +1134,9 @@ class AsyncPieceManager:
             "successful_piece_requests": successful_requests,
             "failed_piece_requests": self._piece_selection_metrics[
                 "failed_piece_requests"
+            ],
+            "hash_verification_failures": self._piece_selection_metrics[
+                "hash_verification_failures"
             ],
             "request_success_rate": request_success_rate,
             "peer_selection_attempts": total_attempts,
@@ -1111,6 +1261,59 @@ class AsyncPieceManager:
 
                 # Remove peer from availability tracking
                 del self.peer_availability[peer_key]
+
+    async def handle_peer_choked(self, peer) -> None:
+        """Requeue pending work for a peer that choked us."""
+        if not hasattr(peer, "peer_info"):
+            return
+
+        peer_key = f"{peer.peer_info.ip}:{peer.peer_info.port}"
+        pieces_requeued = 0
+
+        async with self.lock:
+            requested_pieces = list(
+                self._requested_pieces_per_peer.get(peer_key, set())
+            )
+
+            for piece_index in requested_pieces:
+                if piece_index >= len(self.pieces):
+                    continue
+
+                piece = self.pieces[piece_index]
+                if piece.state not in (PieceState.REQUESTED, PieceState.DOWNLOADING):
+                    continue
+
+                if piece_index in self._active_block_requests:
+                    self._active_block_requests[piece_index].pop(peer_key, None)
+                    if not self._active_block_requests[piece_index]:
+                        del self._active_block_requests[piece_index]
+
+                for block in piece.blocks:
+                    if not block.received:
+                        block.requested_from.discard(peer_key)
+
+                has_other_requests = any(
+                    block.requested_from for block in piece.blocks if not block.received
+                )
+                if has_other_requests:
+                    piece.state = PieceState.REQUESTED
+                else:
+                    piece.state = (
+                        PieceState.MISSING
+                        if all(not block.received for block in piece.blocks)
+                        else PieceState.REQUESTED
+                    )
+                piece.last_request_time = 0.0
+                pieces_requeued += 1
+
+            self._requested_pieces_per_peer.pop(peer_key, None)
+
+        if pieces_requeued:
+            self.logger.info(
+                "Requeued %d piece(s) after peer %s choked us",
+                pieces_requeued,
+                peer_key,
+            )
 
     async def _update_peer_availability(self, peer) -> None:
         """Update peer availability from peer's bitfield.
@@ -1500,10 +1703,13 @@ class AsyncPieceManager:
                 has_outstanding = any(
                     block.requested_from for block in piece.blocks if not block.received
                 )
+                has_real_request_history = self._piece_has_real_request_history(
+                    piece_index, piece
+                )
                 if not has_outstanding:
-                    if pending_initial_request:
+                    if pending_initial_request or not has_real_request_history:
                         self.logger.debug(
-                            "PIECE_MANAGER: Piece %d has no outstanding requests yet and is allowed to proceed with its initial request",
+                            "PIECE_MANAGER: Piece %d has no real outbound requests yet and is allowed to proceed with its initial request",
                             piece_index,
                         )
                     else:
@@ -1721,8 +1927,6 @@ class AsyncPieceManager:
                     if hasattr(piece.state, "name")
                     else str(piece.state),
                 )
-                piece.request_count += 1
-            piece.last_request_time = time.time()  # Track when we last requested
             # CRITICAL FIX: Set adaptive timeout based on swarm health
             # When few peers, use shorter timeout for faster recovery
             # Calculate adaptive timeout based on active peer count
@@ -1780,11 +1984,12 @@ class AsyncPieceManager:
         )
 
         # Distribute blocks among peers
+        requests_sent = 0
         if (
             self.endgame_mode
         ):  # pragma: no cover - Endgame path tested separately, normal path is default
             self.logger.debug("Requesting piece %d in endgame mode", piece_index)
-            await self._request_blocks_endgame(
+            requests_sent = await self._request_blocks_endgame(
                 piece_index,
                 missing_blocks,
                 available_peers,
@@ -1792,7 +1997,7 @@ class AsyncPieceManager:
             )
         else:
             self.logger.debug("Requesting piece %d in normal mode", piece_index)
-            await self._request_blocks_normal(
+            requests_sent = await self._request_blocks_normal(
                 piece_index,
                 missing_blocks,
                 available_peers,
@@ -1801,12 +2006,23 @@ class AsyncPieceManager:
 
         async with self.lock:  # pragma: no cover - Lock acquisition after request, state change tested via mark_requested
             old_state = piece.state
-            piece.state = PieceState.DOWNLOADING
-            self.logger.info(
-                "PIECE_MANAGER: Piece %d state transition: %s -> DOWNLOADING",
-                piece_index,
-                old_state.value if hasattr(old_state, "value") else str(old_state),
-            )
+            if requests_sent > 0:
+                piece.request_count += 1
+                piece.last_request_time = time.time()
+                piece.state = PieceState.DOWNLOADING
+                self.logger.info(
+                    "PIECE_MANAGER: Piece %d state transition: %s -> DOWNLOADING (requests_sent=%d)",
+                    piece_index,
+                    old_state.value if hasattr(old_state, "value") else str(old_state),
+                    requests_sent,
+                )
+            else:
+                piece.state = PieceState.REQUESTED
+                piece.last_request_time = 0.0
+                self.logger.warning(
+                    "PIECE_MANAGER: Piece %d issued no block requests; keeping state at REQUESTED for retry",
+                    piece_index,
+                )
 
     async def _get_peers_for_piece(
         self,
@@ -1910,6 +2126,10 @@ class AsyncPieceManager:
                         for conn in peer_manager.connections.values()
                     },
                 )
+
+        known_requestable_peers: list[AsyncPeerConnection] = []
+        unknown_probe_candidates: list[AsyncPeerConnection] = []
+        unknown_probe_limit = 1
 
         for connection in active_peers:
             peer_key = str(connection.peer_info)
@@ -2019,6 +2239,7 @@ class AsyncPieceManager:
             # When we have few peers with availability (<10), probe peers without bitfields to discover HAVE messages
             active_peer_count = 0
             peers_with_availability_count = 0
+            known_piece_peer_count = 0
             if peer_manager and hasattr(peer_manager, "get_active_peers"):
                 active_peers_list = peer_manager.get_active_peers()
                 active_peer_count = len(active_peers_list) if active_peers_list else 0
@@ -2036,6 +2257,16 @@ class AsyncPieceManager:
                     )
                     if has_bitfield_check or has_have_messages_check:
                         peers_with_availability_count += 1
+                    peer_has_piece = (
+                        peer_key_check in self.peer_availability
+                        and piece_index in self.peer_availability[peer_key_check].pieces
+                    ) or (
+                        hasattr(peer, "peer_state")
+                        and hasattr(peer.peer_state, "pieces_we_have")
+                        and piece_index in peer.peer_state.pieces_we_have
+                    )
+                    if peer_has_piece:
+                        known_piece_peer_count += 1
 
             # CRITICAL FIX: Enable probing mode when we have few peers with availability (<10)
             # This allows us to probe peers without bitfields to discover if they have pieces via HAVE messages
@@ -2072,12 +2303,42 @@ class AsyncPieceManager:
                 # This allows us to find pieces from peers that only send HAVE messages (no bitfield)
                 pieces_known = pieces_from_bitfield + pieces_from_have
                 if pieces_known == 0:
+                    allow_weak_swarm_probe = (
+                        len(known_requestable_peers) == 1
+                        and active_peer_count >= 3
+                        and peers_with_availability_count < active_peer_count
+                    )
+                    if known_piece_peer_count > 0 and not allow_weak_swarm_probe:
+                        self.logger.debug(
+                            "Skipping unknown peer %s for piece %d: %d peer(s) already advertise the piece",
+                            peer_key,
+                            piece_index,
+                            known_piece_peer_count,
+                        )
+                        continue
+                    if known_piece_peer_count > 0 and allow_weak_swarm_probe:
+                        self.logger.info(
+                            "WEAK_SWARM_PROBE: Allowing a capped unknown-peer probe for piece %d despite %d known piece peer(s) "
+                            "(active_peers=%d, peers_with_availability=%d)",
+                            piece_index,
+                            known_piece_peer_count,
+                            active_peer_count,
+                            peers_with_availability_count,
+                        )
                     # Peer has no bitfield and no HAVE messages yet - probe with a single request
                     # This is a probing request to discover if peer has the piece
                     mode_str = "PROBING" if probing_mode else "OPTIMISTIC"
+                    if len(unknown_probe_candidates) >= unknown_probe_limit:
+                        self.logger.debug(
+                            "Skipping unknown peer %s for piece %d: probe budget exhausted (%d)",
+                            peer_key,
+                            piece_index,
+                            unknown_probe_limit,
+                        )
+                        continue
                     self.logger.info(
                         "%s: Requesting piece %d from %s (no bitfield/HAVE messages yet, pieces_known=0, "
-                        "peers_with_availability=%d/%d) - probing to discover if peer has piece via HAVE messages",
+                        "peers_with_availability=%d/%d) - allowing single-peer probe",
                         mode_str,
                         piece_index,
                         peer_key,
@@ -2151,8 +2412,12 @@ class AsyncPieceManager:
                     pipeline_utilization * 100,
                 )
 
-            # Peer passed all filters - add to available list
-            available_peers.append(connection)
+            # Peer passed all filters - prefer peers with confirmed availability and
+            # keep unknown peers as a narrowly capped fallback.
+            if has_piece:
+                known_requestable_peers.append(connection)
+            else:
+                unknown_probe_candidates.append(connection)
             self.logger.debug(
                 "Peer %s is available for piece %d (pipeline: %d/%d slots available, %.1f%% utilized)",
                 peer_key,
@@ -2162,13 +2427,59 @@ class AsyncPieceManager:
                 pipeline_utilization * 100,
             )
 
+        available_peers = list(known_requestable_peers)
+        if not available_peers:
+            available_peers = unknown_probe_candidates[:unknown_probe_limit]
+        elif (
+            len(known_requestable_peers) == 1
+            and unknown_probe_candidates
+            and len(active_peers) >= 3
+        ):
+            self.logger.info(
+                "WEAK_SWARM_PROBE: Adding %d capped unknown peer probe(s) alongside the sole known peer for piece %d",
+                min(len(unknown_probe_candidates), unknown_probe_limit),
+                piece_index,
+            )
+            available_peers.extend(unknown_probe_candidates[:unknown_probe_limit])
+
+        probe_peers = [
+            peer for peer in available_peers if peer not in known_requestable_peers
+        ]
+        known_available_peers = [
+            peer for peer in available_peers if peer in known_requestable_peers
+        ]
+        if (
+            len(known_requestable_peers) == 1
+            and len(active_peers) >= 3
+            and not probe_peers
+        ):
+            for peer in active_peers:
+                if peer in known_requestable_peers:
+                    continue
+                peer_key = str(peer.peer_info)
+                peer_avail = self.peer_availability.get(peer_key)
+                pieces_known = len(peer_avail.pieces) if peer_avail else 0
+                if hasattr(peer, "peer_state") and hasattr(
+                    peer.peer_state, "pieces_we_have"
+                ):
+                    pieces_known = max(
+                        pieces_known, len(peer.peer_state.pieces_we_have)
+                    )
+                if (
+                    pieces_known == 0
+                    and peer.can_request()
+                    and peer.get_available_pipeline_slots() > 0
+                ):
+                    probe_peers.append(peer)
+                    break
+
         # CRITICAL FIX: Only request pieces from best seeders
         # Filter to seeders first, then sort by download speed
         # This maximizes connections but only uses best seeders for requests
         seeder_peers = []
         leecher_peers = []
 
-        for peer in available_peers:
+        for peer in known_available_peers:
             # Check if peer is a seeder (has all pieces)
             is_seeder = False
             if hasattr(peer, "peer_state") and hasattr(peer.peer_state, "bitfield"):
@@ -2202,6 +2513,8 @@ class AsyncPieceManager:
         # CRITICAL FIX: Only use seeders for piece requests if available
         # If no seeders available, fall back to best leechers
         peers_to_use = seeder_peers if seeder_peers else leecher_peers
+        if probe_peers:
+            peers_to_use = list(peers_to_use) + probe_peers[:unknown_probe_limit]
 
         if seeder_peers:
             self.logger.info(
@@ -2249,65 +2562,7 @@ class AsyncPieceManager:
             # This ensures we prefer fast peers but also consider capacity
             return (rate_score * 0.7) + (pipeline_score * 0.3)
 
-        # CRITICAL FIX: Only request pieces from best seeders
-        # Filter to seeders first, then sort by download speed
-        # This maximizes connections but only uses best seeders for requests
-        seeder_peers = []
-        leecher_peers = []
-
-        for peer in available_peers:
-            # Check if peer is a seeder (has all pieces)
-            is_seeder = False
-            if hasattr(peer, "peer_state") and hasattr(peer.peer_state, "bitfield"):
-                bitfield = peer.peer_state.bitfield
-                if bitfield and self.num_pieces > 0:
-                    bits_set = sum(
-                        1
-                        for i in range(self.num_pieces)
-                        if i < len(bitfield) and bitfield[i]
-                    )
-                    completion_percent = (
-                        bits_set / self.num_pieces if self.num_pieces > 0 else 0.0
-                    )
-                    is_seeder = completion_percent >= 0.99  # 99%+ complete = seeder
-                elif (
-                    hasattr(peer.peer_state, "pieces_we_have")
-                    and peer.peer_state.pieces_we_have
-                ):
-                    # Check HAVE messages - if peer has 99%+ of pieces, consider it a seeder
-                    pieces_have = len(peer.peer_state.pieces_we_have)
-                    completion_percent = (
-                        pieces_have / self.num_pieces if self.num_pieces > 0 else 0.0
-                    )
-                    is_seeder = completion_percent >= 0.99
-
-            if is_seeder:
-                seeder_peers.append(peer)
-            else:
-                leecher_peers.append(peer)
-
-        # CRITICAL FIX: Only use seeders for piece requests if available
-        # If no seeders available, fall back to best leechers
-        peers_to_use = seeder_peers if seeder_peers else leecher_peers
-
-        if seeder_peers:
-            self.logger.info(
-                "PIECE_MANAGER: Using %d seeder(s) for piece %d requests (keeping %d leecher(s) connected for PEX/DHT)",
-                len(seeder_peers),
-                piece_index,
-                len(leecher_peers),
-            )
-        else:
-            self.logger.info(
-                "PIECE_MANAGER: No seeders available for piece %d, using %d best leecher(s)",
-                piece_index,
-                len(peers_to_use),
-            )
-
         # Sort by combined score (descending - best peers first)
-        # Use only the filtered peers (seeders first, or best leechers if no seeders)
-        # Sort by combined score (descending - best peers first)
-        # Use only the filtered peers (seeders first, or best leechers if no seeders)
         peers_to_use.sort(key=peer_score, reverse=True)
 
         # Log top peers for debugging
@@ -2344,16 +2599,29 @@ class AsyncPieceManager:
         missing_blocks: list[PieceBlock],
         available_peers: list[AsyncPeerConnection],
         peer_manager: Any,
-    ) -> None:
+    ) -> int:
         """Request blocks in normal mode (no duplicates).
 
         IMPROVEMENT: Ensures all capable peers get minimum allocation,
         then distributes remaining blocks based on bandwidth and capacity.
         No hard caps - uses soft limits based on peer capacity.
         """
+
         # CRITICAL FIX: Filter peers and update tracking atomically to prevent race conditions
         # This ensures we don't request the same piece from the same peer concurrently
+        def peer_has_confirmed_piece(peer: AsyncPeerConnection) -> bool:
+            peer_key = str(peer.peer_info)
+            return (
+                peer_key in self.peer_availability
+                and piece_index in self.peer_availability[peer_key].pieces
+            ) or (
+                hasattr(peer, "peer_state")
+                and hasattr(peer.peer_state, "pieces_we_have")
+                and piece_index in peer.peer_state.pieces_we_have
+            )
+
         capable_peers = []
+        requests_sent = 0
         async with self.lock:
             for peer in available_peers:
                 if not peer.can_request():
@@ -2430,7 +2698,7 @@ class AsyncPieceManager:
                 piece = self.pieces[piece_index]
                 if piece.state == PieceState.REQUESTED:
                     piece.state = PieceState.MISSING
-            return
+            return 0
 
         # IMPROVEMENT: Ensure minimum distribution to all capable peers
         # Calculate minimum blocks per peer (ensures diversity)
@@ -2612,6 +2880,14 @@ class AsyncPieceManager:
                     # Request all allocated blocks, respecting soft capacity limits and throttling
                     # If peer is near capacity, still send requests but prioritize others next time
                     requests_to_send = peer_requests
+                    if not peer_has_confirmed_piece(peer_connection):
+                        requests_to_send = peer_requests[:1]
+                        self._piece_selection_metrics["unknown_peer_probes"] += 1
+                        self.logger.info(
+                            "PIECE_MANAGER: Limiting piece %d to a single probe request for unknown peer %s",
+                            piece_index,
+                            peer_key,
+                        )
                     if throttle_requests:
                         # Limit requests per peer when throttling
                         # CRITICAL FIX: Ensure at least 1 request is sent even when throttling
@@ -2734,6 +3010,7 @@ class AsyncPieceManager:
                                 ):
                                     block.requested_from.add(peer_key)
                                     break
+                            requests_sent += 1
                         except Exception as req_error:
                             # Track failed requests - peer might be refusing
                             self.logger.warning(
@@ -2782,6 +3059,14 @@ class AsyncPieceManager:
                 # Take blocks for this peer
                 peer_blocks = remaining_blocks[:blocks_for_peer]
                 remaining_blocks = remaining_blocks[blocks_for_peer:]
+                if not peer_has_confirmed_piece(peer_connection):
+                    peer_blocks = peer_blocks[:1]
+                    self._piece_selection_metrics["unknown_peer_probes"] += 1
+                    self.logger.info(
+                        "PIECE_MANAGER: Limiting fallback piece %d to a single probe request for unknown peer %s",
+                        piece_index,
+                        peer_key,
+                    )
 
                 # Request blocks from this peer (soft capacity check)
                 outstanding = (
@@ -2932,6 +3217,8 @@ class AsyncPieceManager:
                             # Don't retry immediately - peer might be refusing requests
                             continue
 
+        return requests_sent
+
     def _calculate_adaptive_endgame_duplicates(self) -> int:
         """Calculate adaptive duplicate count for endgame mode.
 
@@ -2996,10 +3283,11 @@ class AsyncPieceManager:
         missing_blocks: list[PieceBlock],
         available_peers: list[AsyncPeerConnection],
         peer_manager: Any,
-    ) -> None:
+    ) -> int:
         """Request blocks in endgame mode (with duplicates)."""
         # Calculate adaptive duplicate count
         adaptive_duplicates = self._calculate_adaptive_endgame_duplicates()
+        requests_sent = 0
 
         # In endgame, request each block from multiple peers
         for block in missing_blocks:
@@ -3062,6 +3350,7 @@ class AsyncPieceManager:
                                 self._requested_pieces_per_peer[peer_key] = set()
                             self._requested_pieces_per_peer[peer_key].add(piece_index)
                         block.requested_from.add(peer_key)
+                        requests_sent += 1
                     except Exception as req_error:
                         # Track failed requests
                         self._piece_selection_metrics["failed_piece_requests"] += 1
@@ -3071,6 +3360,7 @@ class AsyncPieceManager:
                             piece_index,
                             req_error,
                         )
+        return requests_sent
 
     async def handle_piece_block(
         self,
@@ -3642,6 +3932,7 @@ class AsyncPieceManager:
                         if hasattr(piece.state, "value")
                         else str(piece.state)
                     )
+                    self._piece_selection_metrics["hash_verification_failures"] += 1
                     self.logger.warning(
                         "PIECE_MANAGER: Hash verification failed for piece %d (was %s) - resetting to MISSING for re-download",
                         piece_index,
@@ -8358,6 +8649,30 @@ class AsyncPieceManager:
                     checkpoint.piece_states = {}
                     checkpoint.verified_pieces = []
 
+            # Restore download state
+            # download_stats is guaranteed to be non-None by validator, but type checker doesn't know
+            if (
+                checkpoint.download_stats is None
+            ):  # pragma: no cover - Validator ensures non-None
+                checkpoint.download_stats = DownloadStats()  # type: ignore[assignment]
+            self.download_start_time = (
+                checkpoint.download_stats.start_time
+            )  # pragma: no cover - State restoration
+            self.bytes_downloaded = checkpoint.download_stats.bytes_downloaded
+            self.endgame_mode = checkpoint.endgame_mode
+
+            if self._metadata_incomplete:
+                self._deferred_checkpoint = checkpoint.model_copy(deep=True)
+                self._piece_layout_provisional = True
+                self._clear_piece_runtime_tracking(clear_verified=True)
+                self.logger.info(
+                    "Deferring checkpoint piece-state restore until metadata is complete "
+                    "(total_pieces=%d, piece_length=%d)",
+                    checkpoint.total_pieces,
+                    checkpoint.piece_length,
+                )
+                return
+
             # CRITICAL FIX: Validate checkpoint data before restoring
             # Ensure pieces list is initialized and matches checkpoint total_pieces
             if checkpoint.total_pieces > 0 and len(self.pieces) == 0:
@@ -8365,41 +8680,15 @@ class AsyncPieceManager:
                     "Checkpoint has total_pieces=%d but pieces list is empty - initializing pieces",
                     checkpoint.total_pieces,
                 )
-                # Initialize pieces if not already done
                 if self.num_pieces == 0:
                     self.num_pieces = checkpoint.total_pieces
                 if self.piece_length == 0:
                     self.piece_length = checkpoint.piece_length
-
-                # Initialize pieces
-                for i in range(self.num_pieces):
-                    piece = PieceData(i, self.piece_length)
-                    if self.config.strategy.streaming_mode:
-                        if i == 0:
-                            piece.priority = 1000
-                        elif i == self.num_pieces - 1:
-                            piece.priority = 100
-                        else:
-                            piece.priority = max(0, 1000 - i)
-                    if self.file_selection_manager:
-                        file_priority = self.file_selection_manager.get_piece_priority(
-                            i
-                        )
-                        piece.priority = max(piece.priority, file_priority * 100)
-                    self.pieces.append(piece)
+                self._build_piece_layout()
                 self.logger.info(
                     "Initialized %d pieces from checkpoint", len(self.pieces)
                 )
-                # CRITICAL FIX: Ensure num_pieces is set after initializing pieces from checkpoint
-                # This ensures start_download() can use the pieces even if metadata isn't available
-                if self.num_pieces == 0 and len(self.pieces) > 0:
-                    self.num_pieces = len(self.pieces)
-                    self.logger.info(
-                        "Set num_pieces=%d from checkpoint pieces (metadata not yet available)",
-                        self.num_pieces,
-                    )
 
-            # Validate checkpoint total_pieces matches current num_pieces
             if checkpoint.total_pieces != self.num_pieces and self.num_pieces > 0:
                 self.logger.warning(
                     "Checkpoint total_pieces (%d) doesn't match current num_pieces (%d) - "
@@ -8408,7 +8697,6 @@ class AsyncPieceManager:
                     self.num_pieces,
                 )
 
-            # Validate checkpoint verified_pieces count is reasonable
             if len(checkpoint.verified_pieces) > self.num_pieces:
                 self.logger.warning(
                     "Checkpoint has %d verified pieces but only %d total pieces - "
@@ -8422,142 +8710,22 @@ class AsyncPieceManager:
                     if 0 <= idx < self.num_pieces
                 ]
 
-            # Restore download state
-            # download_stats is guaranteed to be non-None by validator, but type checker doesn't know
-            if (
-                checkpoint.download_stats is None
-            ):  # pragma: no cover - Validator ensures non-None
-                checkpoint.download_stats = DownloadStats()  # type: ignore[assignment]
-            self.download_start_time = (
-                checkpoint.download_stats.start_time
-            )  # pragma: no cover - State restoration
-            self.bytes_downloaded = checkpoint.download_stats.bytes_downloaded
-            self.endgame_mode = checkpoint.endgame_mode
-
-            # CRITICAL FIX: Restore piece states with validation
-            # Only restore states for pieces that exist and are within valid range
-            restored_count = 0
-            skipped_count = 0
-            state_corrected_count = 0
-            verified_pieces_set = set(checkpoint.verified_pieces)
-
-            for (
-                piece_idx,
-                piece_state,
-            ) in (
-                checkpoint.piece_states.items()
-            ):  # pragma: no cover - Piece state restoration loop
-                if 0 <= piece_idx < len(self.pieces):
-                    piece = self.pieces[piece_idx]
-                    is_verified = piece_idx in verified_pieces_set
-
-                    # CRITICAL FIX: For verified pieces, mark all blocks as received
-                    # since the data is on disk (verified pieces are written to disk)
-                    # This prevents false "checkpoint corruption" warnings
-                    if is_verified:
-                        # Mark all blocks as received for verified pieces
-                        # The actual data is on disk, so we don't need it in memory
-                        for block in piece.blocks:
-                            block.received = True
-                            # Don't store the actual data - it's on disk
-                            # block.data = b""  # Keep empty to save memory
-
-                    # CRITICAL FIX: Validate piece state - don't mark as verified unless in verified_pieces set
-                    # This prevents incorrect state restoration from corrupted checkpoints
-                    if piece_state == PieceStateModel.VERIFIED:
-                        if not is_verified:
-                            self.logger.warning(
-                                "Checkpoint piece_states marks piece %d as VERIFIED but not in verified_pieces - "
-                                "marking as COMPLETE instead",
-                                piece_idx,
-                            )
-                            piece.state = PieceState.COMPLETE
-                            piece.hash_verified = False
-                        else:
-                            piece.state = PieceState.VERIFIED
-                            piece.hash_verified = True
-                    else:
-                        piece.state = PieceState(piece_state.value)
-                        piece.hash_verified = piece_state == PieceStateModel.VERIFIED
-
-                    # CRITICAL FIX: Validate that restored state matches actual block completion
-                    # Skip validation for verified pieces since their data is on disk, not in memory
-                    # For other pieces, if checkpoint says COMPLETE/VERIFIED but blocks aren't received, reset to MISSING
-                    if (
-                        not is_verified
-                        and piece_state
-                        in (PieceStateModel.COMPLETE, PieceStateModel.VERIFIED)
-                        and not piece.is_complete()
-                    ):
-                        self.logger.warning(
-                            "Checkpoint marks piece %d as %s but blocks are not complete - "
-                            "resetting to MISSING (possible checkpoint corruption)",
-                            piece_idx,
-                            piece_state.value,
-                        )
-                        piece.state = PieceState.MISSING
-                        piece.hash_verified = False
-                        state_corrected_count += 1
-
-                    restored_count += 1
-                else:
-                    skipped_count += 1
-                    if skipped_count <= 5:  # Log first 5 skipped pieces
-                        self.logger.debug(
-                            "Skipping checkpoint piece state for index %d (out of range: 0-%d)",
-                            piece_idx,
-                            len(self.pieces) - 1,
-                        )
-
-            if skipped_count > 5:
-                self.logger.debug(
-                    "Skipped %d additional checkpoint piece states (out of range)",
-                    skipped_count - 5,
+            if not self._checkpoint_geometry_matches_current_layout(checkpoint):
+                self._clear_piece_runtime_tracking(clear_verified=True)
+                self.logger.warning(
+                    "Checkpoint geometry does not match current layout "
+                    "(checkpoint pieces=%d, piece_length=%d, current pieces=%d, piece_length=%d). "
+                    "Skipping checkpoint piece-state restore.",
+                    checkpoint.total_pieces,
+                    checkpoint.piece_length,
+                    self.num_pieces,
+                    self.piece_length,
                 )
+                return
 
-            # CRITICAL FIX: Restore verified pieces with validation
-            # For pieces in verified_pieces, ensure they're marked as VERIFIED and blocks are marked as received
-            # (blocks were already marked as received above, but ensure state is correct)
-            validated_verified = set()
-            for piece_idx in verified_pieces_set:
-                if 0 <= piece_idx < len(self.pieces):
-                    piece = self.pieces[piece_idx]
-                    # Ensure verified pieces are marked as VERIFIED and all blocks are received
-                    if piece.state != PieceState.VERIFIED:
-                        self.logger.debug(
-                            "Piece %d in verified_pieces but state is %s - marking as VERIFIED",
-                            piece_idx,
-                            piece.state,
-                        )
-                        piece.state = PieceState.VERIFIED
-                        piece.hash_verified = True
-                        # Ensure all blocks are marked as received (data is on disk)
-                        for block in piece.blocks:
-                            block.received = True
-                    validated_verified.add(piece_idx)
-                else:
-                    self.logger.debug(
-                        "Skipping verified piece index %d (out of range: 0-%d)",
-                        piece_idx,
-                        len(self.pieces) - 1,
-                    )
-
-            self.verified_pieces = validated_verified
-
-            # Restore completed pieces (pieces that are complete but not yet verified)
-            self.completed_pieces = set()
-            for i, piece in enumerate(
-                self.pieces
-            ):  # pragma: no cover - Completed pieces restoration loop
-                if piece.state == PieceState.COMPLETE:
-                    self.completed_pieces.add(i)
-
-            # Restore peer availability if available
-            if (
-                checkpoint.peer_info and "piece_frequency" in checkpoint.peer_info
-            ):  # pragma: no cover - Peer info restoration
-                self.piece_frequency = Counter(checkpoint.peer_info["piece_frequency"])
-
+            restored_count, skipped_count, state_corrected_count = (
+                self._apply_checkpoint_piece_states(checkpoint)
+            )
             self.logger.info(
                 "Restored checkpoint: %d piece states, %d verified pieces (validated), "
                 "%d completed pieces, %d skipped states, %d state corrections",

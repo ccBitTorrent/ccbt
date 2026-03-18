@@ -99,6 +99,7 @@ class PeerStats:
     upload_rate: float = 0.0  # bytes/second
     request_latency: float = 0.0  # average latency in seconds
     last_activity: float = field(default_factory=time.time)
+    last_rate_sample_time: float = field(default_factory=time.time)
     snub_count: int = 0
     consecutive_failures: int = 0
     performance_score: float = (
@@ -161,6 +162,9 @@ class AsyncPeerConnection:
 
     # Reserved bytes from handshake (for extension support detection)
     reserved_bytes: Optional[bytes] = None
+    ut_metadata_id: Optional[int] = None
+    metadata_size: Optional[int] = None
+    metadata_exchange_started_at: float = 0.0
 
     # Per-peer rate limiting (upload throttling)
     per_peer_upload_limit_kib: int = 0  # KiB/s, 0 = unlimited
@@ -1059,6 +1063,92 @@ class AsyncPeerConnectionManager:
                 ):
                     quality_active += 1
         return quality_active, total_active
+
+    def _connection_has_piece_info(self, connection: AsyncPeerConnection) -> bool:
+        """Return whether a connection has advertised useful piece availability."""
+        bitfield = getattr(connection.peer_state, "bitfield", None)
+        if bitfield is not None and len(bitfield) > 0:
+            return True
+        pieces_we_have = getattr(connection.peer_state, "pieces_we_have", None)
+        return pieces_we_have is not None and len(pieces_we_have) > 0
+
+    def _connection_supports_metadata(self, connection: AsyncPeerConnection) -> bool:
+        """Return whether a connection advertised ut_metadata support."""
+        ut_metadata_id = getattr(connection, "ut_metadata_id", None)
+        metadata_size = getattr(connection, "metadata_size", None)
+        if ut_metadata_id is not None and metadata_size:
+            return True
+        extension_manager = getattr(self, "extension_manager", None)
+        if extension_manager is None:
+            return False
+        peer_id = str(connection.peer_info) if connection.peer_info else ""
+        if not peer_id:
+            return False
+        peer_extensions = extension_manager.get_peer_extensions(peer_id)
+        if not isinstance(peer_extensions, dict):
+            return False
+        m_dict = peer_extensions.get("m", {})
+        if not isinstance(m_dict, dict):
+            return False
+        return (
+            m_dict.get("ut_metadata") is not None
+            and peer_extensions.get("metadata_size") is not None
+        )
+
+    async def get_connection_summary(self) -> dict[str, int]:
+        """Return a summary of connection states useful for recovery logic."""
+        summary = {
+            "total_connections": 0,
+            "connecting_connections": 0,
+            "handshake_complete_connections": 0,
+            "active_connections": 0,
+            "unchoked_connections": 0,
+            "requestable_connections": 0,
+            "metadata_capable_connections": 0,
+            "metadata_exchange_active": 0,
+            "peers_with_piece_info": 0,
+            "productive_connections": 0,
+        }
+        async with self.connection_lock:
+            summary["total_connections"] = len(self.connections)
+            for peer_key, connection in self.connections.items():
+                if connection.state in (
+                    ConnectionState.CONNECTING,
+                    ConnectionState.HANDSHAKE_SENT,
+                    ConnectionState.CONNECTED,
+                ):
+                    summary["connecting_connections"] += 1
+                if connection.state in (
+                    ConnectionState.HANDSHAKE_RECEIVED,
+                    ConnectionState.BITFIELD_SENT,
+                    ConnectionState.BITFIELD_RECEIVED,
+                    ConnectionState.ACTIVE,
+                    ConnectionState.CHOKED,
+                ):
+                    summary["handshake_complete_connections"] += 1
+                if connection.is_active():
+                    summary["active_connections"] += 1
+                if connection.is_active() and not connection.peer_choking:
+                    summary["unchoked_connections"] += 1
+                if connection.can_request():
+                    summary["requestable_connections"] += 1
+                has_piece_info = self._connection_has_piece_info(connection)
+                if has_piece_info:
+                    summary["peers_with_piece_info"] += 1
+                metadata_capable = self._connection_supports_metadata(connection)
+                if metadata_capable:
+                    summary["metadata_capable_connections"] += 1
+                if peer_key in self._metadata_exchange_state:
+                    summary["metadata_exchange_active"] += 1
+                if (
+                    connection.can_request()
+                    or has_piece_info
+                    or metadata_capable
+                    or getattr(connection.stats, "blocks_delivered", 0) > 0
+                    or getattr(connection.stats, "bytes_downloaded", 0) > 0
+                ):
+                    summary["productive_connections"] += 1
+        return summary
 
     async def _prune_probation_peers(self, reason: str) -> None:
         """Disconnect probation peers that never became useful."""
@@ -7111,6 +7201,15 @@ class AsyncPeerConnectionManager:
                             "metadata_size"
                         ) or handshake_data.get(b"metadata_size")
 
+                    if ut_metadata_id is not None:
+                        with contextlib.suppress(TypeError, ValueError):
+                            ut_metadata_id = int(ut_metadata_id)
+                    if metadata_size is not None:
+                        with contextlib.suppress(TypeError, ValueError):
+                            metadata_size = int(metadata_size)
+                    connection.ut_metadata_id = ut_metadata_id
+                    connection.metadata_size = metadata_size
+
                     # CRITICAL FIX: Log extracted values at INFO level
                     self.logger.info(
                         "EXTENSION_HANDSHAKE_EXTRACTED: from %s, ut_metadata_id=%s, metadata_size=%s, has_piece_manager=%s, num_pieces=%s",
@@ -7162,6 +7261,14 @@ class AsyncPeerConnectionManager:
                         and ut_metadata_id is not None
                         and metadata_size is not None
                     ):
+                        if hasattr(connection.peer_info, "ip") and hasattr(
+                            connection.peer_info, "port"
+                        ):
+                            peer_key = (
+                                f"{connection.peer_info.ip}:{connection.peer_info.port}"
+                            )
+                        else:
+                            peer_key = str(connection.peer_info)
                         self.logger.info(
                             "MAGNET_METADATA_EXCHANGE: Peer %s supports ut_metadata (id=%s, metadata_size=%d). Triggering metadata exchange.",
                             connection.peer_info,
@@ -7172,7 +7279,20 @@ class AsyncPeerConnectionManager:
                         # Use the existing connection's reader/writer for metadata exchange
                         if connection.reader and connection.writer:
                             try:
+                                existing_exchange = self._metadata_exchange_state.get(
+                                    peer_key
+                                )
+                                if existing_exchange and not existing_exchange.get(
+                                    "complete", False
+                                ):
+                                    self.logger.info(
+                                        "MAGNET_METADATA_EXCHANGE: Exchange already active for %s (peer_key=%s), skipping duplicate trigger",
+                                        connection.peer_info,
+                                        peer_key,
+                                    )
+                                    return
                                 # Trigger metadata exchange asynchronously (track task)
+                                connection.metadata_exchange_started_at = time.time()
                                 task = asyncio.create_task(
                                     self._trigger_metadata_exchange(
                                         connection, int(ut_metadata_id), handshake_data
@@ -7192,10 +7312,13 @@ class AsyncPeerConnectionManager:
                                 )
                     elif is_magnet_link:
                         self.logger.warning(
-                            "MAGNET_METADATA_EXCHANGE: Cannot trigger metadata exchange for %s: ut_metadata_id=%s, metadata_size=%s",
+                            "MAGNET_METADATA_EXCHANGE: Cannot trigger metadata exchange for %s: ut_metadata_id=%s, metadata_size=%s, handshake_keys=%s",
                             connection.peer_info,
                             ut_metadata_id,
                             metadata_size,
+                            sorted(str(key) for key in handshake_data)
+                            if isinstance(handshake_data, dict)
+                            else [],
                         )
 
                     # Handle SSL extension handshake
@@ -7868,7 +7991,23 @@ class AsyncPeerConnectionManager:
         """Handle choke message."""
         connection.peer_choking = True
         connection.state = ConnectionState.CHOKED
-        self.logger.debug("Peer %s choked us", connection.peer_info)
+        cancelled_requests = list(connection.outstanding_requests.keys())
+        connection.outstanding_requests.clear()
+        if self.piece_manager and hasattr(self.piece_manager, "handle_peer_choked"):
+            try:
+                await self.piece_manager.handle_peer_choked(connection)
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to requeue requests for choked peer %s: %s",
+                    connection.peer_info,
+                    e,
+                )
+        self.logger.info(
+            "Peer %s choked us (cancelled %d outstanding request(s), state=%s)",
+            connection.peer_info,
+            len(cancelled_requests),
+            connection.state.value,
+        )
 
     async def _handle_unchoke(
         self,
@@ -11541,8 +11680,13 @@ class AsyncPeerConnectionManager:
                 await self._cleanup_timed_out_requests(connection)
 
                 # Calculate rates
+                sample_start = getattr(
+                    connection.stats,
+                    "last_rate_sample_time",
+                    connection.stats.last_activity,
+                )
                 time_diff = (
-                    current_time - connection.stats.last_activity
+                    current_time - sample_start
                 )  # pragma: no cover - Same context
                 if time_diff > 0:  # pragma: no cover - Same context
                     connection.stats.download_rate = (
@@ -11579,9 +11723,7 @@ class AsyncPeerConnectionManager:
                 # Reset counters
                 connection.stats.bytes_downloaded = 0  # pragma: no cover - Same context
                 connection.stats.bytes_uploaded = 0  # pragma: no cover - Same context
-                connection.stats.last_activity = (
-                    current_time  # pragma: no cover - Same context
-                )
+                connection.stats.last_rate_sample_time = current_time
 
     async def _log_connection_diagnostics(self) -> None:
         """Log comprehensive connection diagnostics to help identify connection issues.
@@ -12356,7 +12498,7 @@ class AsyncPeerConnectionManager:
         self,
         connection: AsyncPeerConnection,
         ut_metadata_id: int,
-        handshake_data: dict[str, Any],
+        handshake_data: dict[Any, Any],
     ) -> None:
         """Trigger metadata exchange for magnet links using existing connection.
 
@@ -12374,8 +12516,13 @@ class AsyncPeerConnectionManager:
                 )
                 return
 
-            # Get metadata size from handshake
+            # Get metadata size from handshake (support both string and bytes keys)
             metadata_size = handshake_data.get("metadata_size")
+            if metadata_size is None:
+                metadata_size = handshake_data.get(b"metadata_size")
+            if metadata_size is not None:
+                with contextlib.suppress(TypeError, ValueError):
+                    metadata_size = int(metadata_size)
             if not metadata_size:
                 self.logger.debug(
                     "Peer %s supports ut_metadata but metadata_size not in handshake",
@@ -12448,6 +12595,7 @@ class AsyncPeerConnectionManager:
                 "pieces": piece_data_dict,
                 "events": piece_events,
                 "complete": False,
+                "started_at": time.time(),
             }
 
             self.logger.info(
@@ -13091,226 +13239,208 @@ class AsyncPeerConnectionManager:
                                         e,
                                     )
 
-                            # Update piece_manager with new metadata
-                            if "pieces_info" in updated_torrent_data:
-                                pieces_info = updated_torrent_data["pieces_info"]
-                                if "num_pieces" in pieces_info:
-                                    self.piece_manager.num_pieces = int(
-                                        pieces_info["num_pieces"]
-                                    )
-                                    self.logger.info(
-                                        "Updated piece_manager.num_pieces to %d from metadata",
-                                        self.piece_manager.num_pieces,
-                                    )
-                                if "piece_length" in pieces_info:
-                                    self.piece_manager.piece_length = int(
-                                        pieces_info["piece_length"]
-                                    )
-                                if "piece_hashes" in pieces_info:
-                                    self.piece_manager.piece_hashes = pieces_info[
-                                        "piece_hashes"
-                                    ]
+                            if hasattr(self.piece_manager, "update_from_metadata"):
+                                await self.piece_manager.update_from_metadata(
+                                    updated_torrent_data
+                                )
 
-                                # Trigger piece manager update
-                                if hasattr(self.piece_manager, "update_from_metadata"):
-                                    await self.piece_manager.update_from_metadata(
-                                        updated_torrent_data
-                                    )
-
-                                    self.logger.info(
-                                        "Metadata exchange complete for %s. Piece manager updated with %d pieces.",
+                                self.logger.info(
+                                    "Metadata exchange complete for %s. Piece manager updated with %d pieces.",
+                                    connection.peer_info,
+                                    self.piece_manager.num_pieces,
+                                )
+                                if (
+                                    self.piece_manager.num_pieces <= 0
+                                    or len(self.piece_manager.pieces)
+                                    != self.piece_manager.num_pieces
+                                ):
+                                    self.logger.warning(
+                                        "METADATA_COMPLETE: Piece manager invariants not satisfied after metadata update for %s "
+                                        "(num_pieces=%d, pieces_count=%d)",
                                         connection.peer_info,
                                         self.piece_manager.num_pieces,
+                                        len(self.piece_manager.pieces),
                                     )
 
-                                    # CRITICAL FIX: Re-process all stored bitfields from existing connections
-                                    # When metadata becomes available, we need to re-process bitfields that were
-                                    # received before metadata was available (magnet link case)
-                                    await self._reprocess_stored_bitfields()
+                                # CRITICAL FIX: Re-process all stored bitfields from existing connections
+                                # When metadata becomes available, we need to re-process bitfields that were
+                                # received before metadata was available (magnet link case)
+                                await self._reprocess_stored_bitfields()
 
-                                    # CRITICAL FIX: After metadata is available, send our bitfield to all connected peers
-                                    # This is essential because peers need to know what pieces we have
-                                    # For magnet links, we may have skipped sending bitfield earlier when metadata wasn't available
-                                    # BitTorrent spec compliant: send bitfield and INTERESTED after metadata exchange
-                                    send_bitfield_after_metadata = getattr(
-                                        self.config.network,
-                                        "send_bitfield_after_metadata",
-                                        True,
-                                    )
-                                    send_interested_after_metadata = getattr(
-                                        self.config.network,
-                                        "send_interested_after_metadata",
-                                        True,
-                                    )
+                                # CRITICAL FIX: After metadata is available, send our bitfield to all connected peers
+                                # This is essential because peers need to know what pieces we have
+                                # For magnet links, we may have skipped sending bitfield earlier when metadata wasn't available
+                                # BitTorrent spec compliant: send bitfield and INTERESTED after metadata exchange
+                                send_bitfield_after_metadata = getattr(
+                                    self.config.network,
+                                    "send_bitfield_after_metadata",
+                                    True,
+                                )
+                                send_interested_after_metadata = getattr(
+                                    self.config.network,
+                                    "send_interested_after_metadata",
+                                    True,
+                                )
 
-                                    if (
-                                        send_bitfield_after_metadata
-                                        or send_interested_after_metadata
-                                    ):
-                                        try:
-                                            async with self.connection_lock:
-                                                connected_peers = [
-                                                    conn
-                                                    for conn in self.connections.values()
-                                                    if conn.is_connected()
-                                                    and conn.writer is not None
-                                                    and conn.reader is not None
-                                                ]
+                                if (
+                                    send_bitfield_after_metadata
+                                    or send_interested_after_metadata
+                                ):
+                                    try:
+                                        async with self.connection_lock:
+                                            connected_peers = [
+                                                conn
+                                                for conn in self.connections.values()
+                                                if conn.is_connected()
+                                                and conn.writer is not None
+                                                and conn.reader is not None
+                                            ]
 
-                                            if connected_peers:
-                                                self.logger.info(
-                                                    "Sending bitfield and INTERESTED to %d connected peer(s) after metadata fetch to encourage bitfields/HAVE messages",
-                                                    len(connected_peers),
-                                                )
-                                                for peer_conn in connected_peers:
-                                                    # CRITICAL FIX: Validate connection is still valid before sending
-                                                    if (
-                                                        not peer_conn.is_connected()
-                                                        or peer_conn.writer is None
-                                                    ):
-                                                        self.logger.debug(
-                                                            "Skipping %s - connection no longer valid",
-                                                            peer_conn.peer_info,
+                                        if connected_peers:
+                                            self.logger.info(
+                                                "Sending bitfield and INTERESTED to %d connected peer(s) after metadata fetch to encourage bitfields/HAVE messages",
+                                                len(connected_peers),
+                                            )
+                                            for peer_conn in connected_peers:
+                                                # CRITICAL FIX: Validate connection is still valid before sending
+                                                if (
+                                                    not peer_conn.is_connected()
+                                                    or peer_conn.writer is None
+                                                ):
+                                                    self.logger.debug(
+                                                        "Skipping %s - connection no longer valid",
+                                                        peer_conn.peer_info,
+                                                    )
+                                                    continue
+
+                                                # Send bitfield if enabled
+                                                if send_bitfield_after_metadata:
+                                                    try:
+                                                        # CRITICAL FIX: Send our bitfield first (so peer knows what we have)
+                                                        # This is especially important for magnet links where bitfield was skipped earlier
+                                                        await self._send_bitfield(
+                                                            peer_conn
                                                         )
+                                                        self.logger.debug(
+                                                            "Sent bitfield to %s after metadata fetch (state=%s)",
+                                                            peer_conn.peer_info,
+                                                            peer_conn.state.value
+                                                            if hasattr(
+                                                                peer_conn.state,
+                                                                "value",
+                                                            )
+                                                            else str(peer_conn.state),
+                                                        )
+                                                    except Exception as e:
+                                                        self.logger.warning(
+                                                            "Failed to send bitfield to %s after metadata fetch (connection may have closed): %s",
+                                                            peer_conn.peer_info,
+                                                            e,
+                                                        )
+                                                        # CRITICAL FIX: Don't disconnect on error - peer might still be usable
                                                         continue
 
-                                                    # Send bitfield if enabled
-                                                    if send_bitfield_after_metadata:
-                                                        try:
-                                                            # CRITICAL FIX: Send our bitfield first (so peer knows what we have)
-                                                            # This is especially important for magnet links where bitfield was skipped earlier
-                                                            await self._send_bitfield(
-                                                                peer_conn
-                                                            )
+                                                # Send INTERESTED if enabled
+                                                if (
+                                                    send_interested_after_metadata
+                                                    and not peer_conn.am_interested
+                                                ):
+                                                    try:
+                                                        # CRITICAL FIX: Verify connection is still valid before sending
+                                                        if (
+                                                            not peer_conn.is_connected()
+                                                            or peer_conn.writer is None
+                                                        ):
                                                             self.logger.debug(
-                                                                "Sent bitfield to %s after metadata fetch (state=%s)",
+                                                                "Skipping INTERESTED to %s - connection no longer valid",
                                                                 peer_conn.peer_info,
-                                                                peer_conn.state.value
-                                                                if hasattr(
-                                                                    peer_conn.state,
-                                                                    "value",
-                                                                )
-                                                                else str(
-                                                                    peer_conn.state
-                                                                ),
                                                             )
-                                                        except Exception as e:
-                                                            self.logger.warning(
-                                                                "Failed to send bitfield to %s after metadata fetch (connection may have closed): %s",
-                                                                peer_conn.peer_info,
-                                                                e,
-                                                            )
-                                                            # CRITICAL FIX: Don't disconnect on error - peer might still be usable
                                                             continue
 
-                                                    # Send INTERESTED if enabled
-                                                    if (
-                                                        send_interested_after_metadata
-                                                        and not peer_conn.am_interested
-                                                    ):
-                                                        try:
-                                                            # CRITICAL FIX: Verify connection is still valid before sending
-                                                            if (
-                                                                not peer_conn.is_connected()
-                                                                or peer_conn.writer
-                                                                is None
-                                                            ):
-                                                                self.logger.debug(
-                                                                    "Skipping INTERESTED to %s - connection no longer valid",
-                                                                    peer_conn.peer_info,
-                                                                )
-                                                                continue
-
-                                                            await self._send_interested(
-                                                                peer_conn
-                                                            )
-                                                            peer_conn.am_interested = (
-                                                                True
-                                                            )
-                                                            self.logger.debug(
-                                                                "Sent INTERESTED to %s after metadata fetch (state=%s)",
-                                                                peer_conn.peer_info,
-                                                                peer_conn.state.value
-                                                                if hasattr(
-                                                                    peer_conn.state,
-                                                                    "value",
-                                                                )
-                                                                else str(
-                                                                    peer_conn.state
-                                                                ),
-                                                            )
-                                                        except Exception as e:
-                                                            self.logger.warning(
-                                                                "Failed to send INTERESTED to %s after metadata fetch (connection may have closed): %s",
-                                                                peer_conn.peer_info,
-                                                                e,
-                                                            )
-                                                            # CRITICAL FIX: Don't disconnect on error - peer might still be usable
-                                                            continue
-                                        except Exception as e:
-                                            self.logger.warning(
-                                                "Error sending bitfield/INTERESTED after metadata fetch: %s (this is non-fatal)",
-                                                e,
-                                            )
-                                            # CRITICAL FIX: Don't let errors in post-metadata operations break the connection
-
-                                    # CRITICAL FIX: Call start_download() after metadata is fetched to initialize pieces
-                                    # This ensures pieces list is initialized and downloads can start immediately
-                                    if hasattr(self.piece_manager, "start_download"):
-                                        try:
-                                            if asyncio.iscoroutinefunction(
-                                                self.piece_manager.start_download
-                                            ):
-                                                await self.piece_manager.start_download(
-                                                    self
-                                                )
-                                            else:
-                                                self.piece_manager.start_download(self)
-                                            self.logger.info(
-                                                "✅ METADATA_COMPLETE: Called start_download() after metadata fetch (num_pieces=%d, pieces_count=%d, is_downloading=%s)",
-                                                self.piece_manager.num_pieces,
-                                                len(self.piece_manager.pieces)
-                                                if hasattr(self.piece_manager, "pieces")
-                                                else 0,
-                                                getattr(
-                                                    self.piece_manager,
-                                                    "is_downloading",
-                                                    False,
-                                                ),
-                                            )
-
-                                            # CRITICAL FIX: Trigger piece selection immediately after metadata and start_download
-                                            # This ensures we start requesting pieces as soon as metadata is available
-                                            # This prevents peers from disconnecting because we appear uninterested
-                                            if hasattr(
-                                                self.piece_manager, "_select_pieces"
-                                            ):
-                                                try:
-                                                    # Trigger piece selection asynchronously to avoid blocking
-                                                    select_pieces = getattr(
-                                                        self.piece_manager,
-                                                        "_select_pieces",
-                                                        None,
-                                                    )
-                                                    if select_pieces:
-                                                        # Track task (background piece selection)
-                                                        task = asyncio.create_task(
-                                                            select_pieces()
+                                                        await self._send_interested(
+                                                            peer_conn
                                                         )
-                                                        self.add_background_task(task)
-                                                    self.logger.info(
-                                                        "✅ METADATA_COMPLETE: Triggered piece selection after metadata fetch (will request pieces immediately)"
-                                                    )
-                                                except Exception as select_error:
-                                                    self.logger.warning(
-                                                        "Failed to trigger piece selection after metadata fetch: %s (will retry on UNCHOKE)",
-                                                        select_error,
-                                                    )
-                                        except Exception as start_error:
-                                            self.logger.warning(
-                                                "Failed to call start_download() after metadata fetch: %s (will retry on UNCHOKE)",
-                                                start_error,
+                                                        peer_conn.am_interested = True
+                                                        self.logger.debug(
+                                                            "Sent INTERESTED to %s after metadata fetch (state=%s)",
+                                                            peer_conn.peer_info,
+                                                            peer_conn.state.value
+                                                            if hasattr(
+                                                                peer_conn.state,
+                                                                "value",
+                                                            )
+                                                            else str(peer_conn.state),
+                                                        )
+                                                    except Exception as e:
+                                                        self.logger.warning(
+                                                            "Failed to send INTERESTED to %s after metadata fetch (connection may have closed): %s",
+                                                            peer_conn.peer_info,
+                                                            e,
+                                                        )
+                                                        # CRITICAL FIX: Don't disconnect on error - peer might still be usable
+                                                        continue
+                                    except Exception as e:
+                                        self.logger.warning(
+                                            "Error sending bitfield/INTERESTED after metadata fetch: %s (this is non-fatal)",
+                                            e,
+                                        )
+                                        # CRITICAL FIX: Don't let errors in post-metadata operations break the connection
+
+                                # CRITICAL FIX: Call start_download() after metadata is fetched to initialize pieces
+                                # This ensures pieces list is initialized and downloads can start immediately
+                                if hasattr(self.piece_manager, "start_download"):
+                                    try:
+                                        if asyncio.iscoroutinefunction(
+                                            self.piece_manager.start_download
+                                        ):
+                                            await self.piece_manager.start_download(
+                                                self
                                             )
+                                        else:
+                                            self.piece_manager.start_download(self)
+                                        self.logger.info(
+                                            "✅ METADATA_COMPLETE: Called start_download() after metadata fetch (num_pieces=%d, pieces_count=%d, is_downloading=%s)",
+                                            self.piece_manager.num_pieces,
+                                            len(self.piece_manager.pieces)
+                                            if hasattr(self.piece_manager, "pieces")
+                                            else 0,
+                                            getattr(
+                                                self.piece_manager,
+                                                "is_downloading",
+                                                False,
+                                            ),
+                                        )
+
+                                        # CRITICAL FIX: Trigger piece selection immediately after metadata and start_download
+                                        # This ensures we start requesting pieces as soon as metadata is available
+                                        # This prevents peers from disconnecting because we appear uninterested
+                                        if hasattr(
+                                            self.piece_manager, "_select_pieces"
+                                        ):
+                                            try:
+                                                select_pieces = getattr(
+                                                    self.piece_manager,
+                                                    "_select_pieces",
+                                                    None,
+                                                )
+                                                if select_pieces:
+                                                    task = asyncio.create_task(
+                                                        select_pieces()
+                                                    )
+                                                    self.add_background_task(task)
+                                                self.logger.info(
+                                                    "✅ METADATA_COMPLETE: Triggered piece selection after metadata fetch (will request pieces immediately)"
+                                                )
+                                            except Exception as select_error:
+                                                self.logger.warning(
+                                                    "Failed to trigger piece selection after metadata fetch: %s (will retry on UNCHOKE)",
+                                                    select_error,
+                                                )
+                                    except Exception as start_error:
+                                        self.logger.warning(
+                                            "Failed to call start_download() after metadata fetch: %s (will retry on UNCHOKE)",
+                                            start_error,
+                                        )
 
                                     # CRITICAL FIX: Always trigger immediate peer discovery after metadata fetch
                                     # Now that we have metadata, we can actively seek more peers to download from
@@ -13811,6 +13941,8 @@ class AsyncPeerConnectionManager:
             self.logger.warning("Cannot reprocess bitfields: piece_manager is None")
             return
 
+        retry_requested = None
+        select_pieces = None
         async with self.connection_lock:
             total_connections = len(self.connections)
             connections_with_bitfield = 0
@@ -13899,6 +14031,31 @@ class AsyncPeerConnectionManager:
                 reprocessed_count,
                 errors_count,
             )
+
+            retry_requested = getattr(
+                self.piece_manager, "_retry_requested_pieces", None
+            )
+            select_pieces = getattr(self.piece_manager, "_select_pieces", None)
+
+        if reprocessed_count > 0:
+            if callable(retry_requested):
+                try:
+                    await retry_requested()
+                except Exception as e:
+                    self.logger.debug(
+                        "METADATA_AVAILABLE: Failed to retry requested pieces after bitfield reprocessing: %s",
+                        e,
+                        exc_info=True,
+                    )
+            if callable(select_pieces):
+                try:
+                    await select_pieces()
+                except Exception as e:
+                    self.logger.debug(
+                        "METADATA_AVAILABLE: Failed to trigger piece selection after bitfield reprocessing: %s",
+                        e,
+                        exc_info=True,
+                    )
 
     async def set_per_peer_rate_limit(
         self, peer_key: str, upload_limit_kib: int
