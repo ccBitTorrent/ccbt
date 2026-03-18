@@ -208,15 +208,17 @@ class AsyncPeerConnection:
 
     def is_active(self) -> bool:
         """Check if connection is fully active."""
-        # CRITICAL FIX: Include BITFIELD_RECEIVED and ACTIVE states as active
-        # BITFIELD_RECEIVED means we've received peer's bitfield and can check piece availability
-        # ACTIVE means connection is fully ready (may still be choking, but bitfield is available)
-        # CHOKED state is also considered active (peer choked us, but connection is established)
-        if self.state == ConnectionState.BITFIELD_RECEIVED:
-            # Bitfield received - connection is active for piece availability checking
-            # Even if peer is choking, we can check if they have pieces
-            return True
-        return self.state in [ConnectionState.ACTIVE, ConnectionState.CHOKED]
+        # CRITICAL FIX: Treat post-handshake bitfield states as active.
+        # BITFIELD_SENT means the peer connection is established and may still be
+        # exchanging bitfields/extension messages before reaching ACTIVE.
+        # BITFIELD_RECEIVED means we've already received peer availability.
+        # CHOKED is also active: the connection is healthy, just not requestable yet.
+        return self.state in [
+            ConnectionState.BITFIELD_SENT,
+            ConnectionState.BITFIELD_RECEIVED,
+            ConnectionState.ACTIVE,
+            ConnectionState.CHOKED,
+        ]
 
     def has_timed_out(self, timeout: float = 60.0) -> bool:
         """Check if connection has timed out."""
@@ -7658,8 +7660,10 @@ class AsyncPeerConnectionManager:
                 # If we found piece indices, update piece manager
                 if piece_indices:
                     peer_key = f"{connection.peer_info.ip}:{connection.peer_info.port}"
-                    await self.piece_manager.update_peer_availability(
-                        peer_key, piece_indices
+                    await (
+                        self.piece_manager.update_peer_availability_from_piece_indices(
+                            peer_key, piece_indices
+                        )
                     )
                     self.logger.debug(
                         "Updated piece availability from piece layer: %d pieces for %s",
@@ -9352,6 +9356,18 @@ class AsyncPeerConnectionManager:
             self.logger.warning(error_msg)
             raise PeerConnectionError(error_msg)
 
+        previous_state = connection.state
+
+        def _state_after_bitfield() -> ConnectionState:
+            """Avoid regressing already-usable peers back to BITFIELD_SENT."""
+            if previous_state in {
+                ConnectionState.ACTIVE,
+                ConnectionState.CHOKED,
+                ConnectionState.BITFIELD_RECEIVED,
+            }:
+                return previous_state
+            return ConnectionState.BITFIELD_SENT
+
         # CRITICAL FIX: For magnet links, metadata may not be available yet
         # Check if pieces_info exists and has num_pieces before trying to send bitfield
         pieces_info = self.torrent_data.get("pieces_info")
@@ -9362,9 +9378,7 @@ class AsyncPeerConnectionManager:
                 "Skipping bitfield for %s: metadata not available yet (magnet link)",
                 connection.peer_info,
             )
-            connection.state = (
-                ConnectionState.BITFIELD_SENT
-            )  # Mark as sent to avoid retry
+            connection.state = _state_after_bitfield()
             return
 
         num_pieces = pieces_info.get("num_pieces")
@@ -9375,9 +9389,7 @@ class AsyncPeerConnectionManager:
                 connection.peer_info,
                 num_pieces,
             )
-            connection.state = (
-                ConnectionState.BITFIELD_SENT
-            )  # Mark as sent to avoid retry
+            connection.state = _state_after_bitfield()
             return
 
         # Build bitfield from verified pieces
@@ -9400,15 +9412,13 @@ class AsyncPeerConnectionManager:
         if len(verified) > 0 and bitfield_data:
             bitfield_message = BitfieldMessage(bitfield_data)
             await self._send_message(connection, bitfield_message)
-            connection.state = ConnectionState.BITFIELD_SENT
+            connection.state = _state_after_bitfield()
             self.logger.debug(
                 "Sent bitfield to %s (%d pieces)", connection.peer_info, len(verified)
             )
         else:
             # We have no pieces - per BEP 3, don't send bitfield (leecher behavior)
-            connection.state = (
-                ConnectionState.BITFIELD_SENT
-            )  # Mark as sent to avoid retry
+            connection.state = _state_after_bitfield()
             self.logger.debug(
                 "Skipping bitfield for %s: no verified pieces (leecher, per BEP 3)",
                 connection.peer_info,
@@ -11697,8 +11707,11 @@ class AsyncPeerConnectionManager:
                         else 0
                     )
 
-                    connection_age = time.time() - (
-                        getattr(conn, "connection_start_time", time.time())
+                    connection_start_time = getattr(conn, "connection_start_time", None)
+                    connection_age = (
+                        time.time() - connection_start_time
+                        if isinstance(connection_start_time, (int, float))
+                        else 0.0
                     )
 
                     self.logger.info(
@@ -11758,8 +11771,11 @@ class AsyncPeerConnectionManager:
                     len(choked_connections),
                 )
                 for peer_key, conn in choked_connections[:5]:  # Limit to first 5
-                    connection_age = time.time() - (
-                        getattr(conn, "connection_start_time", time.time())
+                    connection_start_time = getattr(conn, "connection_start_time", None)
+                    connection_age = (
+                        time.time() - connection_start_time
+                        if isinstance(connection_start_time, (int, float))
+                        else 0.0
                     )
                     self.logger.info(
                         "  %s: choking=%s, age=%.0fs, interested=%s",
@@ -12039,13 +12055,13 @@ class AsyncPeerConnectionManager:
             if conn.state == ConnectionState.ERROR:
                 continue
 
-            # CRITICAL FIX: Include connections with BITFIELD_RECEIVED state even if reader/writer might be None
-            # This ensures connections that received bitfield are counted as active before they might close
-            # BITFIELD_RECEIVED means we've successfully exchanged bitfields and can check piece availability
-            if conn.state == ConnectionState.BITFIELD_RECEIVED:
-                # BITFIELD_RECEIVED connections are considered active even if reader/writer are None
-                # (they shouldn't be None, but if they are, we still count the connection as active
-                # because we've received the bitfield and can use it for piece availability)
+            # CRITICAL FIX: Include post-handshake bitfield states even if reader/writer
+            # momentarily disappear during cleanup. These peers are still useful for
+            # availability accounting and metadata/bootstrap heuristics.
+            if conn.state in {
+                ConnectionState.BITFIELD_SENT,
+                ConnectionState.BITFIELD_RECEIVED,
+            }:
                 active_peers.append(conn)
                 continue
 
@@ -12194,9 +12210,27 @@ class AsyncPeerConnectionManager:
                 # Already registered, that's fine
                 pass
 
+            metadata_incomplete = bool(
+                getattr(
+                    getattr(self, "piece_manager", None),
+                    "_metadata_incomplete",
+                    False,
+                )
+            )
+            if not metadata_incomplete and isinstance(self.torrent_data, dict):
+                file_info = self.torrent_data.get("file_info")
+                metadata_incomplete = file_info is None or (
+                    isinstance(file_info, dict)
+                    and file_info.get("total_length", 0) == 0
+                )
+
             local_message_map = extension_protocol.get_local_message_map()
             if "ut_metadata" not in local_message_map:
                 local_message_map["ut_metadata"] = 1
+            if metadata_incomplete:
+                # Keep the magnet handshake minimal for better compatibility with
+                # metadata-only peers that may disconnect on large custom maps.
+                local_message_map = {"ut_metadata": 1}
 
             # Create our extension handshake dictionary with the canonical BEP 10
             # message map. Peer-local extension IDs are negotiated via "m".
@@ -12207,83 +12241,88 @@ class AsyncPeerConnectionManager:
                 }
             }
 
-            # Add XET folder sync handshake data if available
-            try:
-                from ccbt.extensions.xet_handshake import XetHandshakeExtension
-                from ccbt.session.session import AsyncSessionManager
-                from ccbt.storage.xet_hashing import XetHasher
+            if not metadata_incomplete:
+                # Add XET folder sync handshake data if available
+                try:
+                    from ccbt.extensions.xet_handshake import XetHandshakeExtension
+                    from ccbt.session.session import AsyncSessionManager
+                    from ccbt.storage.xet_hashing import XetHasher
 
-                xet_handshake = getattr(self, "_xet_handshake", None)
-                # Try to get from session manager if available
-                if (
-                    xet_handshake is None
-                    and hasattr(self, "session_manager")
-                    and isinstance(self.session_manager, AsyncSessionManager)
-                ):
-                    peer_key = (
-                        str(connection.peer_info) if connection.peer_info else None
-                    )
-                    workspace_id_hex = None
-                    if peer_key is not None:
-                        auth_state = self._xet_peer_auth.get(peer_key, {})
-                        workspace_id_hex = auth_state.get("workspace_id_hex")
-                    transport_state = self.session_manager.get_xet_transport_state(
-                        workspace_id_hex=workspace_id_hex
-                    )
-                    if transport_state:
-                        xet_ext = extension_manager.get_extension("xet")
-                        allowlist_hash = transport_state.get("allowlist_hash")
-                        if isinstance(allowlist_hash, str):
-                            with contextlib.suppress(ValueError):
-                                allowlist_hash = bytes.fromhex(allowlist_hash)
-                        if not isinstance(allowlist_hash, bytes):
-                            allowlist_hash = None
-                        xet_handshake = XetHandshakeExtension(
-                            allowlist_hash=allowlist_hash,
-                            sync_mode=str(
-                                transport_state.get("sync_mode", "best_effort")
-                            ),
-                            git_ref=transport_state.get("git_ref"),
-                            key_manager=getattr(self, "key_manager", None),
-                            workspace_id=transport_state.get("workspace_id"),
-                            hash_algorithm=str(
-                                transport_state.get("hash_algorithm")
-                                or XetHasher.get_hash_algorithm()
-                            ),
-                            capabilities=xet_ext.get_capabilities() if xet_ext else {},
-                            allowlist=transport_state.get("allowlist"),
-                            auth_scope=str(
-                                transport_state.get(
-                                    "auth_scope", "strict_workspace_auth"
-                                )
-                            ),
-                            require_signed_metadata=bool(
-                                transport_state.get("require_signed_metadata", True)
-                            ),
+                    xet_handshake = getattr(self, "_xet_handshake", None)
+                    # Try to get from session manager if available
+                    if (
+                        xet_handshake is None
+                        and hasattr(self, "session_manager")
+                        and isinstance(self.session_manager, AsyncSessionManager)
+                    ):
+                        peer_key = (
+                            str(connection.peer_info) if connection.peer_info else None
                         )
-                        self._xet_handshake = xet_handshake
+                        workspace_id_hex = None
+                        if peer_key is not None:
+                            auth_state = self._xet_peer_auth.get(peer_key, {})
+                            workspace_id_hex = auth_state.get("workspace_id_hex")
+                        transport_state = self.session_manager.get_xet_transport_state(
+                            workspace_id_hex=workspace_id_hex
+                        )
+                        if transport_state:
+                            xet_ext = extension_manager.get_extension("xet")
+                            allowlist_hash = transport_state.get("allowlist_hash")
+                            if isinstance(allowlist_hash, str):
+                                with contextlib.suppress(ValueError):
+                                    allowlist_hash = bytes.fromhex(allowlist_hash)
+                            if not isinstance(allowlist_hash, bytes):
+                                allowlist_hash = None
+                            xet_handshake = XetHandshakeExtension(
+                                allowlist_hash=allowlist_hash,
+                                sync_mode=str(
+                                    transport_state.get("sync_mode", "best_effort")
+                                ),
+                                git_ref=transport_state.get("git_ref"),
+                                key_manager=getattr(self, "key_manager", None),
+                                workspace_id=transport_state.get("workspace_id"),
+                                hash_algorithm=str(
+                                    transport_state.get("hash_algorithm")
+                                    or XetHasher.get_hash_algorithm()
+                                ),
+                                capabilities=xet_ext.get_capabilities()
+                                if xet_ext
+                                else {},
+                                allowlist=transport_state.get("allowlist"),
+                                auth_scope=str(
+                                    transport_state.get(
+                                        "auth_scope", "strict_workspace_auth"
+                                    )
+                                ),
+                                require_signed_metadata=bool(
+                                    transport_state.get("require_signed_metadata", True)
+                                ),
+                            )
+                            self._xet_handshake = xet_handshake
 
-                xet_ext = extension_manager.get_extension("xet")
-                if xet_ext is not None and xet_handshake is not None:
-                    xet_ext.folder_sync_handshake = xet_handshake
-                if xet_ext is not None:
-                    xet_handshake_data = xet_ext.encode_handshake()
-                elif xet_handshake is not None:
-                    xet_handshake_data = xet_handshake.encode_handshake()
-                else:
-                    xet_handshake_data = {}
-                if xet_handshake_data:
-                    # Merge XET handshake data into our handshake
-                    for key, value in xet_handshake_data.items():
-                        key_bytes = key.encode("utf-8") if isinstance(key, str) else key
-                        handshake_dict[key_bytes] = value
-            except Exception as e:
-                # Log but don't fail if XET handshake encoding fails
-                self.logger.debug(
-                    "Failed to encode XET handshake for %s: %s",
-                    connection.peer_info,
-                    e,
-                )
+                    xet_ext = extension_manager.get_extension("xet")
+                    if xet_ext is not None and xet_handshake is not None:
+                        xet_ext.folder_sync_handshake = xet_handshake
+                    if xet_ext is not None:
+                        xet_handshake_data = xet_ext.encode_handshake()
+                    elif xet_handshake is not None:
+                        xet_handshake_data = xet_handshake.encode_handshake()
+                    else:
+                        xet_handshake_data = {}
+                    if xet_handshake_data:
+                        # Merge XET handshake data into our handshake
+                        for key, value in xet_handshake_data.items():
+                            key_bytes = (
+                                key.encode("utf-8") if isinstance(key, str) else key
+                            )
+                            handshake_dict[key_bytes] = value
+                except Exception as e:
+                    # Log but don't fail if XET handshake encoding fails
+                    self.logger.debug(
+                        "Failed to encode XET handshake for %s: %s",
+                        connection.peer_info,
+                        e,
+                    )
 
             # Encode as bencoded dictionary
             encoder = BencodeEncoder()
@@ -13562,7 +13601,9 @@ class AsyncPeerConnectionManager:
                 len(extension_payload),
             )
 
-            if msg_type == 1:  # Data response (BEP 9)
+            if msg_type == 0:
+                await self._handle_ut_metadata_request(connection, piece_index)
+            elif msg_type == 1:  # Data response (BEP 9)
                 # BEP 9: Data response format is: {'msg_type': 1, 'piece': 0, 'total_size': 3425}
                 # followed by the piece data (appended after the bencoded dictionary)
                 # Extract piece data: everything after the bencoded header
@@ -13675,6 +13716,89 @@ class AsyncPeerConnectionManager:
                 else (extension_payload.hex() if extension_payload else "empty"),
                 exc_info=True,
             )
+
+    async def _handle_ut_metadata_request(
+        self,
+        connection: AsyncPeerConnection,
+        piece_index: int,
+    ) -> None:
+        """Respond to an inbound ut_metadata request from a peer."""
+        import math
+        import struct
+
+        from ccbt.core.bencode import BencodeEncoder
+
+        if not connection.writer or connection.writer.is_closing():
+            self.logger.debug(
+                "Cannot answer ut_metadata request from %s: writer unavailable",
+                connection.peer_info,
+            )
+            return
+
+        info_dict = (
+            self.torrent_data.get("info")
+            if isinstance(self.torrent_data, dict)
+            else None
+        )
+        if not isinstance(info_dict, dict):
+            reject_payload = BencodeEncoder().encode(
+                {b"msg_type": 2, b"piece": piece_index}
+            )
+            reject_msg = (
+                struct.pack("!IBB", 2 + len(reject_payload), 20, 1) + reject_payload
+            )
+            connection.writer.write(reject_msg)
+            await connection.writer.drain()
+            self.logger.info(
+                "Rejected ut_metadata request for piece %d from %s because metadata is not available locally",
+                piece_index,
+                connection.peer_info,
+            )
+            return
+
+        encoded_info = BencodeEncoder().encode(info_dict)
+        total_size = len(encoded_info)
+        num_pieces = math.ceil(total_size / 16384) if total_size > 0 else 0
+        if piece_index < 0 or piece_index >= num_pieces:
+            reject_payload = BencodeEncoder().encode(
+                {b"msg_type": 2, b"piece": piece_index}
+            )
+            reject_msg = (
+                struct.pack("!IBB", 2 + len(reject_payload), 20, 1) + reject_payload
+            )
+            connection.writer.write(reject_msg)
+            await connection.writer.drain()
+            self.logger.info(
+                "Rejected ut_metadata request for invalid piece %d from %s (num_pieces=%d)",
+                piece_index,
+                connection.peer_info,
+                num_pieces,
+            )
+            return
+
+        piece_start = piece_index * 16384
+        piece_end = min(piece_start + 16384, total_size)
+        piece_data = encoded_info[piece_start:piece_end]
+        response_header = BencodeEncoder().encode(
+            {
+                b"msg_type": 1,
+                b"piece": piece_index,
+                b"total_size": total_size,
+            }
+        )
+        response_payload = response_header + piece_data
+        response_msg = (
+            struct.pack("!IBB", 2 + len(response_payload), 20, 1) + response_payload
+        )
+        connection.writer.write(response_msg)
+        await connection.writer.drain()
+        self.logger.info(
+            "Served ut_metadata piece %d/%d to %s (size=%d bytes)",
+            piece_index + 1,
+            num_pieces,
+            connection.peer_info,
+            len(piece_data),
+        )
 
     async def _reprocess_stored_bitfields(self) -> None:
         """Re-process all stored bitfields from existing connections when metadata becomes available.

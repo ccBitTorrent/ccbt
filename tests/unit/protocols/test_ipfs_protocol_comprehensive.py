@@ -25,6 +25,7 @@ def mock_ipfs_client():
     client.pubsub.subscribe.return_value = iter([])
     client.dht.findprovs.return_value = iter([])
     client.object.stat.return_value = {"CumulativeSize": 1000, "NumLinks": 5}
+    client.object.get.return_value = {}
     client.add_bytes.return_value = "QmTestCID123456789"
     client.cat.return_value = b"test content"
     client.pin.add.return_value = None
@@ -242,7 +243,7 @@ async def test_connect_peer_invalid_info(ipfs_protocol, mock_ipfs_client):
 
 
 @pytest.mark.asyncio
-async def test_connect_peer_with_queued_messages(ipfs_protocol, mock_ipfs_client):  # noqa: SLF001
+async def test_connect_peer_with_queued_messages(ipfs_protocol, mock_ipfs_client):
     """Test peer connection with queued messages."""
     ipfs_protocol._ipfs_client = mock_ipfs_client  # noqa: SLF001
     ipfs_protocol._ipfs_connected = True  # noqa: SLF001
@@ -496,10 +497,10 @@ async def test_get_content_success(ipfs_protocol, mock_ipfs_client):
 
     # Ensure cat returns content
     mock_ipfs_client.cat.return_value = b"test content"
-    
+
     # Mock CID verification to return True
     ipfs_protocol._verify_cid_integrity = MagicMock(return_value=True)
-    
+
     # Mock to_thread to execute the lambda function passed to it
     async def mock_to_thread(func, *_args, **_kwargs):
         """Mock to_thread that executes the lambda function."""

@@ -25,14 +25,14 @@ def mock_ipfs_client():
 def ipfs_protocol(mock_ipfs_client):
     """Create IPFS protocol instance."""
     protocol = IPFSProtocol()
-    
+
     with patch(
         "ccbt.protocols.ipfs.ipfshttpclient.connect",
         return_value=mock_ipfs_client,
     ):
         protocol._ipfs_client = mock_ipfs_client
         protocol._ipfs_connected = True
-    
+
     return protocol
 
 
@@ -41,30 +41,33 @@ async def test_request_blocks_from_peers_basic(ipfs_protocol):
     """Test basic block request from peers."""
     peer_id = "QmPeer1"
     ipfs_protocol.ipfs_peers[peer_id] = MagicMock()
-    
+
     # Setup message queue for receiving
     message_queue = asyncio.Queue()
     ipfs_protocol._peer_message_queues[peer_id] = message_queue
-    
+
     # Create Bitswap response with block
     cid = "QmBlock1"
     block_data = b"block data"
     blocks_response = {cid: block_data}
-    formatted_response = ipfs_protocol._format_bitswap_message(b"", blocks=blocks_response)
-    
+    formatted_response = ipfs_protocol._format_bitswap_message(
+        b"", blocks=blocks_response
+    )
+
     # Mock send_message to return True immediately
-    with patch.object(ipfs_protocol, 'send_message', new_callable=AsyncMock, return_value=True):
+    with patch.object(
+        ipfs_protocol, "send_message", new_callable=AsyncMock, return_value=True
+    ):
         # Put response in queue immediately (no need for background task)
         await message_queue.put(formatted_response)
-        
+
         cids = [cid]
         peers = [peer_id]
         # Add timeout to prevent hanging
         blocks = await asyncio.wait_for(
-            ipfs_protocol._request_blocks_from_peers(cids, peers),
-            timeout=2.0
+            ipfs_protocol._request_blocks_from_peers(cids, peers), timeout=2.0
         )
-        
+
         # Should have received the block
         assert len(blocks) >= 0  # May be empty if timeout
 
@@ -74,15 +77,17 @@ async def test_request_blocks_from_peers_multiple(ipfs_protocol):
     """Test requesting multiple blocks from peers."""
     peer_id = "QmPeer1"
     ipfs_protocol.ipfs_peers[peer_id] = MagicMock()
-    
+
     cids = ["QmBlock1", "QmBlock2"]
     peers = [peer_id]
-    
+
     # Mock _request_blocks_from_peers to return immediately (this test just checks the interface)
     async def mock_request_blocks(cids, peers):
         return {"QmBlock1": b"block1", "QmBlock2": b"block2"}
-    
-    with patch.object(ipfs_protocol, '_request_blocks_from_peers', side_effect=mock_request_blocks):
+
+    with patch.object(
+        ipfs_protocol, "_request_blocks_from_peers", side_effect=mock_request_blocks
+    ):
         blocks = await ipfs_protocol._request_blocks_from_peers(cids, peers)
         assert isinstance(blocks, dict)
         assert len(blocks) == 2
@@ -100,7 +105,7 @@ async def test_request_blocks_from_peers_not_connected(ipfs_protocol):
     """Test block request when not connected."""
     ipfs_protocol._ipfs_connected = False
     ipfs_protocol._ipfs_client = None
-    
+
     blocks = await ipfs_protocol._request_blocks_from_peers(["QmBlock1"], ["QmPeer1"])
     assert blocks == {}
 
@@ -112,9 +117,9 @@ async def test_reconstruct_content_from_blocks_basic(ipfs_protocol):
         "QmBlock1": b"block1",
         "QmBlock2": b"block2",
     }
-    
+
     content = await ipfs_protocol._reconstruct_content_from_blocks(blocks)
-    
+
     # Should concatenate blocks
     assert len(content) > 0
     assert b"block1" in content or b"block2" in content
@@ -128,13 +133,15 @@ async def test_reconstruct_content_from_blocks_empty(ipfs_protocol):
 
 
 @pytest.mark.asyncio
-async def test_reconstruct_content_from_blocks_with_dag(ipfs_protocol, mock_ipfs_client):
+async def test_reconstruct_content_from_blocks_with_dag(
+    ipfs_protocol, mock_ipfs_client
+):
     """Test reconstruction with DAG structure."""
     blocks = {
         "QmBlock1": b"block1",
         "QmBlock2": b"block2",
     }
-    
+
     dag_structure = {
         "root_cid": "QmRoot",
         "links": [
@@ -142,13 +149,15 @@ async def test_reconstruct_content_from_blocks_with_dag(ipfs_protocol, mock_ipfs
             {"Hash": "QmBlock2"},
         ],
     }
-    
+
     mock_ipfs_client.object.get.return_value = {
         "Links": [{"Hash": "QmBlock1"}, {"Hash": "QmBlock2"}],
     }
-    
-    content = await ipfs_protocol._reconstruct_content_from_blocks(blocks, dag_structure)
-    
+
+    content = await ipfs_protocol._reconstruct_content_from_blocks(
+        blocks, dag_structure
+    )
+
     assert len(content) > 0
 
 
@@ -157,9 +166,9 @@ async def test_reconstruct_content_from_blocks_not_connected(ipfs_protocol):
     """Test reconstruction when not connected."""
     ipfs_protocol._ipfs_connected = False
     ipfs_protocol._ipfs_client = None
-    
+
     blocks = {"QmBlock1": b"data"}
-    
+
     with pytest.raises(ConnectionError):
         await ipfs_protocol._reconstruct_content_from_blocks(blocks)
 
@@ -169,14 +178,14 @@ async def test_verify_cid_integrity_valid(ipfs_protocol, mock_ipfs_client):
     """Test CID verification with valid data."""
     data = b"test content"
     mock_ipfs_client.add_bytes.return_value = "QmTestCID123456789"
-    
+
     # First get the actual CID
     actual_cid_result = mock_ipfs_client.add_bytes(data, cid_version=1)
     if isinstance(actual_cid_result, dict):
         actual_cid = actual_cid_result.get("Hash", "QmTestCID123456789")
     else:
         actual_cid = str(actual_cid_result)
-    
+
     # Verify with correct CID
     result = ipfs_protocol._verify_cid_integrity(data, actual_cid)
     assert result is True
@@ -187,7 +196,7 @@ async def test_verify_cid_integrity_invalid(ipfs_protocol, mock_ipfs_client):
     """Test CID verification with invalid CID."""
     data = b"test content"
     mock_ipfs_client.add_bytes.return_value = "QmCorrectCID"
-    
+
     # Verify with wrong CID
     result = ipfs_protocol._verify_cid_integrity(data, "QmWrongCID")
     assert result is False
@@ -198,7 +207,7 @@ async def test_verify_cid_integrity_not_connected(ipfs_protocol):
     """Test CID verification when not connected."""
     ipfs_protocol._ipfs_connected = False
     ipfs_protocol._ipfs_client = None
-    
+
     data = b"test content"
     # Should use fallback hash-based verification
     result = ipfs_protocol._verify_cid_integrity(data, "QmTestCID")
@@ -213,22 +222,44 @@ async def test_get_content_from_daemon(ipfs_protocol, mock_ipfs_client):
     content_data = b"test content"
     mock_ipfs_client.cat.return_value = content_data
     mock_ipfs_client.add_bytes.return_value = cid  # For CID verification
-    
+    mock_ipfs_client.object.get.return_value = {}
     content = await ipfs_protocol.get_content(cid)
-    
     assert content == content_data
     mock_ipfs_client.cat.assert_called_once_with(cid)
+    content_record = ipfs_protocol.ipfs_content[cid]
+    assert content_record.blocks == []
+    assert content_record.links == []
+
+
+@pytest.mark.asyncio
+async def test_get_content_from_daemon_populates_blocks_and_links(
+    ipfs_protocol, mock_ipfs_client
+):
+    """Test get_content (daemon path) populates IPFSContent.blocks and .links."""
+    cid = "QmTestCID"
+    content_data = b"test content"
+    mock_ipfs_client.cat.return_value = content_data
+    mock_ipfs_client.add_bytes.return_value = cid
+    mock_ipfs_client.object.get.return_value = {
+        "Links": [
+            {"Hash": "QmChild1", "Name": "child1"},
+            {"Hash": "QmChild2", "Name": "child2"},
+        ]
+    }
+    content = await ipfs_protocol.get_content(cid)
+    assert content == content_data
+    content_record = ipfs_protocol.ipfs_content[cid]
+    assert content_record.blocks == ["QmChild1", "QmChild2"]
+    assert len(content_record.links) == 2
+    assert content_record.links[0]["Hash"] == "QmChild1"
 
 
 @pytest.mark.asyncio
 async def test_get_content_peer_fallback(ipfs_protocol, mock_ipfs_client):
     """Test peer-based retrieval fallback."""
     cid = "QmTestCID"
-    
-    # Daemon retrieval fails
     mock_ipfs_client.cat.side_effect = Exception("Not found")
-    
-    # Mock peer discovery and block requests
+    mock_ipfs_client.object.get.return_value = {}
     with patch.object(
         ipfs_protocol, "_find_content_peers", return_value=["QmPeer1"]
     ) as mock_find, patch.object(
@@ -237,10 +268,34 @@ async def test_get_content_peer_fallback(ipfs_protocol, mock_ipfs_client):
         ipfs_protocol, "_verify_cid_integrity", return_value=True
     ):
         content = await ipfs_protocol.get_content(cid)
-        
-        # Should have tried peer retrieval
         mock_find.assert_called_once()
         mock_request.assert_called_once()
+    content_record = ipfs_protocol.ipfs_content[cid]
+    assert content_record.blocks == []
+    assert content_record.links == []
+
+
+@pytest.mark.asyncio
+async def test_get_content_peer_fallback_populates_blocks_and_links(
+    ipfs_protocol, mock_ipfs_client
+):
+    """Test get_content (peer path) populates IPFSContent.blocks and .links."""
+    cid = "QmTestCID"
+    mock_ipfs_client.cat.side_effect = Exception("Not found")
+    mock_ipfs_client.object.get.return_value = {
+        "Links": [{"Hash": "QmPeerBlock1", "Name": "pb1"}]
+    }
+    with patch.object(
+        ipfs_protocol, "_find_content_peers", return_value=["QmPeer1"]
+    ), patch.object(
+        ipfs_protocol, "_request_blocks_from_peers", return_value={cid: b"peer content"}
+    ), patch.object(ipfs_protocol, "_verify_cid_integrity", return_value=True):
+        content = await ipfs_protocol.get_content(cid)
+    assert content == b"peer content"
+    content_record = ipfs_protocol.ipfs_content[cid]
+    assert content_record.blocks == ["QmPeerBlock1"]
+    assert len(content_record.links) == 1
+    assert content_record.links[0]["Hash"] == "QmPeerBlock1"
 
 
 @pytest.mark.asyncio
@@ -248,7 +303,7 @@ async def test_get_content_not_connected(ipfs_protocol):
     """Test getting content when not connected."""
     ipfs_protocol._ipfs_connected = False
     ipfs_protocol._ipfs_client = None
-    
+
     content = await ipfs_protocol.get_content("QmTestCID")
     assert content is None
 
@@ -259,11 +314,8 @@ async def test_get_content_cid_verification_fails(ipfs_protocol, mock_ipfs_clien
     cid = "QmTestCID"
     mock_ipfs_client.cat.return_value = b"test content"
     mock_ipfs_client.add_bytes.return_value = "QmWrongCID"
-    
-    with patch.object(
-        ipfs_protocol, "_verify_cid_integrity", return_value=False
-    ):
+
+    with patch.object(ipfs_protocol, "_verify_cid_integrity", return_value=False):
         content = await ipfs_protocol.get_content(cid)
         # Should return None if verification fails
         assert content is None
-

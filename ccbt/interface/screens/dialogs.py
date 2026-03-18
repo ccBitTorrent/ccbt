@@ -1115,6 +1115,85 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             self._show_error(_("Error submitting form: {error}").format(error=str(e)))
 
 
+class LoadingFileListScreen(ModalScreen):  # type: ignore[misc]
+    """Informative loading popup shown while fetching the file list for magnet file selection."""
+
+    DEFAULT_CSS = """
+    LoadingFileListScreen {
+        align: center middle;
+    }
+    LoadingFileListScreen #dialog {
+        width: 50;
+        border: thick $primary;
+        background: $surface;
+    }
+    LoadingFileListScreen #message {
+        width: 100%;
+        height: auto;
+        margin: 1 2;
+        text-align: center;
+    }
+    LoadingFileListScreen #detail {
+        width: 100%;
+        height: auto;
+        margin: 0 2 1 2;
+        text-align: center;
+        color: $text-muted;
+    }
+    """
+
+    def __init__(self, dashboard: Any, info_hash: str, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.dashboard = dashboard
+        self.info_hash = info_hash
+
+    def compose(self) -> ComposeResult:  # pragma: no cover
+        with Container(id="dialog"):
+            with Vertical():
+                yield Static(_("Loading file list…"), id="message")
+                yield Static(
+                    _("Fetching file list for selection. This may take a moment."),
+                    id="detail",
+                )
+
+    def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        asyncio.create_task(self._fetch_files())
+
+    async def _fetch_files(self) -> None:  # pragma: no cover
+        """Invalidate cache, wait, fetch file list; optional retry if empty. Then dismiss with result."""
+        files: list[Any] = []
+        try:
+            if hasattr(self.dashboard._data_provider, "invalidate_cache"):
+                self.dashboard._data_provider.invalidate_cache(
+                    f"torrent_files_{self.info_hash}"
+                )
+            await asyncio.sleep(0.5)
+            try:
+                files = await asyncio.wait_for(
+                    self.dashboard._data_provider.get_torrent_files(self.info_hash),
+                    timeout=10.0,
+                )
+            except (asyncio.TimeoutError, Exception):
+                files = []
+            if not files and hasattr(self.dashboard._data_provider, "invalidate_cache"):
+                self.dashboard._data_provider.invalidate_cache(
+                    f"torrent_files_{self.info_hash}"
+                )
+                await asyncio.sleep(0.5)
+                try:
+                    files = await asyncio.wait_for(
+                        self.dashboard._data_provider.get_torrent_files(
+                            self.info_hash
+                        ),
+                        timeout=10.0,
+                    )
+                except (asyncio.TimeoutError, Exception):
+                    pass
+        except Exception as e:
+            logger.debug("LoadingFileListScreen fetch error: %s", e)
+        self.dismiss(files if isinstance(files, list) else [])  # type: ignore[attr-defined]
+
+
 class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
     """Loading screen shown while fetching metadata for magnet links."""
 
@@ -1161,6 +1240,11 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
         text-align: center;
         text-style: dim;
     }
+    #meta-name, #meta-size, #meta-files {
+        height: 1;
+        margin: 0 1;
+        text-align: center;
+    }
     """
 
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
@@ -1199,6 +1283,9 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
                 yield Static(_("Fetching Metadata..."), id="spinner")
                 yield Static(_("Connecting to peers..."), id="status")
                 yield Static("", id="progress")
+                yield Static("", id="meta-name")
+                yield Static("", id="meta-size")
+                yield Static("", id="meta-files")
                 yield Static(_("Metadata is loading. File selection will appear when available."), id="info-message")
                 yield Static(_("You can skip waiting and continue with all files selected."), id="skip-message")
                 from textual.widgets import Checkbox
@@ -1299,6 +1386,15 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
             logger = logging.getLogger(__name__)
             logger.debug("Error handling metadata ready: %s", e)
 
+    def _format_size_ui(self, size_bytes: int) -> str:
+        """Format size for UI display."""
+        size = float(size_bytes)
+        for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
+            if size < 1024.0:
+                return f"{size:.2f} {unit}"
+            size /= 1024.0
+        return f"{size:.2f} PiB"
+
     async def _check_metadata_status(self) -> None:  # pragma: no cover
         """Check if metadata has been loaded (fallback polling method)."""
         if self._cancelled:
@@ -1306,31 +1402,57 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
 
         try:
             # Check torrent status to see if metadata is available
-            status = await self.dashboard._data_provider.get_torrent_status(self.info_hash_hex)
-            
-            if status:
-                # Check if we have file list (indicates metadata is loaded)
-                files = await self.dashboard._data_provider.get_torrent_files(self.info_hash_hex)
-                
-                if files and len(files) > 0:
-                    # Metadata is loaded - automatically show file selection screen
-                    await self._handle_metadata_ready()
-                    return
-            
-            # Update status message
-            if self._status_widget:
-                peers = (
-                    status.get("connected_peers", status.get("num_peers", 0))
-                    if status
-                    else 0
+            status = await self.dashboard._data_provider.get_torrent_status(
+                self.info_hash_hex
+            )
+            files: list[Any] = []
+            try:
+                files = await self.dashboard._data_provider.get_torrent_files(
+                    self.info_hash_hex
                 )
-                self._status_widget.update(f"Connected to {peers} peer(s), fetching metadata...")
+            except Exception:
+                pass
+
+            if files and len(files) > 0:
+                # Update name/size/file count when metadata is available
+                try:
+                    name_w = self.query_one("#meta-name", Static)  # type: ignore[attr-defined]
+                    size_w = self.query_one("#meta-size", Static)  # type: ignore[attr-defined]
+                    count_w = self.query_one("#meta-files", Static)  # type: ignore[attr-defined]
+                    _path_or_name = (
+                        files[0].get("path", files[0].get("name", ""))
+                        if files
+                        else ""
+                    )
+                    name = (status or {}).get("name") or _path_or_name
+                    if isinstance(name, str) and "/" in name:
+                        name = name.split("/")[0] or name
+                    total = sum(
+                        f.get("size", 0) if isinstance(f, dict) else getattr(f, "size", 0)
+                        for f in files
+                    )
+                    name_w.update(_("Name: {name}").format(name=name or "—"))  # type: ignore[attr-defined]
+                    size_w.update(_("Size: {size}").format(size=self._format_size_ui(total)))  # type: ignore[attr-defined]
+                    count_w.update(_("Files: {count}").format(count=len(files)))  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+                # Metadata is loaded - automatically show file selection screen
+                await self._handle_metadata_ready()
+                return
+
+            if status and self._status_widget:
+                peers = status.get("connected_peers", status.get("num_peers", 0))
+                self._status_widget.update(  # type: ignore[attr-defined]
+                    _("Connected to {peers} peer(s), fetching metadata...").format(
+                        peers=peers
+                    )
+                )
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
             logger.debug("Error checking metadata status: %s", e)
             if self._status_widget:
-                self._status_widget.update(f"Error: {e}")
+                self._status_widget.update(_("Error: {error}").format(error=e))  # type: ignore[attr-defined]
 
     def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
         """Handle button presses."""

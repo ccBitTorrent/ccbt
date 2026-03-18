@@ -1,6 +1,6 @@
 # Getting Started
 
-Welcome to ccBitTorrent! This guide will help you get up and running quickly with our high-performance BitTorrent client.
+Welcome to ccBitTorrent! This guide will help you get up and running quickly with our high-performance BitTorrent client. For the TUI dashboard see [Bitonic](bitonic.md); for the full CLI see [btbt CLI](btbt-cli.md).
 
 !!! tip "Key Feature: BEP XET Protocol Extension"
     ccBitTorrent includes the **Xet Protocol Extension (BEP XET)**, which enables content-defined chunking and cross-torrent deduplication. This transforms BitTorrent into a super-fast, updatable peer-to-peer file system optimized for collaboration. [Learn more about BEP XET →](bep_xet.md)
@@ -32,39 +32,7 @@ cd ccbt
 uv pip install -e .
 ```
 
-Entry points are defined in [pyproject.toml:79-81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79-L81).
-
-## Main Entry Points
-
-ccBitTorrent provides three main entry points:
-
-### 1. Bitonic (Recommended)
-
-**Bitonic** is the main terminal dashboard interface. It provides a live, interactive view of all torrents, peers, and system metrics.
-
-- Entry point: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/interface/terminal_dashboard.py#L1123)
-- Defined in: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L81)
-- Launch: `uv run bitonic` or `uv run ccbt dashboard`
-
-See [Bitonic Guide](bitonic.md) for detailed usage.
-
-### 2. btbt CLI
-
-**btbt** is the enhanced command-line interface with rich features.
-
-- Entry point: [ccbt/cli/main.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L1463)
-- Defined in: [pyproject.toml:80](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L80)
-- Launch: `uv run btbt`
-
-See [btbt CLI Reference](btbt-cli.md) for all available commands.
-
-### 3. ccbt (Basic CLI)
-
-**ccbt** is the basic command-line interface.
-
-- Entry point: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/__main__.py#L18)
-- Defined in: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbittorrent/blob/main/pyproject.toml#L79)
-- Launch: `uv run ccbt`
+Entry points are defined in [pyproject.toml](https://github.com/ccBittorrent/ccbt/blob/main/pyproject.toml). **Bitonic** (recommended): `uv run bitonic` or `uv run ccbt dashboard` — see [Bitonic Guide](bitonic.md). **btbt CLI:** `uv run btbt` — see [btbt CLI Reference](btbt-cli.md). **ccbt:** `uv run ccbt`.
 
 ## Quick Start
 
@@ -119,6 +87,9 @@ uv run btbt download movie.torrent
 # Download from magnet link
 uv run btbt magnet "magnet:?xt=urn:btih:..."
 
+# Magnet with interactive file selection (wait for metadata, then choose files)
+uv run btbt magnet "magnet:?xt=urn:btih:..." --interactive --select-files
+
 # With rate limits
 uv run btbt download movie.torrent --download-limit 1024 --upload-limit 512
 
@@ -127,6 +98,68 @@ uv run btbt download movie.torrent --resume
 ```
 
 See [btbt CLI Reference](btbt-cli.md) for all download options.
+
+### Quick start: XET shared workspace {#xet-quick-start}
+
+XET lets you sync folders over the BitTorrent network (content-defined chunking, P2P discovery). Use it to **share** a folder (get a link and start syncing) or **join** someone else's workspace.
+
+**Prerequisites:** Start the daemon and enable XET:
+
+```bash
+uv run btbt daemon start
+uv run ccbt xet enable
+```
+
+**Share a folder (create link and start syncing):**
+
+```bash
+# 1. Generate a .tonic file and shareable tonic?: link
+uv run btbt tonic create ./my-project --generate-link
+
+# 2. Register the folder with the daemon so it is watched and synced (choose one):
+#    - Sync from the .tonic into the same folder (registers the workspace):
+uv run btbt tonic sync ./my-project.tonic --output ./my-project
+#    - Or add the folder via the Bitonic dashboard (XET / folder sync screen)
+```
+
+**Join a workspace from a link or .tonic file:**
+
+```bash
+# From a tonic?: link (share this format with others)
+uv run btbt tonic sync "tonic?:xt=urn:xet:..." --output ./joined-workspace
+
+# From a .tonic file (local path)
+uv run btbt tonic sync ./project.tonic --output ./project-copy
+
+# From a remote .tonic URL (http or https)
+uv run btbt tonic sync "https://example.com/workspace.tonic" --output ./joined-workspace
+```
+
+Always specify an explicit `--output` directory when joining.
+
+**Joining from a tonic?: link only (cold link):** If you have only the link and no .tonic file, the client will discover peers (using DHT and any trackers or source peers in the link), fetch the workspace metadata from those peers via the XET extension, then start syncing. Ensure the daemon is running and at least one peer for that workspace is reachable.
+
+**Joining from a remote URL:** You can pass an `http://` or `https://` URL to a .tonic file; the client fetches the file from the URL and then proceeds as with a local .tonic path.
+
+**Check sync status:**
+
+```bash
+uv run btbt tonic status ./my-project
+```
+
+**Other XET commands:**
+
+```bash
+# Generate shareable link from folder or .tonic file
+uv run btbt tonic link ./my-project
+uv run btbt tonic link ./my-project --tonic-file ./my-project.tonic
+
+# XET protocol status and cache
+uv run ccbt xet status
+uv run ccbt xet stats
+```
+
+See [BEP XET](bep_xet.md) for protocol details, configuration, and the full CLI reference in [btbt CLI](btbt-cli.md#xet-workspace-commands). A one-command **share** flow (watch folder + get link in a single step) is planned; see [XET share feature plan](implementation-plans/xet-share-feature.md) for details.
 
 ### Configure ccBitTorrent {#configure}
 

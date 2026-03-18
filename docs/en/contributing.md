@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to ccBitTorrent! This document outlines the development process, code standards, and contribution workflow.
 
+**Quick start for contributors:** Clone the repo, run `uv sync --dev`, then `uv run pre-commit install --config dev/pre-commit-config.yaml` and `uv run pytest -c dev/pytest.ini tests/ -v`. See below for lint, type-check, and PR process. For CI workflow details see [CI/CD](CI_CD.md); for release steps see [Release Checklist](RELEASE_CHECKLIST.md).
+
 ## Project Overview
 
 ccBitTorrent is a high-performance BitTorrent client implementation in Python. This is a **reference Python implementation** licensed under the **GPL**. The project aims to provide a complete, well-tested, and performant BitTorrent client.
@@ -140,11 +142,15 @@ Run manually:
 uv run pre-commit run --all-files -c dev/pre-commit-config.yaml
 ```
 
-!!! note "Translation Verification"
-    Before committing changes that affect translatable strings:
-    1. Regenerate the `.pot` template: `uv run python -m ccbt.i18n.scripts.extract`
-    2. Verify PO files: `uv run python -m ccbt.i18n.scripts.validate_po`
-    3. Check translation coverage: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt`
+!!! note "Translation (i18n) workflow"
+    When adding or changing user-facing strings:
+    1. **Wrap strings** in code with `_()`, `_n()`, or `_p()` (see [.cursor/rules/i18n-patterns.mdc](https://github.com/ccBittorrent/ccbt/blob/main/.cursor/rules/i18n-patterns.mdc)).
+    2. **Extract** strings: `uv run python -m ccbt.i18n.extract ccbt` (writes `ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`).
+    3. **Merge** into locales: `uv run python -m ccbt.i18n.scripts.update_translations`
+    4. **Check coverage**: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt` (pre-commit runs this on `ccbt/cli/*.py`).
+    5. **Validate** .po files: `uv run python -m ccbt.i18n.scripts.validate_po`
+    6. **Compile** .mo (optional): `uv run python -m ccbt.i18n.scripts.compile_all`
+    Full script reference: [ccbt/i18n/scripts/README.md](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/i18n/scripts/README.md).
 
 ## Development Configuration
 
@@ -171,7 +177,7 @@ All development configuration files are located in [dev/](dev/):
 - Runs all checks identically to main, including:
   - All linting and type checking
   - Full test suite with coverage
-  - All benchmark checks from [dev/pre-commit-config.yaml:39-68](https://github.com/ccBitTorrent/ccbittorrent/blob/main/dev/pre-commit-config.yaml#L39-L68)
+  - All benchmark checks from [dev/pre-commit-config.yaml:39-68](https://github.com/ccBitTorrent/ccbittorrent/blob/main/dev/pre-commit-config.yaml)
   - Documentation builds
 
 ### Feature Branches
@@ -263,7 +269,7 @@ We maintain high code coverage standards. Coverage reports are generated and mus
 
 ### Benchmark Requirements
 
-Benchmark checks from [dev/pre-commit-config.yaml:39-68](https://github.com/ccBitTorrent/ccbittorrent/blob/main/dev/pre-commit-config.yaml#L39-L68) must pass. These include:
+Benchmark checks from [dev/pre-commit-config.yaml:39-68](https://github.com/ccBitTorrent/ccbittorrent/blob/main/dev/pre-commit-config.yaml) must pass. These include:
 
 - Hash verification benchmarks
 - Disk I/O benchmarks

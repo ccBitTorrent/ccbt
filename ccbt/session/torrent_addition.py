@@ -170,6 +170,19 @@ class TorrentAdditionHandler:
         if session_status == "stopped":
             await self._start_stopped_session(session, resume)
         elif session_status == "starting":
+            has_start_task = bool(getattr(session, "background_start_task", None))
+            has_peer_manager = bool(
+                getattr(
+                    getattr(session, "download_manager", None), "peer_manager", None
+                )
+            )
+            if not has_start_task and not has_peer_manager:
+                self.logger.warning(
+                    "Session reports 'starting' but has no background start task or peer_manager; treating it as not started and launching start()"
+                )
+                session.info.status = "stopped"
+                await self._start_stopped_session(session, resume)
+                return
             await self._wait_for_starting_session(session)
 
     async def _start_stopped_session(self, session: Any, resume: bool) -> None:
@@ -185,26 +198,21 @@ class TorrentAdditionHandler:
             session.info.name,
         )
         try:
-            # CRITICAL: Add logging before and after the call to see if it executes
+            # CRITICAL: Use shield() so timeout does NOT cancel session.start() (magnet/tracker/DHT can take >60s)
             self.logger.info(
                 "About to await session.start() for %s",
                 session.info.name,
             )
-            await asyncio.wait_for(session.start(resume=resume), timeout=60.0)
+            start_task = asyncio.create_task(session.start(resume=resume))
+            session.background_start_task = start_task
+            await asyncio.wait_for(asyncio.shield(start_task), timeout=90.0)
             self.logger.info("Session started successfully for %s", session.info.name)
         except asyncio.TimeoutError:
             self.logger.warning(
-                "Timeout starting torrent %s after 60 seconds (continuing in background)",
+                "Session start for %s still in progress after 90s (continuing in background)",
                 session.info.info_hash.hex()[:8],
             )
-            # Start in background anyway - don't block
-            self.logger.info(
-                "Creating background task for session.start() for %s",
-                session.info.name,
-            )
-            task = asyncio.create_task(session.start(resume=resume))
-            # CRITICAL FIX: Store task reference so we can cancel it if emergency start completes
-            session.background_start_task = task
+            # start_task is not cancelled (shield); it keeps running until completion
         except Exception:
             self.logger.exception(
                 "Exception starting torrent %s",
@@ -472,6 +480,83 @@ class TorrentAdditionHandler:
                 "This indicates a critical failure in download initialization."
             )
 
+    async def _try_emergency_metadata_exchange(
+        self, session: Any, peer_list: list[dict[str, Any]], source: str
+    ) -> bool:
+        """Best-effort metadata fetch for emergency magnet recovery."""
+        if not peer_list:
+            return False
+
+        is_magnet_link = (
+            isinstance(session.torrent_data, dict)
+            and session.torrent_data.get("file_info") is None
+        ) or (
+            isinstance(session.torrent_data, dict)
+            and session.torrent_data.get("file_info", {}).get("total_length", 0) == 0
+        )
+        if not is_magnet_link:
+            return False
+
+        metadata_available = (
+            isinstance(session.torrent_data, dict)
+            and session.torrent_data.get("file_info") is not None
+            and session.torrent_data.get("file_info", {}).get("total_length", 0) > 0
+        )
+        if metadata_available:
+            return True
+
+        self.logger.info(
+            "Emergency: Attempting metadata exchange with %d %s peer(s) for %s",
+            len(peer_list),
+            source,
+            session.info.name,
+        )
+        try:
+            metadata_fetched = await session.handle_magnet_metadata_exchange(peer_list)
+            if metadata_fetched:
+                self.logger.info(
+                    "Emergency: Metadata exchange succeeded with %s peers for %s",
+                    source,
+                    session.info.name,
+                )
+                return True
+        except Exception as metadata_error:
+            self.logger.debug(
+                "Emergency metadata exchange via session handler failed for %s: %s",
+                session.info.name,
+                metadata_error,
+                exc_info=True,
+            )
+
+        try:
+            from ccbt.session.dht_setup import DHTDiscoverySetup
+
+            fallback_setup = DHTDiscoverySetup(session)
+            metadata_fetched = await fallback_setup.handle_magnet_metadata_exchange(
+                peer_list
+            )
+            if metadata_fetched:
+                self.logger.info(
+                    "Emergency: Fallback metadata exchange succeeded with %s peers for %s",
+                    source,
+                    session.info.name,
+                )
+                return True
+        except Exception as fallback_error:
+            self.logger.debug(
+                "Emergency fallback metadata exchange failed for %s: %s",
+                session.info.name,
+                fallback_error,
+                exc_info=True,
+            )
+
+        self.logger.debug(
+            "Emergency: Metadata exchange with %s peers did not complete for %s",
+            source,
+            session.info.name,
+        )
+        return False
+
     async def _setup_emergency_peer_discovery(self, session: Any) -> None:
         """Set up peer discovery after emergency start.
 
@@ -542,16 +627,41 @@ class TorrentAdditionHandler:
                             timeout=10.0,
                         )
                         if response and hasattr(response, "peers") and response.peers:
-                            peer_list = [
-                                {
-                                    "ip": p.ip,
-                                    "port": p.port,
-                                    "peer_source": "tracker",
-                                }
-                                for p in response.peers
-                                if hasattr(p, "ip")
-                            ]
-                            if peer_list and session.download_manager.peer_manager:
+                            # UDP tracker returns list[dict]; HTTP tracker may return PeerInfo objects
+                            raw_count = len(response.peers)
+                            peer_list = []
+                            for p in response.peers:
+                                if isinstance(p, dict):
+                                    ip, port = p.get("ip"), p.get("port")
+                                else:
+                                    ip = getattr(p, "ip", None)
+                                    port = getattr(p, "port", None)
+                                if ip is not None and port is not None:
+                                    peer_list.append(
+                                        {
+                                            "ip": ip,
+                                            "port": int(port),
+                                            "peer_source": "tracker",
+                                        }
+                                    )
+                            if not peer_list:
+                                self.logger.warning(
+                                    "Emergency: Tracker returned %d peer(s) but none had valid ip/port (format may differ)",
+                                    raw_count,
+                                )
+                            elif not getattr(
+                                session.download_manager, "peer_manager", None
+                            ):
+                                self.logger.warning(
+                                    "Emergency: peer_manager is None after emergency start; cannot connect to %d peers",
+                                    len(peer_list),
+                                )
+                            else:
+                                await self._try_emergency_metadata_exchange(
+                                    session,
+                                    peer_list,
+                                    "tracker",
+                                )
                                 self.logger.info(
                                     "Emergency: Connecting to %d peers from tracker",
                                     len(peer_list),
@@ -626,6 +736,11 @@ class TorrentAdditionHandler:
                                     }
                                     for ip, port in peers
                                 ]
+                                await self._try_emergency_metadata_exchange(
+                                    session,
+                                    peer_list,
+                                    "DHT",
+                                )
                                 self.logger.info(
                                     "Emergency: Connecting to %d peers from DHT",
                                     len(peer_list),

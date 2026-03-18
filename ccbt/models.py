@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -481,6 +481,16 @@ class XetSyncStatus(BaseModel):
     last_check_time: Optional[float] = Field(
         None, description="Timestamp of last folder check"
     )
+
+
+class AddXetFolderResult(TypedDict):
+    """Structured return from add_xet_folder."""
+
+    folder_key: str
+    workspace_id: str  # hex
+    sync_mode: str
+    folder_name: str
+    allowlist_hash: Optional[str]  # hex, optional
 
 
 class TorrentInfo(BaseModel):

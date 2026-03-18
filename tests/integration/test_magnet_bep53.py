@@ -385,3 +385,54 @@ class TestMagnetBEP53Integration:
         assert final_file_state.selected == initial_file_state.selected
         assert final_file_state.priority == initial_file_state.priority
 
+    @pytest.mark.asyncio
+    async def test_magnet_with_so_applied_after_metadata_merge(
+        self,
+        temp_output_dir,
+    ):
+        """Add magnet with so=0,1, simulate metadata merge, assert BEP 53 file selection applied."""
+        # Magnet with BEP 53 so=0,1 (only files 0 and 1 selected)
+        magnet_uri = (
+            "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+            "&dn=test_torrent&so=0,1"
+        )
+        session_manager = AsyncSessionManager(output_dir=str(temp_output_dir))
+        session_manager.config.nat.auto_map_ports = False
+
+        # Add magnet (creates session with magnet_info on torrent_data)
+        info_hash_hex = await session_manager.add_magnet(magnet_uri)
+        info_hash = bytes.fromhex(info_hash_hex)
+
+        async with session_manager.lock:
+            session = session_manager.torrents.get(info_hash)
+        assert session is not None
+
+        # Simulate "metadata just merged": add multi-file file_info to torrent_data
+        # get_torrent_info reads file_info["files"] as list of dicts (name, length, path, full_path)
+        assert isinstance(session.torrent_data, dict)
+        session.torrent_data["file_info"] = {
+            "type": "multi",
+            "files": [
+                {"name": "file0.txt", "length": 32768, "path": ["file0.txt"], "full_path": "file0.txt"},
+                {"name": "file1.txt", "length": 33768, "path": ["file1.txt"], "full_path": "file1.txt"},
+                {"name": "file2.txt", "length": 15384, "path": ["file2.txt"], "full_path": "file2.txt"},
+                {"name": "file3.txt", "length": 16384, "path": ["file3.txt"], "full_path": "file3.txt"},
+                {"name": "file4.txt", "length": 16884, "path": ["file4.txt"], "full_path": "file4.txt"},
+            ],
+        }
+
+        # Create file selection manager from updated torrent_data (simulates post-merge)
+        assert session.ensure_file_selection_manager() is True
+        assert session.file_selection_manager is not None
+
+        # Apply BEP 53 from magnet URI (so=0,1)
+        await session._apply_magnet_file_selection_if_needed()
+
+        # Assert only indices 0 and 1 are selected
+        all_states = session.file_selection_manager.get_all_file_states()
+        assert all_states[0].selected is True
+        assert all_states[1].selected is True
+        assert all_states[2].selected is False
+        assert all_states[3].selected is False
+        assert all_states[4].selected is False
+

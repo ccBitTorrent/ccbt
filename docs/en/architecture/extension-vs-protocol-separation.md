@@ -13,7 +13,10 @@ ccBitTorrent has a clear separation between **BitTorrent Extensions** (BEP 10) a
 
 **Location**: `ccbt/extensions/`
 
-**Manager**: `ExtensionManager` (`ccbt/extensions/manager.py`)
+::: ccbt.extensions.manager.ExtensionManager
+    options:
+      show_root_heading: false
+      heading_level: 4
 
 **Handled By**: `AsyncPeerConnectionManager._handle_extension_message()`
 
@@ -45,7 +48,10 @@ ccBitTorrent has a clear separation between **BitTorrent Extensions** (BEP 10) a
 
 **Location**: `ccbt/protocols/`
 
-**Manager**: `ProtocolManager` (`ccbt/protocols/base.py`)
+::: ccbt.protocols.base.ProtocolManager
+    options:
+      show_root_heading: false
+      heading_level: 4
 
 **Handled By**: Protocol-specific handlers in `ProtocolManager`
 

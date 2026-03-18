@@ -164,28 +164,36 @@ class DaemonMain:
                         import os
 
                         lock_pid = int(lock_pid_text)
-                        try:
-                            os.kill(lock_pid, 0)  # Check if process exists
-                            error_msg = (
-                                f"Daemon is already running (PID {lock_pid}). "
-                                "Cannot start another instance."
-                            )
-                            raise RuntimeError(error_msg)
-                        except (OSError, ProcessLookupError) as e:
-                            # Process is dead - remove stale lock and retry
-                            logger.warning(
-                                "Removing stale lock file (process %d not running)",
+                        # Lock held by current process (foreground: CLI created lock then we re-check)
+                        if lock_pid == os.getpid():
+                            logger.debug(
+                                "Lock file held by current process (PID %d), continuing",
                                 lock_pid,
                             )
-                            with contextlib.suppress(OSError):
-                                self.daemon_manager.lock_file.unlink()
-                            # Retry acquiring lock
-                            if not self.daemon_manager.acquire_lock():
-                                msg = (
-                                    "Cannot acquire daemon lock file. "
-                                    "Another daemon may be starting."
+                            # Don't raise - we own the lock
+                        else:
+                            try:
+                                os.kill(lock_pid, 0)  # Check if process exists
+                                error_msg = (
+                                    f"Daemon is already running (PID {lock_pid}). "
+                                    "Cannot start another instance."
                                 )
-                                raise RuntimeError(msg) from e
+                                raise RuntimeError(error_msg)
+                            except (OSError, ProcessLookupError) as e:
+                                # Process is dead - remove stale lock and retry
+                                logger.warning(
+                                    "Removing stale lock file (process %d not running)",
+                                    lock_pid,
+                                )
+                                with contextlib.suppress(OSError):
+                                    self.daemon_manager.lock_file.unlink()
+                                # Retry acquiring lock
+                                if not self.daemon_manager.acquire_lock():
+                                    msg = (
+                                        "Cannot acquire daemon lock file. "
+                                        "Another daemon may be starting."
+                                    )
+                                    raise RuntimeError(msg) from e
                 except Exception as e:
                     logger.warning(
                         "Error checking lock file: %s, removing stale lock", e
@@ -505,6 +513,28 @@ class DaemonMain:
             # This ensures CLI can connect immediately after PID file is written
             # Lock is already acquired at start of this method
             self.daemon_manager.write_pid(acquire_lock=False)
+
+            # Write daemon config.json so CLI/dashboard can discover IPC port and API key
+            # (avoids "Daemon config file not found" and wrong-port connection failures)
+            if self.daemon_manager.state_dir and self._api_key:
+                import json
+
+                config_path = self.daemon_manager.state_dir / "config.json"
+                try:
+                    config_path.write_text(
+                        json.dumps(
+                            {
+                                "ipc_port": ipc_port,
+                                "api_key": self._api_key,
+                                "ipc_host": ipc_host,
+                            },
+                            indent=2,
+                        ),
+                        encoding="utf-8",
+                    )
+                    logger.debug("Wrote daemon config to %s", config_path)
+                except Exception as e:
+                    logger.warning("Could not write daemon config.json: %s", e)
 
             # Start auto-save task
             auto_save_interval = (
@@ -1121,21 +1151,23 @@ class DaemonMain:
         except Exception:
             logger.exception("Error shutting down metrics collection")
 
-        # Save state (before stopping services)
-        if self.session_manager:
-            try:
-                await self.state_manager.save_state(self.session_manager)
-                logger.info("State saved")
-            except Exception:
-                logger.exception("Error saving state during shutdown")
-
-        # Stop IPC server (releases IPC port)
+        # Stop IPC server before save_state so no in-flight request holds session_manager.lock.
+        # Several IPC handlers (e.g. peers/list) hold that lock while awaiting; save_state()
+        # needs the lock for get_global_stats() and can hang indefinitely otherwise.
         if self.ipc_server:
             try:
                 await self.ipc_server.stop()
                 logger.debug("IPC server stopped (port released)")
             except Exception:
                 logger.exception("Error stopping IPC server")
+
+        # Save state (after IPC stopped so no handler blocks lock acquisition)
+        if self.session_manager:
+            try:
+                await self.state_manager.save_state(self.session_manager)
+                logger.info("State saved")
+            except Exception:
+                logger.exception("Error saving state during shutdown")
 
         # Stop session manager (releases all network ports via TCP server, UDP tracker, DHT, NAT)
         if self.session_manager:
@@ -1211,6 +1243,13 @@ async def main() -> int:
     try:
         debug_log("Initializing configuration...")
         config_manager = init_config(args.config)
+        # Set locale from config so any user-facing log or IPC messages use the same locale
+        try:
+            from ccbt.i18n.manager import TranslationManager
+
+            TranslationManager(config_manager.config)
+        except Exception:
+            pass
         debug_log("Configuration initialized, setting up logging...")
 
         # CRITICAL FIX: Apply verbosity/log-level overrides from CLI arguments

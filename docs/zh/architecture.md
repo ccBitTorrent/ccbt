@@ -88,47 +88,15 @@ ccBitTorrent使用面向服务的架构，具有多个核心服务：
 
 所有服务都继承自基础`Service`类，该类提供生命周期管理、健康检查和状态跟踪。
 
-**实现：** `ccbt/services/base.py`
+::: ccbt.services.base.Service
 
 ### AsyncSessionManager
 
-管理整个BitTorrent会话的中央编排器。有两个实现：
+管理整个 BitTorrent 会话的中央编排器。实现仅在一处：`ccbt/session/session.py`；`async_main.py` 为再导出。
 
-1. **`ccbt/session/async_main.py`中的AsyncSessionManager**：由异步CLI入口点使用，管理具有协议支持的多个种子。
+主要组件：`dht_client`、`peer_service`、`queue_manager`、`nat_manager`、`private_torrents`（BEP 27）、`scrape_cache`（BEP 48）、后台任务。
 
-`AsyncSessionManager`类在`ccbt/session/async_main.py`的第319行开始定义。关键初始化属性包括：
-
-- `config`：配置实例（如果未提供则使用全局配置）
-- `torrents`：将种子ID映射到`AsyncDownloadManager`实例的字典
-- `metrics`：`MetricsCollector`实例（如果启用，在`start()`中初始化）
-- `disk_io_manager`：磁盘I/O管理器（在`start()`中初始化）
-- `security_manager`：安全管理器（在`start()`中初始化）
-- `protocol_manager`：用于管理多个协议的`ProtocolManager`
-- `protocols`：活动协议实例列表
-
-查看完整实现：
-
-```python
---8<-- "ccbt/session/async_main.py:319:374"
-```
-
-2. **`ccbt/session/session.py`中的AsyncSessionManager**：更全面的实现，包括DHT、队列管理、NAT遍历和scrape支持。
-
-`ccbt/session/session.py`中更全面的`AsyncSessionManager`（从第1317行开始）包括其他组件：
-
-- `dht_client`：用于对等节点发现的DHT客户端
-- `peer_service`：用于管理对等节点连接的`PeerService`实例
-- `queue_manager`：用于优先级排序的种子队列管理器
-- `nat_manager`：用于端口映射的NAT遍历管理器
-- `private_torrents`：跟踪私有种子的集合（BEP 27）
-- `scrape_cache`：跟踪器scrape结果的缓存（BEP 48）
-- 用于清理、指标收集和定期scraping的后台任务
-
-查看完整实现：
-
-```python
---8<-- "ccbt/session/session.py:1317:1367"
-```
+::: ccbt.session.session.AsyncSessionManager
 
 **职责：**
 - 种子生命周期管理
@@ -160,7 +128,7 @@ ccBitTorrent使用面向服务的架构，具有多个核心服务：
 
 处理所有对等节点连接，具有高级流水线处理。`AsyncPeerConnectionManager`管理种子会话的各个对等节点连接。
 
-**实现：** `ccbt/peer/async_peer_connection.py`
+::: ccbt.peer.async_peer_connection.AsyncPeerConnectionManager
 
 **功能：**
 - 异步TCP连接
@@ -175,7 +143,7 @@ ccBitTorrent使用面向服务的架构，具有多个核心服务：
 
 实现高级片段选择算法。`AsyncPieceManager`协调片段下载、验证和完成跟踪。
 
-**实现：** `ccbt/piece/async_piece_manager.py`
+::: ccbt.piece.async_piece_manager.AsyncPieceManager
 
 **算法：**
 - **Rarest-First**：最优群组健康度
@@ -188,7 +156,7 @@ ccBitTorrent使用面向服务的架构，具有多个核心服务：
 
 具有多种策略的优化磁盘操作。磁盘I/O系统通过`init_disk_io()`初始化，并通过会话管理器进行管理。
 
-**实现：** `ccbt/storage/disk_io.py`
+::: ccbt.storage.disk_io.DiskIOManager
 
 **优化：**
 - 文件预分配（sparse/full）
@@ -255,17 +223,10 @@ ccBitTorrent使用面向服务的架构，具有多个核心服务：
 
 事件系统包括全面的事件类型：
 
-`EventType`枚举定义了所有系统事件，包括对等节点、片段、种子、跟踪器、DHT、协议、扩展和安全事件。包含所有事件类型的完整枚举：
+`EventType` 枚举定义所有系统事件（对等节点、片段、种子、跟踪器、DHT、协议、扩展、安全），并通过 `emit_event()` 在全局总线上发出。
 
-```python
---8<-- "ccbt/utils/events.py:34:152"
-```
-
-事件通过`emit_event()`函数使用全局事件总线发出：
-
-```python
---8<-- "ccbt/utils/events.py:658:661"
-```
+::: ccbt.utils.events.EventType
+::: ccbt.utils.events.EventBus
 
 ## 配置系统
 
@@ -275,11 +236,9 @@ ccBitTorrent使用面向服务的架构，具有多个核心服务：
 
 **实现：** `ccbt/config/config.py`
 
-`ConfigManager`类处理配置加载、验证和热重载。它在标准位置搜索配置文件，并支持加密的代理密码。查看初始化：
+`ConfigManager` 类负责配置加载、验证与热重载。
 
-```python
---8<-- "ccbt/config/config.py:46:60"
-```
+::: ccbt.config.config.ConfigManager
 
 **配置源（按顺序）：**
 1. 默认值（来自Pydantic模型）
@@ -352,11 +311,9 @@ BitTorrent协议扩展由`ExtensionManager`管理，它处理Fast Extension、PE
 
 **实现：** `ccbt/extensions/manager.py`
 
-`ExtensionManager`初始化所有支持的BitTorrent扩展，包括Protocol、SSL、Fast、PEX和DHT扩展。每个扩展都以其功能和状态注册。查看初始化逻辑：
+`ExtensionManager` 初始化 Protocol、SSL、Fast、PEX、DHT 等扩展。
 
-```python
---8<-- "ccbt/extensions/manager.py:51:110"
-```
+::: ccbt.extensions.manager.ExtensionManager
 
 ### 协议管理器
 
@@ -364,11 +321,9 @@ BitTorrent协议扩展由`ExtensionManager`管理，它处理Fast Extension、PE
 
 **实现：** `ccbt/protocols/base.py`
 
-`ProtocolManager`管理具有断路器支持、性能跟踪和自动事件发出的多个协议。协议按其类型注册，统计信息按协议跟踪。查看初始化和注册：
+`ProtocolManager` 管理多协议，支持断路与性能跟踪。
 
-```python
---8<-- "ccbt/protocols/base.py:286:324"
-```
+::: ccbt.protocols.base.ProtocolManager
 
 ## 性能优化
 
@@ -480,11 +435,9 @@ IPFS协议集成通过IPFS守护进程提供分散式内容寻址和对等网络
 
 ### 会话管理器集成
 
-如果配置中启用了IPFS协议，它会在会话管理器启动期间自动注册。协议在协议管理器中注册并启动，具有优雅的错误处理，如果IPFS不可用，不会阻止会话启动。查看初始化：
+配置启用时，IPFS 协议会在会话管理器启动时自动注册。
 
-```python
---8<-- "ccbt/session/async_main.py:441:462"
-```
+::: ccbt.protocols.ipfs.IPFSProtocol
 
 ### 内容寻址
 

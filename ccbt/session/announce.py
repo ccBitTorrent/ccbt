@@ -7,7 +7,7 @@ announce loops, scrape operations, and tracker health monitoring.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ccbt.session.models import SessionContext
 
@@ -355,6 +355,71 @@ class AnnounceLoop:
 
         """
         self.s = session  # AsyncTorrentSession instance
+
+    async def _maybe_trigger_tracker_metadata_exchange(
+        self,
+        peer_list: list[dict[str, Any]],
+        *,
+        active_count: Optional[int] = None,
+    ) -> None:
+        """Attempt magnet metadata exchange from tracker peers when startup is stalled."""
+        if not peer_list:
+            return
+
+        is_magnet_link = (
+            isinstance(self.s.torrent_data, dict)
+            and self.s.torrent_data.get("file_info") is None
+        ) or (
+            isinstance(self.s.torrent_data, dict)
+            and self.s.torrent_data.get("file_info", {}).get("total_length", 0) == 0
+        )
+        if not is_magnet_link:
+            return
+
+        metadata_available = (
+            isinstance(self.s.torrent_data, dict)
+            and self.s.torrent_data.get("file_info") is not None
+            and self.s.torrent_data.get("file_info", {}).get("total_length", 0) > 0
+        )
+        if metadata_available:
+            return
+
+        min_peers_before_dht = getattr(
+            self.s.config.discovery,
+            "min_peers_before_dht",
+            10,
+        )
+        if active_count is not None and active_count >= min_peers_before_dht:
+            self.s.logger.debug(
+                "Skipping direct tracker metadata exchange for %s because %d active tracker connection(s) already exist",
+                self.s.info.name,
+                active_count,
+            )
+            return
+
+        self.s.logger.info(
+            "Magnet link detected, attempting metadata exchange with %d tracker-discovered peer(s) for %s",
+            len(peer_list),
+            self.s.info.name,
+        )
+        try:
+            metadata_fetched = await self.s.handle_magnet_metadata_exchange(peer_list)
+            if metadata_fetched:
+                self.s.logger.info(
+                    "Successfully fetched metadata from tracker-discovered peers for %s",
+                    self.s.info.name,
+                )
+            else:
+                self.s.logger.debug(
+                    "Metadata exchange with tracker-discovered peers did not complete (will retry with DHT or later)"
+                )
+        except Exception as metadata_error:
+            self.s.logger.debug(
+                "Error during metadata exchange with tracker peers for %s: %s (will retry with DHT or later)",
+                self.s.info.name,
+                metadata_error,
+                exc_info=True,
+            )
 
     async def run(self) -> None:
         """Run the announce loop."""
@@ -920,6 +985,32 @@ class AnnounceLoop:
                                             "Failed to invoke DHT callbacks with tracker peers: %s",
                                             dht_error,
                                         )
+                                await asyncio.sleep(1.0)
+                                peer_manager = self.s.download_manager.peer_manager
+                                active_count = None
+                                if peer_manager and hasattr(
+                                    peer_manager, "connections"
+                                ):
+                                    active_count = len(
+                                        [
+                                            c
+                                            for c in peer_manager.connections.values()
+                                            if c.is_active()
+                                        ]
+                                    )
+                                    self.s.logger.info(
+                                        "Tracker peer connection status for %s: %d active connections after adding %d peers (success rate: %.1f%%)",
+                                        self.s.info.name,
+                                        active_count,
+                                        len(unique_peer_list),
+                                        (active_count / len(unique_peer_list) * 100)
+                                        if unique_peer_list
+                                        else 0.0,
+                                    )
+                                await self._maybe_trigger_tracker_metadata_exchange(
+                                    unique_peer_list,
+                                    active_count=active_count,
+                                )
                             except Exception as connect_error:
                                 self.s.logger.warning(
                                     "Failed to connect tracker peers for %s: %s",
@@ -950,169 +1041,10 @@ class AnnounceLoop:
                                         if unique_peer_list
                                         else 0.0,
                                     )
-
-                                # CRITICAL FIX: Trigger metadata exchange for magnet links when peers connect from tracker
-                                # Check if this is a magnet link (metadata not available)
-                                is_magnet_link = (
-                                    isinstance(self.s.torrent_data, dict)
-                                    and self.s.torrent_data.get("file_info") is None
-                                ) or (
-                                    isinstance(self.s.torrent_data, dict)
-                                    and self.s.torrent_data.get("file_info", {}).get(
-                                        "total_length", 0
-                                    )
-                                    == 0
+                                await self._maybe_trigger_tracker_metadata_exchange(
+                                    unique_peer_list,
+                                    active_count=active_count,
                                 )
-
-                                if is_magnet_link:
-                                    # Check if metadata is already available
-                                    metadata_available = (
-                                        isinstance(self.s.torrent_data, dict)
-                                        and self.s.torrent_data.get("file_info")
-                                        is not None
-                                        and self.s.torrent_data.get(
-                                            "file_info", {}
-                                        ).get("total_length", 0)
-                                        > 0
-                                    )
-
-                                    if not metadata_available:
-                                        self.s.logger.info(
-                                            "Magnet link detected, attempting metadata exchange with %d tracker-discovered peer(s) for %s",
-                                            len(peer_list),
-                                            self.s.info.name,
-                                        )
-                                        try:
-                                            # Use DHT setup's metadata exchange handler if available
-                                            if self.s.dht_setup:
-                                                metadata_fetched = await self.s.handle_magnet_metadata_exchange(
-                                                    peer_list
-                                                )
-                                                if metadata_fetched:
-                                                    self.s.logger.info(
-                                                        "Successfully fetched metadata from tracker-discovered peers for %s",
-                                                        self.s.info.name,
-                                                    )
-                                            else:
-                                                # Fallback: use metadata exchange directly
-                                                from ccbt.piece.async_metadata_exchange import (
-                                                    fetch_metadata_from_peers,
-                                                )
-
-                                                metadata = (
-                                                    await fetch_metadata_from_peers(
-                                                        self.s.info.info_hash,
-                                                        peer_list,
-                                                        timeout=60.0,
-                                                    )
-                                                )
-                                                if metadata:
-                                                    self.s.logger.info(
-                                                        "Successfully fetched metadata from tracker-discovered peers for %s",
-                                                        self.s.info.name,
-                                                    )
-                                                    # Update torrent_data with metadata
-                                                    # Type cast: metadata is dict[bytes, Any] but function accepts dict[bytes | str, Any]
-                                                    # The function handles both types, so cast is safe
-                                                    from typing import cast
-
-                                                    from ccbt.core.magnet import (
-                                                        build_torrent_data_from_metadata,
-                                                    )
-
-                                                    updated_torrent_data = build_torrent_data_from_metadata(
-                                                        self.s.info.info_hash,
-                                                        cast(
-                                                            "dict[bytes | str, Any]",
-                                                            metadata,
-                                                        ),
-                                                    )
-                                                    if isinstance(
-                                                        self.s.torrent_data, dict
-                                                    ):
-                                                        self.s.torrent_data.update(
-                                                            updated_torrent_data
-                                                        )
-                                                        # CRITICAL FIX: Update file assembler if it exists (rebuild file segments)
-                                                        if (
-                                                            hasattr(
-                                                                self.s.download_manager,
-                                                                "file_assembler",
-                                                            )
-                                                            and self.s.download_manager.file_assembler
-                                                            is not None
-                                                        ):
-                                                            try:
-                                                                self.s.download_manager.file_assembler.update_from_metadata(
-                                                                    self.s.torrent_data
-                                                                )
-                                                                self.s.logger.info(
-                                                                    "Updated file assembler with new metadata for %s",
-                                                                    self.s.info.name,
-                                                                )
-                                                            except Exception as e:
-                                                                self.s.logger.warning(
-                                                                    "Failed to update file assembler with metadata: %s",
-                                                                    e,
-                                                                )
-                                                        # Update piece_manager with new metadata
-                                                        if (
-                                                            hasattr(
-                                                                self.s.download_manager,
-                                                                "piece_manager",
-                                                            )
-                                                            and self.s.download_manager.piece_manager
-                                                        ):
-                                                            piece_manager = self.s.download_manager.piece_manager
-                                                            if (
-                                                                "pieces_info"
-                                                                in updated_torrent_data
-                                                            ):
-                                                                pieces_info = updated_torrent_data[
-                                                                    "pieces_info"
-                                                                ]
-                                                                if (
-                                                                    "num_pieces"
-                                                                    in pieces_info
-                                                                ):
-                                                                    piece_manager.num_pieces = int(
-                                                                        pieces_info[
-                                                                            "num_pieces"
-                                                                        ]
-                                                                    )
-                                                                    self.s.logger.info(
-                                                                        "Updated piece_manager.num_pieces to %d from metadata",
-                                                                        piece_manager.num_pieces,
-                                                                    )
-                                                                if (
-                                                                    "piece_length"
-                                                                    in pieces_info
-                                                                ):
-                                                                    piece_manager.piece_length = int(
-                                                                        pieces_info[
-                                                                            "piece_length"
-                                                                        ]
-                                                                    )
-                                                                    self.s.logger.info(
-                                                                        "Updated piece_manager.piece_length to %d from metadata",
-                                                                        piece_manager.piece_length,
-                                                                    )
-                                                            if hasattr(
-                                                                piece_manager,
-                                                                "torrent_data",
-                                                            ):
-                                                                piece_manager.torrent_data = self.s.torrent_data
-                                                else:
-                                                    self.s.logger.debug(
-                                                        "Metadata exchange with tracker-discovered peers did not complete (will retry with DHT or later)",
-                                                    )
-                                        except Exception as metadata_error:
-                                            self.s.logger.debug(
-                                                "Error during metadata exchange with tracker peers for %s: %s (will retry with DHT or later)",
-                                                self.s.info.name,
-                                                metadata_error,
-                                                exc_info=True,
-                                            )
                         else:
                             self.s.logger.debug(
                                 "No valid peers to connect from tracker response for %s (response had %d peer objects)",

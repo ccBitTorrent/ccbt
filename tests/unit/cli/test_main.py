@@ -1389,10 +1389,19 @@ def test_debug_command_happy_path(monkeypatch):
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: None)
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _FakeSession())
 
-    # Ensure asyncio.run executes the async debug function
+    # Mock DaemonManager so PID file check does not use real filesystem or fail
+    class _MockPath:
+        def exists(self):
+            return False
+
+    class _MockDaemonManager:
+        def __init__(self):
+            self.pid_file = _MockPath()
+
+    monkeypatch.setattr(cli_main, "DaemonManager", _MockDaemonManager)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    result = runner.invoke(cli_main.cli, ["debug"]) 
+    result = runner.invoke(cli_main.cli, ["debug"])
     assert result.exit_code == 0
     assert "Debug mode" in result.output
 
@@ -2569,22 +2578,65 @@ def test_magnet_happy_path_noninteractive(monkeypatch):
 
 
 def test_magnet_interactive_path(monkeypatch):
+    """Interactive magnet adds via executor then runs start_interactive_magnet_download."""
     runner = CliRunner()
-    cfg = SimpleNamespace(disk=SimpleNamespace(checkpoint_enabled=False, checkpoint_dir="/tmp"))
-    monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg))
+    cfg = SimpleNamespace(
+        disk=SimpleNamespace(checkpoint_enabled=False, checkpoint_dir="/tmp")
+    )
+    monkeypatch.setattr(
+        cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=cfg)
+    )
 
     class _Mgr(_Sess):
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
 
-    async def _start_interactive(session, torrent_data, console, resume=False):
+    # Mock executor: torrent.add returns success with info_hash (hex string)
+    from ccbt.executor.base import CommandResult
+
+    async def _mock_execute(*args: Any, **kwargs: Any):
+        if kwargs.get("path_or_magnet", "").startswith("magnet:"):
+            return CommandResult(
+                success=True, data={"info_hash": "00" * 20}
+            )
+        return CommandResult(success=False, error="unexpected")
+
+    mock_executor = Mock()
+    mock_executor.execute = AsyncMock(side_effect=_mock_execute)
+
+    mock_executor_manager = Mock()
+    mock_executor_manager.get_executor = Mock(return_value=mock_executor)
+
+    async def _start_interactive_magnet(
+        session,
+        magnet_link,
+        info_hash_hex,
+        console,
+        resume=False,
+        output_dir=None,
+    ):
         return None
 
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_interactive_download", _start_interactive)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(
+        cli_main, "start_interactive_magnet_download", _start_interactive_magnet
+    )
+    monkeypatch.setattr(
+        "ccbt.executor.manager.ExecutorManager.get_instance",
+        lambda: mock_executor_manager,
+    )
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    res = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "-i"]) 
+    res = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "-i"])
     assert res.exit_code == 0
 
 

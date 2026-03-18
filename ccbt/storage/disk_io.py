@@ -2373,7 +2373,9 @@ class DiskIOManager:
                     chunk_hash, existing_path, file_path, offset
                 )
             # Store new chunk
-            return await self._store_new_chunk(chunk_hash, chunk_data, dedup)
+            return await self._store_new_chunk(
+                chunk_hash, chunk_data, dedup, file_path=file_path, offset=offset
+            )
 
         except Exception as e:
             self.logger.exception(
@@ -2588,13 +2590,20 @@ class DiskIOManager:
         chunk_hash: bytes,
         chunk_data: bytes,
         dedup: Optional[Any] = None,
+        file_path: Optional[Path] = None,
+        offset: Optional[int] = None,
     ) -> bool:
         """Store a new chunk with metadata.
+
+        Optionally records the file-to-chunk reference in the deduplication
+        database so file reconstruction and reference tracking stay consistent.
 
         Args:
             chunk_hash: 32-byte chunk hash
             chunk_data: Chunk data bytes
             dedup: Optional XetDeduplication instance (will be retrieved if None)
+            file_path: Optional path to file that references this chunk
+            offset: Optional offset in file where this chunk appears
 
         Returns:
             True if successful, False otherwise
@@ -2606,7 +2615,11 @@ class DiskIOManager:
 
             if dedup:
                 # Store via deduplication manager (handles database and storage)
-                await dedup.store_chunk(chunk_hash, chunk_data)
+                kwargs: dict[str, Any] = {}
+                if file_path is not None and offset is not None:
+                    kwargs["file_path"] = str(file_path)
+                    kwargs["file_offset"] = offset
+                await dedup.store_chunk(chunk_hash, chunk_data, **kwargs)
                 self.logger.debug(
                     "Stored new Xet chunk: %s (%d bytes)",
                     chunk_hash.hex()[:16],

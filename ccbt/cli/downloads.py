@@ -22,6 +22,148 @@ if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
 
 
+def _format_size_cli(bytes_count: int) -> str:
+    """Format bytes as human-readable size for CLI output."""
+    size = float(bytes_count)
+    for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
+        if size < 1024.0:
+            return f"{size:.2f} {unit}"
+        size /= 1024.0
+    return f"{size:.2f} PiB"
+
+
+async def run_magnet_file_selection_step(
+    executor: Any,
+    info_hash_hex: str,
+    console: Console,
+    timeout: float = 120.0,
+    poll_interval: float = 2.5,
+) -> None:
+    """Wait for metadata, show file list, prompt for selection, apply file.select.
+
+    Polls file.list until files are available or timeout. Then prints a table,
+    prompts for [a]ll, [n]one, or comma/range indices, and calls file.select
+    (or file.deselect for none).
+
+    Args:
+        executor: UnifiedCommandExecutor (or any with execute(command, **kwargs))
+        info_hash_hex: Torrent info hash (hex)
+        console: Rich console for output
+        timeout: Max seconds to wait for file list
+        poll_interval: Seconds between file.list polls
+
+    """
+    from rich.prompt import Prompt
+    from rich.table import Table
+
+    deadline = asyncio.get_event_loop().time() + timeout
+    file_items: list[Any] = []
+    while asyncio.get_event_loop().time() < deadline:
+        result = await executor.execute("file.list", info_hash=info_hash_hex)
+        if result.success and result.data:
+            raw = result.data.get("files")
+            if hasattr(raw, "files"):
+                file_items = list(raw.files)
+            elif isinstance(raw, list):
+                file_items = raw
+            else:
+                file_items = []
+            if file_items:
+                break
+        await asyncio.sleep(poll_interval)
+
+    if not file_items:
+        console.print(
+            _(
+                "[yellow]No file list available within {timeout}s, continuing with default selection.[/yellow]"
+            ).format(timeout=timeout)
+        )
+        return
+
+    # Build table
+    table = Table(title=_("Files in torrent {hash}...").format(hash=info_hash_hex[:16]))
+    table.add_column(_("Index"), style="cyan", justify="right")
+    table.add_column(_("Name"), style="green")
+    table.add_column(_("Size"), justify="right", style="magenta")
+    indices: list[int] = []
+    for item in file_items:
+        idx = getattr(item, "index", len(indices))
+        name = getattr(item, "name", getattr(item, "path", "?"))
+        size = getattr(item, "size", 0)
+        indices.append(idx)
+        table.add_row(str(idx), str(name), _format_size_cli(size))
+    console.print(table)
+
+    prompt_msg = _("Select files: [a]ll, [n]one, or indices (e.g. 0,2-5)")
+    try:
+        choice = Prompt.ask(prompt_msg, default="a").strip().lower()
+    except Exception:
+        choice = "a"
+
+    if choice == "n":
+        # Deselect all: select no files (deselect all indices)
+        result = await executor.execute(
+            "file.deselect",
+            info_hash=info_hash_hex,
+            file_indices=indices,
+        )
+        if result.success:
+            console.print(_("[green]Deselected all files.[/green]"))
+        else:
+            console.print(
+                _("[yellow]Could not deselect: {error}[/yellow]").format(
+                    error=result.error or _("Unknown error")
+                )
+            )
+        return
+
+    if choice == "a" or not choice:
+        selected = indices
+    else:
+        # Parse comma-separated indices and ranges (e.g. 0,2-5,8)
+        selected = []
+        for part in choice.split(","):
+            stripped = part.strip()
+            if "-" in stripped:
+                try:
+                    a, b = stripped.split("-", 1)
+                    lo, hi = int(a.strip()), int(b.strip())
+                    for i in range(lo, hi + 1):
+                        if i in indices:
+                            selected.append(i)
+                except (ValueError, TypeError):
+                    pass
+            else:
+                try:
+                    i = int(stripped)
+                    if i in indices:
+                        selected.append(i)
+                except (ValueError, TypeError):
+                    pass
+        selected = sorted(set(selected))
+
+    if not selected:
+        console.print(
+            _("[yellow]No valid indices, keeping default selection.[/yellow]")
+        )
+        return
+    result = await executor.execute(
+        "file.select",
+        info_hash=info_hash_hex,
+        file_indices=selected,
+    )
+    if result.success:
+        console.print(
+            _("[green]Selected {count} file(s).[/green]").format(count=len(selected))
+        )
+    else:
+        console.print(
+            _("[yellow]Select failed: {error}[/yellow]").format(
+                error=result.error or _("Unknown error")
+            )
+        )
+
+
 async def start_interactive_download(
     session: AsyncSessionManager,
     torrent_data: dict[str, Any],
@@ -597,16 +739,24 @@ async def start_basic_magnet_download(
 async def start_interactive_magnet_download(
     session: AsyncSessionManager,
     magnet_link: str,
+    info_hash_hex: str,
     console: Console,
     resume: bool = False,
+    output_dir: Optional[Any] = None,
 ) -> None:
-    """Start an interactive magnet link download with user prompts.
+    """Start interactive CLI for a magnet already added via executor.
+
+    The magnet must have been added with executor so add_magnet() ran and
+    magnet_info is set (BEP 53). This only runs the InteractiveCLI download
+    loop and optional file selection.
 
     Args:
         session: The session manager instance
-        magnet_link: Magnet URI string
+        magnet_link: Magnet URI string (for display / parse_magnet name)
+        info_hash_hex: Info hash from torrent.add result
         console: Rich console for output
         resume: Whether to resume from checkpoint
+        output_dir: Optional output directory (for display)
 
     """
     cleanup_task = getattr(session, "_cleanup_task", None)
@@ -614,25 +764,25 @@ async def start_interactive_magnet_download(
         console.print(_("[cyan]Initializing session components...[/cyan]"))
         await session.start()
 
-    # Wait for session to be ready (best effort)
-    # Note: is_ready method may not exist on all session implementations
-
-    # Create executor with local adapter
     adapter = LocalSessionAdapter(session)
     executor = UnifiedCommandExecutor(adapter)
 
-    result = await executor.execute(
-        "torrent.add",
-        path_or_magnet=magnet_link,
-        resume=resume,
-    )
-    if not result.success:
-        raise RuntimeError(result.error or "Failed to add magnet link")
+    from ccbt.core.magnet import parse_magnet
 
-    from ccbt.interface.terminal_dashboard import TerminalDashboard
-
-    app = TerminalDashboard(session)
     try:
-        app.run()  # type: ignore[attr-defined]
-    except KeyboardInterrupt:
-        console.print(_("[yellow]Download interrupted by user[/yellow]"))
+        magnet_info = parse_magnet(magnet_link)
+        name = magnet_info.display_name or "Unknown"
+    except Exception:
+        name = "Unknown"
+
+    torrent_data = {
+        "name": name,
+        "info_hash": info_hash_hex,
+        "download_path": output_dir,
+    }
+    interactive_cli = InteractiveCLI(executor, adapter, console, session=session)
+    await interactive_cli.download_torrent(
+        torrent_data,
+        resume=resume,
+        already_added_info_hash=info_hash_hex,
+    )

@@ -958,12 +958,18 @@ class AsyncTrackerClient:
             # CRITICAL FIX: Ensure info_hash and peer_id are bytes, not strings
             # Convert hex strings to bytes if needed
             if isinstance(info_hash_raw, str):
-                # Try to decode as hex string (40 chars = 20 bytes)
+                # Try to decode as hex string (40 chars = 20 bytes, 64 chars = 32 bytes for v2/XET)
                 if len(info_hash_raw) == 40:
                     try:
                         info_hash = bytes.fromhex(info_hash_raw)
                     except ValueError:
                         msg = f"info_hash is string but not valid hex: {info_hash_raw[:20]}..."
+                        raise TrackerError(msg) from None
+                elif len(info_hash_raw) == 64:
+                    try:
+                        info_hash = bytes.fromhex(info_hash_raw)
+                    except ValueError:
+                        msg = f"info_hash is string but not valid hex (64-char): {info_hash_raw[:20]}..."
                         raise TrackerError(msg) from None
                 else:
                     # Try to decode as URL-encoded bytes
@@ -978,9 +984,10 @@ class AsyncTrackerClient:
                 msg = f"info_hash has invalid type: {type(info_hash_raw)}, expected bytes or hex string"
                 raise TrackerError(msg)
 
-            # Validate info_hash length (should be 20 bytes for SHA-1)
-            if len(info_hash) != 20:
-                msg = f"info_hash must be exactly 20 bytes (SHA-1), got {len(info_hash)} bytes"
+            # Validate info_hash length (20 bytes SHA-1 or 32 bytes for v2/XET workspace)
+            # Not all trackers support 32-byte; HTTP trackers may accept it via URL-encoded binary
+            if len(info_hash) not in (20, 32):
+                msg = f"info_hash must be 20 bytes (SHA-1) or 32 bytes (v2/XET), got {len(info_hash)} bytes"
                 self.logger.error(msg)
                 raise TrackerError(msg)
 
@@ -1078,6 +1085,19 @@ class AsyncTrackerClient:
             )
 
             is_udp = normalized_url.startswith("udp://")
+
+            # BEP 15 (UDP) uses 20-byte info_hash; BEP 41 extends UDP with URLData only. Skip UDP for 32-byte (XET).
+            if is_udp and len(info_hash) == 32:
+                self.logger.debug(
+                    "UDP trackers do not support 32-byte info_hash (XET workspace); skipping %s",
+                    normalized_url[:80],
+                )
+                return TrackerResponse(
+                    peers=[],
+                    interval=1800,
+                    complete=0,
+                    incomplete=0,
+                )
 
             if is_udp:
                 # Route to UDP tracker client

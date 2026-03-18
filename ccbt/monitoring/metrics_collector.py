@@ -37,6 +37,9 @@ except ImportError:  # pragma: no cover - Tested via import failure path
 
 logger = get_logger(__name__)
 
+# Cap on per-peer connection stats dict size; evicted peers report 0.0 for per-peer rate
+_CONNECTION_STATS_MAX_PEERS = 50_000
+
 
 class MetricType(Enum):
     """Types of metrics."""
@@ -120,8 +123,15 @@ class MetricsCollector:
     def __init__(self):
         """Initialize metrics collector."""
         # Connection tracking for success rate calculation
-        self._connection_attempts: dict[str, int] = {}  # peer_key -> attempt count
-        self._connection_successes: dict[str, int] = {}  # peer_key -> success count
+        self._connection_attempts: dict[
+            str, int
+        ] = {}  # peer_key -> attempt count (bounded)
+        self._connection_successes: dict[
+            str, int
+        ] = {}  # peer_key -> success count (bounded)
+        self._total_connection_attempts: int = 0  # O(1) global total (never decreased)
+        self._total_connection_successes: int = 0  # O(1) global total (never decreased)
+        self._connection_stats_max_peers: int = _CONNECTION_STATS_MAX_PEERS
         self._connection_lock = asyncio.Lock()  # Thread-safe access
         self.metrics: dict[str, Metric] = {}
         self.alert_rules: dict[str, AlertRule] = {}
@@ -882,6 +892,9 @@ class MetricsCollector:
     async def record_connection_attempt(self, peer_key: str) -> None:
         """Record a connection attempt for a peer.
 
+        Global totals are updated for O(1) global rate. Per-peer dicts are
+        bounded; evicted peers have no per-peer history (get returns 0.0).
+
         Args:
             peer_key: Unique identifier for the peer (e.g., "ip:port")
 
@@ -890,9 +903,14 @@ class MetricsCollector:
             self._connection_attempts[peer_key] = (
                 self._connection_attempts.get(peer_key, 0) + 1
             )
+            self._total_connection_attempts += 1
+            self._evict_connection_stats_if_over_cap()
 
     async def record_connection_success(self, peer_key: str) -> None:
         """Record a successful connection for a peer.
+
+        Global totals are updated for O(1) global rate. Per-peer dicts are
+        bounded; evicted peers have no per-peer history (get returns 0.0).
 
         Args:
             peer_key: Unique identifier for the peer (e.g., "ip:port")
@@ -902,11 +920,26 @@ class MetricsCollector:
             self._connection_successes[peer_key] = (
                 self._connection_successes.get(peer_key, 0) + 1
             )
+            self._total_connection_successes += 1
+            self._evict_connection_stats_if_over_cap()
+
+    def _evict_connection_stats_if_over_cap(self) -> None:
+        """Evict oldest peer (FIFO) from per-peer dicts when over cap.
+
+        Caller must hold _connection_lock. Does not modify running totals.
+        """
+        while len(self._connection_attempts) > self._connection_stats_max_peers:
+            oldest = next(iter(self._connection_attempts))
+            del self._connection_attempts[oldest]
+            self._connection_successes.pop(oldest, None)
 
     async def get_connection_success_rate(
         self, peer_key: Optional[str] = None
     ) -> float:
         """Get connection success rate for a peer or globally.
+
+        Global rate uses running totals (O(1)). Per-peer rate uses bounded
+        dicts; evicted peers return 0.0.
 
         Args:
             peer_key: Optional peer key. If None, returns global success rate.
@@ -917,18 +950,32 @@ class MetricsCollector:
         """
         async with self._connection_lock:
             if peer_key is not None:
-                # Per-peer success rate
+                # Per-peer success rate (from bounded dicts; evicted => 0.0)
                 attempts = self._connection_attempts.get(peer_key, 0)
                 successes = self._connection_successes.get(peer_key, 0)
                 if attempts == 0:
                     return 0.0
                 return successes / attempts
-            # Global success rate
-            total_attempts = sum(self._connection_attempts.values())
-            total_successes = sum(self._connection_successes.values())
-            if total_attempts == 0:
+            # Global success rate from running totals (O(1))
+            if self._total_connection_attempts == 0:
                 return 0.0
-            return total_successes / total_attempts
+            return self._total_connection_successes / self._total_connection_attempts
+
+    async def get_connection_stats(self) -> tuple[float, int]:
+        """Get global connection success rate and total attempt count.
+
+        Uses running totals only (O(1)); does not iterate per-peer dicts.
+
+        Returns:
+            Tuple of (success_rate_0_to_1, total_attempts). Rate is 0.0 when
+            no attempts; total_attempts is the sum of all recorded attempts.
+        """
+        async with self._connection_lock:
+            total_attempts = self._total_connection_attempts
+            total_successes = self._total_connection_successes
+            if total_attempts == 0:
+                return (0.0, 0)
+            return (total_successes / total_attempts, total_attempts)
 
     async def collect_performance_metrics(self) -> None:
         """Collect performance metrics (public method)."""
@@ -1191,12 +1238,15 @@ class MetricsCollector:
                 self.performance_data["active_peer_connections"] = total_connections
                 self.performance_data["queued_peers_count"] = total_queued_peers
 
-                # Calculate connection success rate if we have attempt data
-                # Note: This would require tracking connection attempts globally
-                # For now, we'll set it based on active connections vs queued peers
-                if total_connections > 0 or total_queued_peers > 0:
-                    # Simple heuristic: more active connections = better success rate
-                    # In a real implementation, we'd track actual success/failure counts
+                # Use real global attempt-based rate when we have attempts;
+                # otherwise fall back to heuristic (active vs queued peers).
+                rate, total_attempts = await self.get_connection_stats()
+                self.performance_data["total_connection_attempts"] = total_attempts
+                if total_attempts > 0:
+                    self.performance_data["connection_success_rate"] = min(
+                        100.0, rate * 100.0
+                    )
+                elif total_connections > 0 or total_queued_peers > 0:
                     if total_connections > 0:
                         self.performance_data["connection_success_rate"] = min(
                             100.0,
@@ -1208,6 +1258,8 @@ class MetricsCollector:
                         )
                     else:
                         self.performance_data["connection_success_rate"] = 0.0
+                else:
+                    self.performance_data["connection_success_rate"] = 0.0
             except Exception:
                 # Connection metrics not available, keep defaults
                 pass

@@ -2,21 +2,17 @@
 
 Comprehensive API documentation for ccBitTorrent with references to actual implementation files.
 
+## Public API
+
+The package public API is defined by `__all__` in [ccbt/__init__.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/__init__.py). Main exports include: **AsyncSessionManager**, **SessionManager**, **Config**, **ConfigManager**, **TorrentParser**, **BencodeDecoder**/**BencodeEncoder**, **MagnetInfo**, **parse_magnet**, **get_config**, **init_config**; submodules **bencode**, **magnet**, **torrent**, **config**, **session**, **tracker**, **dht**, **pex**, **peer**, **peer_connection**, **async_peer_connection**, **piece_manager**, **async_piece_manager**, **metadata_exchange**, **async_metadata_exchange**, **checkpoint**, **file_assembler**, **events**, **exceptions**, **metrics**, **logging_config**, **resilience**, **network_optimizer**; and helpers **build_minimal_torrent_data**, **build_torrent_data_from_metadata**. Use "View source" links from mkdocstrings-rendered sections below for current locations.
+
 ## Entry Points
 
 ### Main Entry Point (ccbt)
 
 Main command-line entry point for basic torrent operations.
 
-Implementation: [ccbt/__main__.py:main](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__main__.py#L18)
-
-Features:
-- Single torrent download mode
-- Daemon mode for multi-torrent sessions: [ccbt/__main__.py:52](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__main__.py#L52)
-- Magnet URI support: [ccbt/__main__.py:73](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__main__.py#L73)
-- Tracker announcement: [ccbt/__main__.py:89](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__main__.py#L89)
-
-Entry point configuration: [pyproject.toml:79](https://github.com/ccBitTorrent/ccbt/blob/main/pyproject.toml#L79)
+Implementation: [ccbt/__main__.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/__main__.py) — `main`. Features: single-torrent download, daemon mode, magnet URI support, tracker announcement. Entry point: [pyproject.toml](https://github.com/ccBittorrent/ccbt/blob/main/pyproject.toml) (project.scripts).
 
 ### Async Download Helpers
 
@@ -33,18 +29,7 @@ Key exports:
 
 High-performance async download manager for individual torrents.
 
-Implementation: [ccbt/session/download_manager.py:AsyncDownloadManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/download_manager.py)
-
-Methods:
-- `__init__()`: [ccbt/session/async_main.py:41](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/async_main.py#L41) - Initialize with torrent data
-- `start()`: [ccbt/session/async_main.py:110](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/async_main.py#L110) - Start download manager
-- `stop()`: [ccbt/session/async_main.py:115](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/async_main.py#L115) - Stop download manager
-- `start_download()`: [ccbt/session/async_main.py:122](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/async_main.py#L122) - Start download with peers
-
-Features:
-- Peer connection management via AsyncPeerConnectionManager: [ccbt/session/async_main.py:127](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/async_main.py#L127)
-- Piece management via AsyncPieceManager: [ccbt/session/async_main.py:94](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/async_main.py#L94)
-- Callback system for events: [ccbt/session/async_main.py:103](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/async_main.py#L103)
+Implementation: [ccbt/session/download_manager.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/session/download_manager.py) — `AsyncDownloadManager`. Methods: `__init__`, `start`, `stop`, `start_download`. Uses peer connection and piece managers; see [ccbt/session/download_manager.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/session/download_manager.py) for current implementation.
 
 ## Core Modules
 
@@ -67,53 +52,35 @@ Parses BitTorrent torrent files and extracts metadata.
 
 **Key Methods:**
 
-- `parse()`: [ccbt/core/torrent.py:34](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/torrent.py#L34) - Parse torrent file from path or URL
-- `_validate_torrent()`: [ccbt/core/torrent.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/torrent.py) - Validate torrent structure
-- `_extract_torrent_data()`: [ccbt/core/torrent.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/torrent.py) - Extract and process torrent data
+- `parse()`: Parse torrent file from path or URL. `_validate_torrent()`, `_extract_torrent_data()`: validation and extraction. See [ccbt/core/torrent.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/core/torrent.py).
 
 #### Bencode Encoding/Decoding
 
-Bencode codec for BitTorrent protocol (BEP 3).
+Bencode codec for BitTorrent protocol (BEP 3). Use "View source" on the reference below for current locations.
 
-**Classes:**
+::: ccbt.core.bencode
+    options:
+      show_source: true
+      show_root_heading: false
+      heading_level: 3
+      members_order: alphabetical
+      filters:
+        - "!^_"
 
-- `BencodeDecoder`: [ccbt/core/bencode.py:BencodeDecoder](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/bencode.py#L24) - Decoder for bencoded data
-- `BencodeEncoder`: [ccbt/core/bencode.py:BencodeEncoder](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/bencode.py#L156) - Encoder for Python objects to bencode
-
-**Functions:**
-- `decode()`: [ccbt/core/bencode.py:decode](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/bencode.py#L221) - Decode bencoded bytes to Python object
-- `encode()`: [ccbt/core/bencode.py:encode](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/bencode.py#L227) - Encode Python object to bencode format
-
-**Supported Types:**
-- Integers: `i<number>e`
-- Strings: `<length>:<data>`
-- Lists: `l<items>e`
-- Dictionaries: `d<key-value pairs>e`
-
-**Exceptions:**
-- `BencodeDecodeError`: [ccbt/core/bencode.py:BencodeDecodeError](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/bencode.py#L16) - Decoding errors
-- `BencodeEncodeError`: [ccbt/core/bencode.py:BencodeEncodeError](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/bencode.py#L20) - Encoding errors
+**Supported Types:** Integers `i<number>e`, strings `<length>:<data>`, lists `l<items>e`, dictionaries `d<key-value pairs>e`.
 
 #### Magnet URI Parsing
 
-Parses magnet URIs (BEP 9) with BEP 53 file selection support.
+Parses magnet URIs (BEP 9) with BEP 53 file selection support. Public API: `parse_magnet()`, `MagnetInfo`, `build_minimal_torrent_data()`, `build_torrent_data_from_metadata()`. Use "View source" on the reference below.
 
-**Functions:**
-- `parse_magnet()`: [ccbt/core/magnet.py:parse_magnet](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/magnet.py#L178) - Parse magnet URI and extract components
-
-**Data Model:**
-- `MagnetInfo`: [ccbt/core/magnet.py:MagnetInfo](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/magnet.py#L17) - Magnet info data model with BEP 53 support
-
-**Features:**
-- Info hash extraction: [ccbt/core/magnet.py:_hex_or_base32_to_bytes](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/magnet.py#L28) - Supports hex (40 chars) and base32 (32 chars)
-- Tracker URLs: Extracts `tr` parameters
-- Web seeds: Extracts `ws` parameters
-- BEP 53 file selection: [ccbt/core/magnet.py:_parse_index_list](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/magnet.py#L40) - Parses `so` (selected) and `x.pe` (prioritized) parameters
-- Display name: Extracts `dn` parameter
-
-**Helper Functions:**
-- `build_minimal_torrent_data()`: [ccbt/core/magnet.py:build_minimal_torrent_data](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/magnet.py) - Build minimal torrent from magnet info
-- `build_torrent_data_from_metadata()`: [ccbt/core/magnet.py:build_torrent_data_from_metadata](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/core/magnet.py) - Build torrent from metadata exchange
+::: ccbt.core.magnet
+    options:
+      show_source: true
+      show_root_heading: false
+      heading_level: 3
+      members_order: alphabetical
+      filters:
+        - "!^_"
 
 ## Session Management
 
@@ -134,42 +101,26 @@ High-performance async session manager for multiple torrents.
 
 #### Initialization
 
-Constructor: [ccbt/session/session.py:2518](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L2518)
-
---8<-- "ccbt/session/session.py:2518:2626"
+Constructor and lifecycle are implemented in `ccbt/session/session.py` (class `AsyncSessionManager`). Use the [API reference source links](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/session/session.py) or mkdocstrings-generated "View source" when available.
 
 #### Lifecycle Methods
 
-- `start()`: [ccbt/session/session.py:2655](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L2655) - Start the async session manager
+- `start()`: Start the async session manager
+- `stop()`: Stop the async session manager
 
-  --8<-- "ccbt/session/session.py:2655:2756"
-
-- `stop()`: [ccbt/session/session.py:3058](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L3058) - Stop the async session manager
-
-  --8<-- "ccbt/session/session.py:3058:3106"
+See `ccbt/session/session.py` for the current implementation of these methods.
 
 #### Torrent Management
 
-- `add_torrent()`: [ccbt/session/session.py:3806](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L3806) - Add torrent file (async) or [ccbt/session/session.py:5403](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L5403) (sync)
-- `add_magnet()`: [ccbt/session/session.py:3938](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L3938) - Add magnet link (async) or [ccbt/session/session.py:5413](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L5413) (sync)
-- `remove()`: [ccbt/session/session.py:4039](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L4039) - Remove torrent (async) or [ccbt/session/session.py:5423](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L5423) (sync)
-- `pause_torrent()`: [ccbt/session/session.py:3584](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L3584) - Pause torrent
-- `resume_torrent()`: [ccbt/session/session.py:3601](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L3601) - Resume torrent
-- `set_rate_limits()`: [ccbt/session/session.py:3659](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L3659) - Set per-torrent rate limits
+See **AsyncSessionManager** above for source links: `add_torrent()`, `add_magnet()`, `remove()`, `pause_torrent()`, `resume_torrent()`, `set_rate_limits()`.
 
 #### Status and Monitoring
 
-- `get_global_stats()`: [ccbt/session/session.py:3725](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L3725) - Aggregate global statistics
-- `get_status()`: [ccbt/session/session.py:4780](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L4780) - Get status for all or specific torrent
-- `get_peers_for_torrent()`: [ccbt/session/session.py:4063](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L4063) - Get peers for a torrent
+See **AsyncSessionManager** above: `get_global_stats()`, `get_status()`, `get_peers_for_torrent()`.
 
 #### Advanced Operations
 
-- `force_announce()`: [ccbt/session/session.py:4191](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L4191) - Force tracker announce
-- `force_scrape()`: [ccbt/session/session.py:4537](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L4537) - Force tracker scrape
-- `refresh_pex()`: [ccbt/session/session.py:4715](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L4715) - Refresh peer exchange
-- `rehash_torrent()`: [ccbt/session/session.py:4513](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L4513) - Rehash torrent
-- `export_session_state()`: [ccbt/session/session.py:3784](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L3784) - Export session state
+See **AsyncSessionManager** above: `force_announce()`, `force_scrape()`, `refresh_pex()`, `rehash_torrent()`, `export_session_state()`.
 
 ### AsyncTorrentSession
 
@@ -186,21 +137,11 @@ Individual torrent session representing one active torrent's lifecycle with asyn
         - "!^_"
       show_submodules: false
 
-**Key Methods:**
+**Key Methods:** See **AsyncTorrentSession** above for source links: `start()`, `stop()`, `pause()`, `resume()`, `get_status()`.
 
-- `start()`: [ccbt/session/session.py:369](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L369) - Start torrent session, initialize download manager, trackers, and PEX
-- `stop()`: [ccbt/session/session.py:920](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L920) - Stop torrent session, save checkpoint, cleanup resources
-- `pause()`: [ccbt/session/session.py:987](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L987) - Pause download
-- `resume()`: [ccbt/session/session.py:1060](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L1060) - Resume download
-- `get_status()`: [ccbt/session/session.py:2267](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L2267) - Get torrent status
+**Components:** `download_manager` (AsyncDownloadManager), `file_selection_manager` (FileSelectionManager), `piece_manager` (AsyncPieceManager), `checkpoint_manager` (CheckpointManager).
 
-**Components:**
-- `download_manager`: [ccbt/session/session.py:78](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L78) - AsyncDownloadManager for piece management
-- `file_selection_manager`: [ccbt/session/session.py:86](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L86) - FileSelectionManager for multi-file torrents
-- `piece_manager`: [ccbt/session/session.py:92](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L92) - AsyncPieceManager for piece selection
-- `checkpoint_manager`: [ccbt/session/session.py:102](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L102) - CheckpointManager for resume functionality
-
-**Data Model:** [ccbt/session/session.py:TorrentSessionInfo](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L47)
+**Data Model:** `TorrentSessionInfo` in [ccbt/session/session.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/session/session.py).
 
 
 ## Peer Management
@@ -284,14 +225,9 @@ Advanced piece selection with rarest-first and endgame.
         - "!^_"
       show_submodules: false
 
-**Features:**
-- Rarest-first piece selection
-- Sequential piece selection
-- Round-robin piece selection
-- Endgame mode with duplicate requests
-- File selection integration: [ccbt/piece/async_piece_manager.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/async_piece_manager.py#L308) - Filters pieces based on file selection state
+**Features:** Rarest-first, sequential, round-robin piece selection; endgame mode; file selection integration via [ccbt/piece/async_piece_manager.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/piece/async_piece_manager.py).
 
-**Configuration:** [ccbt.toml:99-114](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L99-L114)
+**Configuration:** [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml) sections 99–114.
 
 ### FileSelectionManager
 
@@ -308,26 +244,9 @@ Manages file selection and prioritization for multi-file torrents.
         - "!^_"
       show_submodules: false
 
-Features:
-- File selection state management: [ccbt/piece/file_selection.py:FileSelectionState](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L31) - Tracks selection, priority, and progress per file
-- File priority system: [ccbt/piece/file_selection.py:FilePriority](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L18) - Priority levels (DO_NOT_DOWNLOAD, LOW, NORMAL, HIGH, MAXIMUM)
-- Piece-to-file mapping: [ccbt/piece/file_selection.py:PieceToFileMapper](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L49) - Efficient bidirectional mapping between pieces and files
-- Piece filtering: [ccbt/piece/file_selection.py:is_piece_needed](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L249) - Determines if a piece should be downloaded based on file selection
-- Priority-based piece selection: [ccbt/piece/file_selection.py:get_piece_priority](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L268) - Calculates piece priority from file priorities
-- Progress tracking: [ccbt/piece/file_selection.py:update_file_progress](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L317) - Updates download progress per file
+Features: State (`FileSelectionState`), priority (`FilePriority`), piece-to-file mapping (`PieceToFileMapper`), filtering (`is_piece_needed`), priority selection (`get_piece_priority`), progress (`update_file_progress`). Key methods: `select_file`, `deselect_file`, `set_file_priority`, `get_statistics`. Use **FileSelectionManager** above for source links.
 
-Key Methods:
-- `select_file(file_index)`: [ccbt/piece/file_selection.py:select_file](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L142) - Select a file for download
-- `deselect_file(file_index)`: [ccbt/piece/file_selection.py:deselect_file](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L159) - Deselect a file from download
-- `set_file_priority(file_index, priority)`: [ccbt/piece/file_selection.py:set_file_priority](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L177) - Set file download priority
-- `is_piece_needed(piece_index)`: [ccbt/piece/file_selection.py:is_piece_needed](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L249) - Check if a piece is needed based on file selection
-- `get_piece_priority(piece_index)`: [ccbt/piece/file_selection.py:get_piece_priority](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L268) - Get priority for a piece based on file priorities
-- `get_statistics()`: [ccbt/piece/file_selection.py:get_statistics](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/file_selection.py#L359) - Get file selection statistics
-
-Integration:
-- Integrated with `AsyncPieceManager`: [ccbt/piece/async_piece_manager.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/async_piece_manager.py#L94) - File selection manager passed during initialization
-- Integrated with `AsyncTorrentSession`: [ccbt/session/session.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L182) - Automatically created for multi-file torrents
-- Checkpoint persistence: [ccbt/session/session.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L637) - File selection state saved/restored in checkpoints
+Related: [ccbt/piece/file_selection.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/piece/file_selection.py) (`FileSelectionState`, `FilePriority`, `PieceToFileMapper`); integrated with [ccbt/piece/async_piece_manager.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/piece/async_piece_manager.py) and [ccbt/session/session.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/session/session.py); checkpoint persistence in session.
 
 ### PieceManager
 
@@ -358,12 +277,14 @@ Implementation: [ccbt/piece/metadata_exchange.py](https://github.com/ccBitTorren
 
 Base protocol implementation.
 
-Implementation: [ccbt/protocols/base.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/base.py)
-
-Protocol types: [ccbt/protocols/base.py:ProtocolType](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/base.py#L25)
-
-
-Protocol states: [ccbt/protocols/base.py:ProtocolState](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/base.py#L34)
+::: ccbt.protocols.base
+    options:
+      show_source: true
+      show_root_heading: false
+      heading_level: 3
+      members_order: alphabetical
+      filters:
+        - "!^_"
 
 
 ### BitTorrentProtocol
@@ -418,82 +339,91 @@ Implementation: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/bl
 - DHT enabled: `config.ipfs.enable_dht` (default: `True`)
 - Discovery cache TTL: `config.ipfs.discovery_cache_ttl` (default: 300s)
 
-**Methods:**
+**Methods:** Use the **IPFSProtocol** reference below for source links.
 
-- `start()`: [ccbt/protocols/ipfs.py:127](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L127)
+::: ccbt.protocols.ipfs.IPFSProtocol
+    options:
+      show_source: true
+      show_root_heading: false
+      heading_level: 3
+      members_order: alphabetical
+      filters:
+        - "!^_"
+
+- `start()`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Connect to IPFS daemon and initialize protocol
   - Verifies connection by querying node ID
   - Sets protocol state to CONNECTED
 
-- `stop()`: [ccbt/protocols/ipfs.py:151](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L151)
+- `stop()`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Disconnect from IPFS daemon and cleanup resources
   - Closes all peer connections
   - Sets protocol state to DISCONNECTED
 
-- `connect_peer(peer_info: PeerInfo) -> bool`: [ccbt/protocols/ipfs.py:300](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L300)
+- `connect_peer(peer_info: PeerInfo) -> bool`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Connect to an IPFS peer using multiaddr format
   - Parses peer multiaddr and validates peer ID
   - Sets up message listener for peer communication
   - Returns `True` on success, `False` on failure
 
-- `disconnect_peer(peer_id: str) -> None`: [ccbt/protocols/ipfs.py:450](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L450)
+- `disconnect_peer(peer_id: str) -> None`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Disconnect from an IPFS peer
   - Cleans up message queues and listeners
 
-- `send_message(peer_id: str, message: bytes) -> bool`: [ccbt/protocols/ipfs.py:470](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L470)
+- `send_message(peer_id: str, message: bytes) -> bool`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Send message to IPFS peer via pubsub
   - Creates topic from peer_id: `/ccbt/peer/{peer_id}`
   - Validates message size (max 1MB)
   - Returns `True` on success, `False` on failure
 
-- `receive_message(peer_id: str) -> bytes | None`: [ccbt/protocols/ipfs.py:519](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L519)
+- `receive_message(peer_id: str) -> bytes | None`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Receive message from IPFS peer
   - Waits up to 1 second for message from peer queue
   - Returns message bytes or `None` if timeout
 
-- `announce_torrent(torrent_info: TorrentInfo) -> list[PeerInfo]`: [ccbt/protocols/ipfs.py:550](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L550)
+- `announce_torrent(torrent_info: TorrentInfo) -> list[PeerInfo]`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Announce torrent to IPFS network
   - Converts torrent to IPFS content (CID)
   - Discovers peers providing the content via DHT
   - Returns list of peer information
 
-- `scrape_torrent(torrent_info: TorrentInfo) -> dict[str, int]`: [ccbt/protocols/ipfs.py:799](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L799)
+- `scrape_torrent(torrent_info: TorrentInfo) -> dict[str, int]`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Scrape torrent statistics from IPFS network
   - Returns dict with `seeders`, `leechers`, `completed` counts
   - Uses content statistics from IPFS object stats
 
-- `add_content(data: bytes) -> str`: [ccbt/protocols/ipfs.py:882](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L882)
+- `add_content(data: bytes) -> str`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Add content to IPFS and return CID
   - Automatically pins content if `enable_pinning` is `True`
   - Returns CID string or empty string on failure
 
-- `get_content(cid: str) -> bytes | None`: [ccbt/protocols/ipfs.py:962](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L962)
+- `get_content(cid: str) -> bytes | None`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Retrieve content from IPFS by CID
   - Uses IPFS daemon `cat` command
   - Updates content tracking with access time
   - Returns content bytes or `None` if not found
 
-- `pin_content(cid: str) -> bool`: [ccbt/protocols/ipfs.py:1012](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L1012)
+- `pin_content(cid: str) -> bool`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Pin content in IPFS to prevent garbage collection
   - Returns `True` on success, `False` on failure
 
-- `unpin_content(cid: str) -> bool`: [ccbt/protocols/ipfs.py:1035](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L1035)
+- `unpin_content(cid: str) -> bool`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Unpin content from IPFS
   - Returns `True` on success, `False` on failure
 
-- `get_ipfs_peers() -> list[str]`: [ccbt/protocols/ipfs.py:1058](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L1058)
+- `get_ipfs_peers() -> list[str]`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Get list of connected IPFS peer IDs
   - Returns list of peer ID strings
 
-- `get_ipfs_content() -> dict[str, IPFSContent]`: [ccbt/protocols/ipfs.py:1065](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L1065)
+- `get_ipfs_content() -> dict[str, IPFSContent]`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Get all tracked IPFS content
   - Returns dict mapping CID to IPFSContent objects
 
-- `get_content_stats(cid: str) -> dict[str, int]`: [ccbt/protocols/ipfs.py:1072](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L1072)
+- `get_content_stats(cid: str) -> dict[str, int]`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Get statistics for specific content
   - Returns dict with `seeders`, `leechers`, `completed`
 
-- `get_all_content_stats() -> dict[str, dict[str, int]]`: [ccbt/protocols/ipfs.py:1080](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py#L1080)
+- `get_all_content_stats() -> dict[str, dict[str, int]]`: [ccbt/protocols/ipfs.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/protocols/ipfs.py)
   - Get statistics for all tracked content
   - Returns dict mapping CID to stats dicts
 
@@ -585,10 +515,10 @@ Enhanced DHT (BEP 5) client with full Kademlia implementation for peer discovery
       show_submodules: false
 
 **Features:**
-- Kademlia DHT implementation: [ccbt/discovery/dht.py:AsyncDHTClient](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/dht.py#L272) - Full Kademlia routing table
+- Kademlia DHT implementation: [ccbt/discovery/dht.py:AsyncDHTClient](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/dht.py) - Full Kademlia routing table
 - Peer discovery via DHT: [ccbt/discovery/dht.py:find_peers](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/dht.py) - Iterative lookup for peer discovery
-- Node routing table management: [ccbt/discovery/dht.py:DHTNode](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/dht.py#L38) - IPv4/IPv6 node support with BEP 45 multi-address
-- Token verification: [ccbt/discovery/dht.py:DHTToken](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/dht.py#L138) - Secure announce tokens
+- Node routing table management: [ccbt/discovery/dht.py:DHTNode](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/dht.py) - IPv4/IPv6 node support with BEP 45 multi-address
+- Token verification: [ccbt/discovery/dht.py:DHTToken](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/dht.py) - Secure announce tokens
 - Continuous refresh: [ccbt/discovery/dht.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/dht.py) - Automatic routing table maintenance
 
 **Key Methods:**
@@ -597,7 +527,7 @@ Enhanced DHT (BEP 5) client with full Kademlia implementation for peer discovery
 - `find_peers()`: [ccbt/discovery/dht.py:find_peers](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/dht.py) - Find peers for info hash
 - `announce_peer()`: [ccbt/discovery/dht.py:announce_peer](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/dht.py) - Announce peer to DHT
 
-**Configuration:** [ccbt.toml:118-125](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L118-L125)
+**Configuration:** [ccbt.toml:118-125](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 ### AsyncTrackerClient
 
@@ -615,16 +545,16 @@ High-performance async tracker communication for peer discovery.
       show_submodules: false
 
 **Features:**
-- HTTP tracker support: [ccbt/discovery/tracker.py:AsyncTrackerClient](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker.py#L119) - Async HTTP tracker communication
-- UDP tracker support: [ccbt/discovery/tracker_udp_client.py:AsyncUDPTrackerClient](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker_udp_client.py#L80) - Async UDP tracker communication
+- HTTP tracker support: [ccbt/discovery/tracker.py:AsyncTrackerClient](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker.py) - Async HTTP tracker communication
+- UDP tracker support: [ccbt/discovery/tracker_udp_client.py:AsyncUDPTrackerClient](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker_udp_client.py) - Async UDP tracker communication
 - Concurrent announces: [ccbt/discovery/tracker.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker.py) - Multiple tracker announces in parallel
-- DNS caching: [ccbt/discovery/tracker.py:DNSCache](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker.py#L30) - TTL-based DNS cache for tracker hostnames
+- DNS caching: [ccbt/discovery/tracker.py:DNSCache](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker.py) - TTL-based DNS cache for tracker hostnames
 - Announce and scrape operations: [ccbt/discovery/tracker.py:announce](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker.py) - Peer discovery and statistics
 
 **Key Methods:**
 - `announce()`: [ccbt/discovery/tracker.py:announce](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker.py) - Announce torrent to tracker
 - `scrape()`: [ccbt/discovery/tracker.py:scrape](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker.py) - Scrape tracker for statistics
-- `get_session()`: [ccbt/discovery/tracker.py:TrackerSession](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker.py#L106) - Get or create tracker session
+- `get_session()`: [ccbt/discovery/tracker.py:TrackerSession](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker.py) - Get or create tracker session
 
 ### AsyncUDPTrackerClient
 
@@ -642,8 +572,8 @@ Async UDP tracker client implementation (BEP 15).
       show_submodules: false
 
 **Features:**
-- BEP 15 compliant: [ccbt/discovery/tracker_udp_client.py:AsyncUDPTrackerClient](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker_udp_client.py#L80) - Full UDP tracker protocol support
-- Connection ID management: [ccbt/discovery/tracker_udp_client.py:TrackerSession](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker_udp_client.py#L63) - Tracks connection IDs per tracker
+- BEP 15 compliant: [ccbt/discovery/tracker_udp_client.py:AsyncUDPTrackerClient](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker_udp_client.py) - Full UDP tracker protocol support
+- Connection ID management: [ccbt/discovery/tracker_udp_client.py:TrackerSession](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker_udp_client.py) - Tracks connection IDs per tracker
 - Transaction ID tracking: [ccbt/discovery/tracker_udp_client.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/discovery/tracker_udp_client.py) - Handles concurrent requests
 
 ### TrackerServerHTTP
@@ -669,7 +599,7 @@ Features:
 - Automatic peer sharing
 - PEX extension support
 
-Configuration: [ccbt.toml:128-129](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L128-L129)
+Configuration: [ccbt.toml:128-129](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 ## Services
 
@@ -679,10 +609,10 @@ Base service class for service-oriented architecture.
 
 Implementation: [ccbt/services/base.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/services/base.py)
 
-Service states: [ccbt/services/base.py:ServiceState](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/services/base.py#L22)
+Service states: [ccbt/services/base.py:ServiceState](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/services/base.py)
 
 
-Service error: [ccbt/services/base.py:ServiceError](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/services/base.py#L33)
+Service error: [ccbt/services/base.py:ServiceError](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/services/base.py)
 
 
 Service manager: [ccbt/services/base.py:ServiceManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/services/base.py)
@@ -717,7 +647,7 @@ The `write_file()` method implements chunked writes for optimal performance:
 - **Memory efficiency**: Uses `memoryview` for zero-copy chunk slicing
 - **Size limits**: Enforces `max_file_size_mb` from configuration (0/None = unlimited)
 
-Write implementation: [ccbt/services/storage_service.py:_write_file](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/services/storage_service.py#L268)
+Write implementation: [ccbt/services/storage_service.py:_write_file](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/services/storage_service.py)
 
 #### Configuration
 
@@ -725,7 +655,7 @@ Write implementation: [ccbt/services/storage_service.py:_write_file](https://git
 - `disk.write_buffer_kib`: Chunk size for large file writes
 - Default: Unlimited (0) for production, configurable for testing
 
-Configuration: [ccbt.toml:87-89](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L87-L89)
+Configuration: [ccbt.toml:87-89](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 ### TrackerService
 
@@ -758,7 +688,7 @@ High-performance disk I/O manager with preallocation, batching, memory-mapped I/
 **Features:**
 - File preallocation: [ccbt/storage/disk_io.py:preallocate_file](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/storage/disk_io.py) - Supports NONE, SPARSE, FULL, FALLOCATE strategies
 - Write batching: [ccbt/storage/disk_io.py:write_block](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/storage/disk_io.py) - Priority queue for write requests
-- Memory-mapped I/O: [ccbt/storage/disk_io.py:MmapCache](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/storage/disk_io.py#L130) - Cached memory-mapped files for fast access
+- Memory-mapped I/O: [ccbt/storage/disk_io.py:MmapCache](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/storage/disk_io.py) - Cached memory-mapped files for fast access
 - io_uring support (Linux): [ccbt/storage/disk_io.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/storage/disk_io.py) - High-performance async I/O on Linux
 - Direct I/O support: [ccbt/storage/disk_io.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/storage/disk_io.py) - Bypass page cache for large files
 - Parallel hash verification: [ccbt/storage/disk_io.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/storage/disk_io.py) - Thread pool for hash verification
@@ -769,7 +699,7 @@ High-performance disk I/O manager with preallocation, batching, memory-mapped I/
 - `preallocate_file()`: [ccbt/storage/disk_io.py:preallocate_file](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/storage/disk_io.py) - Preallocate file space
 - `verify_piece()`: [ccbt/storage/disk_io.py:verify_piece](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/storage/disk_io.py) - Verify piece hash
 
-**Configuration:** [ccbt.toml:57-96](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L57-L96)
+**Configuration:** [ccbt.toml:57-96](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 ### FileAssembler
 
@@ -803,7 +733,7 @@ Checkpoint management for resume functionality.
 - Checkpoint cleanup
 - Multiple format support (JSON, binary)
 
-**Configuration:** [ccbt.toml:88-96](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L88-L96)
+**Configuration:** [ccbt.toml:88-96](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 **Checkpoint Model:** [ccbt/models.py:TorrentCheckpoint](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py)
 
@@ -837,10 +767,10 @@ Advanced metrics collection system.
       show_submodules: false
 
 **Features:**
-- System metrics collection: [ccbt/monitoring/metrics_collector.py:394](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/metrics_collector.py#L394)
-- Performance metrics tracking: [ccbt/monitoring/metrics_collector.py:404](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/metrics_collector.py#L404)
-- Custom metrics registration: [ccbt/monitoring/metrics_collector.py:190](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/metrics_collector.py#L190)
-- Prometheus metrics export: [ccbt/utils/metrics.py:134](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/utils/metrics.py#L134)
+- System metrics collection: [ccbt/monitoring/metrics_collector.py:394](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/metrics_collector.py)
+- Performance metrics tracking: [ccbt/monitoring/metrics_collector.py:404](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/metrics_collector.py)
+- Custom metrics registration: [ccbt/monitoring/metrics_collector.py:190](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/metrics_collector.py)
+- Prometheus metrics export: [ccbt/utils/metrics.py:134](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/utils/metrics.py)
 
 See the [MetricsCollector](#metricscollector) section below for detailed usage.
 
@@ -860,27 +790,27 @@ Rule-based alert system.
       show_submodules: false
 
 **Features:**
-- Alert rule engine: [ccbt/monitoring/alert_manager.py:AlertRule](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/alert_manager.py#L81)
-- Notification channels: [ccbt/monitoring/alert_manager.py:NotificationChannel](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/alert_manager.py#L44)
+- Alert rule engine: [ccbt/monitoring/alert_manager.py:AlertRule](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/alert_manager.py)
+- Notification channels: [ccbt/monitoring/alert_manager.py:NotificationChannel](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/alert_manager.py)
 - Alert escalation: [ccbt/monitoring/alert_manager.py]
 - Alert suppression: [ccbt/monitoring/alert_manager.py]
 
-**Alert Severity:** [ccbt/monitoring/alert_manager.py:AlertSeverity](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/alert_manager.py#L35)
+**Alert Severity:** [ccbt/monitoring/alert_manager.py:AlertSeverity](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/alert_manager.py)
 
 
 ### DashboardManager
 
 Dashboard management system.
 
-Implementation: [ccbt/monitoring/dashboard.py:DashboardManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/dashboard.py#L126)
+Implementation: [ccbt/monitoring/dashboard.py:DashboardManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/dashboard.py)
 
 
 Features:
-- Dashboard creation: [ccbt/monitoring/dashboard.py:156](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/dashboard.py#L156)
-- Grafana export: [ccbt/monitoring/dashboard.py:366](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/dashboard.py#L366)
-- Widget system: [ccbt/monitoring/dashboard.py:WidgetType](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/dashboard.py#L78)
+- Dashboard creation: [ccbt/monitoring/dashboard.py:156](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/dashboard.py)
+- Grafana export: [ccbt/monitoring/dashboard.py:366](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/dashboard.py)
+- Widget system: [ccbt/monitoring/dashboard.py:WidgetType](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/dashboard.py)
 
-Dashboard types: [ccbt/monitoring/dashboard.py:DashboardType](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/dashboard.py#L67)
+Dashboard types: [ccbt/monitoring/dashboard.py:DashboardType](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/dashboard.py)
 
 ### TracingManager
 
@@ -889,14 +819,14 @@ Distributed tracing for performance analysis.
 Implementation: [ccbt/monitoring/tracing.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/tracing.py)
 
 Features:
-- Span management: [ccbt/monitoring/tracing.py:Span](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/tracing.py#L50)
-- Trace correlation: [ccbt/monitoring/tracing.py:Trace](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/tracing.py#L70)
+- Span management: [ccbt/monitoring/tracing.py:Span](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/tracing.py)
+- Trace correlation: [ccbt/monitoring/tracing.py:Trace](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/tracing.py)
 - Performance profiling
 - OpenTelemetry integration
 
-Span status: [ccbt/monitoring/tracing.py:SpanStatus](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/tracing.py#L31)
+Span status: [ccbt/monitoring/tracing.py:SpanStatus](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/tracing.py)
 
-Span kind: [ccbt/monitoring/tracing.py:SpanKind](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/tracing.py#L40)
+Span kind: [ccbt/monitoring/tracing.py:SpanKind](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/monitoring/tracing.py)
 
 ## Security
 
@@ -917,7 +847,7 @@ Protocol encryption support.
 
 Implementation: [ccbt/security/encryption.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/security/encryption.py)
 
-Configuration: [ccbt.toml:174](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L174)
+Configuration: [ccbt.toml:174](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 ### PeerValidator
 
@@ -925,7 +855,7 @@ Validates peer connections and behavior.
 
 Implementation: [ccbt/security/peer_validator.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/security/peer_validator.py)
 
-Configuration: [ccbt.toml:175](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L175)
+Configuration: [ccbt.toml:175](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 ### RateLimiter
 
@@ -933,7 +863,7 @@ Adaptive rate limiting for bandwidth management.
 
 Implementation: [ccbt/security/rate_limiter.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/security/rate_limiter.py)
 
-Configuration: [ccbt.toml:176](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L176)
+Configuration: [ccbt.toml:176](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 ### AnomalyDetector
 
@@ -954,7 +884,7 @@ ML-based peer selection.
 
 Implementation: [ccbt/ml/peer_selector.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/ml/peer_selector.py)
 
-Configuration: [ccbt.toml:181](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L181)
+Configuration: [ccbt.toml:181](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 ### PiecePredictor
 
@@ -962,7 +892,7 @@ ML-based piece prediction.
 
 Implementation: [ccbt/ml/piece_predictor.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/ml/piece_predictor.py)
 
-Configuration: [ccbt.toml:182](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L182)
+Configuration: [ccbt.toml:182](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 ### AdaptiveLimiter
 
@@ -1071,7 +1001,7 @@ Logging configuration and setup.
 
 Implementation: [ccbt/utils/logging_config.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/utils/logging_config.py)
 
-Configuration: [ccbt.toml:156-160](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L156-L160)
+Configuration: [ccbt.toml:156-160](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 ### Metrics Utils
 
@@ -1079,7 +1009,7 @@ Metrics utility functions.
 
 Implementation: [ccbt/utils/metrics.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/utils/metrics.py)
 
-Prometheus integration: [ccbt/utils/metrics.py:134](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/utils/metrics.py#L134)
+Prometheus integration: [ccbt/utils/metrics.py:134](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/utils/metrics.py)
 
 ### NetworkOptimizer
 
@@ -1121,10 +1051,10 @@ Configuration management with hot-reload, hierarchical loading, and validation.
       show_submodules: false
 
 **Features:**
-- Configuration loading: [ccbt/config/config.py:_load_config](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/config/config.py#L76)
-- File discovery: [ccbt/config/config.py:_find_config_file](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/config/config.py#L55)
+- Configuration loading: [ccbt/config/config.py:_load_config](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/config/config.py)
+- File discovery: [ccbt/config/config.py:_find_config_file](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/config/config.py)
 - Environment variable parsing: [ccbt/config/config.py:_get_env_config](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/config/config.py)
-- Hot reload support: [ccbt/config/config.py:ConfigManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/config/config.py#L40)
+- Hot reload support: [ccbt/config/config.py:ConfigManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/config/config.py)
 - CLI overrides: [ccbt/cli/overrides.py:apply_cli_overrides](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/overrides.py)
 
 **Configuration Precedence:**
@@ -1225,10 +1155,10 @@ Base plugin class for extensibility.
 
 Implementation: [ccbt/plugins/base.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/plugins/base.py)
 
-Plugin states: [ccbt/plugins/base.py:PluginState](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/plugins/base.py#L23)
+Plugin states: [ccbt/plugins/base.py:PluginState](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/plugins/base.py)
 
 
-Plugin error: [ccbt/plugins/base.py:PluginError](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/plugins/base.py#L36)
+Plugin error: [ccbt/plugins/base.py:PluginError](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/plugins/base.py)
 
 
 ### MetricsPlugin
@@ -1249,17 +1179,17 @@ Implementation: [ccbt/plugins/logging_plugin.py](https://github.com/ccBitTorrent
 
 Performance profiler for function-level, async, memory, and I/O profiling.
 
-Implementation: [ccbt/observability/profiler.py:Profiler](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py#L67)
+Implementation: [ccbt/observability/profiler.py:Profiler](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py)
 
 
-Profile types: [ccbt/observability/profiler.py:ProfileType](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py#L30)
+Profile types: [ccbt/observability/profiler.py:ProfileType](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py)
 
-Profile entry model: [ccbt/observability/profiler.py:ProfileEntry](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py#L40)
+Profile entry model: [ccbt/observability/profiler.py:ProfileEntry](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py)
 
-Profile report model: [ccbt/observability/profiler.py:ProfileReport](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py#L56)
+Profile report model: [ccbt/observability/profiler.py:ProfileReport](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py)
 
 Methods:
-- `start()`: [ccbt/observability/profiler.py:93](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py#L93) - Start profiling
+- `start()`: [ccbt/observability/profiler.py:93](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py) - Start profiling
 - `stop()`: [ccbt/observability/profiler.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py) - Stop profiling
 - `profile_function()`: [ccbt/observability/profiler.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py) - Profile a function
 - `profile_async()`: [ccbt/observability/profiler.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/observability/profiler.py) - Profile async operations
@@ -1278,14 +1208,14 @@ Features:
 
 Textual-based terminal dashboard for real-time monitoring.
 
-Implementation: [ccbt/interface/terminal_dashboard.py:TerminalDashboard](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L276)
+Implementation: [ccbt/interface/terminal_dashboard.py:TerminalDashboard](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 
-Initialization: [ccbt/interface/terminal_dashboard.py:299](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L299)
+Initialization: [ccbt/interface/terminal_dashboard.py:299](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
-Layout composition: [ccbt/interface/terminal_dashboard.py:321](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L321)
+Layout composition: [ccbt/interface/terminal_dashboard.py:321](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
-Key bindings: [ccbt/interface/terminal_dashboard.py:337](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L337)
+Key bindings: [ccbt/interface/terminal_dashboard.py:337](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
 Widgets:
 - `Overview`: Global statistics overview
@@ -1295,14 +1225,14 @@ Widgets:
 - `RichLog`: Logging output
 
 Methods:
-- `compose()`: [ccbt/interface/terminal_dashboard.py:321](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L321) - Compose dashboard layout
-- `on_mount()`: [ccbt/interface/terminal_dashboard.py:346](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L346) - Initialize dashboard
+- `compose()`: [ccbt/interface/terminal_dashboard.py:321](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py) - Compose dashboard layout
+- `on_mount()`: [ccbt/interface/terminal_dashboard.py:346](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py) - Initialize dashboard
 - `_poll_once()`: [ccbt/interface/terminal_dashboard.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py) - Poll session for updates
 - `_schedule_poll()`: [ccbt/interface/terminal_dashboard.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py) - Schedule periodic polling
 
 Entry point: [ccbt/interface/terminal_dashboard.py:main](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
 
-Entry point configuration: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbt/blob/main/pyproject.toml#L81)
+Entry point configuration: [pyproject.toml:81](https://github.com/ccBitTorrent/ccbt/blob/main/pyproject.toml)
 
 ## CLI Components
 
@@ -1310,7 +1240,7 @@ Entry point configuration: [pyproject.toml:81](https://github.com/ccBitTorrent/c
 
 Interactive command-line interface.
 
-Implementation: [ccbt/cli/interactive.py:InteractiveCLI](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/interactive.py#L41)
+Implementation: [ccbt/cli/interactive.py:InteractiveCLI](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/interactive.py)
 
 
 Features:
@@ -1377,15 +1307,15 @@ Resume functionality methods in AsyncSessionManager:
 - `validate_checkpoint()`: [ccbt/session/session.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py) - Validate checkpoint
 - `cleanup_completed_checkpoints()`: [ccbt/session/session.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py) - Cleanup completed checkpoints
 
-CLI checkpoint commands: [ccbt/cli/main.py:checkpoints](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/main.py#L849)
+CLI checkpoint commands: [ccbt/cli/main.py:checkpoints](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/main.py)
 
 ## CLI Integration
 
 All API functionality is accessible via the CLI:
 
-- Download commands: [ccbt/cli/main.py:download](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/main.py#L369)
-- Magnet commands: [ccbt/cli/main.py:magnet](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/main.py#L608)
-- Checkpoint commands: [ccbt/cli/main.py:checkpoints](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/main.py#L849)
+- Download commands: [ccbt/cli/main.py:download](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/main.py)
+- Magnet commands: [ccbt/cli/main.py:magnet](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/main.py)
+- Checkpoint commands: [ccbt/cli/main.py:checkpoints](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/main.py)
 - Monitoring commands: [ccbt/cli/monitoring_commands.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/monitoring_commands.py)
 - Advanced commands: [ccbt/cli/advanced_commands.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/advanced_commands.py)
 
@@ -1399,63 +1329,29 @@ Implementation: [ccbt/models.py](https://github.com/ccBitTorrent/ccbt/blob/main/
 
 ### Enumerations
 
-- `LogLevel`: [ccbt/models.py:LogLevel](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L16) - Logging levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `LogLevel`: Logging levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `PieceSelectionStrategy`: Piece selection algorithms (ROUND_ROBIN, RAREST_FIRST, SEQUENTIAL)
+- `PreallocationStrategy`: File preallocation (NONE, SPARSE, FULL, FALLOCATE)
+- `PieceState`: Piece download states (MISSING, REQUESTED, DOWNLOADING, COMPLETE, VERIFIED)
+- `ConnectionState`: Peer connection states
+- `CheckpointFormat`: Checkpoint formats (JSON, BINARY, BOTH)
+- `MessageType`: BitTorrent message types
 
-  --8<-- "ccbt/models.py:16:25"
-
-- `PieceSelectionStrategy`: [ccbt/models.py:PieceSelectionStrategy](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L26) - Piece selection algorithms (ROUND_ROBIN, RAREST_FIRST, SEQUENTIAL)
-
-  --8<-- "ccbt/models.py:26:33"
-
-- `PreallocationStrategy`: [ccbt/models.py:PreallocationStrategy](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L34) - File preallocation (NONE, SPARSE, FULL, FALLOCATE)
-
-  --8<-- "ccbt/models.py:34:42"
-
-- `PieceState`: [ccbt/models.py:PieceState](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L43) - Piece download states (MISSING, REQUESTED, DOWNLOADING, COMPLETE, VERIFIED)
-
-  --8<-- "ccbt/models.py:43:52"
-
-- `ConnectionState`: [ccbt/models.py:ConnectionState](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L53) - Peer connection states
-
-  --8<-- "ccbt/models.py:53:67"
-
-- `CheckpointFormat`: [ccbt/models.py:CheckpointFormat](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L68) - Checkpoint formats (JSON, BINARY, BOTH)
-
-  --8<-- "ccbt/models.py:68:75"
-
-- `MessageType`: [ccbt/models.py:MessageType](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L76) - BitTorrent message types
-
-  --8<-- "ccbt/models.py:76:84"
+See [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py) for enum and class definitions.
 
 ### Core Models
 
-- `PeerInfo`: [ccbt/models.py:PeerInfo](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L90) - Peer information with IP, port, peer_id
-
-  --8<-- "ccbt/models.py:90:123"
-
-- `TrackerResponse`: [ccbt/models.py:TrackerResponse](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L124) - Tracker announce response
-
-  --8<-- "ccbt/models.py:124:135"
-
-- `PieceInfo`: [ccbt/models.py:PieceInfo](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L136) - Piece information with index, length, hash, state
-
-  --8<-- "ccbt/models.py:136:151"
-
-- `FileInfo`: [ccbt/models.py:FileInfo](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L152) - File information with name, length, path
-
-  --8<-- "ccbt/models.py:152:160"
-
-- `TorrentInfo`: [ccbt/models.py:TorrentInfo](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L161) - Complete torrent metadata
-
-  --8<-- "ccbt/models.py:161:184"
+- `PeerInfo`: Peer information with IP, port, peer_id
+- `TrackerResponse`: Tracker announce response
+- `PieceInfo`: Piece information with index, length, hash, state
+- `FileInfo`: File information with name, length, path
+- `TorrentInfo`: Complete torrent metadata
 
 ### Configuration Models
 
-- `NetworkConfig`: [ccbt/models.py:NetworkConfig](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L185) - Network settings with validation
+- `NetworkConfig`: Network settings with validation
 
-  --8<-- "ccbt/models.py:185:250"
-
-- `DiskConfig`: [ccbt/models.py:DiskConfig](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py#L251) - Disk I/O settings
+- `DiskConfig`: [ccbt/models.py:DiskConfig](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py) - Disk I/O settings
 
 - `StrategyConfig`: [ccbt/models.py:StrategyConfig](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/models.py) - Piece selection strategy
 
@@ -1494,7 +1390,7 @@ Field constraints include:
 Public API exports: [ccbt/__init__.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__init__.py)
 
 Key exports:
-- `AsyncSessionManager`: [ccbt/__init__.py:94](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__init__.py#L94)
+- `AsyncSessionManager`: [ccbt/__init__.py:94](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__init__.py)
 - `ConfigManager`: [ccbt/__init__.py]
 - `TorrentParser`: [ccbt/__init__.py]
 - Utility modules
@@ -1503,7 +1399,7 @@ Key exports:
 
 ### Resource Management
 
-Use async context managers where available. See [ccbt/session/session.py:AsyncSessionManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L605)
+Use async context managers where available. See [ccbt/session/session.py:AsyncSessionManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py)
 
 ### Error Handling
 
@@ -1516,14 +1412,14 @@ Handle exceptions appropriately:
 ### Async Operations
 
 All I/O operations are asynchronous. Always use `await`:
-- Session operations: [ccbt/session/session.py:AsyncSessionManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py#L605)
+- Session operations: [ccbt/session/session.py:AsyncSessionManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/session/session.py)
 - Peer operations: [ccbt/peer/async_peer_connection.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/peer/async_peer_connection.py)
 - Piece operations: [ccbt/piece/async_piece_manager.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/piece/async_piece_manager.py)
 - Storage operations: [ccbt/storage/disk_io.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/storage/disk_io.py)
 
 ### Configuration
 
-Access configuration via ConfigManager: [ccbt/config/config.py:ConfigManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/config/config.py#L40)
+Access configuration via ConfigManager: [ccbt/config/config.py:ConfigManager](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/config/config.py)
 
 Configuration file: [ccbt.toml](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
@@ -1532,9 +1428,9 @@ Environment variables: [env.example](https://github.com/ccBitTorrent/ccbt/blob/m
 ### Monitoring
 
 Enable monitoring for production use:
-- Metrics: [ccbt.toml:164](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L164)
-- Alerts: [ccbt.toml:170](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L170)
-- Tracing: [ccbt.toml:168](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml#L168)
+- Metrics: [ccbt.toml:164](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
+- Alerts: [ccbt.toml:170](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
+- Tracing: [ccbt.toml:168](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt.toml)
 
 See the [Monitoring](#monitoring) section below for detailed setup.
 
@@ -1565,7 +1461,7 @@ See the [Monitoring](#monitoring) section below for detailed setup.
 
 Public API: [ccbt/__init__.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__init__.py)
 
-Key exports defined in `__all__`: [ccbt/__init__.py:108](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__init__.py#L108)
+Key exports defined in `__all__`: [ccbt/__init__.py:108](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__init__.py)
 
 Includes:
 - Core classes: `AsyncSessionManager`, `TorrentParser`, `BencodeEncoder`, `BencodeDecoder`
@@ -1573,7 +1469,7 @@ Includes:
 - Models: `MagnetInfo`
 - Modules: All utility and component modules
 
-Lazy attribute access: [ccbt/__init__.py:160](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__init__.py#L160) - Supports dynamic imports
+Lazy attribute access: [ccbt/__init__.py:160](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/__init__.py) - Supports dynamic imports
 
 ### Type Safety
 

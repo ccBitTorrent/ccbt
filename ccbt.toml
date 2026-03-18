@@ -330,6 +330,7 @@ map_xet_multicast_port = false
 [daemon]
 ipc_host = "127.0.0.1"
 ipc_port = 64130
+api_key = "63db67e447a552c3541457967f7b3f4bedbcda97b57fa750f6e35831553043d1"
 
 [webtorrent]
 enable_webtorrent = true

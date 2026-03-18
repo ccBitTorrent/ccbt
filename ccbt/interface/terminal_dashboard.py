@@ -3125,6 +3125,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # UI FEATURE: Enhanced download flow
             # For magnet links, show metadata loading screen and then file selection
             if is_magnet:
+                # Invalidate file-list cache so first get_torrent_files after metadata is fresh
+                if hasattr(self._data_provider, "invalidate_cache"):
+                    self._data_provider.invalidate_cache(f"torrent_files_{info_hash}")
                 # Show metadata loading screen (non-blocking with continue option)
                 from ccbt.interface.screens.dialogs import MetadataLoadingScreen
                 result = await self.push_screen_wait(  # type: ignore[attr-defined]
@@ -3151,12 +3154,11 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 # CRITICAL FIX: After metadata loading screen, try to show file selection dialog
                 # if metadata is now available and torrent has multiple files
                 try:
-                    # Wait a moment for metadata to be fully processed
-                    await asyncio.sleep(0.5)
-                    files = await asyncio.wait_for(
-                        self._data_provider.get_torrent_files(info_hash),
-                        timeout=10.0  # Increased from 5.0 for better reliability,
+                    from ccbt.interface.screens.dialogs import LoadingFileListScreen
+                    files_result = await self.push_screen_wait(  # type: ignore[attr-defined]
+                        LoadingFileListScreen(self, info_hash),
                     )
+                    files = files_result if isinstance(files_result, list) else []
                     # Only show dialog if torrent has multiple files
                     if len(files) > 1:
                         from ccbt.interface.screens.file_selection_dialog import FileSelectionDialog
@@ -3182,57 +3184,49 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                 self.logs.write(f"Selected {len(selected_indices)} file(s) for download")
                             else:
                                 self.logs.write("No files selected for download")
-                except asyncio.TimeoutError:
-                    # Metadata not ready yet - start background task to show dialog later
-                    logger.debug("Metadata not ready yet, will show file selection dialog when available")
-                    async def try_file_selection_later():
-                        """Try to show file selection dialog after metadata is available."""
-                        # Wait for metadata to be available (up to 30 seconds)
-                        max_wait = 30.0
-                        start_time = asyncio.get_event_loop().time()
-                        
-                        while (asyncio.get_event_loop().time() - start_time) < max_wait:
-                            try:
-                                files = await asyncio.wait_for(
-                                    self._data_provider.get_torrent_files(info_hash),
-                                    timeout=2.0,
-                                )
-                                
-                                # Only show dialog if torrent has multiple files
-                                if len(files) > 1:
-                                    from ccbt.interface.screens.file_selection_dialog import FileSelectionDialog
-                                    dialog = FileSelectionDialog(files)
-                                    selected_indices = await self.app.push_screen_wait(dialog)  # type: ignore[attr-defined]
-                                    
-                                    if selected_indices is not None:
-                                        # Deselect all files first
-                                        all_indices = [f.get("index", idx) for idx, f in enumerate(files)]
-                                        await self._command_executor.execute_command(
-                                            "file.deselect",
-                                            info_hash=info_hash,
-                                            file_indices=all_indices,
-                                        )
-                                        
-                                        # Then select the chosen files
-                                        if selected_indices:
+                    elif not files or len(files) <= 1:
+                        # File list empty or single file - show dialog in background when metadata is ready
+                        logger.debug("File list not ready or single file, will show file selection dialog when available")
+                        async def try_file_selection_later():
+                            """Try to show file selection dialog after metadata is available."""
+                            if hasattr(self._data_provider, "invalidate_cache"):
+                                self._data_provider.invalidate_cache(f"torrent_files_{info_hash}")
+                            max_wait = 30.0
+                            start_time = asyncio.get_event_loop().time()
+                            while (asyncio.get_event_loop().time() - start_time) < max_wait:
+                                try:
+                                    files = await asyncio.wait_for(
+                                        self._data_provider.get_torrent_files(info_hash),
+                                        timeout=2.0,
+                                    )
+                                    if len(files) > 1:
+                                        from ccbt.interface.screens.file_selection_dialog import FileSelectionDialog
+                                        dialog = FileSelectionDialog(files)
+                                        selected_indices = await self.app.push_screen_wait(dialog)  # type: ignore[attr-defined]
+                                        if selected_indices is not None:
+                                            all_indices = [f.get("index", idx) for idx, f in enumerate(files)]
                                             await self._command_executor.execute_command(
-                                                "file.select",
+                                                "file.deselect",
                                                 info_hash=info_hash,
-                                                file_indices=selected_indices,
+                                                file_indices=all_indices,
                                             )
-                                            self.logs.write(f"Selected {len(selected_indices)} file(s) for download")
-                                        else:
-                                            self.logs.write("No files selected for download")
-                                    return  # Success - exit loop
-                            except (asyncio.TimeoutError, ValueError, KeyError):
-                                # Metadata not ready yet, wait and retry
-                                await asyncio.sleep(1.0)
-                            except Exception as e:
-                                logger.debug("Error in background file selection: %s", e)
-                                return  # Give up on errors
-                    
-                    # Start background task
-                    asyncio.create_task(try_file_selection_later())
+                                            if selected_indices:
+                                                await self._command_executor.execute_command(
+                                                    "file.select",
+                                                    info_hash=info_hash,
+                                                    file_indices=selected_indices,
+                                                )
+                                                self.logs.write(f"Selected {len(selected_indices)} file(s) for download")
+                                            else:
+                                                self.logs.write("No files selected for download")
+                                        return
+                                except (asyncio.TimeoutError, ValueError, KeyError):
+                                    await asyncio.sleep(1.0)
+                                except Exception as e:
+                                    logger.debug("Error in background file selection: %s", e)
+                                    return
+
+                        asyncio.create_task(try_file_selection_later())
                 except Exception as e:
                     logger.debug("Error showing file selection dialog for magnet link: %s", e)
             # For file torrents, wait a moment for torrent to be fully initialized
@@ -4179,49 +4173,56 @@ async def _ensure_daemon_running(
         cfg.daemon = DaemonConfig(api_key=api_key)
         logger.warning("Daemon config not found, generated new API key")
     
-    # CRITICAL FIX: Use _get_daemon_ipc_port() helper to get the correct IPC port
-    # This ensures we use the daemon's actual port (from daemon config file) rather than
-    # the main config port, which may be different
     from ccbt.cli.main import _get_daemon_ipc_port
-    from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+    from ccbt.daemon.daemon_manager import (
+        DEFAULT_IPC_PORT,
+        get_daemon_config_path,
+        read_daemon_config,
+    )
     import json
-    
-    # Diagnostic: Check if daemon config file exists
-    home_dir = _get_daemon_home_dir()
-    daemon_config_file = home_dir / ".ccbt" / "daemon" / "config.json"
-    daemon_config_exists = daemon_config_file.exists()
-    
-    ipc_port = _get_daemon_ipc_port(cfg)
-    client_host = "127.0.0.1"  # Always use 127.0.0.1 for client connections
-    
+
+    daemon_config_path = get_daemon_config_path()
+    daemon_config = read_daemon_config()
+    daemon_config_exists = daemon_config is not None
+    logger.debug(
+        "Daemon connection: config_path=%s, file_exists=%s",
+        daemon_config_path,
+        daemon_config_path.exists(),
+    )
+
+    # Prefer port and API key from daemon config file when reconnecting
+    if daemon_config:
+        ipc_port = daemon_config.get("ipc_port")
+        ipc_port = int(ipc_port) if ipc_port is not None else _get_daemon_ipc_port(cfg)
+        api_key = daemon_config.get("api_key") or (cfg.daemon and cfg.daemon.api_key)
+    else:
+        ipc_port = _get_daemon_ipc_port(cfg)
+        api_key = cfg.daemon.api_key if cfg.daemon else None
+
+    client_host = "127.0.0.1"
+
     # Update splash if available
     if splash_manager:
         try:
             splash_manager.update_progress_message("Checking daemon status...")
         except Exception:
             pass  # Ignore errors updating splash
-    
-    # CRITICAL: If daemon config file doesn't exist, we may be using the wrong port
-    # Try multiple ports: first the port from config, then default 8080
+
+    # When daemon config file doesn't exist, try default daemon port (64124) as fallback
     ports_to_try = [ipc_port]
     if not daemon_config_exists:
-        # Daemon config file doesn't exist - try default port as fallback
-        default_port = 8080
-        if default_port not in ports_to_try:
-            ports_to_try.append(default_port)
+        if DEFAULT_IPC_PORT not in ports_to_try:
+            ports_to_try.append(DEFAULT_IPC_PORT)
         logger.info(
             "Daemon config file not found at %s. Will try ports: %s",
-            daemon_config_file,
-            ports_to_try
+            daemon_config_path,
+            ports_to_try,
         )
-        
-        # CRITICAL: Use port scanning to find daemon if config file doesn't exist
-        # This is especially useful when daemon is running in another terminal
         logger.info("Scanning for daemon on ports %s...", ports_to_try)
         found_port, found_client = await _scan_for_daemon_port(
-            cfg.daemon.api_key,
+            api_key or "",
             ports_to_try,
-            timeout_per_port=2.0
+            timeout_per_port=2.0,
         )
         
         if found_port and found_client:
@@ -4235,21 +4236,23 @@ async def _ensure_daemon_running(
         else:
             logger.info("Port scanning did not find daemon on any of the tried ports")
     else:
-        try:
-            with open(daemon_config_file, encoding="utf-8") as f:
-                daemon_config = json.load(f)
-                logger.info("Daemon config file found: ipc_port=%s, api_key present=%s",
-                           daemon_config.get("ipc_port"), bool(daemon_config.get("api_key")))
-        except Exception as e:
-            logger.debug("Could not read daemon config file for diagnostics: %s", e)
-    
+        logger.info(
+            "Daemon config file found: ipc_port=%s, api_key present=%s",
+            daemon_config.get("ipc_port") if daemon_config else None,
+            bool(daemon_config and daemon_config.get("api_key")),
+        )
+
     # Try each port with detailed health checks (fallback if port scanning didn't work)
     for port in ports_to_try:
         base_url = f"http://{client_host}:{port}"
-        logger.info("Trying IPC port %d (base_url=%s, api_key present=%s)", 
-                    port, base_url, bool(cfg.daemon and cfg.daemon.api_key))
-        
-        client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
+        logger.info(
+            "Trying IPC port %d (base_url=%s, config_path=%s, api_key present=%s)",
+            port,
+            base_url,
+            daemon_config_path,
+            bool(api_key),
+        )
+        client = IPCClient(api_key=api_key, base_url=base_url)
         
         # CRITICAL: First check if daemon is already healthy using ONLY IPC health check
         # This works even if PID file is missing or stale (e.g., daemon running in foreground)
@@ -4353,8 +4356,12 @@ async def _ensure_daemon_running(
     
     # None of the ports worked - create client with the primary port for the start attempt
     base_url = f"http://{client_host}:{ipc_port}"
-    logger.info("None of the tried ports responded. Using primary port %d for daemon start attempt.", ipc_port)
-    client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
+    logger.info(
+        "None of the tried ports responded. Using primary port %d for daemon start attempt (config_path=%s).",
+        ipc_port,
+        daemon_config_path,
+    )
+    client = IPCClient(api_key=api_key, base_url=base_url)
     
     # CRITICAL: If initial health check failed, daemon is not running
     # We do NOT check PID files or process status - ONLY IPC health checks

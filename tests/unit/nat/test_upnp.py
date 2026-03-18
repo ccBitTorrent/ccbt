@@ -497,6 +497,27 @@ class TestUPnPClient:
                 await client.add_port_mapping(6881, 6881, "tcp")
 
     @pytest.mark.asyncio
+    async def test_add_port_mapping_proceeds_when_delete_returns_501(self):
+        """When DeletePortMapping fails with 501, add_port_mapping proceeds to AddPortMapping."""
+        client = UPnPClient()
+        client.control_url = "http://example.com/control"
+        client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
+        with patch.object(
+            client, "delete_port_mapping", side_effect=UPnPError("SOAP fault (UPnP error code: 501, hint: Action Failed)")
+        ), patch("ccbt.nat.upnp.send_soap_action", new_callable=AsyncMock, return_value={}) as mock_soap:
+            with patch("socket.socket") as mock_sock:
+                mock_sock.return_value.__enter__ = mock_sock
+                mock_sock.return_value.__exit__ = MagicMock(return_value=False)
+                mock_sock.return_value.connect = MagicMock()
+                mock_sock.return_value.getsockname = MagicMock(return_value=("192.168.1.2", 0))
+                mock_sock.return_value.close = MagicMock()
+                result = await client.add_port_mapping(6881, 6881, "tcp")
+        assert result is True
+        mock_soap.assert_called_once()
+        call_args = mock_soap.call_args
+        assert call_args[0][1] == "AddPortMapping"
+
+    @pytest.mark.asyncio
     async def test_delete_port_mapping_error_code(self):
         """Test delete_port_mapping handles error code (lines 527-530)."""
         client = UPnPClient()

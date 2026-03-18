@@ -804,6 +804,29 @@ class TestAdditionalCoverageGaps:
         await piece_manager.update_peer_have("new_peer:6883", 0)
 
     @pytest.mark.asyncio
+    async def test_update_peer_availability_from_piece_indices(self, piece_manager):
+        """Test update_peer_availability_from_piece_indices (piece layer path)."""
+        peer_key = "192.168.1.1:6881"
+        await piece_manager.update_peer_availability_from_piece_indices(
+            peer_key, {0, 1, 2}
+        )
+        assert peer_key in piece_manager.peer_availability
+        assert piece_manager.peer_availability[peer_key].pieces == {0, 1, 2}
+        assert piece_manager.piece_frequency[0] == 1
+        assert piece_manager.piece_frequency[1] == 1
+        assert piece_manager.piece_frequency[2] == 1
+
+        # Update with different set: piece_frequency should reflect diff
+        await piece_manager.update_peer_availability_from_piece_indices(
+            peer_key, {1, 3}
+        )
+        assert piece_manager.peer_availability[peer_key].pieces == {1, 3}
+        assert piece_manager.piece_frequency[0] == 0
+        assert piece_manager.piece_frequency[1] == 1
+        assert piece_manager.piece_frequency[2] == 0
+        assert piece_manager.piece_frequency[3] == 1
+
+    @pytest.mark.asyncio
     async def test_request_piece_early_returns(self, piece_manager):
         """Test request_piece_from_peers early returns (lines 404, 408, 423, 427)."""
         peer_manager = MagicMock()

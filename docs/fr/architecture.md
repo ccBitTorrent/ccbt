@@ -88,47 +88,24 @@ ccBitTorrent utilise une architecture orientée services avec plusieurs services
 
 Tous les services héritent de la classe de base `Service` qui fournit la gestion du cycle de vie, les vérifications de santé et le suivi d'état.
 
-**Implémentation :** `ccbt/services/base.py`
+::: ccbt.services.base.Service
 
 ### AsyncSessionManager
 
-L'orchestrateur central qui gère toute la session BitTorrent. Il existe deux implémentations :
+L'orchestrateur central qui gère toute la session BitTorrent. Une seule implémentation dans `ccbt/session/session.py` ; le module `ccbt/session/async_main.py` réexporte depuis `session.py`.
 
-1. **AsyncSessionManager dans `ccbt/session/async_main.py`** : Utilisé par le point d'entrée CLI asynchrone, gère plusieurs torrents avec support de protocole.
+Le `AsyncSessionManager` dans `ccbt/session/session.py` inclut notamment :
 
-La classe `AsyncSessionManager` est définie dans `ccbt/session/async_main.py` à partir de la ligne 319. Les attributs d'initialisation clés incluent :
-
-- `config` : Instance de configuration (utilise la configuration globale si non fournie)
-- `torrents` : Dictionnaire mappant les IDs de torrents aux instances de `AsyncDownloadManager`
-- `metrics` : Instance de `MetricsCollector` (initialisée dans `start()` si activée)
-- `disk_io_manager` : Gestionnaire d'I/O disque (initialisé dans `start()`)
-- `security_manager` : Gestionnaire de sécurité (initialisé dans `start()`)
-- `protocol_manager` : `ProtocolManager` pour gérer plusieurs protocoles
-- `protocols` : Liste des instances de protocole actives
-
-Voir l'implémentation complète :
-
-```python
---8<-- "ccbt/session/async_main.py:319:374"
-```
-
-2. **AsyncSessionManager dans `ccbt/session/session.py`** : Implémentation plus complète avec DHT, gestion de file d'attente, traversée NAT et support de scrape.
-
-Le `AsyncSessionManager` plus complet dans `ccbt/session/session.py` (à partir de la ligne 1317) inclut des composants supplémentaires :
-
+- `config` : Instance de configuration
 - `dht_client` : Client DHT pour la découverte de pairs
-- `peer_service` : Instance de `PeerService` pour gérer les connexions de pairs
-- `queue_manager` : Gestionnaire de file d'attente de torrents pour la priorisation
-- `nat_manager` : Gestionnaire de traversée NAT pour le mappage de ports
-- `private_torrents` : Ensemble suivant les torrents privés (BEP 27)
-- `scrape_cache` : Cache pour les résultats de scrape de trackers (BEP 48)
-- Tâches en arrière-plan pour le nettoyage, la collecte de métriques et le scraping périodique
+- `peer_service` : Instance de `PeerService` pour les connexions de pairs
+- `queue_manager` : Gestionnaire de file d'attente pour la priorisation
+- `nat_manager` : Gestionnaire de traversée NAT
+- `private_torrents` : Ensemble des torrents privés (BEP 27)
+- `scrape_cache` : Cache pour les résultats de scrape (BEP 48)
+- Tâches en arrière-plan pour nettoyage, métriques et scraping
 
-Voir l'implémentation complète :
-
-```python
---8<-- "ccbt/session/session.py:1317:1367"
-```
+::: ccbt.session.session.AsyncSessionManager
 
 **Responsabilités :**
 - Gestion du cycle de vie des torrents
@@ -160,7 +137,7 @@ Pour améliorer la maintenabilité, la logique de session est progressivement ex
 
 Gère toutes les connexions de pairs avec pipeline avancé. Le `AsyncPeerConnectionManager` gère les connexions de pairs individuelles pour une session de torrent.
 
-**Implémentation :** `ccbt/peer/async_peer_connection.py`
+::: ccbt.peer.async_peer_connection.AsyncPeerConnectionManager
 
 **Fonctionnalités :**
 - Connexions TCP asynchrones
@@ -175,7 +152,7 @@ Gère toutes les connexions de pairs avec pipeline avancé. Le `AsyncPeerConnect
 
 Implémente des algorithmes avancés de sélection de pièces. Le `AsyncPieceManager` coordonne le téléchargement de pièces, la vérification et le suivi de complétion.
 
-**Implémentation :** `ccbt/piece/async_piece_manager.py`
+::: ccbt.piece.async_piece_manager.AsyncPieceManager
 
 **Algorithmes :**
 - **Rarest-First** : Santé optimale de l'essaim
@@ -188,7 +165,7 @@ Implémente des algorithmes avancés de sélection de pièces. Le `AsyncPieceMan
 
 Opérations disque optimisées avec plusieurs stratégies. Le système d'I/O disque est initialisé via `init_disk_io()` et géré via le gestionnaire de session.
 
-**Implémentation :** `ccbt/storage/disk_io.py`
+::: ccbt.storage.disk_io.DiskIOManager
 
 **Optimisations :**
 - Préallocation de fichiers (sparse/full)
@@ -255,17 +232,10 @@ Le système utilise une architecture basée sur les événements pour un couplag
 
 Le système d'événements inclut des types d'événements complets :
 
-L'enum `EventType` définit tous les événements système incluant les événements de pairs, pièces, torrents, trackers, DHT, protocole, extensions et sécurité. L'enum complet avec tous les types d'événements :
+L'enum `EventType` définit tous les événements système (pairs, pièces, torrents, trackers, DHT, protocole, extensions, sécurité). Les événements sont émis via le bus global et `emit_event()`.
 
-```python
---8<-- "ccbt/utils/events.py:34:152"
-```
-
-Les événements sont émis en utilisant le bus d'événements global via la fonction `emit_event()` :
-
-```python
---8<-- "ccbt/utils/events.py:658:661"
-```
+::: ccbt.utils.events.EventType
+::: ccbt.utils.events.EventBus
 
 ## Système de Configuration
 
@@ -275,11 +245,9 @@ La configuration est gérée par `ConfigManager` qui charge les paramètres depu
 
 **Implémentation :** `ccbt/config/config.py`
 
-La classe `ConfigManager` gère le chargement, la validation et le rechargement à chaud de la configuration. Elle recherche les fichiers de configuration dans des emplacements standard et prend en charge les mots de passe de proxy chiffrés. Voir l'initialisation :
+La classe `ConfigManager` gère le chargement, la validation et le rechargement à chaud.
 
-```python
---8<-- "ccbt/config/config.py:46:60"
-```
+::: ccbt.config.config.ConfigManager
 
 **Sources de Configuration (par ordre) :**
 1. Valeurs par défaut (depuis les modèles Pydantic)
@@ -352,11 +320,9 @@ Les extensions du protocole BitTorrent sont gérées par le `ExtensionManager` q
 
 **Implémentation :** `ccbt/extensions/manager.py`
 
-Le `ExtensionManager` initialise toutes les extensions BitTorrent prises en charge incluant les extensions Protocol, SSL, Fast, PEX et DHT. Chaque extension est enregistrée avec ses capacités et son état. Voir la logique d'initialisation :
+Le `ExtensionManager` initialise toutes les extensions BitTorrent (Protocol, SSL, Fast, PEX, DHT).
 
-```python
---8<-- "ccbt/extensions/manager.py:51:110"
-```
+::: ccbt.extensions.manager.ExtensionManager
 
 ### Gestionnaire de Protocoles
 
@@ -364,11 +330,9 @@ Le `ProtocolManager` gère plusieurs protocoles (BitTorrent, IPFS, WebTorrent, X
 
 **Implémentation :** `ccbt/protocols/base.py`
 
-Le `ProtocolManager` gère plusieurs protocoles avec support de circuit breaker, suivi de performance et émission automatique d'événements. Les protocoles sont enregistrés avec leur type et les statistiques sont suivies par protocole. Voir l'initialisation et l'enregistrement :
+Le `ProtocolManager` gère plusieurs protocoles avec circuit breaker et suivi de performance.
 
-```python
---8<-- "ccbt/protocols/base.py:286:324"
-```
+::: ccbt.protocols.base.ProtocolManager
 
 ## Optimisations de Performance
 
@@ -480,11 +444,9 @@ L'intégration du protocole IPFS fournit l'adressage de contenu décentralisé e
 
 ### Intégration du Gestionnaire de Session
 
-Le protocole IPFS est automatiquement enregistré lors du démarrage du gestionnaire de session s'il est activé dans la configuration. Le protocole est enregistré avec le gestionnaire de protocoles et démarré, avec gestion d'erreurs gracieuse qui n'empêche pas le démarrage de session si IPFS n'est pas disponible. Voir l'initialisation :
+Le protocole IPFS est automatiquement enregistré au démarrage du gestionnaire de session si activé.
 
-```python
---8<-- "ccbt/session/async_main.py:441:462"
-```
+::: ccbt.protocols.ipfs.IPFSProtocol
 
 ### Adressage de Contenu
 

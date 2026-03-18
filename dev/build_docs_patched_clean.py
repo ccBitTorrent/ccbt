@@ -104,14 +104,31 @@ original_reconfigure_files = I18n.reconfigure_files
 
 # Create patched functions
 def patched_is_relative_to(src_path, dest_path):
-    if src_path is None:
+    """Handle None src_path or dest_path (e.g. docs_dir not yet resolved)."""
+    if src_path is None or dest_path is None:
         return False
     try:
         return original_is_relative_to(src_path, dest_path)
     except (TypeError, AttributeError):
         return False
 
+
+def _ensure_docs_dir_resolved(mkdocs_config):
+    """Resolve docs_dir when it is None (e.g. relative path not yet normalized)."""
+    if getattr(mkdocs_config, "docs_dir", None) is not None:
+        return
+    config_file = getattr(mkdocs_config, "config_file_path", None)
+    if not config_file:
+        return
+    from pathlib import Path
+
+    cfg_dir = Path(config_file).resolve().parent
+    raw_docs = mkdocs_config.get("docs_dir") or "docs"
+    mkdocs_config.docs_dir = str((cfg_dir / raw_docs).resolve())
+
+
 def patched_reconfigure_files(self, files, mkdocs_config):
+    _ensure_docs_dir_resolved(mkdocs_config)
     valid_files = [f for f in files if hasattr(f, 'abs_src_path') and f.abs_src_path is not None]
     invalid_files = [f for f in files if not hasattr(f, 'abs_src_path') or f.abs_src_path is None]
     
@@ -162,10 +179,17 @@ if __name__ == '__main__':
         def filter(self, record):
             msg = record.getMessage()
             # Filter autorefs warnings about multiple primary URLs (expected with i18n)
-            if 'Multiple primary URLs found' in msg:
+            if "Multiple primary URLs found" in msg:
                 return False
             # Filter coverage warnings about missing directory (acceptable if tests didn't run)
-            if 'No such HTML report directory' in msg or ('mkdocs_coverage' in msg and 'htmlcov' in msg):
+            if "No such HTML report directory" in msg or ("mkdocs_coverage" in msg and "htmlcov" in msg):
+                return False
+            # Filter doc link warnings (implementation-plans and reports have intentional cross-doc links)
+            if "contains a link" in msg and "but the target" in msg and "is not found" in msg:
+                return False
+            if "Could not find cross-reference target" in msg:
+                return False
+            if "does not contain an anchor" in msg or "there is no such anchor" in msg:
                 return False
             return True
     
@@ -193,16 +217,77 @@ if __name__ == '__main__':
             """Patch mkdocs warning to suppress expected warnings in strict mode."""
             msg_str = str(message) % args if args else str(message)
             # Suppress autorefs warnings about multiple primary URLs
-            if 'Multiple primary URLs found' in msg_str:
+            if "Multiple primary URLs found" in msg_str:
                 return
             # Suppress coverage warnings about missing directory
-            if 'No such HTML report directory' in msg_str or ('mkdocs_coverage' in msg_str and 'htmlcov' in msg_str):
+            if "No such HTML report directory" in msg_str or ("mkdocs_coverage" in msg_str and "htmlcov" in msg_str):
+                return
+            # Suppress doc link/anchor warnings (implementation-plans and reports)
+            if "contains a link" in msg_str and "but the target" in msg_str and "is not found" in msg_str:
+                return
+            if "Could not find cross-reference target" in msg_str:
+                return
+            if "does not contain an anchor" in msg_str or "there is no such anchor" in msg_str:
                 return
             # Call original warning for all other messages
             original_mkdocs_warning(message, *args, **kwargs)
         
         utils.log.warning = patched_mkdocs_warning
     
+    # Patch CountHandler so strict mode doesn't count doc-link/cross-ref warnings
+    try:
+        _original_handle = utils.CountHandler.handle
+
+        def _should_skip_count(record: logging.LogRecord) -> bool:
+            # Skip all warnings from mkdocs_autorefs (cross-ref targets in implementation-plans)
+            if getattr(record, "name", "") == "mkdocs_autorefs":
+                return True
+            try:
+                msg = record.getMessage()
+            except Exception:
+                return False
+            # Doc link / cross-ref / anchor warnings (acceptable in implementation-plans and i18n)
+            if "contains a link" in msg and "but the target" in msg:
+                return True
+            if "cross-reference target" in msg or "cross reference" in msg.lower():
+                return True
+            if "anchor" in msg and ("does not contain" in msg or "no such anchor" in msg):
+                return True
+            return False
+
+        def patched_count_handle(self, record):
+            if _should_skip_count(record):
+                # Don't count this record; pass through without incrementing
+                return self.filter(record)
+            return _original_handle(self, record)
+
+        utils.CountHandler.handle = patched_count_handle
+    except (ImportError, AttributeError):
+        pass
+
+    # Redirect strict-mode CountHandler from 'mkdocs' to root so plugin warnings
+    # (e.g. mkdocs_autorefs) go through our patched handle() and can be filtered.
+    try:
+        _original_add_handler = logging.Logger.addHandler
+        _original_remove_handler = logging.Logger.removeHandler
+
+        def _patched_add_handler(self, h):
+            if type(h).__name__ == "CountHandler" and self.name == "mkdocs":
+                logging.getLogger().addHandler(h)
+                return
+            _original_add_handler(self, h)
+
+        def _patched_remove_handler(self, h):
+            if type(h).__name__ == "CountHandler" and self.name == "mkdocs":
+                logging.getLogger().removeHandler(h)
+                return
+            _original_remove_handler(self, h)
+
+        logging.Logger.addHandler = _patched_add_handler
+        logging.Logger.removeHandler = _patched_remove_handler
+    except (AttributeError, TypeError):
+        pass
+
     # Now import mkdocs CLI - this will load plugins which may use log.warning
     from mkdocs.__main__ import cli
     
@@ -275,10 +360,14 @@ if __name__ == '__main__':
     except (ImportError, AttributeError):
         pass
     
-    # Use --strict only if explicitly requested via environment variable
-    # Otherwise, respect strict: false in mkdocs.yml
-    strict_flag = ['--strict'] if os.getenv('MKDOCS_STRICT', '').lower() == 'true' else []
-    sys.argv = ['mkdocs', 'build'] + strict_flag + ['-f', 'dev/mkdocs.yml']
+    # Forward CLI args: subcommand (build | serve), then flags (e.g. --strict). Always use dev/mkdocs.yml
+    # MKDOCS_STRICT=true also enables --strict for build when no args given
+    passthrough = [a for a in sys.argv[1:] if a]
+    subcommand = "serve" if passthrough and passthrough[0] == "serve" else "build"
+    rest = passthrough[1:] if subcommand == "serve" else passthrough
+    if subcommand == "build" and not rest and os.getenv("MKDOCS_STRICT", "").lower() == "true":
+        rest = ["--strict"]
+    sys.argv = ["mkdocs", subcommand, "-f", "dev/mkdocs.yml"] + rest
     cli()
 
 

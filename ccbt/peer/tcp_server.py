@@ -340,7 +340,7 @@ class IncomingPeerServer:
                 and (asyncio.get_event_loop().time() - start_time) < max_wait_time
             ):
                 if self.session_manager is not None:
-                    session = await self.session_manager.get_session_for_info_hash(  # type: ignore[attr-defined]
+                    session = await self.session_manager.get_session_for_info_hash(
                         handshake.info_hash
                     )
                 else:

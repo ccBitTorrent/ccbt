@@ -628,6 +628,7 @@ async def test_get_active_peers(peer_manager):
     # Create connections with different states
     peer1 = PeerInfo(ip="127.0.0.1", port=6881)
     peer2 = PeerInfo(ip="127.0.0.1", port=6882)
+    peer3 = PeerInfo(ip="127.0.0.1", port=6883)
 
     connection1 = AsyncPeerConnection(peer_info=peer1, torrent_data=peer_manager.torrent_data)
     connection1.state = ConnectionState.ACTIVE
@@ -641,16 +642,21 @@ async def test_get_active_peers(peer_manager):
     connection2.reader = AsyncMock()
     connection2.writer = MagicMock()
 
+    connection3 = AsyncPeerConnection(peer_info=peer3, torrent_data=peer_manager.torrent_data)
+    connection3.state = ConnectionState.BITFIELD_SENT
+
     # Add to manager
     peer_manager.connections[str(peer1)] = connection1
     peer_manager.connections[str(peer2)] = connection2
+    peer_manager.connections[str(peer3)] = connection3
 
     # Get active peers
     active = peer_manager.get_active_peers()
 
-    # Should only return active connection
-    assert len(active) == 1
-    assert active[0] == connection1
+    # ACTIVE and BITFIELD_SENT peers should both count as active
+    assert len(active) == 2
+    assert connection1 in active
+    assert connection3 in active
 
 
 @pytest.mark.asyncio

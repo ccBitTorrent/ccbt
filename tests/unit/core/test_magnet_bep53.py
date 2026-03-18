@@ -659,6 +659,51 @@ class TestApplyMagnetFileSelection:
         assert result["announce"] == ""
         assert result["announce_list"] == []
         assert result["info_hash"] == info_hash
+        assert result["_metadata_incomplete"] is True
+
+    def test_magnet_info_from_minimal_torrent_data(self):
+        """Test magnet_info_from_minimal_torrent_data builds MagnetInfo from dict."""
+        from ccbt.core.magnet import (
+            MagnetInfo,
+            magnet_info_from_minimal_torrent_data,
+        )
+
+        info_hash = bytes.fromhex("0123456789abcdef0123456789abcdef01234567")
+        torrent_data = {
+            "info_hash": info_hash,
+            "name": "my-torrent",
+            "announce_list": ["http://t1/announce", "http://t2/announce"],
+            "web_seeds": ["http://ws/"],
+        }
+        mi = magnet_info_from_minimal_torrent_data(torrent_data)
+        assert isinstance(mi, MagnetInfo)
+        assert mi.info_hash == info_hash
+        assert mi.display_name == "my-torrent"
+        assert mi.trackers == ["http://t1/announce", "http://t2/announce"]
+        assert mi.web_seeds == ["http://ws/"]
+        assert mi.selected_indices is None
+        assert mi.prioritized_indices is None
+
+    def test_magnet_info_from_minimal_torrent_data_hex_info_hash(self):
+        """Test magnet_info_from_minimal_torrent_data accepts hex info_hash."""
+        from ccbt.core.magnet import magnet_info_from_minimal_torrent_data
+
+        torrent_data = {
+            "info_hash": "0123456789abcdef0123456789abcdef01234567",
+            "name": "x",
+            "announce_list": [],
+        }
+        mi = magnet_info_from_minimal_torrent_data(torrent_data)
+        assert mi.info_hash == bytes.fromhex(
+            "0123456789abcdef0123456789abcdef01234567"
+        )
+
+    def test_magnet_info_from_minimal_torrent_data_missing_info_hash_raises(self):
+        """Test magnet_info_from_minimal_torrent_data raises when info_hash missing."""
+        from ccbt.core.magnet import magnet_info_from_minimal_torrent_data
+
+        with pytest.raises(ValueError, match="info_hash"):
+            magnet_info_from_minimal_torrent_data({"name": "x"})
 
     def test_validate_indices_with_debug_logged(self, caplog):
         """Test that validation logs debug messages for invalid indices."""

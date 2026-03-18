@@ -92,7 +92,9 @@ class TestUTPPeerConnectionConnect:
     """Tests for UTPPeerConnection.connect() (lines 182-241)."""
 
     @pytest.mark.asyncio
-    async def test_connect_success(self, peer_info, mock_torrent_data, mock_utp_connection):
+    async def test_connect_success(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test successful connection (lines 182-231)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -100,7 +102,9 @@ class TestUTPPeerConnectionConnect:
         )
 
         # Mock UTPConnection class
-        with patch("ccbt.peer.utp_peer.UTPConnection", return_value=mock_utp_connection):
+        with patch(
+            "ccbt.peer.utp_peer.UTPConnection", return_value=mock_utp_connection
+        ):
             # Mock the connection to become CONNECTED quickly
             async def mock_connect():
                 await asyncio.sleep(0.01)
@@ -118,27 +122,36 @@ class TestUTPPeerConnectionConnect:
             assert conn.stats.last_activity > 0
 
     @pytest.mark.asyncio
-    async def test_connect_timeout(self, peer_info, mock_torrent_data, mock_utp_connection):
+    async def test_connect_timeout(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test connection timeout (lines 204-214)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
             torrent_data=mock_torrent_data,
         )
 
-        # Mock UTPConnection class
-        with patch("ccbt.peer.utp_peer.UTPConnection", return_value=mock_utp_connection):
-            # Mock the connection to stay in SYN_SENT
+        # Mock UTPConnection class and time so the 30s wait loop exits quickly
+        with patch(
+            "ccbt.peer.utp_peer.UTPConnection", return_value=mock_utp_connection
+        ), patch("ccbt.peer.utp_peer.time.perf_counter") as mock_perf:
             mock_utp_connection.state = UTPConnectionState.SYN_SENT
             mock_utp_connection.connect = AsyncMock()
+            # start_time=1000, then loop check 1000, then 1031 so elapsed >= 30
+            mock_perf.side_effect = [1000.0, 1000.0, 1031.0]
 
-            with pytest.raises(ConnectionError, match="uTP connection failed to establish"):
+            with pytest.raises(
+                ConnectionError, match="uTP connection failed to establish"
+            ):
                 await conn.connect()
 
             assert conn.state == ConnectionState.ERROR
             assert conn.error_message is not None
 
     @pytest.mark.asyncio
-    async def test_connect_exception(self, peer_info, mock_torrent_data, mock_utp_connection):
+    async def test_connect_exception(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test connection exception handling (lines 233-241)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -146,7 +159,9 @@ class TestUTPPeerConnectionConnect:
         )
 
         # Mock UTPConnection to raise exception
-        with patch("ccbt.peer.utp_peer.UTPConnection", return_value=mock_utp_connection):
+        with patch(
+            "ccbt.peer.utp_peer.UTPConnection", return_value=mock_utp_connection
+        ):
             mock_utp_connection.initialize_transport = AsyncMock(
                 side_effect=OSError("Network error")
             )
@@ -162,7 +177,9 @@ class TestUTPPeerConnectionDisconnect:
     """Tests for UTPPeerConnection.disconnect() (lines 243-258)."""
 
     @pytest.mark.asyncio
-    async def test_disconnect_with_connection(self, peer_info, mock_torrent_data, mock_utp_connection):
+    async def test_disconnect_with_connection(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test disconnect with uTP connection (lines 245-249)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -178,7 +195,9 @@ class TestUTPPeerConnectionDisconnect:
         assert conn.writer is None
 
     @pytest.mark.asyncio
-    async def test_disconnect_with_connection_task(self, peer_info, mock_torrent_data, mock_utp_connection):
+    async def test_disconnect_with_connection_task(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test disconnect with connection task (lines 251-254)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -193,7 +212,9 @@ class TestUTPPeerConnectionDisconnect:
         assert conn.state == ConnectionState.DISCONNECTED
 
     @pytest.mark.asyncio
-    async def test_disconnect_connection_close_error(self, peer_info, mock_torrent_data, mock_utp_connection):
+    async def test_disconnect_connection_close_error(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test disconnect handles connection close error (lines 248-249)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -225,7 +246,9 @@ class TestUTPPeerConnectionReceiveMessages:
         await conn._receive_messages()
 
     @pytest.mark.asyncio
-    async def test_receive_messages_keep_alive(self, peer_info, mock_torrent_data, mock_utp_connection):
+    async def test_receive_messages_keep_alive(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test receive messages handles keep-alive (lines 273-275)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -247,7 +270,9 @@ class TestUTPPeerConnectionReceiveMessages:
             await conn._receive_messages()
 
     @pytest.mark.asyncio
-    async def test_receive_messages_empty_length_data(self, peer_info, mock_torrent_data):
+    async def test_receive_messages_empty_length_data(
+        self, peer_info, mock_torrent_data
+    ):
         """Test receive messages handles empty length data (line 269-270)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -266,7 +291,9 @@ class TestUTPPeerConnectionReceiveMessages:
         assert conn.state == ConnectionState.CONNECTED  # State unchanged
 
     @pytest.mark.asyncio
-    async def test_receive_messages_empty_message_data(self, peer_info, mock_torrent_data):
+    async def test_receive_messages_empty_message_data(
+        self, peer_info, mock_torrent_data
+    ):
         """Test receive messages handles empty message data (line 279-280)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -339,7 +366,9 @@ class TestUTPPeerConnectionReceiveMessages:
         assert conn.state == ConnectionState.DISCONNECTED
 
     @pytest.mark.asyncio
-    async def test_receive_messages_connection_error(self, peer_info, mock_torrent_data):
+    async def test_receive_messages_connection_error(
+        self, peer_info, mock_torrent_data
+    ):
         """Test receive messages handles ConnectionError (lines 288-290)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -347,7 +376,9 @@ class TestUTPPeerConnectionReceiveMessages:
         )
 
         mock_reader = MagicMock()
-        mock_reader.readexactly = AsyncMock(side_effect=ConnectionError("Connection lost"))
+        mock_reader.readexactly = AsyncMock(
+            side_effect=ConnectionError("Connection lost")
+        )
         conn.reader = mock_reader
         conn.state = ConnectionState.CONNECTED
 
@@ -356,7 +387,9 @@ class TestUTPPeerConnectionReceiveMessages:
         assert conn.state == ConnectionState.DISCONNECTED
 
     @pytest.mark.asyncio
-    async def test_receive_messages_general_exception(self, peer_info, mock_torrent_data):
+    async def test_receive_messages_general_exception(
+        self, peer_info, mock_torrent_data
+    ):
         """Test receive messages handles general exception (lines 291-294)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -375,37 +408,102 @@ class TestUTPPeerConnectionReceiveMessages:
 
 
 class TestUTPPeerConnectionStats:
-    """Tests for UTPPeerConnection.update_stats() (lines 296-320)."""
+    """Tests for UTPPeerConnection.update_stats() (time-based rate tracking)."""
 
     def test_update_stats_no_connection(self, peer_info, mock_torrent_data):
-        """Test update_stats with no connection (line 298)."""
+        """Test update_stats with no connection leaves stats unchanged."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
             torrent_data=mock_torrent_data,
         )
         conn.utp_connection = None
 
-        # Should not raise
         conn.update_stats()
 
-    def test_update_stats_with_connection(self, peer_info, mock_torrent_data, mock_utp_connection):
-        """Test update_stats with connection (lines 298-320)."""
+        # Should not raise; stats unchanged
+        assert conn.stats.bytes_downloaded == 0
+        assert conn.stats.bytes_uploaded == 0
+
+    def test_update_stats_with_connection(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
+        """Test update_stats uses delta bytes / delta time over two calls."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
             torrent_data=mock_torrent_data,
         )
         conn.utp_connection = mock_utp_connection
-        conn.stats.last_activity = time.time() - 1.0  # 1 second ago
         conn.state = ConnectionState.CONNECTED
+
+        with patch("ccbt.peer.utp_peer.time") as mock_time:
+            mock_time.time.side_effect = [1000.0, 1002.0]  # 2s between calls
+            conn.update_stats()  # First call: installs sample
+            assert conn.stats.bytes_downloaded == mock_utp_connection.bytes_received
+            assert conn.stats.bytes_uploaded == mock_utp_connection.bytes_sent
+
+            mock_utp_connection.bytes_received = 2024  # +1000
+            mock_utp_connection.bytes_sent = 1012  # +500
+            conn.update_stats()  # Second call: rate = delta / delta_time
+
+        expected_rx, expected_tx = 2024, 1012
+        assert conn.stats.bytes_downloaded == expected_rx
+        assert conn.stats.bytes_uploaded == expected_tx
+        assert conn.stats.download_rate == pytest.approx(500.0, rel=1e-9)  # 1000/2
+        assert conn.stats.upload_rate == pytest.approx(250.0, rel=1e-9)  # 500/2
+
+    def test_update_stats_delta_based_rate_two_samples(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
+        """Rate = delta bytes over delta time between two update_stats calls."""
+        conn = UTPPeerConnection(
+            peer_info=peer_info,
+            torrent_data=mock_torrent_data,
+        )
+        conn.utp_connection = mock_utp_connection
+        conn.state = ConnectionState.CONNECTED
+
+        with patch("ccbt.peer.utp_peer.time") as mock_time:
+            mock_time.time.return_value = 1000.0
+            conn.update_stats()
+            mock_utp_connection.bytes_received = 5000
+            mock_utp_connection.bytes_sent = 2500
+            mock_time.time.return_value = 1010.0  # 10s later
+            conn.update_stats()
+
+        delta_rx = 5000 - 1024
+        delta_tx = 2500 - 512
+        delta_time = 10.0
+        assert conn.stats.download_rate == pytest.approx(
+            delta_rx / delta_time, rel=1e-9
+        )
+        expected_ul = delta_tx / delta_time
+        assert conn.stats.upload_rate == pytest.approx(expected_ul, rel=1e-9)
+
+    def test_update_stats_first_call_no_inflated_rate(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
+        """Test first update_stats() does not use time since last_activity for rate."""
+        conn = UTPPeerConnection(
+            peer_info=peer_info,
+            torrent_data=mock_torrent_data,
+        )
+        conn.utp_connection = mock_utp_connection
+        conn.stats.last_activity = time.time() - 100.0  # Far in the past
+        conn.state = ConnectionState.CONNECTED
+        conn.stats.download_rate = 0.0
+        conn.stats.upload_rate = 0.0
 
         conn.update_stats()
 
-        assert conn.stats.bytes_downloaded == 1024
-        assert conn.stats.bytes_uploaded == 512
-        assert conn.stats.download_rate > 0
-        assert conn.stats.upload_rate > 0
+        # First call only installs sample; rate must not use old wrong formula
+        assert conn.stats.bytes_downloaded == mock_utp_connection.bytes_received
+        assert conn.stats.bytes_uploaded == mock_utp_connection.bytes_sent
+        assert conn.stats.download_rate == 0.0
+        assert conn.stats.upload_rate == 0.0
 
-    def test_update_stats_state_mapping(self, peer_info, mock_torrent_data, mock_utp_connection):
+    def test_update_stats_state_mapping(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test update_stats maps uTP state (lines 313-320)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -434,7 +532,9 @@ class TestUTPPeerConnectionStateChecks:
 
         assert conn.is_connected() is False
 
-    def test_is_connected_connected_state(self, peer_info, mock_torrent_data, mock_utp_connection):
+    def test_is_connected_connected_state(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test is_connected when connected (lines 326)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -445,7 +545,9 @@ class TestUTPPeerConnectionStateChecks:
 
         assert conn.is_connected() is True
 
-    def test_is_connected_not_connected_state(self, peer_info, mock_torrent_data, mock_utp_connection):
+    def test_is_connected_not_connected_state(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test is_connected when not connected (line 326)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -466,7 +568,9 @@ class TestUTPPeerConnectionStateChecks:
 
         assert conn.has_timed_out() is True
 
-    def test_has_timed_out_with_recent_activity(self, peer_info, mock_torrent_data, mock_utp_connection):
+    def test_has_timed_out_with_recent_activity(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test has_timed_out with recent activity (lines 333-336)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -477,18 +581,24 @@ class TestUTPPeerConnectionStateChecks:
 
         assert conn.has_timed_out(timeout=60.0) is False
 
-    def test_has_timed_out_with_old_activity(self, peer_info, mock_torrent_data, mock_utp_connection):
+    def test_has_timed_out_with_old_activity(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test has_timed_out with old activity (lines 333-336)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
             torrent_data=mock_torrent_data,
         )
         conn.utp_connection = mock_utp_connection
-        conn.utp_connection.last_recv_time = time.perf_counter() - 70.0  # 70 seconds ago
+        conn.utp_connection.last_recv_time = (
+            time.perf_counter() - 70.0
+        )  # 70 seconds ago
 
         assert conn.has_timed_out(timeout=60.0) is True
 
-    def test_has_timed_out_no_last_recv_time(self, peer_info, mock_torrent_data, mock_utp_connection):
+    def test_has_timed_out_no_last_recv_time(
+        self, peer_info, mock_torrent_data, mock_utp_connection
+    ):
         """Test has_timed_out when last_recv_time is 0 (line 338)."""
         conn = UTPPeerConnection(
             peer_info=peer_info,
@@ -500,4 +610,3 @@ class TestUTPPeerConnectionStateChecks:
 
         # Should fall back to super().has_timed_out()
         assert conn.has_timed_out(timeout=60.0) is True
-

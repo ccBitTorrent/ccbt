@@ -2,6 +2,9 @@
 
 High-performance async UDP tracker communication with retry logic,
 concurrent announces across multiple tracker tiers, and proper error handling.
+
+Supports BEP 15 IPv6 (18-byte peer response when response is from IPv6) and
+optional BEP 41 extensions (URLData) in announce requests.
 """
 
 from __future__ import annotations
@@ -9,11 +12,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import socket
 import struct
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Optional
+from urllib.parse import urlparse
 
 from ccbt.config.config import get_config
 
@@ -1507,6 +1512,16 @@ class AsyncUDPTrackerClient:
             transaction_id = self._get_transaction_id()
             info_hash = torrent_data["info_hash"]
 
+            # BEP 15 UDP announce uses 20-byte info_hash only; 32-byte (XET workspace) is not supported
+            if len(info_hash) != 20:
+                self.logger.debug(
+                    "UDP tracker protocol (BEP 15) supports 20-byte info_hash only; "
+                    "32-byte (XET) announce skipped for %s:%d",
+                    session.host,
+                    session.port,
+                )
+                return []
+
             # CRITICAL FIX: Use external port from NAT manager if provided, otherwise use config port
             # The port parameter should be the external port from NAT manager (passed from AnnounceController)
             # If None, fallback to internal port but log warning
@@ -1551,6 +1566,7 @@ class AsyncUDPTrackerClient:
                 -1,  # num_want (-1 = default)
                 client_listen_port,  # Port (external port from NAT manager if available)
             )
+            announce_data += self._build_bep41_options(session.url)
 
             # Send request
             # Validate socket is ready
@@ -1808,6 +1824,16 @@ class AsyncUDPTrackerClient:
             transaction_id = self._get_transaction_id()
             info_hash = torrent_data["info_hash"]
 
+            # BEP 15 UDP announce uses 20-byte info_hash only; 32-byte (XET workspace) is not supported
+            if len(info_hash) != 20:
+                self.logger.debug(
+                    "UDP tracker protocol (BEP 15) supports 20-byte info_hash only; "
+                    "32-byte (XET) announce skipped for %s:%d",
+                    session.host,
+                    session.port,
+                )
+                return None
+
             # CRITICAL FIX: Use external port from NAT manager if provided, otherwise use config port
             # The port parameter should be the external port from NAT manager (passed from AnnounceController)
             # If None, fallback to internal port but log warning
@@ -1852,6 +1878,7 @@ class AsyncUDPTrackerClient:
                 -1,  # num_want (-1 = default)
                 client_listen_port,  # Port (external port from NAT manager if available)
             )
+            announce_data += self._build_bep41_options(session.url)
 
             # Send request
             # Validate socket is ready
@@ -2041,6 +2068,84 @@ class AsyncUDPTrackerClient:
         finally:
             self.pending_requests.pop(transaction_id, None)
 
+    @staticmethod
+    def _is_ipv6_address(addr: tuple[str, int]) -> bool:
+        """Return True if addr is an IPv6 address (BEP 15: response format follows packet family)."""
+        if not addr or not addr[0]:
+            return False
+        try:
+            socket.inet_pton(socket.AF_INET6, addr[0])
+            return True
+        except (OSError, TypeError):
+            return False
+
+    def _parse_peers_compact(
+        self, peer_data: bytes, is_ipv6: bool
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Parse BEP 15 compact peer list (6 bytes/IPv4 or 18 bytes/IPv6 per peer). Returns (peers, invalid_count)."""
+        stride = 18 if is_ipv6 else 6
+        peers: list[dict[str, Any]] = []
+        invalid_peers = 0
+        for i in range(0, len(peer_data), stride):
+            if i + stride > len(peer_data):
+                break
+            peer_bytes = peer_data[i : i + stride]
+            try:
+                if is_ipv6:
+                    ip_bytes = peer_bytes[:16]
+                    port = int.from_bytes(peer_bytes[16:18], "big")
+                    try:
+                        ip = socket.inet_ntop(socket.AF_INET6, ip_bytes)
+                    except (OSError, ValueError):
+                        invalid_peers += 1
+                        continue
+                else:
+                    ip_bytes = peer_bytes[:4]
+                    ip = ".".join(str(b) for b in ip_bytes)
+                    port = int.from_bytes(peer_bytes[4:6], "big")
+                    ip_parts = ip.split(".")
+                    is_valid_ip = (
+                        len(ip_parts) == 4
+                        and all(p.isdigit() and 0 <= int(p) <= 255 for p in ip_parts)
+                        and ip != "0.0.0.0"  # nosec B104 - validation only
+                    )
+                    if not is_valid_ip:
+                        invalid_peers += 1
+                        continue
+                if not (1 <= port <= 65535):
+                    invalid_peers += 1
+                    continue
+                if not is_ipv6 and ip == "0.0.0.0":
+                    invalid_peers += 1
+                    continue
+                peers.append(
+                    {
+                        "ip": ip,
+                        "port": port,
+                        "peer_source": "tracker",
+                        "ssl_capable": None,
+                    }
+                )
+            except (ValueError, struct.error, TypeError) as e:
+                invalid_peers += 1
+                self.logger.debug("Error parsing peer at offset %d: %s", i, e)
+        return (peers, invalid_peers)
+
+    @staticmethod
+    def _build_bep41_options(tracker_url: str) -> bytes:
+        """Build BEP 41 extension options (URLData) to append after byte 98 of announce request."""
+        if not tracker_url or not tracker_url.strip():
+            return bytes([0x2, 0x0])  # URLData with length 0
+        parsed = urlparse(tracker_url)
+        path = parsed.path or ""
+        query = ("?" + parsed.query) if parsed.query else ""
+        path_query = (path + query).encode("utf-8")
+        if len(path_query) == 0:
+            return bytes([0x2, 0x0])
+        if len(path_query) > 255:
+            path_query = path_query[:255]
+        return bytes([0x2, len(path_query)]) + path_query
+
     def handle_response(self, data: bytes, _addr: tuple[str, int]) -> None:
         """Handle incoming UDP response.
 
@@ -2177,40 +2282,39 @@ class AsyncUDPTrackerClient:
                         data[:100].hex() if len(data) >= 100 else data.hex(),
                     )
 
+                    # BEP 15: IPv4 response = 6 bytes/peer; IPv6 response = 18 bytes/peer (by packet source)
+                    is_ipv6 = self._is_ipv6_address(_addr)
+                    stride = 18 if is_ipv6 else 6
                     if len(data) > 20:
                         peer_data = data[20:]
-                        peer_count = len(peer_data) // 6
-
-                        # CRITICAL FIX: Validate peer data length is multiple of 6
-                        if len(peer_data) % 6 != 0:
+                        if len(peer_data) % stride != 0:
                             self.logger.warning(
-                                "Peer data length not multiple of 6: %d bytes (expected multiple of 6 for compact format). "
-                                "Truncating to valid length.",
+                                "Peer data length not multiple of %d (IPv4=6, IPv6=18): %d bytes. Truncating.",
+                                stride,
                                 len(peer_data),
                             )
-                            # Truncate to valid length
                             peer_data = peer_data[
-                                : len(peer_data) - (len(peer_data) % 6)
+                                : len(peer_data) - (len(peer_data) % stride)
                             ]
-                            peer_count = len(peer_data) // 6
+                        peer_count = len(peer_data) // stride if peer_data else 0
+                        peers, invalid_peers = self._parse_peers_compact(
+                            peer_data, is_ipv6
+                        )
 
-                        # CRITICAL FIX: Enhanced logging for peer parsing
                         self.logger.info(
                             "Parsing %d peer(s) from tracker %s:%d (peer_data length: %d bytes, "
-                            "expected peers: %d, seeders reported: %d, leechers reported: %d)",
+                            "stride=%d, seeders=%d, leechers=%d)",
                             peer_count,
                             _addr[0] if _addr else "unknown",
                             _addr[1] if _addr else 0,
                             len(peer_data),
-                            peer_count,
+                            stride,
                             seeders,
                             leechers,
                         )
-
-                        # CRITICAL FIX: Log peer data preview for debugging
                         if len(peer_data) > 0:
-                            preview_peers = min(3, peer_count)  # First 3 peers
-                            preview_bytes = preview_peers * 6
+                            preview_peers = min(3, peer_count)
+                            preview_bytes = preview_peers * stride
                             self.logger.debug(
                                 "Peer data preview (first %d peer(s), %d bytes): %s",
                                 preview_peers,
@@ -2236,116 +2340,13 @@ class AsyncUDPTrackerClient:
                                 data.hex()[:200],
                             )
 
-                    # Parse peers from peer_data (if available)
-                    if len(data) > 20:
-                        peer_data = data[20:]
-                        for i in range(0, len(peer_data), 6):
-                            if i + 6 <= len(peer_data):
-                                try:
-                                    peer_bytes = peer_data[i : i + 6]
+                    if invalid_peers > 0:
+                        self.logger.debug(
+                            "Skipped %d invalid peer(s) from tracker response",
+                            invalid_peers,
+                        )
 
-                                    # CRITICAL FIX: Validate peer_bytes length before parsing
-                                    if len(peer_bytes) != 6:
-                                        invalid_peers += 1
-                                        self.logger.debug(
-                                            "Invalid peer bytes length at offset %d: %d bytes (expected 6)",
-                                            i,
-                                            len(peer_bytes),
-                                        )
-                                        continue
-
-                                    # Parse IP address (4 bytes)
-                                    ip_bytes = peer_bytes[:4]
-                                    ip = ".".join(str(b) for b in ip_bytes)
-
-                                    # Parse port (2 bytes, big-endian)
-                                    port_bytes = peer_bytes[4:6]
-                                    if len(port_bytes) != 2:
-                                        invalid_peers += 1
-                                        self.logger.debug(
-                                            "Invalid port bytes length at offset %d: %d bytes (expected 2)",
-                                            i,
-                                            len(port_bytes),
-                                        )
-                                        continue
-                                    port = int.from_bytes(port_bytes, "big")
-
-                                    # CRITICAL FIX: Validate IP and port (relaxed validation)
-                                    # Only filter obviously invalid IPs - don't filter private IPs as they might be valid
-                                    # Many valid peers use private IPs (NAT, VPN, etc.)
-                                    ip_parts = ip.split(".")
-                                    is_valid_ip = False
-                                    try:
-                                        is_valid_ip = (
-                                            len(ip_parts) == 4
-                                            and all(
-                                                p.isdigit() and 0 <= int(p) <= 255
-                                                for p in ip_parts
-                                            )
-                                            and ip != "0.0.0.0"  # nosec B104 - IP validation check, not actual socket binding
-                                            # CRITICAL: Don't filter 127.x.x.x, 169.254.x.x, or private IPs
-                                            # These might be valid in NAT/VPN scenarios
-                                        )
-                                    except (ValueError, AttributeError) as e:
-                                        self.logger.debug(
-                                            "Error validating IP %s: %s",
-                                            ip,
-                                            e,
-                                        )
-
-                                    # Check if port is valid
-                                    is_valid_port = 1 <= port <= 65535
-
-                                    if is_valid_ip and is_valid_port:
-                                        peer_dict = {
-                                            "ip": ip,
-                                            "port": port,
-                                            "peer_source": "tracker",  # Mark peers from tracker responses (BEP 27)
-                                            "ssl_capable": None,  # Unknown until extension handshake
-                                        }
-                                        peers.append(peer_dict)
-                                        # CRITICAL FIX: Log each parsed peer at INFO level for visibility
-                                        self.logger.info(
-                                            "Parsed peer from tracker: %s:%d (offset %d, peer %d/%d)",
-                                            ip,
-                                            port,
-                                            i,
-                                            len(peers),
-                                            peer_count,
-                                        )
-                                    else:
-                                        invalid_peers += 1
-                                        self.logger.warning(
-                                            "Skipping invalid peer from tracker: ip=%s, port=%d (valid_ip=%s, valid_port=%s, offset=%d)",
-                                            ip,
-                                            port,
-                                            is_valid_ip,
-                                            is_valid_port,
-                                            i,
-                                        )
-                                except (
-                                    ValueError,
-                                    IndexError,
-                                    struct.error,
-                                    TypeError,
-                                ) as e:
-                                    invalid_peers += 1
-                                    self.logger.warning(
-                                        "Error parsing peer at offset %d: %s (peer_bytes=%s)",
-                                        i,
-                                        e,
-                                        peer_bytes.hex()
-                                        if "peer_bytes" in locals()
-                                        else "N/A",
-                                    )
-
-                        if invalid_peers > 0:
-                            self.logger.debug(
-                                "Skipped %d invalid peer(s) from tracker response",
-                                invalid_peers,
-                            )
-
-                        # CRITICAL FIX: Log at INFO level for visibility when peers are found
+                        # Log at INFO level for visibility when peers are found
                         if len(peers) > 0:
                             self.logger.info(
                                 "Parsed %d valid peer(s) from tracker %s:%d (seeders=%d, leechers=%d)",
@@ -2367,7 +2368,7 @@ class AsyncUDPTrackerClient:
                                 seeders,
                                 leechers,
                                 peer_data_len,
-                                peer_data_len // 6 if peer_data_len > 0 else 0,
+                                peer_data_len // stride if peer_data_len > 0 else 0,
                                 invalid_peers,
                                 len(data),
                             )

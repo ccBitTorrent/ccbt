@@ -1,6 +1,6 @@
 # Architecture Overview
 
-This document provides a technical overview of ccBitTorrent's architecture, components, and data flow.
+This document provides a technical overview of ccBitTorrent's architecture, components, and data flow. For API details of the components listed here see [API Reference](API.md).
 
 ## Entry Points
 
@@ -10,16 +10,12 @@ ccBitTorrent provides multiple entry points for different use cases:
    - Entry point: `ccbt/__main__.py:main`
    - Usage: `python -m ccbt torrent.torrent` or `python -m ccbt "magnet:..."`
 
-2. **Async CLI (`ccbt async`)**: High-performance async interface with full session management
-   - Entry point: `ccbt/session/async_main.py:main`
-   - Supports daemon mode, multiple torrents, and advanced features
+2. **Enhanced CLI (`btbt`)**: Rich command-line interface with full session management
+   - Entry point: `ccbt/cli/main.py` — `main`
+   - Provides interactive commands, monitoring, daemon mode, and advanced configuration
 
-3. **Enhanced CLI (`btbt`)**: Rich command-line interface with comprehensive features
-   - Entry point: `ccbt/cli/main.py:main`
-   - Provides interactive commands, monitoring, and advanced configuration
-
-4. **Terminal Dashboard (`bitonic`)**: Live, interactive terminal dashboard (TUI)
-   - Entry point: `ccbt/interface/terminal_dashboard.py:main`
+3. **Terminal Dashboard (`bitonic`)**: Live, interactive terminal dashboard (TUI)
+   - Entry point: `ccbt/interface/terminal_dashboard.py` — `main`
    - Real-time visualization of torrents, peers, and system metrics
 
 ## System Architecture
@@ -88,33 +84,13 @@ ccBitTorrent uses a service-oriented architecture with several core services:
 
 All services inherit from the base `Service` class which provides lifecycle management, health checks, and state tracking.
 
-**Implementation:** `ccbt/services/base.py`
+::: ccbt.services.base.Service
 
 ### AsyncSessionManager
 
-The central orchestrator that manages the entire BitTorrent session. There are two implementations:
+The central orchestrator that manages the entire BitTorrent session. There is a **single implementation** in `ccbt/session/session.py`. The module `ccbt/session/async_main.py` is a compatibility shim that re-exports `AsyncSessionManager` (and `AsyncDownloadManager`, `download_magnet`, `download_torrent`, etc.) from `session.py` and `download_manager.py`; it does not define the class.
 
-1. **AsyncSessionManager in `ccbt/session/async_main.py`**: Used by the async CLI entry point, manages multiple torrents with protocol support.
-
-The `AsyncSessionManager` class is defined in `ccbt/session/async_main.py` starting at line 319. Key initialization attributes include:
-
-- `config`: Configuration instance (uses global config if not provided)
-- `torrents`: Dictionary mapping torrent IDs to `AsyncDownloadManager` instances
-- `metrics`: `MetricsCollector` instance (initialized in `start()` if enabled)
-- `disk_io_manager`: Disk I/O manager (initialized in `start()`)
-- `security_manager`: Security manager (initialized in `start()`)
-- `protocol_manager`: `ProtocolManager` for managing multiple protocols
-- `protocols`: List of active protocol instances
-
-See the full implementation:
-
-```python
---8<-- "ccbt/session/async_main.py:319:374"
-```
-
-2. **AsyncSessionManager in `ccbt/session/session.py`**: More comprehensive implementation with DHT, queue management, NAT traversal, and scrape support.
-
-The more comprehensive `AsyncSessionManager` in `ccbt/session/session.py` (starting at line 2278) includes additional components:
+The `AsyncSessionManager` class in `ccbt/session/session.py` includes:
 
 - `dht_client`: DHT client for peer discovery
 - `peer_service`: `PeerService` instance for managing peer connections
@@ -126,6 +102,10 @@ The more comprehensive `AsyncSessionManager` in `ccbt/session/session.py` (start
 - `torrent_addition_handler`: `TorrentAdditionHandler` for torrent addition workflow
 - `background_tasks`: `ManagerBackgroundTasks` for cleanup and metrics loops
 - `scrape_manager`: `ScrapeManager` for tracker scraping operations
+
+**Session modules** (in `ccbt/session/`): Session logic is split across controllers and helpers: `lifecycle.py`, `checkpointing.py`, `status_aggregation.py`, `announce.py`, `peers.py`, `peer_events.py`, `magnet_handling.py`, `dht_setup.py`, `download_startup.py`, `torrent_addition.py`, `manager_background.py`, `scrape.py`, `checkpoint_operations.py`, `manager_startup.py`, `metrics_status.py`, `download_manager.py`, and related XET/sync modules. See the [API Reference](API.md) for details.
+
+::: ccbt.session.session.AsyncSessionManager
 
 **Responsibilities:**
 - Torrent lifecycle management (delegated to `TorrentAdditionHandler`)
@@ -230,7 +210,7 @@ The executor pattern provides a unified interface for both CLI and daemon comman
 
 Handles all peer connections with advanced pipelining. The `AsyncPeerConnectionManager` manages individual peer connections for a torrent session.
 
-**Implementation:** `ccbt/peer/async_peer_connection.py`
+::: ccbt.peer.async_peer_connection.AsyncPeerConnectionManager
 
 **Features:**
 - Async TCP connections
@@ -245,7 +225,7 @@ Handles all peer connections with advanced pipelining. The `AsyncPeerConnectionM
 
 Implements advanced piece selection algorithms. The `AsyncPieceManager` coordinates piece downloading, verification, and completion tracking.
 
-**Implementation:** `ccbt/piece/async_piece_manager.py`
+::: ccbt.piece.async_piece_manager.AsyncPieceManager
 
 **Algorithms:**
 - **Rarest-First**: Optimal swarm health
@@ -258,7 +238,7 @@ Implements advanced piece selection algorithms. The `AsyncPieceManager` coordina
 
 Optimized disk operations with multiple strategies. The disk I/O system is initialized via `init_disk_io()` and managed through the session manager.
 
-**Implementation:** `ccbt/storage/disk_io.py`
+::: ccbt.storage.disk_io.DiskIOManager
 
 **Optimizations:**
 - File preallocation (sparse/full)
@@ -321,21 +301,12 @@ Optimized disk operations with multiple strategies. The disk I/O system is initi
 
 The system uses an event-driven architecture for loose coupling. Events are emitted through the global `EventBus` and can be subscribed to by any component.
 
-**Implementation:** `ccbt/utils/events.py`
-
 The event system includes comprehensive event types:
 
-The `EventType` enum defines all system events including peer, piece, torrent, tracker, DHT, protocol, extension, and security events. The complete enum with all event types:
+The `EventType` enum defines all system events (peer, piece, torrent, tracker, DHT, protocol, extension, security). Events are emitted via the global event bus and `emit_event()`.
 
-```python
---8<-- "ccbt/utils/events.py:34:152"
-```
-
-Events are emitted using the global event bus via the `emit_event()` function:
-
-```python
---8<-- "ccbt/utils/events.py:658:661"
-```
+::: ccbt.utils.events.EventType
+::: ccbt.utils.events.EventBus
 
 ## Configuration System
 
@@ -343,13 +314,9 @@ Events are emitted using the global event bus via the `emit_event()` function:
 
 Configuration is managed by `ConfigManager` which loads settings from multiple sources in priority order.
 
-**Implementation:** `ccbt/config/config.py`
+The `ConfigManager` class handles configuration loading, validation, and hot-reload. It searches for configuration files in standard locations and supports encrypted proxy passwords.
 
-The `ConfigManager` class handles configuration loading, validation, and hot-reload. It searches for configuration files in standard locations and supports encrypted proxy passwords. See the initialization:
-
-```python
---8<-- "ccbt/config/config.py:46:60"
-```
+::: ccbt.config.config.ConfigManager
 
 **Configuration Sources (in order):**
 1. Default values (from Pydantic models)
@@ -368,7 +335,7 @@ The `ConfigManager` supports hot-reload of configuration files without restartin
 
 Metrics collection is initialized via `init_metrics()` and provides Prometheus-compatible metrics.
 
-**Implementation:** `ccbt/monitoring/metrics_collector.py`
+::: ccbt.monitoring.metrics_collector.MetricsCollector
 
 Metrics are initialized in the session manager's `start()` method and can be accessed via `session.metrics` if enabled in configuration.
 
@@ -376,13 +343,13 @@ Metrics are initialized in the session manager's `start()` method and can be acc
 
 The alert system provides rule-based alerting for various system conditions.
 
-**Implementation:** `ccbt/monitoring/alert_manager.py`
+::: ccbt.monitoring.alert_manager.AlertManager
 
 ### Tracing
 
 Distributed tracing support for performance analysis and debugging.
 
-**Implementation:** `ccbt/monitoring/tracing.py`
+::: ccbt.monitoring.tracing.TracingManager
 
 ## Security Features
 
@@ -390,7 +357,7 @@ Distributed tracing support for performance analysis and debugging.
 
 The `SecurityManager` provides comprehensive security features including IP filtering, peer validation, rate limiting, and anomaly detection.
 
-**Implementation:** `ccbt/security/security_manager.py`
+::: ccbt.security.security_manager.SecurityManager
 
 The security manager is initialized in the session manager's `start()` method and can load IP filters from configuration.
 
@@ -398,13 +365,13 @@ The security manager is initialized in the session manager's `start()` method an
 
 Peer validation is handled by the `PeerValidator` which checks for blocked IPs and suspicious behavior patterns.
 
-**Implementation:** `ccbt/security/peer_validator.py`
+::: ccbt.security.peer_validator.PeerValidator
 
 ### Rate Limiting
 
 Adaptive rate limiting for bandwidth management is provided by the `RateLimiter` and `AdaptiveLimiter` (ML-based).
 
-**Implementation:** `ccbt/security/rate_limiter.py`, `ccbt/ml/adaptive_limiter.py`
+::: ccbt.security.rate_limiter.RateLimiter
 
 ## Extensibility
 
@@ -412,7 +379,7 @@ Adaptive rate limiting for bandwidth management is provided by the `RateLimiter`
 
 The plugin system allows for optional plugins and extensions to be registered and managed.
 
-**Implementation:** `ccbt/plugins/base.py`
+::: ccbt.plugins.base.PluginManager
 
 Plugins can be registered with the `PluginManager` and provide hooks for various system events.
 
@@ -420,25 +387,17 @@ Plugins can be registered with the `PluginManager` and provide hooks for various
 
 BitTorrent protocol extensions are managed by the `ExtensionManager` which handles Fast Extension, PEX, DHT, WebSeed, SSL, and XET extensions.
 
-**Implementation:** `ccbt/extensions/manager.py`
+The `ExtensionManager` initializes all supported BitTorrent extensions (Protocol, SSL, Fast, PEX, DHT). Each extension is registered with its capabilities and status.
 
-The `ExtensionManager` initializes all supported BitTorrent extensions including Protocol, SSL, Fast, PEX, and DHT extensions. Each extension is registered with its capabilities and status. See the initialization logic:
-
-```python
---8<-- "ccbt/extensions/manager.py:51:110"
-```
+::: ccbt.extensions.manager.ExtensionManager
 
 ### Protocol Manager
 
 The `ProtocolManager` manages multiple protocols (BitTorrent, IPFS, WebTorrent, XET, Hybrid) with circuit breaker support and performance tracking.
 
-**Implementation:** `ccbt/protocols/base.py`
+The `ProtocolManager` manages multiple protocols with circuit breaker support, performance tracking, and automatic event emission. For BitTorrent v2 (BEP 52) and protocol details see [BEP 52](bep52.md).
 
-The `ProtocolManager` manages multiple protocols with circuit breaker support, performance tracking, and automatic event emission. Protocols are registered with their type and statistics are tracked per protocol. See the initialization and registration:
-
-```python
---8<-- "ccbt/protocols/base.py:286:324"
-```
+::: ccbt.protocols.base.ProtocolManager
 
 ## Performance Optimizations
 
@@ -461,7 +420,7 @@ All I/O operations are asynchronous:
 
 Connection pooling is implemented in the peer connection layer to efficiently reuse TCP connections and manage connection limits.
 
-**Implementation:** `ccbt/peer/connection_pool.py`
+::: ccbt.peer.connection_pool.PeerConnectionPool
 
 ## Testing Architecture
 
@@ -502,8 +461,6 @@ Test utilities and mocks are available in the `tests/` directory for unit, integ
 ### Architecture Overview
 
 The IPFS protocol integration provides decentralized content addressing and peer-to-peer networking capabilities through an IPFS daemon.
-
-**Implementation:** `ccbt/protocols/ipfs.py`
 
 ### Integration Points
 
@@ -550,11 +507,9 @@ The IPFS protocol integration provides decentralized content addressing and peer
 
 ### Session Manager Integration
 
-The IPFS protocol is automatically registered during session manager startup if enabled in configuration. The protocol is registered with the protocol manager and started, with graceful error handling that doesn't prevent session startup if IPFS is unavailable. See the initialization:
+The IPFS protocol is automatically registered during session manager startup if enabled in configuration. The protocol is registered with the protocol manager and started, with graceful error handling that doesn't prevent session startup if IPFS is unavailable.
 
-```python
---8<-- "ccbt/session/async_main.py:441:462"
-```
+::: ccbt.protocols.ipfs.IPFSProtocol
 
 ### Content Addressing
 
@@ -641,4 +596,21 @@ Session Manager          IPFS Protocol          IPFS Daemon
      │                         │                      │
 ```
 
-For more detailed information about specific components, see the individual documentation files and source code.
+### Document map
+
+| Topic | Location |
+|-------|----------|
+| Core (bencode, magnet, torrent parsing) | `ccbt/core/` |
+| Session (manager, torrent session, controllers) | `ccbt/session/` |
+| Peer connections and pool | `ccbt/peer/` |
+| Piece and metadata exchange | `ccbt/piece/` |
+| Storage and disk I/O | `ccbt/storage/` |
+| Discovery (trackers, DHT, PEX) | `ccbt/discovery/` |
+| Protocols (BitTorrent, IPFS, etc.) | `ccbt/protocols/` |
+| Command executor (CLI/daemon routing) | `ccbt/executor/` |
+| Consensus (XET Raft/Byzantine) | `ccbt/consensus/` |
+| Configuration | `ccbt/config/` |
+| CLI and dashboard | `ccbt/cli/`, `ccbt/interface/` |
+| Monitoring and security | `ccbt/monitoring/`, `ccbt/security/` |
+
+For more detailed information about specific components, see the [API Reference](API.md) and source code.
