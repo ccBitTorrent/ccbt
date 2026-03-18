@@ -1,8 +1,12 @@
 """IPC client for daemon communication.
 
-from __future__ import annotations
-
 Provides HTTP REST and WebSocket client for CLI-daemon communication.
+
+i18n: User-visible error or status strings returned to the CLI (e.g. in result.error)
+are translated on the CLI side when displayed. The CLI wraps known messages in _()
+and may pass through daemon-origin strings as-is. For consistent i18n, the daemon
+can return message keys for the CLI to translate, or return English strings for
+the CLI to display.
 """
 
 from __future__ import annotations
@@ -156,24 +160,17 @@ class IPCClient:
             # Log but don't fail - fall back to defaults
             logger.debug(_("Could not read daemon config from ConfigManager: %s"), e)
 
-        # Fallback: Try to read from legacy config file (for backwards compatibility)
-        # CRITICAL FIX: Use consistent path resolution helper to match daemon
-        from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+        # Fallback: read from daemon config file (same path as daemon uses)
+        from ccbt.daemon.daemon_manager import DEFAULT_IPC_PORT, read_daemon_config
 
-        home_dir = _get_daemon_home_dir()
-        config_file = home_dir / ".ccbt" / "daemon" / "config.json"
-        if config_file.exists():
-            try:
-                with open(config_file, encoding="utf-8") as f:
-                    config = json.load(f)
-                    port = config.get("ipc_port", 8080)
-                    # Always connect via 127.0.0.1 (works with server binding to 0.0.0.0 or 127.0.0.1)
-                    return f"http://127.0.0.1:{port}"
-            except Exception:
-                pass
+        daemon_config = read_daemon_config()
+        if daemon_config:
+            port = daemon_config.get("ipc_port")
+            if port is not None:
+                return f"http://127.0.0.1:{int(port)}"
 
-        # Default
-        return "http://127.0.0.1:8080"
+        # Default (must match daemon default for reconnect when config file missing)
+        return f"http://127.0.0.1:{DEFAULT_IPC_PORT}"
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         """Ensure HTTP session is created.
@@ -1642,6 +1639,38 @@ class IPCClient:
             resp.raise_for_status()
             return await resp.json()
 
+    async def share_xet_folder(
+        self,
+        folder_path: str,
+        sync_mode: Optional[str] = None,
+        check_interval: Optional[float] = None,
+        output_tonic: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Share XET folder and get shareable link.
+
+        Args:
+            folder_path: Path to folder to share
+            sync_mode: Synchronization mode (optional)
+            check_interval: Check interval in seconds (optional)
+            output_tonic: Path to write .tonic file (optional)
+
+        Returns:
+            Response dict with folder_key, workspace_id, link, folder_path, tonic_path (if written)
+
+        """
+        session = await self._ensure_session()
+        url = f"{self.base_url}{API_BASE_PATH}/xet/folders/share"
+        payload: dict[str, Any] = {"folder_path": folder_path}
+        if sync_mode:
+            payload["sync_mode"] = sync_mode
+        if check_interval is not None:
+            payload["check_interval"] = check_interval
+        if output_tonic:
+            payload["output_tonic"] = output_tonic
+        async with session.post(url, json=payload, headers=self._get_headers()) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
     async def remove_xet_folder(self, folder_key: str) -> dict[str, Any]:
         """Remove XET folder from synchronization.
 
@@ -2852,9 +2881,11 @@ class IPCClient:
             import socket
             from urllib.parse import urlparse
 
+            from ccbt.daemon.daemon_manager import DEFAULT_IPC_PORT
+
             parsed = urlparse(self.base_url)
             host = parsed.hostname or "127.0.0.1"
-            port = parsed.port or 8080
+            port = parsed.port or DEFAULT_IPC_PORT
 
             # Quick socket test to verify port is open
             # CRITICAL FIX: On Windows, error 10035 (WSAEWOULDBLOCK) can be a false positive
@@ -3084,21 +3115,14 @@ class IPCClient:
             # Log but don't fail - fall back to defaults
             logger.debug(_("Could not read daemon config from ConfigManager: %s"), e)
 
-        # Fallback: Try to read from legacy config file (for backwards compatibility)
-        # CRITICAL FIX: Use consistent path resolution helper to match daemon
-        from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+        # Fallback: read from daemon config file (same path as daemon uses)
+        from ccbt.daemon.daemon_manager import DEFAULT_IPC_PORT, read_daemon_config
 
-        home_dir = _get_daemon_home_dir()
-        config_file = home_dir / ".ccbt" / "daemon" / "config.json"
-        if config_file.exists():
-            try:
-                with open(config_file, encoding="utf-8") as f:
-                    config = json.load(f)
-                    port = config.get("ipc_port", 8080)
-                    # Always connect via 127.0.0.1 (works with server binding to 0.0.0.0 or 127.0.0.1)
-                    return f"http://127.0.0.1:{port}"
-            except Exception:
-                pass
+        daemon_config = read_daemon_config()
+        if daemon_config:
+            port = daemon_config.get("ipc_port")
+            if port is not None:
+                return f"http://127.0.0.1:{int(port)}"
 
-        # Default
-        return "http://127.0.0.1:8080"
+        # Default (must match daemon default for reconnect when config file missing)
+        return f"http://127.0.0.1:{DEFAULT_IPC_PORT}"

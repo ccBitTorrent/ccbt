@@ -109,7 +109,7 @@ def queue_list(_ctx) -> None:
     "--priority",
     type=click.Choice(["maximum", "high", "normal", "low", "paused"]),
     default="normal",
-    help="Priority level",
+    help=_("Priority level"),
 )
 @click.pass_context
 def queue_add(_ctx, info_hash: str, priority: str) -> None:
@@ -138,7 +138,7 @@ def queue_add(_ctx, info_hash: str, priority: str) -> None:
             )
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to add to queue")
+                raise click.ClickException(result.error or _("Failed to add to queue"))
 
             console.print(
                 f"[green]Added torrent to queue with priority {priority.upper()}[/green]"

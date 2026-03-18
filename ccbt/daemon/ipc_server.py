@@ -728,6 +728,9 @@ class IPCServer:
         self.app.router.add_post(
             f"{API_BASE_PATH}/xet/folders/add", self._handle_add_xet_folder
         )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/xet/folders/share", self._handle_share_xet_folder
+        )
         self.app.router.add_delete(
             f"{API_BASE_PATH}/xet/folders/{{folder_key}}",
             self._handle_remove_xet_folder,
@@ -4552,6 +4555,10 @@ class IPCServer:
                 "status": "added",
                 "folder_key": result.data.get("folder_key", folder_path),
             }
+            if isinstance(result.data, dict):
+                for key in ("workspace_id", "sync_mode", "folder_path", "folder_name"):
+                    if key in result.data and result.data[key] is not None:
+                        response_data[key] = result.data[key]
             await self.emit_websocket_event(
                 EventType.XET_FOLDER_ADDED,
                 XetFolderEventData(
@@ -4563,6 +4570,46 @@ class IPCServer:
             return web.json_response(response_data)  # type: ignore[attr-defined]
         except Exception as e:
             logger.exception("Error adding XET folder")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_FOLDER_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_share_xet_folder(self, request: Request) -> Response:
+        """Handle POST /api/v1/xet/folders/share."""
+        try:
+            data = await request.json()
+            folder_path = data.get("folder_path")
+            if not folder_path:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="folder_path is required",
+                        code="VALIDATION_ERROR",
+                    ).model_dump(),
+                    status=400,
+                )
+            result = await self.executor.execute(
+                "xet.share_folder",
+                folder_path=folder_path,
+                sync_mode=data.get("sync_mode"),
+                check_interval=data.get("check_interval"),
+                output_tonic=data.get("output_tonic"),
+            )
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to share XET folder",
+                        code="XET_FOLDER_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            payload = result.data if isinstance(result.data, dict) else {}
+            return web.json_response(payload)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error sharing XET folder")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=str(e),

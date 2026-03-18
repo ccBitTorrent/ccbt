@@ -10,6 +10,7 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
+from unittest.mock import patch
 
 import pytest
 
@@ -172,49 +173,29 @@ async def test_checkpoint_load_per_torrent_options():
         },
     )
 
-    # Create fake session
-    class FakeSession:
-        def __init__(self) -> None:
-            self.options: dict[str, Any] = {}
-            self.session_manager = None
-            self.logger = SimpleNamespace(
-                info=lambda *args, **kwargs: None,
-                exception=lambda *args, **kwargs: None,
-            )
-
-        def _apply_per_torrent_options(self) -> None:
-            """Apply per-torrent options."""
-            pass
-
-    session = FakeSession()
-
-    # Simulate resume from checkpoint
+    # Simulate resume from checkpoint using a patch so we don't affect other tests
     from ccbt.session.session import AsyncTorrentSession
 
-    # Use the actual _resume_from_checkpoint method via a mock
-    async def _resume_from_checkpoint(self, checkpoint: TorrentCheckpoint) -> None:
-        """Resume from checkpoint."""
-        # Restore per-torrent configuration options if they exist
+    async def _resume_from_checkpoint_options_only(
+        self: Any, checkpoint: TorrentCheckpoint
+    ) -> None:
+        """Resume from checkpoint (options only, for this test)."""
         if checkpoint.per_torrent_options is not None and checkpoint.per_torrent_options:
             self.options.update(checkpoint.per_torrent_options)
             self._apply_per_torrent_options()
 
-    # Patch the method
-    AsyncTorrentSession._resume_from_checkpoint = _resume_from_checkpoint
+    with patch.object(
+        AsyncTorrentSession,
+        "_resume_from_checkpoint",
+        _resume_from_checkpoint_options_only,
+    ):
+        session_real = AsyncTorrentSession(
+            {"info_hash": info_hash, "name": "test"}, ".", None
+        )
+        session_real.options = {}
 
-    # Create a real session instance
-    from ccbt.config.config import get_config
+        await session_real._resume_from_checkpoint(checkpoint)
 
-    config = get_config()
-    session_real = AsyncTorrentSession(
-        {"info_hash": info_hash, "name": "test"}, ".", None
-    )
-    session_real.options = {}
-
-    # Restore from checkpoint
-    await session_real._resume_from_checkpoint(checkpoint)
-
-    # Verify options were restored
     assert session_real.options["piece_selection"] == "sequential"
     assert session_real.options["streaming_mode"] is True
     assert session_real.options["max_peers_per_torrent"] == 50
@@ -259,43 +240,7 @@ async def test_checkpoint_load_rate_limits():
     )
     session.session_manager = session_manager
 
-    # #region agent log
-    import json
-    log_path = r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log"
-    try:
-        with open(log_path, "a", encoding="utf-8") as f:
-            ctx_info_hash = None
-            if hasattr(session, "checkpoint_controller") and session.checkpoint_controller:
-                if hasattr(session.checkpoint_controller, "_ctx"):
-                    if hasattr(session.checkpoint_controller._ctx, "info"):
-                        ctx_info_hash = getattr(session.checkpoint_controller._ctx.info, "info_hash", None)
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "TEST", "location": "test_checkpoint_persistence.py:262", "message": "Before _resume_from_checkpoint", "data": {"has_checkpoint_controller": hasattr(session, "checkpoint_controller"), "checkpoint_controller": str(session.checkpoint_controller) if hasattr(session, "checkpoint_controller") else None, "session_manager": str(session_manager), "ctx_info_hash": str(ctx_info_hash) if ctx_info_hash else None, "session_info_hash": str(session.info.info_hash) if hasattr(session, "info") and hasattr(session.info, "info_hash") else None}, "timestamp": __import__("time").time() * 1000}) + "\n")
-    except Exception:
-        pass
-    # #endregion
-    
-    # Restore from checkpoint
-    try:
-        await session._resume_from_checkpoint(checkpoint)
-    except Exception as e:
-        # #region agent log
-        import json
-        log_path = r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log"
-        try:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "EXCEPTION", "location": "test_checkpoint_persistence.py:273", "message": "Exception in _resume_from_checkpoint", "data": {"exception_type": str(type(e)), "exception_msg": str(e)}, "timestamp": __import__("time").time() * 1000}) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        raise
-
-    # #region agent log
-    try:
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "TEST", "location": "test_checkpoint_persistence.py:265", "message": "After _resume_from_checkpoint", "data": {"_per_torrent_limits": str(session_manager._per_torrent_limits), "info_hash_in_limits": info_hash in session_manager._per_torrent_limits}, "timestamp": __import__("time").time() * 1000}) + "\n")
-    except Exception:
-        pass
-    # #endregion
+    await session._resume_from_checkpoint(checkpoint)
 
     # Verify rate limits were restored
     assert info_hash in session_manager._per_torrent_limits

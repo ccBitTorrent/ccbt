@@ -54,6 +54,10 @@ class TestPeerValidator:
         
         assert is_valid is False
         assert "Invalid handshake length" in reason
+        metrics = validator.validation_metrics.get(sample_peer_info.peer_id.hex())
+        assert metrics is not None
+        assert metrics.protocol_violations == 1
+        assert metrics.error_count >= 1
 
     @pytest.mark.asyncio
     async def test_validate_handshake_invalid_protocol(self, validator, sample_peer_info):
@@ -71,6 +75,10 @@ class TestPeerValidator:
         
         assert is_valid is False
         assert "Invalid protocol string" in reason
+        metrics = validator.validation_metrics.get(sample_peer_info.peer_id.hex())
+        assert metrics is not None
+        assert metrics.protocol_violations == 1
+        assert metrics.error_count >= 1
 
     @pytest.mark.asyncio
     async def test_validate_handshake_invalid_reserved_bytes(self, validator, sample_peer_info):
@@ -88,6 +96,10 @@ class TestPeerValidator:
             
             assert is_valid is False
             assert reason == "Invalid reserved bytes"
+        metrics = validator.validation_metrics.get(sample_peer_info.peer_id.hex())
+        assert metrics is not None
+        assert metrics.protocol_violations == 1
+        assert metrics.error_count >= 1
 
     @pytest.mark.asyncio
     async def test_validate_handshake_invalid_info_hash(self, validator, sample_peer_info):
@@ -104,6 +116,10 @@ class TestPeerValidator:
             
             assert is_valid is False
             assert reason == "Invalid info hash"
+        metrics = validator.validation_metrics.get(sample_peer_info.peer_id.hex())
+        assert metrics is not None
+        assert metrics.protocol_violations == 1
+        assert metrics.error_count >= 1
 
     @pytest.mark.asyncio
     async def test_validate_handshake_invalid_peer_id(self, validator, sample_peer_info):
@@ -121,6 +137,10 @@ class TestPeerValidator:
             
             assert is_valid is False
             assert reason == "Invalid peer ID"
+        metrics = validator.validation_metrics.get(sample_peer_info.peer_id.hex())
+        assert metrics is not None
+        assert metrics.protocol_violations == 1
+        assert metrics.error_count >= 1
 
     @pytest.mark.asyncio
     async def test_validate_handshake_exception(self, validator, sample_peer_info):
@@ -160,6 +180,10 @@ class TestPeerValidator:
         
         assert is_valid is False
         assert reason == "Empty message"
+        metrics = validator.validation_metrics.get(sample_peer_info.peer_id.hex())
+        assert metrics is not None
+        assert metrics.protocol_violations == 1
+        assert metrics.error_count >= 1
 
     @pytest.mark.asyncio
     async def test_validate_message_too_large(self, validator, sample_peer_info):
@@ -170,6 +194,10 @@ class TestPeerValidator:
         
         assert is_valid is False
         assert reason == "Message too large"
+        metrics = validator.validation_metrics.get(sample_peer_info.peer_id.hex())
+        assert metrics is not None
+        assert metrics.protocol_violations == 1
+        assert metrics.error_count >= 1
 
     @pytest.mark.asyncio
     async def test_validate_message_invalid_length(self, validator, sample_peer_info):
@@ -180,6 +208,10 @@ class TestPeerValidator:
         
         assert is_valid is False
         assert "Message too large" in reason
+        metrics = validator.validation_metrics.get(sample_peer_info.peer_id.hex())
+        assert metrics is not None
+        assert metrics.protocol_violations == 1
+        assert metrics.error_count >= 1
 
     @pytest.mark.asyncio
     async def test_validate_message_invalid_type(self, validator, sample_peer_info):
@@ -191,6 +223,10 @@ class TestPeerValidator:
             
             assert is_valid is False
             assert "Invalid message format" in reason
+        metrics = validator.validation_metrics.get(sample_peer_info.peer_id.hex())
+        assert metrics is not None
+        assert metrics.protocol_violations == 1
+        assert metrics.error_count >= 1
 
     @pytest.mark.asyncio
     async def test_validate_message_exception(self, validator, sample_peer_info):
@@ -418,6 +454,16 @@ class TestPeerValidator:
         validator._update_validation_metrics(sample_peer_info, False, 0)
         
         metrics = validator.validation_metrics[sample_peer_info.peer_id.hex()]
+        assert metrics.error_count == 1
+
+    def test_update_validation_metrics_protocol_violation(self, validator, sample_peer_info):
+        """Test updating validation metrics with protocol violation increments both counters."""
+        validator._update_validation_metrics(
+            sample_peer_info, False, 0, is_protocol_violation=True
+        )
+        
+        metrics = validator.validation_metrics[sample_peer_info.peer_id.hex()]
+        assert metrics.protocol_violations == 1
         assert metrics.error_count == 1
 
     def test_calculate_connection_quality(self, validator):

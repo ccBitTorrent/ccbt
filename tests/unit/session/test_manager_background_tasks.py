@@ -182,11 +182,12 @@ class TestManagerBackgroundTasks:
     @pytest.mark.asyncio
     async def test_metrics_loop_aggregates_stats(self, background_tasks, mock_manager):
         """Test metrics loop aggregates torrent statistics."""
-        # Create mock torrents
+        # Create mock torrents; use _cached_status = {} so peer count from len(peers).
         torrent1 = Mock()
         torrent1.downloaded_bytes = 1000
         torrent1.uploaded_bytes = 500
         torrent1.left_bytes = 9000
+        torrent1._cached_status = {}
         torrent1.peers = [Mock(), Mock()]
         torrent1.download_rate = 100.0
         torrent1.upload_rate = 50.0
@@ -195,6 +196,7 @@ class TestManagerBackgroundTasks:
         torrent2.downloaded_bytes = 2000
         torrent2.uploaded_bytes = 1000
         torrent2.left_bytes = 8000
+        torrent2._cached_status = {}
         torrent2.peers = [Mock()]
         torrent2.download_rate = 200.0
         torrent2.upload_rate = 100.0
@@ -290,11 +292,12 @@ class TestManagerBackgroundTasks:
 
     def test_aggregate_torrent_stats(self, background_tasks, mock_manager):
         """Test _aggregate_torrent_stats method."""
-        # Create mock torrents
+        # Create mock torrents; _cached_status = {} so peer count from len(peers).
         torrent1 = Mock()
         torrent1.downloaded_bytes = 1000
         torrent1.uploaded_bytes = 500
         torrent1.left_bytes = 9000
+        torrent1._cached_status = {}
         torrent1.peers = [Mock(), Mock()]
         torrent1.download_rate = 100.0
         torrent1.upload_rate = 50.0
@@ -303,6 +306,7 @@ class TestManagerBackgroundTasks:
         torrent2.downloaded_bytes = 2000
         torrent2.uploaded_bytes = 1000
         torrent2.left_bytes = 8000
+        torrent2._cached_status = {}
         torrent2.peers = [Mock()]
         torrent2.download_rate = 200.0
         torrent2.upload_rate = 100.0

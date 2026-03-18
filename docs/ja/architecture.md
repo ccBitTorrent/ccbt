@@ -88,47 +88,15 @@ ccBitTorrentは、いくつかのコアサービスを使用するサービス�
 
 すべてのサービスは、ライフサイクル管理、ヘルスチェック、状態追跡を提供する基本`Service`クラスを継承します。
 
-**実装：** `ccbt/services/base.py`
+::: ccbt.services.base.Service
 
 ### AsyncSessionManager
 
-BitTorrentセッション全体を管理する中央オーケストレーター。2つの実装があります：
+BitTorrentセッション全体を管理する中央オーケストレーター。実装は`ccbt/session/session.py`に1つのみ。`ccbt/session/async_main.py`は再エクスポート。
 
-1. **`ccbt/session/async_main.py`のAsyncSessionManager**：非同期CLIエントリーポイントで使用され、プロトコルサポート付きで複数のトレントを管理します。
+主なコンポーネント：`dht_client`、`peer_service`、`queue_manager`、`nat_manager`、`private_torrents`（BEP 27）、`scrape_cache`（BEP 48）、バックグラウンドタスク。
 
-`AsyncSessionManager`クラスは`ccbt/session/async_main.py`の319行目から定義されています。主要な初期化属性には以下が含まれます：
-
-- `config`：設定インスタンス（提供されない場合はグローバル設定を使用）
-- `torrents`：トレントIDを`AsyncDownloadManager`インスタンスにマッピングする辞書
-- `metrics`：`MetricsCollector`インスタンス（有効な場合、`start()`で初期化）
-- `disk_io_manager`：ディスクI/Oマネージャー（`start()`で初期化）
-- `security_manager`：セキュリティマネージャー（`start()`で初期化）
-- `protocol_manager`：複数のプロトコルを管理する`ProtocolManager`
-- `protocols`：アクティブなプロトコルインスタンスのリスト
-
-完全な実装を参照：
-
-```python
---8<-- "ccbt/session/async_main.py:319:374"
-```
-
-2. **`ccbt/session/session.py`のAsyncSessionManager**：DHT、キュー管理、NATトラバーサル、scrapeサポートを備えたより包括的な実装。
-
-`ccbt/session/session.py`のより包括的な`AsyncSessionManager`（1317行目から）には、追加のコンポーネントが含まれます：
-
-- `dht_client`：ピア発見用のDHTクライアント
-- `peer_service`：ピア接続を管理する`PeerService`インスタンス
-- `queue_manager`：優先順位付け用のトレントキューマネージャー
-- `nat_manager`：ポートマッピング用のNATトラバーサルマネージャー
-- `private_torrents`：プライベートトレントを追跡するセット（BEP 27）
-- `scrape_cache`：トラッカーscrape結果のキャッシュ（BEP 48）
-- クリーンアップ、メトリクス収集、定期的なscraping用のバックグラウンドタスク
-
-完全な実装を参照：
-
-```python
---8<-- "ccbt/session/session.py:1317:1367"
-```
+::: ccbt.session.session.AsyncSessionManager
 
 **責任：**
 - トレントライフサイクル管理
@@ -160,7 +128,7 @@ BitTorrentセッション全体を管理する中央オーケストレーター�
 
 高度なパイプライン処理でピア接続をすべて処理します。`AsyncPeerConnectionManager`は、トレントセッションの個別のピア接続を管理します。
 
-**実装：** `ccbt/peer/async_peer_connection.py`
+::: ccbt.peer.async_peer_connection.AsyncPeerConnectionManager
 
 **機能：**
 - 非同期TCP接続
@@ -175,7 +143,7 @@ BitTorrentセッション全体を管理する中央オーケストレーター�
 
 高度なピース選択アルゴリズムを実装します。`AsyncPieceManager`は、ピースのダウンロード、検証、完了追跡を調整します。
 
-**実装：** `ccbt/piece/async_piece_manager.py`
+::: ccbt.piece.async_piece_manager.AsyncPieceManager
 
 **アルゴリズム：**
 - **Rarest-First**：最適なスウォームの健全性
@@ -188,7 +156,7 @@ BitTorrentセッション全体を管理する中央オーケストレーター�
 
 複数の戦略で最適化されたディスク操作。ディスクI/Oシステムは`init_disk_io()`を介して初期化され、セッションマネージャーを通じて管理されます。
 
-**実装：** `ccbt/storage/disk_io.py`
+::: ccbt.storage.disk_io.DiskIOManager
 
 **最適化：**
 - ファイル事前割り当て（sparse/full）
@@ -255,17 +223,10 @@ BitTorrentセッション全体を管理する中央オーケストレーター�
 
 イベントシステムには包括的なイベントタイプが含まれます：
 
-`EventType`列挙型は、ピア、ピース、トレント、トラッカー、DHT、プロトコル、拡張、セキュリティイベントを含むすべてのシステムイベントを定義します。すべてのイベントタイプを含む完全な列挙型：
+`EventType`列挙型はピア・ピース・トレント・トラッカー・DHT・プロトコル・拡張・セキュリティイベントを定義し、`emit_event()`でグローバルバスに発行されます。
 
-```python
---8<-- "ccbt/utils/events.py:34:152"
-```
-
-イベントは`emit_event()`関数を介してグローバルイベントバスを使用して発行されます：
-
-```python
---8<-- "ccbt/utils/events.py:658:661"
-```
+::: ccbt.utils.events.EventType
+::: ccbt.utils.events.EventBus
 
 ## 設定システム
 
@@ -275,11 +236,9 @@ BitTorrentセッション全体を管理する中央オーケストレーター�
 
 **実装：** `ccbt/config/config.py`
 
-`ConfigManager`クラスは、設定の読み込み、検証、ホットリロードを処理します。標準的な場所で設定ファイルを検索し、暗号化されたプロキシパスワードをサポートします。初期化を参照：
+`ConfigManager`クラスは設定の読み込み・検証・ホットリロードを処理します。
 
-```python
---8<-- "ccbt/config/config.py:46:60"
-```
+::: ccbt.config.config.ConfigManager
 
 **設定ソース（順序）：**
 1. デフォルト値（Pydanticモデルから）
@@ -352,11 +311,9 @@ BitTorrentプロトコル拡張は、Fast Extension、PEX、DHT、WebSeed、SSL�
 
 **実装：** `ccbt/extensions/manager.py`
 
-`ExtensionManager`は、Protocol、SSL、Fast、PEX、DHT拡張を含むすべてのサポートされているBitTorrent拡張を初期化します。各拡張はその機能とステータスで登録されます。初期化ロジックを参照：
+`ExtensionManager`は Protocol / SSL / Fast / PEX / DHT 拡張を初期化します。
 
-```python
---8<-- "ccbt/extensions/manager.py:51:110"
-```
+::: ccbt.extensions.manager.ExtensionManager
 
 ### プロトコルマネージャー
 
@@ -364,11 +321,9 @@ BitTorrentプロトコル拡張は、Fast Extension、PEX、DHT、WebSeed、SSL�
 
 **実装：** `ccbt/protocols/base.py`
 
-`ProtocolManager`は、サーキットブレーカーサポート、パフォーマンス追跡、自動イベント発行を備えた複数のプロトコルを管理します。プロトコルはそのタイプで登録され、統計はプロトコルごとに追跡されます。初期化と登録を参照：
+`ProtocolManager`はサーキットブレーカーとパフォーマンス追跡で複数プロトコルを管理します。
 
-```python
---8<-- "ccbt/protocols/base.py:286:324"
-```
+::: ccbt.protocols.base.ProtocolManager
 
 ## パフォーマンス最適化
 
@@ -480,11 +435,9 @@ IPFSプロトコル統合は、IPFSデーモンを介して分散コンテンツ
 
 ### セッションマネージャー統合
 
-IPFSプロトコルは、設定で有効になっている場合、セッションマネージャーの起動中に自動的に登録されます。プロトコルはプロトコルマネージャーに登録され、IPFSが利用できない場合でもセッション起動を妨げない優雅なエラーハンドリングで開始されます。初期化を参照：
+IPFSプロトコルは設定で有効な場合、セッションマネージャー起動時に自動登録されます。
 
-```python
---8<-- "ccbt/session/async_main.py:441:462"
-```
+::: ccbt.protocols.ipfs.IPFSProtocol
 
 ### コンテンツアドレッシング
 

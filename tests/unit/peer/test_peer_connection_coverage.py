@@ -752,6 +752,26 @@ class TestSendMessage:
 
         # Should send bitfield message
         connection.writer.write.assert_called()
+        assert connection.state == ConnectionState.ACTIVE
+
+    @pytest.mark.asyncio
+    async def test_send_bitfield_without_verified_pieces_preserves_active_state(
+        self, manager
+    ):
+        """Test _send_bitfield does not regress an active peer state."""
+        peer_info = PeerInfo(ip="192.168.1.101", port=6881)
+        connection = AsyncPeerConnection(peer_info, manager.torrent_data)
+        connection.state = ConnectionState.ACTIVE
+        connection.writer = MagicMock()
+        connection.writer.write = MagicMock()
+        connection.writer.drain = AsyncMock()
+
+        manager.piece_manager.verified_pieces = []
+
+        await manager._send_bitfield(connection)
+
+        connection.writer.write.assert_not_called()
+        assert connection.state == ConnectionState.ACTIVE
 
     @pytest.mark.asyncio
     async def test_send_unchoke_error(self, manager):

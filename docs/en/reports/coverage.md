@@ -1,6 +1,14 @@
 # Code Coverage Report
 
-This page displays the code coverage report generated during test execution.
+This page displays the code coverage report when available. On Read the Docs the report is not generated; use the coverage report in CI (e.g. Codecov) or generate it locally.
+
+**Generate the report locally:** Run tests with coverage and HTML output:
+
+```bash
+uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html
+```
+
+Then open `htmlcov/index.html` in your browser. When the docs are built in CI with coverage data, an embedded report may appear below.
 
 <!-- mkdocs-coverage -->
 

@@ -174,6 +174,11 @@ class UTPPeerConnection(AsyncPeerConnection):
 
         self.state = ConnectionState.DISCONNECTED
 
+        # Previous sample for time-based rate tracking (delta bytes / delta time)
+        self._stats_prev_bytes_received: int = 0
+        self._stats_prev_bytes_sent: int = 0
+        self._stats_prev_time: float = 0.0
+
         # Map uTP states to ConnectionState
         self._state_map = {
             UTPConnectionState.IDLE: ConnectionState.DISCONNECTED,
@@ -227,6 +232,10 @@ class UTPPeerConnection(AsyncPeerConnection):
             # Update state
             self.state = ConnectionState.CONNECTED
             self.stats.last_activity = time.time()
+            # Reset rate-tracking sample so first update_stats() only records sample
+            self._stats_prev_bytes_received = 0
+            self._stats_prev_bytes_sent = 0
+            self._stats_prev_time = 0.0
 
             # Start message receiving task
             self.connection_task = asyncio.create_task(self._receive_messages())
@@ -301,32 +310,44 @@ class UTPPeerConnection(AsyncPeerConnection):
             self.error_message = str(e)
 
     def update_stats(self) -> None:
-        """Update statistics from uTP connection."""
-        if self.utp_connection:
-            # Update bytes transferred
-            self.stats.bytes_downloaded = self.utp_connection.bytes_received
-            self.stats.bytes_uploaded = self.utp_connection.bytes_sent
+        """Update statistics from uTP connection.
 
-            # Calculate rates (simplified - would need time-based tracking)
-            # For now, just use basic values
-            if self.stats.last_activity > 0:
-                elapsed = time.time() - self.stats.last_activity
-                if (
-                    elapsed > 0
-                ):  # pragma: no cover - Defensive: elapsed should always be > 0 when last_activity is set, but guard against edge cases
-                    self.stats.download_rate = (
-                        self.utp_connection.bytes_received / elapsed
-                    )
-                    self.stats.upload_rate = self.utp_connection.bytes_sent / elapsed
+        Writes transport-level cumulative bytes to stats.bytes_downloaded /
+        stats.bytes_uploaded. Rates are computed as delta bytes over delta time
+        since the previous call (time-based sampling). The manager's stats loop
+        uses message-level accumulation and does not call this method.
+        """
+        if self.utp_connection is None:
+            return
+        # Update transport-level byte totals for consumers that want transport totals
+        bytes_received = self.utp_connection.bytes_received
+        bytes_sent = self.utp_connection.bytes_sent
+        self.stats.bytes_downloaded = bytes_received
+        self.stats.bytes_uploaded = bytes_sent
 
-            # Map uTP connection state
-            utp_state = self.utp_connection.state
-            mapped_state = self._state_map.get(
-                utp_state,
-                ConnectionState.DISCONNECTED,  # pragma: no cover - Defensive: fallback for unknown uTP states
-            )
-            if mapped_state != self.state:
-                self.state = mapped_state
+        now = time.time()
+        # Time-based rate: delta bytes since last sample over delta time
+        if self._stats_prev_time > 0:
+            delta_time = now - self._stats_prev_time
+            if delta_time > 0:
+                delta_rx = bytes_received - self._stats_prev_bytes_received
+                delta_tx = bytes_sent - self._stats_prev_bytes_sent
+                self.stats.download_rate = delta_rx / delta_time
+                self.stats.upload_rate = delta_tx / delta_time
+        # First call: no previous sample; leave rates unchanged, only install sample
+
+        self._stats_prev_bytes_received = bytes_received
+        self._stats_prev_bytes_sent = bytes_sent
+        self._stats_prev_time = now
+
+        # Map uTP connection state
+        utp_state = self.utp_connection.state
+        mapped_state = self._state_map.get(
+            utp_state,
+            ConnectionState.DISCONNECTED,  # pragma: no cover - Defensive: fallback for unknown uTP states
+        )
+        if mapped_state != self.state:
+            self.state = mapped_state
 
     def is_connected(self) -> bool:
         """Check if uTP connection is established."""

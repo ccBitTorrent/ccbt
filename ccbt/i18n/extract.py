@@ -95,8 +95,9 @@ def generate_pot_template(
     with open(output_file, "w", encoding="utf-8") as f:
         f.write('msgid ""\n')
         f.write('msgstr ""\n')
+        f.write('"Project-Id-Version: ccBitTorrent\\n"\n')
+        f.write('"Language: en\\n"\n')
         f.write('"Content-Type: text/plain; charset=UTF-8\\n"\n')
-        f.write('"Language: \\n"\n')
         f.write('"MIME-Version: 1.0\\n"\n')
         f.write('"Content-Transfer-Encoding: 8bit\\n"\n\n')
 
@@ -116,11 +117,13 @@ if __name__ == "__main__":
         sys.exit(1)
 
     source_dir = Path(sys.argv[1])
-    output_file = (
-        Path(sys.argv[2])
-        if len(sys.argv) > 2 and not sys.argv[2].startswith("--")
-        else source_dir / "ccbt.pot"
-    )
+    if len(sys.argv) > 2 and not sys.argv[2].startswith("--"):
+        output_file = Path(sys.argv[2])
+    else:
+        # Standard location: ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot
+        output_file = (
+            source_dir / "i18n" / "locales" / "en" / "LC_MESSAGES" / "ccbt.pot"
+        )
     comprehensive = "--comprehensive" in sys.argv
 
     generate_pot_template(source_dir, output_file, comprehensive=comprehensive)

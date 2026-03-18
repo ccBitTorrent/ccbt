@@ -377,6 +377,93 @@ def tonic_status(_ctx, folder_path: str) -> None:
         raise click.Abort from e
 
 
+@tonic.command("share")
+@click.argument(
+    "folder_path",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True),
+)
+@click.option(
+    "--sync-mode",
+    type=click.Choice(["designated", "best_effort", "broadcast", "consensus"]),
+    default="best_effort",
+    help="Synchronization mode",
+)
+@click.option(
+    "--check-interval",
+    type=float,
+    default=None,
+    help="Folder check interval in seconds",
+)
+@click.option(
+    "--allowlist",
+    "_allowlist_path",
+    type=click.Path(),
+    help="Path to allowlist file",
+)
+@click.option(
+    "--output",
+    "-o",
+    "tonic_output",
+    type=click.Path(),
+    help="Write .tonic file to this path",
+)
+@click.pass_context
+def tonic_share(
+    _ctx,
+    folder_path: str,
+    sync_mode: str,
+    check_interval: Optional[float],
+    _allowlist_path: Optional[str],
+    tonic_output: Optional[str],
+) -> None:
+    """Register folder for sync and print shareable link (requires daemon)."""
+    console = Console()
+    try:
+        from ccbt.cli.main import _get_executor
+
+        async def _do_share() -> Any:
+            executor, is_daemon = await _get_executor()
+            if executor is None or not is_daemon:
+                msg = _(
+                    "tonic share requires the daemon. Start it with: btbt daemon start"
+                )
+                raise RuntimeError(msg)
+            return await executor.execute(
+                "xet.share_folder",
+                folder_path=folder_path,
+                sync_mode=sync_mode,
+                check_interval=check_interval,
+                output_tonic=tonic_output,
+            )
+
+        result = asyncio.run(_do_share())
+        if not result.success:
+            console.print(_("[red]Error: {e}[/red]").format(e=result.error or ""))
+            raise click.ClickException(result.error or _("Share failed"))
+
+        data = result.data or {}
+        link = data.get("link", "")
+        console.print(_("[bold green]Share link:[/bold green]"))
+        console.print(link)
+        if data.get("folder_key"):
+            console.print(_("  Folder key: {key}").format(key=data["folder_key"]))
+        if data.get("workspace_id"):
+            console.print(_("  Workspace ID: {id}").format(id=data["workspace_id"]))
+        if data.get("tonic_path"):
+            console.print(_("  .tonic file: {path}").format(path=data["tonic_path"]))
+        console.print(
+            _(
+                'Others can join with: ccbt tonic sync "{link}" --output <directory>'
+            ).format(link=link)
+        )
+    except click.ClickException:
+        raise
+    except Exception as e:
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
+        logger.exception(_("Failed to share folder"))
+        raise click.Abort from e
+
+
 @tonic.group("allowlist")
 def tonic_allowlist() -> None:
     """Manage encrypted allowlist for XET folders."""

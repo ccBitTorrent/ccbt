@@ -351,6 +351,7 @@ def build_minimal_torrent_data(
         "info": None,
         "file_info": None,
         "pieces_info": None,
+        "_metadata_incomplete": True,
         "name": name or "",
         "is_magnet": True,  # CRITICAL: Mark as magnet link for DHT setup to prioritize DHT queries
     }
@@ -368,6 +369,47 @@ def build_minimal_torrent_data(
         )
 
     return result
+
+
+def magnet_info_from_minimal_torrent_data(
+    torrent_data: dict[str, Any],
+) -> MagnetInfo:
+    """Build MagnetInfo from minimal torrent_data (e.g. from parse_magnet_link).
+
+    Used when add_torrent is called with a dict that has is_magnet=True but
+    no magnet_uri/magnet_info (e.g. CLI interactive magnet path). Allows
+    BEP 53 application when metadata arrives later.
+
+    Args:
+        torrent_data: Dict with info_hash, name (or similar), announce_list
+            or announce, and optionally web_seeds.
+
+    Returns:
+        MagnetInfo with selected_indices and prioritized_indices None.
+
+    """
+    info_hash = torrent_data.get("info_hash")
+    if info_hash is None:
+        msg = "minimal torrent_data must contain info_hash"
+        raise ValueError(msg)
+    if isinstance(info_hash, str):
+        info_hash = bytes.fromhex(info_hash)
+    name = torrent_data.get("name") or torrent_data.get("display_name")
+    announce_list = torrent_data.get("announce_list")
+    if isinstance(announce_list, list) and announce_list:
+        trackers = list(announce_list)
+    else:
+        announce = torrent_data.get("announce")
+        trackers = [announce] if announce else []
+    web_seeds = torrent_data.get("web_seeds") or []
+    return MagnetInfo(
+        info_hash=info_hash,
+        display_name=name,
+        trackers=trackers,
+        web_seeds=web_seeds,
+        selected_indices=None,
+        prioritized_indices=None,
+    )
 
 
 def validate_and_normalize_indices(
@@ -601,6 +643,7 @@ def build_torrent_data_from_metadata(  # pragma: no cover - BEP 9 (not BEP 53), 
         "announce_list": [],
         "info_hash": info_hash,
         "info": info_dict,
+        "_metadata_incomplete": False,
         "file_info": file_info,
         "pieces_info": pieces_info,
         "name": file_info["name"],

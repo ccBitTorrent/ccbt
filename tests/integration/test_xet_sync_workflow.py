@@ -19,10 +19,18 @@ from ccbt.discovery.xet_cas import P2PCASClient
 pytestmark = [pytest.mark.integration, pytest.mark.extensions]
 
 
-def _build_session_manager_stub() -> SimpleNamespace:
+def _build_session_manager_stub(use_real_cas: bool = False) -> SimpleNamespace:
+    """Build session manager stub. use_real_cas=True uses real P2PCASClient (slower in CI)."""
+    if use_real_cas:
+        cas = P2PCASClient()
+    else:
+        cas = MagicMock()
+        cas.announce_chunk = AsyncMock(return_value=None)
+        cas.find_chunks_peers_batch = AsyncMock(return_value={})
+        cas.find_chunk_peers = AsyncMock(return_value=[])
     return SimpleNamespace(
         config=get_config(),
-        xet_cas_client=P2PCASClient(),
+        xet_cas_client=cas,
         dht_client=None,
         udp_tracker_client=None,
         get_xet_discovery_status=lambda: {},
@@ -96,6 +104,9 @@ class TestXetSyncWorkflow:
         from ccbt.utils.events import get_event_bus
         from ccbt.storage.xet_folder_manager import XetFolder
 
+        # Use mock CAS so CI does not run real discovery (timeouts on no network).
+        session_manager = _build_session_manager_stub(use_real_cas=False)
+
         # Start event bus so FOLDER_CHANGED events are consumed; otherwise the queue
         # fills (watchdog can emit many events on Windows), emit blocks time out
         # repeatedly, and the test can hit the global timeout.
@@ -108,7 +119,7 @@ class TestXetSyncWorkflow:
                 folder_path=folder_path,
                 sync_mode="best_effort",
                 check_interval=0.5,
-                session_manager=_build_session_manager_stub(),
+                session_manager=session_manager,
             )
 
             await folder.start()
@@ -121,13 +132,15 @@ class TestXetSyncWorkflow:
             await asyncio.sleep(1.5)
 
             # Trigger sync; retry if realtime sync has already started one.
+            # More retries and longer sleep so we reliably get a successful sync on CI
+            # (realtime loop can hold sync() for up to ~60s).
             success = False
-            for _ in range(6):
+            for _ in range(24):
                 ok, _ = await folder.sync()
                 if ok:
                     success = True
                     break
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1.0)
             assert success, "folder.sync() did not succeed within retries"
 
             await folder.stop()

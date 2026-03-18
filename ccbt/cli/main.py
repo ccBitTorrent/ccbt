@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import time
 from pathlib import Path
@@ -32,7 +31,11 @@ from ccbt.cli.config_commands import config as config_group
 from ccbt.cli.config_commands_extended import config_extended
 from ccbt.cli.create_torrent import create_torrent
 from ccbt.cli.daemon_commands import daemon as daemon_group
-from ccbt.cli.downloads import start_basic_magnet_download
+from ccbt.cli.downloads import (
+    run_magnet_file_selection_step,
+    start_basic_magnet_download,
+    start_interactive_magnet_download,
+)
 from ccbt.cli.interactive import InteractiveCLI
 from ccbt.cli.monitoring_commands import alerts as alerts_cmd
 from ccbt.cli.monitoring_commands import dashboard as dashboard_cmd
@@ -77,8 +80,8 @@ logger = logging.getLogger(__name__)
 # Exception message templates
 def _daemon_not_responding_msg(max_total_wait: float) -> str:
     """Generate daemon not responding error message."""
-    return (
-        f"Daemon PID file exists but daemon is not responding after {max_total_wait:.1f}s.\n"
+    return _(
+        "Daemon PID file exists but daemon is not responding after {max_total_wait:.1f}s.\n"
         "Possible causes:\n"
         "  - Daemon is still starting up (wait a few seconds and try again)\n"
         "  - Daemon crashed (check logs or run 'btbt daemon status')\n"
@@ -87,20 +90,20 @@ def _daemon_not_responding_msg(max_total_wait: float) -> str:
         "  1. Run 'btbt daemon status' to check if daemon is actually running\n"
         "  2. If daemon is not running, remove stale PID file: 'btbt daemon exit --force'\n"
         "  3. If you want to run locally instead, stop the daemon: 'btbt daemon exit'"
-    )
+    ).format(max_total_wait=max_total_wait)
 
 
 def _daemon_timeout_msg(elapsed: float) -> str:
     """Generate daemon timeout error message."""
-    return (
-        f"Daemon PID file exists but daemon is not responding (timeout after {elapsed:.1f}s).\n"
+    return _(
+        "Daemon PID file exists but daemon is not responding (timeout after {elapsed:.1f}s).\n"
         "The daemon may be starting up or may have crashed.\n\n"
         "To resolve:\n"
         "  1. Run 'btbt daemon status' to check daemon state\n"
         "  2. Check daemon logs for errors\n"
         "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
         "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-    )
+    ).format(elapsed=elapsed)
 
 
 # Exception message constants
@@ -173,8 +176,8 @@ DAEMON_RESUME_CONFLICT_MSG = (
 
 def _daemon_connection_error_msg(error: Exception) -> str:
     """Generate daemon connection error message."""
-    return (
-        f"Daemon PID file exists but cannot connect to daemon (error: {error}).\n"
+    return _(
+        "Daemon PID file exists but cannot connect to daemon (error: {error}).\n"
         "The daemon may be starting up or may have crashed.\n\n"
         "To resolve:\n"
         "  1. Run 'btbt daemon status' to check daemon state\n"
@@ -182,26 +185,26 @@ def _daemon_connection_error_msg(error: Exception) -> str:
         "  3. Verify API key in config matches daemon's API key\n"
         "  4. If daemon crashed, restart it: 'btbt daemon start'\n"
         "  5. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-    )
+    ).format(error=error)
 
 
 def _daemon_not_accessible_msg(elapsed: float) -> str:
     """Generate daemon not accessible error message."""
-    return (
-        f"Daemon PID file exists but daemon is not accessible after {elapsed:.1f}s.\n"
+    return _(
+        "Daemon PID file exists but daemon is not accessible after {elapsed:.1f}s.\n"
         "The daemon may be starting up or may have crashed.\n\n"
         "To resolve:\n"
         "  1. Run 'btbt daemon status' to check daemon state\n"
         "  2. Check daemon logs for startup errors\n"
         "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
         "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-    )
+    ).format(elapsed=elapsed)
 
 
 def _daemon_error_connecting_msg(error: Exception) -> str:
     """Generate daemon error connecting message."""
-    return (
-        f"Daemon PID file exists but error occurred while connecting: {error}.\n"
+    return _(
+        "Daemon PID file exists but error occurred while connecting: {error}.\n"
         "The daemon may be starting up or may have crashed.\n\n"
         "To resolve:\n"
         "  1. Run 'btbt daemon status' to check daemon state\n"
@@ -209,20 +212,22 @@ def _daemon_error_connecting_msg(error: Exception) -> str:
         "  3. Verify IPC server is accessible on the configured port\n"
         "  4. If daemon crashed, restart it: 'btbt daemon start'\n"
         "  5. If you want to run locally, stop the daemon: 'btbt daemon exit'"
-    )
+    ).format(error=error)
 
 
 def _unknown_operation_msg(operation: str) -> str:
     """Generate unknown operation error message."""
-    return (
-        f"Unknown operation '{operation}' requested but daemon PID file exists. "
+    return _(
+        "Unknown operation '{operation}' requested but daemon PID file exists. "
         "This should not happen - please report this as a bug."
-    )
+    ).format(operation=operation)
 
 
 def _error_executing_operation_msg(operation: str, error: Exception) -> str:
     """Generate error executing operation message."""
-    return f"Error executing {operation} on daemon: {error}"
+    return _("Error executing {operation} on daemon: {error}").format(
+        operation=operation, error=error
+    )
 
 
 def _raise_cli_error(message: str) -> None:
@@ -237,55 +242,82 @@ def _get_daemon_ipc_port(cfg: Any) -> int:
         cfg: Config object from get_config()
 
     Returns:
-        IPC port number (default: 8080)
+        IPC port number (default: 64124, aligned with DaemonConfig default)
 
     CRITICAL: This must match the daemon's actual IPC port to prevent connection failures.
     The daemon writes its IPC port to ~/.ccbt/daemon/config.json when it starts.
 
     """
-    # CRITICAL FIX: Always try to read from daemon config file FIRST (most reliable source)
-    # The daemon writes its actual IPC port here when it starts, so this is authoritative
-    # This MUST be checked before main config to ensure we use the daemon's actual port
-
-    # CRITICAL FIX: Use consistent path resolution helper
-    from ccbt.daemon.daemon_manager import _get_daemon_home_dir
-
-    home_dir = _get_daemon_home_dir()
-    daemon_config_file = home_dir / ".ccbt" / "daemon" / "config.json"
-    logger.debug(
-        _("_get_daemon_ipc_port: Checking config_file=%s (home_dir=%s)"),
-        daemon_config_file,
-        home_dir,
+    from ccbt.daemon.daemon_manager import (
+        DEFAULT_IPC_PORT,
+        read_daemon_config,
     )
-    if daemon_config_file.exists():
-        try:
-            with open(daemon_config_file, encoding="utf-8") as f:
-                daemon_config = json.load(f)
-                ipc_port = daemon_config.get("ipc_port")
-                if ipc_port:
-                    logger.debug(
-                        _(
-                            "Read IPC port %d from daemon config file (authoritative source)"
-                        ),
-                        ipc_port,
-                    )
-                    return ipc_port
-                logger.debug(
-                    _(
-                        "Daemon config file exists but ipc_port not found, trying main config"
-                    )
-                )
-        except Exception as e:
-            logger.debug(_("Could not read daemon config file: %s"), e)
 
-    # Fallback to main config (if daemon config file doesn't exist or doesn't have ipc_port)
+    # Prefer daemon config file (authoritative when daemon is running)
+    daemon_config = read_daemon_config()
+    if daemon_config:
+        ipc_port = daemon_config.get("ipc_port")
+        if ipc_port is not None:
+            logger.debug(
+                _("Read IPC port %d from daemon config file (authoritative source)"),
+                ipc_port,
+            )
+            return int(ipc_port)
+
+    # Fallback to main config
     if cfg.daemon and cfg.daemon.ipc_port:
         logger.debug(_("Using IPC port %d from main config"), cfg.daemon.ipc_port)
         return cfg.daemon.ipc_port
 
-    # Default fallback (should rarely be used if daemon is running)
-    logger.debug(_("Using default IPC port 8080 (daemon config file may not exist)"))
-    return 8080
+    # Default fallback (must match daemon default for reconnect when config file missing)
+    logger.debug(
+        _("Using default IPC port %d (daemon config file may not exist)"),
+        DEFAULT_IPC_PORT,
+    )
+    return DEFAULT_IPC_PORT
+
+
+def _get_daemon_connection_params(cfg: Any) -> tuple[int, Optional[str], Path]:
+    """Get (port, api_key, config_path) for daemon connection; prefer daemon config file when present.
+
+    When reconnecting, using the daemon-written config file ensures port and API key
+    match the running daemon regardless of which main config file was loaded (e.g. cwd).
+
+    Returns:
+        Tuple of (ipc_port, api_key or None, daemon_config_path for diagnostics).
+    """
+    from ccbt.daemon.daemon_manager import (
+        DEFAULT_IPC_PORT,
+        get_daemon_config_path,
+        read_daemon_config,
+    )
+
+    config_path = get_daemon_config_path()
+    daemon_config = read_daemon_config()
+    logger.debug(
+        _("Daemon connection: config_path=%s, file_exists=%s"),
+        config_path,
+        config_path.exists(),
+    )
+
+    if daemon_config:
+        port = daemon_config.get("ipc_port")
+        port = (
+            int(port)
+            if port is not None
+            else (cfg.daemon and cfg.daemon.ipc_port) or DEFAULT_IPC_PORT
+        )
+        api_key = daemon_config.get("api_key") or (cfg.daemon and cfg.daemon.api_key)
+        logger.debug(
+            _("Using daemon config file: port=%d, api_key_present=%s"),
+            port,
+            bool(api_key),
+        )
+        return (port, api_key, config_path)
+
+    port = _get_daemon_ipc_port(cfg)
+    api_key = cfg.daemon.api_key if cfg.daemon else None
+    return (port, api_key, config_path)
 
 
 async def _route_to_daemon_if_running(
@@ -337,38 +369,31 @@ async def _route_to_daemon_if_running(
         logger.debug(_("No daemon PID file found - daemon is not running"))
         return False
 
-    # Get API key from config
     cfg = get_config()
-
-    if not cfg.daemon or not cfg.daemon.api_key:
-        if pid_file_exists or daemon_running:
-            logger.warning(
-                _(
-                    "Daemon PID file exists but API key not found in config. "
-                    "Cannot route to daemon. Please check daemon configuration."
-                )
+    ipc_port, api_key, daemon_config_path = _get_daemon_connection_params(cfg)
+    if (pid_file_exists or daemon_running) and not api_key:
+        logger.warning(
+            _(
+                "Daemon PID file exists but API key not found (config or daemon config file). "
+                "Cannot route to daemon. Please check daemon configuration."
             )
-            # Don't return False here - we want to raise an error in the caller
-            # to prevent local session creation
-            api_key_missing_msg = (
-                "Daemon appears to be running but API key is missing from config. "
-                "Run 'btbt daemon status' to check daemon state, or restart the daemon."
-            )
-            raise click.ClickException(api_key_missing_msg)
-        logger.debug(_("No daemon config or API key found - will create local session"))
-        return False
+        )
+        api_key_missing_msg = (
+            "Daemon appears to be running but API key is missing from config. "
+            "Run 'btbt daemon status' to check daemon state, or restart the daemon."
+        )
+        raise click.ClickException(_(api_key_missing_msg))
 
     client: Optional[Any] = None  # Optional[IPCClient]
     try:
-        # CRITICAL FIX: Create client and verify connection before attempting operation
-        # Explicitly use host/port from config to ensure consistency with daemon
-        # Note: If server binds to 0.0.0.0, client can still connect via 127.0.0.1
-        # So we always use 127.0.0.1 for client connections (works with both 0.0.0.0 and 127.0.0.1 server bindings)
-        # For client connection, always use 127.0.0.1 (works with server binding to 0.0.0.0 or 127.0.0.1)
         client_host = "127.0.0.1"
-        ipc_port = _get_daemon_ipc_port(cfg)
         base_url = f"http://{client_host}:{ipc_port}"
-        client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
+        logger.debug(
+            _("Connecting to daemon at %s (config_path=%s)"),
+            base_url,
+            daemon_config_path,
+        )
+        client = IPCClient(api_key=api_key, base_url=base_url)
 
         # CRITICAL FIX: Verify daemon is actually accessible before routing
         # Increased timeout to 30 seconds to account for slow daemon startup (NAT discovery, DHT bootstrap, etc.)
@@ -517,7 +542,9 @@ async def _route_to_daemon_if_running(
                     logger.warning(_("No torrent path or magnet provided"))
                     # If PID file exists, raise exception instead of returning False
                     if pid_file_exists:
-                        no_torrent_msg = "No torrent path or magnet provided for add_torrent operation."
+                        no_torrent_msg = _(
+                            "No torrent path or magnet provided for add_torrent operation."
+                        )
                         raise click.ClickException(no_torrent_msg)
                     return False
 
@@ -678,21 +705,19 @@ async def _get_executor() -> tuple[Optional[Any], bool]:
     if not pid_file_exists:
         return (None, False)
 
-    # Get API key from config
     cfg = get_config()
+    ipc_port, api_key, daemon_config_path = _get_daemon_connection_params(cfg)
+    if not api_key:
+        raise click.ClickException(_(DAEMON_API_KEY_MISSING_MSG))
 
-    if not cfg.daemon or not cfg.daemon.api_key:
-        raise click.ClickException(DAEMON_API_KEY_MISSING_MSG)
-
-    # Explicitly use host/port from config to ensure consistency with daemon
-    # CRITICAL FIX: Always use 127.0.0.1 for client connections (works with server binding to 0.0.0.0 or 127.0.0.1)
-    # Server binding to 0.0.0.0 listens on all interfaces, including 127.0.0.1
-    # CRITICAL FIX: Use helper function to read IPC port from config or daemon config file
-    ipc_port = _get_daemon_ipc_port(cfg)
-    client_host = "127.0.0.1"  # Always use 127.0.0.1 for client connections
+    client_host = "127.0.0.1"
     base_url = f"http://{client_host}:{ipc_port}"
-    logger.debug(_("Connecting to daemon at %s (PID file exists)"), base_url)
-    client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
+    logger.debug(
+        _("Connecting to daemon at %s (PID file exists, config_path=%s)"),
+        base_url,
+        daemon_config_path,
+    )
+    client = IPCClient(api_key=api_key, base_url=base_url)
 
     # Verify daemon is accessible with retry logic (similar to _route_to_daemon_if_running)
     # This accounts for slow daemon startup (NAT discovery, DHT bootstrap, etc.)
@@ -787,7 +812,7 @@ async def _get_executor() -> tuple[Optional[Any], bool]:
             "  3. If daemon crashed, restart it: 'btbt daemon start'\n"
             "  4. If you want to run locally, stop the daemon: 'btbt daemon exit'"
         )
-        raise click.ClickException(timeout_msg)
+        raise click.ClickException(_(timeout_msg))
 
     # Daemon is accessible - create executor via ExecutorManager
     # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
@@ -818,21 +843,19 @@ async def _check_daemon_and_get_client() -> tuple[
     if not pid_file_exists:
         return (False, None)
 
-    # Get API key from config
     cfg = get_config()
+    ipc_port, api_key, daemon_config_path = _get_daemon_connection_params(cfg)
+    if not api_key:
+        raise click.ClickException(_(DAEMON_API_KEY_MISSING_MSG))
 
-    if not cfg.daemon or not cfg.daemon.api_key:
-        raise click.ClickException(DAEMON_API_KEY_MISSING_MSG)
-
-    # Explicitly use host/port from config to ensure consistency with daemon
-    # CRITICAL FIX: Always use 127.0.0.1 for client connections (works with server binding to 0.0.0.0 or 127.0.0.1)
-    # Server binding to 0.0.0.0 listens on all interfaces, including 127.0.0.1
-    # CRITICAL FIX: Use helper function to read IPC port from config or daemon config file
-    ipc_port = _get_daemon_ipc_port(cfg)
-    client_host = "127.0.0.1"  # Always use 127.0.0.1 for client connections
+    client_host = "127.0.0.1"
     base_url = f"http://{client_host}:{ipc_port}"
-    logger.debug(_("Connecting to daemon at %s (PID file exists)"), base_url)
-    client = IPCClient(api_key=cfg.daemon.api_key, base_url=base_url)
+    logger.debug(
+        _("Connecting to daemon at %s (PID file exists, config_path=%s)"),
+        base_url,
+        daemon_config_path,
+    )
+    client = IPCClient(api_key=api_key, base_url=base_url)
 
     # Verify daemon is accessible
     try:
@@ -842,11 +865,11 @@ async def _check_daemon_and_get_client() -> tuple[
         )
         if not is_accessible:
             await client.close()
-            raise click.ClickException(DAEMON_NOT_RESPONDING_MSG)
+            raise click.ClickException(_(DAEMON_NOT_RESPONDING_MSG))
         return (True, client)
     except asyncio.TimeoutError as err:
         await client.close()
-        raise click.ClickException(DAEMON_TIMEOUT_MSG) from err
+        raise click.ClickException(_(DAEMON_TIMEOUT_MSG)) from err
     except Exception as e:
         await client.close()
         error_msg = (
@@ -1478,7 +1501,7 @@ def download(
                 executor, is_daemon = asyncio.run(_get_executor())
                 if executor is None or not is_daemon:
                     # This should never happen if PID file exists - _get_executor() should raise
-                    raise click.ClickException(DAEMON_EXECUTOR_NOT_AVAILABLE_MSG)
+                    raise click.ClickException(_(DAEMON_EXECUTOR_NOT_AVAILABLE_MSG))
             except click.ClickException:
                 # Re-raise ClickException (these are user-facing errors about daemon state)
                 raise
@@ -1533,7 +1556,7 @@ def download(
         # (because we checked it at the start and _get_executor() would have raised if it existed)
         if pid_file_exists:
             # This should never happen - we checked at the start and _get_executor() should have raised
-            raise click.ClickException(DAEMON_CRITICAL_ERROR_MSG)
+            raise click.ClickException(_(DAEMON_CRITICAL_ERROR_MSG))
 
         # No daemon running - create local session and executor
         # CRITICAL FIX: Use ExecutorManager for consistency, even for local sessions
@@ -1687,6 +1710,11 @@ def download(
 @click.option("--output", "-o", type=click.Path(), help=_("Output directory"))
 @click.option("--interactive", "-i", is_flag=True, help=_("Start interactive mode"))
 @click.option(
+    "--select-files",
+    is_flag=True,
+    help=_("Wait for metadata and prompt for file selection (interactive only)"),
+)
+@click.option(
     "--resume",
     "-r",
     is_flag=True,
@@ -1807,6 +1835,7 @@ def magnet(
     magnet_link,
     output,
     interactive,
+    select_files,
     resume,
     no_checkpoint,
     checkpoint_dir,
@@ -1824,6 +1853,7 @@ def magnet(
         _output = str(output) if output else None
         _resume = [resume]  # Use list to allow modification in closure
         _interactive = interactive
+        _select_files = select_files
 
         async def _magnet_operation():
             """Handle magnet operation in a single event loop."""
@@ -1846,7 +1876,7 @@ def magnet(
                     executor, is_daemon = await _get_executor()
                     if executor is None or not is_daemon:
                         # This should never happen if PID file exists - _get_executor() should raise
-                        raise click.ClickException(DAEMON_EXECUTOR_NOT_AVAILABLE_MSG)
+                        raise click.ClickException(_(DAEMON_EXECUTOR_NOT_AVAILABLE_MSG))
                 except click.ClickException:
                     # Re-raise ClickException (these are user-facing errors about daemon state)
                     raise
@@ -2043,11 +2073,46 @@ def magnet(
 
             # Start download
             if _interactive:
-                await start_interactive_download(
+                # Add magnet via executor so add_magnet() runs and magnet_info is set (BEP 53)
+                result = await executor.execute(
+                    "torrent.add",
+                    path_or_magnet=_magnet_link,
+                    output_dir=str(_output) if _output else None,
+                    resume=_resume[0],
+                )
+                if not result.success:
+                    console.print(
+                        _("[red]Failed to add magnet: {error}[/red]").format(
+                            error=result.error or _("Unknown error")
+                        )
+                    )
+                    raise click.ClickException(
+                        result.error or _("Failed to add magnet link")
+                    )
+                info_hash_hex = (
+                    result.data.get("info_hash")
+                    if isinstance(result.data, dict)
+                    else getattr(result.data, "info_hash", None)
+                    or (str(result.data) if result.data else None)
+                )
+                if not info_hash_hex:
+                    raise click.ClickException(
+                        _("Add magnet succeeded but no info_hash returned")
+                    )
+                if _select_files:
+                    await run_magnet_file_selection_step(
+                        executor,
+                        info_hash_hex,
+                        console,
+                        timeout=120.0,
+                    )
+                await start_interactive_magnet_download(
                     session,
-                    torrent_data if torrent_data is not None else {},
+                    _magnet_link,
+                    info_hash_hex,
                     console,
                     resume=_resume[0],
+                    output_dir=Path(_output) if _output else None,
                 )
             else:
                 # Non-interactive download - use basic download function
@@ -2086,7 +2151,7 @@ def web(ctx, port, host):
         pid_file_exists = daemon_manager.pid_file.exists()
 
         if pid_file_exists:
-            raise click.ClickException(DAEMON_WEB_INTERFACE_CONFLICT_MSG)
+            raise click.ClickException(_(DAEMON_WEB_INTERFACE_CONFLICT_MSG))
 
         # Load configuration
         ConfigManager(ctx.obj["config"])
@@ -2334,7 +2399,7 @@ def debug(ctx):
         pid_file_exists = daemon_manager.pid_file.exists()
 
         if pid_file_exists:
-            raise click.ClickException(DAEMON_DEBUG_MODE_CONFLICT_MSG)
+            raise click.ClickException(_(DAEMON_DEBUG_MODE_CONFLICT_MSG))
 
         # Load configuration
         ConfigManager(ctx.obj["config"])
@@ -3187,7 +3252,7 @@ def resume(ctx, info_hash, _output_dir, interactive):
         pid_file_exists = daemon_manager.pid_file.exists()
 
         if pid_file_exists:
-            raise click.ClickException(DAEMON_RESUME_CONFLICT_MSG)
+            raise click.ClickException(_(DAEMON_RESUME_CONFLICT_MSG))
 
         # Load configuration
         config_manager = ConfigManager(ctx.obj["config"])

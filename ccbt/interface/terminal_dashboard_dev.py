@@ -5,6 +5,28 @@ This allows running: textual run --dev -m ccbt.interface.terminal_dashboard_dev
 Usage:
     textual run --dev -m ccbt.interface.terminal_dashboard_dev
     uv run textual run --dev -m ccbt.interface.terminal_dashboard_dev
+
+Running with logs and debugging
+-------------------------------
+- Logs: Logging is configured from config (ccbt.toml) and env when get_app() runs.
+  To capture logs to a file while using the TUI, set a log file before running:
+    CCBT_LOG_FILE=.ccbt/logs/dashboard.log CCBT_LOG_LEVEL=DEBUG uv run textual run --dev -m ccbt.interface.terminal_dashboard_dev
+  Or set observability.log_file and observability.log_level in ccbt.toml.
+
+- No splash (see boot/daemon logs in terminal):
+    uv run textual run --dev -m ccbt.interface.terminal_dashboard_dev --no-splash
+  Or: btbt dashboard --no-splash  (also uses CLI verbosity -v / -vv)
+
+- Textual dev console (logs and print() in a separate console):
+  1. Terminal 1: uv run textual console
+  2. Terminal 2: uv run textual run --dev -m ccbt.interface.terminal_dashboard_dev
+  In-app: use self.log.info() or print(); output appears in Terminal 1.
+  To reduce noise: uv run textual console -x SYSTEM -x EVENT -x DEBUG
+
+- CLI path (uses CLI logging and verbosity):
+  btbt -v dashboard          # INFO logs
+  btbt -vv dashboard         # DEBUG logs
+  btbt dashboard --no-splash  # disable splash to see startup logs
 """
 
 from __future__ import annotations

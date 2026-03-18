@@ -384,15 +384,12 @@ class XetRealtimeSync:
                 return
 
             peer_results: dict[bytes, list[Any]] = {}
-            if hasattr(self.folder.cas_client, "find_chunks_peers_batch"):
-                peer_results = await self.folder.cas_client.find_chunks_peers_batch(
-                    unique_hashes
-                )
-            else:
+            cas = self.folder.cas_client
+            if cas is not None and hasattr(cas, "find_chunks_peers_batch"):
+                peer_results = await cas.find_chunks_peers_batch(unique_hashes)
+            elif cas is not None:
                 for chunk_hash in unique_hashes:
-                    peer_results[
-                        chunk_hash
-                    ] = await self.folder.cas_client.find_chunk_peers(chunk_hash)
+                    peer_results[chunk_hash] = await cas.find_chunk_peers(chunk_hash)
 
             discovered_peer_count = 0
             current_git_ref = self.folder.sync_manager.get_current_git_ref()

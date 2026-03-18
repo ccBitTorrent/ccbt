@@ -81,6 +81,10 @@ class FileSelectionDialog(ModalScreen):  # type: ignore[misc]
         align: center middle;
         margin: 1;
     }
+    .folder-actions {
+        height: auto;
+        margin: 0 0 1 0;
+    }
     """
 
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
@@ -104,26 +108,53 @@ class FileSelectionDialog(ModalScreen):  # type: ignore[misc]
         super().__init__(*args, **kwargs)
         self._files = files
         self._checkboxes: dict[int, Checkbox] = {}
+        # Group file indices by top-level folder for "Select/Deselect folder"
+        self._folder_indices: list[tuple[str, list[int]]] = []
+        _folder_to_indices: dict[str, list[int]] = {}
+        for file_info in self._files:
+            idx = file_info.get("index", 0)
+            name = file_info.get("name", file_info.get("path", ""))
+            folder = (name.split("/")[0] if "/" in name else name.split("\\")[0]) if name else ""
+            if folder not in _folder_to_indices:
+                _folder_to_indices[folder] = []
+            _folder_to_indices[folder].append(idx)
+        self._folder_indices = sorted(
+            _folder_to_indices.items(),
+            key=lambda x: (x[0].lower(), x[1][0]),
+        )
 
     def compose(self) -> ComposeResult:  # type: ignore[override]  # pragma: no cover
         """Compose the file selection dialog."""
         with Vertical(id="dialog"):
             yield Static(_("Select Files to Download"), id="title")
             with Vertical(id="files-container"):
+                for i, (folder_name, indices) in enumerate(self._folder_indices):
+                    if folder_name and len(self._folder_indices) > 1:
+                        yield Static(
+                            _("Folder: {name}").format(name=folder_name),
+                            id=f"folder-label-{i}",
+                        )
+                        with Horizontal(classes="folder-actions"):
+                            yield Button(
+                                _("Select folder"),
+                                id=f"select-folder-{i}",
+                                variant="default",
+                            )
+                            yield Button(
+                                _("Deselect folder"),
+                                id=f"deselect-folder-{i}",
+                                variant="default",
+                            )
                 for file_info in self._files:
                     file_index = file_info.get("index", 0)
                     file_name = file_info.get("name", file_info.get("path", "Unknown"))
                     file_size = file_info.get("size", 0)
                     is_selected = file_info.get("selected", True)
-                    
-                    # Format file size
                     size_str = self._format_size(file_size)
-                    
-                    checkbox_id = f"file-checkbox-{file_index}"
                     checkbox = Checkbox(
                         f"{file_name} ({size_str})",
                         value=is_selected,
-                        id=checkbox_id,
+                        id=f"file-checkbox-{file_index}",
                     )
                     self._checkboxes[file_index] = checkbox
                     yield checkbox
@@ -148,7 +179,7 @@ class FileSelectionDialog(ModalScreen):  # type: ignore[misc]
             selected_indices = [
                 idx
                 for idx, checkbox in self._checkboxes.items()
-                if checkbox.value
+                if checkbox.value  # type: ignore[attr-defined]
             ]
             self.dismiss(selected_indices)  # type: ignore[attr-defined]
         elif event.button.id == "cancel":
@@ -157,6 +188,24 @@ class FileSelectionDialog(ModalScreen):  # type: ignore[misc]
             await self.action_select_all()
         elif event.button.id == "deselect-all":
             await self.action_deselect_all()
+        elif event.button.id and event.button.id.startswith("select-folder-"):
+            try:
+                i = int(event.button.id.replace("select-folder-", ""))
+                if 0 <= i < len(self._folder_indices):
+                    for idx in self._folder_indices[i][1]:
+                        if idx in self._checkboxes:
+                            self._checkboxes[idx].value = True  # type: ignore[attr-defined]
+            except (ValueError, IndexError):
+                pass
+        elif event.button.id and event.button.id.startswith("deselect-folder-"):
+            try:
+                i = int(event.button.id.replace("deselect-folder-", ""))
+                if 0 <= i < len(self._folder_indices):
+                    for idx in self._folder_indices[i][1]:
+                        if idx in self._checkboxes:
+                            self._checkboxes[idx].value = False  # type: ignore[attr-defined]
+            except (ValueError, IndexError):
+                pass
 
     async def action_select_all(self) -> None:  # pragma: no cover
         """Select all files."""

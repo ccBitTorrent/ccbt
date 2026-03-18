@@ -717,6 +717,8 @@ class XetFolder:
                 )
                 return await self.dedup.check_chunk_exists(chunk_hash)
 
+        if self.cas_client is None:
+            return None
         peers = []
         if source_peer:
             peers = await self.cas_client.find_chunk_peers(
@@ -771,6 +773,8 @@ class XetFolder:
 
     async def _build_file_metadata(self, file_path: str) -> Optional[XetFileMetadata]:
         """Build chunk manifest for a workspace file and persist its chunks."""
+        if self.cas_client is None:
+            return None
         file_path_obj = self.folder_path / file_path
         exists = await asyncio.to_thread(file_path_obj.exists)
         if not exists or not await asyncio.to_thread(file_path_obj.is_file):

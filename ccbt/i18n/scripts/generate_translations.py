@@ -7,6 +7,16 @@ from pathlib import Path
 
 # Spanish translations mapping
 SPANISH_TRANSLATIONS = {
+    "\n  [cyan]Matching Rules:[/cyan] None": "\n  [cyan]Reglas coincidentes:[/cyan] Ninguna",
+    "\n  [cyan]Matching Rules:[/cyan] {count}": "\n  [cyan]Reglas coincidentes:[/cyan] {count}",
+    "\n[bold cyan]Cache Statistics:[/bold cyan]": "\n[bold cyan]Estadísticas de caché:[/bold cyan]",
+    "\n[bold]Active Port Mappings:[/bold]": "\n[bold]Asignaciones de puertos activas:[/bold]",
+    "\n[bold]IP Filter Statistics:[/bold]\n": "\n[bold]Estadísticas del filtro IP:[/bold]\n",
+    "\n[bold]IP Filter Test:[/bold]\n": "\n[bold]Prueba del filtro IP:[/bold]\n",
+    "\n[bold]Runtime Status:[/bold]": "\n[bold]Estado en tiempo de ejecución:[/bold]",
+    "\n[bold]Sample chunks (last {limit} accessed):[/bold]\n": "\n[bold]Fragmentos de muestra (últimos {limit} accedidos):[/bold]\n",
+    "\n[bold]Statistics:[/bold]": "\n[bold]Estadísticas:[/bold]",
+    "\n[bold]Total: {count} rules[/bold]": "\n[bold]Total: {count} reglas[/bold]",
     "\nAvailable Commands:\n  help          - Show this help message\n  status        - Show current status\n  peers         - Show connected peers\n  files         - Show file information\n  pause         - Pause download\n  resume        - Resume download\n  stop          - Stop download\n  quit          - Quit application\n  clear         - Clear screen\n        ": "\nComandos disponibles:\n  help          - Mostrar este mensaje de ayuda\n  status        - Mostrar estado actual\n  peers         - Mostrar pares conectados\n  files         - Mostrar información de archivos\n  pause         - Pausar descarga\n  resume        - Reanudar descarga\n  stop          - Detener descarga\n  quit          - Salir de la aplicación\n  clear         - Limpiar pantalla\n        ",
     "\n[bold cyan]File Selection[/bold cyan]": "\n[bold cyan]Selección de archivos[/bold cyan]",
     "\n[bold]File selection[/bold]": "\n[bold]Selección de archivos[/bold]",
@@ -288,6 +298,16 @@ SPANISH_TRANSLATIONS = {
 
 # Basque translations mapping (Euskara)
 BASQUE_TRANSLATIONS = {
+    "\n  [cyan]Matching Rules:[/cyan] None": "\n  [cyan]Bat etorriz dauden arauak:[/cyan] Bat ere ez",
+    "\n  [cyan]Matching Rules:[/cyan] {count}": "\n  [cyan]Bat etorriz dauden arauak:[/cyan] {count}",
+    "\n[bold cyan]Cache Statistics:[/bold cyan]": "\n[bold cyan]Cache estatistikak:[/bold cyan]",
+    "\n[bold]Active Port Mappings:[/bold]": "\n[bold]Portu-mapen aktiboak:[/bold]",
+    "\n[bold]IP Filter Statistics:[/bold]\n": "\n[bold]IP iragazki estatistikak:[/bold]\n",
+    "\n[bold]IP Filter Test:[/bold]\n": "\n[bold]IP iragazki proba:[/bold]\n",
+    "\n[bold]Runtime Status:[/bold]": "\n[bold]Exekuzio-egoera:[/bold]",
+    "\n[bold]Sample chunks (last {limit} accessed):[/bold]\n": "\n[bold]Lagina zatitan (azken {limit} atzituta):[/bold]\n",
+    "\n[bold]Statistics:[/bold]": "\n[bold]Estatistikak:[/bold]",
+    "\n[bold]Total: {count} rules[/bold]": "\n[bold]Guztira: {count} arau[/bold]",
     "\nAvailable Commands:\n  help          - Show this help message\n  status        - Show current status\n  peers         - Show connected peers\n  files         - Show file information\n  pause         - Pause download\n  resume        - Resume download\n  stop          - Stop download\n  quit          - Quit application\n  clear         - Clear screen\n        ": "\nKomando erabilgarriak:\n  help          - Laguntza mezu hau erakusteko\n  status        - Egoera orain erakusteko\n  peers         - Konektatutako kideak erakusteko\n  files         - Fitxategi informazioa erakusteko\n  pause         - Deskarga pausatu\n  resume        - Deskarga berrekin\n  stop          - Deskarga gelditu\n  quit          - Aplikazioa irten\n  clear         - Pantaila garbitu\n        ",
     "\n[bold cyan]File Selection[/bold cyan]": "\n[bold cyan]Fitxategi hautaketa[/bold cyan]",
     "\n[bold]File selection[/bold]": "\n[bold]Fitxategi hautaketa[/bold]",
@@ -567,6 +587,55 @@ BASQUE_TRANSLATIONS = {
     "{elapsed:.0f}s ago": "duela {elapsed:.0f}s",
 }
 
+# French translations (starter set; plan says manual or copy-from-en)
+FRENCH_TRANSLATIONS = {
+    "\n  [cyan]Matching Rules:[/cyan] None": "\n  [cyan]Règles correspondantes :[/cyan] Aucune",
+    "\n  [cyan]Matching Rules:[/cyan] {count}": "\n  [cyan]Règles correspondantes :[/cyan] {count}",
+    "\n[bold cyan]Cache Statistics:[/bold cyan]": "\n[bold cyan]Statistiques du cache[/bold cyan]",
+    "\n[bold]Active Port Mappings:[/bold]": "\n[bold]Mappings de ports actifs[/bold]",
+    "\n[bold]IP Filter Statistics:[/bold]\n": "\n[bold]Statistiques du filtre IP[/bold]\n",
+    "\n[bold]IP Filter Test:[/bold]\n": "\n[bold]Test du filtre IP[/bold]\n",
+    "\n[bold]Runtime Status:[/bold]": "\n[bold]État d'exécution[/bold]",
+    "\n[bold]Sample chunks (last {limit} accessed):[/bold]\n": "\n[bold]Blocs échantillon (derniers {limit} accédés)[/bold]\n",
+    "\n[bold]Statistics:[/bold]": "\n[bold]Statistiques[/bold]",
+    "\n[bold]Total: {count} rules[/bold]": "\n[bold]Total : {count} règles[/bold]",
+    "\n[bold cyan]File Selection[/bold cyan]": "\n[bold cyan]Sélection de fichiers[/bold cyan]",
+    "\n[bold]File selection[/bold]": "\n[bold]Sélection de fichiers[/bold]",
+    "Status": "État",
+    "Pause": "Pause",
+    "Resume": "Reprendre",
+    "Help": "Aide",
+    "Yes": "Oui",
+    "No": "Non",
+    "Error": "Erreur",
+    "Download": "Télécharger",
+    "Upload": "Envoyer",
+}
+
+
+def _unescape_po(s: str) -> str:
+    """Unescape .po string (\\n -> newline, \\" -> ", etc.)."""
+    return s.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"').replace("\\\\", "\\")
+
+
+def _escape_po(s: str) -> str:
+    """Escape for .po msgstr."""
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _read_po_string(lines: list[str], i: int) -> tuple[str, int]:
+    """Read a quoted string from lines starting at i; return (unescaped value, new index)."""
+    if i >= len(lines) or not lines[i].startswith('"'):
+        return "", i
+    parts = [lines[i][1:-1].replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')]
+    j = i + 1
+    while j < len(lines) and lines[j].startswith('"'):
+        line = lines[j]
+        content = line[1:-1] if line.endswith('"') else line[1:]
+        parts.append(content.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\'))
+        j += 1
+    return "".join(parts), j
+
 
 def generate_po_file(
     lang: str, translations: dict[str, str], template_path: Path, output_path: Path
@@ -582,7 +651,9 @@ def generate_po_file(
     lang_names = {
         "es": "Spanish",
         "eu": "Basque / Euskara",
+        "fr": "French",
     }
+    plural_forms = "nplurals=2; plural=(n > 1);" if lang == "fr" else "nplurals=2; plural=(n != 1);"
 
     header = f"""msgid ""
 msgstr ""
@@ -591,90 +662,75 @@ msgstr ""
 "POT-Creation-Date: 2024-01-01 00:00+0000\\n"
 "PO-Revision-Date: {now}\\n"
 "Last-Translator: ccBitTorrent Team\\n"
-"Language-Team: {lang_names[lang]}\\n"
+"Language-Team: {lang_names.get(lang, lang)}\\n"
 "Language: {lang}\\n"
 "MIME-Version: 1.0\\n"
 "Content-Type: text/plain; charset=UTF-8\\n"
 "Content-Transfer-Encoding: 8bit\\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\\n"
+"Plural-Forms: {plural_forms}\\n"
 
 """
 
     # Process template and add translations
     output_lines = [header]
     i = 0
+    in_header = True
     while i < len(lines):
         line = lines[i]
-
-        # Skip header lines (already added)
-        if line.startswith('msgid ""') and i < 10:
+        # Skip header block (first msgid "" / msgstr "" with metadata)
+        if in_header and line.startswith('msgid ""'):
             i += 1
-            continue
-        if line.startswith('msgstr ""') and '"Content-Type:' in line:
-            i += 1
-            continue
-        if line == "" and i < 10:
-            i += 1
-            continue
-
-        # Find msgid
-        if line.startswith('msgid "'):
-            msgid = line[7:-1]  # Remove 'msgid "' and trailing '"'
-            # Handle multiline msgid
-            if msgid.endswith("\\n"):
-                full_msgid = msgid
+            while i < len(lines) and (lines[i].startswith('"') or lines[i] == ""):
+                i += 1
+            if i < len(lines) and lines[i].startswith('msgstr "'):
                 i += 1
                 while i < len(lines) and lines[i].startswith('"'):
-                    full_msgid += (
-                        lines[i][1:-1] if lines[i].endswith('"') else lines[i][1:]
-                    )
                     i += 1
-                msgid = full_msgid
-            else:
-                i += 1
+            in_header = False
+            continue
 
-            # Get msgstr (next line)
-            if i < len(lines) and lines[i].startswith('msgstr "'):
-                msgstr_line = lines[i]
-                _ = msgstr_line[8:-1]  # Remove 'msgstr "' and trailing '"' (not used in this implementation)
-                i += 1
+        if not line.startswith('msgid "'):
+            i += 1
+            continue
 
-                # Check if we have a translation
-                if msgid in translations:
-                    translation = translations[msgid]
-                    # Escape the translation
-                    escaped = (
-                        translation.replace("\\", "\\\\")
-                        .replace('"', '\\"')
-                        .replace("\n", "\\n")
-                    )
-                    output_lines.append(f'msgid "{msgid}"')
-                    output_lines.append(f'msgstr "{escaped}"')
-                    output_lines.append("")
-                else:
-                    # No translation, use original
-                    output_lines.append(f'msgid "{msgid}"')
-                    output_lines.append(f'msgstr "{msgid}"')
-                    output_lines.append("")
+        # Read msgid (single or multi-line)
+        if line == 'msgid ""':
+            msgid_parts = [""]
+            i += 1
+            while i < len(lines) and lines[i].startswith('"'):
+                content = lines[i][1:-1] if lines[i].endswith('"') else lines[i][1:]
+                msgid_parts.append(content.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\"))
+                i += 1
+            msgid = "".join(msgid_parts)
+        else:
+            raw = line[7:-1].replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+            i += 1
+            while i < len(lines) and lines[i].startswith('"'):
+                content = lines[i][1:-1] if lines[i].endswith('"') else lines[i][1:]
+                raw += content.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+                i += 1
+            msgid = raw
+
+        # Read msgstr (next line(s))
+        if i < len(lines) and lines[i].startswith('msgstr "'):
+            if lines[i] == 'msgstr ""':
+                i += 1
+                while i < len(lines) and lines[i].startswith('"'):
+                    i += 1
             else:
-                # Empty msgstr
-                if msgid in translations:
-                    translation = translations[msgid]
-                    escaped = (
-                        translation.replace("\\", "\\\\")
-                        .replace('"', '\\"')
-                        .replace("\n", "\\n")
-                    )
-                    output_lines.append(f'msgid "{msgid}"')
-                    output_lines.append(f'msgstr "{escaped}"')
-                    output_lines.append("")
-                else:
-                    output_lines.append(f'msgid "{msgid}"')
-                    output_lines.append('msgstr ""')
-                    output_lines.append("")
                 i += 1
         else:
             i += 1
+
+        # Emit entry: use translation if in dict, else empty or msgid
+        translation = translations.get(msgid)
+        if translation is not None:
+            output_lines.append(f'msgid "{_escape_po(msgid)}"')
+            output_lines.append(f'msgstr "{_escape_po(translation)}"')
+        else:
+            output_lines.append(f'msgid "{_escape_po(msgid)}"')
+            output_lines.append('msgstr ""')
+        output_lines.append("")
 
     # Write output
     with open(output_path, "w", encoding="utf-8") as f:
@@ -696,3 +752,9 @@ if __name__ == "__main__":
     eu_dir.mkdir(parents=True, exist_ok=True)
     generate_po_file("eu", BASQUE_TRANSLATIONS, template_path, eu_dir / "ccbt.po")
     print(f"Generated Basque translation: {eu_dir / 'ccbt.po'}")
+
+    # Generate French (starter set)
+    fr_dir = base_dir / "fr" / "LC_MESSAGES"
+    fr_dir.mkdir(parents=True, exist_ok=True)
+    generate_po_file("fr", FRENCH_TRANSLATIONS, template_path, fr_dir / "ccbt.po")
+    print(f"Generated French translation: {fr_dir / 'ccbt.po'}")

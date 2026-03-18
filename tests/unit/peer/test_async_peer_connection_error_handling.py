@@ -508,6 +508,40 @@ class TestV2ProtocolHandling:
         assert callback_called
 
     @pytest.mark.asyncio
+    async def test_handle_piece_layer_response_calls_update_from_piece_indices(
+        self, async_peer_manager
+    ):
+        """Test piece layer response calls update_peer_availability_from_piece_indices with set."""
+        pieces_root = b"pieces_root_32bytes_123456789012"
+        hash0 = b"hash0_32bytes_SHA256_12345678901"  # exactly 32 bytes
+        hash1 = b"hash1_32bytes_SHA256_12345678901"  # exactly 32 bytes
+        hash2 = b"hash2_32bytes_SHA256_12345678901"  # exactly 32 bytes
+        async_peer_manager.torrent_data["piece_layers"] = {
+            pieces_root: b"layer_data"
+        }
+        async_peer_manager.torrent_data["piece_hashes"] = [hash0, hash1, hash2]
+        async_peer_manager.piece_manager.update_peer_availability_from_piece_indices = (
+            AsyncMock()
+        )
+        async_peer_manager.piece_manager.update_peer_availability = AsyncMock()
+
+        connection = AsyncPeerConnection(
+            PeerInfo(ip="10.0.0.5", port=6881),
+            async_peer_manager.torrent_data,
+        )
+        response = PieceLayerResponse(pieces_root, [hash0, hash1])
+
+        await async_peer_manager._handle_piece_layer_response(connection, response)
+
+        async_peer_manager.piece_manager.update_peer_availability_from_piece_indices.assert_called_once()
+        call_args = (
+            async_peer_manager.piece_manager.update_peer_availability_from_piece_indices.call_args
+        )
+        assert call_args[0][0] == "10.0.0.5:6881"
+        assert call_args[0][1] == {0, 1}
+        async_peer_manager.piece_manager.update_peer_availability.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_handle_file_tree_request(self, async_peer_manager):
         """Test handling file tree request (lines 918-940)."""
         connection = AsyncPeerConnection(

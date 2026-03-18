@@ -1,6 +1,6 @@
 # Performance Tuning Guide
 
-This guide covers performance optimization techniques for ccBitTorrent to achieve maximum download speeds and efficient resource usage.
+This guide covers performance optimization techniques for ccBitTorrent to achieve maximum download speeds and efficient resource usage. For option reference see [Configuration](configuration.md).
 
 ## Network Optimization
 
@@ -10,43 +10,46 @@ This guide covers performance optimization techniques for ccBitTorrent to achiev
 
 Controls the number of outstanding requests per peer.
 
-Configuration: [ccbt.toml:12](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L12)
+Configuration: [ccbt.toml:12](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 **Recommendations:**
 - **High-latency connections**: 32-64 (satellite, mobile)
 - **Low-latency connections**: 16-32 (fiber, cable)
 - **Local networks**: 8-16 (LAN transfers)
 
-Implementation: [ccbt/peer/async_peer_connection.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/peer/async_peer_connection.py) - Request pipelining
+::: ccbt.peer.async_peer_connection.AsyncPeerConnectionManager
+    options:
+      show_root_heading: false
+      heading_level: 4
 
 #### Block Size
 
 Size of data blocks requested from peers.
 
-Configuration: [ccbt.toml:13](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L13)
+Configuration: [ccbt.toml:13](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 **Recommendations:**
 - **High-bandwidth**: 32-64 KiB (fiber, cable)
 - **Medium-bandwidth**: 16-32 KiB (DSL, mobile)
 - **Low-bandwidth**: 4-16 KiB (dial-up, slow mobile)
 
-Min/Max block sizes: [ccbt.toml:14-15](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L14-L15)
+Min/Max block sizes: [ccbt.toml:14-15](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 #### Socket Buffers
 
 Increase for high-throughput scenarios.
 
-Configuration: [ccbt.toml:17-18](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L17-L18)
+Configuration: [ccbt.toml:17-18](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Default values: [ccbt.toml:17-18](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L17-L18) (256 KiB each)
+Default values: [ccbt.toml:17-18](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml) (256 KiB each)
 
-TCP_NODELAY setting: [ccbt.toml:19](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L19)
+TCP_NODELAY setting: [ccbt.toml:19](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ### Connection Limits
 
 #### Global Peer Limits
 
-Configuration: [ccbt.toml:6-7](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L6-L7)
+Configuration: [ccbt.toml:6-7](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 **Tuning Guidelines:**
 - **High-bandwidth**: Increase global peers (200-500)
@@ -54,37 +57,43 @@ Configuration: [ccbt.toml:6-7](https://github.com/ccBittorrent/ccbt/blob/main/cc
 - **Many torrents**: Reduce per-torrent limit (10-25)
 - **Few torrents**: Increase per-torrent limit (50-100)
 
-Implementation: [ccbt/peer/connection_pool.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/peer/connection_pool.py) - Connection pool management
+::: ccbt.peer.connection_pool.PeerConnectionPool
+    options:
+      show_root_heading: false
+      heading_level: 4
 
-Max connections per peer: [ccbt.toml:8](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L8)
+Max connections per peer: [ccbt.toml:8](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 #### Connection Timeouts
 
-Configuration: [ccbt.toml:22-25](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L22-L25)
+Configuration: [ccbt.toml:22-25](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-- Connection timeout: [ccbt.toml:22](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L22)
-- Handshake timeout: [ccbt.toml:23](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L23)
-- Keep alive interval: [ccbt.toml:24](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L24)
-- Peer timeout: [ccbt.toml:25](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L25)
+- Connection timeout: [ccbt.toml:22](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
+- Handshake timeout: [ccbt.toml:23](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
+- Keep alive interval: [ccbt.toml:24](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
+- Peer timeout: [ccbt.toml:25](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ## Disk I/O Optimization
 
 ### Preallocation Strategy
 
-Configuration: [ccbt.toml:59](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L59)
+Configuration: [ccbt.toml:59](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 **Recommendations:**
 - **SSDs**: Use "full" for better performance
 - **HDDs**: Use "sparse" to save space
 - **Network storage**: Use "none" to avoid delays
 
-Sparse files option: [ccbt.toml:60](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L60)
+Sparse files option: [ccbt.toml:60](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Implementation: [ccbt/storage/disk_io.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/storage/disk_io.py) - Disk I/O operations
+::: ccbt.storage.disk_io.DiskIOManager
+    options:
+      show_root_heading: false
+      heading_level: 4
 
 ### Write Optimization
 
-Configuration: [ccbt.toml:63-64](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L63-L64)
+Configuration: [ccbt.toml:63-64](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 **Tuning Guidelines:**
 - **Fast storage**: Increase batch size (128-256 KiB)
@@ -92,17 +101,17 @@ Configuration: [ccbt.toml:63-64](https://github.com/ccBittorrent/ccbt/blob/main/
 - **Critical data**: Enable sync_writes
 - **Performance**: Disable sync_writes
 
-Write batch size: [ccbt.toml:63](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L63)
+Write batch size: [ccbt.toml:63](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Write buffer size: [ccbt.toml:64](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L64)
+Write buffer size: [ccbt.toml:64](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Sync writes setting: [ccbt.toml:82](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L82)
+Sync writes setting: [ccbt.toml:82](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 File assembler: [ccbt/storage/file_assembler.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/storage/file_assembler.py)
 
 ### Memory Mapping
 
-Configuration: [ccbt.toml:65-66](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L65-L66)
+Configuration: [ccbt.toml:65-66](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 **Benefits:**
 - Faster reads for completed pieces
@@ -114,17 +123,17 @@ Configuration: [ccbt.toml:65-66](https://github.com/ccBittorrent/ccbt/blob/main/
 - May cause memory pressure
 - Best for read-heavy workloads
 
-Use MMAP: [ccbt.toml:65](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L65)
+Use MMAP: [ccbt.toml:65](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-MMAP cache size: [ccbt.toml:66](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L66)
+MMAP cache size: [ccbt.toml:66](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-MMAP cache cleanup interval: [ccbt.toml:67](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L67)
+MMAP cache cleanup interval: [ccbt.toml:67](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ### Advanced I/O Features
 
 #### io_uring (Linux)
 
-Configuration: [ccbt.toml:84](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L84)
+Configuration: [ccbt.toml:84](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 **Requirements:**
 - Linux kernel 5.1+
@@ -133,20 +142,20 @@ Configuration: [ccbt.toml:84](https://github.com/ccBittorrent/ccbt/blob/main/ccb
 
 #### Direct I/O
 
-Configuration: [ccbt.toml:81](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L81)
+Configuration: [ccbt.toml:81](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 **Use Cases:**
 - High-performance storage
 - Bypass OS page cache
 - Consistent performance
 
-Read ahead size: [ccbt.toml:83](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L83)
+Read ahead size: [ccbt.toml:83](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ## Strategy Selection
 
 ### Piece Selection Algorithms
 
-Configuration: [ccbt.toml:101](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L101)
+Configuration: [ccbt.toml:101](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 #### Rarest-First (Recommended)
 
@@ -155,9 +164,12 @@ Configuration: [ccbt.toml:101](https://github.com/ccBittorrent/ccbt/blob/main/cc
 - Faster completion times
 - Better peer cooperation
 
-Implementation: [ccbt/piece/async_piece_manager.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/piece/async_piece_manager.py) - Piece selection logic
+::: ccbt.piece.async_piece_manager.AsyncPieceManager
+    options:
+      show_root_heading: false
+      heading_level: 4
 
-Rarest first threshold: [ccbt.toml:107](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L107)
+Rarest first threshold: [ccbt.toml:107](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 #### Sequential
 
@@ -166,9 +178,9 @@ Rarest first threshold: [ccbt.toml:107](https://github.com/ccBittorrent/ccbt/blo
 - Sequential access patterns
 - Priority-based downloads
 
-Sequential window: [ccbt.toml:108](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L108)
+Sequential window: [ccbt.toml:108](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Streaming mode: [ccbt.toml:104](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L104)
+Streaming mode: [ccbt.toml:104](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 #### Round-Robin
 
@@ -177,11 +189,14 @@ Streaming mode: [ccbt.toml:104](https://github.com/ccBittorrent/ccbt/blob/main/c
 - Debugging
 - Legacy compatibility
 
-Implementation: [ccbt/piece/piece_manager.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/piece/piece_manager.py)
+::: ccbt.piece.piece_manager.PieceManager
+    options:
+      show_root_heading: false
+      heading_level: 4
 
 ### Endgame Optimization
 
-Configuration: [ccbt.toml:102-103](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L102-L103)
+Configuration: [ccbt.toml:102-103](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 **Tuning:**
 - **Fast connections**: Lower threshold (0.85-0.9)
@@ -189,82 +204,85 @@ Configuration: [ccbt.toml:102-103](https://github.com/ccBittorrent/ccbt/blob/mai
 - **Many peers**: Increase duplicates (3-5)
 - **Few peers**: Decrease duplicates (1-2)
 
-Endgame threshold: [ccbt.toml:103](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L103)
+Endgame threshold: [ccbt.toml:103](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Endgame duplicates: [ccbt.toml:102](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L102)
+Endgame duplicates: [ccbt.toml:102](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Pipeline capacity: [ccbt.toml:109](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L109)
+Pipeline capacity: [ccbt.toml:109](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ### Piece Priorities
 
-Configuration: [ccbt.toml:112-113](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L112-L113)
+Configuration: [ccbt.toml:112-113](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-First piece priority: [ccbt.toml:112](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L112)
+First piece priority: [ccbt.toml:112](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Last piece priority: [ccbt.toml:113](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L113)
+Last piece priority: [ccbt.toml:113](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ## Rate Limiting
 
 ### Global Limits
 
-Configuration: [ccbt.toml:140-141](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L140-L141)
+Configuration: [ccbt.toml:140-141](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Global download limit: [ccbt.toml:140](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L140) (0 = unlimited)
+Global download limit: [ccbt.toml:140](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml) (0 = unlimited)
 
-Global upload limit: [ccbt.toml:141](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L141) (0 = unlimited)
+Global upload limit: [ccbt.toml:141](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml) (0 = unlimited)
 
-Network-level limits: [ccbt.toml:39-42](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L39-L42)
+Network-level limits: [ccbt.toml:39-42](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Implementation: [ccbt/security/rate_limiter.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/security/rate_limiter.py) - Rate limiting logic
+::: ccbt.security.rate_limiter.RateLimiter
+    options:
+      show_root_heading: false
+      heading_level: 4
 
 ### Per-Torrent Limits
 
-Set limits via CLI using [ccbt/cli/main.py:download](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/main.py#L369) with `--download-limit` and `--upload-limit` options.
+Set limits via CLI using [ccbt/cli/main.py:download](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/main.py) with `--download-limit` and `--upload-limit` options.
 
-Per-torrent configuration: [ccbt.toml:144-145](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L144-L145)
+Per-torrent configuration: [ccbt.toml:144-145](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Per-peer limits: [ccbt.toml:148](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L148)
+Per-peer limits: [ccbt.toml:148](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ### Scheduler Settings
 
-Scheduler time slice: [ccbt.toml:151](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L151)
+Scheduler time slice: [ccbt.toml:151](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ## Hash Verification
 
 ### Worker Threads
 
-Configuration: [ccbt.toml:70](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L70)
+Configuration: [ccbt.toml:70](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 **Tuning Guidelines:**
 - **CPU cores**: Match or exceed core count
 - **SSD storage**: Can handle more workers
 - **HDD storage**: Limit workers (2-4)
 
-Hash chunk size: [ccbt.toml:71](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L71)
+Hash chunk size: [ccbt.toml:71](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Hash batch size: [ccbt.toml:72](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L72)
+Hash batch size: [ccbt.toml:72](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Hash queue size: [ccbt.toml:73](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L73)
+Hash queue size: [ccbt.toml:73](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Implementation: [ccbt/storage/disk_io.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/storage/disk_io.py) - Hash verification workers
+Hash verification workers: see `DiskIOManager` above.
 
 ## Memory Management
 
 ### Buffer Sizes
 
-Write buffer: [ccbt.toml:64](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L64)
+Write buffer: [ccbt.toml:64](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Read ahead: [ccbt.toml:83](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L83)
+Read ahead: [ccbt.toml:83](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ### Cache Settings
 
-Cache size: [ccbt.toml:78](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L78)
+Cache size: [ccbt.toml:78](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-MMAP cache: [ccbt.toml:66](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L66)
+MMAP cache: [ccbt.toml:66](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Disk queue size: [ccbt.toml:77](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L77)
+Disk queue size: [ccbt.toml:77](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Disk workers: [ccbt.toml:76](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L76)
+Disk workers: [ccbt.toml:76](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ## System-Level Optimization
 
@@ -282,63 +300,63 @@ For network stack optimizations, refer to your operating system's documentation.
 
 Monitor these key metrics via Prometheus:
 
-- **Download Speed**: `ccbt_download_rate_bytes_per_second` - See [ccbt/utils/metrics.py:142](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/utils/metrics.py#L142)
-- **Upload Speed**: `ccbt_upload_rate_bytes_per_second` - See [ccbt/utils/metrics.py:148](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/utils/metrics.py#L148)
+- **Download Speed**: `ccbt_download_rate_bytes_per_second` - See [ccbt/utils/metrics.py:142](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/utils/metrics.py)
+- **Upload Speed**: `ccbt_upload_rate_bytes_per_second` - See [ccbt/utils/metrics.py:148](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/utils/metrics.py)
 - **Connected Peers**: Available via MetricsCollector
 - **Disk Queue Depth**: Available via MetricsCollector - See [ccbt/monitoring/metrics_collector.py]
 - **Hash Queue Depth**: Available via MetricsCollector
 
-Prometheus metrics endpoint: [ccbt/utils/metrics.py:179](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/utils/metrics.py#L179)
+Prometheus metrics endpoint: [ccbt/utils/metrics.py:179](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/utils/metrics.py)
 
 ### Performance Profiling
 
-Enable metrics: [ccbt.toml:164](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L164)
+Enable metrics: [ccbt.toml:164](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
-Metrics port: [ccbt.toml:165](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L165)
+Metrics port: [ccbt.toml:165](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 Access metrics at `http://localhost:9090/metrics` when enabled.
 
-View metrics via CLI: [ccbt/cli/monitoring_commands.py:metrics](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/monitoring_commands.py#L229)
+View metrics via CLI: [ccbt/cli/monitoring_commands.py:metrics](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/monitoring_commands.py)
 
 ## Troubleshooting Performance Issues
 
 ### Low Download Speeds
 
 1. **Check peer connections**:
-   Launch Bitonic dashboard: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/monitoring_commands.py#L20)
+   Launch Bitonic dashboard: [ccbt/cli/monitoring_commands.py:dashboard](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/monitoring_commands.py)
 
 2. **Verify piece selection**:
-   Configure in [ccbt.toml:101](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L101)
+   Configure in [ccbt.toml:101](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
    
    Implementation: [ccbt/piece/async_piece_manager.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/piece/async_piece_manager.py)
 
 3. **Increase pipeline depth**:
-   Configure in [ccbt.toml:12](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L12)
+   Configure in [ccbt.toml:12](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
    
    Implementation: [ccbt/peer/async_peer_connection.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/peer/async_peer_connection.py)
 
 4. **Check rate limits**:
-   Configuration: [ccbt.toml:140-141](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L140-L141)
+   Configuration: [ccbt.toml:140-141](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
    
-   CLI status command: [ccbt/cli/main.py:status](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/main.py#L789)
+   CLI status command: [ccbt/cli/main.py:status](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/main.py)
 
 ### High CPU Usage
 
 1. **Reduce hash workers**:
-   Configure in [ccbt.toml:70](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L70)
+   Configure in [ccbt.toml:70](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 2. **Disable memory mapping**:
-   Configure in [ccbt.toml:65](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L65)
+   Configure in [ccbt.toml:65](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 3. **Increase refresh intervals**:
-   Bitonic refresh interval: [ccbt/interface/terminal_dashboard.py:303](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py#L303)
+   Bitonic refresh interval: [ccbt/interface/terminal_dashboard.py:303](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/interface/terminal_dashboard.py)
    
-   Dashboard config: [ccbt.toml:189](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L189)
+   Dashboard config: [ccbt.toml:189](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 ### Disk I/O Bottlenecks
 
 1. **Enable write batching**:
-   Configure write batch size: [ccbt.toml:63](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L63)
+   Configure write batch size: [ccbt.toml:63](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
    
    Implementation: [ccbt/storage/disk_io.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/storage/disk_io.py)
 
@@ -352,63 +370,7 @@ View metrics via CLI: [ccbt/cli/monitoring_commands.py:metrics](https://github.c
 
 ## Benchmarking
 
-### Benchmark Scripts
-
-Performance benchmark scripts are located in `tests/performance/`:
-
-- Hash verification: `tests/performance/bench_hash_verify.py`
-- Disk I/O: `tests/performance/bench_disk_io.py`
-- Piece assembly: `tests/performance/bench_piece_assembly.py`
-- Loopback throughput: `tests/performance/bench_loopback_throughput.py`
-- Encryption: `tests/performance/bench_encryption.py`
-
-Run all benchmarks: [tests/scripts/bench_all.py](https://github.com/ccBittorrent/ccbt/blob/main/tests/scripts/bench_all.py)
-
-Benchmark configuration example: [example-config-performance.toml](examples/example-config-performance.toml)
-
-### Benchmark Recording
-
-Benchmarks can be recorded with different modes to track performance over time:
-
-#### Recording Modes
-
-- **`pre-commit`**: Records during pre-commit hook runs (quick smoke tests)
-- **`commit`**: Records during actual commits (full benchmarks, recorded in both per-run and timeseries)
-- **`both`**: Records in both pre-commit and commit contexts
-- **`auto`**: Automatically detects context (uses `PRE_COMMIT` env var)
-- **`none`**: No recording (benchmark runs but doesn't save results)
-
-#### Running Benchmarks with Recording
-
-```bash
-# Pre-commit mode (quick smoke test)
-uv run python tests/performance/bench_hash_verify.py --quick --record-mode=pre-commit
-
-# Commit mode (full benchmark)
-uv run python tests/performance/bench_hash_verify.py --record-mode=commit
-
-# Both modes
-uv run python tests/performance/bench_hash_verify.py --record-mode=both
-
-# Auto-detect mode (default)
-uv run python tests/performance/bench_hash_verify.py --record-mode=auto
-```
-
-#### Benchmark Data Storage
-
-Benchmark results are stored in two formats:
-
-1. **Per-run files** (`docs/reports/benchmarks/runs/`):
-   - Individual JSON files for each benchmark run
-   - Filename format: `{benchmark_name}-{timestamp}-{commit_hash_short}.json`
-   - Contains full metadata: git commit hash, branch, author, platform info, results
-
-2. **Time-series files** (`docs/reports/benchmarks/timeseries/`):
-   - Aggregated historical data in JSON format
-   - Filename format: `{benchmark_name}_timeseries.json`
-   - Enables easy querying of performance trends over time
-
-For detailed information on querying historical data and benchmark reports, see [Benchmark Reports](reports/benchmarks/index.md).
+Performance benchmark scripts are in `tests/performance/` (hash verification, disk I/O, piece assembly, loopback throughput, encryption). Run all: [tests/scripts/bench_all.py](https://github.com/ccBittorrent/ccbt/blob/main/tests/scripts/bench_all.py). Example config: [example-config-performance.toml](examples/example-config-performance.toml). For recording modes, storage locations, and per-run vs timeseries data, see [Benchmarks](reports/benchmarks/index.md).
 
 ### Test and Coverage Artifacts
 
@@ -427,7 +389,7 @@ Legacy benchmark artifacts are still written to `site/reports/benchmarks/artifac
 ## Best Practices
 
 1. **Start with defaults**: Begin with default settings from [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
-2. **Measure baseline**: Establish performance baseline using [ccbt/cli/monitoring_commands.py:metrics](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/monitoring_commands.py#L229)
+2. **Measure baseline**: Establish performance baseline using [ccbt/cli/monitoring_commands.py:metrics](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/monitoring_commands.py)
 3. **Change one setting**: Modify one setting at a time in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 4. **Test thoroughly**: Verify improvements
 5. **Monitor resources**: Watch CPU, memory, disk usage via [Bitonic](bitonic.md)
@@ -440,9 +402,9 @@ Legacy benchmark artifacts are still written to `site/reports/benchmarks/artifac
 Reference high-performance configuration template: [ccbt/config/config_templates.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/config/config_templates.py)
 
 Key settings:
-- Network: [ccbt.toml:11-42](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L11-L42)
-- Disk: [ccbt.toml:57-85](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L57-L85)
-- Strategy: [ccbt.toml:99-114](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L99-L114)
+- Network: [ccbt.toml:11-42](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
+- Disk: [ccbt.toml:57-85](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
+- Strategy: [ccbt.toml:99-114](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
 
 Example: [example-config-performance.toml](examples/example-config-performance.toml)
 
@@ -451,8 +413,8 @@ Example: [example-config-performance.toml](examples/example-config-performance.t
 Reference low-resource configuration template: [ccbt/config/config_templates.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/config/config_templates.py)
 
 Key settings:
-- Network: [ccbt.toml:6-7](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L6-L7) - Reduce peer limits
-- Disk: [ccbt.toml:59-65](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L59-L65) - Use sparse preallocation, disable MMAP
-- Strategy: [ccbt.toml:101](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml#L101) - Rarest-first remains optimal
+- Network: [ccbt.toml:6-7](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml) - Reduce peer limits
+- Disk: [ccbt.toml:59-65](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml) - Use sparse preallocation, disable MMAP
+- Strategy: [ccbt.toml:101](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml) - Rarest-first remains optimal
 
 For more detailed configuration options, see the [Configuration](configuration.md) documentation.

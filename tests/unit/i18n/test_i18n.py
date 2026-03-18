@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from ccbt.i18n import DEFAULT_LOCALE, _, get_locale, set_locale
+from ccbt.i18n import (
+    DEFAULT_LOCALE,
+    _,
+    _is_valid_locale,
+    get_locale,
+    set_locale,
+)
 from ccbt.i18n.manager import TranslationManager
 
 
@@ -73,7 +79,7 @@ def test_translation_manager_reload() -> None:
 def test_locale_from_env() -> None:
     """Test locale from environment variable."""
     old_locale = os.environ.get("CCBT_LOCALE")
-    
+
     try:
         os.environ["CCBT_LOCALE"] = "fr"
         locale = get_locale()
@@ -83,4 +89,13 @@ def test_locale_from_env() -> None:
             os.environ["CCBT_LOCALE"] = old_locale
         else:
             os.environ.pop("CCBT_LOCALE", None)
+
+
+def test_is_valid_locale() -> None:
+    """Test _is_valid_locale with real or mock locale dirs."""
+    # en and es typically exist in repo
+    assert _is_valid_locale("en") is True
+    # Invalid code
+    assert _is_valid_locale("") is False
+    assert _is_valid_locale("xx") is False  # no xx locale dir unless added
 

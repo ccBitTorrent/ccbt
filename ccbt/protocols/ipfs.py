@@ -887,7 +887,8 @@ class IPFSProtocol(Protocol):
                 placeholder_cid = f"Qm{piece_hash[:44]}"
                 blocks.append(placeholder_cid)
 
-            # Links will be populated when pieces are converted to blocks
+            # Links will be populated when pieces are converted to blocks.
+            # Real links could be filled later via object.get(metadata_cid) if desired.
             links: list[dict[str, Any]] = []
 
             # Create IPFS content record
@@ -1381,6 +1382,37 @@ class IPFSProtocol(Protocol):
             self.logger.warning("Unexpected error getting content stats: %s", e)
             return {"seeders": 0, "leechers": 0, "completed": 0}
 
+    async def _extract_blocks_and_links(
+        self, cid: str
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        """Extract blocks (child CIDs) and links from IPFS object.get(cid).
+
+        Returns ([], []) when not connected, object has no Links, or on error
+        (e.g. raw block or object.get fails).
+        """
+        if not self._ipfs_connected or self._ipfs_client is None:
+            return ([], [])
+        try:
+            obj = await to_thread(
+                self._ipfs_client.object.get,  # type: ignore[attr-defined]
+                cid,
+            )
+        except Exception as e:
+            self.logger.debug("Could not get object structure for CID %s: %s", cid, e)
+            return ([], [])
+        if not isinstance(obj, dict):
+            return ([], [])
+        links_raw = obj.get("Links", [])
+        if not isinstance(links_raw, (list, tuple)):
+            return ([], [])
+        links = list(links_raw)
+        blocks = [
+            link.get("Hash", "")
+            for link in links
+            if isinstance(link, dict) and link.get("Hash")
+        ]
+        return (blocks, links)
+
     async def add_content(self, data: bytes) -> str:
         """Add content to IPFS and return CID."""
         if not self._ipfs_connected or self._ipfs_client is None:
@@ -1407,12 +1439,12 @@ class IPFSProtocol(Protocol):
             # Pin content if enabled (handled by add_bytes with pin parameter if needed)
             # For now, we track it separately
 
-            # Create IPFS content record
+            blocks, links = await self._extract_blocks_and_links(cid)
             ipfs_content = IPFSContent(
                 cid=cid,
                 size=len(data),
-                blocks=[],  # Would need to extract from IPFS object
-                links=[],
+                blocks=blocks,
+                links=links,
             )
 
             self.ipfs_content[cid] = ipfs_content
@@ -1484,11 +1516,12 @@ class IPFSProtocol(Protocol):
                         content = self.ipfs_content[cid]
                         content.last_accessed = time.time()
                     else:
+                        blocks, links = await self._extract_blocks_and_links(cid)
                         ipfs_content = IPFSContent(
                             cid=cid,
                             size=len(content_data),
-                            blocks=[],
-                            links=[],
+                            blocks=blocks,
+                            links=links,
                             last_accessed=time.time(),
                         )
                         self.ipfs_content[cid] = ipfs_content
@@ -1555,11 +1588,12 @@ class IPFSProtocol(Protocol):
                 content = self.ipfs_content[cid]
                 content.last_accessed = time.time()
             else:
+                blocks, links = await self._extract_blocks_and_links(cid)
                 ipfs_content = IPFSContent(
                     cid=cid,
                     size=len(content_data),
-                    blocks=[],
-                    links=[],
+                    blocks=blocks,
+                    links=links,
                     last_accessed=time.time(),
                 )
                 self.ipfs_content[cid] = ipfs_content
