@@ -162,9 +162,14 @@ class AsyncPeerConnection:
 
     # Reserved bytes from handshake (for extension support detection)
     reserved_bytes: Optional[bytes] = None
+    supports_extension_protocol: bool = False
     ut_metadata_id: Optional[int] = None
     metadata_size: Optional[int] = None
+    our_extension_handshake_sent_at: float = 0.0
+    peer_extension_handshake_received_at: float = 0.0
     metadata_exchange_started_at: float = 0.0
+    metadata_exchange_completed_at: float = 0.0
+    last_disconnect_stage: str = ""
 
     # Per-peer rate limiting (upload throttling)
     per_peer_upload_limit_kib: int = 0  # KiB/s, 0 = unlimited
@@ -185,6 +190,7 @@ class AsyncPeerConnection:
     )
     is_seeder: bool = False  # Whether peer is a seeder (has all pieces)
     completion_percent: float = 0.0  # Peer's completion percentage (0.0-1.0)
+    metadata_only_since: float = 0.0  # Time when peer became metadata-only
 
     # Callback functions (set by connection manager)
     on_peer_connected: Optional[Callable[[AsyncPeerConnection], None]] = None
@@ -212,7 +218,7 @@ class AsyncPeerConnection:
 
     def is_active(self) -> bool:
         """Check if connection is fully active."""
-        # CRITICAL FIX: Treat post-handshake bitfield states as active.
+        # BitTorrent: treat post-handshake bitfield states as active.
         # BITFIELD_SENT means the peer connection is established and may still be
         # exchanging bitfields/extension messages before reaching ACTIVE.
         # BITFIELD_RECEIVED means we've already received peer availability.
@@ -509,7 +515,7 @@ class AsyncPeerConnectionManager:
             max_peers_per_torrent: Optional maximum peers per torrent (overrides config)
 
         """
-        # CRITICAL FIX: Initialize logger FIRST before any property setters that might use it
+        # Init: initialize logger first before any property setters that might use it
         import logging
 
         self.logger = logging.getLogger(__name__)
@@ -569,7 +575,7 @@ class AsyncPeerConnectionManager:
         # Connection management
         self.connections: dict[str, AsyncPeerConnection] = {}
         self.connection_lock = asyncio.Lock()
-        # CRITICAL FIX: Initialize connection batches flag to prevent AttributeError
+        # Init: initialize connection batches flag to prevent AttributeError
         # This flag tracks when connection batches from trackers are in progress
         self._connection_batches_in_progress: bool = False
         # Pending peer queue for deferred batches
@@ -596,16 +602,16 @@ class AsyncPeerConnectionManager:
         self._timeout_calculator: Optional[Any] = None
 
         # Failed peer tracking with exponential backoff
-        # CRITICAL FIX: Track failure count for exponential backoff instead of just timestamp
+        # BitTorrent: track failure count for exponential backoff instead of just timestamp
         # Peers will be automatically retried when:
         # 1. New peer lists arrive from trackers/DHT/PEX (if backoff period has expired)
         # 2. Exponential backoff ensures we don't retry too aggressively
         # Backoff intervals: 15s (1st), 30s (2nd), 60s (3rd), 120s (4th), 240s (5th), 600s (max)
         self._failed_peers: dict[
             str, dict[str, Any]
-        ] = {}  # peer_key -> {"timestamp": float, "count": int, "reason": str, "peer_source": str, "is_seeder": bool}
+        ] = {}  # peer_key -> {"timestamp": float, "count": int, "reason": str, "is_terminal": bool, "peer_source": str, "is_seeder": bool}
         self._failed_peer_lock = asyncio.Lock()
-        # CRITICAL FIX: Optimized retry intervals for better connection success and swarm health
+        # BitTorrent: optimized retry intervals for better connection success and swarm health
         # Standard exponential backoff: 10s initial, doubles each time, max 5 minutes
         self._min_retry_interval = (
             10.0  # Initial retry interval (10 seconds, prevents overwhelming peers)
@@ -617,20 +623,20 @@ class AsyncPeerConnectionManager:
             2.0  # Standard exponential backoff multiplier (doubles each retry)
         )
 
-        # CRITICAL FIX: Track tracker-discovered peers for retry when seeder count is low
+        # BitTorrent: track tracker-discovered peers for retry when seeder count is low
         self._tracker_peers_to_retry: dict[
             str, dict[str, Any]
         ] = {}  # peer_key -> peer_data
         self._tracker_retry_lock = asyncio.Lock()
         self._tracker_retry_task: Optional[asyncio.Task] = None
 
-        # CRITICAL FIX: Global connection limiter for Windows to prevent WinError 121 and WinError 10055
+        # Windows: global connection limiter to prevent WinError 121 and 10055
         # Windows has strict limits on socket buffers and OS-level TCP connection semaphores
         # WinError 10055 occurs when the event loop selector can't monitor all sockets due to buffer exhaustion
         # We need to limit simultaneous connections more aggressively on Windows
         import sys
 
-        # CRITICAL FIX: Use configurable limit from NetworkConfig (BitTorrent spec compliant)
+        # Config: use configurable limit from NetworkConfig (BitTorrent spec compliant)
         # This prevents OS socket exhaustion while maintaining good peer discovery
         max_concurrent = getattr(
             self.config.network,
@@ -658,6 +664,22 @@ class AsyncPeerConnectionManager:
             str, float
         ] = {}  # peer_key -> backoff until timestamp
 
+        # Lifecycle counters used for stalled-download diagnostics.
+        self._connection_stage_counters: dict[str, int] = {
+            "connect_attempts": 0,
+            "tcp_connected": 0,
+            "tcp_open_timeout": 0,
+            "tcp_open_cancelled": 0,
+            "tcp_open_failed": 0,
+            "handshake_sent": 0,
+            "handshake_received": 0,
+            "handshake_timeout": 0,
+            "info_hash_mismatch": 0,
+            "bitfield_received": 0,
+            "bitfield_wait_timeout": 0,
+            "state_promotion_failed": 0,
+        }
+
         # Choking management
         self.upload_slots: list[AsyncPeerConnection] = []
         self.optimistic_unchoke: Optional[AsyncPeerConnection] = None
@@ -672,7 +694,7 @@ class AsyncPeerConnectionManager:
         # Running state flag for idempotency
         self._running: bool = False
 
-        # CRITICAL FIX: Debouncing for piece selection triggers from Have messages
+        # BitTorrent: debouncing for piece selection triggers from Have messages
         # Prevent excessive piece selection calls from duplicate Have messages
         self._last_piece_selection_trigger: float = 0.0
         self._piece_selection_debounce_interval: float = 0.1  # 100ms debounce interval
@@ -710,7 +732,7 @@ class AsyncPeerConnectionManager:
         }
 
         # Initialize uTP incoming connection handler if uTP is enabled
-        # CRITICAL FIX: Only create task if event loop is running (not during __init__ in tests)
+        # Init: only create task if event loop is running (not during __init__ in tests)
         if self.config.network.enable_utp:
             try:
                 asyncio.get_running_loop()
@@ -789,7 +811,7 @@ class AsyncPeerConnectionManager:
             "on_piece_received callback set, _on_piece_received=%s",
             self._on_piece_received,
         )
-        # CRITICAL FIX: Propagate callback to all existing connections immediately
+        # Connection batch: propagate callback to all existing connections immediately
         try:
             asyncio.get_running_loop()
             # Track task to satisfy RUF006 (background propagation)
@@ -1011,6 +1033,119 @@ class AsyncPeerConnectionManager:
             return f"{peer.ip}:{peer.port}"
         return str(peer)
 
+    def _classify_connection_failure(
+        self, failure: BaseException | str
+    ) -> tuple[str, bool]:
+        """Classify a connection failure and return reason and retryability.
+
+        Args:
+            failure: Exception instance or error string.
+
+        Returns:
+            Tuple of (failure_reason, is_temporary).
+        """
+        if isinstance(failure, BaseException):
+            error_text = str(failure).lower()
+            error_type = type(failure).__name__.lower()
+        else:
+            error_text = str(failure).lower()
+            error_type = error_text
+
+        # Cancellation is transient.
+        if isinstance(failure, asyncio.CancelledError):
+            return ("connection_cancelled", True)
+        if isinstance(failure, asyncio.TimeoutError) or (
+            "timeout" in error_text and "winerror 121" not in error_text
+        ):
+            return ("timeout", True)
+        if isinstance(failure, asyncio.IncompleteReadError) or (
+            "incomplete" in error_text and "read" in error_text
+        ):
+            return ("incomplete_read", True)
+        if isinstance(failure, ConnectionResetError) or "connection reset" in error_text:
+            return ("connection_reset", True)
+        if isinstance(failure, ConnectionRefusedError) or (
+            "connection refused" in error_text
+            or "winerror 10061" in error_text
+        ):
+            return ("connection_refused", True)
+        if isinstance(failure, ConnectionAbortedError):
+            # Usually transient in P2P environments
+            return ("connection_aborted", True)
+        if isinstance(failure, OSError):
+            errno_value = getattr(failure, "errno", None)
+            if errno_value == 121 or "winerror 121" in error_text:
+                return ("semaphore_timeout", True)
+            if errno_value == 10061 or "winerror 10061" in error_text:
+                return ("connection_refused", True)
+            if errno_value == 10054 or errno_value == 104:
+                return ("connection_reset", True)
+            if errno_value == 10053 or errno_value == 10052:
+                return ("protocol_error", False)
+        if (
+            "connection reset" in error_text
+            or "reset by peer" in error_text
+        ):
+            return ("connection_reset", True)
+        if isinstance(failure, MessageError):
+            return ("protocol_error", False)
+        if (
+            "info hash" in error_text
+            or "mismatch" in error_text
+            or "invalid handshake" in error_text
+            or "protocol error" in error_text
+            or "protocol_error" in error_text
+        ):
+            return ("protocol_error", False)
+        if isinstance(failure, PeerConnectionError):
+            if "handshake" in error_type and "invalid" in error_text:
+                return ("protocol_error", False)
+        return ("connection_error", True)
+
+    def _calculate_failure_backoff_interval(
+        self,
+        fail_count: int,
+        fail_reason: str,
+        is_terminal: bool,
+        active_peer_count: int,
+    ) -> float:
+        """Calculate backoff interval for failed peers."""
+        fail_reason = (fail_reason or "").lower()
+
+        base_interval = self._min_retry_interval
+        backoff_multiplier = self._backoff_multiplier
+        max_backoff = self._max_retry_interval
+
+        # Reason-aware tuning: protocol/auth failures should backoff longer,
+        # while transient network failures can be retried slightly sooner.
+        if fail_reason in {"protocol_error", "handshake_mismatch", "invalid_handshake"}:
+            backoff_multiplier = max(backoff_multiplier, 3.0)
+            max_backoff = max(base_interval, self._max_retry_interval * 0.5)
+        elif fail_reason in {"timeout", "connection_refused", "connection_reset"}:
+            backoff_multiplier = max(1.0, backoff_multiplier * 0.8)
+
+        # Terminal failures should not be retried aggressively.
+        if is_terminal:
+            base_interval *= 3.0
+            backoff_multiplier = max(backoff_multiplier, 3.0)
+            max_backoff = max(base_interval, self._max_retry_interval * 0.5)
+
+        backoff_interval = min(
+            base_interval * (backoff_multiplier ** (max(fail_count, 1) - 1)),
+            max_backoff,
+        )
+
+        if is_terminal:
+            return backoff_interval
+
+        if active_peer_count <= 2:
+            return min(backoff_interval * 0.2, max_backoff * 0.2)
+        if active_peer_count <= 5:
+            return min(backoff_interval * 0.4, max_backoff * 0.4)
+        if active_peer_count <= 10:
+            return min(backoff_interval * 0.6, max_backoff * 0.6)
+        return backoff_interval
+
     def _record_probation_peer(
         self,
         peer_key: str,
@@ -1108,6 +1243,71 @@ class AsyncPeerConnectionManager:
             and peer_extensions.get("metadata_size") is not None
         )
 
+    def _connection_supports_extensions(self, connection: AsyncPeerConnection) -> bool:
+        """Return whether a connection advertised BEP 10 support."""
+        if getattr(connection, "supports_extension_protocol", False):
+            return True
+        reserved_bytes = getattr(connection, "reserved_bytes", None)
+        return bool(
+            isinstance(reserved_bytes, (bytes, bytearray))
+            and len(reserved_bytes) >= 6
+            and bool(reserved_bytes[5] & 0x10)
+        )
+
+    def _metadata_is_incomplete(self) -> bool:
+        """Return whether the current torrent still needs magnet metadata."""
+        piece_manager = getattr(self, "piece_manager", None)
+        if piece_manager is not None and getattr(
+            piece_manager, "_metadata_incomplete", False
+        ):
+            return True
+        if piece_manager is not None and getattr(piece_manager, "num_pieces", 0) == 0:
+            return True
+        if isinstance(self.torrent_data, dict):
+            file_info = self.torrent_data.get("file_info")
+            return file_info is None or (
+                isinstance(file_info, dict)
+                and int(file_info.get("total_length", 0) or 0) == 0
+            )
+        return False
+
+    def _connection_is_metadata_only(self, connection: AsyncPeerConnection) -> bool:
+        """Return whether a connection is currently useful only for metadata."""
+        return self._connection_supports_metadata(
+            connection
+        ) and not self._connection_has_piece_info(connection)
+
+    def _infer_disconnect_stage(self, connection: AsyncPeerConnection) -> str:
+        """Summarize the last meaningful stage reached before disconnect."""
+        if (
+            getattr(connection, "metadata_exchange_started_at", 0.0) > 0.0
+            and getattr(connection, "metadata_exchange_completed_at", 0.0) <= 0.0
+        ):
+            return "metadata_incomplete"
+        if connection.state in (
+            ConnectionState.HANDSHAKE_SENT,
+            ConnectionState.HANDSHAKE_RECEIVED,
+        ):
+            return "handshake_timeout"
+        if connection.state == ConnectionState.BITFIELD_SENT:
+            if self._metadata_is_incomplete() and self._connection_supports_extensions(
+                connection
+            ):
+                return "no_extension_progress"
+            return "bitfield_timeout"
+        if connection.state == ConnectionState.BITFIELD_RECEIVED:
+            return "bitfield_received"
+        if connection.state in (ConnectionState.ACTIVE, ConnectionState.CHOKED):
+            return "active_disconnect"
+        if connection.state == ConnectionState.CONNECTING:
+            return "tcp_open_failed"
+        return "unknown"
+
+    def _record_connection_stage(self, stage: str) -> None:
+        """Increment a lifecycle stage counter used in diagnostics."""
+        current = self._connection_stage_counters.get(stage, 0)
+        self._connection_stage_counters[stage] = current + 1
+
     async def get_connection_summary(self) -> dict[str, int]:
         """Return a summary of connection states useful for recovery logic."""
         metadata_incomplete = bool(
@@ -1117,13 +1317,57 @@ class AsyncPeerConnectionManager:
             "total_connections": 0,
             "connecting_connections": 0,
             "handshake_complete_connections": 0,
+            "extension_capable_connections": 0,
+            "bitfield_complete_connections": 0,
             "active_connections": 0,
             "unchoked_connections": 0,
             "requestable_connections": 0,
             "metadata_capable_connections": 0,
+            "metadata_only_connections": 0,
             "metadata_exchange_active": 0,
             "peers_with_piece_info": 0,
+            "payload_capable_connections": 0,
             "productive_connections": 0,
+            "outbound_success_connections": 0,
+            "connect_attempts": int(
+                self._connection_stage_counters.get("connect_attempts", 0)
+            ),
+            "tcp_connected": int(
+                self._connection_stage_counters.get("tcp_connected", 0)
+            ),
+            "tcp_open_timeout": int(
+                self._connection_stage_counters.get("tcp_open_timeout", 0)
+            ),
+            "tcp_open_cancelled": int(
+                self._connection_stage_counters.get("tcp_open_cancelled", 0)
+            ),
+            "tcp_open_failed": int(
+                self._connection_stage_counters.get("tcp_open_failed", 0)
+            ),
+            "handshake_sent": int(
+                self._connection_stage_counters.get("handshake_sent", 0)
+            ),
+            "handshake_received": int(
+                self._connection_stage_counters.get("handshake_received", 0)
+            ),
+            "handshake_timeout": int(
+                self._connection_stage_counters.get("handshake_timeout", 0)
+            ),
+            "info_hash_mismatch": int(
+                self._connection_stage_counters.get("info_hash_mismatch", 0)
+            ),
+            "bitfield_received": int(
+                self._connection_stage_counters.get("bitfield_received", 0)
+            ),
+            "bitfield_received_events": int(
+                self._connection_stage_counters.get("bitfield_received", 0)
+            ),
+            "bitfield_wait_timeout": int(
+                self._connection_stage_counters.get("bitfield_wait_timeout", 0)
+            ),
+            "state_promotion_failed": int(
+                self._connection_stage_counters.get("state_promotion_failed", 0)
+            ),
         }
         async with self.connection_lock:
             summary["total_connections"] = len(self.connections)
@@ -1142,24 +1386,46 @@ class AsyncPeerConnectionManager:
                     ConnectionState.CHOKED,
                 ):
                     summary["handshake_complete_connections"] += 1
+                if self._connection_supports_extensions(connection):
+                    summary["extension_capable_connections"] += 1
+                has_piece_info = self._connection_has_piece_info(connection)
+                metadata_only = self._connection_is_metadata_only(connection)
+                if has_piece_info:
+                    summary["bitfield_complete_connections"] += 1
                 if connection.is_active():
                     summary["active_connections"] += 1
+                    if getattr(connection.peer_info, "peer_source", "") != "incoming":
+                        summary["outbound_success_connections"] += 1
                 if connection.is_active() and not connection.peer_choking:
                     summary["unchoked_connections"] += 1
                 if connection.can_request():
                     summary["requestable_connections"] += 1
-                has_piece_info = self._connection_has_piece_info(connection)
                 if has_piece_info:
                     summary["peers_with_piece_info"] += 1
+                    summary["payload_capable_connections"] += 1
                 metadata_capable = self._connection_supports_metadata(connection)
                 if metadata_capable:
                     summary["metadata_capable_connections"] += 1
+                if metadata_only and connection.is_active():
+                    summary["metadata_only_connections"] += 1
                 if peer_key in self._metadata_exchange_state:
                     summary["metadata_exchange_active"] += 1
                 if (
                     getattr(connection.stats, "blocks_delivered", 0) > 0
                     or getattr(connection.stats, "bytes_downloaded", 0) > 0
                     or has_piece_info
+                    or (
+                        metadata_incomplete
+                        and self._connection_supports_extensions(connection)
+                        and connection.state
+                        in (
+                            ConnectionState.HANDSHAKE_RECEIVED,
+                            ConnectionState.BITFIELD_SENT,
+                            ConnectionState.BITFIELD_RECEIVED,
+                            ConnectionState.ACTIVE,
+                            ConnectionState.CHOKED,
+                        )
+                    )
                     or (metadata_capable and metadata_incomplete)
                 ):
                     summary["productive_connections"] += 1
@@ -1199,10 +1465,16 @@ class AsyncPeerConnectionManager:
                 if has_useful_activity:
                     del self._quality_probation_peers[peer_key]
                     self._quality_verified_peers.add(peer_key)
+                    connection.metadata_only_since = 0.0
                     continue
 
                 elapsed = now - start_time
-                if elapsed >= timeout:
+                effective_timeout = timeout
+                if self._connection_is_metadata_only(connection):
+                    if connection.metadata_only_since <= 0.0:
+                        connection.metadata_only_since = start_time
+                    effective_timeout = min(timeout, 8.0)
+                if elapsed >= effective_timeout:
                     to_disconnect.append(connection)
                     del self._quality_probation_peers[peer_key]
 
@@ -1240,7 +1512,7 @@ class AsyncPeerConnectionManager:
             from ccbt.models import PeerInfo
             from ccbt.transport.utp_socket import UTPSocketManager
 
-            # CRITICAL FIX: Use uTP socket manager from session manager if available
+            # Session: use uTP socket manager from session manager if available
             # Singleton pattern removed - use session_manager.utp_socket_manager
             socket_manager = None
             if (
@@ -1386,6 +1658,7 @@ class AsyncPeerConnectionManager:
 
     def _raise_info_hash_mismatch(self, expected: bytes, got: bytes) -> None:
         """Raise PeerConnectionError for info hash mismatch."""
+        self._record_connection_stage("info_hash_mismatch")
         msg = f"Info hash mismatch: expected {expected.hex()}, got {got.hex()}"
         raise PeerConnectionError(msg)
 
@@ -1830,7 +2103,7 @@ class AsyncPeerConnectionManager:
             self.logger.debug("Connection pool started")
 
             # Start background tasks
-            # CRITICAL FIX: Only create tasks if they don't already exist
+            # Connection batch: only create tasks if they don't already exist
             # This prevents duplicate tasks if start() is called multiple times
             if self._choking_task is None or self._choking_task.done():
                 self._choking_task = asyncio.create_task(self._choking_loop())
@@ -1898,7 +2171,7 @@ class AsyncPeerConnectionManager:
             peer_port: Peer port
 
         """
-        # CRITICAL FIX: Reject new connections during shutdown
+        # Shutdown: reject new connections during shutdown
         if not self._running:
             self.logger.debug(
                 "Rejecting incoming connection from %s:%d: manager is shutting down",
@@ -1971,7 +2244,7 @@ class AsyncPeerConnectionManager:
         connection.writer = writer
         connection.state = ConnectionState.HANDSHAKE_RECEIVED
 
-        # CRITICAL FIX: Clear failure tracking on successful connection (BitTorrent spec compliant)
+        # BitTorrent: clear failure tracking on successful connection (spec compliant)
         # This allows peers that were temporarily unavailable to be retried later
         peer_key = f"{peer_info.ip}:{peer_info.port}"
         if peer_key in self._connection_failure_counts:
@@ -1987,7 +2260,7 @@ class AsyncPeerConnectionManager:
             del self._connection_backoff_until[peer_key]
         # Initialize per-peer upload rate limit from config
         connection.per_peer_upload_limit_kib = self.per_peer_upload_limit_kib
-        # CRITICAL FIX: Set callbacks on incoming connection early
+        # Connection batch: set callbacks on incoming connection early
         if self._on_peer_connected:
             connection.on_peer_connected = self._on_peer_connected
         if self._on_peer_disconnected:
@@ -2045,7 +2318,7 @@ class AsyncPeerConnectionManager:
             # Configure reserved bytes based on configuration
             our_handshake.configure_from_config(self.config)
 
-            # CRITICAL FIX: Log handshake reserved bits for debugging and compliance verification
+            # BitTorrent: log handshake reserved bits for debugging and compliance verification
             reserved_bits_info = []
             if our_handshake.supports_extension_protocol():
                 reserved_bits_info.append("Extension Protocol (BEP 10)")
@@ -2078,7 +2351,7 @@ class AsyncPeerConnectionManager:
                 writer.close()
                 await writer.wait_closed()
             except (ConnectionResetError, OSError):
-                # CRITICAL FIX: Handle Windows ConnectionResetError (WinError 10054) gracefully
+                # Windows: handle ConnectionResetError (WinError 10054) gracefully
                 # Remote host closed connection - this is normal, don't log as error
                 import sys
 
@@ -2108,7 +2381,7 @@ class AsyncPeerConnectionManager:
                 pass  # Ignore other errors during cleanup
             return
 
-        # CRITICAL FIX: Set callbacks before adding to connections
+        # Connection batch: set callbacks before adding to connections
         # This ensures callbacks are available when messages arrive
         # Use the private attributes to avoid triggering property setters
         if self._on_peer_connected:
@@ -2155,7 +2428,7 @@ class AsyncPeerConnectionManager:
                     "Sent bitfield to incoming peer %s:%d", peer_ip, peer_port
                 )
             except PeerConnectionError as e:
-                # CRITICAL FIX: For magnet links, bitfield may fail if metadata isn't available yet
+                # Magnet: bitfield may fail if metadata isn't available yet
                 # This is expected and we should continue with the connection
                 # Check if it's a metadata-related error (pieces_info is None)
                 pieces_info = self.torrent_data.get("pieces_info")
@@ -2216,7 +2489,7 @@ class AsyncPeerConnectionManager:
                 peer_port,
             )
 
-            # CRITICAL FIX: Verify we're in the correct event loop context before creating task
+            # Init: verify we're in the correct event loop context before creating task
             try:
                 loop = asyncio.get_running_loop()
                 connection.connection_task = asyncio.create_task(
@@ -2315,7 +2588,7 @@ class AsyncPeerConnectionManager:
 
         This method is idempotent - calling it multiple times is safe.
         """
-        # CRITICAL FIX: Even if manager was never started, we should still cancel connection tasks
+        # Shutdown: even if manager was never started, still cancel connection tasks
         # and disconnect connections if they exist
         has_connections = False
         async with self.connection_lock:
@@ -2387,7 +2660,7 @@ class AsyncPeerConnectionManager:
         self._reconnection_task = None
         self._tracker_retry_task = None
 
-        # CRITICAL FIX: Cancel all connection tasks (message loops) before disconnecting
+        # Shutdown: cancel all connection tasks (message loops) before disconnecting
         # This ensures message loops stop processing and connections close cleanly
         async with self.connection_lock:
             connection_tasks_to_cancel: list[asyncio.Task] = [
@@ -2430,13 +2703,13 @@ class AsyncPeerConnectionManager:
                     len(connections_to_disconnect),
                 )
 
-            # CRITICAL FIX: Close connections in batches on Windows to prevent socket buffer exhaustion
+            # Windows: close connections in batches to prevent socket buffer exhaustion
             # WinError 10055 occurs when too many sockets are closed simultaneously
             # Windows has limited socket buffer space and event loop selector capacity
             import sys
 
             is_windows = sys.platform == "win32"
-            # CRITICAL FIX: Further reduced batch size on Windows to prevent WinError 10055
+            # Windows: reduced batch size to prevent WinError 10055
             # Windows socket buffer exhaustion can occur with even 5 simultaneous closes
             batch_size = (
                 3 if is_windows else 20
@@ -2484,7 +2757,7 @@ class AsyncPeerConnectionManager:
                                     except (OSError, asyncio.TimeoutError):
                                         pass  # Ignore errors during forced close
                             except OSError as e:
-                                # CRITICAL FIX: Handle WinError 10055 gracefully
+                                # Windows: handle WinError 10055 gracefully
                                 error_code = getattr(e, "winerror", None) or getattr(
                                     e, "errno", None
                                 )
@@ -2553,7 +2826,7 @@ class AsyncPeerConnectionManager:
             _from_pending_queue: Internal flag indicating the peers originated from the pending queue
 
         """
-        # CRITICAL FIX: Check if manager is running before attempting connections
+        # Connection batch: check if manager is running before attempting connections
         # This prevents connection attempts after shutdown starts
         if not self._running:
             self.logger.debug(
@@ -2562,7 +2835,7 @@ class AsyncPeerConnectionManager:
             )
             return
 
-        # CRITICAL FIX: Add detailed logging for peer connection attempts
+        # Connection batch: add detailed logging for peer connection attempts
         if not peer_list:
             self.logger.debug("connect_to_peers called with empty peer list")
             return
@@ -2571,14 +2844,14 @@ class AsyncPeerConnectionManager:
         self._ensure_quality_tracking_initialized()
         await self._prune_probation_peers("pre_batch")
 
-        # CRITICAL FIX: Set flag to indicate connection batches are in progress
+        # Connection batch: set flag to indicate batches are in progress
         # This prevents peer_count_low events from triggering DHT until batches are exhausted
         # Set AFTER validation checks to avoid setting flag unnecessarily
         self._connection_batches_in_progress = True
         batch_start_time = time.time()
 
         try:
-            # CRITICAL FIX: Enhanced logging for connection attempts
+            # Connection batch: enhanced logging for connection attempts
             peer_sources = {}
             for peer in peer_list:
                 source = peer.get("peer_source", "unknown")
@@ -2587,7 +2860,7 @@ class AsyncPeerConnectionManager:
             source_summary = ", ".join(
                 [f"{count} from {source}" for source, count in peer_sources.items()]
             )
-            # CRITICAL FIX: Get info_hash from torrent_data, not from non-existent self.info_hash attribute
+            # Init: get info_hash from torrent_data, not from non-existent self.info_hash attribute
             # After metadata exchange, torrent_data["info_hash"] is updated, so this will show the correct hash
             info_hash_display = "unknown"
             if isinstance(self.torrent_data, dict):
@@ -2605,7 +2878,7 @@ class AsyncPeerConnectionManager:
                 info_hash_display,
             )
             config = self.config.network
-            # CRITICAL FIX: Don't limit max_connections to len(peer_list) when peer count is low
+            # Connection batch: don't limit max_connections to len(peer_list) when peer count is low
             # This allows connecting to multiple peers even when only 1 is discovered initially
             # Only apply len(peer_list) limit if we already have many peers
             async with self.connection_lock:
@@ -2614,7 +2887,7 @@ class AsyncPeerConnectionManager:
                     1 for conn in self.connections.values() if conn.is_active()
                 )
 
-            # CRITICAL FIX: Reduce max batch duration to prevent blocking DHT discovery
+            # Connection batch: reduce max batch duration to prevent blocking DHT discovery
             # With 199 peers and batch_size=20, that's 10 batches. If each batch takes 25s,
             # sequential processing would take 250s. We need to clear the flag sooner to
             # allow DHT discovery to start. Use 20s for low peer count, 45s otherwise.
@@ -2624,12 +2897,12 @@ class AsyncPeerConnectionManager:
                 20.0 if active_peer_count < 50 else 45.0
             )  # Reduced from 60.0
 
-            # CRITICAL FIX: When many peers are discovered, allow more connections
+            # Connection batch: when many peers are discovered, allow more connections
             # Don't limit to len(peer_list) when we have many discovered peers - connect to as many as possible
             # This fixes the issue where 356 peers are discovered but only 3 are connected
-            # CRITICAL FIX: Be MUCH more aggressive when peer count is low - connect to many more peers to find seeders
+            # BitTorrent: be more aggressive when peer count is low to find seeders
             # This prevents downloads from stalling when the single peer stops sending
-            # CRITICAL FIX: Also connect more aggressively when peers are choking us - we need more peers to find cooperative ones
+            # BitTorrent: connect more aggressively when peers are choking us to find cooperative ones
             if active_peer_count < 3:
                 # CRITICAL: Very low peer count - connect to as many peers as possible to find seeders
                 # Use at least 30 connections or 5x discovered peers, whichever is larger
@@ -2671,6 +2944,7 @@ class AsyncPeerConnectionManager:
 
             # Filter out recently failed peers using exponential backoff
             current_time = time.time()
+            recent_failure_snapshot: dict[str, dict[str, Any]] = {}
             async with self._failed_peer_lock:
                 # Clean up old failures (older than max retry interval)
                 expired_keys = [
@@ -2681,8 +2955,11 @@ class AsyncPeerConnectionManager:
                 ]
                 for key in expired_keys:
                     del self._failed_peers[key]
+                recent_failure_snapshot = {
+                    key: dict(value) for key, value in self._failed_peers.items()
+                }
 
-            # CRITICAL FIX: Prioritize seeders when connecting
+            # BitTorrent: prioritize seeders when connecting
             # If tracker reports seeders, prioritize connecting to them first
             # Sort peer_list to put potential seeders first (tracker-reported seeders)
             peer_list_sorted = []
@@ -2707,6 +2984,26 @@ class AsyncPeerConnectionManager:
                     "🌱 SEEDER PRIORITY: Found %d potential seeder(s) in discovered peers - prioritizing for connection",
                     len(potential_seeders),
                 )
+            recent_failure_count = len(recent_failure_snapshot)
+            if recent_failure_count > 0:
+                peer_list_sorted.sort(
+                    key=lambda peer: (
+                        f"{peer.get('ip', '')}:{peer.get('port', 0)}"
+                        in recent_failure_snapshot,
+                        recent_failure_snapshot.get(
+                            f"{peer.get('ip', '')}:{peer.get('port', 0)}",
+                            {},
+                        ).get("count", 0),
+                        recent_failure_snapshot.get(
+                            f"{peer.get('ip', '')}:{peer.get('port', 0)}",
+                            {},
+                        ).get("timestamp", 0.0),
+                    )
+                )
+                self.logger.info(
+                    "🔁 RETRY PRESSURE: %d peer(s) have recent failures; prioritizing fresh peers before retries.",
+                    recent_failure_count,
+                )
 
             # Convert to PeerInfo list and filter out recently failed peers
             peer_info_list = []
@@ -2714,7 +3011,7 @@ class AsyncPeerConnectionManager:
             for idx, peer_data in enumerate(
                 peer_list_sorted[: max_connections * 2]
             ):  # Check more peers to account for filtering
-                # CRITICAL FIX: Validate peer_data is a dict before accessing it
+                # Validation: peer_data must be a dict before accessing
                 if not isinstance(peer_data, dict):
                     error_msg = (
                         f"peer_data at index {idx} is not a dict, got {type(peer_data)}. "
@@ -2741,7 +3038,7 @@ class AsyncPeerConnectionManager:
                     self.logger.exception(error_msg)
                     continue  # Skip invalid peer data
 
-                # CRITICAL FIX: Skip if already connected, but log for diagnostics
+                # Connection batch: skip if already connected, but log for diagnostics
                 peer_key = str(peer_info)
                 if peer_key in self.connections:
                     existing_conn = self.connections[peer_key]
@@ -2752,7 +3049,7 @@ class AsyncPeerConnectionManager:
                             existing_conn.peer_state.bitfield is not None
                             and len(existing_conn.peer_state.bitfield) > 0
                         )
-                        # CRITICAL FIX: Don't skip peers without bitfields - they may send HAVE messages
+                        # BitTorrent: don't skip peers without bitfields - they may send HAVE messages
                         # According to BitTorrent spec (BEP 3), bitfield is OPTIONAL if peer has no pieces
                         # Peers may send HAVE messages instead of bitfields (protocol-compliant)
                         # Only skip if peer has been connected for a while without sending HAVE messages
@@ -2802,7 +3099,7 @@ class AsyncPeerConnectionManager:
                     continue
 
                 # Skip if recently failed (using exponential backoff)
-                # CRITICAL FIX: When peer count is very low, be more aggressive about retrying failed peers
+                # BitTorrent: when peer count is very low, be more aggressive about retrying failed peers
                 # This helps recover from transient connection failures
                 async with self._failed_peer_lock:
                     fail_info = self._failed_peers.get(peer_key)
@@ -2811,50 +3108,14 @@ class AsyncPeerConnectionManager:
                     fail_time = fail_info.get("timestamp", 0)
                     fail_count = fail_info.get("count", 1)
                     fail_reason = fail_info.get("reason", "unknown")
+                    fail_is_terminal = bool(fail_info.get("is_terminal", False))
 
-                    # CRITICAL FIX: When peer count is very low, reduce backoff to retry faster
-                    # This helps when we have few peers and need to maximize connections
-                    if active_peer_count <= 2:
-                        # Very low peer count - use shorter backoff (50% of normal)
-                        backoff_multiplier = self._backoff_multiplier * 0.5
-                        max_retry = self._max_retry_interval * 0.5
-                    elif active_peer_count <= 5:
-                        # Low peer count - use shorter backoff (75% of normal)
-                        backoff_multiplier = self._backoff_multiplier * 0.75
-                        max_retry = self._max_retry_interval * 0.75
-                    else:
-                        # Normal peer count - use standard backoff
-                        backoff_multiplier = self._backoff_multiplier
-                        max_retry = self._max_retry_interval
-
-                    # Calculate exponential backoff: min_interval * (multiplier ^ (count - 1))
-                    # Cap at max_retry_interval
-                    backoff_interval = min(
-                        self._min_retry_interval
-                        * (backoff_multiplier ** (fail_count - 1)),
-                        max_retry,
+                    backoff_interval = self._calculate_failure_backoff_interval(
+                        fail_count=fail_count,
+                        fail_reason=fail_reason,
+                        is_terminal=fail_is_terminal,
+                        active_peer_count=active_peer_count,
                     )
-
-                    # CRITICAL FIX: For certain failure types, retry faster (connection refused, timeout)
-                    # These are often transient and worth retrying sooner
-                    if (
-                        "connection refused" in fail_reason.lower()
-                        or "timeout" in fail_reason.lower()
-                    ):
-                        backoff_interval = (
-                            backoff_interval * 0.5
-                        )  # 50% shorter backoff for transient errors
-
-                    # CRITICAL FIX: When peer count is very low, be much more aggressive with retries
-                    # This allows faster connection recycling and prevents download stalls
-                    if active_peer_count < 3:
-                        backoff_interval = (
-                            backoff_interval * 0.2
-                        )  # 80% shorter backoff when peer count is critically low
-                    elif active_peer_count < 10:
-                        backoff_interval = (
-                            backoff_interval * 0.4
-                        )  # 60% shorter backoff when peer count is low
 
                     # Check if backoff period has elapsed
                     elapsed = current_time - fail_time
@@ -2874,7 +3135,7 @@ class AsyncPeerConnectionManager:
                 # Add to connection list
                 peer_info_list.append(peer_info)
 
-            # CRITICAL FIX: Track peers in current batch to prevent reconnection loop from interfering
+            # Connection batch: track peers in current batch to prevent reconnection loop from interfering
             # Initialize set to track peers being processed in this batch
             if not hasattr(self, "_current_batch_peers"):
                 self._current_batch_peers = set[Any]()
@@ -2889,6 +3150,18 @@ class AsyncPeerConnectionManager:
             # Rank peers before connecting (highest score first)
             if peer_info_list:
                 peer_info_list = await self._rank_peers_for_connection(peer_info_list)
+                if recent_failure_snapshot:
+                    peer_info_list.sort(
+                        key=lambda peer_info: (
+                            str(peer_info) in recent_failure_snapshot,
+                            recent_failure_snapshot.get(str(peer_info), {}).get(
+                                "count", 0
+                            ),
+                            recent_failure_snapshot.get(str(peer_info), {}).get(
+                                "timestamp", 0.0
+                            ),
+                        )
+                    )
 
                 # Update current batch tracking with ranked peers
                 self._current_batch_peers.clear()
@@ -2896,7 +3169,7 @@ class AsyncPeerConnectionManager:
                     peer_key = str(peer_info)
                     self._current_batch_peers.add(peer_key)  # type: ignore[attr-defined]
 
-            # CRITICAL FIX: Store ALL deduplicated peers in queue for continuous connection attempts
+            # Connection batch: store all deduplicated peers in queue for continuous connection attempts
             # User requirement: "the queue should be filled with deduplicated peers, and continue connecting peers
             # and removing attempted and failed connections until all peers have been tried and most have been connected"
             # We'll process them in batches but continuously attempt all peers
@@ -2948,7 +3221,7 @@ class AsyncPeerConnectionManager:
                 )
 
             # Warmup connections if enabled
-            # CRITICAL FIX: Disable warmup on Windows to avoid WinError 121
+            # Windows: disable warmup to avoid WinError 121
             import sys
 
             if (
@@ -2975,14 +3248,14 @@ class AsyncPeerConnectionManager:
                     len(peer_list) - len(peer_info_list) - skipped_failed,
                     max_connections,
                 )
-                # CRITICAL FIX: Clear flag even when no peers to connect
+                # Connection batch: clear flag even when no peers to connect
                 self._connection_batches_in_progress = False
-                # CRITICAL FIX: Clear current batch tracking when batches complete
+                # Connection batch: clear current batch tracking when batches complete
                 if hasattr(self, "_current_batch_peers"):
                     self._current_batch_peers.clear()
                 return
 
-            # CRITICAL FIX: Enhanced logging for connection attempt start
+            # Connection batch: enhanced logging for connection attempt start
             self.logger.info(
                 "Starting connection attempts to %d peer(s) (filtered from %d input, skipped %d failed, max_per_torrent: %d)",
                 len(peer_info_list),
@@ -2992,7 +3265,7 @@ class AsyncPeerConnectionManager:
             )
 
             # Rate limit connection attempts to avoid overwhelming the system
-            # CRITICAL FIX: Optimal batch sizing algorithm that adapts to peer count and system resources
+            # Connection batch: optimal batch sizing that adapts to peer count and system resources
             # The semaphore already limits concurrent connections, so we can use larger batches safely
             # Key insight: When there are 1000+ peers, small batches (20-50) create 20-50 batches,
             # which takes forever and blocks DHT discovery. Use larger batches for many peers.
@@ -3073,14 +3346,26 @@ class AsyncPeerConnectionManager:
             else:
                 base_batch_size = 50 if not is_windows else 40
 
-            # CRITICAL FIX: Batch size should not exceed semaphore limit
+            # Connection batch: batch size should not exceed semaphore limit
             # The semaphore limits concurrent attempts, so batches larger than semaphore are wasteful
             # Also respect max_connections limit
             batch_size = min(base_batch_size, max_concurrent, max_connections)
 
-            # CRITICAL FIX: Ensure minimum batch size for efficiency
+            # Connection batch: ensure minimum batch size for efficiency
             # Very small batches (<10) create too many iterations and slow processing
             batch_size = max(10, batch_size)
+            if active_peer_count == 0 and recent_failure_count >= max(
+                10, len(peer_list) // 4
+            ):
+                reduced_batch_size = 15 if is_windows else 20
+                if batch_size > reduced_batch_size:
+                    self.logger.info(
+                        "🛑 FAILURE PRESSURE: Reducing batch size from %d to %d because %d peers recently failed while active peers remain at zero.",
+                        batch_size,
+                        reduced_batch_size,
+                        recent_failure_count,
+                    )
+                    batch_size = reduced_batch_size
 
             # Connection delay: no delay for fast processing, small delay on Windows for stability
             if active_peer_count == 0:
@@ -3095,6 +3380,10 @@ class AsyncPeerConnectionManager:
                 connection_delay = 0.02  # 20ms delay for Windows (stability)
             else:
                 connection_delay = 0.0  # NO DELAY - non-Windows can handle it
+            if active_peer_count == 0 and recent_failure_count >= max(
+                10, len(peer_list) // 4
+            ):
+                connection_delay = max(connection_delay, 0.03 if is_windows else 0.01)
 
             # Log optimal batch configuration
             estimated_batches = (
@@ -3115,11 +3404,12 @@ class AsyncPeerConnectionManager:
                 connection_delay,
             )
 
-            # CRITICAL FIX: Aggregate connection statistics for diagnostics (BitTorrent spec compliant)
+            # BitTorrent: aggregate connection statistics for diagnostics (spec compliant)
             connection_stats = {
                 "successful": 0,
                 "failed": 0,
                 "timeout": 0,
+                "cancelled": 0,
                 "connection_refused": 0,
                 "winerror_121": 0,
                 "other_errors": 0,
@@ -3128,7 +3418,7 @@ class AsyncPeerConnectionManager:
                 "zero_success_batches": 0,  # Track batches with zero successes
             }
 
-            # CRITICAL FIX: Process peers continuously - initial batch first, then remaining peers
+            # Connection batch: process peers continuously - initial batch first, then remaining peers
             # This ensures all deduplicated peers are attempted, not just the first max_connections
             all_peers_to_process = peer_info_list.copy()
             if remaining_peers:
@@ -3143,7 +3433,7 @@ class AsyncPeerConnectionManager:
             try:
                 pending_enqueue_reason: Optional[str] = None
                 for batch_start in range(0, len(all_peers_to_process), batch_size):
-                    # CRITICAL FIX: Check if manager is shutting down before processing batch
+                    # Shutdown: check if manager is shutting down before processing batch
                     if not self._running:
                         self.logger.debug(
                             "Stopping connection batch: manager shutdown (processed %d/%d peers)",
@@ -3152,7 +3442,7 @@ class AsyncPeerConnectionManager:
                         )
                         break
 
-                    # CRITICAL FIX: Check if batch processing has exceeded maximum duration
+                    # Connection batch: check if batch processing has exceeded maximum duration
                     # This prevents the flag from blocking DHT discovery indefinitely
                     batch_elapsed = time.time() - batch_start_time
                     if batch_elapsed > max_batch_duration:
@@ -3168,7 +3458,7 @@ class AsyncPeerConnectionManager:
                         self._connection_batches_in_progress = False
                         break
 
-                    # CRITICAL FIX: Clear flag early when we have enough active peers OR after processing initial batches
+                    # Connection batch: clear flag early when we have enough active peers or after initial batches
                     # This allows DHT discovery to start while connection batches continue in background
                     # This is critical for popular torrents with 1000+ peers - we don't want to block DHT for minutes
                     if batch_start > 0:  # At least one batch processed
@@ -3178,7 +3468,7 @@ class AsyncPeerConnectionManager:
                                 [c for c in self.connections.values() if c.is_active()]
                             )
 
-                            # CRITICAL FIX: Clear flag early if:
+                            # Connection batch: clear flag early if:
                             # 1. We have at least 2 active peers AND processed at least 2 batches (30-60 peers attempted), OR
                             # 2. We've been processing for more than 30 seconds (half max duration), OR
                             # 3. We have at least 5 active peers (good enough to start DHT)
@@ -3215,7 +3505,7 @@ class AsyncPeerConnectionManager:
                                 self._connection_batches_in_progress = False
                                 # Don't break - continue processing batches in background
 
-                    # CRITICAL FIX: Check active connection count before each batch
+                    # Connection batch: check active connection count before each batch
                     # If we have enough active connections, we can stop processing more batches
                     remaining_for_queue: list[PeerInfo] = []
                     current_active = 0
@@ -3251,20 +3541,20 @@ class AsyncPeerConnectionManager:
                     connection_stats["batches_processed"] += 1
                     batch_successful = 0  # Track successes in this batch
 
-                    # CRITICAL FIX: Create all connection tasks immediately in parallel (no delays)
+                    # Connection batch: create all connection tasks immediately in parallel (no delays)
                     # This dramatically speeds up batch processing - connections happen concurrently
-                    # CRITICAL FIX: Wrap each connection with timeout to prevent hanging
+                    # Connection batch: wrap each connection with timeout to prevent hanging
                     # Individual connections can hang during TCP connect or handshake, blocking the batch
                     tasks = []
-                    # CRITICAL FIX: Reduced from 45s to 25s - 45s was too long and causing batch processing to stall
+                    # Connection batch: reduced from 45s to 25s to avoid batch processing stall
                     # 25s is sufficient for TCP connect + handshake without blocking batch completion
                     connection_timeout = 25.0  # Per-connection timeout (must be longer than batch timeout)
                     for peer_info in batch:  # pragma: no cover - Loop for connecting to multiple peers, tested via single peer connections
-                        # CRITICAL FIX: Check _running before each connection attempt
+                        # Shutdown: check _running before each connection attempt
                         if not self._running:
                             break
 
-                        # CRITICAL FIX: Wrap connection with timeout to prevent hanging
+                        # Connection batch: wrap connection with timeout to prevent hanging
                         # This ensures individual connections don't block batch processing indefinitely
                         async def connect_with_timeout(
                             peer: PeerInfo, timeout: float = connection_timeout
@@ -3303,15 +3593,16 @@ class AsyncPeerConnectionManager:
 
                         # Create task immediately - no delays within batch for maximum speed
                         task = asyncio.create_task(
-                            connect_with_timeout(peer_info)
+                            connect_with_timeout(peer_info),
+                            name=f"connect_peer:{peer_info.ip}:{peer_info.port}",
                         )  # pragma: no cover - Same context
                         tasks.append(task)  # pragma: no cover - Same context
 
-                    # CRITICAL FIX: Process results as they complete instead of waiting for all
+                    # Connection batch: process results as they complete instead of waiting for all
                     # This allows logs to appear in real-time and prevents blocking
                     # Use asyncio.as_completed() to process results as they arrive
                     if tasks:
-                        # CRITICAL FIX: Cancel tasks if manager is shutting down
+                        # Shutdown: cancel tasks if manager is shutting down
                         if not self._running:
                             self.logger.debug(
                                 "Cancelling %d connection task(s): manager shutdown",
@@ -3319,6 +3610,10 @@ class AsyncPeerConnectionManager:
                             )
                             for task in tasks:
                                 if not task.done():
+                                    self.logger.debug(
+                                        "Cancelling task %s (reason=manager_shutdown)",
+                                        task.get_name(),
+                                    )
                                     task.cancel()
                             with contextlib.suppress(
                                 asyncio.TimeoutError, asyncio.CancelledError
@@ -3329,9 +3624,9 @@ class AsyncPeerConnectionManager:
                                 )
                             continue
 
-                        # CRITICAL FIX: Add timeout for batch processing to prevent slow batches from blocking
+                        # Connection batch: add timeout for batch processing to prevent blocking
                         # Use shorter timeout when peer count is low (faster recovery)
-                        # CRITICAL FIX: Batch timeout must be shorter than per-connection timeout (25s)
+                        # Connection batch: batch timeout must be shorter than per-connection timeout (25s)
                         # This ensures batches complete even if some connections hang
                         # Reduced from 20-40s to 15-25s for faster batch completion
                         batch_timeout = 15.0 if active_peer_count < 3 else 25.0
@@ -3345,11 +3640,11 @@ class AsyncPeerConnectionManager:
                             3, batch_size // 4
                         )  # Exit early if 25% succeed
 
-                        # CRITICAL FIX: Process with timeout and early exit if enough connections succeed
+                        # Connection batch: process with timeout and early exit if enough connections succeed
                         try:
                             async with asyncio.timeout(batch_timeout):
                                 for completed_future in asyncio.as_completed(tasks):
-                                    # CRITICAL FIX: Check _running before processing each result
+                                    # Shutdown: check _running before processing each result
                                     if not self._running:
                                         self.logger.debug(
                                             "Stopping result processing: manager shutdown"
@@ -3372,7 +3667,7 @@ class AsyncPeerConnectionManager:
                                                     successful_in_batch += 1
                                                     batch_successful += 1
 
-                                                # CRITICAL FIX: Early exit if enough connections succeed
+                                                # Connection batch: early exit if enough connections succeed
                                                 # This speeds up batch processing when we get good peers quickly
                                                 if (
                                                     successful_in_batch
@@ -3395,6 +3690,10 @@ class AsyncPeerConnectionManager:
                                                     # Cancel remaining tasks
                                                     for remaining_task in tasks:
                                                         if not remaining_task.done():
+                                                            self.logger.debug(
+                                                                "Cancelling task %s (reason=early_batch_success_exit)",
+                                                                remaining_task.get_name(),
+                                                            )
                                                             remaining_task.cancel()
                                                     break
 
@@ -3411,7 +3710,7 @@ class AsyncPeerConnectionManager:
                                                     )
                                                 break
                                     except asyncio.CancelledError:
-                                        # CRITICAL FIX: Handle CancelledError properly - mark task as cancelled
+                                        # Shutdown: handle CancelledError properly - mark task as cancelled
                                         # Find which task was cancelled and mark it in results
                                         for i, task in enumerate(tasks):
                                             if task.done() and results[i] is None:
@@ -3437,7 +3736,7 @@ class AsyncPeerConnectionManager:
                                                 completed_count += 1
                                                 break
                         except TimeoutError:
-                            # CRITICAL FIX: Batch timeout - cancel remaining tasks and move on
+                            # Connection batch: batch timeout - cancel remaining tasks and move on
                             self.logger.debug(
                                 "Connection batch timeout after %.1fs (%d/%d completed, %d successful) - cancelling remaining tasks",
                                 batch_timeout,
@@ -3448,6 +3747,10 @@ class AsyncPeerConnectionManager:
                             # Cancel all remaining tasks
                             for task in tasks:
                                 if not task.done():
+                                    self.logger.debug(
+                                        "Cancelling task %s (reason=batch_timeout)",
+                                        task.get_name(),
+                                    )
                                     task.cancel()
                             # Wait briefly for cancellations to propagate, then mark remaining as timeout
                             await asyncio.sleep(
@@ -3477,7 +3780,7 @@ class AsyncPeerConnectionManager:
                         peer_info = batch[i]
                         peer_key = str(peer_info)
 
-                        # CRITICAL FIX: Skip if result is None (task not completed yet)
+                        # Connection batch: skip if result is None (task not completed yet)
                         # This can happen if batch timeout occurred before all tasks completed
                         if conn_result is None:
                             # Task didn't complete - mark as timeout (intentional overwrite)
@@ -3491,7 +3794,7 @@ class AsyncPeerConnectionManager:
                         if isinstance(
                             conn_result, Exception
                         ):  # pragma: no cover - Same context
-                            # CRITICAL FIX: Handle CancelledError as a temporary failure (not permanent)
+                            # BitTorrent: handle CancelledError as a temporary failure (not permanent)
                             # Cancelled connections should be retried in subsequent batches
                             if isinstance(conn_result, asyncio.CancelledError):
                                 # Cancelled connections are temporary - don't mark as permanent failure
@@ -3501,65 +3804,27 @@ class AsyncPeerConnectionManager:
                                     peer_info,
                                 )
                                 connection_stats["failed"] += 1
+                                connection_stats["cancelled"] += 1
                             else:
                                 connection_stats["failed"] += 1
 
-                            # CRITICAL FIX: Record failure with exponential backoff tracking
-                            error_str = str(conn_result)
-                            error_type = type(conn_result).__name__
-
-                            # Determine failure reason for better retry strategy
-                            # CRITICAL FIX: Categorize errors as temporary (should retry) vs permanent (should not retry)
-                            failure_reason = "unknown"
-                            is_temporary = (
-                                True  # Default to temporary - most errors are retryable
+                            # BitTorrent: record failure with exponential backoff tracking
+                            failure_reason, is_temporary = self._classify_connection_failure(
+                                conn_result
                             )
+                            error_str = str(conn_result)
 
-                            if (
-                                "WinError 121" in error_str
-                                or "semaphore timeout" in error_str.lower()
-                            ):
-                                failure_reason = "semaphore_timeout"
-                                connection_stats["winerror_121"] += 1
-                                is_temporary = True  # Semaphore timeout is temporary - retry after backoff
-                            elif (
-                                "connection refused" in error_str.lower()
-                                or "WinError 1225" in error_str
-                            ):
-                                failure_reason = "connection_refused"
-                                connection_stats["connection_refused"] += 1
-                                is_temporary = True  # Connection refused is temporary - peer may be busy
-                            elif "timeout" in error_str.lower() or isinstance(
-                                conn_result, asyncio.TimeoutError
-                            ):
-                                failure_reason = "timeout"
+                            if failure_reason == "timeout":
                                 connection_stats["timeout"] += 1
-                                is_temporary = (
-                                    True  # Timeouts are temporary - network may be slow
-                                )
-                            elif "connection reset" in error_str.lower():
-                                failure_reason = "connection_reset"
-                                connection_stats["other_errors"] += 1
-                                is_temporary = True  # Connection reset is temporary - peer may have closed connection
-                            elif (
-                                "info hash" in error_str.lower()
-                                or "mismatch" in error_str.lower()
-                            ):
-                                failure_reason = "info_hash_mismatch"
-                                is_temporary = False  # Info hash mismatch is permanent - peer has wrong torrent
-                            elif (
-                                "handshake" in error_str.lower()
-                                and "invalid" in error_str.lower()
-                            ):
-                                failure_reason = "invalid_handshake"
-                                is_temporary = False  # Invalid handshake is permanent - peer protocol incompatible
+                            elif failure_reason == "connection_refused":
+                                connection_stats["connection_refused"] += 1
+                            elif failure_reason == "semaphore_timeout":
+                                connection_stats["winerror_121"] += 1
                             else:
-                                failure_reason = error_type.lower()
-                                # Default to temporary for unknown errors - better to retry than give up
-                                is_temporary = True
+                                connection_stats["other_errors"] += 1
 
                             # Update failure tracking with exponential backoff
-                            # CRITICAL FIX: Only track temporary failures - permanent failures should not be retried
+                            # BitTorrent: only track temporary failures - permanent failures should not be retried
                             async with self._failed_peer_lock:
                                 if is_temporary:
                                     # Only track temporary failures for retry logic
@@ -3571,6 +3836,13 @@ class AsyncPeerConnectionManager:
                                         )
                                         fail_info["timestamp"] = time.time()
                                         fail_info["reason"] = failure_reason
+                                        fail_info["is_terminal"] = not is_temporary
+                                        fail_info["peer_source"] = getattr(
+                                            peer_info, "peer_source", "unknown"
+                                        )
+                                        fail_info["is_seeder"] = bool(
+                                            getattr(peer_info, "is_seeder", False)
+                                        )
                                         fail_count = fail_info["count"]
                                     else:
                                         # First failure
@@ -3578,6 +3850,13 @@ class AsyncPeerConnectionManager:
                                             "timestamp": time.time(),
                                             "count": 1,
                                             "reason": failure_reason,
+                                            "is_terminal": not is_temporary,
+                                            "peer_source": getattr(
+                                                peer_info, "peer_source", "unknown"
+                                            ),
+                                            "is_seeder": bool(
+                                                getattr(peer_info, "is_seeder", False)
+                                            ),
                                         }
                                         fail_count = 1
                                 else:
@@ -3591,15 +3870,16 @@ class AsyncPeerConnectionManager:
 
                             # Calculate backoff interval for logging (only for temporary failures)
                             if is_temporary and fail_count > 0:
-                                backoff_interval = min(
-                                    self._min_retry_interval
-                                    * (self._backoff_multiplier ** (fail_count - 1)),
-                                    self._max_retry_interval,
+                                backoff_interval = self._calculate_failure_backoff_interval(
+                                    fail_count=fail_count,
+                                    fail_reason=failure_reason,
+                                    is_terminal=not is_temporary,
+                                    active_peer_count=active_peer_count,
                                 )
                             else:
                                 backoff_interval = 0  # No retry for permanent failures
 
-                            # CRITICAL FIX: Handle WinError 121 (semaphore timeout) gracefully on Windows
+                            # Windows: handle WinError 121 (semaphore timeout) gracefully
                             # This is expected on Windows when many connections are attempted simultaneously
                             import sys
 
@@ -3673,7 +3953,7 @@ class AsyncPeerConnectionManager:
                                         failure_reason,
                                     )
                         else:
-                            # CRITICAL FIX: Check if connection actually completed handshake AND bitfield exchange
+                            # Connection batch: check if connection completed handshake and bitfield exchange
                             # _connect_to_peer() returns after handshake completes, so if no exception,
                             # the connection should be in self.connections
                             # However, we should only count it as successful if it has completed the full protocol
@@ -3682,7 +3962,7 @@ class AsyncPeerConnectionManager:
                             async with self.connection_lock:
                                 if peer_key in self.connections:
                                     conn = self.connections[peer_key]
-                                    # CRITICAL FIX: Only count connections as successful if they've completed
+                                    # Connection batch: only count connections as successful if they've completed
                                     # the full protocol handshake (handshake + bitfield exchange)
                                     # HANDSHAKE_SENT is too early - connection may not have received peer's handshake yet
                                     # We need at least HANDSHAKE_RECEIVED (handshake complete) or better yet,
@@ -3712,6 +3992,9 @@ class AsyncPeerConnectionManager:
                                         if conn.state != ConnectionState.DISCONNECTED:
                                             connection_stats["successful"] += 1
                                         else:
+                                            self._record_connection_stage(
+                                                "state_promotion_failed"
+                                            )
                                             connection_stats["failed"] += 1
                                 else:
                                     # No connection in dict - handshake must have failed
@@ -3732,15 +4015,21 @@ class AsyncPeerConnectionManager:
                                                     conn.state.value,
                                                 )
                                             else:
+                                                self._record_connection_stage(
+                                                    "state_promotion_failed"
+                                                )
                                                 connection_stats["failed"] += 1
                                         else:
+                                            self._record_connection_stage(
+                                                "state_promotion_failed"
+                                            )
                                             connection_stats["failed"] += 1
 
-                    # CRITICAL FIX: Track zero-success batches for fail-fast DHT trigger
+                    # Connection batch: track zero-success batches for fail-fast DHT trigger
                     if batch_successful == 0:
                         connection_stats["zero_success_batches"] += 1
 
-                    # CRITICAL FIX: Process batches as fast as possible - no delays when connection_delay is 0
+                    # Connection batch: process batches as fast as possible when connection_delay is 0
                     # Only delay if connection_delay > 0 and we have more batches to process
                     if (
                         batch_start + batch_size < len(all_peers_to_process)
@@ -3760,7 +4049,7 @@ class AsyncPeerConnectionManager:
                 # Log any errors in batch processing but don't stop the outer try/finally
                 self.logger.warning("Error during connection batch processing: %s", e)
         finally:
-            # CRITICAL FIX: Always clear flag when connection batches complete (or are interrupted)
+            # Connection batch: always clear flag when batches complete or are interrupted
             # This allows peer_count_low events to trigger DHT discovery
             # Also clear flag if batch processing took too long (timeout protection)
             batch_elapsed = time.time() - batch_start_time
@@ -3770,7 +4059,7 @@ class AsyncPeerConnectionManager:
                     batch_elapsed,
                 )
             self._connection_batches_in_progress = False
-            # CRITICAL FIX: Clear current batch tracking when batches complete
+            # Connection batch: clear current batch tracking when batches complete
             if hasattr(self, "_current_batch_peers"):
                 self._current_batch_peers.clear()
             self.logger.debug(
@@ -3778,9 +4067,9 @@ class AsyncPeerConnectionManager:
                 batch_elapsed,
             )
 
-        # CRITICAL FIX: Log connection summary after batch completes with detailed statistics
+        # Connection batch: log connection summary after batch completes with detailed statistics
         total_attempts = connection_stats["total_attempts"]
-        # CRITICAL FIX: Log batch statistics for diagnostics (BitTorrent spec compliant)
+        # BitTorrent: log batch statistics for diagnostics (spec compliant)
         successful = connection_stats["successful"]
         failed = connection_stats["failed"]
         total = connection_stats["total_attempts"]
@@ -3791,20 +4080,21 @@ class AsyncPeerConnectionManager:
             success_rate = (successful / total) * 100
             self.logger.info(
                 "📊 CONNECTION BATCH STATISTICS: %d batches processed, %d total attempts, %d successful (%.1f%%), "
-                "%d failed (%d timeouts, %d refused, %d WinError 121, %d other), %d zero-success batches",
+                "%d failed (%d timeouts, %d cancelled, %d refused, %d WinError 121, %d other), %d zero-success batches",
                 batches,
                 total,
                 successful,
                 success_rate,
                 failed,
                 connection_stats["timeout"],
+                connection_stats["cancelled"],
                 connection_stats["connection_refused"],
                 connection_stats["winerror_121"],
                 connection_stats["other_errors"],
                 zero_success_batches,
             )
 
-            # CRITICAL FIX: If we have zero successes after multiple batches, clear connection_batches_in_progress
+            # Connection batch: if zero successes after multiple batches, clear connection_batches_in_progress
             # This allows DHT to start even if peer count < 50 (fail-fast mode)
             if successful == 0 and batches >= 3:
                 self.logger.warning(
@@ -3861,7 +4151,7 @@ class AsyncPeerConnectionManager:
                 f" ({', '.join(failure_details)})" if failure_details else ""
             )
 
-            # CRITICAL FIX: Get current connection counts for logging
+            # Connection batch: get current connection counts for logging
             current_connections = len(self.connections)
             active_connections = len(
                 [c for c in self.connections.values() if c.is_active()]
@@ -3981,8 +4271,9 @@ class AsyncPeerConnectionManager:
 
         """
         peer_key = f"{peer_info.ip}:{peer_info.port}"
+        self._record_connection_stage("connect_attempts")
 
-        # CRITICAL FIX: Check if peer is in backoff period (BitTorrent spec compliant)
+        # BitTorrent: check if peer is in backoff period (spec compliant)
         current_time = time.time()
         if peer_key in self._connection_backoff_until:
             backoff_until = self._connection_backoff_until[peer_key]
@@ -3998,7 +4289,7 @@ class AsyncPeerConnectionManager:
             # Backoff period expired, remove from backoff dict
             del self._connection_backoff_until[peer_key]
 
-        # CRITICAL FIX: Check if manager is shutting down before attempting connection
+        # Shutdown: check if manager is shutting down before attempting connection
         # This prevents connection attempts after shutdown starts
         if not self._running:
             self.logger.debug(
@@ -4008,7 +4299,7 @@ class AsyncPeerConnectionManager:
             )
             return
 
-        # CRITICAL FIX: Add logging for connection attempts
+        # Connection batch: add logging for connection attempts
         self.logger.debug(
             "Attempting connection to peer %s:%d (source: %s)",
             peer_info.ip,
@@ -4028,7 +4319,7 @@ class AsyncPeerConnectionManager:
         except Exception as e:
             self.logger.debug("Failed to record connection attempt: %s", e)
 
-        # CRITICAL FIX: Check connection limits before attempting connection
+        # Connection batch: check connection limits before attempting connection
         # This prevents wasting resources on unnecessary connection attempts
         # IMPORTANT: Only count active connections, not failed/inactive ones
         # This allows replacing failed connections with new ones
@@ -4040,7 +4331,7 @@ class AsyncPeerConnectionManager:
             total_connections = len(self.connections)
             max_per_torrent = self.max_peers_per_torrent
 
-            # CRITICAL FIX: When active peer count is very low (< 5), allow more connections
+            # Connection batch: when active peer count is very low (< 5), allow more connections
             # This prevents downloads from stalling when single peer stops
             # Use a higher effective limit to allow aggressive seeder hunting
             effective_limit = max_per_torrent
@@ -4076,7 +4367,7 @@ class AsyncPeerConnectionManager:
                     )
                     return
 
-        # CRITICAL FIX: Acquire semaphore to limit concurrent connection attempts (BitTorrent spec compliant)
+        # BitTorrent: acquire semaphore to limit concurrent connection attempts (spec compliant)
         # This prevents OS socket exhaustion on Windows and other platforms
         async with self._global_connection_semaphore:
             connection: Optional[AsyncPeerConnection] = None
@@ -4134,7 +4425,7 @@ class AsyncPeerConnectionManager:
                             and hasattr(conn_obj, "reader")
                             and hasattr(conn_obj, "writer")
                         ):
-                            # CRITICAL FIX: PooledConnection is not an AsyncPeerConnection
+                            # Validation: PooledConnection is not an AsyncPeerConnection
                             # We need to create an AsyncPeerConnection from the pooled connection
                             # Extract reader/writer from PooledConnection and create proper AsyncPeerConnection
                             from ccbt.peer.connection_pool import (
@@ -4142,7 +4433,7 @@ class AsyncPeerConnectionManager:
                             )
 
                             if isinstance(conn_obj, PooledConnectionType):
-                                # CRITICAL FIX: Validate pooled connection has valid reader/writer
+                                # Validation: pooled connection must have valid reader/writer
                                 if conn_obj.reader is None or conn_obj.writer is None:
                                     self.logger.warning(
                                         "Pooled connection for %s has None reader/writer, creating new connection",
@@ -4156,7 +4447,7 @@ class AsyncPeerConnectionManager:
                                         None  # Will create new connection below
                                     )
                                 else:
-                                    # CRITICAL FIX: Check that pooled reader/writer are not closed
+                                    # Validation: check that pooled reader/writer are not closed
                                     writer_closing = (
                                         hasattr(conn_obj.writer, "is_closing")
                                         and conn_obj.writer.is_closing()
@@ -4173,7 +4464,7 @@ class AsyncPeerConnectionManager:
                                         connection = (
                                             None  # Will create new connection below
                                         )
-                                    # CRITICAL FIX: Validate reader/writer have required methods
+                                    # Validation: reader/writer must have required methods
                                     elif not hasattr(
                                         conn_obj.reader, "read"
                                     ) or not hasattr(conn_obj.writer, "write"):
@@ -4193,7 +4484,7 @@ class AsyncPeerConnectionManager:
                                         connection = AsyncPeerConnection(
                                             peer_info, self.torrent_data
                                         )
-                                        # CRITICAL FIX: Set reader/writer BEFORE releasing pool connection
+                                        # Init: set reader/writer before releasing pool connection
                                         # This ensures reader/writer are available when we need them
                                         connection.reader = conn_obj.reader
                                         connection.writer = conn_obj.writer
@@ -4202,7 +4493,7 @@ class AsyncPeerConnectionManager:
                                         connection.per_peer_upload_limit_kib = (
                                             self.per_peer_upload_limit_kib
                                         )
-                                        # CRITICAL FIX: Set callbacks on pooled connection
+                                        # Connection batch: set callbacks on pooled connection
                                         if self._on_peer_connected:
                                             connection.on_peer_connected = (
                                                 self._on_peer_connected
@@ -4223,7 +4514,7 @@ class AsyncPeerConnectionManager:
                                                 "Set on_piece_received callback on pooled connection to %s",
                                                 peer_info,
                                             )
-                                        # CRITICAL FIX: Set local reader/writer variables from connection object
+                                        # Init: set local reader/writer variables from connection object
                                         # This ensures the later checks for reader/writer work correctly
                                         reader = connection.reader
                                         writer = connection.writer
@@ -4233,7 +4524,7 @@ class AsyncPeerConnectionManager:
                                             type(conn_obj.reader).__name__,
                                             type(conn_obj.writer).__name__,
                                         )
-                                        # CRITICAL FIX: DO NOT release pooled connection yet
+                                        # Connection batch: do not release pooled connection yet
                                         # We need to keep it until handshake completes
                                         # The connection pool will be released when the connection is closed
                                         # Store reference to pooled connection for later cleanup
@@ -4248,7 +4539,7 @@ class AsyncPeerConnectionManager:
                             elif isinstance(conn_obj, AsyncPeerConnection):
                                 # Already an AsyncPeerConnection, use it directly
                                 connection = conn_obj
-                                # CRITICAL FIX: Ensure callbacks are set on reused connection
+                                # Connection batch: ensure callbacks are set on reused connection
                                 if self._on_peer_connected:
                                     connection.on_peer_connected = (
                                         self._on_peer_connected
@@ -4299,7 +4590,7 @@ class AsyncPeerConnectionManager:
                     connection.per_peer_upload_limit_kib = (
                         self.per_peer_upload_limit_kib
                     )
-                    # CRITICAL FIX: Set callbacks on newly created connection
+                    # Connection batch: set callbacks on newly created connection
                     if self._on_peer_connected:
                         connection.on_peer_connected = self._on_peer_connected
                     if self._on_peer_disconnected:
@@ -4326,7 +4617,7 @@ class AsyncPeerConnectionManager:
                         connection
                     )
 
-                    # CRITICAL FIX: Set callbacks early to ensure they're available when messages arrive
+                    # Connection batch: set callbacks early so they're available when messages arrive
                     # This prevents "No callback registered" warnings
                     if self._on_peer_connected:
                         connection.on_peer_connected = self._on_peer_connected
@@ -4460,7 +4751,7 @@ class AsyncPeerConnectionManager:
                     reader = connection.reader
                     writer = connection.writer
 
-                # CRITICAL FIX: Skip TCP connection setup if we already have a connection from pool
+                # Connection batch: skip TCP connection setup if we already have a connection from pool
                 # Pooled connections already have reader/writer set, so we can skip TCP setup
                 # BUT: Only skip if reader/writer are actually set (not None)
                 # If we got a pooled connection but reader/writer are None, create new connection
@@ -4485,7 +4776,7 @@ class AsyncPeerConnectionManager:
                         connection.per_peer_upload_limit_kib = (
                             self.per_peer_upload_limit_kib
                         )
-                        # CRITICAL FIX: Set callbacks on newly created TCP connection
+                        # Connection batch: set callbacks on newly created TCP connection
                         if self._on_peer_connected:
                             connection.on_peer_connected = self._on_peer_connected
                         if self._on_peer_disconnected:
@@ -4497,7 +4788,7 @@ class AsyncPeerConnectionManager:
 
                     # Establish TCP connection with adaptive timeout
                     timeout = self._calculate_timeout(connection)
-                    # CRITICAL FIX: On Windows, use longer timeout to account for semaphore delays and NAT traversal
+                    # Windows: use longer timeout for semaphore delays and NAT traversal
                     # Many peers are behind NAT/firewalls and need more time to establish connections
                     import sys
 
@@ -4505,7 +4796,7 @@ class AsyncPeerConnectionManager:
                     active_peer_count = len(self.get_active_peers())
 
                     if sys.platform == "win32":
-                        # CRITICAL FIX: Reduced timeouts - 35-30s was too long and causing batch processing to stall
+                        # Connection batch: reduced timeouts to avoid batch processing stall
                         # 20s is sufficient for TCP connect on Windows with NAT/firewall delays
                         # When we have < 3 peers, use slightly longer timeout but still reasonable
                         if active_peer_count < 3:
@@ -4519,7 +4810,7 @@ class AsyncPeerConnectionManager:
                         else:
                             timeout = 15.0  # Reduced from 30s to 15s for Windows (handles NAT/firewall delays without blocking)
 
-                    # CRITICAL FIX: Detect NAT presence and increase timeout for NAT environments
+                    # Connection batch: detect NAT presence and increase timeout for NAT environments
                     # NAT traversal adds significant latency, especially on Windows
                     # Increase timeout by 15% for NAT environments (minimum 20s, max 40s on Windows)
                     if self.config.nat.auto_map_ports:
@@ -4540,7 +4831,7 @@ class AsyncPeerConnectionManager:
                             )
                             timeout = nat_timeout
 
-                    # CRITICAL FIX: Log TCP connection attempt with more detail
+                    # Connection batch: log TCP connection attempt with more detail
                     self.logger.info(
                         "Attempting TCP connection to %s:%s (timeout=%.1fs, platform=%s)",
                         peer_info.ip,
@@ -4549,7 +4840,7 @@ class AsyncPeerConnectionManager:
                         sys.platform,
                     )
 
-                    # CRITICAL FIX: Improved retry logic with exponential backoff
+                    # BitTorrent: improved retry logic with exponential backoff
                     # For very low peer counts, use retries with exponential backoff to find reachable peers
                     # This helps when most discovered peers are unreachable or behind NAT
                     import random
@@ -4626,6 +4917,7 @@ class AsyncPeerConnectionManager:
                                 if retry_attempt > 0
                                 else "",
                             )
+                            self._record_connection_stage("tcp_connected")
                             # Connection successful, break out of retry loop
                             break
                         except (
@@ -4634,7 +4926,7 @@ class AsyncPeerConnectionManager:
                             ConnectionError,
                             asyncio.CancelledError,
                         ) as e:
-                            # CRITICAL FIX: Handle CancelledError during shutdown gracefully
+                            # Shutdown: handle CancelledError during shutdown gracefully
                             if isinstance(e, asyncio.CancelledError):
                                 from ccbt.utils.shutdown import is_shutting_down
 
@@ -4648,16 +4940,18 @@ class AsyncPeerConnectionManager:
                                     # Re-raise CancelledError to allow proper cleanup
                                     raise
                                 # If not during shutdown, treat as timeout
+                                self._record_connection_stage("tcp_open_cancelled")
                                 last_error = asyncio.TimeoutError(
                                     "Connection cancelled"
                                 )
                             else:
                                 last_error = e
 
-                            # CRITICAL FIX: Log timeout failures with peer IP:port and timeout value
+                            # Connection batch: log timeout failures with peer IP:port and timeout value
                             if isinstance(e, asyncio.TimeoutError) or isinstance(
                                 last_error, asyncio.TimeoutError
                             ):
+                                self._record_connection_stage("tcp_open_timeout")
                                 from ccbt.utils.shutdown import is_shutting_down
 
                                 if not is_shutting_down():
@@ -4678,7 +4972,7 @@ class AsyncPeerConnectionManager:
                                     )
 
                             # Connection failed - check if we should retry
-                            # CRITICAL FIX: Handle WinError 121 (semaphore timeout) gracefully on Windows
+                            # Windows: handle WinError 121 (semaphore timeout) gracefully
                             error_code = (
                                 getattr(e, "winerror", None)
                                 if hasattr(e, "winerror")
@@ -4718,7 +5012,7 @@ class AsyncPeerConnectionManager:
 
                             # Retry if this is a retryable error and we haven't exhausted retries
                             if is_retryable and retry_attempt < max_retries:
-                                # CRITICAL FIX: Exponential backoff with jitter to prevent thundering herd
+                                # BitTorrent: exponential backoff with jitter to prevent thundering herd
                                 # Formula: base_delay * (2^retry_attempt) + random_jitter
                                 # Jitter is 0-20% of the delay to spread out retries
                                 exponential_delay = base_retry_delay * (
@@ -4741,7 +5035,7 @@ class AsyncPeerConnectionManager:
                             if connection:
                                 connection.state = ConnectionState.DISCONNECTED
 
-                            # CRITICAL FIX: Track connection failures for adaptive backoff (BitTorrent spec compliant)
+                            # BitTorrent: track connection failures for adaptive backoff (spec compliant)
                             peer_key = f"{peer_info.ip}:{peer_info.port}"
                             current_time = time.time()
 
@@ -4786,7 +5080,7 @@ class AsyncPeerConnectionManager:
                                     backoff_delay,
                                 )
 
-                            # CRITICAL FIX: Enhanced error message with retry information
+                            # Connection batch: enhanced error message with retry information
                             self.logger.warning(
                                 "Failed to connect to peer %s:%d after %d attempts: %s",
                                 peer_info.ip,
@@ -4794,11 +5088,12 @@ class AsyncPeerConnectionManager:
                                 max_retries + 1,
                                 last_error,
                             )
+                            self._record_connection_stage("tcp_open_failed")
                             # Re-raise as PeerConnectionError for consistent error handling
                             error_msg = f"Failed to establish TCP connection to {peer_info.ip}:{peer_info.port} after {retry_attempt + 1} attempt(s): {last_error}"
                             raise PeerConnectionError(error_msg) from last_error
 
-                    # CRITICAL FIX: Validate reader/writer are set after TCP connection
+                    # Validation: reader/writer must be set after TCP connection
                     if reader is None or writer is None:
                         error_msg = (
                             f"TCP connection established but reader/writer are None for {peer_info} "
@@ -4807,7 +5102,7 @@ class AsyncPeerConnectionManager:
                         self.logger.error(error_msg)
                         raise RuntimeError(error_msg)
 
-                    # CRITICAL FIX: Validate TCP connection is fully established before proceeding
+                    # Validation: TCP connection must be fully established before proceeding
                     # Check that writer is not closing and reader is ready
                     if hasattr(writer, "is_closing") and writer.is_closing():
                         error_msg = f"Writer is closing immediately after TCP connection to {peer_info}"
@@ -4822,7 +5117,7 @@ class AsyncPeerConnectionManager:
                         # Small delay to allow connection to fully establish
                         await asyncio.sleep(0.01)
 
-                    # CRITICAL FIX: Store original reader/writer before encryption attempt
+                    # Init: store original reader/writer before encryption attempt
                     # This ensures we can fall back to plain connection if encryption fails
                     original_reader = reader
                     original_writer = writer
@@ -4861,7 +5156,7 @@ class AsyncPeerConnectionManager:
                                 encrypted_writer = EncryptedStreamWriter(
                                     writer, result.cipher
                                 )
-                                # CRITICAL FIX: Validate encrypted reader/writer are not None
+                                # Validation: encrypted reader/writer must not be None
                                 if encrypted_reader is None or encrypted_writer is None:
                                     self.logger.error(
                                         "Encryption handshake succeeded but encrypted reader/writer are None for %s",
@@ -4906,7 +5201,7 @@ class AsyncPeerConnectionManager:
                                     "falling back to plain connection with %s",
                                     peer_info,
                                 )
-                                # CRITICAL FIX: Ensure reader/writer are restored to original values
+                                # Init: ensure reader/writer are restored to original values
                                 reader = original_reader
                                 writer = original_writer
                         except Exception as e:  # pragma: no cover - Encryption handshake exception, tested via success path
@@ -4921,11 +5216,11 @@ class AsyncPeerConnectionManager:
                                 "falling back to plain: %s",
                                 e,
                             )
-                            # CRITICAL FIX: Restore original reader/writer on exception
+                            # Init: restore original reader/writer on exception
                             reader = original_reader
                             writer = original_writer
 
-                    # CRITICAL FIX: Final validation after encryption attempt
+                    # Validation: final validation after encryption attempt
                     if reader is None or writer is None:
                         error_msg = (
                             f"Reader/writer became None after encryption handshake for {peer_info} "
@@ -4935,10 +5230,10 @@ class AsyncPeerConnectionManager:
                         raise RuntimeError(error_msg)
 
                     # Set reader/writer (already set for uTP/WebRTC/pooled, set here for TCP)
-                    # CRITICAL FIX: Only set reader/writer if they were actually initialized
+                    # Init: only set reader/writer if they were actually initialized
                     # For uTP/WebRTC/pooled, reader/writer are already set on the connection object
                     # For TCP, we need to set them from the local variables
-                    # CRITICAL FIX: Log current state before setting reader/writer
+                    # Init: log current state before setting reader/writer
                     self.logger.debug(
                         "Setting reader/writer: use_utp=%s, use_webrtc=%s, connection.reader=%s, connection.writer=%s, local reader=%s, local writer=%s",
                         use_utp,
@@ -4966,7 +5261,7 @@ class AsyncPeerConnectionManager:
                         and connection.writer is not None
                     ):
                         # Connection already has reader/writer (from pool or already set)
-                        # CRITICAL FIX: Validate pooled reader/writer are not closed before using them
+                        # Validation: pooled reader/writer must not be closed before use
                         if (
                             hasattr(connection.writer, "is_closing")
                             and connection.writer.is_closing()
@@ -4976,7 +5271,7 @@ class AsyncPeerConnectionManager:
                                 peer_info,
                             )
                             # Writer is closing, need to create new connection
-                            # CRITICAL FIX: Release the invalid pooled connection first
+                            # Connection batch: release the invalid pooled connection first
                             await self.connection_pool.release(
                                 f"{peer_info.ip}:{peer_info.port}", pool_connection
                             )
@@ -5004,16 +5299,16 @@ class AsyncPeerConnectionManager:
                             pool_connection = None
                             # Fall through to TCP connection setup
                         else:
-                            # CRITICAL FIX: Still need to set local variables for use in handshake
+                            # Init: set local variables for use in handshake
                             reader = connection.reader
                             writer = connection.writer
-                            # CRITICAL FIX: Validate reader/writer are actually usable
+                            # Validation: reader/writer must be actually usable
                             if reader is None or writer is None:
                                 self.logger.error(
                                     "Connection has reader/writer attributes but they are None for %s",
                                     peer_info,
                                 )
-                                # CRITICAL FIX: Release invalid pooled connection and create new one
+                                # Connection batch: release invalid pooled connection and create new one
                                 if pool_connection:
                                     await self.connection_pool.release(
                                         f"{peer_info.ip}:{peer_info.port}",
@@ -5052,7 +5347,7 @@ class AsyncPeerConnectionManager:
                                 )
                 elif connection:
                     # TCP connection - set reader/writer from local variables
-                    # CRITICAL FIX: Ensure reader/writer are set before assigning to connection
+                    # Init: ensure reader/writer are set before assigning to connection
                     if reader is None or writer is None:
                         # Reader/writer not initialized - this should not happen in normal flow
                         # but can occur if an exception happened during connection setup
@@ -5064,7 +5359,7 @@ class AsyncPeerConnectionManager:
                         )
                         error_msg = f"Reader or writer not initialized for TCP connection to {peer_info}"
                         raise RuntimeError(error_msg)
-                    # CRITICAL FIX: Set connection reader/writer and verify they're set
+                    # Init: set connection reader/writer and verify they're set
                     connection.reader = reader  # type: ignore[assignment] # pragma: no cover - Same context
                     connection.writer = writer  # type: ignore[assignment] # pragma: no cover - Same context
                     # Verify they were set correctly
@@ -5082,7 +5377,7 @@ class AsyncPeerConnectionManager:
                         peer_info,
                     )
 
-                    # CRITICAL FIX: Call on_peer_connected callback immediately after connection is established
+                    # Connection batch: call on_peer_connected callback immediately after connection is established
                     # This ensures the callback is called even if handshake operations fail
                     if self._on_peer_connected:
                         try:
@@ -5107,14 +5402,14 @@ class AsyncPeerConnectionManager:
                             )
 
                 # Perform BitTorrent handshake (all transport types need this)
-                # CRITICAL FIX: Ensure connection is not None before proceeding
+                # Validation: ensure connection is not None before proceeding
                 if connection is None:
                     error_msg = (
                         f"Connection is None for {peer_info} - this should not happen"
                     )
                     raise RuntimeError(error_msg)
 
-                # CRITICAL FIX: Ensure reader/writer are available and not None
+                # Note: Ensure reader/writer are available and not None
                 # First check connection object, then local variables
                 if connection.reader is None:
                     # Try to use local reader if available
@@ -5144,7 +5439,7 @@ class AsyncPeerConnectionManager:
                 reader = connection.reader
                 writer = connection.writer
 
-                # CRITICAL FIX: Double-check writer is not None and is writable before using it
+                # Note: Double-check writer is not None and is writable before using it
                 if writer is None:
                     error_msg = (
                         f"Writer became None after assignment for {peer_info}. "
@@ -5161,7 +5456,7 @@ class AsyncPeerConnectionManager:
                     self.logger.error(error_msg)
                     raise RuntimeError(error_msg)
 
-                # CRITICAL FIX: Check that writer is not closed and has write method
+                # Note: Check that writer is not closed and has write method
                 if hasattr(writer, "is_closing") and writer.is_closing():
                     error_msg = (
                         f"Writer is closing for {peer_info} - cannot send handshake"
@@ -5174,7 +5469,7 @@ class AsyncPeerConnectionManager:
                     self.logger.error(error_msg)
                     raise RuntimeError(error_msg)
 
-                # CRITICAL FIX: Log that we have valid reader/writer before handshake
+                # Note: Log that we have valid reader/writer before handshake
                 self.logger.debug(
                     "Reader and writer validated for %s (reader type=%s, writer type=%s, is_closing=%s)",
                     peer_info,
@@ -5187,6 +5482,7 @@ class AsyncPeerConnectionManager:
                 connection.state = (
                     ConnectionState.HANDSHAKE_SENT
                 )  # pragma: no cover - Same context
+                self._record_connection_stage("handshake_sent")
 
                 # Send BitTorrent handshake (now possibly through encrypted stream or uTP)
                 # Create handshake with optional Ed25519 signature
@@ -5216,7 +5512,7 @@ class AsyncPeerConnectionManager:
                 # Configure reserved bytes based on configuration
                 handshake.configure_from_config(self.config)
 
-                # CRITICAL FIX: Log handshake reserved bits for debugging and compliance verification
+                # BitTorrent: log handshake reserved bits for debugging and compliance verification
                 reserved_bits_info = []
                 if handshake.supports_extension_protocol():
                     reserved_bits_info.append("Extension Protocol (BEP 10)")
@@ -5236,7 +5532,7 @@ class AsyncPeerConnectionManager:
 
                 handshake_data = handshake.encode()
 
-                # CRITICAL FIX: Final comprehensive check before writing
+                # Note: Final comprehensive check before writing
                 # Re-assign from connection to ensure we have the latest value
                 writer = connection.writer
                 if writer is None:
@@ -5247,7 +5543,7 @@ class AsyncPeerConnectionManager:
                     self.logger.error(error_msg)
                     raise RuntimeError(error_msg)
 
-                # CRITICAL FIX: Check writer is not closed
+                # Note: Check writer is not closed
                 if hasattr(writer, "is_closing") and writer.is_closing():
                     error_msg = (
                         f"Writer is closing before handshake write for {peer_info}"
@@ -5255,7 +5551,7 @@ class AsyncPeerConnectionManager:
                     self.logger.error(error_msg)
                     raise RuntimeError(error_msg)
 
-                # CRITICAL FIX: Verify writer has write method
+                # Note: Verify writer has write method
                 if not hasattr(writer, "write") or not callable(
                     getattr(writer, "write", None)
                 ):
@@ -5263,7 +5559,7 @@ class AsyncPeerConnectionManager:
                     self.logger.error(error_msg)
                     raise RuntimeError(error_msg)
 
-                # CRITICAL FIX: Add logging and timeout for handshake
+                # Note: Add logging and timeout for handshake
                 self.logger.info(
                     "Sending handshake to %s (writer type=%s, handshake size=%d bytes, is_closing=%s)",
                     peer_info,
@@ -5272,7 +5568,7 @@ class AsyncPeerConnectionManager:
                     writer.is_closing() if hasattr(writer, "is_closing") else "N/A",
                 )
                 try:
-                    # CRITICAL FIX: StreamWriter.write() is synchronous and returns None
+                    # Note: StreamWriter.write() is synchronous and returns None
                     # Do NOT await it - just call it and then await drain()
                     writer.write(handshake_data)  # Synchronous write, returns None
                     await writer.drain()  # Wait for data to be sent
@@ -5297,9 +5593,9 @@ class AsyncPeerConnectionManager:
                     self.logger.error(error_msg)
                     raise RuntimeError(error_msg)
 
-                # CRITICAL FIX: Read handshake with support for v1 (68 bytes), v2 (80 bytes), and hybrid (100 bytes)
+                # Note: Read handshake with support for v1 (68 bytes), v2 (80 bytes), and hybrid (100 bytes)
                 # First read the minimum v1 handshake size to detect protocol version
-                # CRITICAL FIX: Increase timeout to 10s for better reliability on slower networks (Phase 5)
+                # Note: Increase timeout to 10s for better reliability on slower networks (Phase 5)
 
                 # Validate connection state before reading handshake
                 if (
@@ -5343,7 +5639,7 @@ class AsyncPeerConnectionManager:
 
                     # Check if this is a v2 or hybrid handshake by examining reserved bytes
                     # Bit 0 of first reserved byte indicates v2 support
-                    # CRITICAL FIX: Validate peer_handshake_data is bytes before using len()
+                    # Note: Validate peer_handshake_data is bytes before using len()
                     if not isinstance(peer_handshake_data, bytes):
                         error_msg = (
                             f"peer_handshake_data is not bytes (type: {type(peer_handshake_data).__name__}) "
@@ -5391,13 +5687,14 @@ class AsyncPeerConnectionManager:
                 except asyncio.TimeoutError:
                     # Calculate timeout for error message
                     handshake_timeout = self._calculate_adaptive_handshake_timeout()
+                    self._record_connection_stage("handshake_timeout")
                     error_msg = f"Handshake timeout from {peer_info} (no response after {handshake_timeout:.1f}s)"
                     self.logger.warning(
                         "Handshake timeout: %s - peer may be unresponsive or connection was closed. "
                         "This is normal for peers that don't respond quickly or have network latency.",
                         error_msg,
                     )
-                    # CRITICAL FIX: Close connection before raising error
+                    # Note: Close connection before raising error
                     if writer is not None:
                         try:
                             writer.close()
@@ -5410,7 +5707,7 @@ class AsyncPeerConnectionManager:
                     ConnectionResetError,
                     OSError,
                 ) as e:
-                    # CRITICAL FIX: Improve error categorization and logging
+                    # Note: Improve error categorization and logging
                     # Handle Windows-specific connection reset errors gracefully
                     import sys
 
@@ -5461,7 +5758,7 @@ class AsyncPeerConnectionManager:
                         peer_info, "handshake_failure", error_type
                     )
 
-                    # CRITICAL FIX: Close connection before raising error
+                    # Note: Close connection before raising error
                     if writer is not None:
                         try:
                             writer.close()
@@ -5476,7 +5773,7 @@ class AsyncPeerConnectionManager:
                         error_msg,
                         type(e).__name__,
                     )
-                    # CRITICAL FIX: Close connection before raising error
+                    # Note: Close connection before raising error
                     if writer is not None:
                         try:
                             writer.close()
@@ -5484,7 +5781,7 @@ class AsyncPeerConnectionManager:
                         except Exception:
                             pass
                     raise PeerConnectionError(error_msg) from e
-                # CRITICAL FIX: Add error handling for handshake decode
+                # Note: Add error handling for handshake decode
                 # Handle v1, v2, and hybrid handshakes
                 try:
                     # Try v1 handshake first (68 bytes)
@@ -5551,9 +5848,13 @@ class AsyncPeerConnectionManager:
                 )  # pragma: no cover - Same context
                 # Store reserved bytes for extension support detection
                 connection.reserved_bytes = peer_handshake.reserved_bytes
+                connection.supports_extension_protocol = (
+                    peer_handshake.supports_extension_protocol()
+                )
                 connection.state = (
                     ConnectionState.HANDSHAKE_RECEIVED
                 )  # pragma: no cover - Same context
+                self._record_connection_stage("handshake_received")
 
                 # Validate handshake
                 if (
@@ -5566,7 +5867,7 @@ class AsyncPeerConnectionManager:
                         f"(peer may be serving a different torrent)"
                     )
                     self.logger.warning(error_msg)
-                    # CRITICAL FIX: Close connection before raising error
+                    # Note: Close connection before raising error
                     if writer is not None:
                         try:
                             writer.close()
@@ -5577,7 +5878,7 @@ class AsyncPeerConnectionManager:
                         info_hash, peer_handshake.info_hash
                     )  # pragma: no cover - Same context
 
-                # CRITICAL FIX: Send our bitfield and unchoke after receiving peer's handshake
+                # Note: Send our bitfield and unchoke after receiving peer's handshake
                 # Protocol order: handshake exchange -> our bitfield -> our unchoke -> wait for peer's bitfield -> send interested
                 # We send interested in the bitfield handler after receiving peer's bitfield to ensure proper message ordering
                 self.logger.info(
@@ -5607,7 +5908,7 @@ class AsyncPeerConnectionManager:
                     self.logger.warning(error_msg)
                     raise PeerConnectionError(error_msg) from e
 
-                # CRITICAL FIX: Send INTERESTED immediately after handshake completes
+                # Note: Send INTERESTED immediately after handshake completes
                 # Many peers wait for INTERESTED before sending bitfield or unchoking us
                 # Sending INTERESTED immediately encourages peers to proceed with the protocol
                 # This is protocol-compliant - INTERESTED can be sent at any time after handshake
@@ -5636,6 +5937,26 @@ class AsyncPeerConnectionManager:
                     connection.writer is not None,
                 )
 
+                if self._metadata_is_incomplete():
+                    if self._connection_supports_extensions(connection):
+                        self.logger.info(
+                            "MAGNET_EXTENSION_BOOTSTRAP: Peer %s advertised BEP 10 support during base handshake; sending our extension handshake proactively.",
+                            peer_info,
+                        )
+                        self._record_connection_stage("handshake_extension_supported")
+                        await self._send_our_extension_handshake(connection)
+                        if connection.peer_extension_handshake_received_at <= 0.0:
+                            self.logger.info(
+                                "MAGNET_EXTENSION_BOOTSTRAP: Waiting for peer extension handshake from %s before ut_metadata requests can start.",
+                                peer_info,
+                            )
+                    else:
+                        self.logger.info(
+                            "MAGNET_EXTENSION_UNAVAILABLE: Peer %s completed the base handshake without BEP 10 support; magnet metadata cannot be fetched from this peer.",
+                            peer_info,
+                        )
+                        self._record_connection_stage("handshake_no_extension_support")
+
                 # Attempt SSL negotiation after handshake if extension protocol is supported
                 # This happens after bitfield/unchoke but before starting message handling
                 try:
@@ -5654,7 +5975,7 @@ class AsyncPeerConnectionManager:
                 # Start message handling
                 self.logger.debug("Starting message handling loop for %s", peer_info)
 
-                # CRITICAL FIX: Send INTERESTED after delay if peer hasn't sent bitfield
+                # Note: Send INTERESTED after delay if peer hasn't sent bitfield
                 # Per BEP 3, leechers with no pieces don't send bitfields - they send HAVE messages
                 # Sending INTERESTED encourages them to send HAVE messages or bitfield
                 async def send_interested_if_no_bitfield():
@@ -5695,7 +6016,7 @@ class AsyncPeerConnectionManager:
                 # Add timeout task using public API
                 connection.add_timeout_task(delayed_interested_task)
 
-                # CRITICAL FIX: Start bitfield timeout monitor (BitTorrent protocol compliance)
+                # Note: Start bitfield timeout monitor (BitTorrent protocol compliance)
                 # According to BitTorrent spec, bitfield is OPTIONAL if peer has no pieces
                 # However, most peers send bitfield immediately after handshake
                 # We allow HAVE messages as an alternative to bitfield (protocol-compliant)
@@ -5763,6 +6084,7 @@ class AsyncPeerConnectionManager:
                             messages_received,
                             elapsed_time,
                         )
+                        self._record_connection_stage("bitfield_wait_timeout")
                         # Disconnect peer
                         connection.state = ConnectionState.ERROR
                         await self._disconnect_peer(connection)
@@ -5800,7 +6122,7 @@ class AsyncPeerConnectionManager:
                 # Store task reference to prevent garbage collection
                 connection.add_timeout_task(timeout_task)
 
-                # CRITICAL FIX: Set callbacks BEFORE adding to connections dict
+                # Note: Set callbacks BEFORE adding to connections dict
                 # This ensures callbacks are available when messages arrive
                 # Use the private attributes to avoid triggering property setters
                 if self._on_peer_connected:
@@ -5822,7 +6144,7 @@ class AsyncPeerConnectionManager:
                         peer_info,
                     )
 
-                # CRITICAL FIX: Add connection to dict BEFORE creating task to ensure it's tracked
+                # Note: Add connection to dict BEFORE creating task to ensure it's tracked
                 # even if exceptions occur in task creation. This prevents race conditions where
                 # the message loop starts before the connection is in the dict.
                 peer_key = str(peer_info)
@@ -5832,7 +6154,7 @@ class AsyncPeerConnectionManager:
                     )
                 self._record_probation_peer(peer_key, connection)
 
-                # CRITICAL FIX: Create connection task AFTER adding to dict to ensure thread safety
+                # Note: Create connection task AFTER adding to dict to ensure thread safety
                 # Verify we're in the correct event loop context before creating task
                 try:
                     loop = asyncio.get_running_loop()
@@ -5857,7 +6179,7 @@ class AsyncPeerConnectionManager:
                     msg = f"No running event loop for connection task creation: {e}"
                     raise RuntimeError(msg) from e
 
-                    # CRITICAL FIX: Log successful connection at INFO level
+                    # Note: Log successful connection at INFO level
                     self.logger.info(
                         "Connection to %s:%d succeeded (source: %s, state=%s, total connections: %d)",
                         peer_info.ip,
@@ -5886,7 +6208,7 @@ class AsyncPeerConnectionManager:
                 except Exception as e:
                     self.logger.debug("Failed to record connection success: %s", e)
 
-                # CRITICAL FIX: Start unchoke timeout detection task
+                # Note: Start unchoke timeout detection task
                 # Monitor if peer sends UNCHOKE within reasonable time (30 seconds)
                 connection_start_time = time.time()
                 # Store connection start time on connection for grace period checks
@@ -5897,14 +6219,14 @@ class AsyncPeerConnectionManager:
                 _ = task  # Store reference to avoid unused variable warning
 
                 # Notify callback (wrapped in try/except to prevent exceptions from removing connection)
-                # CRITICAL FIX: Call both manager callback and connection callback for compatibility
+                # Note: Call both manager callback and connection callback for compatibility
                 if self._on_peer_connected:  # pragma: no cover - Same context
                     try:
                         self._on_peer_connected(
                             connection
                         )  # pragma: no cover - Same context
                     except Exception as e:
-                        # CRITICAL FIX: Log callback error but don't remove connection
+                        # Note: Log callback error but don't remove connection
                         self.logger.warning(
                             "Error in on_peer_connected callback for %s: %s (connection will remain)",
                             peer_info,
@@ -5913,7 +6235,7 @@ class AsyncPeerConnectionManager:
                         )
                         # Don't re-raise - connection is still valid even if callback fails
 
-                # CRITICAL FIX: Also call connection's on_peer_connected callback if set
+                # Note: Also call connection's on_peer_connected callback if set
                 # This ensures compatibility with code that sets callbacks directly on connections
                 if connection.on_peer_connected:
                     try:
@@ -5932,10 +6254,10 @@ class AsyncPeerConnectionManager:
                     connection.state.value,
                 )  # pragma: no cover - Same context
 
-                # CRITICAL FIX: Send INTERESTED proactively when peer becomes active
+                # Note: Send INTERESTED proactively when peer becomes active
                 # This encourages peers to unchoke us, allowing us to download from multiple peers
                 # Many peers wait for INTERESTED before unchoking, so we need to be proactive
-                # CRITICAL FIX: Also send INTERESTED immediately after bitfield is received (not just after connection)
+                # Note: Also send INTERESTED immediately after bitfield is received (not just after connection)
                 # This ensures peers know we're interested as soon as we see their bitfield
                 if not connection.am_interested:
                     try:
@@ -5952,7 +6274,7 @@ class AsyncPeerConnectionManager:
                             e,
                         )
 
-                # CRITICAL FIX: Log connection details for debugging
+                # Note: Log connection details for debugging
                 self.logger.debug(
                     "Peer %s connection details: reader=%s, writer=%s, encrypted=%s, choking=%s, interested=%s",
                     peer_info,
@@ -5963,7 +6285,7 @@ class AsyncPeerConnectionManager:
                     connection.am_interested,
                 )
 
-                # CRITICAL FIX: Verify connection is still in dict after all operations
+                # Note: Verify connection is still in dict after all operations
                 async with self.connection_lock:
                     if peer_key not in self.connections:
                         self.logger.error(
@@ -5980,7 +6302,7 @@ class AsyncPeerConnectionManager:
                         )
 
             except asyncio.CancelledError:
-                # CRITICAL FIX: Handle CancelledError during shutdown gracefully
+                # Note: Handle CancelledError during shutdown gracefully
                 from ccbt.utils.shutdown import is_shutting_down
 
                 if is_shutting_down():
@@ -5998,7 +6320,7 @@ class AsyncPeerConnectionManager:
             except PeerConnectionError as e:
                 # Re-raise PeerConnectionError (validation errors, handshake errors, etc.)
                 # so they can be handled by callers
-                # CRITICAL FIX: Suppress verbose logging during shutdown
+                # Note: Suppress verbose logging during shutdown
                 from ccbt.utils.shutdown import is_shutting_down
 
                 # Record failure in circuit breaker
@@ -6006,13 +6328,13 @@ class AsyncPeerConnectionManager:
                     breaker = self.circuit_breaker_manager.get_breaker(peer_id)
                     breaker._on_failure()  # noqa: SLF001 - CircuitBreaker internal API
 
-                    # CRITICAL FIX: Check if connection was added to dict before exception
+                    # Note: Check if connection was added to dict before exception
                     peer_key = str(peer_info)
                     was_in_dict = False
                     async with self.connection_lock:
                         was_in_dict = peer_key in self.connections
 
-                    # CRITICAL FIX: Check if this is WinError 121 (semaphore timeout) and log as DEBUG
+                    # Note: Check if this is WinError 121 (semaphore timeout) and log as DEBUG
                     error_str = str(e)
                     is_winerror_121 = (
                         "WinError 121" in error_str
@@ -6051,7 +6373,7 @@ class AsyncPeerConnectionManager:
                         )
 
                 if connection:
-                    # CRITICAL FIX: Validate writer state before cleanup
+                    # Note: Validate writer state before cleanup
                     if connection.writer is not None:
                         try:
                             if (
@@ -6075,13 +6397,13 @@ class AsyncPeerConnectionManager:
                     breaker = self.circuit_breaker_manager.get_breaker(peer_id)
                     breaker._on_failure()  # noqa: SLF001 - CircuitBreaker internal API
 
-                # CRITICAL FIX: Check if connection was added to dict before exception
+                # Note: Check if connection was added to dict before exception
                 peer_key = str(peer_info)
                 was_in_dict = False
                 async with self.connection_lock:
                     was_in_dict = peer_key in self.connections
 
-                # CRITICAL FIX: Log the actual error with more detail and connection state
+                # Note: Log the actual error with more detail and connection state
                 error_type = type(e).__name__
                 error_msg = str(e)
                 connection_state = connection.state.value if connection else "None"
@@ -6112,7 +6434,7 @@ class AsyncPeerConnectionManager:
                 )
 
                 if connection and connection.writer is not None:
-                    # CRITICAL FIX: Validate writer state before cleanup
+                    # Note: Validate writer state before cleanup
                     try:
                         if (
                             hasattr(connection.writer, "is_closing")
@@ -6187,9 +6509,9 @@ class AsyncPeerConnectionManager:
         """Periodic task to send keep-alive messages to peer.
 
         Sends keep-alive (length=0 message) with adaptive interval based on connection state.
-        CRITICAL FIX: Improved keep-alive handling with timeout detection and adaptive intervals.
+        Note: Improved keep-alive handling with timeout detection and adaptive intervals.
         """
-        # CRITICAL FIX: Adaptive keep-alive interval based on connection state
+        # Note: Adaptive keep-alive interval based on connection state
         # Active connections: 120s (standard BitTorrent keep-alive)
         # Choked connections: 90s (more frequent to detect dead connections faster)
         # Low activity: 60s (very frequent to detect dead connections quickly)
@@ -6199,7 +6521,7 @@ class AsyncPeerConnectionManager:
 
         try:
             while connection.is_connected():
-                # CRITICAL FIX: Adaptive keep-alive interval based on connection state
+                # Note: Adaptive keep-alive interval based on connection state
                 if connection.state == ConnectionState.CHOKED:
                     # Choked connections: send keep-alive more frequently (90s)
                     keepalive_interval = 90.0
@@ -6210,7 +6532,7 @@ class AsyncPeerConnectionManager:
                     # Other states: use base interval
                     keepalive_interval = base_keepalive_interval
 
-                # CRITICAL FIX: Check if connection has been silent for too long
+                # Note: Check if connection has been silent for too long
                 # If no activity for 2x keep-alive interval, connection may be dead
                 time_since_activity = time.time() - connection.stats.last_activity
                 if time_since_activity > (keepalive_interval * 2):
@@ -6248,7 +6570,7 @@ class AsyncPeerConnectionManager:
                         await connection.writer.drain()
                         connection.stats.last_activity = time.time()
 
-                        # CRITICAL FIX: Reset failure count on successful keep-alive
+                        # Note: Reset failure count on successful keep-alive
                         if keepalive_failures > 0:
                             self.logger.debug(
                                 "Keep-alive: Successfully sent to %s (reset failure count from %d)",
@@ -6310,7 +6632,7 @@ class AsyncPeerConnectionManager:
             connection.reader is not None,
         )
 
-        # CRITICAL FIX: Start keep-alive sender task
+        # Note: Start keep-alive sender task
         keepalive_task = None
         try:
             keepalive_task = asyncio.create_task(self._keepalive_sender(connection))
@@ -6327,7 +6649,7 @@ class AsyncPeerConnectionManager:
                     )
                     raise RuntimeError(msg)  # pragma: no cover - Same context
 
-                # CRITICAL FIX: Connection timeout monitoring
+                # Note: Connection timeout monitoring
                 # Check if peer has been silent for too long (no messages received)
                 # Reduced from 120s to 90s for faster dead connection detection
                 current_time = time.time()
@@ -6349,7 +6671,7 @@ class AsyncPeerConnectionManager:
                     break
 
                 # Read message length
-                # CRITICAL FIX: Reduced timeout to 90s for faster dead connection detection
+                # Note: Reduced timeout to 90s for faster dead connection detection
                 # 90s is still generous but allows faster recovery from dead connections
                 try:
                     length_data = await asyncio.wait_for(
@@ -6372,7 +6694,7 @@ class AsyncPeerConnectionManager:
                 )  # pragma: no cover - Same context
 
                 if length == 0:  # pragma: no cover - Same context
-                    # CRITICAL FIX: Keep-alive message - update activity and reset timeout
+                    # Note: Keep-alive message - update activity and reset timeout
                     current_activity_time = time.time()
                     connection.stats.last_activity = current_activity_time
                     last_message_time = current_activity_time
@@ -6383,7 +6705,7 @@ class AsyncPeerConnectionManager:
                     continue  # pragma: no cover - Same context
 
                 # Read message payload
-                # CRITICAL FIX: Reduced timeout to 90s for faster dead connection detection
+                # Note: Reduced timeout to 90s for faster dead connection detection
                 # 90s is still generous but allows faster recovery from dead connections
                 try:
                     payload = await asyncio.wait_for(
@@ -6407,7 +6729,7 @@ class AsyncPeerConnectionManager:
                 message_count += 1
 
                 # Check for extension message (message type 20) before decoding
-                # CRITICAL FIX: Extension messages MUST be handled immediately and not skipped
+                # Note: Extension messages MUST be handled immediately and not skipped
                 # They are time-sensitive (especially ut_metadata responses) and should not be delayed
                 if length > 0 and payload and payload[0] == 20:  # Extension message
                     # CRITICAL: Log at INFO level to track extension messages
@@ -6425,7 +6747,7 @@ class AsyncPeerConnectionManager:
                         connection.peer_choking,
                         payload_preview,
                     )
-                    # CRITICAL FIX: Handle extension message immediately with error handling
+                    # Note: Handle extension message immediately with error handling
                     # Don't let extension message handling errors break the message loop
                     try:
                         await self._handle_extension_message(
@@ -6443,7 +6765,7 @@ class AsyncPeerConnectionManager:
                         )
                     continue  # pragma: no cover - Same context
 
-                # CRITICAL FIX: Handle non-standard message types (9-19, 21+)
+                # Note: Handle non-standard message types (9-19, 21+)
                 # These are NOT extension protocol messages (message type 20 is extension protocol)
                 # Some clients may send these, but they're not part of BEP 10
                 # We should skip them or handle them separately, but NOT route to extension handler
@@ -6476,7 +6798,7 @@ class AsyncPeerConnectionManager:
                     if message:  # pragma: no cover - Same context
                         # Log message type with connection state
                         message_type = type(message).__name__
-                        # CRITICAL FIX: Log bitfield messages at INFO level for diagnostics
+                        # Note: Log bitfield messages at INFO level for diagnostics
                         if isinstance(message, BitfieldMessage):
                             self.logger.info(
                                 "MESSAGE_LOOP: Received BITFIELD from %s (state=%s, choking=%s, interested=%s, message #%d, bitfield_length=%d)",
@@ -6531,12 +6853,12 @@ class AsyncPeerConnectionManager:
                 message_count,
                 time.time() - connection_start_time,
             )
-            # CRITICAL FIX: Re-raise CancelledError to properly propagate cancellation
+            # Note: Re-raise CancelledError to properly propagate cancellation
             # The finally block will still run for cleanup, but the task will be marked as cancelled
             raise
             # pragma: no cover - Cancellation handling in message loop
         except asyncio.IncompleteReadError as e:
-            # CRITICAL FIX: Handle IncompleteReadError gracefully (peer closed connection)
+            # Note: Handle IncompleteReadError gracefully (peer closed connection)
             # Set connection state to ERROR before disconnecting
             connection.state = ConnectionState.ERROR
             duration = time.time() - connection_start_time
@@ -6551,7 +6873,7 @@ class AsyncPeerConnectionManager:
                 connection.state.value,
             )
         except Exception:  # pragma: no cover - Exception handling in message loop
-            # CRITICAL FIX: Set connection state to ERROR before disconnecting
+            # Note: Set connection state to ERROR before disconnecting
             connection.state = ConnectionState.ERROR
             self.logger.exception(
                 "Error handling messages from %s (processed %d messages, duration=%.1fs, state=%s)",
@@ -6561,7 +6883,7 @@ class AsyncPeerConnectionManager:
                 connection.state.value,
             )  # pragma: no cover - Same context
         finally:
-            # CRITICAL FIX: Cancel keep-alive sender task when message loop stops
+            # Note: Cancel keep-alive sender task when message loop stops
             if keepalive_task and not keepalive_task.done():
                 keepalive_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -6620,7 +6942,7 @@ class AsyncPeerConnectionManager:
                 message, KeepAliveMessage
             ):  # pragma: no cover - Keep-alive message handling, tested via message handlers
                 # Keep-alive, just update activity
-                # CRITICAL FIX: AsyncPeerConnection uses stats.last_activity, not last_activity directly
+                # Note: AsyncPeerConnection uses stats.last_activity, not last_activity directly
                 if hasattr(connection, "stats") and hasattr(
                     connection.stats, "last_activity"
                 ):
@@ -6656,7 +6978,7 @@ class AsyncPeerConnectionManager:
             else:
                 # Handle state change messages
                 if isinstance(message, ChokeMessage):  # pragma: no cover - Same context
-                    # CRITICAL FIX: Call the handler instead of handling inline
+                    # Note: Call the handler instead of handling inline
                     # This ensures _handle_choke is called for consistency
                     handler = self.message_handlers.get(MessageType.CHOKE)
                     if handler:
@@ -6681,7 +7003,7 @@ class AsyncPeerConnectionManager:
                 elif isinstance(
                     message, UnchokeMessage
                 ):  # pragma: no cover - Same context
-                    # CRITICAL FIX: Call the handler instead of handling inline
+                    # Note: Call the handler instead of handling inline
                     # This ensures _handle_unchoke is called, which triggers piece selection
                     handler = self.message_handlers.get(MessageType.UNCHOKE)
                     if handler:
@@ -6759,7 +7081,7 @@ class AsyncPeerConnectionManager:
                 state_before,
                 choking_before,
             )  # pragma: no cover - Same context
-            # CRITICAL FIX: Call error handler to properly handle the connection error
+            # Note: Call error handler to properly handle the connection error
             await self._handle_connection_error(
                 connection, error_msg
             )  # pragma: no cover - Same context
@@ -6922,7 +7244,9 @@ class AsyncPeerConnectionManager:
 
             # Handle extension handshake (extension_id = 0)
             if extension_id == 0:
-                # CRITICAL FIX: Log at INFO level to ensure visibility of extension handshake responses
+                connection.peer_extension_handshake_received_at = time.time()
+                self._record_connection_stage("peer_extension_handshake_received")
+                # Note: Log at INFO level to ensure visibility of extension handshake responses
                 self.logger.info(
                     "EXTENSION_HANDSHAKE_RECEIVED: from %s, payload_len=%d, first_50_bytes=%s",
                     connection.peer_info,
@@ -6930,7 +7254,7 @@ class AsyncPeerConnectionManager:
                     payload[:50].hex() if len(payload) >= 50 else payload.hex(),
                 )
                 try:
-                    # CRITICAL FIX: Extension handshake payload format
+                    # Note: Extension handshake payload format
                     # The payload should be: <message_id (20)><extension_id (0)><bencoded_data>
                     # But decode_handshake expects: <length><message_id><bencoded_data>
                     # So we need to reconstruct the full message format
@@ -6942,7 +7266,7 @@ class AsyncPeerConnectionManager:
                         )
                         return
 
-                    # CRITICAL FIX: Extension handshake uses bencoded data (BEP 10), not JSON
+                    # Note: Extension handshake uses bencoded data (BEP 10), not JSON
                     # The payload format is: <message_id (20)><extension_id (0)><bencoded_data>
                     # We need to decode the bencoded data directly
                     bencoded_data = payload[2:] if len(payload) > 2 else payload[1:]
@@ -6962,7 +7286,7 @@ class AsyncPeerConnectionManager:
                         decoder = BencodeDecoder(bencoded_data)
                         handshake_data = decoder.decode()
 
-                        # CRITICAL FIX: Log decoded handshake data at INFO level
+                        # Note: Log decoded handshake data at INFO level
                         self.logger.info(
                             "EXTENSION_HANDSHAKE_PARSED: from %s, handshake_keys=%s, has_m=%s, has_metadata_size=%s",
                             connection.peer_info,
@@ -7200,7 +7524,7 @@ class AsyncPeerConnectionManager:
                             e,
                         )
 
-                    # CRITICAL FIX: Extract ut_metadata_id and metadata_size BEFORE sending our handshake
+                    # Note: Extract ut_metadata_id and metadata_size BEFORE sending our handshake
                     # This ensures we have the information needed to trigger metadata exchange
                     # IMPORTANT: Handle both bytes and string keys (BEP 10 allows both)
                     ut_metadata_id = None
@@ -7225,7 +7549,7 @@ class AsyncPeerConnectionManager:
                     connection.ut_metadata_id = ut_metadata_id
                     connection.metadata_size = metadata_size
 
-                    # CRITICAL FIX: Log extracted values at INFO level
+                    # Note: Log extracted values at INFO level
                     self.logger.info(
                         "EXTENSION_HANDSHAKE_EXTRACTED: from %s, ut_metadata_id=%s, metadata_size=%s, has_piece_manager=%s, num_pieces=%s",
                         connection.peer_info,
@@ -7238,7 +7562,7 @@ class AsyncPeerConnectionManager:
                         else None,
                     )
 
-                    # CRITICAL FIX: Send our extension handshake to peer (BEP 10 requirement)
+                    # Note: Send our extension handshake to peer (BEP 10 requirement)
                     # We MUST send our extension handshake before using extension messages
                     # This is required by BEP 10 - peers will reject extension messages if we haven't sent our handshake
                     try:
@@ -7250,7 +7574,7 @@ class AsyncPeerConnectionManager:
                             e,
                         )
 
-                    # CRITICAL FIX: Trigger metadata exchange for magnet links
+                    # Note: Trigger metadata exchange for magnet links
                     # Check if this is a magnet link and metadata is not available
                     # IMPORTANT: Check both piece_manager.num_pieces == 0 AND torrent_data structure
                     is_magnet_link = False
@@ -7290,7 +7614,7 @@ class AsyncPeerConnectionManager:
                             ut_metadata_id,
                             metadata_size,
                         )
-                        # CRITICAL FIX: Actually trigger metadata exchange, don't just log
+                        # Note: Actually trigger metadata exchange, don't just log
                         # Use the existing connection's reader/writer for metadata exchange
                         if connection.reader and connection.writer:
                             try:
@@ -7350,13 +7674,13 @@ class AsyncPeerConnectionManager:
                         exc_info=True,
                     )
             else:
-                # CRITICAL FIX: Handle ut_metadata responses FIRST (BEP 9)
+                # Note: Handle ut_metadata responses FIRST (BEP 9)
                 # Check if this is a ut_metadata response for an active metadata exchange
                 # ut_metadata responses have extension_id = ut_metadata_id (from handshake)
                 # According to BEP 9, ut_metadata responses have format:
                 # <message_id (20)><ut_metadata_id><bencoded_header><piece_data>
                 # Where bencoded_header is: d8:msg_typei1e5:piecei<index>ee (data) or d8:msg_typei2e5:piecei<index>ee (reject)
-                # CRITICAL FIX: Use consistent peer_key format (ip:port) to match storage format
+                # Note: Use consistent peer_key format (ip:port) to match storage format
                 if hasattr(connection.peer_info, "ip") and hasattr(
                     connection.peer_info, "port"
                 ):
@@ -7405,7 +7729,7 @@ class AsyncPeerConnectionManager:
                             int(extension_id) if extension_id is not None else None
                         )
 
-                        # CRITICAL FIX: Check if extension_id matches peer's declared ut_metadata_id
+                        # Note: Check if extension_id matches peer's declared ut_metadata_id
                         # Some buggy peers declare ut_metadata_id=2 but send extension_id=1
                         # So we also check if extension_id=1 (our ut_metadata_id) as a fallback
                         our_ut_metadata_id = (
@@ -7464,7 +7788,7 @@ class AsyncPeerConnectionManager:
                         active_peers[:5] if len(active_peers) > 5 else active_peers,
                     )
 
-                    # CRITICAL FIX: Check if this might be a ut_metadata response even without active state
+                    # Note: Check if this might be a ut_metadata response even without active state
                     # This can happen if state was cleaned up due to timeout but response arrived late
                     # Check if extension_id matches ut_metadata from peer's extension handshake
                     peer_id = str(connection.peer_info) if connection.peer_info else ""
@@ -7483,7 +7807,7 @@ class AsyncPeerConnectionManager:
                                 connection.peer_info,
                                 extension_id,
                             )
-                            # CRITICAL FIX: Try to recreate state if we have peer extensions
+                            # Note: Try to recreate state if we have peer extensions
                             # This allows us to handle late responses
                             try:
                                 # Get metadata_size from peer extensions (stored during handshake)
@@ -7625,7 +7949,7 @@ class AsyncPeerConnectionManager:
             )
             # Still try to check for ut_metadata even if other handlers failed
             try:
-                # CRITICAL FIX: Use consistent peer_key format (ip:port)
+                # Note: Use consistent peer_key format (ip:port)
                 if hasattr(connection.peer_info, "ip") and hasattr(
                     connection.peer_info, "port"
                 ):
@@ -7713,7 +8037,7 @@ class AsyncPeerConnectionManager:
         )
 
         # Get piece layer from torrent data
-        # CRITICAL FIX: Safe access to torrent_data - handle case where it might not be a dict
+        # Note: Safe access to torrent_data - handle case where it might not be a dict
         if not isinstance(self.torrent_data, dict):
             self.logger.error(
                 "torrent_data is not a dict (type: %s), cannot get piece_layers",
@@ -7844,7 +8168,7 @@ class AsyncPeerConnectionManager:
         )
 
         # Get file tree from torrent data
-        # CRITICAL FIX: Safe access to torrent_data - handle case where it might not be a dict
+        # Note: Safe access to torrent_data - handle case where it might not be a dict
         if not isinstance(self.torrent_data, dict):
             self.logger.error(
                 "torrent_data is not a dict (type: %s), cannot get file_tree",
@@ -8053,7 +8377,7 @@ class AsyncPeerConnectionManager:
                 connection.peer_info,
             )
 
-        # CRITICAL FIX: Send INTERESTED immediately when peer unchokes us
+        # Note: Send INTERESTED immediately when peer unchokes us
         # This is required by BitTorrent protocol - we must be interested to request pieces
         # Even if we haven't received a bitfield yet, we should send INTERESTED to keep the connection active
         if not connection.am_interested:
@@ -8071,9 +8395,9 @@ class AsyncPeerConnectionManager:
                     e,
                 )
 
-        # CRITICAL FIX: Trigger piece selection when peer unchokes us
+        # Note: Trigger piece selection when peer unchokes us
         # This ensures we immediately start requesting pieces from newly unchoked peers
-        # CRITICAL FIX: Use INFO level logging to ensure we see this in production logs
+        # Note: Use INFO level logging to ensure we see this in production logs
         self.logger.info(
             "UNCHOKE handler: piece_manager=%s, has_select_pieces=%s, peer=%s",
             self.piece_manager is not None,
@@ -8091,7 +8415,7 @@ class AsyncPeerConnectionManager:
 
                 for attempt in range(max_retries):
                     try:
-                        # CRITICAL FIX: Check if download is started before selecting pieces
+                        # Note: Check if download is started before selecting pieces
                         if not getattr(self.piece_manager, "is_downloading", False):
                             self.logger.info(
                                 "Piece manager download not started (is_downloading=False) - starting download from UNCHOKE handler (peer: %s)",
@@ -8113,7 +8437,7 @@ class AsyncPeerConnectionManager:
                                     ),
                                 )
 
-                        # CRITICAL FIX: Ensure _peer_manager is set before selecting pieces
+                        # Note: Ensure _peer_manager is set before selecting pieces
                         peer_manager = getattr(
                             self.piece_manager, "_peer_manager", None
                         )
@@ -8151,7 +8475,7 @@ class AsyncPeerConnectionManager:
                         if select_pieces:
                             await select_pieces()
 
-                        # CRITICAL FIX: Also retry pieces that were stuck in REQUESTED state
+                        # Note: Also retry pieces that were stuck in REQUESTED state
                         # This ensures pieces that couldn't be requested earlier (due to no unchoked peers)
                         # are retried immediately when peers become available
                         retry_method = getattr(
@@ -8248,19 +8572,129 @@ class AsyncPeerConnectionManager:
 
                 elapsed = time.time() - connection_start_time
 
-                # If peer is still choking after timeout, log warning
+                # If peer is still choking after timeout, classify as hard recovery
                 if elapsed >= unchoke_timeout and connection.peer_choking:
+                    peer_key = self._get_peer_key(connection)
+                    async def _collect_recovery_state() -> tuple[int, int, int, int]:
+                        active = 0
+                        requestable = 0
+                        productive = 0
+                        total = 0
+                        async with self.connection_lock:
+                            total = len(self.connections)
+                            for conn in self.connections.values():
+                                if conn.is_active():
+                                    active += 1
+                                if conn.can_request():
+                                    requestable += 1
+                                if self._connection_has_piece_info(conn):
+                                    productive += 1
+                        return active, requestable, productive, total
+
+                    active_count, requestable_count, productive_count, total_count = (
+                        await _collect_recovery_state()
+                    )
+
+                    recovery_state = {
+                        "candidate_peer": peer_key,
+                        "peer_state": connection.state.value,
+                        "peer_choking": connection.peer_choking,
+                        "peer_interested": connection.peer_interested,
+                        "am_interested": connection.am_interested,
+                        "outstanding_requests": len(connection.outstanding_requests),
+                        "active_peer_count": active_count,
+                        "requestable_peer_count": requestable_count,
+                        "productive_peer_count": productive_count,
+                        "total_peer_count": total_count,
+                        "elapsed_since_connect": elapsed,
+                        "elapsed_since_activity": time.time() - connection.stats.last_activity,
+                        "source": getattr(connection.peer_info, "peer_source", "tracker"),
+                        "is_seeder": bool(getattr(connection, "is_seeder", False)),
+                    }
+
                     self.logger.warning(
-                        "Peer %s has not sent UNCHOKE message after %.1f seconds. "
-                        "Connection state: %s, choking: %s, interested: %s. "
-                        "This peer may be unresponsive or not following protocol correctly.",
+                        "Hard choke timeout recovery: peer %s stalled in CHOKED state for %.1f seconds. "
+                        "Classified as recovery candidate; state=%s, outstanding_requests=%d, active=%d, requestable=%d, productive=%d",
                         connection.peer_info,
                         elapsed,
                         connection.state.value,
-                        connection.peer_choking,
-                        connection.am_interested,
+                        recovery_state["outstanding_requests"],
+                        active_count,
+                        requestable_count,
+                        productive_count,
                     )
-                    # Only log once, then stop monitoring
+
+                    await self._record_connection_failure(
+                        connection.peer_info, "connection_failure", "stale_unchoke_timeout"
+                    )
+                    async with self._failed_peer_lock:
+                        now = time.time()
+                        fail_info = self._failed_peers.get(peer_key)
+                        if fail_info:
+                            fail_info["count"] = int(fail_info.get("count", 1)) + 1
+                            fail_info["timestamp"] = now
+                            fail_info["reason"] = "stale_unchoke_timeout"
+                            fail_info["is_terminal"] = False
+                            fail_info["peer_source"] = getattr(
+                                connection.peer_info, "peer_source", "tracker"
+                            )
+                            fail_info["is_seeder"] = bool(
+                                getattr(connection, "is_seeder", False)
+                            )
+                        else:
+                            self._failed_peers[peer_key] = {
+                                "timestamp": now,
+                                "count": 1,
+                                "reason": "stale_unchoke_timeout",
+                                "is_terminal": False,
+                                "peer_source": getattr(
+                                    connection.peer_info, "peer_source", "tracker"
+                                ),
+                                "is_seeder": bool(getattr(connection, "is_seeder", False)),
+                            }
+
+                    with contextlib.suppress(Exception):
+                        import hashlib
+                        from ccbt.core.bencode import BencodeEncoder
+                        from ccbt.utils.events import Event, emit_event
+
+                        info_hash_hex = ""
+                        if (
+                            isinstance(self.torrent_data, dict)
+                            and "info" in self.torrent_data
+                        ):
+                            encoder = BencodeEncoder()
+                            info_dict = self.torrent_data["info"]
+                            info_hash_bytes = hashlib.sha1(encoder.encode(info_dict)).digest()
+                            info_hash_hex = info_hash_bytes.hex()
+
+                        await emit_event(
+                            Event(
+                                event_type="peer_count_low",
+                                data={
+                                    "info_hash": info_hash_hex,
+                                    "active_peer_count": active_count,
+                                    "active_peers": active_count,
+                                    "total_peer_count": total_count,
+                                    "total_peers": total_count,
+                                    "threshold": 1,
+                                    "trigger": "hard_unchoke_recovery",
+                                    "failure_reason": "stale_unchoke_timeout",
+                                    "recovery_state": recovery_state,
+                                },
+                            )
+                        )
+
+                    self.logger.info(
+                        "Hard recovery action: disconnecting stalled choked peer %s and triggering immediate replacement.",
+                        connection.peer_info,
+                    )
+                    with contextlib.suppress(Exception):
+                        self._record_connection_stage("choke_timeout_recovery")
+                    with contextlib.suppress(Exception):
+                        await self._disconnect_peer(connection)
+                    with contextlib.suppress(Exception):
+                        self._schedule_pending_resume(reason="hard_unchoke_recovery")
                     break
 
                 # If peer unchoked us, stop monitoring
@@ -8305,7 +8739,7 @@ class AsyncPeerConnectionManager:
         """Handle have message."""
         piece_index = message.piece_index
 
-        # CRITICAL FIX: Check for duplicate Have messages and skip all processing for duplicates
+        # Note: Check for duplicate Have messages and skip all processing for duplicates
         is_duplicate = piece_index in connection.peer_state.pieces_we_have
         if is_duplicate:
             # Early return for duplicates - don't process, don't update frequency, don't trigger selection
@@ -8321,7 +8755,7 @@ class AsyncPeerConnectionManager:
         peer_key = self._get_peer_key(connection)
         self._mark_peer_quality_verified(peer_key, "have_message", connection)
 
-        # CRITICAL FIX: Track that peer has sent HAVE messages (alternative to bitfield)
+        # Note: Track that peer has sent HAVE messages (alternative to bitfield)
         # This allows us to be lenient with bitfield timeout - HAVE messages are protocol-compliant
         # If peer has no pieces initially, they may send HAVE messages as they download pieces
         have_messages_count = len(connection.peer_state.pieces_we_have)
@@ -8340,7 +8774,7 @@ class AsyncPeerConnectionManager:
                 connection.peer_info,
                 piece_index,
             )
-            # CRITICAL FIX: Send INTERESTED when we receive first HAVE message from peer without bitfield
+            # Note: Send INTERESTED when we receive first HAVE message from peer without bitfield
             # This is the correct protocol behavior - leechers don't send bitfields, they send HAVE messages
             if not connection.am_interested:
                 try:
@@ -8365,10 +8799,10 @@ class AsyncPeerConnectionManager:
             has_bitfield,
         )
 
-        # CRITICAL FIX: Update piece frequency in piece manager for rarest-first selection
+        # Note: Update piece frequency in piece manager for rarest-first selection
         if self.piece_manager and hasattr(self.piece_manager, "update_peer_have"):
             try:
-                # CRITICAL FIX: Use consistent peer_key format (ip:port) to match piece manager
+                # Note: Use consistent peer_key format (ip:port) to match piece manager
                 # This ensures HAVE messages update peer_availability correctly
                 if hasattr(connection.peer_info, "ip") and hasattr(
                     connection.peer_info, "port"
@@ -8389,7 +8823,7 @@ class AsyncPeerConnectionManager:
                     connection.peer_info,
                 )
 
-        # CRITICAL FIX: Ensure download is started when we receive Have messages
+        # Note: Ensure download is started when we receive Have messages
         has_piece_manager = self.piece_manager is not None
         has_is_downloading = has_piece_manager and hasattr(
             self.piece_manager, "is_downloading"
@@ -8465,7 +8899,7 @@ class AsyncPeerConnectionManager:
                 piece_index,
             )
 
-        # CRITICAL FIX: Trigger piece selection if download is active (with debouncing)
+        # Note: Trigger piece selection if download is active (with debouncing)
         if (
             self.piece_manager
             and hasattr(self.piece_manager, "is_downloading")
@@ -8473,7 +8907,7 @@ class AsyncPeerConnectionManager:
         ):
             try:
                 if hasattr(self.piece_manager, "_select_pieces"):
-                    # CRITICAL FIX: Debounce piece selection triggers to prevent excessive calls
+                    # Note: Debounce piece selection triggers to prevent excessive calls
                     import time
 
                     current_time = time.time()
@@ -8529,7 +8963,7 @@ class AsyncPeerConnectionManager:
             )
             return
 
-        # CRITICAL FIX: For magnet links, metadata may not be available yet
+        # Note: For magnet links, metadata may not be available yet
         # We should still accept bitfields from peers even without metadata
         # The bitfield will be validated later when metadata becomes available
         pieces_info = self.torrent_data.get("pieces_info")
@@ -8584,7 +9018,7 @@ class AsyncPeerConnectionManager:
             connection.state.value,
         )
 
-        # CRITICAL FIX: Warn if bitfield appears to be all zeros
+        # Note: Warn if bitfield appears to be all zeros
         # This might indicate a parsing issue or the peer actually has no pieces
         if pieces_count == 0 and bitfield_length > 0:
             # Check if bitfield is actually all zeros or if there's a parsing issue
@@ -8603,10 +9037,11 @@ class AsyncPeerConnectionManager:
 
         connection.peer_state.bitfield = message.bitfield
         connection.state = ConnectionState.BITFIELD_RECEIVED
+        self._record_connection_stage("bitfield_received")
         peer_key = self._get_peer_key(connection)
         self._mark_peer_quality_verified(peer_key, "bitfield_received", connection)
 
-        # CRITICAL FIX: Cancel bitfield timeout monitor since we received bitfield
+        # Note: Cancel bitfield timeout monitor since we received bitfield
         # This prevents false disconnections when bitfield arrives on time
         # Also cancel if peer has sent HAVE messages (alternative to bitfield)
         has_have_messages = (
@@ -8630,10 +9065,10 @@ class AsyncPeerConnectionManager:
                     len(connection.peer_state.pieces_we_have),
                 )
 
-        # CRITICAL FIX: Send interested message after receiving peer's bitfield
+        # Note: Send interested message after receiving peer's bitfield
         # This ensures proper protocol message ordering: handshake -> bitfield exchange -> interested
         # Protocol requires: We send INTERESTED → Peer sends UNCHOKE → We can request pieces
-        # CRITICAL FIX: Also resend INTERESTED if we already sent it but peer has pieces we want
+        # Note: Also resend INTERESTED if we already sent it but peer has pieces we want
         # This helps ensure peers know we're interested, especially if they missed our first INTERESTED
         should_send_interested = False
         should_resend_interested = False
@@ -8684,7 +9119,7 @@ class AsyncPeerConnectionManager:
                     e,
                 )
 
-        # CRITICAL FIX: Transition to ACTIVE after receiving bitfield and sending INTERESTED
+        # Note: Transition to ACTIVE after receiving bitfield and sending INTERESTED
         # This allows piece availability checking even if peer hasn't unchoked yet
         # Protocol flow: handshake → bitfield exchange → INTERESTED → (wait for UNCHOKE)
         # We transition to ACTIVE after bitfield exchange to allow piece selection
@@ -8705,7 +9140,7 @@ class AsyncPeerConnectionManager:
                 connection.peer_info,
             )
         else:
-            # CRITICAL FIX: Transition to ACTIVE even if peer is choking
+            # Note: Transition to ACTIVE even if peer is choking
             # This allows piece availability checking and selection
             # Actual piece requests will be blocked by can_request() until peer unchokes
             connection.state = ConnectionState.ACTIVE
@@ -8714,7 +9149,7 @@ class AsyncPeerConnectionManager:
                 connection.peer_info,
             )
 
-        # CRITICAL FIX: Trigger piece selection immediately after bitfield (especially for seeders)
+        # Note: Trigger piece selection immediately after bitfield (especially for seeders)
         # This prepares piece requests even if peer is choking, so we're ready when they unchoke
         # For seeders, this is critical as they have all pieces and should be prioritized
         if self.piece_manager and hasattr(self.piece_manager, "_select_pieces"):
@@ -8787,7 +9222,7 @@ class AsyncPeerConnectionManager:
             # Add background task using public API
             connection.add_background_task(task)
 
-        # CRITICAL FIX: Update piece manager with peer availability
+        # Note: Update piece manager with peer availability
         # This must be done even if metadata is not available yet (for magnet links)
         # The bitfield will be re-processed when metadata becomes available
         if self.piece_manager and connection.peer_state.bitfield:
@@ -8806,7 +9241,7 @@ class AsyncPeerConnectionManager:
                     peer_key, connection.peer_state.bitfield
                 )
 
-                # CRITICAL FIX: Detect seeder status from bitfield for better prioritization
+                # Note: Detect seeder status from bitfield for better prioritization
                 is_seeder = False
                 completion_percent = 0.0
                 if (
@@ -8841,7 +9276,7 @@ class AsyncPeerConnectionManager:
                     is_seeder,
                 )
 
-                # CRITICAL FIX: Don't disconnect peers with empty bitfields immediately
+                # Note: Don't disconnect peers with empty bitfields immediately
                 # According to BEP 3, leechers with no pieces don't send bitfields
                 # They may send HAVE messages later as they download pieces
                 # Only disconnect if peer has no pieces AND we've waited long enough
@@ -8853,7 +9288,7 @@ class AsyncPeerConnectionManager:
                     # Don't disconnect - peer may send HAVE messages later
                     # The bitfield timeout monitor will handle disconnection if peer never sends HAVE messages
 
-                # CRITICAL FIX: Check if peer has any pieces we need (BitTorrent protocol compliance)
+                # Note: Check if peer has any pieces we need (BitTorrent protocol compliance)
                 # If peer has no pieces we need, send NOT_INTERESTED and schedule disconnect
                 # This prevents keeping useless connections that waste resources
                 # BUT: For magnet links or when metadata isn't available yet, don't disconnect
@@ -8865,7 +9300,7 @@ class AsyncPeerConnectionManager:
                         has_needed_piece = False
                         bitfield = connection.peer_state.bitfield
 
-                        # CRITICAL FIX: If bitfield shows 0 pieces but bitfield length > 0,
+                        # Note: If bitfield shows 0 pieces but bitfield length > 0,
                         # the bitfield might be all zeros OR there's a parsing issue
                         # Don't disconnect immediately - wait for HAVE messages or metadata
                         if pieces_count == 0 and bitfield_length > 0:
@@ -8961,7 +9396,7 @@ class AsyncPeerConnectionManager:
                     exc_info=True,
                 )
         elif self.piece_manager and not connection.peer_state.bitfield:
-            # CRITICAL FIX: Create peer availability entry even if no bitfield received
+            # Note: Create peer availability entry even if no bitfield received
             # This allows HAVE messages to update peer availability later
             try:
                 # Get peer key for piece manager
@@ -8994,7 +9429,7 @@ class AsyncPeerConnectionManager:
                     e,
                 )
 
-        # CRITICAL FIX: Ensure download is started when we receive bitfield
+        # Note: Ensure download is started when we receive bitfield
         if (
             self.piece_manager
             and hasattr(self.piece_manager, "is_downloading")
@@ -9190,9 +9625,9 @@ class AsyncPeerConnectionManager:
         message: PieceMessage,
     ) -> None:
         """Handle piece message."""
-        # CRITICAL FIX: Log at INFO level when PIECE messages are received
+        # Note: Log at INFO level when PIECE messages are received
         # This helps diagnose why pieces are stuck in DOWNLOADING state
-        # CRITICAL FIX: Suppress verbose logging during shutdown
+        # Note: Suppress verbose logging during shutdown
         from ccbt.utils.shutdown import is_shutting_down
 
         if not is_shutting_down():
@@ -9250,7 +9685,7 @@ class AsyncPeerConnectionManager:
                 block_latency,
             )
         else:
-            # CRITICAL FIX: Check if unexpected piece is actually needed
+            # Note: Check if unexpected piece is actually needed
             # Peers may send pieces we need but didn't request yet (e.g., out-of-order, preemptive)
             connection.stats.unexpected_pieces_count += 1
             is_useful = False
@@ -9280,7 +9715,7 @@ class AsyncPeerConnectionManager:
                                     connection.peer_info,
                                     piece.state.name,
                                 )
-                                # CRITICAL FIX: INCREASE timeout when peer sends useful unexpected pieces
+                                # Note: INCREASE timeout when peer sends useful unexpected pieces
                                 # This gives the peer more time to send pieces, allowing per-piece and per-block
                                 # timeouts to capture the sent pieces instead of timing out prematurely
                                 if connection.stats.unexpected_pieces_useful > 0:
@@ -9327,7 +9762,7 @@ class AsyncPeerConnectionManager:
             connection.stats.blocks_delivered += 1
 
         # Notify callback
-        # CRITICAL FIX: Check both manager callback and connection callback
+        # Note: Check both manager callback and connection callback
         # The connection callback should be set via propagation, but if manager callback
         # is None, try the connection's callback as a fallback
         callback = self.on_piece_received
@@ -9497,7 +9932,7 @@ class AsyncPeerConnectionManager:
         ) as e:  # pragma: no cover - Exception handling when sending message
             error_msg = f"Failed to send {message.__class__.__name__} to {connection.peer_info}: {e}"
             self.logger.warning(error_msg)
-            # CRITICAL FIX: Don't disconnect here - let caller handle it
+            # Note: Don't disconnect here - let caller handle it
             # Disconnecting here can cause issues if we're still in the connection setup phase
             raise PeerConnectionError(error_msg) from e
 
@@ -9522,7 +9957,7 @@ class AsyncPeerConnectionManager:
                 return previous_state
             return ConnectionState.BITFIELD_SENT
 
-        # CRITICAL FIX: For magnet links, metadata may not be available yet
+        # Note: For magnet links, metadata may not be available yet
         # Check if pieces_info exists and has num_pieces before trying to send bitfield
         pieces_info = self.torrent_data.get("pieces_info")
         if pieces_info is None:
@@ -9561,7 +9996,7 @@ class AsyncPeerConnectionManager:
                 bitfield_bytes[byte_index] |= 1 << (7 - bit_index)
         bitfield_data = bytes(bitfield_bytes)
 
-        # CRITICAL FIX: Per BEP 3, leechers with no pieces should NOT send a bitfield
+        # Note: Per BEP 3, leechers with no pieces should NOT send a bitfield
         # Only send bitfield if we have at least one verified piece
         if len(verified) > 0 and bitfield_data:
             bitfield_message = BitfieldMessage(bitfield_data)
@@ -9694,8 +10129,11 @@ class AsyncPeerConnectionManager:
 
         """
         peer_key = str(connection.peer_info)
+        disconnect_stage = self._infer_disconnect_stage(connection)
+        connection.last_disconnect_stage = disconnect_stage
+        self._record_connection_stage(f"disconnect_{disconnect_stage}")
 
-        # CRITICAL FIX: Add grace period for connections that received bitfield
+        # Note: Add grace period for connections that received bitfield
         # Connections that received bitfield are valuable and should be kept longer
         # This prevents removing connections too quickly when peers close them
         # BitTorrent spec: peers may close connections for various reasons, but we should
@@ -9715,7 +10153,7 @@ class AsyncPeerConnectionManager:
             )
             await asyncio.sleep(grace_period)
 
-        # CRITICAL FIX: Cancel all outstanding requests before disconnecting
+        # Note: Cancel all outstanding requests before disconnecting
         # This prevents pieces from being stuck in REQUESTED/DOWNLOADING state
         outstanding_count = (
             len(connection.outstanding_requests)
@@ -9735,9 +10173,9 @@ class AsyncPeerConnectionManager:
             if hasattr(connection, "request_queue"):
                 connection.request_queue.clear()
 
-        # CRITICAL FIX: Set state to ERROR and remove from dict atomically
+        # Note: Set state to ERROR and remove from dict atomically
         # This prevents race conditions where connection is in ERROR state but still in dict
-        # CRITICAL FIX: Use lock_held parameter to avoid deadlock when called from disconnect_all()
+        # Note: Use lock_held parameter to avoid deadlock when called from disconnect_all()
         if lock_held:
             # Lock already held - don't acquire again (would cause deadlock)
             with contextlib.suppress(Exception):
@@ -9768,7 +10206,7 @@ class AsyncPeerConnectionManager:
                 self._quality_probation_peers.pop(peer_key, None)
 
         # Cancel connection task (only if it exists - PooledConnection doesn't have this)
-        # CRITICAL FIX: Check if task is done before awaiting to prevent RuntimeError
+        # Note: Check if task is done before awaiting to prevent RuntimeError
         if (
             hasattr(connection, "connection_task")
             and connection.connection_task
@@ -9777,7 +10215,7 @@ class AsyncPeerConnectionManager:
             connection.connection_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 try:
-                    # CRITICAL FIX: Add timeout to prevent hanging on task cancellation
+                    # Note: Add timeout to prevent hanging on task cancellation
                     await asyncio.wait_for(
                         connection.connection_task,
                         timeout=2.0,
@@ -9801,7 +10239,7 @@ class AsyncPeerConnectionManager:
         if connection.writer:
             try:
                 connection.writer.close()
-                # CRITICAL FIX: Add timeout and handle WinError 10055 gracefully
+                # Note: Add timeout and handle WinError 10055 gracefully
                 try:
                     await asyncio.wait_for(
                         connection.writer.wait_closed(),
@@ -9833,7 +10271,7 @@ class AsyncPeerConnectionManager:
                 # Ignore cleanup errors when closing connection writer
                 pass  # Connection writer cleanup errors are expected  # pragma: no cover - Same context
 
-        # CRITICAL FIX: Release pooled connection if it was stored
+        # Note: Release pooled connection if it was stored
         # This cleans up the connection pool reference we stored earlier
         pooled_conn = connection.pooled_connection
         if pooled_conn:
@@ -9874,6 +10312,16 @@ class AsyncPeerConnectionManager:
                 )
         if active_remaining == 0 and not self._pending_peer_queue:
             self._connection_batches_in_progress = False
+
+        self.logger.info(
+            "PEER_DISCONNECT: %s removed at stage=%s (state=%s, outstanding_requests=%d, metadata_started=%s, metadata_completed=%s)",
+            peer_key,
+            disconnect_stage,
+            connection.state.value,
+            outstanding_count,
+            connection.metadata_exchange_started_at > 0.0,
+            connection.metadata_exchange_completed_at > 0.0,
+        )
 
         # Clear optimistic unchoke if this peer
         if (
@@ -9920,8 +10368,8 @@ class AsyncPeerConnectionManager:
         except Exception as e:
             self.logger.debug("Failed to emit PEER_DISCONNECTED event: %s", e)
 
-        # CRITICAL FIX: Check peer count after disconnection and trigger immediate discovery if low
-        # CRITICAL FIX: Don't acquire lock if it's already held (e.g., from disconnect_all())
+        # Note: Check peer count after disconnection and trigger immediate discovery if low
+        # Note: Don't acquire lock if it's already held (e.g., from disconnect_all())
         if lock_held:
             # Lock already held - access connections directly
             current_peer_count = len(self.connections)
@@ -9938,7 +10386,7 @@ class AsyncPeerConnectionManager:
 
         # Trigger immediate peer discovery if peer count is critically low
         # This ensures recovery when the last peer disconnects
-        # CRITICAL FIX: Suppress this during shutdown to avoid log spam
+        # Note: Suppress this during shutdown to avoid log spam
         from ccbt.utils.shutdown import is_shutting_down
 
         if not is_shutting_down():
@@ -10025,7 +10473,7 @@ class AsyncPeerConnectionManager:
     async def _reconnection_loop(self) -> None:
         """Periodic task to retry failed peer connections.
 
-        CRITICAL FIX: Adaptive reconnection interval based on active peer count.
+        Note: Adaptive reconnection interval based on active peer count.
         When peer count is low, retry more frequently to discover peers faster.
 
         Checks failed peers and retries those whose backoff period has expired.
@@ -10036,19 +10484,19 @@ class AsyncPeerConnectionManager:
             10  # Limit retries per cycle to avoid overwhelming system
         )
 
-        # CRITICAL FIX: Check _running flag to allow clean shutdown
+        # Note: Check _running flag to allow clean shutdown
         while self._running:
             try:
-                # CRITICAL FIX: Check _running before doing any work
+                # Note: Check _running before doing any work
                 if not self._running:
                     break
 
-                # CRITICAL FIX: Don't interfere with connection batches from trackers
+                # Note: Don't interfere with connection batches from trackers
                 # If connection batches are in progress, skip this cycle to avoid interfering
                 # BUT: If peer count is critically low, allow reconnection even during batches
                 # This ensures we continue discovering peers even after piece requests start
                 if self._connection_batches_in_progress:
-                    # CRITICAL FIX: Check active peer count - if critically low, allow reconnection
+                    # Note: Check active peer count - if critically low, allow reconnection
                     # This ensures peer processing continues even after piece requests start
                     active_peer_count = len(self.get_active_peers())
                     if active_peer_count < 3:
@@ -10068,13 +10516,13 @@ class AsyncPeerConnectionManager:
                         await asyncio.sleep(5.0)
                         continue
 
-                # CRITICAL FIX: Adaptive reconnection interval based on active peer count
+                # Note: Adaptive reconnection interval based on active peer count
                 # According to BitTorrent best practices (BEP 5, BEP 11), ultra-aggressive mode should only
                 # be used when peer count is 0 (no peers at all) to avoid overwhelming the network and
                 # getting blacklisted. Normal aggressive mode is sufficient for 1-2 peers.
                 active_peer_count = len(self.get_active_peers())
                 if active_peer_count == 0:
-                    # CRITICAL FIX: Ultra-aggressive mode only when peer count is 0 (no peers at all)
+                    # Note: Ultra-aggressive mode only when peer count is 0 (no peers at all)
                     # This prevents overwhelming the network when we have at least 1 peer connected
                     # Ultra-aggressive mode (3s interval) can cause peer blacklisting if used too early
                     reconnection_interval = 3.0
@@ -10121,7 +10569,7 @@ class AsyncPeerConnectionManager:
                     reconnection_interval = base_reconnection_interval
                     max_retries_per_cycle = 10
 
-                # CRITICAL FIX: Use interruptible sleep that checks _running frequently
+                # Note: Use interruptible sleep that checks _running frequently
                 # This ensures the loop exits quickly when shutdown is requested
                 sleep_interval = min(
                     reconnection_interval, 1.0
@@ -10142,31 +10590,15 @@ class AsyncPeerConnectionManager:
                     for peer_key, fail_info in list(self._failed_peers.items()):
                         fail_count = fail_info.get("count", 1)
                         fail_timestamp = fail_info.get("timestamp", 0.0)
+                        fail_reason = fail_info.get("reason", "unknown")
+                        fail_is_terminal = bool(fail_info.get("is_terminal", False))
 
-                        # Calculate backoff interval
-                        # CRITICAL FIX: Reduce backoff for ultra-low peer counts - much more aggressive
-                        base_backoff = self._min_retry_interval * (
-                            self._backoff_multiplier ** (fail_count - 1)
+                        backoff_interval = self._calculate_failure_backoff_interval(
+                            fail_count=fail_count,
+                            fail_reason=fail_reason,
+                            is_terminal=fail_is_terminal,
+                            active_peer_count=active_peer_count,
                         )
-                        if active_peer_count < 3:
-                            # Ultra-low peer count: reduce backoff by 80% to retry much faster
-                            backoff_interval = min(
-                                base_backoff * 0.2, self._max_retry_interval * 0.2
-                            )
-                        elif active_peer_count < 5:
-                            # Low peer count: reduce backoff by 60% to retry faster
-                            backoff_interval = min(
-                                base_backoff * 0.4, self._max_retry_interval * 0.4
-                            )
-                        elif active_peer_count < 10:
-                            # Moderate peer count: reduce backoff by 40% to retry faster
-                            backoff_interval = min(
-                                base_backoff * 0.6, self._max_retry_interval * 0.6
-                            )
-                        else:
-                            backoff_interval = min(
-                                base_backoff, self._max_retry_interval
-                            )
 
                         # Check if backoff period has expired
                         elapsed = current_time - fail_timestamp
@@ -10174,7 +10606,7 @@ class AsyncPeerConnectionManager:
                             # Check if peer is already connected
                             async with self.connection_lock:
                                 if peer_key not in self.connections:
-                                    # CRITICAL FIX: Don't retry peers that are in current connection batches
+                                    # Note: Don't retry peers that are in current connection batches
                                     # Check if this peer is in the current batch being processed
                                     # This prevents reconnection loop from interfering with tracker peer processing
                                     if (
@@ -10312,13 +10744,13 @@ class AsyncPeerConnectionManager:
                 :max_slots
             ]  # pragma: no cover - Same context
 
-            # CRITICAL FIX: Choke peers not in new slots, but give new peers a grace period
+            # Note: Choke peers not in new slots, but give new peers a grace period
             # New peers need time to request from us before we choke them
             # This breaks the chicken-and-egg: we unchoke them → they request → they unchoke us
             current_time = time.time()
             grace_period = 30.0  # 30 seconds grace period for new peers
 
-            # CRITICAL FIX: Use lists instead of sets since AsyncPeerConnection is not hashable
+            # Note: Use lists instead of sets since AsyncPeerConnection is not hashable
             # Build list of peers to choke by checking which peers in upload_slots are not in new_upload_slots
             peers_to_choke = [
                 peer for peer in self.upload_slots if peer not in new_upload_slots
@@ -10376,7 +10808,7 @@ class AsyncPeerConnectionManager:
 
             self.upload_slots = new_upload_slots  # pragma: no cover - Same context
 
-            # CRITICAL FIX: Send INTERESTED to all active peers that we haven't sent it to yet
+            # Note: Send INTERESTED to all active peers that we haven't sent it to yet
             # This encourages peers to unchoke us, allowing us to download from multiple peers
             # Many peers wait for INTERESTED before unchoking, so we need to be proactive
             for peer in active_peers:  # pragma: no cover - Same context
@@ -10445,7 +10877,7 @@ class AsyncPeerConnectionManager:
                 )  # pragma: no cover - Same context
 
             # Select new optimistic unchoke
-            # CRITICAL FIX: Don't require peer_interested for optimistic unchoke
+            # Note: Don't require peer_interested for optimistic unchoke
             # New peers may not be interested yet, but we should still give them a chance
             # This breaks the chicken-and-egg problem: we unchoke them so they can request,
             # which encourages them to unchoke us
@@ -10513,7 +10945,7 @@ class AsyncPeerConnectionManager:
             )  # pragma: no cover - Time-dependent sleep in background loop
             await self._update_peer_stats()  # pragma: no cover - Same context
 
-            # CRITICAL FIX: Log comprehensive connection diagnostics every 30 seconds
+            # Note: Log comprehensive connection diagnostics every 30 seconds
             # This helps identify why peers aren't becoming requestable
             if not hasattr(self, "_last_diagnostics_log"):
                 self._last_diagnostics_log = 0.0  # type: ignore[attr-defined]
@@ -10539,7 +10971,7 @@ class AsyncPeerConnectionManager:
     ) -> bool:
         """Determine if a peer connection should be recycled.
 
-        CRITICAL FIX: Maximize peer count first - only recycle truly bad peers.
+        Note: Maximize peer count first - only recycle truly bad peers.
         Keep all peers connected and only use best seeders for piece requests.
 
         Args:
@@ -10550,7 +10982,7 @@ class AsyncPeerConnectionManager:
             True if the peer should be recycled, False otherwise.
 
         """
-        # CRITICAL FIX: Only recycle peers that are truly problematic
+        # Note: Only recycle peers that are truly problematic
         # Maximize peer count first - be very conservative about disconnecting
 
         # Get current active peer count to determine if we can afford to recycle
@@ -10565,7 +10997,7 @@ class AsyncPeerConnectionManager:
             # If that fails, default to allowing recycling (conservative)
             active_peer_count = 0
 
-        # CRITICAL FIX: If we have few peers, don't recycle anyone (maximize connections first)
+        # Note: If we have few peers, don't recycle anyone (maximize connections first)
         min_peers_before_recycling = 100  # Only recycle if we have 100+ peers
         if active_peer_count < min_peers_before_recycling:
             # Keep all peers - maximize connections first
@@ -10586,7 +11018,7 @@ class AsyncPeerConnectionManager:
         )
         getattr(self.config.network, "connection_pool_min_upload_bandwidth", 0)
 
-        # CRITICAL FIX: Only recycle if peer has severe issues (many consecutive failures)
+        # Note: Only recycle if peer has severe issues (many consecutive failures)
         # Don't recycle based on performance score alone - keep peers for PEX/DHT
         if connection.stats.consecutive_failures > max_failures:
             self.logger.debug(
@@ -10597,7 +11029,7 @@ class AsyncPeerConnectionManager:
             )
             return True
 
-        # CRITICAL FIX: Only recycle if peer is completely idle AND we're at connection limit
+        # Note: Only recycle if peer is completely idle AND we're at connection limit
         # AND a new peer is available to replace it
         current_time = time.time()
         idle_time = current_time - connection.stats.last_activity
@@ -10615,7 +11047,7 @@ class AsyncPeerConnectionManager:
             )
             return True
 
-        # CRITICAL FIX: Don't recycle based on bandwidth thresholds - keep peers for PEX/DHT
+        # Note: Don't recycle based on bandwidth thresholds - keep peers for PEX/DHT
         # Only recycle if bandwidth is configured AND peer is completely dead (0 bandwidth for very long)
         # Only recycle if peer has been completely dead for a very long time
         if (
@@ -10631,7 +11063,7 @@ class AsyncPeerConnectionManager:
             )
             return True
 
-        # CRITICAL FIX: Don't recycle based on performance score - keep peers connected
+        # Note: Don't recycle based on performance score - keep peers connected
         # Performance-based recycling is too aggressive - maximize connections first
         # Only recycle if performance is truly terrible AND we have many peers
         if (
@@ -10653,7 +11085,7 @@ class AsyncPeerConnectionManager:
     async def _peer_evaluation_loop(self) -> None:
         """Periodically evaluate peer performance and recycle low-performing connections.
 
-        CRITICAL FIX: Also maintains minimum peer count by triggering discovery when needed.
+        Note: Also maintains minimum peer count by triggering discovery when needed.
         This ensures peer processing continues even after piece requests start.
         """
         interval = getattr(
@@ -10668,7 +11100,7 @@ class AsyncPeerConnectionManager:
                 self.logger.debug("Running peer evaluation loop...")
                 await self._prune_probation_peers("evaluation_loop")
 
-                # CRITICAL FIX: Check if we need to maintain minimum peer count
+                # Note: Check if we need to maintain minimum peer count
                 # This ensures peer processing continues even after piece requests start
                 async with self.connection_lock:
                     active_peer_count = sum(
@@ -10682,7 +11114,7 @@ class AsyncPeerConnectionManager:
                         active_peer_count,
                         min_peer_count,
                     )
-                    # CRITICAL FIX: Trigger peer_count_low event to encourage discovery
+                    # Note: Trigger peer_count_low event to encourage discovery
                     # This ensures continuous peer discovery even after piece requests start
                     if self.event_bus is not None:
                         try:
@@ -10714,7 +11146,7 @@ class AsyncPeerConnectionManager:
                     max_connections = self.max_peers_per_torrent
                     at_connection_limit = current_connections >= max_connections
 
-                    # CRITICAL FIX: First, disconnect peers without bitfields (after timeout)
+                    # Note: First, disconnect peers without bitfields (after timeout)
                     # These peers are not following protocol and should be disconnected to make room for fresh peers
                     peers_without_bitfield: list[AsyncPeerConnection] = []
                     current_time = time.time()
@@ -10726,7 +11158,7 @@ class AsyncPeerConnectionManager:
                     for _peer_key, connection in list(
                         self.connections.items()
                     ):  # Iterate over a copy
-                        # CRITICAL FIX: Disconnect peers that haven't sent bitfield OR HAVE messages within timeout
+                        # Note: Disconnect peers that haven't sent bitfield OR HAVE messages within timeout
                         # According to BitTorrent spec (BEP 3), bitfield is OPTIONAL if peer has no pieces
                         # However, peers should send HAVE messages as they download pieces
                         # Only disconnect if peer sends neither bitfield nor HAVE messages
@@ -10745,7 +11177,7 @@ class AsyncPeerConnectionManager:
 
                             # Only disconnect if peer has neither bitfield nor HAVE messages
                             if not has_bitfield and not has_have_messages:
-                                # CRITICAL FIX: Use adaptive timeout based on useful peer count
+                                # Note: Use adaptive timeout based on useful peer count
                                 # When we have few useful peers, be more aggressive in cycling useless ones
                                 # Count useful peers (those with bitfields or HAVE messages)
                                 useful_peer_count = sum(
@@ -10806,7 +11238,7 @@ class AsyncPeerConnectionManager:
                                     have_messages_count,
                                 )
 
-                    # CRITICAL FIX: Keep minimum peers for DHT/PEX to work
+                    # Note: Keep minimum peers for DHT/PEX to work
                     # DHT and PEX need at least 50 active connections to exchange peer information effectively
                     min_peers_for_dht_pex = 50  # Minimum peers to keep for DHT/PEX functionality (increased to prevent aggressive discovery)
 
@@ -10855,11 +11287,11 @@ class AsyncPeerConnectionManager:
                             )
                         )
 
-                    # CRITICAL FIX: Maximize peer count first - only cycle if we're at connection limit
+                    # Note: Maximize peer count first - only cycle if we're at connection limit
                     # Don't cycle peers aggressively - keep all peers connected for PEX/DHT
                     peers_to_cycle: list[AsyncPeerConnection] = []
 
-                    # CRITICAL FIX: Only cycle peers if we're at 95%+ of connection limit
+                    # Note: Only cycle peers if we're at 95%+ of connection limit
                     # Maximize connections first - don't cycle until we're full
                     if (
                         current_connections >= max_connections * 0.95
@@ -10879,7 +11311,7 @@ class AsyncPeerConnectionManager:
                             if connection.is_active() and (
                                 has_bitfield or has_have_messages
                             ):
-                                # CRITICAL FIX: Never cycle seeders - they're too valuable
+                                # Note: Never cycle seeders - they're too valuable
                                 # Check if this peer is a seeder
                                 is_seeder = False
                                 if (
@@ -10914,17 +11346,17 @@ class AsyncPeerConnectionManager:
                                     current_time - connection.stats.last_activity
                                 )
 
-                                # CRITICAL FIX: Only cycle peers that are truly not useful
+                                # Note: Only cycle peers that are truly not useful
                                 # Maximize connections - only cycle if peer is completely idle for very long
                                 pipeline_utilization = len(
                                     connection.outstanding_requests
                                 ) / max(connection.max_pipeline_depth, 1)
 
-                                # CRITICAL FIX: Much longer age threshold - maximize connections first
+                                # Note: Much longer age threshold - maximize connections first
                                 # Only cycle peers that have been idle for 15+ minutes AND not seeders
                                 min_age = 900.0  # 15 minutes - much longer to maximize connections
 
-                                # CRITICAL FIX: Only cycle if peer is:
+                                # Note: Only cycle if peer is:
                                 # 1. Not a seeder (seeders are too valuable)
                                 # 2. Been idle for 15+ minutes
                                 # 3. Not actively downloading (pipeline empty)
@@ -10950,7 +11382,7 @@ class AsyncPeerConnectionManager:
                                     if len(peers_to_cycle) >= max_connections * 0.1:
                                         break
 
-                    # CRITICAL FIX: Keep minimum peers for DHT/PEX to work
+                    # Note: Keep minimum peers for DHT/PEX to work
                     # Don't cycle all peers - keep at least 50 for DHT/PEX functionality
                     # Maximize connections first - only cycle if we have many peers
                     min_peers_for_dht_pex = 50  # Minimum peers to keep for DHT/PEX functionality (increased to maximize connections)
@@ -11000,7 +11432,7 @@ class AsyncPeerConnectionManager:
                             )
                         )
 
-                    # CRITICAL FIX: Count seeders and trigger discovery if we have few seeders
+                    # Note: Count seeders and trigger discovery if we have few seeders
                     # Seeders are critical for completing downloads - we need to find more if we have few
                     seeders_count = 0
                     for conn in self.connections.values():
@@ -11020,7 +11452,7 @@ class AsyncPeerConnectionManager:
                                     if completion_percent >= 1.0:
                                         seeders_count += 1
 
-                    # CRITICAL FIX: If we disconnected peers, trigger immediate discovery
+                    # Note: If we disconnected peers, trigger immediate discovery
                     # Also trigger if we have few useful peers OR few seeders (even if we didn't disconnect)
                     # Note: We may have kept some peers for DHT/PEX even if they're not useful
                     should_trigger_discovery = (
@@ -11089,7 +11521,7 @@ class AsyncPeerConnectionManager:
                                 "Failed to trigger discovery after peer cycling: %s", e
                             )
 
-                    # CRITICAL FIX: Count seeders and prioritize keeping them
+                    # Note: Count seeders and prioritize keeping them
                     # Seeders are the most valuable peers - never disconnect them unless absolutely necessary
                     seeders_count = 0
                     seeders: list[AsyncPeerConnection] = []
@@ -11120,7 +11552,7 @@ class AsyncPeerConnectionManager:
                     for _peer_key, connection in list(
                         self.connections.items()
                     ):  # Iterate over a copy
-                        # CRITICAL FIX: Never disconnect seeders unless they're completely unresponsive
+                        # Note: Never disconnect seeders unless they're completely unresponsive
                         # Seeders are the most valuable peers - keep them even if they're temporarily slow
                         if connection in seeders:
                             # Only disconnect seeders if they have many consecutive failures or are completely idle
@@ -11135,7 +11567,7 @@ class AsyncPeerConnectionManager:
                                 await self._disconnect_peer(connection)
                             continue  # Skip further evaluation for seeders
 
-                        # CRITICAL FIX: Check if peer has no pieces we need (BitTorrent protocol compliance)
+                        # Note: Check if peer has no pieces we need (BitTorrent protocol compliance)
                         # Disconnect peers that have no useful pieces after grace period
                         if connection.is_active() and connection.peer_state.bitfield:
                             # Peer has sent bitfield - check if they have any pieces at all first
@@ -11147,7 +11579,7 @@ class AsyncPeerConnectionManager:
                                 if byte_val & (1 << (7 - bit_idx))
                             )
 
-                            # CRITICAL FIX: Disconnect peers with empty bitfields immediately
+                            # Note: Disconnect peers with empty bitfields immediately
                             if pieces_count == 0:
                                 self.logger.info(
                                     "Disconnecting %s: peer has empty bitfield (no pieces at all)",
@@ -11208,6 +11640,11 @@ class AsyncPeerConnectionManager:
                                 )
                             )
                             if not metadata_incomplete:
+                                if self._connection_is_metadata_only(connection):
+                                    if connection.metadata_only_since <= 0.0:
+                                        connection.metadata_only_since = time.time()
+                                else:
+                                    connection.metadata_only_since = 0.0
                                 connection_age = max(
                                     0.0,
                                     time.time()
@@ -11217,7 +11654,11 @@ class AsyncPeerConnectionManager:
                                         time.time(),
                                     ),
                                 )
-                                grace_period = 12.0
+                                grace_period = (
+                                    6.0
+                                    if self._connection_is_metadata_only(connection)
+                                    else 12.0
+                                )
                                 if connection_age > grace_period:
                                     self.logger.info(
                                         "Disconnecting %s: peer stayed requestable for %.1fs without advertising any piece availability",
@@ -11337,9 +11778,9 @@ class AsyncPeerConnectionManager:
             peer_key = str(peer_info)
             score = 0.0
 
-            # CRITICAL FIX: Prioritize seeders (peers with 100% of pieces) and near-seeders (90%+ complete)
+            # Note: Prioritize seeders (peers with 100% of pieces) and near-seeders (90%+ complete)
             # Seeders are the most valuable peers - connect to them first
-            # CRITICAL FIX: Also prioritize tracker-reported seeders (they're more likely to have bitfields)
+            # Note: Also prioritize tracker-reported seeders (they're more likely to have bitfields)
             seeder_bonus = 0.0
             tracker_seeder_bonus = 0.0
 
@@ -11398,7 +11839,23 @@ class AsyncPeerConnectionManager:
                                     0.15  # Increased from 0.1 to 0.15 for near-seeders
                                 )
 
+            # 0.5. Historical productivity and reliability bonus
+            quality_bonus = 0.0
+            if peer_key in self._quality_verified_peers:
+                quality_bonus = 0.25
+            elif peer_key in self._quality_probation_peers:
+                quality_bonus = 0.08
+
+            if existing_conn is not None and existing_conn.is_active():
+                delivered = getattr(existing_conn.stats, "blocks_delivered", 0)
+                failed = getattr(existing_conn.stats, "blocks_failed", 0)
+                total_completed = delivered + failed
+                if total_completed > 0:
+                    block_success_ratio = delivered / total_completed
+                    quality_bonus += min(0.1, block_success_ratio * 0.1)
+
             score += seeder_bonus + tracker_seeder_bonus
+            score += quality_bonus
 
             # 1. Historical performance (30% weight - reduced from 40% to allow slower peers)
             performance_score = 0.5  # Default neutral score
@@ -11489,7 +11946,7 @@ class AsyncPeerConnectionManager:
             score += success_rate * 0.2
 
             # 4. Source quality bonus (increased weight for better peer selection)
-            # CRITICAL FIX: Tracker peers are more likely to have bitfields and be seeders
+            # Note: Tracker peers are more likely to have bitfields and be seeders
             # Prefer tracker peers over DHT/PEX peers (tracker peers are more reliable)
             source_bonus = 0.0
             peer_source = peer_info.peer_source or "unknown"
@@ -11497,7 +11954,7 @@ class AsyncPeerConnectionManager:
                 source_bonus = (
                     0.15  # Increased from 0.1 to 0.15 - tracker peers are more reliable
                 )
-                # CRITICAL FIX: Tracker peers are more likely to have bitfields, so prioritize them
+                # Note: Tracker peers are more likely to have bitfields, so prioritize them
                 # This helps avoid connecting to peers with pieces=0 (no bitfield)
             elif peer_source == "dht":
                 source_bonus = 0.05  # DHT peers get 5% bonus
@@ -11508,78 +11965,76 @@ class AsyncPeerConnectionManager:
 
             score += source_bonus
 
-            # CRITICAL FIX: Additional bonus/penalty for already-connected peers based on bitfield/HAVE message status
+            # Note: Additional bonus/penalty for already-connected peers based on bitfield/HAVE message status
             # According to BitTorrent spec (BEP 3), bitfield is OPTIONAL if peer has no pieces
             # Peers may send HAVE messages instead of bitfields (protocol-compliant)
             # We should allow connections to peers without bitfields but check if they send HAVE messages
             # Only penalize peers that don't send HAVE messages OR bitfields after a reasonable time
             already_connected_communication_bonus = 0.0
-            if peer_key in self.connections:
-                existing_conn = self.connections[peer_key]
-                if existing_conn.is_active():
-                    has_bitfield = (
-                        existing_conn.peer_state.bitfield is not None
-                        and len(existing_conn.peer_state.bitfield) > 0
-                    )
-                    # CRITICAL FIX: Check for HAVE messages as alternative to bitfield
-                    have_messages_count = (
-                        len(existing_conn.peer_state.pieces_we_have)
-                        if existing_conn.peer_state.pieces_we_have
-                        else 0
-                    )
-                    has_have_messages = have_messages_count > 0
+            if existing_conn is not None and existing_conn.is_active():
+                has_bitfield = (
+                    existing_conn.peer_state.bitfield is not None
+                    and len(existing_conn.peer_state.bitfield) > 0
+                )
+                # Note: Check for HAVE messages as alternative to bitfield
+                have_messages_count = (
+                    len(existing_conn.peer_state.pieces_we_have)
+                    if existing_conn.peer_state.pieces_we_have
+                    else 0
+                )
+                has_have_messages = have_messages_count > 0
 
-                    # Calculate connection age to determine if peer has had time to send HAVE messages
-                    connection_age = (
-                        time.time() - existing_conn.stats.last_activity
-                        if hasattr(existing_conn.stats, "last_activity")
-                        else 0.0
-                    )
-                    have_message_timeout = 30.0  # 30 seconds - reasonable time for peer to send first HAVE message
+                # Calculate connection age to determine if peer has had time to send HAVE messages
+                connection_age = (
+                    time.time() - existing_conn.stats.last_activity
+                    if hasattr(existing_conn.stats, "last_activity")
+                    else 0.0
+                )
+                have_message_timeout = 30.0  # 30 seconds - reasonable time for peer to send first HAVE message
 
-                    if has_bitfield:
-                        # Already connected with bitfield - give bonus (seeder bonus already applied above)
-                        # This helps keep connections to peers we know have pieces
-                        already_connected_communication_bonus = (
-                            0.1  # 10% bonus for peers we know have bitfields
-                        )
-                        self.logger.debug(
-                            "Peer %s already connected with bitfield - adding +%.1f bonus",
-                            peer_key,
-                            already_connected_communication_bonus,
-                        )
-                    elif has_have_messages:
-                        # Peer sent HAVE messages but no bitfield - protocol-compliant (leecher with 0% complete initially)
-                        # Give smaller bonus than bitfield, but still positive (peer is communicating)
-                        already_connected_communication_bonus = (
-                            0.05  # 5% bonus for peers using HAVE messages
-                        )
-                        self.logger.debug(
-                            "Peer %s already connected with %d HAVE message(s) (no bitfield) - adding +%.1f bonus (protocol-compliant)",
-                            peer_key,
-                            have_messages_count,
-                            already_connected_communication_bonus,
-                        )
-                    elif connection_age > have_message_timeout:
-                        # Already connected for >30s but no bitfield AND no HAVE messages
-                        # This peer is likely non-responsive or buggy - penalize
-                        already_connected_communication_bonus = (
-                            -0.2
-                        )  # Penalty for peers that don't communicate
-                        self.logger.debug(
-                            "Peer %s already connected for %.1fs but no bitfield OR HAVE messages - applying -%.1f penalty",
-                            peer_key,
-                            connection_age,
-                            abs(already_connected_communication_bonus),
-                        )
-                    else:
-                        # Recently connected (<30s) without bitfield - give benefit of doubt
-                        # Peer may send HAVE messages soon - no penalty yet
-                        self.logger.debug(
-                            "Peer %s recently connected (%.1fs) without bitfield - waiting for HAVE messages (no penalty yet)",
-                            peer_key,
-                            connection_age,
-                        )
+                if has_bitfield:
+                    # Already connected with bitfield - give bonus (seeder bonus already applied above)
+                    # This helps keep connections to peers we know have pieces
+                    already_connected_communication_bonus = (
+                        0.1  # 10% bonus for peers we know have bitfields
+                    )
+                    self.logger.debug(
+                        "Peer %s already connected with bitfield - adding +%.1f bonus",
+                        peer_key,
+                        already_connected_communication_bonus,
+                    )
+                elif has_have_messages:
+                    # Peer sent HAVE messages but no bitfield - protocol-compliant (leecher with 0% complete initially)
+                    # Give smaller bonus than bitfield, but still positive (peer is communicating)
+                    already_connected_communication_bonus = (
+                        0.05  # 5% bonus for peers using HAVE messages
+                    )
+                    self.logger.debug(
+                        "Peer %s already connected with %d HAVE message(s) (no bitfield) - adding +%.1f bonus (protocol-compliant)",
+                        peer_key,
+                        have_messages_count,
+                        already_connected_communication_bonus,
+                    )
+                elif connection_age > have_message_timeout:
+                    # Already connected for >30s but no bitfield AND no HAVE messages
+                    # This peer is likely non-responsive or buggy - penalize
+                    already_connected_communication_bonus = (
+                        -0.2
+                    )  # Penalty for peers that don't communicate
+                    self.logger.debug(
+                        "Peer %s already connected for %.1fs but no bitfield OR HAVE messages - applying -%.1f penalty",
+                        peer_key,
+                        connection_age,
+                        abs(already_connected_communication_bonus),
+                    )
+                else:
+                    # Recently connected (<30s) without bitfield - give benefit of doubt
+                    # Peer may send HAVE messages soon - no penalty yet
+                    self.logger.debug(
+                        "Peer %s recently connected (%.1fs) without bitfield - waiting for HAVE messages (no penalty yet)",
+                        peer_key,
+                        connection_age,
+                    )
 
             score += already_connected_communication_bonus
 
@@ -11587,9 +12042,21 @@ class AsyncPeerConnectionManager:
             failure_penalty = 0.0
             async with self._failed_peer_lock:
                 if peer_key in self._failed_peers:
-                    fail_count = self._failed_peers[peer_key].get("count", 0)
-                    # Penalize based on failure count: -0.1 per failure, max -0.5
-                    failure_penalty = min(0.5, fail_count * 0.1)
+                    fail_info = self._failed_peers[peer_key]
+                    fail_count = fail_info.get("count", 0)
+                    fail_reason = str(fail_info.get("reason", "")).lower()
+                    is_terminal = bool(fail_info.get("is_terminal", False))
+
+                    if is_terminal:
+                        # Terminal failures should be deprioritized strongly.
+                        failure_penalty = min(0.9, 0.5 + min(fail_count, 8) * 0.05)
+                    else:
+                        # Transient failures: modest penalty that increases with retries.
+                        failure_penalty = min(0.45, fail_count * 0.1)
+
+                    if fail_reason in {"protocol_error", "handshake_error", "info_hash_mismatch"}:
+                        # Additional penalty for quality/compatibility failures.
+                        failure_penalty = min(1.0, failure_penalty + 0.15)
 
             score -= failure_penalty
 
@@ -11618,7 +12085,7 @@ class AsyncPeerConnectionManager:
         According to BitTorrent protocol, requests that don't receive responses
         within a reasonable time should be cancelled to prevent pipeline deadlock.
 
-        CRITICAL FIX: Use more aggressive timeout when pipeline is full to prevent
+        Note: Use more aggressive timeout when pipeline is full to prevent
         deadlock. If pipeline is >80% full, use shorter timeout (15s) to free slots faster.
 
         Args:
@@ -11632,7 +12099,7 @@ class AsyncPeerConnectionManager:
         # Default timeout: 60 seconds (configurable via network.request_timeout)
         base_timeout = getattr(self.config.network, "request_timeout", 60.0)
 
-        # CRITICAL FIX: Use more aggressive timeout when pipeline is full
+        # Note: Use more aggressive timeout when pipeline is full
         # If pipeline is >80% full, use shorter timeout to free slots faster
         pipeline_utilization = len(connection.outstanding_requests) / max(
             connection.max_pipeline_depth, 1
@@ -11651,7 +12118,7 @@ class AsyncPeerConnectionManager:
         else:
             request_timeout = base_timeout
 
-        # CRITICAL FIX: Apply dynamic timeout adjustment based on unexpected pieces
+        # Note: Apply dynamic timeout adjustment based on unexpected pieces
         # If peer is sending useful unexpected pieces, INCREASE timeout to give them more time
         # This allows per-piece and per-block timeouts to capture the sent pieces
         if hasattr(connection.stats, "timeout_adjustment_factor"):
@@ -11737,7 +12204,7 @@ class AsyncPeerConnectionManager:
 
         async with self.connection_lock:  # pragma: no cover - Same context
             for connection in self.connections.values():  # pragma: no cover - Stats update loop requires time-based state changes, complex to test
-                # CRITICAL FIX: Clean up timed-out requests before updating stats
+                # Note: Clean up timed-out requests before updating stats
                 # This prevents pipeline deadlock when peers don't send data
                 await self._cleanup_timed_out_requests(connection)
 
@@ -12034,7 +12501,7 @@ class AsyncPeerConnectionManager:
             )
             return
 
-        # CRITICAL FIX: Ensure "interested" message is sent before requesting pieces
+        # Note: Ensure "interested" message is sent before requesting pieces
         # According to BitTorrent protocol, we should be "interested" before requesting,
         # but we don't block requests if sending fails - some peers may accept requests anyway
         if not connection.am_interested:
@@ -12052,7 +12519,7 @@ class AsyncPeerConnectionManager:
                     e,
                 )
 
-        # CRITICAL FIX: Log when we actually request a piece
+        # Note: Log when we actually request a piece
         self.logger.debug(
             "Requesting piece %d:%d:%d from %s (interested=%s, can_request=%s)",
             piece_index,
@@ -12247,19 +12714,19 @@ class AsyncPeerConnectionManager:
 
     def get_active_peers(self) -> list[AsyncPeerConnection]:
         """Get list of active peers."""
-        # CRITICAL FIX: Include peers that are connected but not yet fully active
+        # Note: Include peers that are connected but not yet fully active
         # Also include peers that have received bitfield (ready for requests)
         # Note: This is a synchronous method, so we can't use async locks
         # We create a copy of connections.values() to iterate safely
         active_peers = []
         connections_copy = list(self.connections.values())
         for conn in connections_copy:
-            # CRITICAL FIX: Explicitly exclude ERROR and DISCONNECTED state connections
+            # Note: Explicitly exclude ERROR and DISCONNECTED state connections
             # ERROR state indicates connection is being cleaned up or has failed
             if conn.state == ConnectionState.ERROR:
                 continue
 
-            # CRITICAL FIX: Include post-handshake bitfield states even if reader/writer
+            # Note: Include post-handshake bitfield states even if reader/writer
             # momentarily disappear during cleanup. These peers are still useful for
             # availability accounting and metadata/bootstrap heuristics.
             if conn.state in {
@@ -12269,7 +12736,7 @@ class AsyncPeerConnectionManager:
                 active_peers.append(conn)
                 continue
 
-            # CRITICAL FIX: Exclude connections that don't have reader/writer (actually disconnected)
+            # Note: Exclude connections that don't have reader/writer (actually disconnected)
             # A connection can be in ACTIVE state but have None reader/writer if it was disconnected
             # This prevents including stale connections that will never unchoke
             # BUT: BITFIELD_RECEIVED connections are handled above, so we only check reader/writer for other states
@@ -12328,7 +12795,7 @@ class AsyncPeerConnectionManager:
                 connection = self.connections[
                     peer_key
                 ]  # pragma: no cover - Same context
-                # CRITICAL FIX: Pass lock_held=True since we already hold the lock
+                # Note: Pass lock_held=True since we already hold the lock
                 await self._disconnect_peer(
                     connection, lock_held=True
                 )  # pragma: no cover - Same context
@@ -12381,6 +12848,13 @@ class AsyncPeerConnectionManager:
             self.logger.debug(
                 "Cannot send extension handshake to %s: writer not available",
                 connection.peer_info,
+            )
+            return
+        if connection.our_extension_handshake_sent_at > 0.0:
+            self.logger.debug(
+                "Skipping duplicate extension handshake to %s (already sent %.1fs ago)",
+                connection.peer_info,
+                time.time() - connection.our_extension_handshake_sent_at,
             )
             return
 
@@ -12540,6 +13014,8 @@ class AsyncPeerConnectionManager:
             # Send extension handshake
             connection.writer.write(handshake_msg)
             await connection.writer.drain()
+            connection.our_extension_handshake_sent_at = time.time()
+            self._record_connection_stage("our_extension_handshake_sent")
 
             self.logger.info(
                 "Sent our extension handshake to %s (length=%d, ut_metadata_id=1)",
@@ -12586,10 +13062,11 @@ class AsyncPeerConnectionManager:
                 with contextlib.suppress(TypeError, ValueError):
                     metadata_size = int(metadata_size)
             if not metadata_size:
-                self.logger.debug(
-                    "Peer %s supports ut_metadata but metadata_size not in handshake",
+                self.logger.warning(
+                    "MAGNET_METADATA_EXCHANGE: Peer %s advertised ut_metadata but did not provide metadata_size; cannot start exchange yet.",
                     connection.peer_info,
                 )
+                self._record_connection_stage("metadata_exchange_missing_size")
                 return
 
             # CRITICAL SECURITY: Limit metadata size to prevent DoS attacks (BEP 9)
@@ -12603,6 +13080,7 @@ class AsyncPeerConnectionManager:
                     connection.peer_info,
                     MAX_METADATA_SIZE,
                 )
+                self._record_connection_stage("metadata_exchange_rejected_size")
                 return
 
             if metadata_size <= 0:
@@ -12611,6 +13089,7 @@ class AsyncPeerConnectionManager:
                     metadata_size,
                     connection.peer_info,
                 )
+                self._record_connection_stage("metadata_exchange_invalid_size")
                 return
 
             self.logger.info(
@@ -12620,7 +13099,7 @@ class AsyncPeerConnectionManager:
                 ut_metadata_id,
             )
 
-            # CRITICAL FIX: Use existing connection directly instead of creating new one
+            # Note: Use existing connection directly instead of creating new one
             # Calculate number of metadata pieces (each piece is 16KB)
             import math
             import struct
@@ -12635,7 +13114,7 @@ class AsyncPeerConnectionManager:
                 metadata_size,
             )
 
-            # CRITICAL FIX: Initialize metadata exchange state with events for coordination
+            # Note: Initialize metadata exchange state with events for coordination
             # Use consistent peer_key format (ip:port) to match lookup format
             if hasattr(connection.peer_info, "ip") and hasattr(
                 connection.peer_info, "port"
@@ -12643,6 +13122,14 @@ class AsyncPeerConnectionManager:
                 peer_key = f"{connection.peer_info.ip}:{connection.peer_info.port}"
             else:
                 peer_key = str(connection.peer_info)
+            existing_state = self._metadata_exchange_state.get(peer_key)
+            if existing_state and not existing_state.get("complete", False):
+                self.logger.info(
+                    "MAGNET_METADATA_EXCHANGE: Exchange already active for %s (peer_key=%s), skipping duplicate trigger.",
+                    connection.peer_info,
+                    peer_key,
+                )
+                return
             piece_events: dict[int, asyncio.Event] = {}
             piece_data_dict: dict[int, Optional[bytes]] = {}
 
@@ -12650,6 +13137,8 @@ class AsyncPeerConnectionManager:
                 piece_events[piece_idx] = asyncio.Event()
                 piece_data_dict[piece_idx] = None
 
+            connection.metadata_exchange_started_at = time.time()
+            self._record_connection_stage("metadata_exchange_started")
             self._metadata_exchange_state[peer_key] = {
                 "ut_metadata_id": ut_metadata_id,
                 "metadata_size": metadata_size,
@@ -12670,7 +13159,7 @@ class AsyncPeerConnectionManager:
             )
 
             try:
-                # CRITICAL FIX: Ensure INTERESTED is sent before metadata requests
+                # Note: Ensure INTERESTED is sent before metadata requests
                 # Some peers may require INTERESTED before responding to metadata requests
                 # According to BitTorrent protocol, we should be interested before requesting
                 if not connection.am_interested:
@@ -12689,7 +13178,7 @@ class AsyncPeerConnectionManager:
                             e,
                         )
 
-                # CRITICAL FIX: Don't wait for UNCHOKE - send metadata requests immediately
+                # Note: Don't wait for UNCHOKE - send metadata requests immediately
                 # BEP 9 allows metadata exchange even when choked, and waiting causes timeouts
                 # Many peers don't respond to metadata requests when choked, so we'll try anyway
                 # but won't block waiting for UNCHOKE (which may never come)
@@ -12780,17 +13269,17 @@ class AsyncPeerConnectionManager:
                         continue
 
                 # Wait for all pieces with timeout
-                # CRITICAL FIX: Adaptive timeout based on peer choking state
+                # Note: Adaptive timeout based on peer choking state
                 # Choked peers may take longer to respond (or not respond at all)
                 # Unchoked peers should respond quickly
-                # CRITICAL FIX: Use configurable timeout values from NetworkConfig
+                # Note: Use configurable timeout values from NetworkConfig
                 # BitTorrent spec compliant: reasonable timeouts prevent hanging connections
                 base_timeout_per_piece = getattr(
                     self.config.network,
                     "metadata_piece_timeout",
                     15.0,
                 )
-                # CRITICAL FIX: Use shorter timeout for unchoked peers (they should respond faster)
+                # Note: Use shorter timeout for unchoked peers (they should respond faster)
                 # Use longer timeout for choked peers (they may be slow or not respond)
                 if connection.peer_choking:
                     # Choked peer - use longer timeout but don't wait too long
@@ -12819,7 +13308,7 @@ class AsyncPeerConnectionManager:
                     60.0,
                 )
                 # Use configured total timeout or calculate from per-piece timeout
-                # CRITICAL FIX: Reduce buffer from 30s to 15s to fail faster on unresponsive peers
+                # Note: Reduce buffer from 30s to 15s to fail faster on unresponsive peers
                 total_timeout = max(
                     metadata_exchange_timeout,
                     timeout_per_piece * num_pieces
@@ -12906,7 +13395,7 @@ class AsyncPeerConnectionManager:
                                 connection.peer_info,
                             )
             finally:
-                # CRITICAL FIX: Don't clean up state immediately - wait a bit for late responses
+                # Note: Don't clean up state immediately - wait a bit for late responses
                 # Some responses may arrive after timeout but before cleanup
                 # Only clean up if we're not waiting for any more pieces
                 if peer_key in self._metadata_exchange_state:
@@ -13008,7 +13497,7 @@ class AsyncPeerConnectionManager:
                         )
                         return
 
-                    # CRITICAL FIX: Check for 'info' key with both bytes and string keys
+                    # Note: Check for 'info' key with both bytes and string keys
                     # BEP 3 specifies bytes keys, but some implementations may use strings
                     info_key = None
                     if b"info" in metadata:
@@ -13181,7 +13670,7 @@ class AsyncPeerConnectionManager:
                     from ccbt.utils.metadata_utils import validate_info_dict
 
                     # info_dict is already set above (either from metadata[info_key] or as fallback from metadata itself)
-                    # CRITICAL FIX: Normalize info_dict keys to bytes for validation
+                    # Note: Normalize info_dict keys to bytes for validation
                     # BencodeEncoder handles both bytes and string keys, but we need to ensure consistency
                     # Some decoders may return string keys, so we normalize to bytes for validation
                     normalized_info_dict: dict[bytes, Any] = {}
@@ -13221,6 +13710,8 @@ class AsyncPeerConnectionManager:
                         len(complete_metadata),
                         num_pieces,
                     )
+                    connection.metadata_exchange_completed_at = time.time()
+                    self._record_connection_stage("metadata_exchange_completed")
 
                     # Update torrent_data and piece_manager
                     if hasattr(self, "piece_manager") and self.piece_manager:
@@ -13228,7 +13719,7 @@ class AsyncPeerConnectionManager:
 
                         from ccbt.core.magnet import build_torrent_data_from_metadata
 
-                        # CRITICAL FIX: build_torrent_data_from_metadata expects the info_dict, not the full metadata
+                        # Note: build_torrent_data_from_metadata expects the info_dict, not the full metadata
                         # The full metadata contains keys like 'info', 'announce', etc.
                         # We need to extract the 'info' dictionary from the metadata
                         # Use normalized_info_dict to ensure bytes keys (required by build_torrent_data_from_metadata)
@@ -13244,7 +13735,7 @@ class AsyncPeerConnectionManager:
                         if isinstance(self.torrent_data, dict):
                             self.torrent_data.update(updated_torrent_data)
 
-                            # CRITICAL FIX: Update info_hash in torrent_data so it's no longer "unknown"
+                            # Note: Update info_hash in torrent_data so it's no longer "unknown"
                             # This ensures subsequent connection attempts have the correct info_hash
                             # The info_hash should already be in updated_torrent_data from build_torrent_data_from_metadata
                             if "info_hash" in updated_torrent_data:
@@ -13324,12 +13815,12 @@ class AsyncPeerConnectionManager:
                                         len(self.piece_manager.pieces),
                                     )
 
-                                # CRITICAL FIX: Re-process all stored bitfields from existing connections
+                                # Note: Re-process all stored bitfields from existing connections
                                 # When metadata becomes available, we need to re-process bitfields that were
                                 # received before metadata was available (magnet link case)
                                 await self._reprocess_stored_bitfields()
 
-                                # CRITICAL FIX: After metadata is available, send our bitfield to all connected peers
+                                # Note: After metadata is available, send our bitfield to all connected peers
                                 # This is essential because peers need to know what pieces we have
                                 # For magnet links, we may have skipped sending bitfield earlier when metadata wasn't available
                                 # BitTorrent spec compliant: send bitfield and INTERESTED after metadata exchange
@@ -13364,7 +13855,7 @@ class AsyncPeerConnectionManager:
                                                 len(connected_peers),
                                             )
                                             for peer_conn in connected_peers:
-                                                # CRITICAL FIX: Validate connection is still valid before sending
+                                                # Note: Validate connection is still valid before sending
                                                 if (
                                                     not peer_conn.is_connected()
                                                     or peer_conn.writer is None
@@ -13378,7 +13869,7 @@ class AsyncPeerConnectionManager:
                                                 # Send bitfield if enabled
                                                 if send_bitfield_after_metadata:
                                                     try:
-                                                        # CRITICAL FIX: Send our bitfield first (so peer knows what we have)
+                                                        # Note: Send our bitfield first (so peer knows what we have)
                                                         # This is especially important for magnet links where bitfield was skipped earlier
                                                         await self._send_bitfield(
                                                             peer_conn
@@ -13399,7 +13890,7 @@ class AsyncPeerConnectionManager:
                                                             peer_conn.peer_info,
                                                             e,
                                                         )
-                                                        # CRITICAL FIX: Don't disconnect on error - peer might still be usable
+                                                        # Note: Don't disconnect on error - peer might still be usable
                                                         continue
 
                                                 # Send INTERESTED if enabled
@@ -13408,7 +13899,7 @@ class AsyncPeerConnectionManager:
                                                     and not peer_conn.am_interested
                                                 ):
                                                     try:
-                                                        # CRITICAL FIX: Verify connection is still valid before sending
+                                                        # Note: Verify connection is still valid before sending
                                                         if (
                                                             not peer_conn.is_connected()
                                                             or peer_conn.writer is None
@@ -13439,16 +13930,16 @@ class AsyncPeerConnectionManager:
                                                             peer_conn.peer_info,
                                                             e,
                                                         )
-                                                        # CRITICAL FIX: Don't disconnect on error - peer might still be usable
+                                                        # Note: Don't disconnect on error - peer might still be usable
                                                         continue
                                     except Exception as e:
                                         self.logger.warning(
                                             "Error sending bitfield/INTERESTED after metadata fetch: %s (this is non-fatal)",
                                             e,
                                         )
-                                        # CRITICAL FIX: Don't let errors in post-metadata operations break the connection
+                                        # Note: Don't let errors in post-metadata operations break the connection
 
-                                # CRITICAL FIX: Call start_download() after metadata is fetched to initialize pieces
+                                # Note: Call start_download() after metadata is fetched to initialize pieces
                                 # This ensures pieces list is initialized and downloads can start immediately
                                 if hasattr(self.piece_manager, "start_download"):
                                     try:
@@ -13473,7 +13964,7 @@ class AsyncPeerConnectionManager:
                                             ),
                                         )
 
-                                        # CRITICAL FIX: Trigger piece selection immediately after metadata and start_download
+                                        # Note: Trigger piece selection immediately after metadata and start_download
                                         # This ensures we start requesting pieces as soon as metadata is available
                                         # This prevents peers from disconnecting because we appear uninterested
                                         if hasattr(
@@ -13504,7 +13995,7 @@ class AsyncPeerConnectionManager:
                                             start_error,
                                         )
 
-                                    # CRITICAL FIX: Always trigger immediate peer discovery after metadata fetch
+                                    # Note: Always trigger immediate peer discovery after metadata fetch
                                     # Now that we have metadata, we can actively seek more peers to download from
                                     # This is especially important for magnet links where we may have few initial peers
                                     try:
@@ -13541,7 +14032,7 @@ class AsyncPeerConnectionManager:
                                                 if has_bitfield or has_have_messages:
                                                     peers_with_piece_info.append(conn)
 
-                                        # CRITICAL FIX: Log connection state for debugging
+                                        # Note: Log connection state for debugging
                                         connection_states = {}
                                         async with self.connection_lock:
                                             for conn in self.connections.values():
@@ -13561,6 +14052,15 @@ class AsyncPeerConnectionManager:
                                             len(peers_with_piece_info),
                                             connection_states,
                                         )
+                                        if active_peers and not peers_with_piece_info:
+                                            now = time.time()
+                                            for conn in active_peers:
+                                                if conn.metadata_only_since <= 0.0:
+                                                    conn.metadata_only_since = now
+                                            self.logger.info(
+                                                "After metadata fetch: tagging %d active peer(s) as metadata-only probation candidates until they advertise payload availability",
+                                                len(active_peers),
+                                            )
                                     except Exception as e:
                                         self.logger.warning(
                                             "Error checking active peers after metadata fetch: %s (this is non-fatal)",
@@ -13610,11 +14110,11 @@ class AsyncPeerConnectionManager:
                                             e,
                                         )
 
-                                    # CRITICAL FIX: Restart download now that metadata is available
+                                    # Note: Restart download now that metadata is available
                                     # This ensures piece selection and downloading can begin immediately
                                     # For magnet links, the piece_manager may have been started with num_pieces=0
                                     # and needs to be restarted now that we have the actual piece count
-                                    # CRITICAL FIX: Always call start_download after metadata fetch, even if is_downloading=True
+                                    # Note: Always call start_download after metadata fetch, even if is_downloading=True
                                     # This is because is_downloading may have been set to True earlier with num_pieces=0,
                                     # and we need to reinitialize pieces now that we have the correct num_pieces
                                     if hasattr(self.piece_manager, "start_download"):
@@ -13665,7 +14165,7 @@ class AsyncPeerConnectionManager:
                 else str(connection.state),
                 connection.is_connected(),
             )
-            # CRITICAL FIX: Don't disconnect peer on metadata exchange error
+            # Note: Don't disconnect peer on metadata exchange error
             # The peer might still be usable for downloading pieces
             # Only log the error and continue - graceful degradation
 
@@ -13733,7 +14233,7 @@ class AsyncPeerConnectionManager:
 
             # Extract msg_type and piece_index
             # Handle both bytes and int keys/values (for compatibility)
-            # CRITICAL FIX: Use 'in' check instead of 'or' to handle piece_index=0 correctly
+            # Note: Use 'in' check instead of 'or' to handle piece_index=0 correctly
             # If piece_index=0, then 'header.get(b"piece") or header.get("piece")' would fail
             # because 0 is falsy in Python
             if b"msg_type" in header:
@@ -13803,7 +14303,7 @@ class AsyncPeerConnectionManager:
                 piece_data = extension_payload[header_len:]
 
                 # BEP 9: Check for total_size in header (optional, but should match if present)
-                # CRITICAL FIX: Use 'in' check instead of 'or' for consistency (though total_size shouldn't be 0)
+                # Note: Use 'in' check instead of 'or' for consistency (though total_size shouldn't be 0)
                 if b"total_size" in header:
                     total_size = header[b"total_size"]
                 elif "total_size" in header:
@@ -13933,6 +14433,7 @@ class AsyncPeerConnectionManager:
             else None
         )
         if not isinstance(info_dict, dict):
+            num_pieces_reject = 0
             reject_payload = BencodeEncoder().encode(
                 {b"msg_type": 2, b"piece": piece_index}
             )
@@ -13942,10 +14443,10 @@ class AsyncPeerConnectionManager:
             connection.writer.write(reject_msg)
             await connection.writer.drain()
             self.logger.info(
-                "Rejected ut_metadata request for piece %d from %s because metadata is not available locally",
+                "Rejected ut_metadata request for piece %d from %s because metadata is not available locally (num_pieces=%d)",
                 piece_index,
                 connection.peer_info,
-                num_pieces,
+                num_pieces_reject,
             )
             return
 

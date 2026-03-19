@@ -59,7 +59,7 @@ class TestInfoHashMismatch:
             mock_torrent_data, mock_piece_manager
         )
         
-        # CRITICAL FIX: Start the manager before connecting
+        # Note: Start the manager before connecting
         await manager.start()
 
         # Create connection with wrong info hash in handshake
@@ -73,14 +73,14 @@ class TestInfoHashMismatch:
         mock_writer.wait_closed = AsyncMock()
         mock_writer.write = MagicMock()
         mock_writer.close = MagicMock()
-        # CRITICAL FIX: Configure is_closing() to return False so connection can proceed
+        # Note: Configure is_closing() to return False so connection can proceed
         mock_writer.is_closing = MagicMock(return_value=False)
 
         with patch("asyncio.open_connection") as mock_open:
             mock_open.return_value = (mock_reader, mock_writer)
 
             # Mock handshake response with wrong info hash
-            # CRITICAL FIX: Mock readexactly to handle protocol length (1 byte) then remaining (67 bytes)
+            # Note: Mock readexactly to handle protocol length (1 byte) then remaining (67 bytes)
             handshake_calls = {"protocol_len": False, "remaining": False}
             async def readexactly_side_effect(n):
                 if n == 1 and not handshake_calls["protocol_len"]:
@@ -117,7 +117,7 @@ class TestInfoHashMismatch:
             async with manager.connection_lock:
                 assert str(peer_info) not in manager.connections
             
-        # CRITICAL FIX: Stop the manager to clean up
+        # Note: Stop the manager to clean up
         await manager.stop()
 
 
@@ -133,7 +133,7 @@ class TestOnPeerConnectedCallback:
             mock_torrent_data, mock_piece_manager
         )
         
-        # CRITICAL FIX: Start the manager before connecting
+        # Note: Start the manager before connecting
         await manager.start()
 
         # Set up callback
@@ -153,7 +153,7 @@ class TestOnPeerConnectedCallback:
         mock_writer.wait_closed = AsyncMock()
         mock_writer.write = MagicMock()
         mock_writer.close = MagicMock()
-        # CRITICAL FIX: Configure is_closing() to return False so connection can proceed
+        # Note: Configure is_closing() to return False so connection can proceed
         mock_writer.is_closing = MagicMock(return_value=False)
 
         # Create proper handshake
@@ -161,7 +161,7 @@ class TestOnPeerConnectedCallback:
         peer_handshake = Handshake(info_hash, b"remote_peer_id_20_by")
         proper_handshake_data = peer_handshake.encode()  # 68 bytes
         
-        # CRITICAL FIX: Mock readexactly to handle protocol length (1 byte) then remaining (67 bytes)
+        # Note: Mock readexactly to handle protocol length (1 byte) then remaining (67 bytes)
         handshake_calls = {"protocol_len": False, "remaining": False}
         async def readexactly_side_effect(n):
             if n == 1 and not handshake_calls["protocol_len"]:
@@ -180,7 +180,7 @@ class TestOnPeerConnectedCallback:
         manager._send_bitfield = AsyncMock()
         manager._send_unchoke = AsyncMock()
 
-        # CRITICAL FIX: Mock _handle_peer_messages to prevent hanging, but let create_task work normally
+        # Note: Mock _handle_peer_messages to prevent hanging, but let create_task work normally
         async def mock_handle_peer_messages(connection):
             """Mock message handler that doesn't hang."""
             # Just return immediately - don't actually handle messages
@@ -193,7 +193,7 @@ class TestOnPeerConnectedCallback:
 
             await manager._connect_to_peer(peer_info)
 
-            # CRITICAL FIX: Wait for callback to be called (connection is async)
+            # Note: Wait for callback to be called (connection is async)
             import asyncio
             max_wait = 0.5  # Increased wait time
             start_time = asyncio.get_event_loop().time()
@@ -207,13 +207,13 @@ class TestOnPeerConnectedCallback:
         # Verify callback was called (may be called multiple times during connection setup)
         assert len(callback_called) >= 1, f"Callback not called (waited {elapsed:.3f}s, connections: {list(manager.connections.keys())})"
         assert callback_connection[0] is not None
-        # CRITICAL FIX: State might be BITFIELD_SENT or ACTIVE after handshake, not just HANDSHAKE_RECEIVED
+        # Note: State might be BITFIELD_SENT or ACTIVE after handshake, not just HANDSHAKE_RECEIVED
         # Use .value for comparison to avoid enum comparison issues
         state_value = callback_connection[0].state.value if hasattr(callback_connection[0].state, "value") else str(callback_connection[0].state)
         valid_states = [s.value if hasattr(s, "value") else str(s) for s in (ConnectionState.HANDSHAKE_RECEIVED, ConnectionState.BITFIELD_SENT, ConnectionState.ACTIVE)]
         assert state_value in valid_states, f"Connection state {state_value} not in valid states {valid_states}"
         
-        # CRITICAL FIX: Stop the manager to clean up
+        # Note: Stop the manager to clean up
         await manager.stop()
 
     @pytest.mark.asyncio
@@ -225,7 +225,7 @@ class TestOnPeerConnectedCallback:
             mock_torrent_data, mock_piece_manager
         )
         
-        # CRITICAL FIX: Start the manager before connecting
+        # Note: Start the manager before connecting
         await manager.start()
 
         # Ensure callback is None
@@ -238,14 +238,14 @@ class TestOnPeerConnectedCallback:
         mock_writer.wait_closed = AsyncMock()
         mock_writer.write = MagicMock()
         mock_writer.close = MagicMock()
-        mock_writer.is_closing = MagicMock(return_value=False)  # CRITICAL FIX: Ensure writer is not closing
+        mock_writer.is_closing = MagicMock(return_value=False)  # Note: Ensure writer is not closing
 
         # Create proper handshake
         info_hash = mock_torrent_data["info_hash"]
         peer_handshake = Handshake(info_hash, b"remote_peer_id_20_by")
         proper_handshake_data = peer_handshake.encode()  # 68 bytes
         
-        # CRITICAL FIX: Mock readexactly to handle protocol length (1 byte) then remaining (67 bytes)
+        # Note: Mock readexactly to handle protocol length (1 byte) then remaining (67 bytes)
         handshake_calls = {"protocol_len": False, "remaining": False}
         async def readexactly_side_effect(n):
             if n == 1 and not handshake_calls["protocol_len"]:
@@ -264,7 +264,7 @@ class TestOnPeerConnectedCallback:
         manager._send_bitfield = AsyncMock()
         manager._send_unchoke = AsyncMock()
 
-        # CRITICAL FIX: Mock _handle_peer_messages to prevent hanging, but let create_task work normally
+        # Note: Mock _handle_peer_messages to prevent hanging, but let create_task work normally
         async def mock_handle_peer_messages(connection):
             """Mock message handler that doesn't hang."""
             # Just return immediately - don't actually handle messages
@@ -278,7 +278,7 @@ class TestOnPeerConnectedCallback:
             # Should not raise error
             await manager._connect_to_peer(peer_info)
 
-            # CRITICAL FIX: Wait for connection to be added (similar to other tests)
+            # Note: Wait for connection to be added (similar to other tests)
             import asyncio
             max_wait = 0.5  # Increased wait time
             start_time = asyncio.get_event_loop().time()
@@ -301,7 +301,7 @@ class TestOnPeerConnectedCallback:
             async with manager.connection_lock:
                 assert peer_key in manager.connections, f"Connection {peer_key} not found in {list(manager.connections.keys())}"
         
-        # CRITICAL FIX: Stop the manager to clean up
+        # Note: Stop the manager to clean up
         await manager.stop()
 
 

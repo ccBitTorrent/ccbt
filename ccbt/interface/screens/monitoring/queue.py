@@ -65,12 +65,11 @@ class QueueMetricsScreen(MonitoringScreen):  # type: ignore[misc]
             queue_stats = self.query_one("#queue_stats", Static)
             queue_table = self.query_one("#queue_table", Static)
 
-            # Get queue manager from session
-            queue_manager = None
-            if hasattr(self.session, "queue_manager"):
-                queue_manager = self.session.queue_manager
+            # Prefer DataProvider in daemon mode; queue manager only in local session
+            provider = getattr(self, "_data_provider", None)
+            queue_manager = None if provider else getattr(self.session, "queue_manager", None)
 
-            if not queue_manager:
+            if not queue_manager and not provider:
                 content.update(
                     Panel(
                         "Queue manager not available. Queue management may be disabled in configuration.",
@@ -82,18 +81,52 @@ class QueueMetricsScreen(MonitoringScreen):  # type: ignore[misc]
                 queue_table.update("")
                 return
 
-            # Get queue status
-            try:
-                queue_status = await queue_manager.get_queue_status()
-            except Exception as e:
-                content.update(
-                    Panel(
-                        f"Error getting queue status: {e}",
-                        title="Error",
-                        border_style="red",
+            if provider:
+                # Daemon mode: show torrent list as simple queue view (no queue_manager over IPC)
+                try:
+                    torrents_list = await provider.list_torrents()
+                    all_status = {t.get("info_hash") or t.get("info_hash_hex", ""): t for t in torrents_list if t.get("info_hash") or t.get("info_hash_hex")}
+                    queue_status = {
+                        "statistics": {
+                            "total_torrents": len(all_status),
+                            "active_downloading": sum(1 for t in all_status.values() if str(t.get("status", "")).lower() in ("downloading", "active")),
+                            "active_seeding": sum(1 for t in all_status.values() if str(t.get("progress", 0)) == "1.0" or str(t.get("status", "")).lower() == "seeding"),
+                            "queued": 0,
+                            "paused": sum(1 for t in all_status.values() if str(t.get("status", "")).lower() == "paused"),
+                            "by_priority": {},
+                        },
+                        "entries": [
+                            {
+                                "info_hash": ih,
+                                "name": (t.get("name") or str(t.get("info_hash", ih)))[:40],
+                                "queue_position": i + 1,
+                                "priority": t.get("priority", "normal"),
+                                "status": t.get("status", "unknown"),
+                                "added_time": 0,
+                                "allocated_down_kib": 0,
+                                "allocated_up_kib": 0,
+                            }
+                            for i, (ih, t) in enumerate(all_status.items())
+                        ],
+                    }
+                except Exception as e:
+                    content.update(Panel(f"Error loading queue data: {e}", title="Error", border_style="red"))
+                    queue_stats.update("")
+                    queue_table.update("")
+                    return
+            else:
+                # Get queue status from local queue manager
+                try:
+                    queue_status = await queue_manager.get_queue_status()
+                except Exception as e:
+                    content.update(
+                        Panel(
+                            f"Error getting queue status: {e}",
+                            title="Error",
+                            border_style="red",
+                        )
                     )
-                )
-                return
+                    return
 
             statistics = queue_status.get("statistics", {})
             entries = queue_status.get("entries", [])
@@ -178,17 +211,16 @@ class QueueMetricsScreen(MonitoringScreen):  # type: ignore[misc]
                         minutes = int((waiting_seconds % 3600) // 60)
                         waiting_str = f"{hours}h {minutes}m"
 
-                    # Get torrent name from session
-                    torrent_name = info_hash_hex[:16] + "..."
-                    try:
-                        info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        torrent_session = self.session.torrents.get(info_hash_bytes)
-                        if torrent_session and hasattr(torrent_session, "info"):
-                            torrent_name = torrent_session.info.name[
-                                :40
-                            ]  # Truncate long names
-                    except Exception:
-                        pass
+                    # Get torrent name from entry or session
+                    torrent_name = entry.get("name") or info_hash_hex[:16] + "..."
+                    if not provider:
+                        try:
+                            info_hash_bytes = bytes.fromhex(info_hash_hex)
+                            torrent_session = self.session.torrents.get(info_hash_bytes)
+                            if torrent_session and hasattr(torrent_session, "info"):
+                                torrent_name = (torrent_session.info.name or "")[:40]
+                        except Exception:
+                            pass
 
                     # Format priority with color
                     priority_colors = {

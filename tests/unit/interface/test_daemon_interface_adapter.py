@@ -44,6 +44,39 @@ async def test_websocket_reconnect_restores_full_subscription_set(
 
 
 @pytest.mark.asyncio
+async def test_websocket_reconnect_calls_resync_from_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After reconnect, adapter must resync caches from UI snapshot to avoid stale state."""
+    ipc_client = MagicMock()
+    ipc_client.receive_events_batch = AsyncMock(
+        side_effect=[RuntimeError("connection lost"), asyncio.CancelledError()],
+    )
+    ipc_client.is_daemon_running = AsyncMock(return_value=True)
+    ipc_client.connect_websocket = AsyncMock(return_value=True)
+    ipc_client.subscribe_events = AsyncMock(return_value=True)
+
+    adapter = DaemonInterfaceAdapter(ipc_client)
+    adapter._websocket_connected = True
+    resync_awaited = []
+
+    async def _capture_resync() -> None:
+        resync_awaited.append(1)
+
+    adapter._resync_from_snapshot = _capture_resync  # type: ignore[assignment]
+
+    async def _no_sleep(_: float) -> None:
+        pass
+
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+    await adapter._websocket_event_loop()
+
+    assert len(resync_awaited) == 1, "Reconnect must trigger one _resync_from_snapshot"
+    ipc_client.subscribe_events.assert_awaited()
+
+
+@pytest.mark.asyncio
 async def test_media_events_invalidate_media_cache_and_notify_callbacks() -> None:
     """Media WebSocket events should invalidate caches and reach UI callbacks."""
 

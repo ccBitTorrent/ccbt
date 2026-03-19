@@ -64,7 +64,7 @@ try:
                 )  # pragma: no cover - Same context
             return _raise_not_implemented()  # pragma: no cover - Same context
 
-    # CRITICAL FIX: On Windows, use SelectorEventLoop instead of ProactorEventLoop
+    # Note: On Windows, use SelectorEventLoop instead of ProactorEventLoop
     # ProactorEventLoop has known bugs with UDP sockets (WinError 10022)
     # This must be set BEFORE wrapping with _SafeEventLoopPolicy
     import sys

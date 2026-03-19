@@ -38,7 +38,7 @@ class TestSessionInfoHashNormalization:
             "file_info": {"total_length": 16384},
         }
         
-        # CRITICAL FIX: Don't patch logging.getLogger - it interferes with pytest's logging config
+        # Note: Don't patch logging.getLogger - it interferes with pytest's logging config
         # Instead, just verify the info_hash is normalized correctly
         session = AsyncTorrentSession(td, str(tmp_path))
         assert len(session.info.info_hash) == 20
@@ -60,7 +60,7 @@ class TestSessionInfoHashNormalization:
             "file_info": {"total_length": 16384},
         }
         
-        # CRITICAL FIX: Don't patch logging.getLogger - it interferes with pytest's logging config
+        # Note: Don't patch logging.getLogger - it interferes with pytest's logging config
         # Instead, just verify the info_hash is normalized correctly
         # The warning is logged (visible in captured stdout), but we don't need to assert on it
         session = AsyncTorrentSession(td, str(tmp_path))
@@ -423,7 +423,7 @@ class TestSessionMagnetFileSelection:
             selected_indices=[0],
             prioritized_indices={},
         )
-        session.magnet_info = magnet_info
+        session.torrent_data["magnet_info"] = magnet_info
         session.file_selection_manager = None  # Missing
         
         # Update file_info to multi-file to trigger file selection manager creation
@@ -472,7 +472,7 @@ class TestSessionMagnetFileSelection:
             web_seeds=[],
             selected_indices=[0],
         )
-        session.magnet_info = magnet_info
+        session.torrent_data["magnet_info"] = magnet_info
         session.file_selection_manager = Mock()
         
         await session._apply_magnet_file_selection_if_needed()
@@ -629,7 +629,7 @@ class TestSessionManagerPaths:
         mgr = AsyncSessionManager(str(tmp_path))
         mock_cpm = MockCPM()
         
-        # CRITICAL FIX: Set checkpoint_manager directly on the manager instead of patching
+        # Note: Set checkpoint_manager directly on the manager instead of patching
         # This ensures cleanup_completed uses the mock
         mgr.checkpoint_manager = mock_cpm
         count = await mgr.cleanup_completed_checkpoints()

@@ -40,7 +40,7 @@ def mock_config():
         enable_encryption=True,
         encryption_mode="preferred",
     )
-    # CRITICAL FIX: Add required network config attributes
+    # Note: Add required network config attributes
     config.network = SimpleNamespace(
         max_peers_per_torrent=50,
         max_global_peers=200,
@@ -59,7 +59,7 @@ def mock_config():
     config.nat = SimpleNamespace(
         auto_map_ports=False,
     )
-    # CRITICAL FIX: Add required limits config attributes
+    # Note: Add required limits config attributes
     config.limits = SimpleNamespace(
         per_peer_up_kib=0,  # Unlimited
     )
@@ -229,7 +229,7 @@ async def test_encryption_handshake_sets_connection_properties(
         manager._send_bitfield = AsyncMock()
         manager._handle_bitfield = AsyncMock()
         
-        # CRITICAL FIX: EncryptionMode is constructed from a string, not called directly
+        # Note: EncryptionMode is constructed from a string, not called directly
         # The code does: EncryptionMode(self.config.security.encryption_mode)
         # So we need to ensure EncryptionMode("preferred") returns EncryptionMode.PREFERRED
         # We can't patch the class constructor easily, so we ensure the config value is correct

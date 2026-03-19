@@ -65,42 +65,68 @@ class TrackerMetricsScreen(MonitoringScreen):  # type: ignore[misc]
             tracker_stats = self.query_one("#tracker_stats", Static)
             tracker_sessions = self.query_one("#tracker_sessions", Static)
 
-            # Get tracker client from session
+            # Prefer DataProvider in daemon mode (per-torrent trackers aggregate)
+            provider = getattr(self, "_data_provider", None)
             tracker_client = None
-            if hasattr(self.session, "tracker"):
-                tracker_client = self.session.tracker
-            elif hasattr(self.session, "tracker_client"):
-                tracker_client = self.session.tracker_client
+            session_stats = None
+            sessions_aggregate = []
 
-            if not tracker_client:
-                content.update(
-                    Panel(
-                        "Tracker client not available. Tracker may not be initialized.",
-                        title="Tracker Metrics",
-                        border_style="yellow",
+            if provider:
+                try:
+                    torrents_list = await provider.list_torrents()
+                    for t in torrents_list[:20]:
+                        ih = t.get("info_hash") or t.get("info_hash_hex", "")
+                        if not ih:
+                            continue
+                        trackers = await provider.get_torrent_trackers(ih)
+                        for tr in trackers:
+                            sessions_aggregate.append({
+                                "url": tr.get("url", ""),
+                                "last_announce": tr.get("last_announce", tr.get("last_update", 0)) or 0,
+                                "interval": tr.get("interval", 0) or 0,
+                                "failure_count": tr.get("failure_count", 0) or 0,
+                                "backoff_delay": tr.get("backoff_delay", 0) or 0,
+                                "status": tr.get("tracker_status", tr.get("status", "unknown")),
+                            })
+                except Exception as e:
+                    content.update(Panel(f"Error loading tracker data: {e}", title="Error", border_style="red"))
+                    tracker_stats.update("")
+                    tracker_sessions.update("")
+                    return
+            else:
+                if hasattr(self.session, "tracker"):
+                    tracker_client = self.session.tracker
+                elif hasattr(self.session, "tracker_client"):
+                    tracker_client = self.session.tracker_client
+
+                if not tracker_client:
+                    content.update(
+                        Panel(
+                            "Tracker client not available. Tracker may not be initialized.",
+                            title="Tracker Metrics",
+                            border_style="yellow",
+                        )
                     )
-                )
-                tracker_stats.update("")
-                tracker_sessions.update("")
-                return
+                    tracker_stats.update("")
+                    tracker_sessions.update("")
+                    return
 
-            # Get session statistics
-            try:
-                session_stats = tracker_client.get_session_stats()
-            except Exception as e:
-                content.update(
-                    Panel(
-                        f"Error getting tracker stats: {e}",
-                        title="Error",
-                        border_style="red",
+                try:
+                    session_stats = tracker_client.get_session_stats()
+                except Exception as e:
+                    content.update(
+                        Panel(
+                            f"Error getting tracker stats: {e}",
+                            title="Error",
+                            border_style="red",
+                        )
                     )
-                )
-                return
+                    return
 
-            # Get tracker sessions
-            sessions = getattr(tracker_client, "sessions", {})
+            # Get tracker sessions (local) or use aggregate (daemon)
+            sessions = getattr(tracker_client, "sessions", {}) if tracker_client else {}
 
-            # Display tracker statistics
+            # Display tracker statistics (local only; daemon uses per-torrent view)
             if session_stats:
                 stats_table = Table(title="Tracker Statistics", expand=True)
                 stats_table.add_column("Tracker", style="cyan", ratio=3)
@@ -147,16 +173,35 @@ class TrackerMetricsScreen(MonitoringScreen):  # type: ignore[misc]
                     )
                 )
 
-            # Display tracker sessions
-            if sessions:
+            # Display tracker sessions (from tracker_client or daemon aggregate)
+            current_time = time.time()
+            if sessions_aggregate:
+                sessions_table = Table(title="Tracker Sessions (daemon)", expand=True)
+                sessions_table.add_column("URL", style="cyan", ratio=3)
+                sessions_table.add_column("Last Announce", style="green", ratio=2)
+                sessions_table.add_column("Interval", style="yellow", ratio=1)
+                sessions_table.add_column("Failures", style="red", ratio=1)
+                sessions_table.add_column("Status", style="blue", ratio=1)
+                for s in sessions_aggregate:
+                    last_announce = s.get("last_announce", 0) or 0
+                    interval = s.get("interval", 0) or 0
+                    failure_count = s.get("failure_count", 0) or 0
+                    url = s.get("url", "")
+                    status = s.get("status", "unknown")
+                    if last_announce > 0:
+                        time_since = current_time - last_announce
+                        last_str = f"{int(time_since)}s ago" if time_since < 60 else f"{int(time_since // 60)}m ago" if time_since < 3600 else f"{int(time_since // 3600)}h ago"
+                    else:
+                        last_str = "Never"
+                    sessions_table.add_row(url[:60], last_str, str(interval), str(failure_count), status)
+                tracker_sessions.update(Panel(sessions_table))
+            elif sessions:
                 sessions_table = Table(title="Tracker Sessions", expand=True)
                 sessions_table.add_column("URL", style="cyan", ratio=3)
                 sessions_table.add_column("Last Announce", style="green", ratio=2)
                 sessions_table.add_column("Interval", style="yellow", ratio=1)
                 sessions_table.add_column("Failures", style="red", ratio=1)
                 sessions_table.add_column("Status", style="blue", ratio=1)
-
-                current_time = time.time()
 
                 for url, session in sessions.items():
                     last_announce = session.last_announce

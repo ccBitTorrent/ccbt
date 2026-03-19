@@ -186,7 +186,7 @@ class TestXetIntegration:
         mock_peer.ip = "192.168.1.1"
         mock_peer.port = 6881
         mock_cas.find_chunk_peers = AsyncMock(return_value=[mock_peer])
-        # CRITICAL FIX: Mock find_chunks_peers_batch to return peers for chunks
+        # Note: Mock find_chunks_peers_batch to return peers for chunks
         # The code checks for this method first, so we need to return peers in batch format
         from ccbt.models import PeerInfo
         mock_batch_peer = PeerInfo(ip="192.168.1.1", port=6881)
@@ -197,7 +197,7 @@ class TestXetIntegration:
             b"C" * 32: [mock_batch_peer],
         })
         
-        # CRITICAL FIX: Mock catalog to return a dict, not a coroutine
+        # Note: Mock catalog to return a dict, not a coroutine
         # The code tries to iterate over catalog_results.items(), so it must be a dict
         mock_catalog = AsyncMock()
         mock_catalog.get_peers_by_chunks = AsyncMock(return_value={})  # Empty dict, will fall back to find_chunk_peers
@@ -810,7 +810,7 @@ class TestXetIntegration:
         config.disk.download_dir = str(temp_dir)
 
         # Create DiskIOManager (it gets config internally via get_config())
-        # CRITICAL FIX: DiskIOManager.__init__() doesn't accept config parameter
+        # Note: DiskIOManager.__init__() doesn't accept config parameter
         with patch("ccbt.storage.disk_io.get_config", return_value=config):
             disk_io = DiskIOManager()
 
@@ -844,7 +844,7 @@ class TestXetIntegration:
         assert read_data is not None
         assert read_data == file_data
 
-        # CRITICAL FIX: Close database before teardown to prevent Windows file locking issues
+        # Note: Close database before teardown to prevent Windows file locking issues
         # The dedup instance is obtained from disk_io, so we need to close it explicitly
         if dedup:
             dedup.close()

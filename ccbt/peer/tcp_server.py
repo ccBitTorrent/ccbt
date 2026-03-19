@@ -69,7 +69,7 @@ class IncomingPeerServer:
                 reuse_address=True,
             )
         except OSError as e:
-            # CRITICAL FIX: Enhanced port conflict error handling
+            # Note: Enhanced port conflict error handling
             error_code = e.errno if hasattr(e, "errno") else None
             import sys
 
@@ -171,7 +171,7 @@ class IncomingPeerServer:
     async def stop(self) -> None:
         """Stop the TCP server gracefully.
 
-        CRITICAL FIX: Add delays on Windows to prevent socket buffer exhaustion (WinError 10055).
+        Note: Add delays on Windows to prevent socket buffer exhaustion (WinError 10055).
         ENHANCEMENT: Explicitly close all sockets to ensure immediate port release.
         """
         if not self._running:
@@ -195,7 +195,7 @@ class IncomingPeerServer:
             self.server.close()
             try:
                 await asyncio.wait_for(self.server.wait_closed(), timeout=5.0)
-                # CRITICAL FIX: Add delay on Windows after server close to prevent buffer exhaustion
+                # Note: Add delay on Windows after server close to prevent buffer exhaustion
                 import sys
 
                 if sys.platform == "win32":
@@ -203,7 +203,7 @@ class IncomingPeerServer:
             except asyncio.TimeoutError:
                 self.logger.warning("TCP server close timed out")
             except OSError as e:
-                # CRITICAL FIX: Handle WinError 10055 gracefully
+                # Note: Handle WinError 10055 gracefully
                 error_code = getattr(e, "winerror", None) or getattr(e, "errno", None)
                 if error_code == 10055:
                     self.logger.debug(
@@ -325,7 +325,7 @@ class IncomingPeerServer:
                 await writer.wait_closed()
                 return
 
-            # CRITICAL FIX: Lookup torrent session by info_hash with retry logic
+            # Note: Lookup torrent session by info_hash with retry logic
             # Session may not be registered yet if it's starting in background
             # Wait up to 60 seconds for session registration before rejecting connection
             # Increased to 60s to handle slow session initialization, especially for magnet links
@@ -350,7 +350,7 @@ class IncomingPeerServer:
 
             if session is None:
                 elapsed = asyncio.get_event_loop().time() - start_time
-                # CRITICAL FIX: Check if any sessions exist at all
+                # Note: Check if any sessions exist at all
                 # If no sessions are registered, this is expected during startup - use DEBUG level
                 # If sessions exist but this one doesn't, it's a real issue - use WARNING level
                 has_any_sessions = False
@@ -384,7 +384,7 @@ class IncomingPeerServer:
                 await writer.wait_closed()
                 return
 
-            # CRITICAL FIX: Check session readiness before accepting connections
+            # Note: Check session readiness before accepting connections
             # Reject connections if session is stopped (not ready to accept peers)
             if (
                 hasattr(session, "info")
@@ -437,7 +437,7 @@ class IncomingPeerServer:
                 # Remote host closed connection - this is normal
                 pass
         except (ConnectionResetError, OSError) as e:
-            # CRITICAL FIX: Handle Windows ConnectionResetError (WinError 10054) gracefully
+            # Note: Handle Windows ConnectionResetError (WinError 10054) gracefully
             # This occurs when remote host closes connection during handshake or processing
             import sys
 

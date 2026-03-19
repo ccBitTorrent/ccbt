@@ -235,7 +235,7 @@ class TestAsyncPeerConnectionManagerBasics:
     @pytest.mark.asyncio
     async def test_manager_start_stop(self, async_peer_manager):
         """Test manager start and stop."""
-        # CRITICAL FIX: The fixture already starts the manager, so we need to stop it first
+        # Note: The fixture already starts the manager, so we need to stop it first
         # to test the start/stop lifecycle properly
         await async_peer_manager.stop()
         
@@ -245,7 +245,7 @@ class TestAsyncPeerConnectionManagerBasics:
         assert async_peer_manager._choking_task is not None
         assert async_peer_manager._stats_task is not None
         
-        # CRITICAL FIX: Store task references before stop() sets them to None
+        # Note: Store task references before stop() sets them to None
         choking_task = async_peer_manager._choking_task
         stats_task = async_peer_manager._stats_task
         
@@ -519,7 +519,7 @@ class TestAsyncPeerConnectionManagerMessageHandling:
     @pytest.mark.asyncio
     async def test_handle_bitfield(self, async_peer_manager):
         """Test handling bitfield message."""
-        # CRITICAL FIX: Start the manager if not already started
+        # Note: Start the manager if not already started
         if not async_peer_manager._running:
             await async_peer_manager.start()
         
@@ -529,12 +529,12 @@ class TestAsyncPeerConnectionManagerMessageHandling:
         )
         connection.state = ConnectionState.HANDSHAKE_RECEIVED
         
-        # CRITICAL FIX: Add connection to manager's connections dict
+        # Note: Add connection to manager's connections dict
         # _handle_bitfield might need the connection to be registered
         peer_key = str(connection.peer_info)
         async_peer_manager.connections[peer_key] = connection
 
-        # CRITICAL FIX: Mock piece_manager.update_peer_availability as AsyncMock
+        # Note: Mock piece_manager.update_peer_availability as AsyncMock
         # Also set num_pieces to a numeric value (not MagicMock) for seeder detection logic
         if async_peer_manager.piece_manager:
             async_peer_manager.piece_manager.update_peer_availability = AsyncMock()
@@ -553,7 +553,7 @@ class TestAsyncPeerConnectionManagerMessageHandling:
 
         await async_peer_manager._handle_bitfield(connection, bitfield_message)
 
-        # CRITICAL FIX: peer_state.bitfield stores bytes, not the BitfieldMessage object
+        # Note: peer_state.bitfield stores bytes, not the BitfieldMessage object
         assert connection.peer_state.bitfield == bitfield_data
         # State may be BITFIELD_RECEIVED or ACTIVE depending on implementation
         assert connection.state in (ConnectionState.BITFIELD_RECEIVED, ConnectionState.ACTIVE)

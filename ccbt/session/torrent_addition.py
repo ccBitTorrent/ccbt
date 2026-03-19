@@ -220,7 +220,7 @@ class TorrentAdditionHandler:
             )
             # Try background start as fallback
             task = asyncio.create_task(session.start(resume=resume))
-            # CRITICAL FIX: Store task reference so we can cancel it if emergency start completes
+            # Note: Store task reference so we can cancel it if emergency start completes
             session.background_start_task = task
 
     async def _wait_for_starting_session(self, session: Any) -> None:
@@ -230,7 +230,7 @@ class TorrentAdditionHandler:
             session: AsyncTorrentSession instance
 
         """
-        # CRITICAL FIX: Check if network services are disabled early
+        # Note: Check if network services are disabled early
         # If network services are disabled, the session may never transition from "starting" to "downloading"
         # because it's waiting for network initialization (tracker announces, DHT, etc.) that will never happen.
         config = session.config if hasattr(session, "config") else None
@@ -253,7 +253,7 @@ class TorrentAdditionHandler:
         # Session is already starting - wait for it to complete or timeout
         self.logger.info("Session is starting, waiting for completion (max 60s)")
         try:
-            # CRITICAL FIX: Reduce wait time for test scenarios (when network services are disabled)
+            # Note: Reduce wait time for test scenarios (when network services are disabled)
             max_wait_seconds = 5 if (config and not config.discovery.enable_dht) else 60
             # Wait for status to change from "starting"
             for i in range(max_wait_seconds):  # Check every second
@@ -283,10 +283,10 @@ class TorrentAdditionHandler:
                     # Continue waiting despite error
 
             # Still "starting" after 60 seconds - check if download manager was started
-            # CRITICAL FIX: Don't force status change - check actual download state
+            # Note: Don't force status change - check actual download state
             await self._check_and_recover_starting_session(session)
 
-            # CRITICAL FIX: Check status again after recovery - it may have changed to "downloading"
+            # Note: Check status again after recovery - it may have changed to "downloading"
             try:
                 status = await asyncio.wait_for(session.get_status(), timeout=2.0)
                 new_status = status.get("status", "stopped")
@@ -307,7 +307,7 @@ class TorrentAdditionHandler:
                 "Error waiting for session to start: %s",
                 wait_error,
             )
-            # CRITICAL FIX: Don't force status - check actual state instead
+            # Note: Don't force status - check actual state instead
             await self._check_download_state_after_error(session, wait_error)
 
     async def _check_and_recover_starting_session(self, session: Any) -> None:
@@ -317,7 +317,7 @@ class TorrentAdditionHandler:
             session: AsyncTorrentSession instance
 
         """
-        # CRITICAL FIX: Check if network services are disabled
+        # Note: Check if network services are disabled
         config = session.config if hasattr(session, "config") else None
 
         # If network services are disabled, set status to downloading
@@ -440,7 +440,7 @@ class TorrentAdditionHandler:
                     "Emergency start successful - status set to 'downloading'"
                 )
 
-                # CRITICAL FIX: Cancel any background start() task that might still be running
+                # Note: Cancel any background start() task that might still be running
                 # This prevents the background task from continuing and potentially causing issues
                 task = session.background_start_task
                 if task:
@@ -462,7 +462,7 @@ class TorrentAdditionHandler:
                     # Clear the reference
                     delattr(session, "_background_start_task")
 
-                # CRITICAL FIX: Set up peer discovery even in emergency start
+                # Note: Set up peer discovery even in emergency start
                 # The normal start() flow sets up DHT/tracker/PEX, but if it hung,
                 # we need to set it up here
                 self.logger.info("Setting up peer discovery after emergency start...")
@@ -474,7 +474,7 @@ class TorrentAdditionHandler:
                         discovery_error,
                     )
         except Exception:
-            # CRITICAL FIX: Don't force status - log error and let status reflect actual state
+            # Note: Don't force status - log error and let status reflect actual state
             self.logger.exception(
                 "Emergency start failed - session status will remain 'starting' until download actually starts. "
                 "This indicates a critical failure in download initialization."
@@ -597,7 +597,7 @@ class TorrentAdditionHandler:
                             "Emergency: Triggering tracker announce for %s",
                             session.info.name,
                         )
-                        # CRITICAL FIX: Use listen_port_tcp (or listen_port as fallback) and get external port from NAT
+                        # Note: Use listen_port_tcp (or listen_port as fallback) and get external port from NAT
                         listen_port = (
                             session.config.network.listen_port_tcp
                             or session.config.network.listen_port

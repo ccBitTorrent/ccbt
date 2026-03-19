@@ -224,7 +224,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                             title=_("Global Configuration"),
                         )
                     )
-                # CRITICAL FIX: Ensure table receives focus
+                # Note: Ensure table receives focus
                 if self._sections_table:
                     self.call_later(self._sections_table.focus)  # type: ignore[attr-defined]
             else:

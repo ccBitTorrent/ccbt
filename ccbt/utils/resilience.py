@@ -428,9 +428,21 @@ def with_rate_limit(
 
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> T:
-            # For sync functions, we need to run the rate limiter in async context
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(rate_limiter.wait_for_permission())
+            try:
+                previous_loop = asyncio.get_event_loop()
+            except RuntimeError:
+                previous_loop = None
+
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(rate_limiter.wait_for_permission())
+            finally:
+                loop.close()
+                if previous_loop is not None and not previous_loop.is_closed():
+                    asyncio.set_event_loop(previous_loop)
+                else:
+                    asyncio.set_event_loop(None)
             return func(*args, **kwargs)
 
         if asyncio.iscoroutinefunction(func):

@@ -112,6 +112,7 @@ class DHTToken:
 
     token: bytes
     info_hash: bytes
+    node_addr: tuple[str, int] = ("", 0)
     created_time: float = field(default_factory=time.time)
     expires_time: float = field(
         default_factory=lambda: time.time() + 900.0,
@@ -468,7 +469,7 @@ class AsyncDHTClient:
         # Routing table
         self.routing_table = KademliaRoutingTable(self.node_id)
 
-        # Bootstrap nodes - CRITICAL FIX: Use config instead of hardcoded defaults
+        # Bootstrap nodes - Note: Use config instead of hardcoded defaults
         # Parse bootstrap nodes from config (format: "host:port")
         # Initialize logger first for error reporting
         self.logger = logging.getLogger(__name__)
@@ -509,6 +510,15 @@ class AsyncDHTClient:
         # Bootstrap node performance tracking
         # Maps (host, port) -> performance metrics
         self.bootstrap_performance: dict[tuple[str, int], dict[str, Any]] = {}
+        self.bootstrap_success_count = 0
+        self.bootstrap_failure_count = 0
+        self.last_bootstrap_reason = "not_started"
+        self.last_bootstrap_failure_reason = ""
+        self.last_zero_node_lookup_at = 0.0
+        self._empty_table_rebootstrap_attempts = 0
+        self._max_empty_table_rebootstrap_attempts = 3
+        self._last_empty_table_rebootstrap_at = 0.0
+        self._empty_table_rebootstrap_backoff = 1.0
 
         # Pending queries
         self.pending_queries: dict[bytes, asyncio.Future] = {}
@@ -521,8 +531,8 @@ class AsyncDHTClient:
         # Adaptive timeout calculator (lazy initialization)
         self._timeout_calculator: Optional[Any] = None
 
-        # Tokens for announce_peer
-        self.tokens: dict[bytes, DHTToken] = {}
+        # Tokens for announce_peer, keyed by (info_hash, node_addr) or legacy info_hash
+        self.tokens: dict[Union[bytes, tuple[bytes, tuple[str, int]]], DHTToken] = {}
         self.token_secret = os.urandom(20)
 
         # Background tasks
@@ -536,6 +546,12 @@ class AsyncDHTClient:
         self.peer_callbacks_by_hash: dict[
             bytes, list[Callable[[list[tuple[str, int]]], None]]
         ] = {}
+        self.callback_metrics: dict[str, int] = {
+            "peers_found_without_callbacks": 0,
+            "peers_delivered_to_callbacks": 0,
+            "callback_exceptions": 0,
+            "callbacks_registered": 0,
+        }
 
         # BEP 27: Callback to check if a torrent is private
         self.is_private_torrent: Optional[Callable[[bytes], bool]] = None
@@ -576,7 +592,7 @@ class AsyncDHTClient:
                 local_addr=(self.bind_ip, self.bind_port),
             )
         except OSError as e:
-            # CRITICAL FIX: Enhanced port conflict error handling
+            # Note: Enhanced port conflict error handling
             error_code = e.errno if hasattr(e, "errno") else None
             import sys
 
@@ -670,7 +686,7 @@ class AsyncDHTClient:
         # Proper cleanup order: close transport first, then handle socket
         if self.transport:
             self.transport.close()
-            # CRITICAL FIX: Wait for transport to fully close (Windows timing issue)
+            # Note: Wait for transport to fully close (Windows timing issue)
             # On Windows, UDP sockets may not be immediately released after close()
             # This prevents "WinError 10048: Only one usage of each socket address" errors
             import sys
@@ -736,11 +752,14 @@ class AsyncDHTClient:
         # Return True if we have any nodes (partial bootstrap), False otherwise
         return len(self.routing_table.nodes) > 0
 
-    async def _bootstrap(self) -> None:
+    async def _bootstrap(self, reason: str = "bootstrap") -> None:
         """Bootstrap the DHT by finding initial nodes."""
+        self.last_bootstrap_reason = reason
+        self.last_bootstrap_failure_reason = ""
         self.logger.info("Bootstrapping DHT...")
+        self.last_zero_node_lookup_at = 0.0
 
-        # CRITICAL FIX: Add overall timeout to bootstrap process (30 seconds max)
+        # Note: Add overall timeout to bootstrap process (30 seconds max)
         # This prevents hanging indefinitely if all bootstrap nodes are unreachable
         bootstrap_timeout = 30.0
         start_time = time.time()
@@ -754,6 +773,7 @@ class AsyncDHTClient:
                     bootstrap_timeout,
                     len(self.routing_table.nodes),
                 )
+                self.last_bootstrap_failure_reason = "bootstrap_timeout"
                 break
 
             if not await self._bootstrap_step(host, port):
@@ -761,6 +781,7 @@ class AsyncDHTClient:
 
             # If we have enough nodes, we can stop early
             if len(self.routing_table.nodes) >= 8:
+                self.bootstrap_success_count += 1
                 self.logger.info(
                     "Bootstrap complete: found %d nodes", len(self.routing_table.nodes)
                 )
@@ -778,10 +799,76 @@ class AsyncDHTClient:
                 )
             except asyncio.TimeoutError:
                 self.logger.debug("Refresh routing table timeout during bootstrap")
+                self.last_bootstrap_failure_reason = "routing_refresh_timeout"
 
+        if len(self.routing_table.nodes) > 0:
+            self.bootstrap_success_count += 1
+            self._empty_table_rebootstrap_attempts = 0
+            self._empty_table_rebootstrap_backoff = 1.0
+        else:
+            self.bootstrap_failure_count += 1
+            if not self.last_bootstrap_failure_reason:
+                self.last_bootstrap_failure_reason = "no_nodes_discovered"
         self.logger.info(
             "Bootstrap completed with %d nodes", len(self.routing_table.nodes)
         )
+
+    async def rebootstrap(self) -> bool:
+        """Retry bootstrap using ranked bootstrap nodes.
+
+        Returns:
+            True if at least one node is present after rebootstrap, False otherwise.
+        """
+        ranked_nodes = self._rank_bootstrap_nodes(self.bootstrap_nodes)
+        original_nodes = self.bootstrap_nodes
+        if ranked_nodes:
+            self.bootstrap_nodes = ranked_nodes
+        try:
+            await self._bootstrap(reason="rebootstrap")
+        finally:
+            self.bootstrap_nodes = original_nodes
+        return len(self.routing_table.nodes) > 0
+
+    def _schedule_zero_node_rebootstrap(self, reason: str = "empty_routing_table") -> bool:
+        """Schedule a bounded rebootstrap when routing table is empty."""
+        now = time.monotonic()
+        if self._empty_table_rebootstrap_attempts >= self._max_empty_table_rebootstrap_attempts:
+            self.logger.debug(
+                "DHT empty routing rebootstrap suppressed after %d attempts: %s",
+                self._empty_table_rebootstrap_attempts,
+                reason,
+            )
+            return False
+
+        cooldown = self._empty_table_rebootstrap_backoff
+        if now - self._last_empty_table_rebootstrap_at < cooldown:
+            self.logger.debug(
+                "DHT empty routing rebootstrap skipped due cooldown %.1fs (%s)",
+                cooldown - (now - self._last_empty_table_rebootstrap_at),
+                reason,
+            )
+            return False
+
+        self._last_empty_table_rebootstrap_at = now
+        self._empty_table_rebootstrap_attempts += 1
+        self._empty_table_rebootstrap_backoff = min(
+            self._empty_table_rebootstrap_backoff * 2.0, 60.0
+        )
+        self.logger.warning(
+            "DHT bootstrap retries: scheduling bounded rebootstrap %d/%d for %s",
+            self._empty_table_rebootstrap_attempts,
+            self._max_empty_table_rebootstrap_attempts,
+            reason,
+        )
+
+        async def _run() -> None:
+            try:
+                await self.rebootstrap()
+            except Exception as exc:  # pragma: no cover - defensive logging
+                self.logger.debug("DHT scheduled rebootstrap failed: %s", exc)
+
+        asyncio.create_task(_run())
+        return True
 
     async def _bootstrap_step(self, host: str, port: int) -> bool:
         """Attempt to bootstrap from a single host:port. Returns False on error.
@@ -792,7 +879,7 @@ class AsyncDHTClient:
         start_time = time.time()
 
         try:
-            # CRITICAL FIX: Use async DNS resolution with timeout to prevent hanging
+            # Note: Use async DNS resolution with timeout to prevent hanging
             # socket.gethostbyname() is blocking and can hang indefinitely
             try:
                 # Use asyncio.to_thread() to run blocking DNS resolution in thread pool
@@ -826,11 +913,15 @@ class AsyncDHTClient:
                 # Extract IPv4 address from first result
                 addr = (addr_info[0][4][0], port)
             except asyncio.TimeoutError:
+                self.last_bootstrap_failure_reason = f"dns_timeout:{host}:{port}"
                 self.logger.debug(
                     "DNS resolution timeout for bootstrap node %s:%s", host, port
                 )
                 return False
             except Exception as dns_error:
+                self.last_bootstrap_failure_reason = (
+                    f"dns_failed:{host}:{port}:{type(dns_error).__name__}"
+                )
                 self.logger.debug(
                     "DNS resolution failed for bootstrap node %s:%s: %s",
                     host,
@@ -851,11 +942,13 @@ class AsyncDHTClient:
                     "response_times": [],
                     "last_success": 0.0,
                     "last_failure": 0.0,
+                    "last_failure_reason": "",
                 }
 
             perf = self.bootstrap_performance[bootstrap_key]
             perf["success_count"] += 1
             perf["last_success"] = time.time()
+            perf["last_failure_reason"] = ""
             perf["response_times"].append(response_time)
             if len(perf["response_times"]) > 10:
                 perf["response_times"].pop(0)
@@ -863,6 +956,9 @@ class AsyncDHTClient:
             return True
         except Exception as e:
             self.logger.debug("Bootstrap failed for %s:%s: %s", host, port, e)
+            self.last_bootstrap_failure_reason = (
+                f"bootstrap_failed:{host}:{port}:{type(e).__name__}"
+            )
 
             # Track failed bootstrap
             response_time = time.time() - start_time
@@ -873,11 +969,13 @@ class AsyncDHTClient:
                     "response_times": [],
                     "last_success": 0.0,
                     "last_failure": 0.0,
+                    "last_failure_reason": "",
                 }
 
             perf = self.bootstrap_performance[bootstrap_key]
             perf["failure_count"] += 1
             perf["last_failure"] = time.time()
+            perf["last_failure_reason"] = type(e).__name__
             perf["response_times"].append(response_time)
             if len(perf["response_times"]) > 10:
                 perf["response_times"].pop(0)
@@ -1417,6 +1515,27 @@ class AsyncDHTClient:
         # Get initial k closest nodes
         closest_nodes = self.routing_table.get_closest_nodes(info_hash, k)
         closest_set: set[DHTNode] = set(closest_nodes)
+        if not closest_set:
+            self.last_zero_node_lookup_at = time.time()
+            self.logger.warning(
+                "DHT lookup for %s cannot start because the routing table is empty (queried 0 nodes). "
+                "Bootstrap is missing, blocked, or has not completed yet.",
+                info_hash.hex()[:8],
+            )
+            self._last_query_metrics = {
+                "duration": 0.0,
+                "peers_found": 0,
+                "depth": 0,
+                "nodes_queried": 0,
+                "alpha": alpha,
+                "k": k,
+                "max_depth": max_depth if max_depth is not None else 10,
+                "zero_node_lookup": True,
+                "empty_table_retry_scheduled": self._schedule_zero_node_rebootstrap(
+                    reason=f"get_peers:{info_hash.hex()[:8]}"
+                ),
+            }
+            return []
 
         # Track query depth for logging
         query_depth = 0
@@ -1527,7 +1646,7 @@ class AsyncDHTClient:
                             if peer_addr not in peers_set:
                                 peers_set.add(peer_addr)
 
-                                # CRITICAL FIX: Invoke callbacks immediately when peers are found
+                                # Note: Invoke callbacks immediately when peers are found
                                 # This ensures peers are connected as soon as they're discovered
                                 # rather than waiting until the entire query completes
                                 try:
@@ -1600,7 +1719,7 @@ class AsyncDHTClient:
                                 found_closer_nodes = True
                             elif closest_set:
                                 # Check if this node is closer than the farthest node in closest_set
-                                # CRITICAL FIX: Use list() to avoid set modification during iteration
+                                # Note: Use list() to avoid set modification during iteration
                                 farthest_node = max(
                                     list(closest_set),
                                     key=lambda n: self.routing_table.distance(
@@ -1613,7 +1732,7 @@ class AsyncDHTClient:
 
                                 if new_distance < farthest_distance:
                                     # Replace farthest with this closer node
-                                    # CRITICAL FIX: Check if node still exists before removing (race condition fix)
+                                    # Note: Check if node still exists before removing (race condition fix)
                                     closest_set.discard(farthest_node)
                                     closest_set.add(new_node)
                                     found_closer_nodes = True
@@ -1658,7 +1777,15 @@ class AsyncDHTClient:
                 # Store token for announce_peer
                 token = r.get(b"token")
                 if token:
-                    self.tokens[info_hash] = DHTToken(token, info_hash)
+                    token_entry = DHTToken(
+                        token,
+                        info_hash,
+                        (node.ip, node.port),
+                    )
+                    self.tokens[(info_hash, (node.ip, node.port))] = token_entry
+                    # Keep a legacy info_hash alias for compatibility with older
+                    # diagnostics/tests while scoped tokens remain authoritative.
+                    self.tokens[info_hash] = token_entry
 
             # Stop if we have enough peers
             if len(peers_set) >= max_peers:
@@ -1725,7 +1852,7 @@ class AsyncDHTClient:
 
         # Notify callbacks with info_hash filtering (even if peers list is empty,
         # callbacks might have been invoked during the query via incoming messages)
-        # CRITICAL FIX: Always invoke callbacks with final peer list, even if empty
+        # Note: Always invoke callbacks with final peer list, even if empty
         # This ensures callbacks are notified when query completes
         # Also invoke with all discovered peers (not just new ones) to ensure all peers are processed
         if peers:
@@ -1785,7 +1912,14 @@ class AsyncDHTClient:
             "alpha": alpha,
             "k": k,
             "max_depth": effective_max_depth,
+            "zero_node_lookup": len(queried_nodes) == 0,
         }
+        if len(queried_nodes) == 0:
+            self.last_zero_node_lookup_at = time.time()
+            self.logger.warning(
+                "DHT lookup for %s completed with queried 0 nodes. Treating this as bootstrap-missing rather than a normal empty peer result.",
+                info_hash.hex()[:8],
+            )
 
         return peers
 
@@ -1815,28 +1949,50 @@ class AsyncDHTClient:
             )
             return 0
 
-        # Get token for this info hash
-        if info_hash not in self.tokens:
+        # Get token(s) for this info hash
+        token_entries = [
+            token
+            for token in self.tokens.values()
+            if getattr(token, "info_hash", None) == info_hash
+        ]
+        if not token_entries:
             # Try to get token by doing a get_peers query
             await self.get_peers(info_hash, 1)
+            token_entries = [
+                token
+                for token in self.tokens.values()
+                if getattr(token, "info_hash", None) == info_hash
+            ]
 
-        if info_hash not in self.tokens:
+        if not token_entries:
             self.logger.debug("No token available for %s", info_hash.hex())
-            return 0
-
-        token = self.tokens[info_hash]
-
-        # Check if token is still valid
-        if time.time() > token.expires_time:
-            del self.tokens[info_hash]
             return 0
 
         # Find closest nodes to announce to
         closest_nodes = self.routing_table.get_closest_nodes(info_hash, 8)
+        has_scoped_tokens = any(
+            isinstance(token_key, tuple)
+            and len(token_key) == 2
+            and token_key[0] == info_hash
+            for token_key in self.tokens
+        )
 
         success_count = 0
         for node in closest_nodes:
             try:
+                token_key: Union[bytes, tuple[bytes, tuple[str, int]]] = (
+                    info_hash,
+                    (node.ip, node.port),
+                )
+                token = self.tokens.get(token_key)
+                if token is None and not has_scoped_tokens:
+                    token_key = info_hash
+                    token = self.tokens.get(info_hash)
+                if token is None:
+                    continue
+                if time.time() > token.expires_time:
+                    del self.tokens[token_key]
+                    continue
                 response = await self._send_query(
                     (node.ip, node.port),
                     "announce_peer",
@@ -2222,16 +2378,18 @@ class AsyncDHTClient:
         t = message.get(b"t")
         if not isinstance(a, dict) or t is None:
             return
-        if not get_config().discovery.dht_enable_storage:
-            return
         node_id = a.get(b"id")
         if node_id is not None and len(node_id) == 20:
             with contextlib.suppress(Exception):
                 self.routing_table.add_node(DHTNode(node_id, addr[0], addr[1]))
         q = message.get(b"q")
         if q == b"get":
+            if not get_config().discovery.dht_enable_storage:
+                return
             self._handle_get_request(a, t, addr)
         elif q == b"put":
+            if not get_config().discovery.dht_enable_storage:
+                return
             self._handle_put_request(a, t, addr)
         elif q == b"find_node":
             self._handle_find_node_request(a, t, addr)
@@ -2571,6 +2729,12 @@ class AsyncDHTClient:
                 # Calculate adaptive interval based on swarm health
                 interval = self._calculate_adaptive_interval()
                 await asyncio.sleep(interval)
+                if len(self.routing_table.nodes) == 0:
+                    self.logger.warning(
+                        "DHT refresh detected empty routing table; triggering rebootstrap"
+                    )
+                    await self.rebootstrap()
+                    continue
                 await self._refresh_routing_table()
             except asyncio.CancelledError:
                 break
@@ -2579,6 +2743,11 @@ class AsyncDHTClient:
 
     async def _refresh_routing_table(self) -> None:
         """Refresh routing table by finding nodes."""
+        if len(self.routing_table.nodes) == 0:
+            self.logger.debug(
+                "Skipping routing-table refresh because no nodes are currently available"
+            )
+            return
         # Generate random target IDs to find nodes
         for _ in range(8):
             target_id = os.urandom(20)
@@ -2604,12 +2773,12 @@ class AsyncDHTClient:
 
         # Clean up expired tokens
         expired_tokens = [
-            info_hash
-            for info_hash, token in self.tokens.items()
+            token_key
+            for token_key, token in self.tokens.items()
             if current_time > token.expires_time
         ]
-        for info_hash in expired_tokens:
-            del self.tokens[info_hash]
+        for token_key in expired_tokens:
+            del self.tokens[token_key]
 
         # Clean up expired BEP 44 storage tokens
         expired_storage = [
@@ -2679,7 +2848,7 @@ class AsyncDHTClient:
             info_hash: Info hash to filter callbacks
 
         """
-        # CRITICAL FIX: Add logging to verify callback invocations
+        # Note: Add logging to verify callback invocations
         global_callback_count = len(self.peer_callbacks)
         hash_specific_count = len(self.peer_callbacks_by_hash.get(info_hash, []))
 
@@ -2699,11 +2868,13 @@ class AsyncDHTClient:
                 info_hash.hex()[:16] + "...",
                 len(peers),
             )
+            self.callback_metrics["peers_found_without_callbacks"] += len(peers)
 
         # Invoke global callbacks (no info_hash filtering)
         for idx, callback in enumerate(self.peer_callbacks):
             try:
                 callback(peers)
+                self.callback_metrics["peers_delivered_to_callbacks"] += len(peers)
                 self.logger.info(
                     "Invoked global DHT peer callback #%d for info_hash %s (%d peers)",
                     idx + 1,
@@ -2711,6 +2882,7 @@ class AsyncDHTClient:
                     len(peers),
                 )
             except Exception:
+                self.callback_metrics["callback_exceptions"] += 1
                 self.logger.exception(
                     "Peer callback error (global callback #%d, info_hash=%s)",
                     idx + 1,
@@ -2722,6 +2894,7 @@ class AsyncDHTClient:
             for idx, callback in enumerate(self.peer_callbacks_by_hash[info_hash]):
                 try:
                     callback(peers)
+                    self.callback_metrics["peers_delivered_to_callbacks"] += len(peers)
                     self.logger.info(
                         "Invoked info_hash-specific DHT peer callback #%d for info_hash %s (%d peers)",
                         idx + 1,
@@ -2729,6 +2902,7 @@ class AsyncDHTClient:
                         len(peers),
                     )
                 except Exception:
+                    self.callback_metrics["callback_exceptions"] += 1
                     self.logger.exception(
                         "Peer callback error (info_hash=%s, callback #%d)",
                         info_hash.hex()[:8],
@@ -2753,6 +2927,7 @@ class AsyncDHTClient:
             if info_hash not in self.peer_callbacks_by_hash:
                 self.peer_callbacks_by_hash[info_hash] = []
             self.peer_callbacks_by_hash[info_hash].append(callback)
+            self.callback_metrics["callbacks_registered"] += 1
             self.logger.debug(
                 "Registered DHT peer callback for info_hash %s (total callbacks for this hash: %d)",
                 info_hash.hex()[:8],
@@ -2760,6 +2935,7 @@ class AsyncDHTClient:
             )
         else:
             self.peer_callbacks.append(callback)
+            self.callback_metrics["callbacks_registered"] += 1
             self.logger.debug(
                 "Registered global DHT peer callback (total global callbacks: %d)",
                 len(self.peer_callbacks),
@@ -2796,6 +2972,14 @@ class AsyncDHTClient:
             "routing_table": self.routing_table.get_stats(),
             "tokens": len(self.tokens),
             "pending_queries": len(self.pending_queries),
+            "empty_table_rebootstrap_attempts": self._empty_table_rebootstrap_attempts,
+            "max_empty_table_rebootstrap_attempts": self._max_empty_table_rebootstrap_attempts,
+            "empty_table_rebootstrap_backoff": self._empty_table_rebootstrap_backoff,
+            "bootstrap_success_count": self.bootstrap_success_count,
+            "bootstrap_failure_count": self.bootstrap_failure_count,
+            "last_bootstrap_reason": self.last_bootstrap_reason,
+            "last_bootstrap_failure_reason": self.last_bootstrap_failure_reason,
+            "last_zero_node_lookup_at": self.last_zero_node_lookup_at,
         }
 
 

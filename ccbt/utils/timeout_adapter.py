@@ -195,7 +195,7 @@ class AdaptiveTimeoutCalculator:
                 "handshake_timeout_desperation_max",
                 20.0,  # CRITICAL: Default to 20.0, not 60.0 - config should override if needed
             )
-            # CRITICAL FIX: Reduced from 60s to 20s max - 60s was causing connections to hang
+            # Note: Reduced from 60s to 20s max - 60s was causing connections to hang
             # 20s is sufficient for slow peers/NAT traversal without blocking batch processing
             # BitTorrent spec recommends 10-30s for handshake timeouts
             timeout = max(
@@ -241,7 +241,7 @@ class AdaptiveTimeoutCalculator:
         # Clamp to config bounds
         timeout = max(min_timeout, min(max_timeout, timeout))
 
-        # CRITICAL FIX: Log at INFO level in desperation mode to help diagnose handshake issues
+        # Note: Log at INFO level in desperation mode to help diagnose handshake issues
         if mode == "desperation":
             self.logger.info(
                 "Handshake timeout calculated: %.1fs (mode=%s, active_peers=%d) - using longer timeout for better connection success",

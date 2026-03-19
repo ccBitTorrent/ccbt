@@ -24,6 +24,19 @@ from ccbt.interface.data_provider import (
 logger = logging.getLogger(__name__)
 
 
+class _SnapshotTorrentRef:
+    """Minimal ref for a torrent entry from a UI snapshot (used for self.torrents after resync)."""
+
+    __slots__ = ("info_hash", "_data")
+
+    def __init__(self, info_hash_hex: str, data: dict[str, Any]) -> None:
+        self.info_hash = info_hash_hex
+        self._data = data
+
+    def model_dump(self) -> dict[str, Any]:
+        return self._data
+
+
 WEBSOCKET_EVENT_SUBSCRIPTIONS = (
     EventType.TORRENT_ADDED,
     EventType.TORRENT_REMOVED,
@@ -199,6 +212,8 @@ class DaemonInterfaceAdapter:
 
                     # Subscribe to relevant events
                     await self._client.subscribe_events(self._subscription_events())
+                    # Snapshot resync so caches match daemon state (no silent drift after connect)
+                    await self._resync_from_snapshot()
                     # Mapping reference for UI planning:
                     #   GLOBAL_STATS_UPDATED   -> dashboard overview/speeds.
                     #   TORRENT_* events       -> torrents table + selectors.
@@ -216,8 +231,9 @@ class DaemonInterfaceAdapter:
                 else:
                     self.logger.warning("Failed to connect WebSocket, will use polling only")
 
-                # Initial status fetch
-                await self._refresh_cache()
+                # Initial status fetch (if WebSocket failed we still need cache)
+                if not self._websocket_connected:
+                    await self._refresh_cache()
 
                 self.logger.info("Daemon interface adapter started")
                 return
@@ -276,7 +292,7 @@ class DaemonInterfaceAdapter:
 
         while self._websocket_connected:
             try:
-                # CRITICAL FIX: Use batch receiving for better efficiency - process multiple events at once
+                # Note: Use batch receiving for better efficiency - process multiple events at once
                 # This reduces latency and improves throughput for high-frequency events
                 events = await self._client.receive_events_batch(timeout=0.3, max_events=20)
                 if events:
@@ -312,6 +328,7 @@ class DaemonInterfaceAdapter:
                             await self._client.subscribe_events(
                                 self._subscription_events(),
                             )
+                            await self._resync_from_snapshot()
                             self.logger.info("WebSocket reconnected successfully")
                             consecutive_failures = 0
                             reconnect_delay = 1.0
@@ -617,6 +634,38 @@ class DaemonInterfaceAdapter:
                         self.logger.debug("Error in event callback: %s", e)
         except Exception as e:
             self.logger.debug("Error handling WebSocket event: %s", e)
+
+    async def _resync_from_snapshot(self) -> None:
+        """Resync adapter caches from daemon UI snapshot (after subscribe or reconnect)."""
+        try:
+            response = await self._client.get_ui_snapshot()
+            gs = _normalize_global_stats_read_model(
+                response.global_stats if isinstance(response.global_stats, dict) else {},
+            )
+            torrents_normalized = [
+                _normalize_torrent_read_model(
+                    t if isinstance(t, dict) else getattr(t, "model_dump", lambda: {})(),
+                )
+                for t in (response.torrents or [])
+            ]
+            async with self._cache_lock:
+                self._cached_status = gs
+                self._global_stats_cache = gs
+                self._cached_torrents.clear()
+                self.torrents.clear()
+                for t in torrents_normalized:
+                    info_hash_hex = t.get("info_hash") or t.get("info_hash_hex") or ""
+                    if not info_hash_hex:
+                        continue
+                    try:
+                        info_hash = bytes.fromhex(info_hash_hex)
+                    except ValueError:
+                        continue
+                    self._cached_torrents[info_hash_hex] = t
+                    self.torrents[info_hash] = _SnapshotTorrentRef(info_hash_hex, t)
+            self.logger.debug("Resynced adapter caches from UI snapshot")
+        except Exception as e:
+            self.logger.debug("Resync from snapshot failed: %s", e)
 
     async def _refresh_cache(self) -> None:
         """Refresh cached status from daemon."""

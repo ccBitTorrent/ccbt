@@ -614,7 +614,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         display: block;
     }
     
-    /* CRITICAL FIX: Graphs pane always visible */
+    /* Note: Graphs pane always visible */
     #top-pane-graphs {
         height: 1fr;
         overflow-y: auto;
@@ -660,12 +660,12 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
     def compose(self) -> Any:  # pragma: no cover
         """Compose the graphs section layout.
         
-        CRITICAL FIX: Replaced Tabs with ButtonSelector for better visibility control.
+        Note: Replaced Tabs with ButtonSelector for better visibility control.
         All content is always mounted and visible, with manual visibility management.
         """
         from ccbt.interface.widgets.button_selector import ButtonSelector
         
-        # CRITICAL FIX: Removed alerts and logs tabs - only graphs now
+        # Note: Removed alerts and logs tabs - only graphs now
         # Graphs pane - Always visible (no selector needed)
         with Container(id="top-pane-content"):
             with Container(id="top-pane-graphs"):
@@ -701,7 +701,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
             self._graph_selector = self.query_one("#graph-sub-selector", ButtonSelector)  # type: ignore[attr-defined]
             logger.debug("GraphsSectionContainer.on_mount: Found graph_selector: %s", self._graph_selector is not None)
             
-            # CRITICAL FIX: Ensure graph display area is visible
+            # Note: Ensure graph display area is visible
             try:
                 graph_area = self.query_one("#graph-display-area", Container)  # type: ignore[attr-defined]
                 if graph_area:
@@ -710,7 +710,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
             except Exception as e:
                 logger.error("Error ensuring graph area visibility: %s", e, exc_info=True)
             
-            # CRITICAL FIX: Set active graph selection first, then load content
+            # Note: Set active graph selection first, then load content
             if self._graph_selector:
                 try:
                     # Set active selection to trigger initial load
@@ -772,14 +772,14 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         """
         try:
             graph_area = self.query_one("#graph-display-area", Container)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure graph area is visible
+            # Note: Ensure graph area is visible
             if graph_area:
                 graph_area.display = True  # type: ignore[attr-defined]
             
             if graph_tab_id == self._active_graph_tab_id:
                 return
             
-            # CRITICAL FIX: Clear existing content before loading new graph
+            # Note: Clear existing content before loading new graph
             # Unregister widgets before removing them
             try:
                 for widget in self._registered_widgets:
@@ -799,7 +799,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
             except Exception as e:
                 logger.debug("Error removing graph children: %s", e)
             
-            # CRITICAL FIX: Verify data provider is available and valid
+            # Note: Verify data provider is available and valid
             if not self._data_provider:
                 logger.warning("Data provider not available for graph loading")
                 placeholder = Static(
@@ -810,7 +810,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                 self._active_graph_tab_id = graph_tab_id
                 return
             
-            # CRITICAL FIX: Verify data provider has required methods
+            # Note: Verify data provider has required methods
             if not hasattr(self._data_provider, "get_adapter"):
                 logger.warning("Data provider missing get_adapter method")
                 placeholder = Static(
@@ -832,7 +832,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                         id="performance-graph"
                     )
                     graph_area.mount(graph)  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Ensure graph is visible and trigger refresh after mount
+                    # Note: Ensure graph is visible and trigger refresh after mount
                     graph.display = True  # type: ignore[attr-defined]
                     # Ensure graph area is visible
                     graph_area.display = True  # type: ignore[attr-defined]
@@ -1049,7 +1049,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
             self._registered_widgets.append(widget)
         
         try:
-            # CRITICAL FIX: Verify data provider and adapter are available
+            # Note: Verify data provider and adapter are available
             if not self._data_provider:
                 logger.warning("GraphsSectionContainer: Data provider not available for widget registration")
                 return

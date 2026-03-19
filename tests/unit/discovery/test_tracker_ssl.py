@@ -373,7 +373,7 @@ class TestTrackerSSLIntegration:
                 with patch.object(client, "_build_tracker_url") as mock_build_url:
                     mock_build_url.return_value = "https://tracker.example.com/announce?info_hash=..."
                     with patch.object(client, "_parse_response_async") as mock_parse:
-                        # CRITICAL FIX: _parse_response_async returns TrackerResponse object, not dict
+                        # Note: _parse_response_async returns TrackerResponse object, not dict
                         from ccbt.discovery.tracker import TrackerResponse
                         mock_response = TrackerResponse(
                             interval=3600,

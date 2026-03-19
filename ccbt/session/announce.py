@@ -7,6 +7,7 @@ announce loops, scrape operations, and tracker health monitoring.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ccbt.session.models import SessionContext
@@ -47,7 +48,7 @@ class AnnounceController:
         td = self.prepare_torrent_dict(self._ctx.torrent_data)
         tracker_urls = self.collect_trackers(td)
 
-        # CRITICAL FIX: Log collected trackers for debugging
+        # Note: Log collected trackers for debugging
         if self._logger:
             self._logger.info(
                 "TRACKER_COLLECTION: Collected %d tracker(s) from torrent_data (announce_list=%s, trackers=%s, announce=%s)",
@@ -87,7 +88,7 @@ class AnnounceController:
                     "Tracker start failed, attempting announce anyway", exc_info=True
                 )
 
-        # CRITICAL FIX: Use external port if NAT mapping exists, otherwise use internal port
+        # Note: Use external port if NAT mapping exists, otherwise use internal port
         # This ensures trackers receive the correct port for routing incoming connections
         # Use listen_port_tcp (or listen_port as fallback) to match actual configured port
         # Try to get config from context first, then from session manager as fallback
@@ -107,7 +108,7 @@ class AnnounceController:
                     listen_port,
                     "context" if self._config else "session_manager",
                 )
-        # CRITICAL FIX: Try to get port from session_manager config if available
+        # Note: Try to get port from session_manager config if available
         # Avoid hardcoded 6881 fallback - use actual configured port
         elif (
             self._ctx
@@ -156,7 +157,7 @@ class AnnounceController:
                             external_port,
                             listen_port,
                         )
-                # CRITICAL FIX: Log warning if external port lookup fails
+                # Note: Log warning if external port lookup fails
                 # This indicates NAT mapping may not exist for the configured port
                 elif self._logger:
                     self._logger.warning(
@@ -177,7 +178,7 @@ class AnnounceController:
                     )
 
         # Use built-in concurrent multi-tracker announce
-        # CRITICAL FIX: Log the port being used for tracker announce
+        # Note: Log the port being used for tracker announce
         if self._logger:
             self._logger.debug(
                 "Calling tracker.announce_to_multiple with port=%d (listen_port=%d, announce_port=%d)",
@@ -425,17 +426,48 @@ class AnnounceLoop:
         metadata_capable_connections = summary.get("metadata_capable_connections", 0)
         metadata_exchange_active = summary.get("metadata_exchange_active", 0)
         peers_with_piece_info = summary.get("peers_with_piece_info", 0)
+        requestable_connections = summary.get("requestable_connections", 0)
+
+        metadata_metrics = getattr(self.s, "_peer_discovery_metrics", None)
+        if isinstance(metadata_metrics, dict):
+            if (
+                active_connections == 0
+                and productive_connections == 0
+                and requestable_connections == 0
+                and peers_with_piece_info == 0
+            ):
+                started_at = float(
+                    metadata_metrics.get("metadata_starvation_started_at", 0.0) or 0.0
+                )
+                now = time.time()
+                if started_at <= 0.0:
+                    metadata_metrics["metadata_starvation_started_at"] = now
+                    metadata_metrics["metadata_starvation_seconds"] = 0.0
+                else:
+                    metadata_metrics["metadata_starvation_seconds"] = max(
+                        0.0, now - started_at
+                    )
+            else:
+                metadata_metrics["metadata_starvation_started_at"] = 0.0
+                metadata_metrics["metadata_starvation_seconds"] = 0.0
 
         self.s.logger.info(
             "TRACKER_METADATA_STATUS: %s tracker_peers_added=%d active_connections=%d productive_connections=%d "
-            "metadata_capable_connections=%d metadata_exchange_active=%d peers_with_piece_info=%d",
+            "requestable_connections=%d metadata_capable_connections=%d metadata_exchange_active=%d peers_with_piece_info=%d "
+            "metadata_starvation_seconds=%.1f",
             self.s.info.name,
             len(peer_list),
             active_connections,
             productive_connections,
+            requestable_connections,
             metadata_capable_connections,
             metadata_exchange_active,
             peers_with_piece_info,
+            float(
+                metadata_metrics.get("metadata_starvation_seconds", 0.0)
+                if isinstance(metadata_metrics, dict)
+                else 0.0
+            ),
         )
         if metadata_exchange_active > 0:
             self.s.logger.info(
@@ -526,7 +558,7 @@ class AnnounceLoop:
                     await asyncio.sleep(base_announce_interval)
                     continue
 
-                # CRITICAL FIX: Collect all trackers (not just single announce URL)
+                # Note: Collect all trackers (not just single announce URL)
                 # This ensures all trackers from magnet links are used
                 tracker_urls = announce_controller.collect_trackers(td)
 
@@ -543,7 +575,7 @@ class AnnounceLoop:
                 if announce_event == "started":
                     self._mark_initial_announce_sent()
 
-                # CRITICAL FIX: Use external port if NAT mapping exists, otherwise use internal port
+                # Note: Use external port if NAT mapping exists, otherwise use internal port
                 # Use listen_port_tcp (or listen_port as fallback) to match actual configured port
                 listen_port = (
                     self.s.config.network.listen_port_tcp
@@ -571,7 +603,7 @@ class AnnounceLoop:
                                 listen_port,
                             )
                         else:
-                            # CRITICAL FIX: Log warning if external port lookup fails
+                            # Note: Log warning if external port lookup fails
                             # This indicates NAT mapping may not exist for the configured port
                             self.s.logger.warning(
                                 "NAT external port lookup failed for internal port %d (protocol=tcp). "
@@ -615,7 +647,7 @@ class AnnounceLoop:
                         "Failed to emit TRACKER_ANNOUNCE_STARTED event: %s", e
                     )
 
-                # CRITICAL FIX: Announce to all trackers, not just one
+                # Note: Announce to all trackers, not just one
                 # This ensures all trackers from magnet links are used for peer discovery
                 if hasattr(self.s.tracker, "announce_to_multiple"):
                     responses = await self.s.tracker.announce_to_multiple(
@@ -683,7 +715,7 @@ class AnnounceLoop:
                         len(tracker_urls),
                         total_peers,
                     )
-                    # CRITICAL FIX: Aggregate peers from ALL successful responses, not just the first one
+                    # Note: Aggregate peers from ALL successful responses, not just the first one
                     # This ensures we connect to peers from all trackers that responded
                     all_peers = []
                     for resp in successful_responses:
@@ -732,6 +764,15 @@ class AnnounceLoop:
                 requestable_peers = int(
                     cached_status.get("requestable_peers", connected_peers) or 0
                 )
+                handshake_complete_peers = int(
+                    cached_status.get("handshake_complete_peers", 0) or 0
+                )
+                extension_capable_peers = int(
+                    cached_status.get("extension_capable_peers", 0) or 0
+                )
+                metadata_capable_peers = int(
+                    cached_status.get("metadata_capable_peers", 0) or 0
+                )
                 if usable_peer_count == 0:
                     self.s.tracker_connection_status = "degraded"
                     self.s.last_tracker_error = (
@@ -755,10 +796,13 @@ class AnnounceLoop:
                     ):
                         next_announce_interval = min(next_announce_interval, 120.0)
                         self.s.logger.info(
-                            "Tracker announce produced peers but swarm remains weak (connected=%d, productive=%d, requestable=%d); using accelerated reannounce interval %.1fs",
+                            "Tracker announce produced peers but swarm remains weak (connected=%d, productive=%d, requestable=%d, handshake_complete=%d, extension_capable=%d, metadata_capable=%d); using accelerated reannounce interval %.1fs",
                             connected_peers,
                             productive_peers,
                             requestable_peers,
+                            handshake_complete_peers,
+                            extension_capable_peers,
+                            metadata_capable_peers,
                             next_announce_interval,
                         )
 
@@ -801,7 +845,7 @@ class AnnounceLoop:
                     and response.peers
                     and self.s.download_manager
                 ):
-                    # CRITICAL FIX: Check if peer manager exists (may have been initialized early)
+                    # Note: Check if peer manager exists (may have been initialized early)
                     has_peer_manager = (
                         hasattr(self.s.download_manager, "peer_manager")
                         and self.s.download_manager.peer_manager is not None
@@ -812,7 +856,7 @@ class AnnounceLoop:
                         and getattr(self.s.download_manager, "_download_started", False)
                     ) or has_peer_manager
 
-                    # CRITICAL FIX: Log peer manager status for diagnostics
+                    # Note: Log peer manager status for diagnostics
                     self.s.logger.info(
                         "🔍 TRACKER PEER CONNECTION: response.peers=%d, download_manager=%s, has_peer_manager=%s, download_started=%s",
                         len(response.peers) if response.peers else 0,
@@ -821,10 +865,10 @@ class AnnounceLoop:
                         download_started,
                     )
 
-                    # CRITICAL FIX: If peer manager exists, connect peers directly
+                    # Note: If peer manager exists, connect peers directly
                     # If peer manager doesn't exist yet, wait with retry logic, then queue peers for later
                     if not has_peer_manager:
-                        # CRITICAL FIX: Wait for peer_manager to be ready (similar to DHT retry logic)
+                        # Note: Wait for peer_manager to be ready (similar to DHT retry logic)
                         # This handles timing issues where tracker responses arrive before peer_manager is initialized
                         self.s.logger.warning(
                             "⚠️ TRACKER PEER CONNECTION: peer_manager not ready for %s, waiting up to 2 seconds...",
@@ -912,10 +956,10 @@ class AnnounceLoop:
                             await asyncio.sleep(next_announce_interval)
                             continue
 
-                    # CRITICAL FIX: If peer manager exists (or became ready after retry), connect peers directly
+                    # Note: If peer manager exists (or became ready after retry), connect peers directly
                     if has_peer_manager:
                         peer_list = []
-                        # CRITICAL FIX: Use aggregated peers from all successful tracker responses
+                        # Note: Use aggregated peers from all successful tracker responses
                         # The response object now contains all peers from all successful trackers
                         for p in (
                             response.peers
@@ -961,7 +1005,7 @@ class AnnounceLoop:
                                 )
 
                         if peer_list:
-                            # CRITICAL FIX: Deduplicate peers before connecting
+                            # Note: Deduplicate peers before connecting
                             # Some trackers may return duplicate peers
                             seen_peers = set()
                             unique_peer_list = []
@@ -997,7 +1041,7 @@ class AnnounceLoop:
                                     self.s.info.name,
                                 )
 
-                                # CRITICAL FIX: Also add tracker peers to PEX manager for sharing with other peers
+                                # Note: Also add tracker peers to PEX manager for sharing with other peers
                                 # This helps bootstrap the PEX network with known good peers from trackers
                                 if (
                                     hasattr(self.s, "pex_manager")
@@ -1038,7 +1082,7 @@ class AnnounceLoop:
                                             pex_error,
                                         )
 
-                                # CRITICAL FIX: Also notify DHT callbacks about tracker-discovered peers
+                                # Note: Also notify DHT callbacks about tracker-discovered peers
                                 # This helps bootstrap DHT peer discovery with known good peers
                                 if hasattr(self.s, "dht_client") and self.s.dht_client:
                                     try:
@@ -1130,7 +1174,7 @@ class AnnounceLoop:
                                     self.s.info.name,
                                     connect_error,
                                 )
-                                # CRITICAL FIX: Verify connections after a delay
+                                # Note: Verify connections after a delay
                                 await asyncio.sleep(
                                     1.0
                                 )  # Give connections time to establish

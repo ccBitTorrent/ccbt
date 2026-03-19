@@ -45,7 +45,7 @@ class TestTorrentConfigCommandsSIM102Fix:
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
         
-        # CRITICAL FIX: The SIM102 fix is at line 186, not 169
+        # Note: The SIM102 fix is at line 186, not 169
         # Find the SIM102 fix around line 186
         lines = source.splitlines()
         found_combined_if = False
@@ -73,7 +73,7 @@ class TestTorrentConfigCommandsSIM102Fix:
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
         
-        # CRITICAL FIX: The SIM102 fix is at line 533, not 474
+        # Note: The SIM102 fix is at line 533, not 474
         # Find the SIM102 fix around line 533
         lines = source.splitlines()
         found_combined_if = False

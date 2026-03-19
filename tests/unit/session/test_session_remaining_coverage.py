@@ -184,7 +184,7 @@ async def test_metrics_loop_executes(monkeypatch):
     async def _mock_emit(stats):
         metrics_called.append(1)
 
-    mgr._emit_global_metrics = _mock_emit
+    mgr.background_tasks._emit_global_metrics = _mock_emit
     mgr._aggregate_torrent_stats = lambda: {}
 
     import asyncio

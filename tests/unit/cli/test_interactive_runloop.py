@@ -54,7 +54,7 @@ class TestInteractiveRunLoop:
             def clear(self):
                 outputs.clear()
             
-            # CRITICAL FIX: Rich Progress requires console.get_time and log methods
+            # Note: Rich Progress requires console.get_time and log methods
             def get_time(self):
                 return time.time
             

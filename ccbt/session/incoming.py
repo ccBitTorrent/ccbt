@@ -35,7 +35,7 @@ class IncomingPeerHandler:
             peer_port: Peer port number
 
         """
-        # CRITICAL FIX: Access peer_manager via download_manager (it's stored there)
+        # Note: Access peer_manager via download_manager (it's stored there)
         # Fallback to direct peer_manager attribute if it exists (set by some setup code)
         peer_manager = getattr(self.s, "download_manager", None)
         if peer_manager:
@@ -102,7 +102,7 @@ class IncomingPeerHandler:
                     writer.close()
                     await writer.wait_closed()
                 except (ConnectionResetError, OSError):
-                    # CRITICAL FIX: Handle Windows ConnectionResetError (WinError 10054) gracefully
+                    # Note: Handle Windows ConnectionResetError (WinError 10054) gracefully
                     # Remote host closed connection - this is normal
                     pass
                 except Exception:
@@ -141,7 +141,7 @@ class IncomingPeerHandler:
                 max_wait = 30.0
                 wait_interval = 0.5
                 waited = 0.0
-                # CRITICAL FIX: Check peer_manager via download_manager
+                # Note: Check peer_manager via download_manager
                 peer_manager = None
                 while waited < max_wait and not self.s.stopped:
                     # Try to get peer_manager from download_manager

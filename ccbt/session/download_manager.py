@@ -239,7 +239,7 @@ class AsyncDownloadManager:
         self.peer_manager.on_piece_received = self._on_piece_received
         self.peer_manager.on_bitfield_received = self._on_bitfield_received
 
-        # CRITICAL FIX: Propagate callbacks to existing connections if any exist
+        # Note: Propagate callbacks to existing connections if any exist
         # This handles the case where connections are created before callbacks are registered
         # The property setters will automatically propagate, but we also do it explicitly here
         # to ensure it happens immediately
@@ -265,7 +265,7 @@ class AsyncDownloadManager:
                 )
 
         self.piece_manager.on_piece_completed = self._on_piece_completed
-        # CRITICAL FIX: Don't override on_piece_verified if it's already set by session
+        # Note: Don't override on_piece_verified if it's already set by session
         # The session's callback writes to disk, this one just broadcasts HAVE
         # Only set if not already set (session will set it before start_download is called)
         # Check if callback exists and is not None - if session set it, keep it
@@ -516,7 +516,7 @@ class AsyncDownloadManager:
 
     def _on_piece_received(self, connection, piece_message) -> None:
         """Handle received piece block from peer."""
-        # CRITICAL FIX: Log at INFO level to track piece reception (suppress during shutdown)
+        # Note: Log at INFO level to track piece reception (suppress during shutdown)
         from ccbt.utils.shutdown import is_shutting_down
 
         if not is_shutting_down():
@@ -599,7 +599,7 @@ async def _announce_to_trackers(
         announce = torrent_data.get("announce")
         if announce:
             tracker_urls = [announce]
-    # CRITICAL FIX: Filter out empty, None, and invalid URLs before announcing
+    # Note: Filter out empty, None, and invalid URLs before announcing
     # This prevents announce attempts to invalid trackers
     tracker_urls = [
         url.strip()
@@ -632,7 +632,7 @@ async def _announce_to_trackers(
         )
 
         for response in responses:
-            # CRITICAL FIX: Handle None response (UDP tracker client unavailable)
+            # Note: Handle None response (UDP tracker client unavailable)
             if response is None:
                 continue
             if not hasattr(response, "peers") or not response.peers:
@@ -748,7 +748,7 @@ async def download_magnet(
                             port=get_config().network.listen_port,
                             event="started",
                         )
-                        # CRITICAL FIX: Handle None response (UDP tracker client unavailable)
+                        # Note: Handle None response (UDP tracker client unavailable)
                         if response is None:
                             continue
                         if not hasattr(response, "peers") or not response.peers:
@@ -801,7 +801,7 @@ async def download_magnet(
                     )
                     seen_peers: set[tuple[str, int]] = set()
                     for response in responses:
-                        # CRITICAL FIX: Handle None response (UDP tracker client unavailable)
+                        # Note: Handle None response (UDP tracker client unavailable)
                         if response is None:
                             continue
                         if not hasattr(response, "peers") or not response.peers:

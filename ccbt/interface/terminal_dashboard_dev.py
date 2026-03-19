@@ -214,7 +214,7 @@ def get_app() -> TerminalDashboard:
             except KeyboardInterrupt:
                 # User pressed Ctrl+C - cancel the thread and re-raise
                 logger.info("Daemon wait interrupted by user (KeyboardInterrupt)")
-                # CRITICAL FIX: Cannot set daemon status on active thread
+                # Note: Cannot set daemon status on active thread
                 # Instead, just let the thread finish naturally - it's a daemon thread by default
                 # The thread will exit when the main process exits
                 raise

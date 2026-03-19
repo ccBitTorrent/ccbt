@@ -130,7 +130,7 @@ class TestRequestPrioritization:
     @pytest.mark.asyncio
     async def test_calculate_request_priority_rarest_first(self, peer_connection_manager, mock_piece_manager):
         """Test priority calculation for rarest pieces."""
-        # CRITICAL FIX: Use AsyncMock for async function to ensure proper await behavior
+        # Note: Use AsyncMock for async function to ensure proper await behavior
         from unittest.mock import AsyncMock
         
         async def mock_get_piece_availability(piece_index):
@@ -152,7 +152,7 @@ class TestRequestPrioritization:
     @pytest.mark.asyncio
     async def test_calculate_request_priority_unknown_piece(self, peer_connection_manager, mock_piece_manager):
         """Test priority calculation for unknown piece availability."""
-        # CRITICAL FIX: Use AsyncMock for async function to ensure proper await behavior
+        # Note: Use AsyncMock for async function to ensure proper await behavior
         from unittest.mock import AsyncMock
         
         # Mock to return 0 availability (unknown piece)

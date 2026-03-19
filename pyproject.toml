@@ -46,7 +46,6 @@ dependencies = [
     "aiohttp-socks>=0.10.1",
     "aiortc>=1.9.0",
     "prometheus-client>=0.21.1",
-    "av>=12.3.0",
     "netifaces>=0.11.0; platform_system != 'Windows'",
     "liburing>=0.0.1; sys_platform == 'linux'",
     "ipfshttpclient>=0.8.0a2",
@@ -59,6 +58,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+media = [
+    "av>=12.3.0",
+]
+
 dev = [
     "pytest>=8.3.5",
     "pytest-asyncio>=0.24.0",
@@ -228,6 +231,12 @@ omit = [
     "*/py.typed",
     # Exclude root-level wrapper modules (re-export from core)
     "ccbt/bencode.py",  # Wrapper re-exporting from core.bencode
+    # Exclude CLI and UI from coverage by design
+    "ccbt/cli/*",
+    "ccbt/interface/*",
+    "ccbt/interface/*/*",
+    "ccbt/interface/*/*/*",
+    "ccbt/interface/*/*/*/*",
 ]
 # Note: We include __init__.py files as they may contain package initialization logic
 

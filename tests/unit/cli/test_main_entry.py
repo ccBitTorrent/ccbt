@@ -57,7 +57,7 @@ class TestMainEntry:
                         }
                         mock_dm_class.return_value = mock_dm_instance
 
-                        # CRITICAL FIX: Mock DHT client to prevent background refresh loop from hanging
+                        # Note: Mock DHT client to prevent background refresh loop from hanging
                         # The DHT client starts background tasks (_refresh_loop, _cleanup_loop) that run indefinitely
                         # Mock the DHT client so it doesn't start these tasks
                         with patch("ccbt.discovery.dht.DHTClient") as mock_dht_class:
@@ -113,7 +113,7 @@ class TestMainEntry:
                         }
                         mock_tracker_class.return_value = mock_tracker_instance
 
-                        # CRITICAL FIX: Mock DHT client to prevent background refresh loop from hanging
+                        # Note: Mock DHT client to prevent background refresh loop from hanging
                         # The DHT client starts background tasks (_refresh_loop, _cleanup_loop) that run indefinitely
                         # Mock the DHT client so it doesn't start these tasks
                         # Patch the DHTClient class and also patch asyncio.run to ensure cleanup
@@ -456,7 +456,7 @@ class TestMainEntry:
                                     "pieces_info": {"num_pieces": 1},
                                 }
 
-                                # CRITICAL FIX: Mock DHT client to prevent MagicMock comparison errors
+                                # Note: Mock DHT client to prevent MagicMock comparison errors
                                 # The DHT client's _calculate_adaptive_interval method accesses config values
                                 # that must be numeric, not MagicMock objects
                                 with patch("ccbt.discovery.dht.DHTClient") as mock_dht_class:

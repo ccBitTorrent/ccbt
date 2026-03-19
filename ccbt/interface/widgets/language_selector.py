@@ -214,7 +214,7 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
             if not new_locale or new_locale == self._current_locale:
                 return
             
-            # CRITICAL FIX: Create async task properly to avoid hanging
+            # Note: Create async task properly to avoid hanging
             # We're already in the app's event loop, so just create the task directly
             import asyncio
             asyncio.create_task(self._change_language(new_locale))
@@ -270,7 +270,7 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
             # Update info display
             self._update_language_info()
             
-            # CRITICAL FIX: Post message to app so it propagates to all widgets
+            # Note: Post message to app so it propagates to all widgets
             # Textual messages bubble up through the widget tree, but we need to ensure
             # the app receives it to coordinate the refresh
             try:

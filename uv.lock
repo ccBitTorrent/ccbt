@@ -1172,9 +1172,6 @@ dependencies = [
     { name = "aiortc", version = "1.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "aiortc", version = "1.13.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
     { name = "aiortc", version = "1.14.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "av", version = "12.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
-    { name = "av", version = "14.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
-    { name = "av", version = "16.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "blake3" },
     { name = "click", version = "8.1.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "click", version = "8.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
@@ -1255,6 +1252,11 @@ dev = [
     { name = "textual-dev", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "ty" },
 ]
+media = [
+    { name = "av", version = "12.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "av", version = "14.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
+    { name = "av", version = "16.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1316,7 +1318,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.8.0" },
     { name = "aiohttp-socks", specifier = ">=0.10.1" },
     { name = "aiortc", specifier = ">=1.9.0" },
-    { name = "av", specifier = ">=12.3.0" },
+    { name = "av", marker = "extra == 'media'", specifier = ">=12.3.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.10" },
     { name = "blake3", specifier = ">=1.0.8" },
     { name = "click", specifier = ">=8.1.8" },
@@ -1362,7 +1364,7 @@ requires-dist = [
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1a24" },
     { name = "watchdog", specifier = ">=4.0.2" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["media", "dev"]
 
 [package.metadata.requires-dev]
 dev = [

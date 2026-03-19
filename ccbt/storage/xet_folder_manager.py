@@ -19,6 +19,7 @@ from ccbt.session.xet_sync_manager import XetSyncManager
 from ccbt.storage.xet_chunking import GearhashChunker
 from ccbt.storage.xet_deduplication import XetDeduplication
 from ccbt.storage.xet_hashing import XetHasher
+from ccbt.utils.compat import to_thread_compat
 from ccbt.utils.events import Event, EventType, emit_event
 
 if TYPE_CHECKING:
@@ -582,9 +583,9 @@ class XetFolder:
         target_path = self.folder_path / entry.file_path
 
         if entry.deleted:
-            exists = await asyncio.to_thread(target_path.exists)
+            exists = await to_thread_compat(target_path.exists)
             if exists:
-                await asyncio.to_thread(lambda: target_path.unlink(missing_ok=True))
+                await to_thread_compat(lambda: target_path.unlink(missing_ok=True))
             await self._refresh_metadata_snapshot()
             self.sync_manager.set_last_error(None)
             self.logger.info("Deleted synced file: %s", entry.file_path)
@@ -629,7 +630,7 @@ class XetFolder:
                 msg = f"Missing chunk {chunk_hash.hex()[:16]} for {entry.file_path}"
                 self.sync_manager.set_last_error(msg)
                 raise FileNotFoundError(msg)
-            chunk_bytes = await asyncio.to_thread(chunk_path.read_bytes)
+            chunk_bytes = await to_thread_compat(chunk_path.read_bytes)
             actual_chunk_hash = self.hasher.compute_chunk_hash(
                 chunk_bytes, algorithm=self.hash_algorithm
             )
@@ -653,7 +654,7 @@ class XetFolder:
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_bytes(rebuilt_data[: file_metadata.total_size])
 
-        await asyncio.to_thread(_write_materialized_file)
+        await to_thread_compat(_write_materialized_file)
 
         # Update git ref in sync manager if changed
         if self.git_versioning:
@@ -776,11 +777,11 @@ class XetFolder:
         if self.cas_client is None:
             return None
         file_path_obj = self.folder_path / file_path
-        exists = await asyncio.to_thread(file_path_obj.exists)
-        if not exists or not await asyncio.to_thread(file_path_obj.is_file):
+        exists = await to_thread_compat(file_path_obj.exists)
+        if not exists or not await to_thread_compat(file_path_obj.is_file):
             return None
 
-        file_data = await asyncio.to_thread(file_path_obj.read_bytes)
+        file_data = await to_thread_compat(file_path_obj.read_bytes)
         chunk_hashes: list[bytes] = []
         offset = 0
         for chunk_data in self.chunker.chunk_buffer(file_data):
@@ -851,7 +852,7 @@ class XetFolder:
                     out.append(p)
                 return out
 
-            workspace_files = await asyncio.to_thread(_list_workspace_files)
+            workspace_files = await to_thread_compat(_list_workspace_files)
 
             for file_path_obj in workspace_files:
                 relative_path = str(file_path_obj.relative_to(self.folder_path))
@@ -929,4 +930,4 @@ class XetFolder:
         chunk_path = await self.dedup.check_chunk_exists(chunk_hash)
         if chunk_path is None:
             return None
-        return await asyncio.to_thread(chunk_path.read_bytes)
+        return await to_thread_compat(chunk_path.read_bytes)

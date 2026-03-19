@@ -263,7 +263,7 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
         # Enhanced DHT success ratio indicator with color coding
         if self._piece_health_data:
             dht_ratio = self._piece_health_data.get("dht_success_ratio", 0.0)
-            if dht_ratio > 0:
+            if isinstance(dht_ratio, (int, float)) and dht_ratio > 0:
                 dht_pct = dht_ratio * 100
                 if dht_pct >= 80:
                     dht_style = "green"

@@ -33,7 +33,7 @@ class TestAsyncSessionManagerMetricsEdgeCases:
         if mock_config_enabled.observability.enable_metrics:
             # Metrics should be initialized if enabled
             # May be None if dependencies missing
-            # CRITICAL FIX: Metrics (MetricsCollector) has get_metrics_summary(), not get_all_metrics()
+            # Note: Metrics (MetricsCollector) has get_metrics_summary(), not get_all_metrics()
             assert session.metrics is None or hasattr(session.metrics, "get_metrics_summary")
 
         # Stop should work even with no torrents
@@ -50,7 +50,7 @@ class TestAsyncSessionManagerMetricsEdgeCases:
     ):
         """Test behavior when start() is called multiple times.
         
-        CRITICAL FIX: Metrics may be recreated on second start, so we check
+        Note: Metrics may be recreated on second start, so we check
         that metrics exist and are valid, not that they're the same instance.
         Also ensure proper cleanup between starts to prevent port conflicts.
         """
@@ -63,7 +63,7 @@ class TestAsyncSessionManagerMetricsEdgeCases:
         await session.start()
         metrics1 = session.metrics
 
-        # CRITICAL FIX: Stop and cleanup before second start to prevent port conflicts
+        # Note: Stop and cleanup before second start to prevent port conflicts
         await session.stop()
         # Wait a bit for ports to be released
         await asyncio.sleep(0.5)

@@ -157,7 +157,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
             if not path:
                 return
             
-            # CRITICAL FIX: Use command executor for daemon compatibility
+            # Note: Use command executor for daemon compatibility
             # Check if dashboard has command executor (daemon mode) or use session directly (local mode)
             if hasattr(self.dashboard, "_command_executor") and self.dashboard._command_executor:
                 # Daemon mode: use command executor
@@ -172,7 +172,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
                         info_hash_hex = result.data.get("info_hash", "") if result.data else ""
                         if info_hash_hex:
                             logger.debug("QuickAddTorrentScreen: Torrent added successfully, info_hash: %s", info_hash_hex)
-                            # CRITICAL FIX: Dismiss with info_hash and trigger immediate UI refresh
+                            # Note: Dismiss with info_hash and trigger immediate UI refresh
                             try:
                                 self.dismiss(info_hash_hex)  # type: ignore[attr-defined]
                                 # Trigger immediate UI refresh after dismiss
@@ -248,7 +248,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
     def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
         """Handle button presses.
         
-        CRITICAL FIX: Use call_later to avoid blocking UI thread.
+        Note: Use call_later to avoid blocking UI thread.
         Button press handlers should return immediately to prevent screen freezes.
         """
         if event.button.id == "cancel":
@@ -260,7 +260,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
                     logger.error("Error in async cancel: %s", e, exc_info=True)
             asyncio.create_task(cancel_async())
         elif event.button.id == "submit":
-            # CRITICAL FIX: Schedule async work without blocking
+            # Note: Schedule async work without blocking
             # Create task immediately to prevent UI freeze
             async def submit_async() -> None:
                 try:
@@ -1045,7 +1045,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     async def _submit(self) -> None:  # pragma: no cover
         """Submit the form and add torrent."""
         try:
-            # CRITICAL FIX: Validate torrent path before proceeding
+            # Note: Validate torrent path before proceeding
             if not self.torrent_path or not self.torrent_path.strip():
                 self._show_error(_("Please enter a torrent path or magnet link"))
                 return
@@ -1107,7 +1107,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             # Close screen and call dashboard's _process_add_torrent
             self.dismiss(True)  # type: ignore[attr-defined]
             # Access private method for internal dashboard functionality
-            # CRITICAL FIX: Use asyncio.create_task to avoid blocking UI
+            # Note: Use asyncio.create_task to avoid blocking UI
             import asyncio
             asyncio.create_task(self.dashboard._process_add_torrent(self.torrent_path, options))
         except Exception as e:
@@ -1301,7 +1301,7 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
             self._status_widget = self.query_one("#status", Static)  # type: ignore[attr-defined]
             self._progress_widget = self.query_one("#progress", Static)  # type: ignore[attr-defined]
             
-            # CRITICAL FIX: Register event callback for METADATA_READY
+            # Note: Register event callback for METADATA_READY
             # Handle both AsyncSessionManager and DaemonInterfaceAdapter
             if hasattr(self.session, "register_event_callback"):
                 from ccbt.daemon.ipc_protocol import EventType
@@ -1310,7 +1310,7 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
                     """Handle metadata ready event."""
                     event_info_hash = data.get("info_hash", "")
                     if event_info_hash == self.info_hash_hex:
-                        # CRITICAL FIX: Event callbacks may run in app thread or different thread
+                        # Note: Event callbacks may run in app thread or different thread
                         # Use create_task which works in both cases (Textual handles thread safety)
                         import asyncio
                         asyncio.create_task(self._handle_metadata_ready())
@@ -1327,7 +1327,7 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
                     """Handle metadata ready event."""
                     event_info_hash = data.get("info_hash", "")
                     if event_info_hash == self.info_hash_hex:
-                        # CRITICAL FIX: Event callbacks may run in app thread or different thread
+                        # Note: Event callbacks may run in app thread or different thread
                         # Use create_task which works in both cases (Textual handles thread safety)
                         import asyncio
                         asyncio.create_task(self._handle_metadata_ready())

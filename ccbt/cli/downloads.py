@@ -596,7 +596,7 @@ async def start_basic_magnet_download(
                             )
                         )
 
-                # CRITICAL FIX: Add user-facing warning if no peers connect after reasonable time
+                # Note: Add user-facing warning if no peers connect after reasonable time
                 if current_status == "downloading" and connected_peers == 0:
                     import time
 
@@ -686,7 +686,7 @@ async def start_basic_magnet_download(
                     ).format(error=e)
                 )
 
-            # CRITICAL FIX: Ensure session is properly stopped on KeyboardInterrupt
+            # Note: Ensure session is properly stopped on KeyboardInterrupt
             # This prevents "Unclosed client session" warnings
             try:
                 await session.stop()
@@ -698,7 +698,7 @@ async def start_basic_magnet_download(
                 )
             raise
         finally:
-            # CRITICAL FIX: Always try to stop session in finally block
+            # Note: Always try to stop session in finally block
             # This ensures cleanup even if an exception occurs
             try:
                 result = await executor.execute(

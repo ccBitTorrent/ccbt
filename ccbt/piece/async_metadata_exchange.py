@@ -260,7 +260,7 @@ class AsyncMetadataExchange:
             if not task.done():  # pragma: no cover - Same context
                 task.cancel()  # pragma: no cover - Same context
 
-        # CRITICAL FIX: Validate metadata before returning
+        # Note: Validate metadata before returning
         if self.metadata_dict:
             # Verify metadata contains required fields
             if b"info" not in self.metadata_dict:
@@ -351,7 +351,7 @@ class AsyncMetadataExchange:
         self.sessions[peer_info] = session
 
         try:
-            # CRITICAL FIX: Improved connection timeout handling for Windows
+            # Note: Improved connection timeout handling for Windows
             # Windows may need longer timeouts due to semaphore delays
             import sys
 
@@ -384,7 +384,7 @@ class AsyncMetadataExchange:
                 peer_info[1],
             )
 
-            # CRITICAL FIX: Add timeout for handshake exchange
+            # Note: Add timeout for handshake exchange
             handshake_timeout = 10.0
             if sys.platform == "win32":
                 handshake_timeout = 15.0  # Longer timeout on Windows
@@ -436,7 +436,7 @@ class AsyncMetadataExchange:
             )
             session.state = MetadataState.NEGOTIATING  # pragma: no cover - Same context
 
-            # CRITICAL FIX: Add timeout for extended handshake
+            # Note: Add timeout for extended handshake
             extended_handshake_timeout = 15.0
             if sys.platform == "win32":
                 extended_handshake_timeout = 20.0  # Longer timeout on Windows
@@ -509,7 +509,7 @@ class AsyncMetadataExchange:
                 )
 
         except asyncio.TimeoutError:
-            # CRITICAL FIX: Better error messages for different error types
+            # Note: Better error messages for different error types
             error_type = "timeout"
             error_msg = f"Connection timeout after {timeout:.1f}s"
             self.logger.debug(

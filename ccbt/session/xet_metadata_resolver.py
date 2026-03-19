@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +11,7 @@ from ccbt.core.tonic import TonicFile
 from ccbt.core.tonic_link import parse_tonic_link
 from ccbt.session.xet_cold_link_discovery import discover_peers_for_workspace
 from ccbt.session.xet_cold_link_fetch import fetch_xet_metadata_from_peers
+from ccbt.utils.compat import to_thread_compat
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ async def _fetch_tonic_bytes_from_url(
                     raise RuntimeError(msg)
                 return body
 
-        return await asyncio.to_thread(_fetch_sync)
+        return await to_thread_compat(_fetch_sync)
 
     body = b""
     redirect_count = 0
@@ -154,7 +154,7 @@ class XetMetadataResolver:
             resolved = str(tonic_path.resolve())
             return data, resolved
 
-        metadata_bytes, resolved_str = await asyncio.to_thread(_read_and_resolve)
+        metadata_bytes, resolved_str = await to_thread_compat(_read_and_resolve)
         parsed_metadata = self._tonic_file.parse_bytes(metadata_bytes)
         workspace_id = self._tonic_file.get_info_hash(parsed_metadata)
         return ResolvedTonicMetadata(

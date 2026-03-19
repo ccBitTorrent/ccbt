@@ -360,7 +360,7 @@ class TestUTPConfigSetFileSave:
         config_file = tmp_path / "ccbt.toml"
         config_file.write_text(toml.dumps({"network": {"utp": {"mtu": 1200}}}))
         
-        # CRITICAL FIX: utp_commands uses init_config() from ccbt.config.config, not ConfigManager directly
+        # Note: utp_commands uses init_config() from ccbt.config.config, not ConfigManager directly
         # Mock init_config to return a config manager with our temp file
         with patch("ccbt.config.config.init_config") as mock_init_config:
             mock_manager = MagicMock()
@@ -395,7 +395,7 @@ class TestUTPConfigSetFileSave:
         nonexistent_dir = tmp_path / "nonexistent"
         config_file = nonexistent_dir / "ccbt.toml"
         
-        # CRITICAL FIX: utp_commands uses init_config() from ccbt.config.config, not ConfigManager directly
+        # Note: utp_commands uses init_config() from ccbt.config.config, not ConfigManager directly
         # Mock init_config to return a config manager with our temp file
         with patch("ccbt.config.config.init_config") as mock_init_config:
             mock_manager = MagicMock()

@@ -130,7 +130,7 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
         """Mount the graph widget."""
         try:
             self._sparkline = self.query_one("#graph-sparkline", Sparkline)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Initialize with varying data pattern so Sparkline renders a visible line
+            # Note: Initialize with varying data pattern so Sparkline renders a visible line
             # A flat line (all same value) may not be visible - use a simple wave pattern
             if self._sparkline:
                 # Create a simple visible pattern: [0.1, 0.2, 0.1, 0.2, ...] repeated
@@ -168,7 +168,7 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
         if self._sparkline and self._data_history:
             try:
                 self._sparkline.data = self._data_history  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._sparkline, "refresh"):
                     self._sparkline.refresh()  # type: ignore[attr-defined]
             except Exception as e:
@@ -388,7 +388,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             self._upload_sparkline = self.query_one("#upload-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._event_annotations_widget = self.query_one("#event-annotations", Static)  # type: ignore[attr-defined]
             
-            # CRITICAL FIX: Initialize with VARYING data pattern so Sparklines render a visible line
+            # Note: Initialize with VARYING data pattern so Sparklines render a visible line
             # A flat line (all same value) may not be visible - use a simple wave pattern
             # Create a visible pattern: [0.1, 0.2, 0.1, 0.2, ...] repeated for 20 points
             initial_data = [0.1 + (i % 2) * 0.1 for i in range(20)]
@@ -409,11 +409,11 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 self._upload_sparkline.refresh()  # type: ignore[attr-defined]
                 logger.debug("UploadDownloadGraphWidget: Initialized upload sparkline with %d varying data points", len(initial_data))
             
-            # CRITICAL FIX: Start periodic updates if data provider is available
+            # Note: Start periodic updates if data provider is available
             if self._data_provider:
                 logger.debug("UploadDownloadGraphWidget: Starting update loop with data provider")
                 self._start_updates()
-                # CRITICAL FIX: Trigger immediate update after widget is fully mounted
+                # Note: Trigger immediate update after widget is fully mounted
                 # Use call_after_refresh to ensure widget is ready and event loop is accessible
                 def trigger_initial_update() -> None:
                     """Trigger initial data update after widget is ready."""
@@ -454,7 +454,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         def schedule_update() -> None:
             """Schedule async update (wrapper for set_interval)."""
             try:
-                # CRITICAL FIX: Get the event loop and create task properly
+                # Note: Get the event loop and create task properly
                 # Textual widgets run in the app's event loop, so we can get it directly
                 try:
                     loop = asyncio.get_running_loop()
@@ -469,9 +469,9 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 logger.error("Error scheduling graph update: %s", e, exc_info=True)
         
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
-            # CRITICAL FIX: Reduced interval from 2.0s to 1.0s for tighter performance updates
+            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately using call_after_refresh to ensure widget is ready
             self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
@@ -491,7 +491,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         
         try:
             # Fetch rate samples (last 120 seconds by default)
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             # If daemon is busy (e.g., adding torrent), don't block UI for 30+ seconds
             logger.debug("UploadDownloadGraphWidget: Fetching rate samples from data provider...")
             try:
@@ -565,7 +565,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             logger.debug("UploadDownloadGraphWidget: Extracted %d download rates, %d upload rates, %d timestamps", 
                          len(download_rates), len(upload_rates), len(timestamps))
             
-            # CRITICAL FIX: Always update histories with actual time series data
+            # Note: Always update histories with actual time series data
             # Use the real data even if it's all zeros - Sparklines can render zero data
             # Only use placeholder pattern if we have NO data at all (empty list)
             if download_rates:
@@ -620,7 +620,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
     def _update_display(self) -> None:  # pragma: no cover
         """Update the graph display for UploadDownloadGraphWidget."""
-        # CRITICAL FIX: Try to update even if not fully attached yet (for initial render)
+        # Note: Try to update even if not fully attached yet (for initial render)
         # Only skip if explicitly hidden
         if hasattr(self, "display") and self.display is False:  # type: ignore[attr-defined]
             logger.debug("UploadDownloadGraphWidget: Widget explicitly hidden, skipping display update")
@@ -628,7 +628,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         
         try:
             if self._download_sparkline:
-                # CRITICAL FIX: Always set data - use real data even if all zeros
+                # Note: Always set data - use real data even if all zeros
                 # Sparklines can render zero data, but need at least some variation to be visible
                 if self._download_history and len(self._download_history) > 0:
                     # Ensure data has some variation - if all zeros, add slight variation for visibility
@@ -650,7 +650,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     placeholder = [0.1 + (i % 2) * 0.1 for i in range(20)]
                     self._download_sparkline.data = placeholder  # type: ignore[attr-defined]
                     logger.debug("UploadDownloadGraphWidget: Updated download sparkline with placeholder pattern (no data yet)")
-                # CRITICAL FIX: Ensure widget is visible and refresh
+                # Note: Ensure widget is visible and refresh
                 self._download_sparkline.display = True  # type: ignore[attr-defined]
                 # Force repaint by calling refresh
                 if hasattr(self._download_sparkline, "refresh"):
@@ -663,7 +663,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         
         try:
             if self._upload_sparkline:
-                # CRITICAL FIX: Always set data - use real data even if all zeros
+                # Note: Always set data - use real data even if all zeros
                 if self._upload_history and len(self._upload_history) > 0:
                     # Ensure data has some variation - if all zeros, add slight variation for visibility
                     data_min = min(self._upload_history) if self._upload_history else 0.0
@@ -684,7 +684,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     placeholder = [0.1 + (i % 2) * 0.1 for i in range(20)]
                     self._upload_sparkline.data = placeholder  # type: ignore[attr-defined]
                     logger.debug("UploadDownloadGraphWidget: Updated upload sparkline with placeholder pattern (no data yet)")
-                # CRITICAL FIX: Ensure widget is visible and refresh
+                # Note: Ensure widget is visible and refresh
                 self._upload_sparkline.display = True  # type: ignore[attr-defined]
                 # Force repaint by calling refresh
                 if hasattr(self._upload_sparkline, "refresh"):
@@ -695,7 +695,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         except Exception as e:
             logger.error("Error updating upload sparkline: %s", e, exc_info=True)
         
-        # CRITICAL FIX: Trigger parent widget refresh to ensure repaint
+        # Note: Trigger parent widget refresh to ensure repaint
         try:
             self.refresh()  # Refresh parent widget to trigger repaint
         except Exception:
@@ -851,7 +851,7 @@ class PieceHealthPictogram(Container):  # type: ignore[misc]
                 logger.debug("PieceHealthPictogram: schedule error: %s", exc)
 
         try:
-            # CRITICAL FIX: Reduced interval from 3.0s to 1.5s for tighter updates
+            # Note: Reduced interval from 3.0s to 1.5s for tighter updates
             self._update_task = self.set_interval(1.5, schedule_update)  # type: ignore[attr-defined]
             self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
         except Exception as exc:
@@ -1078,9 +1078,9 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 logger.debug("Error scheduling disk graph update: %s", e)
         
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
-            # CRITICAL FIX: Reduced interval from 2.0s to 1.0s for tighter performance updates
+            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
             self.call_later(schedule_update)  # type: ignore[attr-defined]
@@ -1100,7 +1100,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         
         try:
             # Fetch disk I/O metrics
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             try:
                 metrics = await asyncio.wait_for(
                     self._data_provider.get_disk_io_metrics(),
@@ -1169,7 +1169,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._read_sparkline.data = self._read_history  # type: ignore[attr-defined]
                 else:
                     self._read_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._read_sparkline, "refresh"):
                     self._read_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1180,7 +1180,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._write_sparkline.data = self._write_history  # type: ignore[attr-defined]
                 else:
                     self._write_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._write_sparkline, "refresh"):
                     self._write_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1191,7 +1191,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._cache_sparkline.data = self._cache_hit_history  # type: ignore[attr-defined]
                 else:
                     self._cache_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._cache_sparkline, "refresh"):
                     self._cache_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1309,9 +1309,9 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 logger.debug("Error scheduling network graph update: %s", e)
         
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
-            # CRITICAL FIX: Reduced interval from 2.0s to 1.0s for tighter performance updates
+            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
             self.call_later(schedule_update)  # type: ignore[attr-defined]
@@ -1332,7 +1332,7 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         
         try:
             # Fetch network timing metrics
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             try:
                 metrics = await asyncio.wait_for(
                     self._data_provider.get_network_timing_metrics(),
@@ -1392,7 +1392,7 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._utp_sparkline.data = self._utp_delay_history  # type: ignore[attr-defined]
                 else:
                     self._utp_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._utp_sparkline, "refresh"):
                     self._utp_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1403,7 +1403,7 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._overhead_sparkline.data = self._overhead_history  # type: ignore[attr-defined]
                 else:
                     self._overhead_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._overhead_sparkline, "refresh"):
                     self._overhead_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1465,7 +1465,7 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 logger.debug("Error scheduling download graph update: %s", e)
         
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
@@ -1485,7 +1485,7 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         
         try:
             # Fetch rate samples
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             try:
                 samples = await asyncio.wait_for(
                     self._data_provider.get_rate_samples(seconds=120),
@@ -1538,7 +1538,7 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._sparkline.data = self._download_history  # type: ignore[attr-defined]
                 else:
                     self._sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._sparkline, "refresh"):
                     self._sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1600,7 +1600,7 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 logger.debug("Error scheduling upload graph update: %s", e)
         
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
@@ -1620,7 +1620,7 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         
         try:
             # Fetch rate samples
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             try:
                 samples = await asyncio.wait_for(
                     self._data_provider.get_rate_samples(seconds=120),
@@ -1673,7 +1673,7 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._sparkline.data = self._upload_history  # type: ignore[attr-defined]
                 else:
                     self._sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._sparkline, "refresh"):
                     self._sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1888,9 +1888,9 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                 logger.debug("Error scheduling per-torrent graph update: %s", e)
         
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
-            # CRITICAL FIX: Reduced interval from 2.0s to 1.0s for tighter performance updates
+            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
             self.call_later(schedule_update)  # type: ignore[attr-defined]
@@ -1930,7 +1930,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                         self._download_sparkline.data = self._download_history  # type: ignore[attr-defined]
                     else:
                         self._download_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                    # Note: Force refresh to ensure Sparkline repaints
                     if hasattr(self._download_sparkline, "refresh"):
                         self._download_sparkline.refresh()  # type: ignore[attr-defined]
             except Exception as e:
@@ -1941,7 +1941,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                         self._upload_sparkline.data = self._upload_history  # type: ignore[attr-defined]
                     else:
                         self._upload_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                    # Note: Force refresh to ensure Sparkline repaints
                     if hasattr(self._upload_sparkline, "refresh"):
                         self._upload_sparkline.refresh()  # type: ignore[attr-defined]
             except Exception as e:
@@ -1952,7 +1952,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                         self._piece_rate_sparkline.data = self._piece_rate_history  # type: ignore[attr-defined]
                     else:
                         self._piece_rate_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                    # Note: Force refresh to ensure Sparkline repaints
                     if hasattr(self._piece_rate_sparkline, "refresh"):
                         self._piece_rate_sparkline.refresh()  # type: ignore[attr-defined]
                     else:
@@ -2020,7 +2020,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                     self._download_sparkline.data = self._download_history  # type: ignore[attr-defined]
                 else:
                     self._download_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._download_sparkline, "refresh"):
                     self._download_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -2031,7 +2031,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                     self._upload_sparkline.data = self._upload_history  # type: ignore[attr-defined]
                 else:
                     self._upload_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._upload_sparkline, "refresh"):
                     self._upload_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -2132,12 +2132,12 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
     def compose(self) -> Any:  # pragma: no cover
         """Compose the performance graph widget.
         
-        CRITICAL FIX: Don't create widgets in compose() - just yield placeholders.
+        Note: Don't create widgets in compose() - just yield placeholders.
         Widgets will be created in on_mount() to avoid blocking compose().
         """
         with Container(id="upload-download-section"):
             yield Static("Upload & Download Speed", id="ud-title")
-            # CRITICAL FIX: Don't create widget here - just yield a placeholder container
+            # Note: Don't create widget here - just yield a placeholder container
             # The actual widget will be created in on_mount() to avoid blocking
             with Container(id="ud-graph-container"):
                 yield Static("Loading graph...", id="ud-graph-placeholder")
@@ -2145,15 +2145,15 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the performance graph widget.
         
-        CRITICAL FIX: Create the UploadDownloadGraphWidget here instead of in compose()
+        Note: Create the UploadDownloadGraphWidget here instead of in compose()
         to avoid blocking compose() and causing pending callback warnings.
         """
         logger.debug("PerformanceGraphWidget.on_mount: Starting mount (data_provider=%s)", self._data_provider is not None)
         try:
-            # CRITICAL FIX: Ensure widget is visible
+            # Note: Ensure widget is visible
             self.display = True  # type: ignore[attr-defined]
             
-            # CRITICAL FIX: Create widget in on_mount() instead of compose()
+            # Note: Create widget in on_mount() instead of compose()
             if self._data_provider:
                 # Try to create widget immediately, with fallback to call_after_refresh
                 try:
@@ -2182,7 +2182,7 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
                         # Register nested widget for event-driven updates
                         self._register_nested_widget(self._upload_download_widget)
                         logger.debug("PerformanceGraphWidget: UploadDownloadGraphWidget created and mounted successfully")
-                        # CRITICAL FIX: Schedule an update after widget is fully attached
+                        # Note: Schedule an update after widget is fully attached
                         def ensure_widget_initialized() -> None:
                             try:
                                 if self._upload_download_widget:
@@ -2218,7 +2218,7 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
                                     # Register nested widget for event-driven updates
                                     self._register_nested_widget(self._upload_download_widget)
                                     logger.debug("PerformanceGraphWidget: UploadDownloadGraphWidget created after refresh")
-                                    # CRITICAL FIX: Schedule an update after widget is fully attached
+                                    # Note: Schedule an update after widget is fully attached
                                     def ensure_widget_initialized() -> None:
                                         try:
                                             if self._upload_download_widget:
@@ -2461,9 +2461,9 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
                 logger.debug("Error scheduling system resources graph update: %s", e)
         
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
-            # CRITICAL FIX: Reduced interval from 2.0s to 1.0s for tighter performance updates
+            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
             self.call_later(schedule_update)  # type: ignore[attr-defined]
@@ -2933,7 +2933,7 @@ class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
                 logger.debug("PeerQualitySummaryWidget: schedule error: %s", exc)
 
         try:
-            # CRITICAL FIX: Reduced interval from 3.0s to 1.5s for tighter updates
+            # Note: Reduced interval from 3.0s to 1.5s for tighter updates
             self._update_task = self.set_interval(1.5, schedule_update)  # type: ignore[attr-defined]
             self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
         except Exception as exc:

@@ -73,7 +73,7 @@ async def _get_ipfs_protocol() -> Optional[Any]:  # Optional[IPFSProtocol]
             logger.exception("Failed to get IPFS protocol from session")
 
     # Fallback: create temporary session if executor not available
-    # CRITICAL FIX: Use safe local session creation helper
+    # Note: Use safe local session creation helper
     try:
         from ccbt.cli.main import _ensure_local_session_safe
 

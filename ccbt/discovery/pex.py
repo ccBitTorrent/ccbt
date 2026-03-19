@@ -128,7 +128,7 @@ class AsyncPexManager:
     async def _pex_loop(self) -> None:
         """Background task for PEX operations.
 
-        CRITICAL FIX: Adaptive PEX interval based on peer count.
+        Note: Adaptive PEX interval based on peer count.
         When peer count is low, exchange peers more frequently.
         """
         base_pex_interval = (
@@ -138,7 +138,7 @@ class AsyncPexManager:
 
         while True:  # pragma: no cover - Background loop, tested via cancellation
             try:
-                # CRITICAL FIX: Adaptive PEX interval based on connected peer count
+                # Note: Adaptive PEX interval based on connected peer count
                 # BEP 11 compliant: max 1 message per minute (60s), but allow 30s minimum for low peer counts
                 # If we have callback to get peer count, use it to adjust interval
                 if self.get_connected_peers_callback:

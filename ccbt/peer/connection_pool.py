@@ -102,7 +102,7 @@ class PeerConnectionPool:
         self.config = config
         self.base_max_connections = max_connections
 
-        # CRITICAL FIX: Initialize pool and metrics BEFORE calling _calculate_adaptive_limit
+        # Note: Initialize pool and metrics BEFORE calling _calculate_adaptive_limit
         # because _calculate_adaptive_limit may access self.metrics
         # Connection management
         self.pool: dict[str, Any] = {}  # peer_id -> connection
@@ -391,7 +391,7 @@ class PeerConnectionPool:
                 await self._remove_connection(peer_id)
 
         # Try to acquire semaphore
-        # CRITICAL FIX: Increase timeout for Windows semaphore acquisition
+        # Note: Increase timeout for Windows semaphore acquisition
         # WinError 121 can occur if semaphore acquisition times out
         semaphore_timeout = 10.0  # Increased from 5.0 for Windows compatibility
         try:
@@ -417,14 +417,14 @@ class PeerConnectionPool:
                 self.pool[peer_id] = connection
                 self.logger.debug("Created new connection for %s", peer_id)
                 return connection
-            # CRITICAL FIX: Remove metrics entry if connection creation failed
+            # Note: Remove metrics entry if connection creation failed
             # This prevents failed connections from being marked as "stale" later
             if peer_id in self.metrics:
                 del self.metrics[peer_id]
             self.semaphore.release()
             return None
         except Exception:
-            # CRITICAL FIX: Remove metrics entry if connection creation raised exception
+            # Note: Remove metrics entry if connection creation raised exception
             # This prevents failed connections from being marked as "stale" later
             if peer_id in self.metrics:
                 del self.metrics[peer_id]
@@ -871,7 +871,7 @@ class PeerConnectionPool:
     async def _close_all_connections(self) -> None:
         """Close all connections in the pool.
 
-        CRITICAL FIX: Close connections in batches on Windows to prevent socket buffer exhaustion.
+        Note: Close connections in batches on Windows to prevent socket buffer exhaustion.
         WinError 10055 occurs when too many sockets are closed simultaneously.
         """
         import sys
@@ -898,7 +898,7 @@ class PeerConnectionPool:
 
                     await self._remove_connection(peer_id)
                 except OSError as e:
-                    # CRITICAL FIX: Handle WinError 10055 gracefully
+                    # Note: Handle WinError 10055 gracefully
                     error_code = getattr(e, "winerror", None) or getattr(
                         e, "errno", None
                     )
@@ -1387,7 +1387,7 @@ class PeerConnectionPool:
     async def _close_all_connections(self) -> None:
         """Close all connections in the pool.
 
-        CRITICAL FIX: Close connections in batches on Windows to prevent socket buffer exhaustion.
+        Note: Close connections in batches on Windows to prevent socket buffer exhaustion.
         WinError 10055 occurs when too many sockets are closed simultaneously.
         """
         import sys
@@ -1414,7 +1414,7 @@ class PeerConnectionPool:
 
                     await self._remove_connection(peer_id)
                 except OSError as e:
-                    # CRITICAL FIX: Handle WinError 10055 gracefully
+                    # Note: Handle WinError 10055 gracefully
                     error_code = getattr(e, "winerror", None) or getattr(
                         e, "errno", None
                     )
@@ -1468,7 +1468,7 @@ class PeerConnectionPool:
         current_time = time.time()
 
         # Grace period for new connections (don't check bandwidth/quality for connections less than this old)
-        # CRITICAL FIX: self.config is already NetworkConfig, not Config, so don't access .network
+        # Note: self.config is already NetworkConfig, not Config, so don't access .network
         connection_grace_period = (
             getattr(self.config, "connection_pool_grace_period", 60.0)
             if self.config
@@ -1494,7 +1494,7 @@ class PeerConnectionPool:
                 metrics.is_healthy = False
 
             # Check error rate (only for established connections)
-            # CRITICAL FIX: Check errors even for new connections if error count is very high
+            # Note: Check errors even for new connections if error count is very high
             # This prevents keeping connections with excessive errors
             error_threshold = 10
             if metrics.errors > error_threshold:
@@ -1515,7 +1515,7 @@ class PeerConnectionPool:
             # Only check quality for connections that have had time to establish
             if connection_age > connection_grace_period:
                 quality_score = self._calculate_connection_quality(metrics)
-                # CRITICAL FIX: self.config is already NetworkConfig, not Config, so don't access .network
+                # Note: self.config is already NetworkConfig, not Config, so don't access .network
                 min_quality = (
                     getattr(self.config, "connection_pool_quality_threshold", 0.3)
                     if self.config

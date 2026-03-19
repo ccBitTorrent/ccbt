@@ -88,6 +88,7 @@ class PieceData:
     download_start_time: float = 0.0  # Timestamp when piece download started
     last_activity_time: float = 0.0  # Timestamp of last block received
     last_request_time: float = 0.0  # Timestamp when piece was last requested
+    requests_dispatched: int = 0  # Outbound request count from the current/last request attempt
     request_timeout: float = 120.0  # Timeout for piece requests (seconds)
     primary_peer: Optional[str] = None  # Peer key that provided most blocks
     peer_block_counts: dict[str, int] = field(
@@ -123,11 +124,11 @@ class PieceData:
 
         CRITICAL: Validates block boundaries and prevents duplicate/overlapping blocks.
         """
-        # CRITICAL FIX: Validate begin offset is within piece bounds
+        # Note: Validate begin offset is within piece bounds
         if begin < 0 or begin >= self.length:
             return False
 
-        # CRITICAL FIX: Validate data length
+        # Note: Validate data length
         if len(data) == 0:
             return False
 
@@ -142,17 +143,17 @@ class PieceData:
             # No block found for this begin offset
             return False
 
-        # CRITICAL FIX: Validate block is not already received
+        # Note: Validate block is not already received
         if target_block.received:
             # Block already received - don't overwrite (handled in handle_piece_block)
             return False
 
-        # CRITICAL FIX: Validate data length matches expected block length
+        # Note: Validate data length matches expected block length
         expected_length = target_block.length
         if len(data) != expected_length:
             return False
 
-        # CRITICAL FIX: Validate block boundaries don't overlap with other received blocks
+        # Note: Validate block boundaries don't overlap with other received blocks
         block_end = begin + len(data)
         for block in self.blocks:
             if block.received and block.begin != begin:
@@ -391,6 +392,7 @@ class AsyncPieceManager:
             "pipeline_full_rejections": 0,  # Count of requests rejected due to full pipeline
             "stuck_pieces_recovered": 0,  # Count of stuck pieces recovered
             "unknown_peer_probes": 0,  # Count of single-block probes sent to peers without piece availability
+            "no_requestable_peers": 0,  # Number of request attempts with no requestable peers
             "pipeline_utilization_samples": deque(
                 maxlen=100
             ),  # Recent pipeline utilization samples
@@ -403,8 +405,12 @@ class AsyncPieceManager:
             "peer_selection_attempts": 0,  # Total peer selection attempts
             "peer_selection_successes": 0,  # Successful peer selections
         }
+        self._verification_counters: dict[str, int] = {
+            "piece_hash_verification_successes": 0,
+            "piece_hash_verification_failures": 0,
+        }
 
-        # CRITICAL FIX: Track stuck pieces with timestamps for cooldown management
+        # Note: Track stuck pieces with timestamps for cooldown management
         # Maps piece_index -> (request_count, last_skip_time, skip_reason)
         self._stuck_pieces: dict[int, tuple[int, float, str]] = {}
 
@@ -898,10 +904,10 @@ class AsyncPieceManager:
 
     def get_missing_pieces(self) -> list[int]:
         """Get list of missing piece indices."""
-        # CRITICAL FIX: Handle case where pieces list is empty but num_pieces > 0
+        # Note: Handle case where pieces list is empty but num_pieces > 0
         # This can happen when metadata arrives after piece manager initialization
         # Try to initialize pieces on-the-fly if possible (fallback initialization)
-        # CRITICAL FIX: Also handle length mismatch (pieces list length != num_pieces)
+        # Note: Also handle length mismatch (pieces list length != num_pieces)
         if (
             not self.pieces or len(self.pieces) != self.num_pieces
         ) and self.num_pieces > 0:
@@ -918,7 +924,7 @@ class AsyncPieceManager:
                     "Pieces should be initialized in start_download().",
                     self.num_pieces,
                 )
-                # CRITICAL FIX: Try to initialize pieces on-the-fly if we have the necessary data
+                # Note: Try to initialize pieces on-the-fly if we have the necessary data
                 # This is a fallback - start_download() should have done this, but if it didn't, we try here
                 try:
                     pieces_info = self.torrent_data.get("pieces_info", {})
@@ -985,7 +991,7 @@ class AsyncPieceManager:
             # Get missing pieces from existing list with validation
             missing = []
             for i, piece in enumerate(self.pieces):
-                # CRITICAL FIX: Validate piece state - if state is COMPLETE but blocks aren't complete, treat as MISSING
+                # Note: Validate piece state - if state is COMPLETE but blocks aren't complete, treat as MISSING
                 if piece.state == PieceState.MISSING:
                     missing.append(i)
                 elif (
@@ -1007,7 +1013,7 @@ class AsyncPieceManager:
             # Normal case: pieces list matches num_pieces
             missing = []
             for i, piece in enumerate(self.pieces):
-                # CRITICAL FIX: Validate piece state - check both state and actual completion
+                # Note: Validate piece state - check both state and actual completion
                 if piece.state == PieceState.MISSING:
                     missing.append(i)
                 elif (
@@ -1052,12 +1058,12 @@ class AsyncPieceManager:
 
     def get_download_progress(self) -> float:
         """Get download progress as a fraction (0.0 to 1.0)."""
-        # CRITICAL FIX: If num_pieces is 0, return 1.0 (100% complete) - no pieces means nothing to download
+        # Note: If num_pieces is 0, return 1.0 (100% complete) - no pieces means nothing to download
         # This handles edge case of empty torrents (0-byte files)
         if self.num_pieces == 0:
             return 1.0
 
-        # CRITICAL FIX: Ensure verified_pieces is a set and we're counting correctly
+        # Note: Ensure verified_pieces is a set and we're counting correctly
         verified_count = len(self.verified_pieces) if self.verified_pieces else 0
 
         # Validate that verified_count doesn't exceed num_pieces (shouldn't happen, but defensive)
@@ -1071,7 +1077,7 @@ class AsyncPieceManager:
 
         progress = verified_count / self.num_pieces
 
-        # CRITICAL FIX: Only return 1.0 if we actually have all pieces verified
+        # Note: Only return 1.0 if we actually have all pieces verified
         # Also check that we have pieces initialized
         if progress >= 1.0 and len(self.pieces) == self.num_pieces:
             # Double-check: verify that all pieces are actually verified
@@ -1184,7 +1190,7 @@ class AsyncPieceManager:
         if hasattr(peer, "peer_info"):
             peer_key = f"{peer.peer_info.ip}:{peer.peer_info.port}"
 
-            # CRITICAL FIX: Reset stuck pieces immediately when peer disconnects
+            # Note: Reset stuck pieces immediately when peer disconnects
             # This prevents pieces from being stuck in REQUESTED/DOWNLOADING state
             pieces_reset = []
             async with self.lock:
@@ -1345,7 +1351,7 @@ class AsyncPieceManager:
         )
         async with self.lock:
             metadata_incomplete = getattr(self, "_metadata_incomplete", False)
-            # CRITICAL FIX: If num_pieces is 0 (magnet link before metadata), infer from bitfield
+            # Note: If num_pieces is 0 (magnet link before metadata), infer from bitfield
             # This allows bitfields to be parsed even before metadata is fetched
             num_pieces_to_use = self.num_pieces
             if metadata_incomplete and bitfield:
@@ -1381,7 +1387,7 @@ class AsyncPieceManager:
             # Parse bitfield
             pieces = set()
             if bitfield:
-                # CRITICAL FIX: Parse bitfield but only include pieces that are actually set
+                # Note: Parse bitfield but only include pieces that are actually set
                 # We'll validate piece indices later when checking availability
                 # Count non-zero bytes for debugging
                 non_zero_bytes = sum(1 for b in bitfield if b != 0)
@@ -1401,7 +1407,7 @@ class AsyncPieceManager:
                     for bit_idx in range(8):
                         piece_idx = byte_idx * 8 + bit_idx
                         # Check if bit is set (1 = has piece, 0 = doesn't have piece)
-                        # CRITICAL FIX: Only check num_pieces_to_use if it's > 0
+                        # Note: Only check num_pieces_to_use if it's > 0
                         # If num_pieces_to_use is 0, we should use the full bitfield length
                         max_piece_idx = (
                             num_pieces_to_use
@@ -1510,7 +1516,7 @@ class AsyncPieceManager:
             peer_manager: Peer connection manager
 
         """
-        # CRITICAL FIX: Ensure pieces are initialized before requesting
+        # Note: Ensure pieces are initialized before requesting
         # This handles the case where get_missing_pieces() returns indices but pieces list is empty
         if self.num_pieces > 0 and len(self.pieces) == 0:
             self.logger.warning(
@@ -1548,7 +1554,7 @@ class AsyncPieceManager:
             )
 
         async with self.lock:
-            # CRITICAL FIX: Handle case where piece_index is valid but pieces list hasn't caught up yet
+            # Note: Handle case where piece_index is valid but pieces list hasn't caught up yet
             if piece_index >= len(self.pieces):
                 if piece_index < self.num_pieces:
                     # Piece index is valid but piece hasn't been initialized yet
@@ -1563,10 +1569,13 @@ class AsyncPieceManager:
 
             piece = self.pieces[piece_index]
 
-            # CRITICAL FIX: Don't request pieces if no peers have communicated piece availability
+            # Note: Don't request pieces if no peers have communicated piece availability
             # Check both peer_availability (bitfields) AND active connections with HAVE messages
             # This prevents infinite loops when peers are connected but haven't sent bitfields
-            has_peer_availability = len(self.peer_availability) > 0
+            has_peer_availability = any(
+                len(peer_availability.pieces) > 0
+                for peer_availability in self.peer_availability.values()
+            )
             has_have_messages = False
             has_active_peers = False
             if peer_manager and hasattr(peer_manager, "get_active_peers"):
@@ -1581,7 +1590,7 @@ class AsyncPieceManager:
                         has_have_messages = True
                         break
 
-            # CRITICAL FIX: If we have active peers but no availability data yet, allow querying them directly
+            # Note: If we have active peers but no availability data yet, allow querying them directly
             # This is important after metadata is fetched - peers may not have sent bitfields yet
             # We'll query them directly in _get_peers_for_piece, which will check their bitfields/HAVE messages
             if not has_peer_availability and not has_have_messages:
@@ -1607,13 +1616,13 @@ class AsyncPieceManager:
                     piece.state = PieceState.MISSING
                     return
 
-            # CRITICAL FIX: Filter out peers with empty bitfields (no pieces at all)
+            # Note: Filter out peers with empty bitfields (no pieces at all)
             # These peers are in peer_availability but have no pieces, so they're useless
             peers_with_pieces = {
                 k: v for k, v in self.peer_availability.items() if len(v.pieces) > 0
             }
 
-            # CRITICAL FIX: Verify that at least one peer actually has this piece before requesting
+            # Note: Verify that at least one peer actually has this piece before requesting
             # Check both peer_availability AND connection.peer_state.pieces_we_have (HAVE messages)
             # This ensures we find pieces from peers that only sent HAVE messages (no bitfield)
             actual_availability_from_bitfield = sum(
@@ -1639,10 +1648,10 @@ class AsyncPieceManager:
                 actual_availability_from_bitfield + actual_availability_from_have
             )
 
-            # CRITICAL FIX: If we have active peers but no availability data, use optimistic mode
+            # Note: If we have active peers but no availability data, use optimistic mode
             # This allows requesting pieces even when peers haven't sent bitfields/HAVE messages yet
             # The optimistic mode in _get_peers_for_piece will handle querying peers directly
-            has_any_peer_availability = len(self.peer_availability) > 0
+            has_any_peer_availability = has_peer_availability
             optimistic_mode = not has_any_peer_availability and has_active_peers
 
             if actual_availability == 0 and not optimistic_mode:
@@ -1672,7 +1681,7 @@ class AsyncPieceManager:
                     len(active_peers_for_availability),
                 )
 
-            # CRITICAL FIX: Check if piece is already being requested from any peer
+            # Note: Check if piece is already being requested from any peer
             # This prevents duplicate requests when selector runs concurrently
             if piece.state == PieceState.REQUESTED:
                 pending_initial_request = piece_index in self._pending_piece_requests
@@ -1683,7 +1692,7 @@ class AsyncPieceManager:
                         piece_index,
                     )
 
-                # CRITICAL FIX: If no peers have bitfields, reset stuck pieces immediately
+                # Note: If no peers have bitfields, reset stuck pieces immediately
                 # This prevents infinite loops when peers are connected but haven't sent bitfields
                 if not self.peer_availability:
                     self.logger.debug(
@@ -1718,7 +1727,7 @@ class AsyncPieceManager:
                     else:
                         # Piece is stuck - check timeout
                         current_time = time.time()
-                        # CRITICAL FIX: Use adaptive timeout based on swarm health
+                        # Note: Use adaptive timeout based on swarm health
                         # When few peers, use shorter timeout for faster recovery
                         base_timeout = getattr(
                             piece, "request_timeout", 120.0
@@ -1748,6 +1757,24 @@ class AsyncPieceManager:
 
                         if time_since_request > adaptive_timeout:
                             # Timeout with no outstanding requests - reset to MISSING
+                            if (
+                                piece.requests_dispatched == 0
+                                and not self._piece_has_real_request_history(
+                                    piece_index, piece
+                                )
+                            ):
+                                self.logger.warning(
+                                    "PIECE_MANAGER: Piece %d in REQUESTED state with no outstanding requests but no outbound requests were dispatched "
+                                    "(timeout after %.1fs, adaptive_timeout=%.1fs, active_peers=%d) - deferring reset for immediate retry",
+                                    piece_index,
+                                    time_since_request,
+                                    adaptive_timeout,
+                                    active_peer_count,
+                                )
+                                piece.last_request_time = 0.0
+                                self._piece_selection_metrics["no_requestable_peers"] += 1
+                                return
+
                             self.logger.warning(
                                 "PIECE_MANAGER: Piece %d stuck in REQUESTED state with no outstanding requests "
                                 "(timeout after %.1fs, adaptive_timeout=%.1fs, active_peers=%d) - resetting to MISSING",
@@ -1797,7 +1824,7 @@ class AsyncPieceManager:
                 )
                 return
 
-            # CRITICAL FIX: Check if piece is already being requested from any peer
+            # Note: Check if piece is already being requested from any peer
             # This prevents duplicate requests even before state check
             if self._peer_manager and hasattr(self._peer_manager, "get_active_peers"):
                 active_peers = self._peer_manager.get_active_peers()
@@ -1821,9 +1848,9 @@ class AsyncPieceManager:
                         )
                         return
 
-        # CRITICAL FIX: Check for available peers BEFORE transitioning piece to REQUESTED state
+        # Note: Check for available peers BEFORE transitioning piece to REQUESTED state
         # This prevents pieces from being stuck in REQUESTED state when no peers are available
-        # CRITICAL FIX: Log when request_piece_from_peers is called to diagnose why requests aren't being sent
+        # Note: Log when request_piece_from_peers is called to diagnose why requests aren't being sent
         self.logger.info(
             "🔵 REQUEST_PIECE: Called for piece %d (state=%s, peer_manager=%s)",
             piece_index,
@@ -1837,12 +1864,12 @@ class AsyncPieceManager:
             piece_index,
         )
         if not available_peers:
-            # CRITICAL FIX: Log detailed information about why no peers are available
+            # Note: Log detailed information about why no peers are available
             # This helps diagnose why downloads aren't starting
             has_choked_peers_with_piece = False
             if peer_manager and hasattr(peer_manager, "get_active_peers"):
                 active_peers = peer_manager.get_active_peers()
-                # CRITICAL FIX: Include peers with bitfields OR HAVE messages
+                # Note: Include peers with bitfields OR HAVE messages
                 # Some peers only send HAVE messages, not full bitfields
                 peers_with_bitfield = []
                 for p in active_peers:
@@ -1861,7 +1888,7 @@ class AsyncPieceManager:
                     if hasattr(p, "can_request") and p.can_request()
                 ]
 
-                # CRITICAL FIX: Check if any choked peers have this piece
+                # Note: Check if any choked peers have this piece
                 # If so, keep piece in REQUESTED state so it can be retried when peers unchoke
                 choked_peers_with_piece = []
                 for p in peers_with_bitfield:
@@ -1874,7 +1901,7 @@ class AsyncPieceManager:
                             choked_peers_with_piece.append(peer_key)
                             has_choked_peers_with_piece = True
 
-                # CRITICAL FIX: Suppress verbose warnings during shutdown
+                # Note: Suppress verbose warnings during shutdown
                 from ccbt.utils.shutdown import is_shutting_down
 
                 if not is_shutting_down():
@@ -1900,7 +1927,7 @@ class AsyncPieceManager:
                     peer_manager is not None,
                 )
 
-            # CRITICAL FIX: If piece is already REQUESTED and we have choked peers with this piece,
+            # Note: If piece is already REQUESTED and we have choked peers with this piece,
             # keep it in REQUESTED state so it can be retried when peers unchoke
             # Only set to MISSING if there are truly no peers (disconnected or no bitfield)
             async with self.lock:
@@ -1910,14 +1937,31 @@ class AsyncPieceManager:
                         "Keeping piece %d in REQUESTED state (choked peers have this piece, will retry when they unchoke)",
                         piece_index,
                     )
+                elif (
+                    piece.state == PieceState.REQUESTED
+                    and piece.requests_dispatched == 0
+                    and not self._piece_has_real_request_history(piece_index, piece)
+                ):
+                    # No requestable peers for this attempt; keep in REQUESTED for deferred retry.
+                    self.logger.debug(
+                        "No requestable peers for piece %d this attempt; keeping REQUESTED state for deferred retry",
+                        piece_index,
+                    )
+                    self._piece_selection_metrics["no_requestable_peers"] += 1
+                    piece.last_request_time = 0.0
+                    piece.requests_dispatched = 0
                 else:
                     # No peers have this piece or piece wasn't already REQUESTED - set to MISSING
                     piece.state = PieceState.MISSING
+                    piece.request_count = 0
+                    piece.requests_dispatched = 0
+                    piece.last_request_time = 0.0
+                    self._piece_selection_metrics["no_requestable_peers"] += 1
             return
 
-        # CRITICAL FIX: Only transition to REQUESTED state AFTER confirming peers are available
+        # Note: Only transition to REQUESTED state AFTER confirming peers are available
         # This prevents pieces from being stuck in REQUESTED state when no peers can fulfill the request
-        # CRITICAL FIX: If piece is already REQUESTED (marked synchronously in _select_rarest_first),
+        # Note: If piece is already REQUESTED (marked synchronously in _select_rarest_first),
         # don't reset it - just update the request time
         async with self.lock:
             old_state = piece.state
@@ -1930,7 +1974,7 @@ class AsyncPieceManager:
                     if hasattr(piece.state, "name")
                     else str(piece.state),
                 )
-            # CRITICAL FIX: Set adaptive timeout based on swarm health
+            # Note: Set adaptive timeout based on swarm health
             # When few peers, use shorter timeout for faster recovery
             # Calculate adaptive timeout based on active peer count
             active_peer_count = 0
@@ -1945,7 +1989,7 @@ class AsyncPieceManager:
                 piece.request_timeout = 90.0  # 1.5 minutes when few peers
             else:
                 piece.request_timeout = 120.0  # 2 minutes default when many peers
-            # CRITICAL FIX: Suppress verbose logging during shutdown
+            # Note: Suppress verbose logging during shutdown
             from ccbt.utils.shutdown import is_shutting_down
 
             if not is_shutting_down():
@@ -2012,6 +2056,7 @@ class AsyncPieceManager:
             if requests_sent > 0:
                 piece.request_count += 1
                 piece.last_request_time = time.time()
+                piece.requests_dispatched = getattr(piece, "requests_dispatched", 0) + requests_sent
                 piece.state = PieceState.DOWNLOADING
                 self.logger.info(
                     "PIECE_MANAGER: Piece %d state transition: %s -> DOWNLOADING (requests_sent=%d)",
@@ -2022,6 +2067,7 @@ class AsyncPieceManager:
             else:
                 piece.state = PieceState.REQUESTED
                 piece.last_request_time = 0.0
+                piece.requests_dispatched = getattr(piece, "requests_dispatched", 0)
                 self.logger.warning(
                     "PIECE_MANAGER: Piece %d issued no block requests; keeping state at REQUESTED for retry",
                     piece_index,
@@ -2047,7 +2093,7 @@ class AsyncPieceManager:
             self.logger.warning("peer_manager has no get_active_peers method")
             return available_peers
 
-        # CRITICAL FIX: Clean up timed-out requests before checking peers
+        # Note: Clean up timed-out requests before checking peers
         # This frees pipeline slots that are stuck due to peers not sending data
         # IMPROVEMENT: Also force cleanup for peers with full pipelines (>90% utilization)
         if hasattr(peer_manager, "_cleanup_timed_out_requests"):
@@ -2061,7 +2107,7 @@ class AsyncPieceManager:
                     if cleanup_method:
                         await cleanup_method(peer)
 
-                    # CRITICAL FIX: If pipeline is >90% full, force more aggressive cleanup
+                    # Note: If pipeline is >90% full, force more aggressive cleanup
                     # This helps when peers have full pipelines but aren't sending data
                     pipeline_utilization = len(peer.outstanding_requests) / max(
                         peer.max_pipeline_depth, 1
@@ -2101,7 +2147,7 @@ class AsyncPieceManager:
 
         active_peers = peer_manager.get_active_peers()
 
-        # CRITICAL FIX: Suppress verbose logging during shutdown
+        # Note: Suppress verbose logging during shutdown
         from ccbt.utils.shutdown import is_shutting_down
 
         if not is_shutting_down():
@@ -2114,7 +2160,7 @@ class AsyncPieceManager:
                 else 0,
             )
 
-        # CRITICAL FIX: If no active peers but connections exist, log details
+        # Note: If no active peers but connections exist, log details
         if len(active_peers) == 0 and hasattr(peer_manager, "connections"):
             total_connections = len(peer_manager.connections)
             if total_connections > 0:
@@ -2136,7 +2182,7 @@ class AsyncPieceManager:
 
         for connection in active_peers:
             peer_key = str(connection.peer_info)
-            # CRITICAL FIX: Validate piece_index before checking bitfield
+            # Note: Validate piece_index before checking bitfield
             # If num_pieces is set and piece_index is out of range, skip this peer
             if self.num_pieces > 0 and piece_index >= self.num_pieces:
                 self.logger.debug(
@@ -2149,7 +2195,7 @@ class AsyncPieceManager:
                 continue
 
             # Check if peer has this piece in their bitfield
-            # CRITICAL FIX: Also check connection.peer_state.pieces_we_have for HAVE messages
+            # Note: Also check connection.peer_state.pieces_we_have for HAVE messages
             # Some peers don't send bitfields but send HAVE messages instead
             has_piece_from_availability = (
                 peer_key in self.peer_availability
@@ -2169,7 +2215,7 @@ class AsyncPieceManager:
             if not is_shutting_down():
                 peer_avail = self.peer_availability.get(peer_key)
                 pieces_from_bitfield = len(peer_avail.pieces) if peer_avail else 0
-                # CRITICAL FIX: Include HAVE messages in pieces_known count
+                # Note: Include HAVE messages in pieces_known count
                 pieces_from_have = 0
                 if hasattr(connection, "peer_state") and hasattr(
                     connection.peer_state, "pieces_we_have"
@@ -2207,7 +2253,7 @@ class AsyncPieceManager:
             )
             available_pipeline_slots = connection.get_available_pipeline_slots()
 
-            # CRITICAL FIX: Check if piece is already being requested from this peer
+            # Note: Check if piece is already being requested from this peer
             # This prevents duplicate requests to the same peer
             if (
                 peer_key in self._requested_pieces_per_peer
@@ -2221,13 +2267,16 @@ class AsyncPieceManager:
                 )
                 continue
 
-            # CRITICAL FIX: After metadata fetch, peers may not have sent bitfields yet
+            # Note: After metadata fetch, peers may not have sent bitfields yet
             # If we have no peer availability data at all, use optimistic mode:
             # Allow querying unchoked peers even if we don't know if they have the piece
             # This is a fallback to get downloads started when peers haven't sent bitfields/HAVE messages yet
-            has_any_peer_availability = len(self.peer_availability) > 0
+            has_any_peer_availability = any(
+                len(peer_availability.pieces) > 0
+                for peer_availability in self.peer_availability.values()
+            )
 
-            # CRITICAL FIX: Also use optimistic mode when the main peer's pipeline is full
+            # Note: Also use optimistic mode when the main peer's pipeline is full
             # If the peer with bitfield has a full pipeline (>90%), try other peers optimistically
             main_peer_pipeline_full = False
             if has_any_peer_availability and has_piece:
@@ -2238,7 +2287,7 @@ class AsyncPieceManager:
                 if pipeline_utilization > 0.9:
                     main_peer_pipeline_full = True
 
-            # CRITICAL FIX: Get active peer count to determine if we should probe peers without bitfields
+            # Note: Get active peer count to determine if we should probe peers without bitfields
             # When we have few peers with availability (<10), probe peers without bitfields to discover HAVE messages
             active_peer_count = 0
             peers_with_availability_count = 0
@@ -2271,8 +2320,20 @@ class AsyncPieceManager:
                     if peer_has_piece:
                         known_piece_peer_count += 1
 
-            # CRITICAL FIX: Enable probing mode when we have few peers with availability (<10)
+            # Note: Enable probing mode when we have few peers with availability (<10)
             # This allows us to probe peers without bitfields to discover if they have pieces via HAVE messages
+            degraded_payload_bootstrap = (
+                not self._metadata_incomplete
+                and can_req
+                and active_peer_count > 0
+                and peers_with_availability_count == 0
+                and known_piece_peer_count == 0
+            )
+            if degraded_payload_bootstrap and active_peer_count > 1:
+                unknown_probe_limit = min(2, active_peer_count)
+            else:
+                unknown_probe_limit = 1
+
             probing_mode = peers_with_availability_count < 10 and can_req
 
             optimistic_mode = (
@@ -2302,7 +2363,7 @@ class AsyncPieceManager:
 
             if not has_piece and (optimistic_mode or probing_mode):
                 # Optimistic/Probing mode: peer hasn't sent bitfield/HAVE messages yet, but they're unchoked
-                # CRITICAL FIX: Probe peers without bitfields to discover if they have pieces via HAVE messages
+                # Note: Probe peers without bitfields to discover if they have pieces via HAVE messages
                 # This allows us to find pieces from peers that only send HAVE messages (no bitfield)
                 pieces_known = pieces_from_bitfield + pieces_from_have
                 if pieces_known == 0:
@@ -2378,7 +2439,7 @@ class AsyncPieceManager:
                 )
                 continue
 
-            # CRITICAL FIX: Additional pipeline check - filter out peers with high utilization
+            # Note: Additional pipeline check - filter out peers with high utilization
             # Even if can_request() returns True, peers with >90% pipeline utilization should be deprioritized
             if pipeline_utilization > 0.9:
                 self.logger.debug(
@@ -2391,7 +2452,7 @@ class AsyncPieceManager:
                 )
                 continue
 
-            # CRITICAL FIX: Filter out peers with no available pipeline slots
+            # Note: Filter out peers with no available pipeline slots
             # This prevents "No available peers" warnings when all peers have full pipelines
             if available_pipeline_slots <= 0:
                 self.logger.debug(
@@ -2476,7 +2537,7 @@ class AsyncPieceManager:
                     probe_peers.append(peer)
                     break
 
-        # CRITICAL FIX: Only request pieces from best seeders
+        # Note: Only request pieces from best seeders
         # Filter to seeders first, then sort by download speed
         # This maximizes connections but only uses best seeders for requests
         seeder_peers = []
@@ -2488,11 +2549,14 @@ class AsyncPieceManager:
             if hasattr(peer, "peer_state") and hasattr(peer.peer_state, "bitfield"):
                 bitfield = peer.peer_state.bitfield
                 if bitfield and self.num_pieces > 0:
-                    bits_set = sum(
-                        1
-                        for i in range(self.num_pieces)
-                        if i < len(bitfield) and bitfield[i]
-                    )
+                    bits_set = 0
+                    for piece_idx in range(self.num_pieces):
+                        byte_index = piece_idx // 8
+                        bit_index = 7 - (piece_idx % 8)
+                        if byte_index >= len(bitfield):
+                            break
+                        if bitfield[byte_index] & (1 << bit_index):
+                            bits_set += 1
                     completion_percent = (
                         bits_set / self.num_pieces if self.num_pieces > 0 else 0.0
                     )
@@ -2513,7 +2577,7 @@ class AsyncPieceManager:
             else:
                 leecher_peers.append(peer)
 
-        # CRITICAL FIX: Only use seeders for piece requests if available
+        # Note: Only use seeders for piece requests if available
         # If no seeders available, fall back to best leechers
         peers_to_use = seeder_peers if seeder_peers else leecher_peers
         if probe_peers:
@@ -2610,7 +2674,7 @@ class AsyncPieceManager:
         No hard caps - uses soft limits based on peer capacity.
         """
 
-        # CRITICAL FIX: Filter peers and update tracking atomically to prevent race conditions
+        # Note: Filter peers and update tracking atomically to prevent race conditions
         # This ensures we don't request the same piece from the same peer concurrently
         def peer_has_confirmed_piece(peer: AsyncPeerConnection) -> bool:
             peer_key = str(peer.peer_info)
@@ -2624,6 +2688,9 @@ class AsyncPieceManager:
             )
 
         capable_peers = []
+        optimistic_candidate_count = sum(
+            1 for peer in available_peers if not peer_has_confirmed_piece(peer)
+        )
         requests_sent = 0
         async with self.lock:
             for peer in available_peers:
@@ -2696,6 +2763,17 @@ class AsyncPieceManager:
                 "No capable peers for piece %d after filtering (duplicates and pipeline checks)",
                 piece_index,
             )
+            if optimistic_candidate_count > 0:
+                async with self.lock:
+                    piece = self.pieces[piece_index]
+                    if piece.state == PieceState.REQUESTED:
+                        piece.last_request_time = __import__("time").time()
+                self.logger.info(
+                    "Keeping piece %d in REQUESTED state for retry after %d optimistic peer probe candidate(s) were available but not currently capable",
+                    piece_index,
+                    optimistic_candidate_count,
+                )
+                return 0
             # Reset piece state if no peers available
             async with self.lock:
                 piece = self.pieces[piece_index]
@@ -2710,8 +2788,6 @@ class AsyncPieceManager:
         # Use bandwidth-aware load balancing if available
         if hasattr(peer_manager, "_balance_requests_across_peers"):
             # Create RequestInfo objects for load balancing
-            import time
-
             from ccbt.peer.async_peer_connection import RequestInfo
 
             requests: list[RequestInfo] = []
@@ -2733,20 +2809,20 @@ class AsyncPieceManager:
             else:
                 # Fallback: simple round-robin if method not available
                 balanced_requests_result = requests
-            # CRITICAL FIX: Handle case where mock returns coroutine
+            # Note: Handle case where mock returns coroutine
             if asyncio.iscoroutine(balanced_requests_result):
                 balanced_requests = await balanced_requests_result
-                # CRITICAL FIX: Handle nested coroutine case
+                # Note: Handle nested coroutine case
                 if asyncio.iscoroutine(balanced_requests):
                     balanced_requests = await balanced_requests
             else:
                 balanced_requests = balanced_requests_result
-            # CRITICAL FIX: Get active peer count for throttling
+            # Note: Get active peer count for throttling
             active_peer_count = 0
             peers_with_availability = 0
             if peer_manager and hasattr(peer_manager, "get_active_peers"):
                 active_peers_result = peer_manager.get_active_peers()
-                # CRITICAL FIX: Handle case where mock returns coroutine
+                # Note: Handle case where mock returns coroutine
                 if asyncio.iscoroutine(active_peers_result):
                     active_peers_list = await active_peers_result
                 else:
@@ -2767,9 +2843,9 @@ class AsyncPieceManager:
                     if has_bitfield or has_have_messages:
                         peers_with_availability += 1
 
-            # CRITICAL FIX: Throttle requests when peer count is low (<10) to avoid overwhelming peers
+            # Note: Throttle requests when peer count is low (<10) to avoid overwhelming peers
             # This prevents peers from disconnecting due to too many requests
-            # CRITICAL FIX: Only throttle if we have active peers (active_peer_count > 0)
+            # Note: Only throttle if we have active peers (active_peer_count > 0)
             # If active_peer_count = 0, there are no peers to throttle, so don't enable throttling
             throttle_requests = active_peer_count > 0 and active_peer_count < 10
             if throttle_requests:
@@ -2780,7 +2856,7 @@ class AsyncPieceManager:
                 )
 
             # Send balanced requests with soft rate limiting and throttling
-            # CRITICAL FIX: Handle case where balanced_requests.items() returns a coroutine (AsyncMock)
+            # Note: Handle case where balanced_requests.items() returns a coroutine (AsyncMock)
             # Handle nested coroutines by repeatedly awaiting until we get a non-coroutine result
             # Type annotation: balanced_requests should be dict-like
             if isinstance(balanced_requests, dict):
@@ -2796,7 +2872,7 @@ class AsyncPieceManager:
                 if await_count > 10:  # Safety limit to prevent infinite loops
                     break
 
-            # CRITICAL FIX: If items_dict is still an AsyncMock or not dict-like, try to get a dict from it
+            # Note: If items_dict is still an AsyncMock or not dict-like, try to get a dict from it
             # Also handle dict_items objects (result of calling .items() on a dict)
             if isinstance(items_dict, dict):
                 # Already a dict, use it directly
@@ -2850,13 +2926,13 @@ class AsyncPieceManager:
                     )
                     max_pipeline = getattr(peer_connection, "max_pipeline_depth", 10)
 
-                    # CRITICAL FIX: When throttling, reduce max pipeline depth per peer
+                    # Note: When throttling, reduce max pipeline depth per peer
                     # This prevents overwhelming peers when peer count is low
                     throttle_factor = 1.0
                     effective_max_pipeline = max_pipeline
                     if throttle_requests:
                         # Reduce effective pipeline depth to 50-70% when peer count is low
-                        # CRITICAL FIX: Ensure throttle_factor is at least 0.5, but don't go below 1 request
+                        # Note: Ensure throttle_factor is at least 0.5, but don't go below 1 request
                         throttle_factor = (
                             max(0.5, active_peer_count / 10.0)
                             if active_peer_count > 0
@@ -2893,11 +2969,11 @@ class AsyncPieceManager:
                         )
                     if throttle_requests:
                         # Limit requests per peer when throttling
-                        # CRITICAL FIX: Ensure at least 1 request is sent even when throttling
+                        # Note: Ensure at least 1 request is sent even when throttling
                         max_requests_per_peer = max(
                             1, int(len(peer_requests) * throttle_factor)
                         )
-                        requests_to_send = peer_requests[:max_requests_per_peer]
+                        requests_to_send = requests_to_send[:max_requests_per_peer]
                         if len(requests_to_send) < len(peer_requests):
                             self.logger.debug(
                                 "THROTTLING: Limiting requests to peer %s: %d/%d (throttle_factor=%.2f)",
@@ -2917,7 +2993,7 @@ class AsyncPieceManager:
                             len(requests_to_send),
                         )
 
-                    # CRITICAL FIX: Add delay between requests when throttling to avoid overwhelming peers
+                    # Note: Add delay between requests when throttling to avoid overwhelming peers
                     request_delay = 0.0
                     if throttle_requests:
                         # Delay increases as peer count decreases (more delay for fewer peers)
@@ -2942,7 +3018,7 @@ class AsyncPieceManager:
                             )
                             continue
 
-                        # CRITICAL FIX: When throttling, use effective_max_pipeline instead of original max_pipeline_depth
+                        # Note: When throttling, use effective_max_pipeline instead of original max_pipeline_depth
                         # This ensures we don't block requests when throttling reduces pipeline depth
                         if throttle_requests:
                             # Use throttled pipeline depth for slot check
@@ -3003,7 +3079,7 @@ class AsyncPieceManager:
                             )
                             self._piece_selection_metrics["active_block_requests"] += 1
                             self._piece_selection_metrics["total_piece_requests"] += 1
-                            # CRITICAL FIX: Tracking already updated atomically before sending
+                            # Note: Tracking already updated atomically before sending
                             # Just mark block as requested
                             # Find corresponding block and mark as requested
                             for block in missing_blocks:
@@ -3108,7 +3184,7 @@ class AsyncPieceManager:
                             block.length,
                         )
                         outstanding += 1
-                        # CRITICAL FIX: Tracking already updated atomically before sending
+                        # Note: Tracking already updated atomically before sending
                         # Just mark block as requested
                         block.requested_from.add(peer_key)
                     except Exception as req_error:
@@ -3205,7 +3281,7 @@ class AsyncPieceManager:
                             self._piece_selection_metrics["active_block_requests"] += 1
                             self._piece_selection_metrics["total_piece_requests"] += 1
                             outstanding += 1
-                            # CRITICAL FIX: Tracking already updated atomically before sending
+                            # Note: Tracking already updated atomically before sending
                             # Just mark block as requested
                             block.requested_from.add(peer_key)
                         except Exception as req_error:
@@ -3382,7 +3458,7 @@ class AsyncPieceManager:
 
         """
         async with self.lock:
-            # CRITICAL FIX: Validate piece_index bounds before accessing
+            # Note: Validate piece_index bounds before accessing
             if piece_index < 0 or piece_index >= len(self.pieces):
                 self.logger.warning(
                     "Received block for invalid piece_index %d (valid range: 0-%d), ignoring",
@@ -3393,7 +3469,7 @@ class AsyncPieceManager:
 
             piece = self.pieces[piece_index]
 
-            # CRITICAL FIX: Validate block belongs to this piece
+            # Note: Validate block belongs to this piece
             # Check that begin offset is within piece bounds
             if begin < 0 or begin >= piece.length:
                 self.logger.warning(
@@ -3404,7 +3480,7 @@ class AsyncPieceManager:
                 )
                 return
 
-            # CRITICAL FIX: Validate block data length
+            # Note: Validate block data length
             if len(data) == 0:
                 self.logger.warning(
                     "Received empty block for piece %d at offset %d, ignoring",
@@ -3413,7 +3489,7 @@ class AsyncPieceManager:
                 )
                 return
 
-            # CRITICAL FIX: Check for duplicate blocks (already received)
+            # Note: Check for duplicate blocks (already received)
             for block in piece.blocks:
                 if block.begin == begin and block.received:
                     # Block already received - verify it matches
@@ -3472,7 +3548,7 @@ class AsyncPieceManager:
                     if not self._active_block_requests[piece_index]:
                         del self._active_block_requests[piece_index]
 
-                # CRITICAL FIX: Track last activity time when receiving blocks
+                # Note: Track last activity time when receiving blocks
                 piece.last_activity_time = time.time()
 
                 # Track which peer provided this block
@@ -3561,7 +3637,7 @@ class AsyncPieceManager:
                                 current_bytes + bytes_for_file,
                             )
 
-                # CRITICAL FIX: Always schedule hash verification when piece is completed
+                # Note: Always schedule hash verification when piece is completed
                 # Verification must happen regardless of whether on_piece_completed callback is set
                 # This ensures pieces are verified and written to disk even if callback is not configured
                 if piece.state == PieceState.COMPLETE:
@@ -3570,18 +3646,9 @@ class AsyncPieceManager:
                         piece_index, piece
                     )
 
-            # Select pieces within window
-            window_pieces = [
-                idx for idx in missing_pieces if window_start <= idx < window_end
-            ]
-
-            if window_pieces:
-                # CRITICAL FIX: Check if we have any peers with bitfields before requesting pieces
-                if self._peer_manager:
-                    active_peers = (
-                        self._peer_manager.get_active_peers()
-                        if hasattr(self._peer_manager, "get_active_peers")
-                        else []
+                    # Schedule hash verification for completed piece
+                    _task = asyncio.create_task(
+                        self._verify_piece_hash(piece_index, piece)
                     )
                     self._background_tasks.add(_task)
                     _task.add_done_callback(self._background_tasks.discard)
@@ -3625,9 +3692,9 @@ class AsyncPieceManager:
                     except Exception as e:
                         self.logger.debug("Failed to emit piece_completed event: %s", e)
 
-                # Notify callback (after scheduling verification)
-                if self.on_piece_completed:
-                    self.on_piece_completed(piece_index)
+                    # Notify callback (after scheduling verification)
+                    if self.on_piece_completed:
+                        self.on_piece_completed(piece_index)
 
     async def _hash_worker(
         self,
@@ -3675,7 +3742,7 @@ class AsyncPieceManager:
                     )
                     return
 
-                # CRITICAL FIX: Snapshot piece data while holding lock to prevent race conditions
+                # Note: Snapshot piece data while holding lock to prevent race conditions
                 async with self.lock:
                     if not piece.is_complete():
                         self.logger.error(
@@ -3719,7 +3786,7 @@ class AsyncPieceManager:
                 )
             else:  # pragma: no cover - v1-only torrent path, tested via v2/hybrid paths
                 # v1-only torrent: use piece_hashes (SHA-1)
-                # CRITICAL FIX: Validate piece_hashes array before accessing
+                # Note: Validate piece_hashes array before accessing
                 if piece_index >= len(self.piece_hashes):
                     self.logger.error(
                         "Hash verification failed for piece %d: piece_index (%d) >= len(piece_hashes) (%d). "
@@ -3732,7 +3799,7 @@ class AsyncPieceManager:
 
                 expected_hash = self.piece_hashes[piece_index]
 
-                # CRITICAL FIX: Validate expected hash is not empty
+                # Note: Validate expected hash is not empty
                 if not expected_hash or len(expected_hash) == 0:
                     self.logger.error(
                         "Hash verification failed for piece %d: expected_hash is empty or None (len=%d). "
@@ -3743,7 +3810,7 @@ class AsyncPieceManager:
                     )
                     return
 
-                # CRITICAL FIX: Snapshot piece data while holding lock to prevent race conditions
+                # Note: Snapshot piece data while holding lock to prevent race conditions
                 # If blocks are modified during hash verification, we could get corrupted data
                 # Make a defensive copy of the piece data before releasing the lock
                 async with self.lock:
@@ -3759,7 +3826,7 @@ class AsyncPieceManager:
                     piece_data_len = len(piece_data_snapshot)
                     num_blocks = len(piece.blocks)
 
-                # CRITICAL FIX: Log hash details for debugging
+                # Note: Log hash details for debugging
                 self.logger.info(
                     "Verifying piece %d: expected_hash_len=%d bytes, piece_data_len=%d bytes, num_blocks=%d",
                     piece_index,
@@ -3783,6 +3850,7 @@ class AsyncPieceManager:
                 )
 
             if is_valid:
+                self._verification_counters["piece_hash_verification_successes"] += 1
                 async with self.lock:
                     self.verified_pieces.add(piece_index)
                     piece.state = PieceState.VERIFIED
@@ -3792,7 +3860,7 @@ class AsyncPieceManager:
                         if not self._requested_pieces_per_peer[peer_key]:
                             del self._requested_pieces_per_peer[peer_key]
 
-                    # CRITICAL FIX: Clean up stuck piece tracking when piece is verified
+                    # Note: Clean up stuck piece tracking when piece is verified
                     # This ensures pieces that were stuck but eventually completed are removed from tracking
                     if piece_index in self._stuck_pieces:
                         stuck_info = self._stuck_pieces[piece_index]
@@ -3887,7 +3955,7 @@ class AsyncPieceManager:
                         self.num_pieces,
                     )
 
-                    # CRITICAL FIX: Trigger download complete callback immediately
+                    # Note: Trigger download complete callback immediately
                     # This ensures files are finalized as soon as download completes
                     if self.on_download_complete:
                         try:
@@ -3933,7 +4001,8 @@ class AsyncPieceManager:
                             "Failed to emit torrent_completed event: %s", e
                         )
             else:
-                # CRITICAL FIX: Reset piece state when hash verification fails
+                self._verification_counters["piece_hash_verification_failures"] += 1
+                # Note: Reset piece state when hash verification fails
                 # This ensures the piece will be re-downloaded from another peer
                 async with self.lock:
                     old_state = (
@@ -3965,6 +4034,17 @@ class AsyncPieceManager:
             Exception
         ):  # pragma: no cover - Exception handler, tested via verify_exception test
             self.logger.exception("Error verifying piece %s", piece_index)
+
+    def get_verification_counters(self) -> dict[str, int]:
+        """Return compact piece-hash verification counters for diagnostics."""
+        return {
+            "piece_hash_verification_successes": int(
+                self._verification_counters.get("piece_hash_verification_successes", 0)
+            ),
+            "piece_hash_verification_failures": int(
+                self._verification_counters.get("piece_hash_verification_failures", 0)
+            ),
+        }
 
     async def _store_xet_hash(self, piece_index: int, piece: PieceData) -> None:
         """Store Xet Merkle hash for verified piece.
@@ -4093,7 +4173,7 @@ class AsyncPieceManager:
         Algorithm is auto-detected from expected_hash length.
         """
         try:
-            # CRITICAL FIX: Validate piece is complete before hashing
+            # Note: Validate piece is complete before hashing
             if not piece.is_complete():
                 self.logger.error(
                     "Cannot hash piece %d: piece is not complete (missing blocks)",
@@ -4104,7 +4184,7 @@ class AsyncPieceManager:
             # Get piece data (no optional data buffer available in this implementation)
             data_bytes = piece.get_data()
 
-            # CRITICAL FIX: Validate piece data is not empty
+            # Note: Validate piece data is not empty
             if not data_bytes or len(data_bytes) == 0:
                 self.logger.error(
                     "Cannot hash piece %d: piece data is empty (len=%d)",
@@ -4156,7 +4236,7 @@ class AsyncPieceManager:
 
             actual_hash = hasher.digest()
 
-            # CRITICAL FIX: Log hash comparison details for debugging
+            # Note: Log hash comparison details for debugging
             matches = actual_hash == expected_hash
             if not matches:
                 self.logger.warning(
@@ -4204,7 +4284,7 @@ class AsyncPieceManager:
 
         """
         try:
-            # CRITICAL FIX: Validate piece data is not empty
+            # Note: Validate piece data is not empty
             if not data_bytes or len(data_bytes) == 0:
                 self.logger.error(
                     "Cannot hash piece %d: piece data is empty (len=%d)",
@@ -4256,7 +4336,7 @@ class AsyncPieceManager:
 
             actual_hash = hasher.digest()
 
-            # CRITICAL FIX: Log hash comparison details for debugging
+            # Note: Log hash comparison details for debugging
             matches = actual_hash == expected_hash
             if not matches:
                 self.logger.warning(
@@ -4305,7 +4385,7 @@ class AsyncPieceManager:
 
         """
         try:
-            # CRITICAL FIX: Snapshot piece data while holding lock to prevent race conditions
+            # Note: Snapshot piece data while holding lock to prevent race conditions
             async with self.lock:
                 if not piece.is_complete():
                     self.logger.error(
@@ -4514,7 +4594,7 @@ class AsyncPieceManager:
         """
         current_time = time.time()
 
-        # CRITICAL FIX: Calculate adaptive timeout based on swarm health
+        # Note: Calculate adaptive timeout based on swarm health
         # When few peers, use shorter timeout for faster recovery
         active_peer_count = 0
         if self._peer_manager and hasattr(self._peer_manager, "get_active_peers"):
@@ -4525,7 +4605,7 @@ class AsyncPieceManager:
             )
             active_peer_count = len(active_peers) if active_peers else 0
 
-        # CRITICAL FIX: Much more aggressive timeout when few peers (faster recovery)
+        # Note: Much more aggressive timeout when few peers (faster recovery)
         # When only 2-3 peers, pieces get stuck easily - use very short timeout
         if active_peer_count <= 2:
             adaptive_timeout = (
@@ -4541,7 +4621,7 @@ class AsyncPieceManager:
             if not hasattr(self, "_requested_pieces_per_peer"):
                 self._requested_pieces_per_peer: dict[str, set[int]] = {}
 
-            # CRITICAL FIX: Also check pieces directly for staleness (not just per-peer tracking)
+            # Note: Also check pieces directly for staleness (not just per-peer tracking)
             # This catches pieces stuck in REQUESTED/DOWNLOADING with no outstanding requests
             pieces_to_reset = []
             for piece_idx, piece in enumerate(self.pieces):
@@ -4554,7 +4634,7 @@ class AsyncPieceManager:
                     )
 
                     if not has_outstanding:
-                        # CRITICAL FIX: Check if piece is complete (all blocks received) before resetting
+                        # Note: Check if piece is complete (all blocks received) before resetting
                         # If all blocks are received, piece should transition to COMPLETE, not be reset
                         if piece.is_complete():
                             # All blocks received - piece should transition to COMPLETE state
@@ -4565,8 +4645,23 @@ class AsyncPieceManager:
                             )
                             continue
 
+                        # Skip stale-reset paths when no outbound requests were dispatched
+                        # for this request attempt. This prevents unnecessary transitions
+                        # when requests remain pending due no requestable peers.
+                        requests_dispatched = int(
+                            getattr(piece, "requests_dispatched", 0)
+                        )
+                        if requests_dispatched == 0 and not self._piece_has_real_request_history(
+                            piece_idx, piece
+                        ):
+                            self.logger.debug(
+                                "Skipping stale reset for piece %d: no outbound requests dispatched (requestable peers missing)",
+                                piece_idx,
+                            )
+                            continue
+
                         # No outstanding requests AND not complete - check timeout AND recent activity
-                        # CRITICAL FIX: Don't reset pieces that have received blocks recently
+                        # Note: Don't reset pieces that have received blocks recently
                         last_activity = getattr(piece, "last_activity_time", 0.0)
                         last_request = getattr(piece, "last_request_time", 0.0)
 
@@ -4582,7 +4677,7 @@ class AsyncPieceManager:
                         # No recent activity - check timeout
                         if last_request > 0:
                             time_since_request = current_time - last_request
-                            # CRITICAL FIX: Use adaptive timeout, and be more aggressive
+                            # Note: Use adaptive timeout, and be more aggressive
                             # Reset pieces faster when they have no outstanding requests
                             reset_timeout = (
                                 adaptive_timeout * 0.5
@@ -4601,7 +4696,7 @@ class AsyncPieceManager:
             # Reset stuck pieces
             for piece_idx in pieces_to_reset:
                 piece = self.pieces[piece_idx]
-                # CRITICAL FIX: Double-check for recent activity before resetting
+                # Note: Double-check for recent activity before resetting
                 # This prevents resetting pieces that just received blocks
                 last_activity = getattr(piece, "last_activity_time", 0.0)
                 if last_activity > 0:
@@ -4616,7 +4711,7 @@ class AsyncPieceManager:
                         )
                         continue
 
-                # CRITICAL FIX: Don't reset entire piece if any blocks were received
+                # Note: Don't reset entire piece if any blocks were received
                 # Only reset unreceived blocks to avoid re-downloading already received data
                 received_blocks_count = sum(
                     1 for block in piece.blocks if block.received
@@ -4812,7 +4907,7 @@ class AsyncPieceManager:
                     piece = self.pieces[piece_idx]
                     # If piece is still REQUESTED/DOWNLOADING and not making progress
                     if piece.state in (PieceState.REQUESTED, PieceState.DOWNLOADING):
-                        # CRITICAL FIX: Be more aggressive - check timeout even with lower request_count
+                        # Note: Be more aggressive - check timeout even with lower request_count
                         # Also check if piece has no outstanding requests (stuck)
                         has_outstanding = any(
                             block.requested_from
@@ -4824,14 +4919,14 @@ class AsyncPieceManager:
                         last_activity = getattr(piece, "last_activity_time", None)
                         last_request = getattr(piece, "last_request_time", 0.0)
 
-                        # CRITICAL FIX: More aggressive staleness detection
+                        # Note: More aggressive staleness detection
                         # 1. If no outstanding requests and timeout exceeded - clear immediately
                         # 2. If request_count >= 3 (lowered from 5) and timeout exceeded - clear
                         # 3. If no activity tracking and request_count >= 3 - clear
                         should_clear = False
 
                         if not has_outstanding:
-                            # CRITICAL FIX: Check if piece is complete (all blocks received) before clearing
+                            # Note: Check if piece is complete (all blocks received) before clearing
                             # If all blocks are received, piece should transition to COMPLETE, not be cleared
                             if piece.is_complete():
                                 # All blocks received - piece should transition to COMPLETE state
@@ -4839,7 +4934,7 @@ class AsyncPieceManager:
                                 continue
 
                             # No outstanding requests AND not complete - use shorter timeout
-                            # CRITICAL FIX: Don't clear if piece has recent activity (blocks received)
+                            # Note: Don't clear if piece has recent activity (blocks received)
                             if last_activity and (current_time - last_activity) < 30.0:
                                 # Piece has recent activity - don't clear
                                 should_clear = False
@@ -4858,7 +4953,7 @@ class AsyncPieceManager:
                                 should_clear = True
                         elif piece.request_count >= 3:  # Lowered from 5
                             # Has outstanding but high request count - check timeout
-                            # CRITICAL FIX: Don't clear if piece has recent activity
+                            # Note: Don't clear if piece has recent activity
                             if last_activity and (current_time - last_activity) < 30.0:
                                 # Piece has recent activity - don't clear
                                 should_clear = False
@@ -4894,7 +4989,7 @@ class AsyncPieceManager:
                                 if not block.received
                             )
                             if not has_outstanding:
-                                # CRITICAL FIX: Check if piece is complete (all blocks received) before resetting
+                                # Note: Check if piece is complete (all blocks received) before resetting
                                 # If all blocks are received, piece should transition to COMPLETE, not be reset
                                 if piece.is_complete():
                                     # All blocks received - piece should transition to COMPLETE state
@@ -4906,7 +5001,7 @@ class AsyncPieceManager:
                                     )
                                     continue
 
-                                # CRITICAL FIX: Check for recent activity before resetting
+                                # Note: Check for recent activity before resetting
                                 # Don't reset pieces that have received blocks recently
                                 last_activity = getattr(
                                     piece, "last_activity_time", 0.0
@@ -4949,7 +5044,7 @@ class AsyncPieceManager:
     async def _piece_selector(self) -> None:
         """Background task for piece selection.
 
-        CRITICAL FIX: Dynamic interval - faster when stuck, slower when working.
+        Note: Dynamic interval - faster when stuck, slower when working.
         This ensures faster recovery when no pieces are being selected.
         """
         consecutive_no_pieces = 0
@@ -5016,7 +5111,7 @@ class AsyncPieceManager:
             self._peer_manager is not None,
         )
 
-        # CRITICAL FIX: Allow piece selection even if is_downloading is False but we have active peers
+        # Note: Allow piece selection even if is_downloading is False but we have active peers
         # This handles the case where metadata is being fetched but peers are already connected
         # We can start selecting pieces once we have peers, even if metadata isn't fully available
         if self.download_complete:
@@ -5026,7 +5121,7 @@ class AsyncPieceManager:
             )
             return
 
-        # CRITICAL FIX: If is_downloading is False but we have active peers, allow selection
+        # Note: If is_downloading is False but we have active peers, allow selection
         # This is important for magnet links where metadata is being fetched
         if not self.is_downloading:
             # Check if we have active peers - if so, allow selection (metadata may be coming)
@@ -5044,7 +5139,7 @@ class AsyncPieceManager:
                     self.is_downloading,
                 )
                 return
-            # CRITICAL FIX: We have active peers but is_downloading is False
+            # Note: We have active peers but is_downloading is False
             # This might be a magnet link - allow selection to proceed
             # The piece selector will handle missing metadata gracefully
             self.logger.debug(
@@ -5052,7 +5147,7 @@ class AsyncPieceManager:
                 len(active_peers) if active_peers else 0,
             )
 
-        # CRITICAL FIX: Check for active peers before selecting pieces
+        # Note: Check for active peers before selecting pieces
         if not self._peer_manager:
             self.logger.debug(
                 "Piece selector skipping: peer_manager is None (no peers available yet)"
@@ -5086,7 +5181,7 @@ class AsyncPieceManager:
                 )
                 return
 
-        # CRITICAL FIX: Validate pieces list before selecting
+        # Note: Validate pieces list before selecting
         # Also check if pieces list has items but num_pieces is 0 (from checkpoint)
         if len(self.pieces) > 0 and self.num_pieces == 0:
             # Pieces were restored from checkpoint but num_pieces wasn't set
@@ -5128,7 +5223,7 @@ class AsyncPieceManager:
                 "Initialized %d pieces in piece selector (fallback)", len(self.pieces)
             )
 
-        # CRITICAL FIX: Check for unchoked peers BEFORE selecting pieces
+        # Note: Check for unchoked peers BEFORE selecting pieces
         # This prevents selecting pieces when no peers can fulfill the request
         if self._peer_manager and hasattr(self._peer_manager, "get_active_peers"):
             active_peers = (
@@ -5137,20 +5232,37 @@ class AsyncPieceManager:
                 else []
             )
             if active_peers:
-                # Check for peers with bitfields
-                peers_with_bitfield = [
-                    p
-                    for p in active_peers
-                    if f"{p.peer_info.ip}:{p.peer_info.port}" in self.peer_availability
-                ]
+                # Track peers that have advertised payload availability through either
+                # a bitfield or HAVE messages. Metadata-only peers should not block the
+                # optimistic bootstrap path once metadata is complete.
+                peers_with_piece_info = []
+                for peer in active_peers:
+                    peer_key = f"{peer.peer_info.ip}:{peer.peer_info.port}"
+                    peer_availability = self.peer_availability.get(peer_key)
+                    has_piece_info = bool(
+                        peer_availability is not None and peer_availability.pieces
+                    )
+                    if (
+                        not has_piece_info
+                        and hasattr(peer, "peer_state")
+                        and hasattr(peer.peer_state, "pieces_we_have")
+                    ):
+                        has_piece_info = bool(peer.peer_state.pieces_we_have)
+                    if has_piece_info:
+                        peers_with_piece_info.append(peer)
                 # Check for unchoked peers (can request pieces)
                 unchoked_peers = [
                     p
-                    for p in peers_with_bitfield
+                    for p in peers_with_piece_info
+                    if hasattr(p, "can_request") and p.can_request()
+                ]
+                requestable_active_peers = [
+                    p
+                    for p in active_peers
                     if hasattr(p, "can_request") and p.can_request()
                 ]
 
-                # CRITICAL FIX: If no unchoked peers available, still allow selection but log warning
+                # Note: If no unchoked peers available, still allow selection but log warning
                 # This allows pieces to be selected and marked as REQUESTED, ready when peers unchoke
                 # This prevents downloads from stalling when peers temporarily choke us
                 if not unchoked_peers:
@@ -5158,31 +5270,37 @@ class AsyncPieceManager:
                         "No unchoked peers available (active: %d, with bitfield: %d) - "
                         "allowing piece selection anyway (pieces will be ready when peers unchoke)",
                         len(active_peers),
-                        len(peers_with_bitfield),
+                        len(peers_with_piece_info),
                     )
                     # Retry any REQUESTED pieces in case peers become available
                     retry_method = getattr(self, "_retry_requested_pieces", None)
                     if retry_method:
                         with contextlib.suppress(Exception):
                             await retry_method()  # Ignore retry errors during selection
-                    # CRITICAL FIX: Don't return - allow selection to proceed even when choked
+                    # Note: Don't return - allow selection to proceed even when choked
                     # This ensures pieces are selected and ready when peers unchoke
-                    # Only return if we have NO peers with bitfields at all
-                    if not peers_with_bitfield:
-                        if not self._metadata_incomplete:
-                            self.logger.warning(
-                                "PIECE_SELECTOR_DEGRADED: %d active peer(s) but none have advertised bitfield/HAVE availability after metadata completion. Triggering connection recovery.",
-                                len(active_peers),
-                            )
-                            if hasattr(self._peer_manager, "_schedule_pending_resume"):
-                                with contextlib.suppress(Exception):
-                                    self._peer_manager._schedule_pending_resume(  # noqa: SLF001
-                                        reason="piece_selector_no_piece_info"
-                                    )
-                        self.logger.debug(
-                            "No peers with bitfields - skipping piece selection until bitfields arrive"
+                    # Only return if we have no advertised availability and no requestable
+                    # peers that can be used for a capped optimistic bootstrap.
+                    if not peers_with_piece_info and not self._metadata_incomplete:
+                        self.logger.warning(
+                            "PIECE_SELECTOR_DEGRADED: %d active peer(s) but none have advertised bitfield/HAVE availability after metadata completion. Triggering connection recovery.",
+                            len(active_peers),
                         )
-                        return
+                        if hasattr(self._peer_manager, "_schedule_pending_resume"):
+                            with contextlib.suppress(Exception):
+                                self._peer_manager._schedule_pending_resume(  # noqa: SLF001
+                                    reason="piece_selector_no_piece_info"
+                                )
+                        if requestable_active_peers:
+                            self.logger.info(
+                                "PIECE_SELECTOR_DEGRADED: continuing with optimistic bootstrap because %d active peer(s) remain requestable even without advertised availability",
+                                len(requestable_active_peers),
+                            )
+                        else:
+                            self.logger.debug(
+                                "No peers with piece availability and none are requestable - skipping piece selection until swarm recovers"
+                            )
+                            return
 
         # Magnets must not start selecting/requesting content pieces until metadata is complete.
         if self._metadata_incomplete:
@@ -5195,7 +5313,7 @@ class AsyncPieceManager:
             )
             return
 
-        # CRITICAL FIX: Return early if num_pieces is 0 (metadata not available yet)
+        # Note: Return early if num_pieces is 0 (metadata not available yet)
         # This prevents unnecessary processing and provides clear logging
         if self.num_pieces == 0:
             self.logger.info(
@@ -5232,7 +5350,7 @@ class AsyncPieceManager:
                 if state_name in state_counts:
                     state_counts[state_name] = state_counts.get(state_name, 0) + 1
 
-                # CRITICAL FIX: Validate piece state matches actual block completion
+                # Note: Validate piece state matches actual block completion
                 # Reset any pieces marked COMPLETE/VERIFIED that aren't actually complete
                 if (
                     piece.state in (PieceState.COMPLETE, PieceState.VERIFIED)
@@ -5257,9 +5375,9 @@ class AsyncPieceManager:
                     state_corrected_count,
                 )
 
-        # CRITICAL FIX: Clear stale requested pieces before selecting new ones
+        # Note: Clear stale requested pieces before selecting new ones
         # This prevents pieces from being permanently blocked by stale tracking
-        # CRITICAL FIX: Use adaptive timeout based on swarm health
+        # Note: Use adaptive timeout based on swarm health
         # Calculate base timeout based on active peer count
         active_peer_count = 0
         if self._peer_manager and hasattr(self._peer_manager, "get_active_peers"):
@@ -5270,7 +5388,7 @@ class AsyncPieceManager:
             )
             active_peer_count = len(active_peers) if active_peers else 0
 
-        # CRITICAL FIX: Much more aggressive timeout when few peers (faster recovery)
+        # Note: Much more aggressive timeout when few peers (faster recovery)
         # When only 2-3 peers, pieces get stuck easily - use very short timeout
         if active_peer_count <= 2:
             base_timeout = 15.0  # 15s when very few peers (was 20s)
@@ -5279,10 +5397,10 @@ class AsyncPieceManager:
         else:
             base_timeout = 60.0  # 60s when many peers
 
-        # CRITICAL FIX: Always clear stale pieces before selecting (refresh peer list)
+        # Note: Always clear stale pieces before selecting (refresh peer list)
         await self._clear_stale_requested_pieces(timeout=base_timeout)
 
-        # CRITICAL FIX: Refresh peer availability before selecting pieces
+        # Note: Refresh peer availability before selecting pieces
         # This ensures we have up-to-date peer list after disconnections
         if self._peer_manager and hasattr(self._peer_manager, "get_active_peers"):
             # Force refresh by checking active peers
@@ -5313,7 +5431,7 @@ class AsyncPieceManager:
                             if self.piece_frequency[piece_idx] <= 0:
                                 del self.piece_frequency[piece_idx]
 
-        # CRITICAL FIX: Also check for pieces that are COMPLETE but not VERIFIED
+        # Note: Also check for pieces that are COMPLETE but not VERIFIED
         # These should transition to verification, not stay stuck
         async with self.lock:
             complete_but_not_verified = [
@@ -5337,7 +5455,7 @@ class AsyncPieceManager:
                         self._background_tasks.add(task)
                         task.add_done_callback(self._background_tasks.discard)
 
-        # CRITICAL FIX: Recalculate piece_frequency from peer_availability if it's empty or out of sync
+        # Note: Recalculate piece_frequency from peer_availability if it's empty or out of sync
         # This handles cases where piece_frequency is lost (checkpoint restoration, peer disconnections)
         async with self.lock:
             if not self.piece_frequency or len(self.piece_frequency) == 0:
@@ -5379,7 +5497,7 @@ class AsyncPieceManager:
                         if actual_frequency > 0:
                             self.piece_frequency[piece_idx] = actual_frequency
 
-        # CRITICAL FIX: Clean up expired stuck pieces (cooldown expired)
+        # Note: Clean up expired stuck pieces (cooldown expired)
         # This allows pieces that were stuck to be retried after cooldown expires
         current_time = time.time()
         expired_stuck = []
@@ -5404,7 +5522,7 @@ class AsyncPieceManager:
                 expired_stuck[:10],
             )
 
-        # CRITICAL FIX: Reset stuck pieces that are in REQUESTED or DOWNLOADING state
+        # Note: Reset stuck pieces that are in REQUESTED or DOWNLOADING state
         async with self.lock:
             self.logger.debug(
                 "Piece state distribution: %s (total: %d, corrected: %d)",
@@ -5445,7 +5563,7 @@ class AsyncPieceManager:
             )
 
         # Select pieces based on strategy
-        # CRITICAL FIX: Track pieces selected before/after to detect when selector stops working
+        # Note: Track pieces selected before/after to detect when selector stops working
         async with self.lock:
             pieces_selected_before = len(
                 [
@@ -5507,7 +5625,7 @@ class AsyncPieceManager:
                         if hasattr(self._peer_manager, "get_active_peers")
                         else []
                     )
-                    # CRITICAL FIX: Include peers with bitfields OR HAVE messages
+                    # Note: Include peers with bitfields OR HAVE messages
                     # Also include peers that are in peer_availability (even if pieces=0, they've communicated)
                     peers_with_bitfield_list = []
                     for p in active_peers:
@@ -5958,7 +6076,7 @@ class AsyncPieceManager:
                 )
                 return
 
-            # CRITICAL FIX: Return early if num_pieces is 0 (metadata not available yet)
+            # Note: Return early if num_pieces is 0 (metadata not available yet)
             # This prevents unnecessary processing when metadata hasn't been fetched (e.g., magnet links)
             if self.num_pieces == 0:
                 self.logger.debug(
@@ -5966,7 +6084,7 @@ class AsyncPieceManager:
                 )
                 return
 
-            # CRITICAL FIX: Ensure pieces are initialized before selecting
+            # Note: Ensure pieces are initialized before selecting
             # This fixes the issue where num_pieces > 0 but pieces list is empty
             if self.num_pieces > 0 and len(self.pieces) == 0:
                 self.logger.warning(
@@ -6028,7 +6146,7 @@ class AsyncPieceManager:
             if not missing_pieces:  # pragma: no cover - Early return when no missing pieces, tested separately
                 return
 
-            # CRITICAL FIX: Validate that pieces list matches num_pieces
+            # Note: Validate that pieces list matches num_pieces
             # This prevents IndexError when accessing self.pieces[piece_idx]
             if len(self.pieces) < self.num_pieces:
                 self.logger.warning(
@@ -6049,10 +6167,10 @@ class AsyncPieceManager:
                     )
                     return
 
-            # CRITICAL FIX: Don't select pieces if no peers have bitfields yet
+            # Note: Don't select pieces if no peers have bitfields yet
             # This prevents infinite loops when peers are connected but haven't sent bitfields
             # Also filter out peers with empty bitfields (no pieces at all)
-            # CRITICAL FIX: Clean up stale peer_availability entries for disconnected peers
+            # Note: Clean up stale peer_availability entries for disconnected peers
             # This prevents the selector from stopping when peers disconnect
             if self._peer_manager and hasattr(self._peer_manager, "get_active_peers"):
                 active_peers = (
@@ -6082,7 +6200,7 @@ class AsyncPieceManager:
                                     )
                             del self.peer_availability[stale_key]
 
-                # CRITICAL FIX: Recalculate piece_frequency from peer_availability to fix stale data
+                # Note: Recalculate piece_frequency from peer_availability to fix stale data
                 # This ensures piece_frequency always matches actual peer_availability
                 # This fixes the issue where piece_frequency has stale entries (e.g., frequency=8-9) but no peers actually have those pieces
                 if self.peer_availability:
@@ -6121,7 +6239,7 @@ class AsyncPieceManager:
                             len(recalculated_frequency),
                         )
 
-                # CRITICAL FIX: Include peers with bitfields OR HAVE messages
+                # Note: Include peers with bitfields OR HAVE messages
                 peers_with_bitfield = []
                 for p in active_peers:
                     peer_key = f"{p.peer_info.ip}:{p.peer_info.port}"
@@ -6160,7 +6278,7 @@ class AsyncPieceManager:
             for piece_idx in missing_pieces:  # pragma: no cover - Selection algorithm loop, requires peer availability setup
                 frequency = self.piece_frequency.get(piece_idx, 0)
 
-                # CRITICAL FIX: Always verify piece availability in peer_availability, not just frequency
+                # Note: Always verify piece availability in peer_availability, not just frequency
                 # This prevents selecting pieces that have stale frequency data (e.g., after peer disconnections)
                 # Calculate actual frequency from peer_availability to ensure accuracy
                 actual_frequency = sum(
@@ -6169,7 +6287,7 @@ class AsyncPieceManager:
                     if piece_idx in peer_avail.pieces
                 )
 
-                # CRITICAL FIX: If frequency is 0, check peer_availability directly as fallback
+                # Note: If frequency is 0, check peer_availability directly as fallback
                 # This handles cases where piece_frequency is out of sync with peer_availability
                 # (e.g., after peer disconnections/reconnections or checkpoint restoration)
                 if frequency == 0:
@@ -6191,7 +6309,7 @@ class AsyncPieceManager:
                         )
                         continue
                 elif actual_frequency == 0:
-                    # CRITICAL FIX: Frequency > 0 but no peers actually have the piece
+                    # Note: Frequency > 0 but no peers actually have the piece
                     # This indicates stale frequency data - update it and skip this piece
                     self.logger.warning(
                         "Piece %d has frequency=%d but no peers actually have it (stale frequency data) - "
@@ -6205,7 +6323,7 @@ class AsyncPieceManager:
                         del self.piece_frequency[piece_idx]
                     continue
                 elif actual_frequency != frequency:
-                    # CRITICAL FIX: Frequency doesn't match actual availability - update it
+                    # Note: Frequency doesn't match actual availability - update it
                     # This handles cases where frequency is out of sync (e.g., peer disconnected but frequency wasn't decremented)
                     self.logger.debug(
                         "Piece %d frequency mismatch: frequency=%d, actual=%d - updating frequency to match reality",
@@ -6291,7 +6409,7 @@ class AsyncPieceManager:
                 max_simultaneous,
             )
 
-            # CRITICAL FIX: If piece_scores is empty but we have active peers, create optimistic scores
+            # Note: If piece_scores is empty but we have active peers, create optimistic scores
             # This handles the case where all peers have all-zero bitfields (leechers) but may send HAVE messages
             # or may have pieces when they unchoke. We select pieces optimistically to keep the download pipeline active.
             if not piece_scores and active_peer_count > 0 and missing_pieces:
@@ -6315,7 +6433,7 @@ class AsyncPieceManager:
                 )
 
             # Select top pieces to request (adaptive count)
-            # CRITICAL FIX: Filter pieces by peer availability BEFORE selecting them
+            # Note: Filter pieces by peer availability BEFORE selecting them
             # This prevents selecting pieces that can't be requested, which causes infinite loops
             selected_pieces = []
             if self._peer_manager and hasattr(self._peer_manager, "get_active_peers"):
@@ -6324,7 +6442,7 @@ class AsyncPieceManager:
                     if hasattr(self._peer_manager, "get_active_peers")
                     else []
                 )
-                # CRITICAL FIX: Define peers_with_bitfield before using it
+                # Note: Define peers_with_bitfield before using it
                 peers_with_bitfield = [
                     p
                     for p in active_peers
@@ -6339,11 +6457,11 @@ class AsyncPieceManager:
                 for _score, piece_idx in piece_scores[:adaptive_request_count]:
                     piece = self.pieces[piece_idx]
 
-                    # CRITICAL FIX: Skip pieces that are not MISSING (already requested/downloading)
+                    # Note: Skip pieces that are not MISSING (already requested/downloading)
                     if piece.state != PieceState.MISSING:
                         continue
 
-                    # CRITICAL FIX: Check if piece is in stuck_pieces tracking (was reset due to no progress)
+                    # Note: Check if piece is in stuck_pieces tracking (was reset due to no progress)
                     # If so, apply longer cooldown before retrying
                     if piece_idx in self._stuck_pieces:
                         stuck_info = self._stuck_pieces[piece_idx]
@@ -6351,7 +6469,7 @@ class AsyncPieceManager:
                         current_time = time.time()
                         time_since_stuck = current_time - stuck_time
 
-                        # CRITICAL FIX: Apply longer cooldown for previously stuck pieces
+                        # Note: Apply longer cooldown for previously stuck pieces
                         # Stuck pieces need more time before retry to avoid immediate re-sticking
                         stuck_cooldown = min(
                             180.0, 30.0 * (stuck_request_count // 10)
@@ -6373,7 +6491,7 @@ class AsyncPieceManager:
                             stuck_request_count,
                         )
 
-                    # CRITICAL FIX: Add cooldown for pieces that have failed multiple times
+                    # Note: Add cooldown for pieces that have failed multiple times
                     # This prevents repeatedly selecting pieces that can't be requested
                     request_count = getattr(piece, "request_count", 0)
                     if request_count > 0:
@@ -6382,7 +6500,7 @@ class AsyncPieceManager:
                         current_time = time.time()
                         time_since_last_request = current_time - last_request_time
 
-                        # CRITICAL FIX: More aggressive cooldown - lower threshold and longer cooldown
+                        # Note: More aggressive cooldown - lower threshold and longer cooldown
                         # Apply exponential backoff: pieces that failed many times need longer cooldown
                         # Lower threshold from 5 to 3 for faster cooldown activation
                         if request_count >= 3:
@@ -6411,7 +6529,7 @@ class AsyncPieceManager:
                                 )
                                 continue
 
-                        # CRITICAL FIX: Skip pieces that have been selected many times without making progress
+                        # Note: Skip pieces that have been selected many times without making progress
                         # This prevents infinite loops when pieces can't be requested
                         if request_count >= 10:
                             # Very high request count - check if piece has made any progress
@@ -6422,7 +6540,7 @@ class AsyncPieceManager:
                                 or (current_time - last_activity) > 120.0
                             ):
                                 # No activity or very old activity - skip this piece
-                                # CRITICAL FIX: Calculate time since last activity properly (avoid infinite values)
+                                # Note: Calculate time since last activity properly (avoid infinite values)
                                 time_since_activity = (
                                     current_time - last_activity
                                     if last_activity > 0
@@ -6440,7 +6558,7 @@ class AsyncPieceManager:
                                     request_count,
                                     time_str,
                                 )
-                                # CRITICAL FIX: Track this piece as stuck and reset it
+                                # Note: Track this piece as stuck and reset it
                                 # This prevents pieces from being permanently stuck
                                 current_time = time.time()
                                 self._stuck_pieces[piece_idx] = (
@@ -6452,7 +6570,7 @@ class AsyncPieceManager:
                                 piece.request_count = 0  # Reset request count to allow retry after cooldown
                                 piece.last_activity_time = 0.0  # Reset activity time
 
-                                # CRITICAL FIX: Set last_request_time to current time for cooldown tracking
+                                # Note: Set last_request_time to current time for cooldown tracking
                                 # This ensures the piece won't be retried immediately
                                 piece.last_request_time = current_time
 
@@ -6463,11 +6581,11 @@ class AsyncPieceManager:
                                 )
                                 continue
 
-                    # CRITICAL FIX: Check if piece can actually be requested from available peers
+                    # Note: Check if piece can actually be requested from available peers
                     # This prevents selecting pieces that will immediately fail and be reset to MISSING
                     # IMPROVEMENT: When peer count is very low, be more lenient with pipeline checks
                     # Allow selecting pieces even if pipeline is >90% full (it will free up soon)
-                    # CRITICAL FIX: Also check choked peers - they might unchoke soon
+                    # Note: Also check choked peers - they might unchoke soon
                     can_be_requested = False
                     available_peer = None
                     pipeline_utilization = 1.0
@@ -6491,7 +6609,7 @@ class AsyncPieceManager:
                                 else 1.0
                             )
 
-                            # CRITICAL FIX: When peer count is low, allow selecting pieces even if pipeline is >90% full
+                            # Note: When peer count is low, allow selecting pieces even if pipeline is >90% full
                             # The pipeline will free up as blocks are received, so we can pre-select pieces
                             if outstanding < max_outstanding:
                                 can_be_requested = True
@@ -6515,10 +6633,10 @@ class AsyncPieceManager:
                             available_peer = peer_key
                             break
 
-                    # CRITICAL FIX: If no unchoked peers have this piece OR if there are no unchoked peers at all, check choked peers
+                    # Note: If no unchoked peers have this piece OR if there are no unchoked peers at all, check choked peers
                     # This allows selecting pieces even when peers are choked (they might unchoke soon)
                     # This prevents downloads from stalling when peers temporarily choke us
-                    # CRITICAL FIX: Always check choked peers if can_be_requested is False, regardless of unchoked_peers count
+                    # Note: Always check choked peers if can_be_requested is False, regardless of unchoked_peers count
                     # This ensures pieces are selected even when all peers are choking
                     if not can_be_requested:
                         # Check if any choked peers have this piece
@@ -6545,7 +6663,7 @@ class AsyncPieceManager:
                                 len(unchoked_peers),
                             )
 
-                    # CRITICAL FIX: If still no peers have this piece but we have active peers, allow optimistic selection
+                    # Note: If still no peers have this piece but we have active peers, allow optimistic selection
                     # This handles the case where all peers have all-zero bitfields (leechers) but may send HAVE messages
                     # or may have pieces when they unchoke. We select pieces optimistically to keep the download pipeline active.
                     if (
@@ -6608,10 +6726,10 @@ class AsyncPieceManager:
                     if self.pieces[piece_idx].state == PieceState.MISSING:
                         selected_pieces.append(piece_idx)
 
-            # CRITICAL FIX: If no pieces were selected from top scores, try fallback selection
+            # Note: If no pieces were selected from top scores, try fallback selection
             # This prevents the selector from getting stuck when all top pieces are problematic
             # Fallback tries pieces with lower scores (higher availability, less optimal but available)
-            # CRITICAL FIX: Log summary of pieces selected
+            # Note: Log summary of pieces selected
             if selected_pieces:
                 self.logger.info(
                     "✅ PIECE_SELECTOR: Selected %d pieces in rarest-first: %s (total candidates: %d, active_peers: %d)",
@@ -6635,7 +6753,7 @@ class AsyncPieceManager:
                     "No pieces selected from top scores - trying fallback selection (look-ahead to find available pieces)"
                 )
 
-                # CRITICAL FIX: Look ahead through ALL available pieces, not just top scores
+                # Note: Look ahead through ALL available pieces, not just top scores
                 # This ensures we find pieces that can be requested even if they're not optimal
                 fallback_selected = []
                 skipped_count = 0
@@ -6652,7 +6770,7 @@ class AsyncPieceManager:
                     if piece.state != PieceState.MISSING:
                         continue
 
-                    # CRITICAL FIX: Check if piece is in stuck_pieces tracking
+                    # Note: Check if piece is in stuck_pieces tracking
                     # In fallback mode, be more lenient but still respect stuck tracking
                     if piece_idx in self._stuck_pieces:
                         stuck_info = self._stuck_pieces[piece_idx]
@@ -6670,7 +6788,7 @@ class AsyncPieceManager:
                         # Cooldown expired - remove from stuck tracking
                         del self._stuck_pieces[piece_idx]
 
-                    # CRITICAL FIX: Skip pieces with very high request_count (stuck pieces)
+                    # Note: Skip pieces with very high request_count (stuck pieces)
                     # But be more lenient in fallback mode - only skip if request_count >= 15
                     request_count = getattr(piece, "request_count", 0)
                     if request_count >= 15:
@@ -6722,7 +6840,7 @@ class AsyncPieceManager:
                     )
                     selected_pieces = fallback_selected
                 else:
-                    # CRITICAL FIX: If fallback also found nothing, try "desperation mode"
+                    # Note: If fallback also found nothing, try "desperation mode"
                     # Select ANY piece that ANY peer has, regardless of pipeline or cooldown
                     # This ensures maximum progress even when stuck on final pieces
                     self.logger.warning(
@@ -6801,7 +6919,7 @@ class AsyncPieceManager:
                             # But don't actually request yet - let next cycle handle it
                             pass
 
-            # CRITICAL FIX: Don't return early if no unchoked peers - allow pieces to be selected from choked peers
+            # Note: Don't return early if no unchoked peers - allow pieces to be selected from choked peers
             # Pieces will be requested when peers unchoke. This ensures downloads start immediately when peers unchoke.
             # Only check for peers with bitfields to ensure we have some peer availability data
             if self._peer_manager and hasattr(self._peer_manager, "get_active_peers"):
@@ -6821,7 +6939,7 @@ class AsyncPieceManager:
                     if hasattr(p, "can_request") and p.can_request()
                 ]
 
-                # CRITICAL FIX: Only return if we have NO peers with bitfields at all
+                # Note: Only return if we have NO peers with bitfields at all
                 # If we have peers with bitfields (even if choked), allow selection to proceed
                 # Pieces will be requested when peers unchoke
                 if not peers_with_bitfield:
@@ -6848,7 +6966,7 @@ class AsyncPieceManager:
                         len(unchoked_peers),
                     )
 
-            # CRITICAL FIX: Check if we have any peers with bitfields before requesting pieces
+            # Note: Check if we have any peers with bitfields before requesting pieces
             if selected_pieces:
                 self.logger.info(
                     "🔵 PIECE_REQUEST: Processing %d selected pieces for requesting (selected_pieces=%s)",
@@ -6869,14 +6987,14 @@ class AsyncPieceManager:
                         in self.peer_availability
                     ]
 
-                    # CRITICAL FIX: Check how many peers are unchoked (can request pieces)
+                    # Note: Check how many peers are unchoked (can request pieces)
                     unchoked_peers = [
                         p
                         for p in peers_with_bitfield
                         if hasattr(p, "can_request") and p.can_request()
                     ]
 
-                    # CRITICAL FIX: Always request pieces if we have peers with bitfields, even if all are choked
+                    # Note: Always request pieces if we have peers with bitfields, even if all are choked
                     # The request_piece_from_peers method will handle choked peers gracefully
                     # This ensures pieces are ready to be requested immediately when peers unchoke
                     if not peers_with_bitfield:
@@ -6899,7 +7017,7 @@ class AsyncPieceManager:
                             selected_pieces[:5],
                         )
 
-                    # CRITICAL FIX: Only log if we actually selected pieces, or if we have peers but selected nothing
+                    # Note: Only log if we actually selected pieces, or if we have peers but selected nothing
                     # This reduces log spam when pieces can't be requested
                     if selected_pieces:
                         self.logger.info(
@@ -6920,7 +7038,7 @@ class AsyncPieceManager:
                             len(unchoked_peers),
                         )
 
-                    # CRITICAL FIX: Mark pieces as REQUESTED synchronously BEFORE creating async tasks
+                    # Note: Mark pieces as REQUESTED synchronously BEFORE creating async tasks
                     # This fixes the race condition where pieces are selected but counted before being marked REQUESTED
                     # The async tasks will still handle the actual requesting, but the state is set immediately
                     for piece_idx in selected_pieces:
@@ -6928,11 +7046,11 @@ class AsyncPieceManager:
                             piece = self.pieces[piece_idx]
                             if piece.state == PieceState.MISSING:
                                 piece.state = PieceState.REQUESTED
-                                piece.request_count += 1
-                                piece.last_request_time = time.time()
+                                piece.requests_dispatched = 0
+                                piece.last_request_time = 0.0
                                 self._pending_piece_requests.add(piece_idx)
 
-                    # CRITICAL FIX: Request pieces even if peers are choking or don't have bitfields yet
+                    # Note: Request pieces even if peers are choking or don't have bitfields yet
                     # The request_piece_from_peers method will check can_request() and only request from unchoked peers
                     # This ensures pieces are requested immediately when peers unchoke or bitfields arrive
                     if selected_pieces:
@@ -6951,7 +7069,7 @@ class AsyncPieceManager:
                             self.request_piece_from_peers(piece_idx, self._peer_manager)
                         )
 
-                        # CRITICAL FIX: Add error callback to catch silent failures
+                        # Note: Add error callback to catch silent failures
                         def log_task_error(task: asyncio.Task, piece_idx: int) -> None:
                             try:
                                 task.result()  # This will raise if task failed
@@ -6966,7 +7084,7 @@ class AsyncPieceManager:
                         )
                         _ = task  # Store reference to avoid unused variable warning
                 else:
-                    # CRITICAL FIX: Log when pieces are selected but peer_manager is not available
+                    # Note: Log when pieces are selected but peer_manager is not available
                     self.logger.debug(
                         "Piece selector selected %d pieces but peer_manager is None (no peers available yet): %s",
                         len(selected_pieces),
@@ -7071,7 +7189,7 @@ class AsyncPieceManager:
             ]
 
             if window_pieces:
-                # CRITICAL FIX: Check if we have any peers with bitfields before requesting pieces
+                # Note: Check if we have any peers with bitfields before requesting pieces
                 if self._peer_manager:
                     active_peers = (
                         self._peer_manager.get_active_peers()
@@ -7092,7 +7210,7 @@ class AsyncPieceManager:
                         )
                         return  # Wait for bitfields before requesting pieces
 
-                    # CRITICAL FIX: Log unchoked peer count for debugging
+                    # Note: Log unchoked peer count for debugging
                     unchoked_peers = [
                         p
                         for p in peers_with_bitfield
@@ -7115,7 +7233,7 @@ class AsyncPieceManager:
                         self.pieces[piece_idx].state == PieceState.MISSING
                         and self._peer_manager
                     ):
-                        # CRITICAL FIX: Actually request the selected piece
+                        # Note: Actually request the selected piece
                         task = asyncio.create_task(
                             self.request_piece_from_peers(piece_idx, self._peer_manager)
                         )
@@ -7172,7 +7290,7 @@ class AsyncPieceManager:
 
         Falls back if piece availability is below threshold.
         """
-        # CRITICAL FIX: Get data while holding lock, then release lock
+        # Note: Get data while holding lock, then release lock
         # before calling _select_sequential() or _select_rarest_first() to avoid deadlock
         # (those methods also acquire the lock)
         async with self.lock:
@@ -7227,7 +7345,7 @@ class AsyncPieceManager:
         """
         current_time = time.time()
         download_time = current_time - self.download_start_time
-        # CRITICAL FIX: Use a minimum threshold to avoid division by zero or very large numbers
+        # Note: Use a minimum threshold to avoid division by zero or very large numbers
         # If elapsed time is less than 0.001 seconds, return 0.0
         if download_time > 0.001:
             return self.bytes_downloaded / download_time
@@ -7263,7 +7381,7 @@ class AsyncPieceManager:
                     self.pieces[piece_idx].state == PieceState.MISSING
                     and self._peer_manager
                 ):
-                    # CRITICAL FIX: Actually request the selected piece
+                    # Note: Actually request the selected piece
                     task = asyncio.create_task(
                         self.request_piece_from_peers(piece_idx, self._peer_manager)
                     )
@@ -7316,7 +7434,7 @@ class AsyncPieceManager:
                         if piece_with_peer:
                             break
 
-        # CRITICAL FIX: Release lock before calling _mark_piece_requested to avoid deadlock
+        # Note: Release lock before calling _mark_piece_requested to avoid deadlock
         # asyncio.Lock is not reentrant across await points
         if piece_with_peer is not None:
             # Mark piece as requested - main logic will handle actual request
@@ -7360,19 +7478,19 @@ class AsyncPieceManager:
     async def _select_round_robin(self) -> None:
         """Select pieces in round-robin fashion.
 
-        CRITICAL FIX: Filter pieces by peer availability to avoid requesting pieces
+        Note: Filter pieces by peer availability to avoid requesting pieces
         that no peer has. Skip pieces that have been requested too many times without success.
         Advance to next piece when current piece is unavailable.
         Uses exponential backoff instead of hard blocking for request_count.
         """
         async with self.lock:
-            # CRITICAL FIX: Use get_missing_pieces() which already filters out non-compliant pieces
+            # Note: Use get_missing_pieces() which already filters out non-compliant pieces
             missing_pieces = self.get_missing_pieces()
 
             if not missing_pieces:
                 return
 
-            # CRITICAL FIX: Filter pieces by peer availability
+            # Note: Filter pieces by peer availability
             # If bitfields are available, only select pieces that at least one peer has
             has_any_bitfields = len(self.peer_availability) > 0
             available_pieces = []
@@ -7408,16 +7526,16 @@ class AsyncPieceManager:
                     return
 
                 # Filter to pieces available from at least one UNCHOKED peer
-                # CRITICAL FIX: Check both bitfields AND HAVE messages
+                # Note: Check both bitfields AND HAVE messages
                 # Some peers only send HAVE messages, not full bitfields
-                # CRITICAL FIX: Only select pieces available from unchoked peers (can_request())
+                # Note: Only select pieces available from unchoked peers (can_request())
                 current_time = time.time()
                 for piece_idx in missing_pieces:
                     piece = self.pieces[piece_idx]
                     if piece.state != PieceState.MISSING:
                         continue  # Skip pieces that are already being requested/downloaded
 
-                    # CRITICAL FIX: Exponential backoff instead of hard blocking
+                    # Note: Exponential backoff instead of hard blocking
                     request_count = getattr(piece, "request_count", 0)
                     last_request_time = getattr(piece, "last_request_time", 0.0)
                     time_since_last_request = current_time - last_request_time
@@ -7472,7 +7590,7 @@ class AsyncPieceManager:
                                 )
 
                     if has_unchoked_peer:
-                        # CRITICAL FIX: Check if piece has already been requested from any unchoked peer
+                        # Note: Check if piece has already been requested from any unchoked peer
                         # to prevent duplicate requests in round-robin mode
                         already_requested = False
                         if self._peer_manager:
@@ -7566,7 +7684,7 @@ class AsyncPieceManager:
                         )
                         unchoked_count = sum(1 for p in active_peers if p.can_request())
 
-                    # CRITICAL FIX: Add detailed diagnostics about why peers are choking
+                    # Note: Add detailed diagnostics about why peers are choking
                     peer_details = []
                     if self._peer_manager:
                         active_peers = (
@@ -7613,12 +7731,12 @@ class AsyncPieceManager:
                     )
                 return
 
-            # CRITICAL FIX: Select first available piece (round-robin)
+            # Note: Select first available piece (round-robin)
             # Sort available pieces to maintain round-robin order
             available_pieces.sort()
             piece_idx = available_pieces[0]
 
-            # CRITICAL FIX: Actually request the selected piece
+            # Note: Actually request the selected piece
             if (
                 self.pieces[piece_idx].state == PieceState.MISSING
                 and self._peer_manager
@@ -7658,7 +7776,7 @@ class AsyncPieceManager:
                         len(missing_pieces),
                     )
 
-                # CRITICAL FIX: Actually request the selected piece
+                # Note: Actually request the selected piece
                 # request_piece_from_peers will check can_request() and only request from unchoked peers
                 task = asyncio.create_task(
                     self.request_piece_from_peers(piece_idx, self._peer_manager)
@@ -7702,7 +7820,7 @@ class AsyncPieceManager:
 
                 for piece_idx in missing_pieces:
                     frequency = self.piece_frequency.get(piece_idx, 0)
-                    # CRITICAL FIX: If frequency is 0, check peer_availability directly as fallback
+                    # Note: If frequency is 0, check peer_availability directly as fallback
                     if frequency == 0:
                         # Recalculate frequency from peer_availability
                         actual_frequency = sum(
@@ -7964,11 +8082,11 @@ class AsyncPieceManager:
 
         Args:
             peer_manager: Peer connection manager
-        CRITICAL FIX: Don't start downloads until metadata is available for magnet links.
+        Note: Don't start downloads until metadata is available for magnet links.
 
         """
         try:
-            # CRITICAL FIX: Re-check num_pieces from torrent_data in case metadata was updated
+            # Note: Re-check num_pieces from torrent_data in case metadata was updated
             # This handles the case where metadata is fetched after piece manager initialization
             pieces_info = self.torrent_data.get("pieces_info", {})
             current_num_pieces = pieces_info.get("num_pieces", 0)
@@ -7978,7 +8096,7 @@ class AsyncPieceManager:
                 current_num_pieces = 0
 
             # Update num_pieces if it changed (metadata was fetched)
-            # CRITICAL FIX: Handle both cases: num_pieces going from 0 to >0, AND num_pieces changing from wrong value to correct value
+            # Note: Handle both cases: num_pieces going from 0 to >0, AND num_pieces changing from wrong value to correct value
             if current_num_pieces > 0:
                 if self.num_pieces == 0:
                     # First time setting num_pieces (metadata just arrived)
@@ -8005,7 +8123,7 @@ class AsyncPieceManager:
                     piece_hashes_val = pieces_info.get("piece_hashes", [])
                     if isinstance(piece_hashes_val, (list, tuple)):
                         self.piece_hashes = list(piece_hashes_val)
-                # CRITICAL FIX: Clear pieces if length doesn't match num_pieces
+                # Note: Clear pieces if length doesn't match num_pieces
                 # This fixes the issue where pieces were initialized with wrong num_pieces (e.g., from bitfield inference)
                 if len(self.pieces) != self.num_pieces:
                     self.logger.warning(
@@ -8075,9 +8193,9 @@ class AsyncPieceManager:
                 self.is_downloading,
             )
 
-            # CRITICAL FIX: Ensure pieces are initialized if num_pieces > 0 but pieces list is empty
+            # Note: Ensure pieces are initialized if num_pieces > 0 but pieces list is empty
             # This handles cases where num_pieces was updated but pieces weren't initialized
-            # CRITICAL FIX: Also check if pieces length doesn't match num_pieces (mismatch bug)
+            # Note: Also check if pieces length doesn't match num_pieces (mismatch bug)
             if self.num_pieces > 0 and (
                 len(self.pieces) == 0 or len(self.pieces) != self.num_pieces
             ):
@@ -8145,7 +8263,7 @@ class AsyncPieceManager:
                     "Initialized %d pieces in start_download()", len(self.pieces)
                 )
 
-            # CRITICAL FIX: Check if pieces were initialized from checkpoint
+            # Note: Check if pieces were initialized from checkpoint
             # If pieces list has items but num_pieces is 0, use pieces count
             if self.num_pieces == 0 and len(self.pieces) > 0:
                 self.num_pieces = len(self.pieces)
@@ -8154,12 +8272,12 @@ class AsyncPieceManager:
                     self.num_pieces,
                 )
 
-            # CRITICAL FIX: Check if metadata is available before starting download
+            # Note: Check if metadata is available before starting download
             # For magnet links, num_pieces will be 0 until metadata is fetched
-            # CRITICAL FIX: Allow download start even without metadata for magnet links
+            # Note: Allow download start even without metadata for magnet links
             # This allows peer connections to proceed while metadata is being fetched
             if self.num_pieces == 0:
-                # CRITICAL FIX: Try to infer num_pieces from peer data if available
+                # Note: Try to infer num_pieces from peer data if available
                 # This handles the case where peers are sending Have messages but metadata hasn't been fetched yet
                 inferred_num_pieces = 0
                 max_piece_index = -1
@@ -8175,7 +8293,7 @@ class AsyncPieceManager:
                     )
 
                     # Check all peer connections for the highest piece index seen
-                    # CRITICAL FIX: Use connection_lock if available, otherwise access connections directly
+                    # Note: Use connection_lock if available, otherwise access connections directly
                     if hasattr(peer_manager, "connection_lock"):
                         async with peer_manager.connection_lock:
                             connections_to_check = list(connections_dict.values())
@@ -8299,12 +8417,12 @@ class AsyncPieceManager:
                             connections_checked,
                             connections_with_pieces,
                         )
-                        # CRITICAL FIX: Store peer_manager for later use when metadata is available
+                        # Note: Store peer_manager for later use when metadata is available
                         # But also set is_downloading=True to allow piece selector to run
                         # This allows the system to be ready when metadata arrives
                         if peer_manager is not None:
                             self._peer_manager = peer_manager
-                        # CRITICAL FIX: Set is_downloading=True even without metadata
+                        # Note: Set is_downloading=True even without metadata
                         # This allows piece selector to run and be ready when metadata arrives
                         # The piece selector will handle num_pieces=0 gracefully
                         self.is_downloading = True
@@ -8313,19 +8431,19 @@ class AsyncPieceManager:
                         )
                         return
 
-            # CRITICAL FIX: Verify peer_manager is valid
+            # Note: Verify peer_manager is valid
             if peer_manager is None:
                 self.logger.error("Cannot start download: peer_manager is None")
                 return
 
-            # CRITICAL FIX: Check if already downloading to avoid duplicate starts
+            # Note: Check if already downloading to avoid duplicate starts
             # BUT: Allow re-initialization if pieces list is empty but num_pieces > 0 (metadata was just fetched)
             was_downloading = self.is_downloading
             needs_reinit = (
                 was_downloading and self.num_pieces > 0 and len(self.pieces) == 0
             )
 
-            # CRITICAL FIX: If pieces aren't initialized but num_pieces > 0, we MUST initialize them
+            # Note: If pieces aren't initialized but num_pieces > 0, we MUST initialize them
             # Don't return early if pieces need initialization - this fixes the "Pieces list is empty" warning
             if was_downloading and not needs_reinit:
                 # Double-check: if num_pieces > 0 but pieces are empty, we need to initialize
@@ -8356,14 +8474,14 @@ class AsyncPieceManager:
                     self.num_pieces,
                 )
 
-            # CRITICAL FIX: Set _peer_manager BEFORE is_downloading to ensure it's available for piece selection
+            # Note: Set _peer_manager BEFORE is_downloading to ensure it's available for piece selection
             # This prevents piece selector from running with None peer_manager
             self._peer_manager = peer_manager
             self.logger.debug(
                 "Set _peer_manager reference in piece manager (peer_manager is not None)"
             )
 
-            # CRITICAL FIX: Validate that _peer_manager is set before proceeding
+            # Note: Validate that _peer_manager is set before proceeding
             if self._peer_manager is None:
                 self.logger.error(
                     "Cannot start download: _peer_manager is None after assignment"
@@ -8378,7 +8496,7 @@ class AsyncPieceManager:
                 self.num_pieces,
             )
 
-            # CRITICAL FIX: Trigger initial piece selection after starting download
+            # Note: Trigger initial piece selection after starting download
             # This ensures pieces are requested as soon as download starts
             # Add a small delay to ensure peer_manager is fully ready
             await asyncio.sleep(0.1)  # Small delay to ensure peer_manager is ready
@@ -8460,6 +8578,7 @@ class AsyncPieceManager:
 
     def get_stats(self) -> dict[str, Any]:
         """Get piece manager statistics."""
+        verification = self.get_verification_counters()
         return {
             "total_pieces": self.num_pieces,
             "completed_pieces": len(self.completed_pieces),
@@ -8470,6 +8589,12 @@ class AsyncPieceManager:
             "endgame_mode": self.endgame_mode,
             "piece_frequency": dict(self.piece_frequency.most_common(10)),
             "peer_count": len(self.peer_availability),
+            "piece_hash_verification_successes": verification[
+                "piece_hash_verification_successes"
+            ],
+            "piece_hash_verification_failures": verification[
+                "piece_hash_verification_failures"
+            ],
         }
 
     async def get_checkpoint_state(
@@ -8644,7 +8769,7 @@ class AsyncPieceManager:
                 len(self.pieces),
             )
 
-            # CRITICAL FIX: Detect checkpoint corruption before restoring
+            # Note: Detect checkpoint corruption before restoring
             # Check for impossible state: all pieces marked COMPLETE but no verified pieces and 0% downloaded
             if checkpoint.piece_states:
                 complete_count = sum(
@@ -8700,7 +8825,7 @@ class AsyncPieceManager:
                 )
                 return
 
-            # CRITICAL FIX: Validate checkpoint data before restoring
+            # Note: Validate checkpoint data before restoring
             # Ensure pieces list is initialized and matches checkpoint total_pieces
             if checkpoint.total_pieces > 0 and len(self.pieces) == 0:
                 self.logger.warning(

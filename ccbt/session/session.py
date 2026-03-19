@@ -72,6 +72,7 @@ from ccbt.session.xet_folder_runtime import XetFolderRuntime
 from ccbt.session.xet_metadata_resolver import XetMetadataResolver
 from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.storage.xet_folder_manager import XetFolder
+from ccbt.utils.compat import sha1_compat
 from ccbt.utils.events import Event, EventType, emit_event
 from ccbt.utils.logging_config import get_logger
 from ccbt.utils.metrics import Metrics
@@ -149,7 +150,7 @@ class AsyncTorrentSession:
         self.file_selection_manager: Optional[FileSelectionManager] = None
         self.ensure_file_selection_manager()
 
-        # CRITICAL FIX: Pass session_manager to AsyncTrackerClient
+        # Note: Pass session_manager to AsyncTrackerClient
         # This ensures it uses the daemon's initialized UDP tracker client
         # instead of creating a new one, preventing WinError 10048
         self.tracker = AsyncTrackerClient()
@@ -157,7 +158,7 @@ class AsyncTorrentSession:
         if session_manager:
             self.tracker._session_manager = session_manager  # type: ignore[attr-defined]
 
-        # CRITICAL FIX: Register immediate connection callback for tracker responses
+        # Note: Register immediate connection callback for tracker responses
         # This connects peers IMMEDIATELY when tracker responses arrive, before announce loop
         # Note: Callback will be registered in start() after components are initialized
         self.pex_manager: Optional[AsyncPexManager] = None
@@ -166,10 +167,13 @@ class AsyncTorrentSession:
         # Initialize checkpoint controller (will be fully initialized after ctx is created)
         self.checkpoint_controller: Optional[CheckpointController] = None
 
-        # CRITICAL FIX: Timestamp to track when tracker peers are being connected
+        # Note: Timestamp to track when tracker peers are being connected
         # This prevents DHT from starting until tracker connections complete
         # Use timestamp instead of boolean to handle multiple concurrent callbacks
         self._tracker_peers_connecting_until: Optional[float] = None  # type: ignore[attr-defined]
+        self._tracker_immediate_connection_cooldown_until: Optional[float] = None
+        self._tracker_immediate_connect_burst_per_source = 12
+        self._tracker_immediate_connect_burst_total = 24
         self._last_tracker_metadata_fallback_at: float = 0.0
         self._tracker_metadata_fallback_in_progress: bool = False
         self._low_peers_since: Optional[float] = None
@@ -191,7 +195,7 @@ class AsyncTorrentSession:
             )
             info_hash = torrent_data["info_hash"]
 
-        # CRITICAL FIX: Normalize info_hash to exactly 20 bytes (SHA-1 length)
+        # Note: Normalize info_hash to exactly 20 bytes (SHA-1 length)
         # Truncate if too long, pad with zeros if too short, and log warnings
         if isinstance(info_hash, str):
             # Convert hex string to bytes
@@ -248,7 +252,7 @@ class AsyncTorrentSession:
         self._stop_event = asyncio.Event()
         self._stopped = False  # Flag for incoming peer queue processor
 
-        # CRITICAL FIX: Initialize incoming peer handler and queue
+        # Note: Initialize incoming peer handler and queue
         # This allows the TCP server to route incoming connections to this session
         from ccbt.session.incoming import IncomingPeerHandler
 
@@ -290,6 +294,48 @@ class AsyncTorrentSession:
             "connection_attempts": 0,
             "connection_successes": 0,
             "connection_failures": 0,
+            "peers_returned_by_source": {
+                "tracker": 0,
+                "dht": 0,
+                "pex": 0,
+                "lsd": 0,
+                "incoming": 0,
+                "unknown": 0,
+            },
+            "peers_converted_to_attempts_by_source": {
+                "tracker": 0,
+                "dht": 0,
+                "pex": 0,
+                "lsd": 0,
+                "incoming": 0,
+                "unknown": 0,
+            },
+            "usable_peers_formed_by_source": {
+                "tracker": 0,
+                "dht": 0,
+                "pex": 0,
+                "lsd": 0,
+                "incoming": 0,
+                "unknown": 0,
+            },
+            "usable_live_peers_by_source": {
+                "tracker": 0,
+                "dht": 0,
+                "pex": 0,
+                "lsd": 0,
+                "incoming": 0,
+                "unknown": 0,
+            },
+            "payload_capable_live_peers_by_source": {
+                "tracker": 0,
+                "dht": 0,
+                "pex": 0,
+                "lsd": 0,
+                "incoming": 0,
+                "unknown": 0,
+            },
+            "metadata_starvation_started_at": 0.0,
+            "metadata_starvation_seconds": 0.0,
             "last_peer_discovery_time": 0.0,
         }
 
@@ -528,7 +574,7 @@ class AsyncTorrentSession:
         if num_files <= 1:
             return
 
-        # CRITICAL FIX: Recreate file selection manager if missing
+        # Note: Recreate file selection manager if missing
         # This can happen when metadata is fetched after session creation
         if not self.file_selection_manager:
             # Recreate from current torrent_data
@@ -564,7 +610,7 @@ class AsyncTorrentSession:
             file_info = td.get("file_info")
             result: dict[str, Any] = dict(td)
 
-            # CRITICAL FIX: Rebuild invalid pieces_info from legacy fields
+            # Note: Rebuild invalid pieces_info from legacy fields
             # Check if pieces_info exists but is invalid (missing required fields)
             if pieces_info is not None:
                 if (
@@ -646,7 +692,7 @@ class AsyncTorrentSession:
             result["announce"] = td.announce
         if hasattr(td, "announce_list") and td.announce_list:
             result["announce_list"] = td.announce_list
-        # CRITICAL FIX: Preserve v2 fields (BEP 52) if present
+        # Note: Preserve v2 fields (BEP 52) if present
         if hasattr(td, "meta_version") and td.meta_version:
             result["meta_version"] = td.meta_version
         if hasattr(td, "piece_layers") and td.piece_layers:
@@ -672,7 +718,7 @@ class AsyncTorrentSession:
         """
         torrent_data = self._normalized_td
 
-        # CRITICAL FIX: Allow magnet links to start without announce URLs
+        # Note: Allow magnet links to start without announce URLs
         # Magnet links can use DHT for peer discovery even without trackers
         is_magnet = torrent_data.get("is_magnet", False)
         if is_magnet:
@@ -712,7 +758,7 @@ class AsyncTorrentSession:
         try:
             self.info.status = "starting"
 
-            # CRITICAL FIX: Validate announce URLs before starting
+            # Note: Validate announce URLs before starting
             # This prevents session from getting stuck in 'starting' state
             if not self._validate_announce_urls():
                 error_msg = (
@@ -744,7 +790,7 @@ class AsyncTorrentSession:
             # Start tracker client
             await self.tracker.start()
 
-            # CRITICAL FIX: Register immediate connection callback AFTER tracker is started
+            # Note: Register immediate connection callback AFTER tracker is started
             # This connects peers IMMEDIATELY when tracker responses arrive, before announce loop
             self._register_immediate_connection_callback()
 
@@ -760,7 +806,7 @@ class AsyncTorrentSession:
                 self.logger.exception("Failed to start piece manager")
                 raise  # Re-raise - piece manager is critical
 
-            # CRITICAL FIX: Initialize peer manager early, even without peers
+            # Note: Initialize peer manager early, even without peers
             # This ensures _peer_manager is set on piece manager before piece selection starts
             # The peer manager can wait for peers to arrive from tracker/DHT/PEX
             if (
@@ -845,7 +891,7 @@ class AsyncTorrentSession:
                         max_peers_per_torrent=max_peers,
                     )
 
-                    # CRITICAL FIX: Set default bitfield handler if no callback was set
+                    # Note: Set default bitfield handler if no callback was set
                     if (
                         not hasattr(peer_manager, "on_bitfield_received")
                         or peer_manager.on_bitfield_received is None
@@ -861,7 +907,7 @@ class AsyncTorrentSession:
 
                         peer_manager.on_bitfield_received = _default_bitfield_handler  # type: ignore[assignment]
 
-                    # CRITICAL FIX: Set _peer_manager on piece manager immediately
+                    # Note: Set _peer_manager on piece manager immediately
                     # This allows piece selection to work even before peers are connected
                     self.piece_manager._peer_manager = peer_manager  # type: ignore[attr-defined]
 
@@ -879,7 +925,7 @@ class AsyncTorrentSession:
                             peer_manager.is_peer_xet_authorized
                         )
 
-                    # CRITICAL FIX: Set up callbacks BEFORE starting download using PeerEventsBinder
+                    # Note: Set up callbacks BEFORE starting download using PeerEventsBinder
                     # This ensures callbacks are available when download operations start
                     # Use PeerEventsBinder for consistent event binding
                     binder = PeerEventsBinder(self.ctx)
@@ -921,7 +967,7 @@ class AsyncTorrentSession:
                     # Type ignore: on_piece_verified is a dynamic attribute on download_manager
                     self.download_manager.on_piece_verified = _wrap_piece_verified  # type: ignore[attr-defined]
 
-                    # CRITICAL FIX: Initialize web seeds from magnet link (ws= parameters)
+                    # Note: Initialize web seeds from magnet link (ws= parameters)
                     # Web seeds are stored in torrent_data and should be added to WebSeedExtension
                     if self.session_manager and self.session_manager.extension_manager:
                         web_seeds = None
@@ -961,9 +1007,9 @@ class AsyncTorrentSession:
                                     exc_info=True,
                                 )
 
-                    # CRITICAL FIX: Start piece manager download with peer manager
+                    # Note: Start piece manager download with peer manager
                     # This sets is_downloading=True and allows piece selection to work
-                    # CRITICAL FIX: For magnet links, this may set is_downloading=True even if num_pieces=0
+                    # Note: For magnet links, this may set is_downloading=True even if num_pieces=0
                     # This is intentional - allows piece selector to be ready when metadata arrives
                     self.logger.debug("Starting piece manager download")
                     await self.piece_manager.start_download(peer_manager)
@@ -1067,10 +1113,19 @@ class AsyncTorrentSession:
             # CRITICAL: Hydrate from trackers first - run DHT setup in background so we don't
             # block session start. Tracker announces can start immediately and peers connect
             # while DHT bootstraps; status transitions to "downloading" without waiting for DHT.
+            allow_dht_recovery_fallback = getattr(
+                self.config.discovery,
+                "enable_dht_recovery_fallback",
+                True,
+            )
             should_init_dht = (
                 self.config.discovery.enable_dht
                 and self.session_manager
-                and (dht_explicitly_requested or is_magnet_link)
+                and (
+                    dht_explicitly_requested
+                    or is_magnet_link
+                    or (allow_dht_recovery_fallback and not self.is_private)
+                )
             )
             if should_init_dht:
 
@@ -1111,14 +1166,14 @@ class AsyncTorrentSession:
                 self._dht_setup = None
                 self._handle_magnet_metadata_exchange = None
 
-            # CRITICAL FIX: Start incoming peer queue processor
+            # Note: Start incoming peer queue processor
             # This processes queued incoming connections when peer manager isn't ready yet
             self._incoming_queue_task = self._task_supervisor.create_task(
                 self._incoming_peer_handler.run_queue_processor(),
                 name="incoming_queue_processor",
             )
 
-            # CRITICAL FIX: Set up event handler for peer_count_low events
+            # Note: Set up event handler for peer_count_low events
             # This triggers immediate peer discovery when peer count drops critically low
             try:
                 from ccbt.utils.events import EventHandler, get_event_bus
@@ -1210,7 +1265,7 @@ class AsyncTorrentSession:
                                         min_peers_before_dht,
                                     )
 
-                        # CRITICAL FIX: Wait for connection batches to complete before starting DHT
+                        # Note: Wait for connection batches to complete before starting DHT
                         # User requirement: "peer count low checks should only start basically after the first batches of connections are exhausted"
                         # Check if connection batches are currently in progress
                         if (
@@ -1305,7 +1360,7 @@ class AsyncTorrentSession:
                                             max_wait,
                                         )
 
-                        # CRITICAL FIX: Also check tracker peer connection timestamp (secondary check)
+                        # Note: Also check tracker peer connection timestamp (secondary check)
                         # This ensures we wait for tracker responses to be processed
                         import time as time_module
 
@@ -1493,7 +1548,7 @@ class AsyncTorrentSession:
                             )
 
                         # Trigger immediate DHT query if DHT is enabled
-                        # CRITICAL FIX: Rate limit immediate DHT queries to prevent peer disconnections
+                        # Note: Rate limit immediate DHT queries to prevent peer disconnections
                         # Check if we've triggered an immediate query recently (within last 60 seconds)
                         current_time = time.time()
                         last_immediate_query_key = f"_last_immediate_dht_query_{self.session.info.info_hash.hex()}"
@@ -1528,7 +1583,7 @@ class AsyncTorrentSession:
                                     else None
                                 )
                                 if dht_client:
-                                    # CRITICAL FIX: Use very conservative parameters to prevent blacklisting
+                                    # Note: Use very conservative parameters to prevent blacklisting
                                     # Reduced query parameters to avoid overwhelming the DHT network
                                     setattr(
                                         self.session,
@@ -1546,7 +1601,7 @@ class AsyncTorrentSession:
                                         k=8,  # Reduced from 16 to be more conservative (BEP 5 compliant)
                                         max_depth=8,  # Reduced from 12 to be more conservative (BEP 5 compliant)
                                     )
-                                    # CRITICAL FIX: Immediately connect to discovered peers
+                                    # Note: Immediately connect to discovered peers
                                     if (
                                         discovered_peers
                                         and self.session.download_manager
@@ -1618,12 +1673,37 @@ class AsyncTorrentSession:
                                             self.session.config.network.listen_port_tcp
                                             or self.session.config.network.listen_port
                                         )
-                                        response = await self.session.tracker.announce(
-                                            td, port=listen_port
+                                        announce_port = listen_port
+                                        nat_manager = getattr(
+                                            self.session.session_manager,
+                                            "nat_manager",
+                                            None,
                                         )
+                                        if nat_manager is not None:
+                                            with contextlib.suppress(Exception):
+                                                external_port = (
+                                                    await nat_manager.get_external_port(
+                                                        listen_port,
+                                                        "tcp",
+                                                    )
+                                                )
+                                                if external_port is not None:
+                                                    announce_port = external_port
+                                        responses = await self.session.tracker.announce_to_multiple(
+                                            td,
+                                            tracker_urls,
+                                            port=announce_port,
+                                        )
+                                        aggregated_peers = []
+                                        for response in responses:
+                                            if response and getattr(
+                                                response,
+                                                "peers",
+                                                None,
+                                            ):
+                                                aggregated_peers.extend(response.peers)
                                         if (
-                                            response
-                                            and response.peers
+                                            aggregated_peers
                                             and self.session.download_manager
                                         ):
                                             peer_manager = getattr(
@@ -1638,7 +1718,7 @@ class AsyncTorrentSession:
                                                         "port": p.port,
                                                         "peer_source": "tracker",
                                                     }
-                                                    for p in response.peers
+                                                    for p in aggregated_peers
                                                     if hasattr(p, "ip")
                                                     and hasattr(p, "port")
                                                 ]
@@ -1650,8 +1730,9 @@ class AsyncTorrentSession:
                                                         peer_list
                                                     )
                                                     self.session.logger.info(
-                                                        "Immediate tracker announce returned %d peer(s)",
+                                                        "Immediate tracker announce returned %d peer(s) across %d successful tracker response(s)",
                                                         len(peer_list),
+                                                        len(responses),
                                                     )
                                 except Exception as e:
                                     self.session.logger.debug(
@@ -1681,7 +1762,7 @@ class AsyncTorrentSession:
                 self._peer_count_low_handler = None
 
             # Start background tasks with error isolation
-            # CRITICAL FIX: Wrap task creation to ensure exceptions don't crash the daemon
+            # Note: Wrap task creation to ensure exceptions don't crash the daemon
             # The event loop exception handler will catch any unhandled exceptions in these tasks
             try:
                 self.logger.info(
@@ -1706,7 +1787,7 @@ class AsyncTorrentSession:
                     )
 
                 # Start seeding stats task if torrent is completed (seeding)
-                # CRITICAL FIX: For new sessions (especially magnet links), status will be "starting" not "seeding"
+                # Note: For new sessions (especially magnet links), status will be "starting" not "seeding"
                 # Only start seeding stats task if status is actually "seeding"
                 # Use defensive checks to avoid AttributeError on missing attributes
                 try:
@@ -1729,7 +1810,7 @@ class AsyncTorrentSession:
                     )
             except Exception as task_error:
                 # Log error but don't fail session start - tasks will be handled by exception handler
-                # CRITICAL FIX: Don't re-raise AttributeError for missing attributes on TorrentSessionInfo
+                # Note: Don't re-raise AttributeError for missing attributes on TorrentSessionInfo
                 # This can happen during initialization when attributes aren't fully set yet
                 if isinstance(task_error, AttributeError) and "progress" in str(
                     task_error
@@ -1788,7 +1869,7 @@ class AsyncTorrentSession:
         self._stop_event.set()
         self._stopped = True  # Signal incoming queue processor to stop
 
-        # CRITICAL FIX: Cancel any background start() task that might still be running
+        # Note: Cancel any background start() task that might still be running
         # This prevents the background task from continuing and potentially causing issues during shutdown
         if hasattr(self, "_background_start_task") and self._background_start_task:
             task = self._background_start_task
@@ -1820,7 +1901,7 @@ class AsyncTorrentSession:
                 if metadata_task and not metadata_task.done():
                     metadata_task.cancel()
                     tasks_to_cancel.append(metadata_task)
-        # CRITICAL FIX: Cancel DHT discovery task to prevent it from continuing during shutdown
+        # Note: Cancel DHT discovery task to prevent it from continuing during shutdown
         if (
             hasattr(self, "_dht_discovery_task")
             and self._dht_discovery_task
@@ -1878,7 +1959,7 @@ class AsyncTorrentSession:
         await self.download_manager.stop()
         await self.piece_manager.stop()
 
-        # CRITICAL FIX: Ensure tracker is properly stopped and session is closed
+        # Note: Ensure tracker is properly stopped and session is closed
         # This prevents "Unclosed client session" warnings
         try:
             await self.tracker.stop()
@@ -2106,13 +2187,41 @@ class AsyncTorrentSession:
             if not peers or self.is_stopped():
                 return
 
-            # CRITICAL FIX: Set timestamp to indicate tracker peers are being connected
+            import time as time_module
+            connection_start_time = time_module.time()
+
+            cooldown_until = self._tracker_immediate_connection_cooldown_until
+            if cooldown_until is not None and connection_start_time < cooldown_until:
+                self.logger.debug(
+                    "⚡ IMMEDIATE CONNECTION: In debounce cooldown until %.1fs; skipping %d peer(s) from %s",
+                    cooldown_until - connection_start_time,
+                    len(peers),
+                    tracker_url,
+                )
+                return
+
+            self.record_discovered_peers(peers, source="tracker")
+
+            # Note: Set timestamp to indicate tracker peers are being connected
             # This prevents DHT from starting until tracker connections complete
             # Use timestamp to handle multiple concurrent callbacks - extend the time if needed
-            import time as time_module
-
-            connection_start_time = time_module.time()
             max_wait_time = 4.0 if self._metadata_is_incomplete() else 2.0
+            max_peers_per_torrent = getattr(
+                self.config.network, "max_peers_per_torrent", self._tracker_immediate_connect_burst_total
+            )
+            configured_max_peers = (
+                max_peers_per_torrent
+                if isinstance(max_peers_per_torrent, int) and max_peers_per_torrent > 0
+                else self._tracker_immediate_connect_burst_total
+            )
+            per_source_limit = min(
+                self._tracker_immediate_connect_burst_per_source,
+                max(1, configured_max_peers // 4),
+            )
+            per_torrent_limit = min(
+                self._tracker_immediate_connect_burst_total,
+                configured_max_peers,
+            )
 
             # If flag is already set, extend it if this callback started later
             if self._tracker_peers_connecting_until is None:  # type: ignore[attr-defined]
@@ -2167,9 +2276,40 @@ class AsyncTorrentSession:
                             seen_peers.add(peer_key)
                             unique_peer_list.append(peer)
 
+                    peer_connection_capacity = max(
+                        0,
+                        configured_max_peers
+                        - len(self.download_manager.peer_manager.connections),
+                    )
+                    if peer_connection_capacity <= 0:
+                        self._tracker_immediate_connection_cooldown_until = (
+                            connection_start_time + 1.5
+                        )
+                        self.logger.debug(
+                            "⚡ IMMEDIATE CONNECTION: Tracker peer queue saturated for %s (connected=%d, max=%d)",
+                            self.info.name,
+                            len(self.download_manager.peer_manager.connections),
+                            configured_max_peers,
+                        )
+                        return
+
+                    bounded_peer_list: list[dict[str, Any]] = []
+                    source_counts: dict[str, int] = {}
+                    for peer in unique_peer_list:
+                        source = str(peer.get("peer_source", "tracker") or "tracker")
+                        if source_counts.get(source, 0) >= per_source_limit:
+                            continue
+                        if len(bounded_peer_list) >= per_torrent_limit:
+                            break
+                        if len(bounded_peer_list) >= peer_connection_capacity:
+                            break
+                        source_counts[source] = source_counts.get(source, 0) + 1
+                        bounded_peer_list.append(peer)
+
+                    unique_peer_list = bounded_peer_list
                     if unique_peer_list:
                         self.logger.info(
-                            "⚡ IMMEDIATE CONNECTION: Connecting %d unique peer(s) immediately for %s",
+                            "⚡ IMMEDIATE CONNECTION: Connecting %d bounded peer(s) immediately for %s",
                             len(unique_peer_list),
                             self.info.name,
                         )
@@ -2184,14 +2324,39 @@ class AsyncTorrentSession:
                             )
 
                             metadata_incomplete = self._metadata_is_incomplete()
+                            severe_metadata_starvation = False
+                            with contextlib.suppress(Exception):
+                                swarm_state_for_metadata = (
+                                    await self._get_swarm_recovery_state()
+                                )
+                                severe_metadata_starvation = bool(
+                                    swarm_state_for_metadata["metadata_incomplete"]
+                                    and int(
+                                        swarm_state_for_metadata["requestable_peers"]
+                                    )
+                                    == 0
+                                    and int(
+                                        swarm_state_for_metadata["productive_peers"]
+                                    )
+                                    == 0
+                                    and int(
+                                        swarm_state_for_metadata[
+                                            "peers_with_piece_info"
+                                        ]
+                                    )
+                                    == 0
+                                )
 
                             now = time_module.time()
                             fallback_cooldown = 15.0
                             if (
                                 metadata_incomplete
                                 and not self._tracker_metadata_fallback_in_progress
-                                and now - self._last_tracker_metadata_fallback_at
-                                >= fallback_cooldown
+                                and (
+                                    severe_metadata_starvation
+                                    or now - self._last_tracker_metadata_fallback_at
+                                    >= fallback_cooldown
+                                )
                             ):
                                 peer_subset = unique_peer_list[
                                     : min(50, len(unique_peer_list))
@@ -2222,7 +2387,7 @@ class AsyncTorrentSession:
                                     self.remove_metadata_task
                                 )
 
-                            # CRITICAL FIX: Ensure download starts immediately after connecting peers
+                            # Note: Ensure download starts immediately after connecting peers
                             # This ensures piece requests are sent as soon as connections are established
                             # For magnet links, metadata may have been received, so we need to restart download
                             if hasattr(self, "piece_manager") and self.piece_manager:
@@ -2300,17 +2465,30 @@ class AsyncTorrentSession:
                         "⚡ IMMEDIATE CONNECTION: peer_manager still not ready after 5 seconds, peers will be connected via announce loop",
                     )
             finally:
-                # CRITICAL FIX: Clear flag only if this callback's time has expired
+                # Note: Clear flag only if this callback's time has expired
                 # This allows multiple callbacks to coordinate properly
                 import time as time_module
 
                 if self._tracker_peers_connecting_until:  # type: ignore[attr-defined]
                     if time_module.time() >= self._tracker_peers_connecting_until:  # type: ignore[attr-defined]
                         self._tracker_peers_connecting_until = None  # type: ignore[attr-defined]
+                        self._tracker_immediate_connection_cooldown_until = None
                         self.logger.info(
                             "✅ IMMEDIATE CONNECTION: Tracker peer connection wait period expired (flag cleared, DHT can now start if needed)"
                         )
                     else:
+                        peer_manager = (
+                            getattr(self.download_manager, "peer_manager", None)
+                        )
+                        batches_active = bool(
+                            getattr(peer_manager, "_connection_batches_in_progress", False)
+                            if peer_manager
+                            else False
+                        )
+                        if not batches_active:
+                            self._tracker_immediate_connection_cooldown_until = (
+                                time_module.time() + 1.0
+                            )
                         self.logger.debug(
                             "⏸️ IMMEDIATE CONNECTION: Other callbacks still active, keeping flag set until %.1fs",
                             self._tracker_peers_connecting_until - time_module.time(),  # type: ignore[attr-defined]
@@ -2379,7 +2557,7 @@ class AsyncTorrentSession:
             if not isinstance(u, str):
                 continue
             v = u.strip()
-            # CRITICAL FIX: Validate tracker URLs - must start with http://, https://, or udp://
+            # Note: Validate tracker URLs - must start with http://, https://, or udp://
             # This ensures only valid tracker URLs are used for announcements
             if not v or not v.startswith(("http://", "https://", "udp://")):
                 continue
@@ -2518,7 +2696,7 @@ class AsyncTorrentSession:
         self.info.status = "seeding"
         self.logger.info("Download complete, now seeding: %s", self.info.name)
 
-        # CRITICAL FIX: Create file_assembler if it doesn't exist
+        # Note: Create file_assembler if it doesn't exist
         # This handles the case where download completes before any pieces were written
         if (
             not hasattr(self.download_manager, "file_assembler")
@@ -2551,7 +2729,7 @@ class AsyncTorrentSession:
                 self.download_manager.file_assembler.num_pieces,  # type: ignore[attr-defined]
             )
 
-            # CRITICAL FIX: Ensure file_segments are built
+            # Note: Ensure file_segments are built
             if not self.download_manager.file_assembler.file_segments:  # type: ignore[attr-defined]
                 self.logger.info(
                     "File segments empty, rebuilding from metadata for: %s",
@@ -2572,7 +2750,7 @@ class AsyncTorrentSession:
                         self.info.name,
                     )
 
-            # CRITICAL FIX: Write all verified pieces to disk now
+            # Note: Write all verified pieces to disk now
             # Since download is complete, all pieces should be verified
             if self.piece_manager:
                 written_count = 0
@@ -2611,7 +2789,7 @@ class AsyncTorrentSession:
                     self.info.name,
                 )
 
-        # CRITICAL FIX: Finalize files after all pieces are written to disk
+        # Note: Finalize files after all pieces are written to disk
         # This ensures files are properly assembled and made accessible
         if (
             hasattr(self.download_manager, "file_assembler")
@@ -2619,7 +2797,7 @@ class AsyncTorrentSession:
         ):
             file_assembler = self.download_manager.file_assembler  # type: ignore[attr-defined]
             try:
-                # CRITICAL FIX: Wait for all verified pieces to be written to disk
+                # Note: Wait for all verified pieces to be written to disk
                 # This handles the race condition where completion is detected before all writes complete
                 total_pieces = file_assembler.num_pieces  # type: ignore[union-attr]
 
@@ -2674,7 +2852,7 @@ class AsyncTorrentSession:
                                     total_pieces,
                                     self.info.name,
                                 )
-                                # CRITICAL FIX: Wait a moment for any pending async writes to complete
+                                # Note: Wait a moment for any pending async writes to complete
                                 await asyncio.sleep(
                                     0.5
                                 )  # Give disk I/O time to complete
@@ -2759,7 +2937,7 @@ class AsyncTorrentSession:
                                                         e,
                                                     )
 
-                                # CRITICAL FIX: Wait a moment for async writes to complete before finalizing
+                                # Note: Wait a moment for async writes to complete before finalizing
                                 await asyncio.sleep(0.5)
                                 # Finalize with whatever we have
                                 await file_assembler.finalize_files()  # type: ignore[union-attr]
@@ -2798,7 +2976,7 @@ class AsyncTorrentSession:
                     e,
                 )
 
-        # CRITICAL FIX: Notify session manager of completion
+        # Note: Notify session manager of completion
         # This ensures WebSocket events are emitted and callbacks are triggered
         if self.session_manager and self.session_manager.on_torrent_complete:
             try:
@@ -2873,7 +3051,7 @@ class AsyncTorrentSession:
             self.info.name,
         )
 
-        # CRITICAL FIX: Broadcast HAVE message to all connected peers
+        # Note: Broadcast HAVE message to all connected peers
         # This is important for peer relationships - some clients disconnect if we don't send HAVE messages
         # Per BEP 3, we should send HAVE messages when we complete a piece
         if self.download_manager and self.download_manager.peer_manager:
@@ -2886,7 +3064,7 @@ class AsyncTorrentSession:
                     e,
                 )
 
-        # CRITICAL FIX: Write verified piece to disk using file assembler
+        # Note: Write verified piece to disk using file assembler
         if self.piece_manager and 0 <= piece_index < len(self.piece_manager.pieces):
             from ccbt.piece.async_piece_manager import PieceState as PieceStateEnum
 
@@ -2897,7 +3075,7 @@ class AsyncTorrentSession:
                     # Get piece data
                     piece_data = piece.get_data()
                     if piece_data:
-                        # CRITICAL FIX: Check if files are available before creating file assembler
+                        # Note: Check if files are available before creating file assembler
                         # For magnet links, metadata (including files) may not be available yet
                         files_available = False
                         if isinstance(self.torrent_data, dict):
@@ -2931,7 +3109,7 @@ class AsyncTorrentSession:
                             not hasattr(self.download_manager, "file_assembler")
                             or self.download_manager.file_assembler is None
                         ):
-                            # CRITICAL FIX: Ensure output directory exists before creating file assembler
+                            # Note: Ensure output directory exists before creating file assembler
                             output_dir_path = Path(self.output_dir)
                             if not output_dir_path.exists():
                                 output_dir_path.mkdir(parents=True, exist_ok=True)
@@ -2954,7 +3132,7 @@ class AsyncTorrentSession:
                                 self.download_manager.file_assembler.num_pieces,  # type: ignore[attr-defined]
                             )
 
-                        # CRITICAL FIX: Check if file segments are built (may be empty if metadata wasn't available when created)
+                        # Note: Check if file segments are built (may be empty if metadata wasn't available when created)
                         if not self.download_manager.file_assembler.file_segments:  # type: ignore[attr-defined]
                             # Rebuild file segments in case metadata became available after file assembler was created
                             self.logger.info(
@@ -2965,7 +3143,7 @@ class AsyncTorrentSession:
                                 self.torrent_data
                             )
 
-                        # CRITICAL FIX: Ensure file segments exist before writing
+                        # Note: Ensure file segments exist before writing
                         if not self.download_manager.file_assembler.file_segments:  # type: ignore[attr-defined]
                             self.logger.error(
                                 "Cannot write piece %d: file segments are still empty after rebuild. "
@@ -3676,6 +3854,95 @@ class AsyncTorrentSession:
         if hasattr(self, "_metadata_tasks"):
             self._metadata_tasks.discard(task)
 
+    def _normalize_peer_source(self, source: Any) -> str:
+        """Normalize a peer source label for metrics bucketing."""
+        if isinstance(source, str) and source in {
+            "tracker",
+            "dht",
+            "pex",
+            "lsd",
+            "incoming",
+            "unknown",
+        }:
+            return source
+        return "unknown"
+
+    def _record_peer_source_counts(
+        self, metric_name: str, counts: dict[str, int]
+    ) -> None:
+        """Accumulate peer source counts into a session metric bucket."""
+        metric_bucket = self._peer_discovery_metrics.get(metric_name)
+        if not isinstance(metric_bucket, dict):
+            return
+        for raw_source, count in counts.items():
+            source = self._normalize_peer_source(raw_source)
+            metric_bucket[source] = int(metric_bucket.get(source, 0)) + int(count)
+
+    def record_discovered_peers(
+        self,
+        peers: list[dict[str, Any]] | list[tuple[str, int]],
+        *,
+        source: Optional[str] = None,
+    ) -> None:
+        """Record peer discovery ingress counts before ranking/filtering."""
+        source_counts: dict[str, int] = {}
+        if source is not None:
+            normalized = self._normalize_peer_source(source)
+            source_counts[normalized] = len(peers)
+        else:
+            for peer in peers:
+                peer_source = "unknown"
+                if isinstance(peer, dict):
+                    peer_source = self._normalize_peer_source(peer.get("peer_source"))
+                source_counts[peer_source] = source_counts.get(peer_source, 0) + 1
+
+        self._record_peer_source_counts("peers_discovered_by_source", source_counts)
+        self._record_peer_source_counts("peers_returned_by_source", source_counts)
+
+    def update_usable_live_peers_by_source(self, connections: dict[str, Any]) -> None:
+        """Replace usable-live-peer source snapshot using actual connection state."""
+        source_counts = {
+            "tracker": 0,
+            "dht": 0,
+            "pex": 0,
+            "lsd": 0,
+            "incoming": 0,
+            "unknown": 0,
+        }
+        payload_capable_counts = source_counts.copy()
+        for connection in connections.values():
+            peer_info = getattr(connection, "peer_info", None)
+            source = self._normalize_peer_source(
+                getattr(peer_info, "peer_source", "unknown")
+            )
+            has_piece_info = bool(
+                getattr(getattr(connection, "peer_state", None), "bitfield", None)
+            ) or bool(
+                getattr(getattr(connection, "peer_state", None), "pieces_we_have", None)
+            )
+            stats = getattr(connection, "stats", None)
+            productive = bool(
+                getattr(stats, "blocks_delivered", 0) > 0
+                or getattr(stats, "bytes_downloaded", 0) > 0
+                or has_piece_info
+            )
+            requestable = False
+            with contextlib.suppress(Exception):
+                requestable = bool(connection.can_request())
+            if productive or requestable:
+                source_counts[source] += 1
+            if has_piece_info:
+                payload_capable_counts[source] += 1
+
+        self._peer_discovery_metrics["usable_live_peers_by_source"] = source_counts
+        self._peer_discovery_metrics["payload_capable_live_peers_by_source"] = (
+            payload_capable_counts
+        )
+        # Keep the legacy metric aligned with exact live counts instead of heuristic estimation.
+        self._peer_discovery_metrics["usable_peers_formed_by_source"] = (
+            source_counts.copy()
+        )
+
     def _metadata_is_incomplete(self) -> bool:
         """Return True when torrent metadata is still incomplete."""
         if bool(
@@ -3703,6 +3970,10 @@ class AsyncTorrentSession:
             "productive_peers": 0,
             "requestable_peers": 0,
             "peers_with_piece_info": 0,
+            "handshake_complete_peers": 0,
+            "extension_capable_peers": 0,
+            "bitfield_complete_peers": 0,
+            "metadata_capable_peers": 0,
             "active_block_requests": 0,
             "download_rate": 0.0,
         }
@@ -3713,6 +3984,10 @@ class AsyncTorrentSession:
         if peer_manager and hasattr(peer_manager, "get_connection_summary"):
             with contextlib.suppress(Exception):
                 summary = await peer_manager.get_connection_summary()
+                if hasattr(peer_manager, "connections"):
+                    self.update_usable_live_peers_by_source(
+                        getattr(peer_manager, "connections", {})
+                    )
                 state["active_peers"] = int(summary.get("active_connections", 0) or 0)
                 state["productive_peers"] = int(
                     summary.get("productive_connections", 0) or 0
@@ -3722,6 +3997,18 @@ class AsyncTorrentSession:
                 )
                 state["peers_with_piece_info"] = int(
                     summary.get("peers_with_piece_info", 0) or 0
+                )
+                state["handshake_complete_peers"] = int(
+                    summary.get("handshake_complete_connections", 0) or 0
+                )
+                state["extension_capable_peers"] = int(
+                    summary.get("extension_capable_connections", 0) or 0
+                )
+                state["bitfield_complete_peers"] = int(
+                    summary.get("bitfield_complete_connections", 0) or 0
+                )
+                state["metadata_capable_peers"] = int(
+                    summary.get("metadata_capable_connections", 0) or 0
                 )
 
         if (
@@ -3750,17 +4037,47 @@ class AsyncTorrentSession:
                     getattr(stats, "download_rate", 0.0) or 0.0
                 )
 
-        state["has_usable_download_path"] = bool(
+        state["has_metadata_progress_path"] = bool(
             metadata_incomplete
-            or state["download_rate"] > 0.0
+            and state.get("handshake_complete_peers", 0) > 0
+            and (
+                state.get("extension_capable_peers", 0) > 0
+                or state.get("metadata_capable_peers", 0) > 0
+            )
+        )
+        state["has_usable_download_path"] = bool(
+            state["download_rate"] > 0.0
             or state["active_block_requests"] > 0
             or (state["requestable_peers"] > 0 and state["peers_with_piece_info"] > 0)
+            or state["has_metadata_progress_path"]
+            or (
+                state.get("handshake_complete_peers", 0) > 0
+                and state.get("metadata_capable_peers", 0) > 0
+            )
         )
         state["degraded_swarm"] = bool(
             not metadata_incomplete
             and state["active_peers"] > 0
             and not state["has_usable_download_path"]
         )
+        metrics = getattr(self, "_peer_discovery_metrics", None)
+        if isinstance(metrics, dict):
+            if (
+                metadata_incomplete
+                and int(state.get("requestable_peers", 0)) == 0
+                and int(state.get("productive_peers", 0)) == 0
+                and not bool(state.get("has_metadata_progress_path", False))
+            ):
+                now = time.time()
+                started_at = float(metrics.get("metadata_starvation_started_at", 0.0))
+                if started_at <= 0.0:
+                    metrics["metadata_starvation_started_at"] = now
+                    metrics["metadata_starvation_seconds"] = 0.0
+                else:
+                    metrics["metadata_starvation_seconds"] = max(0.0, now - started_at)
+            else:
+                metrics["metadata_starvation_started_at"] = 0.0
+                metrics["metadata_starvation_seconds"] = 0.0
         return state
 
     async def get_swarm_recovery_state(self) -> dict[str, Any]:
@@ -3770,6 +4087,11 @@ class AsyncTorrentSession:
     def _swarm_requires_fast_recovery(self, state: dict[str, Any]) -> bool:
         """Return whether recovery paths should bypass tracker-first delays."""
         if bool(state.get("metadata_incomplete", False)):
+            return True
+        if (
+            int(state.get("requestable_peers", 0) or 0) == 0
+            and int(state.get("productive_peers", 0) or 0) == 0
+        ):
             return True
         if bool(state.get("degraded_swarm", False)):
             return True
@@ -3919,6 +4241,8 @@ class AsyncSessionManager:
         self.key_manager = key_manager
         self.torrents: dict[bytes, AsyncTorrentSession] = {}
         self.lock = asyncio.Lock()
+        # Backward-compatibility flag used by sync wrapper tests.
+        self._session_started = False
 
         # Global components
         self.dht_client: Optional[AsyncDHTClient] = None
@@ -3984,7 +4308,7 @@ class AsyncSessionManager:
         self.security_manager: Optional[Any] = None
         self.nat_manager: Optional[Any] = None
         self.tcp_server: Optional[Any] = None
-        # CRITICAL FIX: Store reference to initialized UDP tracker client
+        # Note: Store reference to initialized UDP tracker client
         # This ensures all torrent sessions use the same initialized socket
         # The UDP tracker client is a singleton, but we store the reference
         # to ensure it's accessible and to prevent any lazy initialization
@@ -3993,37 +4317,37 @@ class AsyncSessionManager:
         self.queue_manager: Optional[Any] = None
         self.key_manager: Optional[Any] = None
 
-        # CRITICAL FIX: Store executor initialized at daemon startup
+        # Note: Store executor initialized at daemon startup
         # This ensures executor uses the session manager's initialized components
         # and prevents duplicate executor creation
         self.executor: Optional[Any] = None
 
-        # CRITICAL FIX: Store protocol manager initialized at daemon startup
+        # Note: Store protocol manager initialized at daemon startup
         # Singleton pattern removed - protocol manager is now managed via session manager
         # This ensures proper lifecycle management and prevents conflicts
         self.protocol_manager: Optional[Any] = None
 
-        # CRITICAL FIX: Store WebTorrent WebSocket server initialized at daemon startup
+        # Note: Store WebTorrent WebSocket server initialized at daemon startup
         # WebSocket server socket must be initialized once and never recreated
         # This prevents port conflicts and socket recreation issues
         self.webtorrent_websocket_server: Optional[Any] = None
 
-        # CRITICAL FIX: Store WebRTC connection manager initialized at daemon startup
+        # Note: Store WebRTC connection manager initialized at daemon startup
         # WebRTC manager should be shared across all WebTorrent protocol instances
         # This ensures proper resource management and prevents duplicate managers
         self.webrtc_manager: Optional[Any] = None
 
-        # CRITICAL FIX: Store uTP socket manager initialized at daemon startup
+        # Note: Store uTP socket manager initialized at daemon startup
         # Singleton pattern removed - uTP socket manager is now managed via session manager
         # This ensures proper socket lifecycle management and prevents socket recreation
         self.utp_socket_manager: Optional[Any] = None
 
-        # CRITICAL FIX: Store extension manager initialized at daemon startup
+        # Note: Store extension manager initialized at daemon startup
         # Singleton pattern removed - extension manager is now managed via session manager
         # This ensures proper lifecycle management and prevents conflicts
         self.extension_manager: Optional[Any] = None
 
-        # CRITICAL FIX: Store disk I/O manager initialized at daemon startup
+        # Note: Store disk I/O manager initialized at daemon startup
         # Singleton pattern removed - disk I/O manager is now managed via session manager
         # This ensures proper lifecycle management and prevents conflicts
         self.disk_io_manager: Optional[Any] = None
@@ -4171,9 +4495,7 @@ class AsyncSessionManager:
             with contextlib.suppress(Exception):
                 public_key_hex = self.key_manager.get_public_key_hex()
         seed = public_key_hex or f"{self.output_dir}:{id(self)}"
-        return hashlib.sha1(seed.encode("utf-8"), usedforsecurity=False).hexdigest()[
-            :16
-        ]
+        return sha1_compat(seed.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
     def _on_lpd_peer_discovered(self, ip: str, port: int) -> None:
         """Callback when LPD discovers a peer on the LAN; register for XET discovery."""
@@ -4713,6 +5035,7 @@ class AsyncSessionManager:
                 exc_info=True,
             )
 
+        self._session_started = True
         self.logger.info("Async session manager started")
 
     async def stop(self) -> None:
@@ -4842,6 +5165,7 @@ class AsyncSessionManager:
         # Clear metrics reference
         self.metrics = None
 
+        self._session_started = False
         self.logger.info("Async session manager stopped")
 
     async def start_web_interface(
@@ -5413,7 +5737,7 @@ class AsyncSessionManager:
                 # Get peers count safely (may fail if peer_service is not initialized)
                 peers_count = 0
                 try:
-                    # CRITICAL FIX: Add timeout to prevent hanging in tests or when peer_service is slow
+                    # Note: Add timeout to prevent hanging in tests or when peer_service is slow
                     peers = await asyncio.wait_for(
                         self.get_peers_for_torrent(info_hash.hex()),
                         timeout=5.0,
@@ -6113,7 +6437,7 @@ class AsyncSessionManager:
 
         workspace_id_hex = workspace_id.hex()
         if folder_key is None:
-            path_suffix = hashlib.sha1(
+            path_suffix = sha1_compat(
                 str(resolved_folder_path).encode("utf-8"),
                 usedforsecurity=False,
             ).hexdigest()[:12]
@@ -6804,7 +7128,30 @@ class AsyncSessionManager:
             connected_peers = 0
 
             for torrent in self.torrents.values():
-                status = getattr(torrent.info, "status", "unknown")
+                info_obj = getattr(torrent, "info", None)
+                status = getattr(info_obj, "status", None)
+                status_payload: Optional[dict[str, Any]] = None
+                if status is None:
+                    cached_status = getattr(torrent, "_cached_status", None)
+                    if isinstance(cached_status, dict):
+                        status = cached_status.get("status", "unknown")
+                        status_payload = cached_status
+                    else:
+                        get_status_fn = getattr(torrent, "get_status", None)
+                        if callable(get_status_fn):
+                            try:
+                                maybe_status = get_status_fn()
+                                if asyncio.iscoroutine(maybe_status):
+                                    maybe_status = await maybe_status
+                                if isinstance(maybe_status, dict):
+                                    status = maybe_status.get("status", "unknown")
+                                    status_payload = maybe_status
+                                else:
+                                    status = "unknown"
+                            except Exception:
+                                status = "unknown"
+                        else:
+                            status = "unknown"
                 if status == "paused":
                     num_paused += 1
                 elif status == "seeding":
@@ -6812,18 +7159,33 @@ class AsyncSessionManager:
                 elif status in ("downloading", "starting"):
                     num_active += 1
 
-                total_download_rate += torrent.download_rate
-                total_upload_rate += torrent.upload_rate
-                cached_status = getattr(torrent, "_cached_status", None)
+                total_download_rate += float(
+                    getattr(torrent, "download_rate", 0.0) or 0.0
+                )
+                total_upload_rate += float(getattr(torrent, "upload_rate", 0.0) or 0.0)
+                cached_status = status_payload
+                if cached_status is None:
+                    cached_status = getattr(torrent, "_cached_status", None)
+                if not isinstance(cached_status, dict):
+                    get_status_fn = getattr(torrent, "get_status", None)
+                    if callable(get_status_fn):
+                        try:
+                            maybe_status = get_status_fn()
+                            if asyncio.iscoroutine(maybe_status):
+                                maybe_status = await maybe_status
+                            if isinstance(maybe_status, dict):
+                                cached_status = maybe_status
+                        except Exception:
+                            cached_status = None
                 progress = (
                     cached_status.get("progress", 0.0)
                     if isinstance(cached_status, dict)
                     else 0.0
                 )
                 total_progress += progress
-                total_downloaded += torrent.downloaded_bytes
-                total_uploaded += torrent.uploaded_bytes
-                total_left += torrent.left_bytes
+                total_downloaded += int(getattr(torrent, "downloaded_bytes", 0) or 0)
+                total_uploaded += int(getattr(torrent, "uploaded_bytes", 0) or 0)
+                total_left += int(getattr(torrent, "left_bytes", 0) or 0)
                 if isinstance(cached_status, dict):
                     cached_peer_count = cached_status.get("connected_peers", None)
                 else:
@@ -7087,6 +7449,74 @@ class AsyncSessionManager:
 
         """
         return self.background_tasks._aggregate_torrent_stats()
+
+    async def validate_checkpoint(self, checkpoint: TorrentCheckpoint) -> bool:
+        """Validate checkpoint integrity via checkpoint operations delegate."""
+        return await self.checkpoint_ops.validate(checkpoint)
+
+    async def resume_from_checkpoint(
+        self,
+        info_hash: bytes,
+        checkpoint: TorrentCheckpoint,
+        torrent_path: Optional[str] = None,
+    ) -> str:
+        """Resume torrent from checkpoint via checkpoint operations delegate."""
+        return await self.checkpoint_ops.resume_from_checkpoint(
+            info_hash, checkpoint, torrent_path
+        )
+
+    async def find_checkpoint_by_name(self, name: str) -> Optional[TorrentCheckpoint]:
+        """Find checkpoint by torrent name with robust load-error handling."""
+        checkpoint_manager = getattr(self, "checkpoint_manager", None)
+        if checkpoint_manager is None:
+            checkpoint_manager = CheckpointManager(self.config.disk)
+
+        checkpoints = await checkpoint_manager.list_checkpoints()
+        for checkpoint_info in checkpoints:
+            try:
+                checkpoint = await checkpoint_manager.load_checkpoint(
+                    checkpoint_info.info_hash,
+                )
+                if checkpoint and checkpoint.torrent_name == name:
+                    return checkpoint
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to load checkpoint %s: %s",
+                    checkpoint_info.info_hash.hex(),
+                    e,
+                )
+        return None
+
+    async def _cleanup_loop(self) -> None:
+        """Compatibility alias for manager cleanup loop."""
+        await self.background_tasks.cleanup_loop()
+
+    async def _metrics_loop(self) -> None:
+        """Compatibility alias for manager metrics loop."""
+        await self.background_tasks.metrics_loop()
+
+    async def _emit_global_metrics(self, stats: dict[str, Any]) -> None:
+        """Compatibility alias for metrics emission hook."""
+        await self.background_tasks._emit_global_metrics(stats)
+
+    def status(self) -> dict[str, Any]:
+        """Synchronous status wrapper for backwards compatibility."""
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop and running_loop.is_running():
+            # Avoid nested event-loop execution in the same thread.
+            return {}
+
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(self.get_status())
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
 
 
 # Alias for backward compatibility

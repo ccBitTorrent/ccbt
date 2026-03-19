@@ -105,7 +105,7 @@ class StructuredFormatter(logging.Formatter):
 
             return json.dumps(log_entry, default=str)
         except Exception:
-            # CRITICAL FIX: Fallback to simple format if JSON serialization fails
+            # Note: Fallback to simple format if JSON serialization fails
             # This prevents "Logging error" messages from circular failures
             try:
                 return f"{record.levelname} {record.name}: {record.getMessage()}"
@@ -145,7 +145,7 @@ class ColoredFormatter(logging.Formatter):
 
             return super().format(record)
         except Exception:
-            # CRITICAL FIX: Fallback to simple format if formatting fails
+            # Note: Fallback to simple format if formatting fails
             try:
                 return f"{record.levelname} {record.name}: {record.getMessage()}"
             except Exception:
@@ -273,7 +273,7 @@ def setup_logging(config: ObservabilityConfig) -> None:
             "formatter": "colored" if not config.structured_logging else "structured",
             "filters": ["correlation"],
             "stream": sys.stdout,
-            # CRITICAL FIX: Disable buffering for real-time log output
+            # Note: Disable buffering for real-time log output
             # This ensures logs appear immediately instead of only on interrupt
         }
 

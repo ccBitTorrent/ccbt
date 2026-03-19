@@ -685,7 +685,7 @@ class TestDaemonSessionAdapterXETOps:
 
         result = await adapter.add_xet_folder(folder_path)
 
-        assert result == folder_path
+        assert result["folder_key"] == folder_path
         mock_ipc_client.add_xet_folder.assert_called_once_with(
             folder_path=folder_path,
             tonic_file=None,
@@ -716,7 +716,7 @@ class TestDaemonSessionAdapterXETOps:
             check_interval=check_interval,
         )
 
-        assert result == folder_path
+        assert result["folder_key"] == folder_path
         mock_ipc_client.add_xet_folder.assert_called_once_with(
             folder_path=folder_path,
             tonic_file=tonic_file,

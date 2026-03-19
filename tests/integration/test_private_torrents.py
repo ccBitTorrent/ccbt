@@ -36,7 +36,7 @@ async def test_private_torrent_peer_source_validation(tmp_path: Path):
     # Start the manager so _running is True (required for _connect_to_peer to work)
     await peer_manager.start()
     
-    # CRITICAL FIX: Mock asyncio.open_connection to prevent real network calls
+    # Note: Mock asyncio.open_connection to prevent real network calls
     # This prevents 30-second timeouts per connection attempt (2 retries = 60s per peer)
     # Without this mock, the test would timeout after 300+ seconds with 5 peers
     with patch("asyncio.open_connection") as mock_open_conn:
@@ -300,7 +300,7 @@ async def test_private_torrent_tracker_only_peers(tmp_path: Path, mock_network_c
                     # Verify _is_private flag is set on peer manager
                     assert getattr(peer_manager, "_is_private", False) is True
                     
-                    # CRITICAL FIX: Mock asyncio.open_connection to prevent real network calls
+                    # Note: Mock asyncio.open_connection to prevent real network calls
                     # This prevents 30-second timeouts per connection attempt
                     with patch("asyncio.open_connection") as mock_open_conn:
                         mock_open_conn.side_effect = ConnectionError("Mocked connection failure")
@@ -332,7 +332,7 @@ async def test_non_private_torrent_allows_all_sources(tmp_path: Path):
     await peer_manager.start()
     
     try:
-        # CRITICAL FIX: Mock asyncio.open_connection to prevent real network calls
+        # Note: Mock asyncio.open_connection to prevent real network calls
         # This prevents 30-second timeouts per connection attempt (5 sources = 150+ seconds)
         with patch("asyncio.open_connection") as mock_open_conn:
             mock_open_conn.side_effect = ConnectionError("Mocked connection failure")

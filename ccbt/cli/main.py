@@ -336,7 +336,7 @@ async def _route_to_daemon_if_running(
         True if routed to daemon, False if daemon not running
 
     """
-    # CRITICAL FIX: Check PID file existence directly before attempting os.kill()
+    # Note: Check PID file existence directly before attempting os.kill()
     # This avoids Windows-specific os.kill() errors that can cause false negatives
     daemon_manager = DaemonManager()
     pid_file_exists = daemon_manager.pid_file.exists()
@@ -361,7 +361,7 @@ async def _route_to_daemon_if_running(
             # Don't set daemon_running = False here - we'll check via IPC instead
             # The IPC connection check is the authoritative way to verify daemon is running
 
-    # CRITICAL FIX: If PID file exists, we MUST attempt IPC connection
+    # Note: If PID file exists, we MUST attempt IPC connection
     # Don't skip IPC check just because is_running() failed on Windows
     # The IPC connection is the definitive test of whether the daemon is accessible
     if not pid_file_exists and not daemon_running:
@@ -395,7 +395,7 @@ async def _route_to_daemon_if_running(
         )
         client = IPCClient(api_key=api_key, base_url=base_url)
 
-        # CRITICAL FIX: Verify daemon is actually accessible before routing
+        # Note: Verify daemon is actually accessible before routing
         # Increased timeout to 30 seconds to account for slow daemon startup (NAT discovery, DHT bootstrap, etc.)
         # Initial wait to give daemon time to start IPC server after PID file is written
         initial_wait = 1.0
@@ -526,9 +526,9 @@ async def _route_to_daemon_if_running(
                 raise click.ClickException(error_msg)
             return False
 
-        # CRITICAL FIX: Perform the requested operation using executor
+        # Note: Perform the requested operation using executor
         # Wrap in try-except to ensure client is properly closed even on errors
-        # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+        # Note: Use ExecutorManager to ensure consistent executor creation
         from ccbt.executor.manager import ExecutorManager
 
         executor_manager = ExecutorManager.get_instance()
@@ -633,7 +633,7 @@ async def _route_to_daemon_if_running(
         # Re-raise ClickException (these are user-facing errors about daemon state)
         raise
     except Exception as e:
-        # CRITICAL FIX: Distinguish between connection errors and other errors
+        # Note: Distinguish between connection errors and other errors
         error_type = type(e).__name__
         error_str = str(e)
         is_connection_error = (
@@ -681,7 +681,7 @@ async def _route_to_daemon_if_running(
 
         return False
     finally:
-        # CRITICAL FIX: Always close client to prevent resource leaks
+        # Note: Always close client to prevent resource leaks
         if client:
             try:
                 await client.close()
@@ -815,7 +815,7 @@ async def _get_executor() -> tuple[Optional[Any], bool]:
         raise click.ClickException(_(timeout_msg))
 
     # Daemon is accessible - create executor via ExecutorManager
-    # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+    # Note: Use ExecutorManager to ensure consistent executor creation
     # This prevents duplicate executors and ensures proper session reference management
     # ExecutorManager will create DaemonSessionAdapter internally when ipc_client is provided
     from ccbt.executor.manager import ExecutorManager
@@ -1489,7 +1489,7 @@ def download(
     console = Console()
 
     try:
-        # CRITICAL FIX: Always check for daemon PID file FIRST before calling _get_executor()
+        # Note: Always check for daemon PID file FIRST before calling _get_executor()
         # This prevents any possibility of creating a local session when daemon is running
         daemon_manager = DaemonManager()
         pid_file_exists = daemon_manager.pid_file.exists()
@@ -1551,7 +1551,7 @@ def download(
             asyncio.run(_add_torrent_to_daemon())
             return
 
-        # CRITICAL FIX: Double-check daemon PID file before creating local session
+        # Note: Double-check daemon PID file before creating local session
         # This is a safety check - if we reach here, PID file should NOT exist
         # (because we checked it at the start and _get_executor() would have raised if it existed)
         if pid_file_exists:
@@ -1559,7 +1559,7 @@ def download(
             raise click.ClickException(_(DAEMON_CRITICAL_ERROR_MSG))
 
         # No daemon running - create local session and executor
-        # CRITICAL FIX: Use ExecutorManager for consistency, even for local sessions
+        # Note: Use ExecutorManager for consistency, even for local sessions
         from ccbt.executor.manager import ExecutorManager
 
         # Load configuration
@@ -1577,12 +1577,12 @@ def download(
         # Create session (only when daemon is NOT running)
         session = AsyncSessionManager(".")
 
-        # CRITICAL FIX: Start session immediately to initialize NAT manager, TCP server, and port bindings
+        # Note: Start session immediately to initialize NAT manager, TCP server, and port bindings
         # This ensures components use configured ports instead of random ports
         # NOTE: This only runs when daemon is confirmed NOT running - no port conflicts possible
         asyncio.run(session.start())
 
-        # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+        # Note: Use ExecutorManager to ensure consistent executor creation
         # This prevents duplicate executors and ensures proper session reference management
         executor_manager = ExecutorManager.get_instance()
         executor = executor_manager.get_executor(session_manager=session)
@@ -1845,7 +1845,7 @@ def magnet(
     console = Console()
 
     try:
-        # CRITICAL FIX: Use a single event loop for the entire operation
+        # Note: Use a single event loop for the entire operation
         # This prevents "Event loop is closed" errors when IPCClient is created
         # in one event loop and used in another
         # Capture variables from outer scope for closure
@@ -1857,7 +1857,7 @@ def magnet(
 
         async def _magnet_operation():
             """Handle magnet operation in a single event loop."""
-            # CRITICAL FIX: Always check for daemon PID file FIRST before calling _get_executor()
+            # Note: Always check for daemon PID file FIRST before calling _get_executor()
             # This prevents any possibility of creating a local session when daemon is running
             daemon_manager = DaemonManager()
             pid_file_exists = daemon_manager.pid_file.exists()
@@ -1934,7 +1934,7 @@ def magnet(
                             logger.debug(_("Error closing IPC client: %s"), e)
                 return
 
-            # CRITICAL FIX: Double-check daemon PID file before creating local session
+            # Note: Double-check daemon PID file before creating local session
             # This is a safety check - if we reach here, PID file should NOT exist
             # (because we checked it at the start and _get_executor() would have raised if it existed)
             # But we check again as a defensive measure
@@ -1963,7 +1963,7 @@ def magnet(
             )
 
             # No daemon running - create local session and executor
-            # CRITICAL FIX: Use ExecutorManager for consistency, even for local sessions
+            # Note: Use ExecutorManager for consistency, even for local sessions
             from ccbt.executor.manager import ExecutorManager
 
             # Load configuration
@@ -1980,12 +1980,12 @@ def magnet(
             # Create session (only when daemon is NOT running)
             session = AsyncSessionManager(".")
 
-            # CRITICAL FIX: Start session immediately to initialize NAT manager, TCP server, and port bindings
+            # Note: Start session immediately to initialize NAT manager, TCP server, and port bindings
             # This ensures components use configured ports instead of random ports
             # NOTE: This only runs when daemon is confirmed NOT running - no port conflicts possible
             await session.start()
 
-            # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+            # Note: Use ExecutorManager to ensure consistent executor creation
             # This prevents duplicate executors and ensures proper session reference management
             executor_manager = ExecutorManager.get_instance()
             executor = executor_manager.get_executor(session_manager=session)
@@ -2145,7 +2145,7 @@ def web(ctx, port, host):
     console = Console()
 
     try:
-        # CRITICAL FIX: Check for daemon PID file BEFORE creating local session
+        # Note: Check for daemon PID file BEFORE creating local session
         # If PID file exists, we MUST prevent local session to avoid port conflicts
         daemon_manager = DaemonManager()
         pid_file_exists = daemon_manager.pid_file.exists()
@@ -2190,7 +2190,7 @@ def interactive(ctx):
 
         if executor is None:
             # No daemon running - create local session and executor
-            # CRITICAL FIX: Use ExecutorManager for consistency
+            # Note: Use ExecutorManager for consistency
             from ccbt.executor.manager import ExecutorManager
 
             session = AsyncSessionManager(".")
@@ -2393,7 +2393,7 @@ def debug(ctx):
     console = Console()
 
     try:
-        # CRITICAL FIX: Check for daemon PID file BEFORE creating local session
+        # Note: Check for daemon PID file BEFORE creating local session
         # If PID file exists, we MUST prevent local session to avoid port conflicts
         daemon_manager = DaemonManager()
         pid_file_exists = daemon_manager.pid_file.exists()
@@ -3246,7 +3246,7 @@ def resume(ctx, info_hash, _output_dir, interactive):
     console = Console()
 
     try:
-        # CRITICAL FIX: Check for daemon PID file BEFORE creating local session
+        # Note: Check for daemon PID file BEFORE creating local session
         # If PID file exists, we MUST prevent local session to avoid port conflicts
         daemon_manager = DaemonManager()
         pid_file_exists = daemon_manager.pid_file.exists()

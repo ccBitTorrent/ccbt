@@ -80,6 +80,7 @@ from ccbt.daemon.ipc_protocol import (
     TrackerAddRequest,
     TrackerInfo,
     TrackerListResponse,
+    UISnapshotResponse,
     WebSocketEvent,
     WebSocketMessage,
     WebSocketSubscribeRequest,
@@ -124,7 +125,7 @@ class IPCServer:
 
         """
         self.session_manager = session_manager
-        # CRITICAL FIX: Use ExecutorManager to get executor
+        # Note: Use ExecutorManager to get executor
         # This ensures we use the same executor instance initialized at daemon startup
         # which has access to all initialized components (UDP tracker, DHT, etc.)
         # ExecutorManager ensures single executor instance per session manager
@@ -147,7 +148,7 @@ class IPCServer:
             error_msg = f"Failed to get executor: {e}"
             raise RuntimeError(error_msg) from e
 
-        # CRITICAL FIX: Verify executor is ready
+        # Note: Verify executor is ready
         # The executor should have access to session_manager and all required components
         if not hasattr(self.executor, "adapter") or self.executor.adapter is None:
             error_msg = "Executor adapter not initialized"
@@ -699,6 +700,11 @@ class IPCServer:
         self.app.router.add_get(
             f"{API_BASE_PATH}/session/stats", self._handle_get_global_stats
         )
+        # UI snapshot (first-paint hydration: global stats + torrents + services + rate samples)
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/ui/snapshot",
+            self._handle_ui_snapshot,
+        )
         self.app.router.add_post(
             f"{API_BASE_PATH}/global/pause-all",
             self._handle_global_pause_all,
@@ -865,7 +871,7 @@ class IPCServer:
                 seconds = 120
 
         try:
-            # CRITICAL FIX: session_manager.get_rate_samples() returns list[dict[str, float]]
+            # Note: session_manager.get_rate_samples() returns list[dict[str, float]]
             # but RateSamplesResponse expects list[RateSample]
             samples_dict = await self.session_manager.get_rate_samples(seconds)
             logger.debug(
@@ -1616,6 +1622,11 @@ class IPCServer:
                     "last_query_depth": 0,
                     "last_query_nodes_queried": 0,
                     "routing_table_size": 0,
+                    "bootstrap_success_count": 0,
+                    "bootstrap_failure_count": 0,
+                    "last_bootstrap_reason": "",
+                    "last_bootstrap_failure_reason": "",
+                    "last_zero_node_lookup_at": 0.0,
                 }
 
                 # Use actual metrics if available
@@ -1656,6 +1667,21 @@ class IPCServer:
                     metrics["last_query_nodes_queried"] = int(
                         last_query.get("nodes_queried", 0) or 0
                     )  # type: ignore[arg-type]
+                    metrics["bootstrap_success_count"] = int(
+                        dht_metrics.get("bootstrap_success_count", 0) or 0
+                    )
+                    metrics["bootstrap_failure_count"] = int(
+                        dht_metrics.get("bootstrap_failure_count", 0) or 0
+                    )
+                    metrics["last_bootstrap_reason"] = str(
+                        dht_metrics.get("last_bootstrap_reason", "") or ""
+                    )
+                    metrics["last_bootstrap_failure_reason"] = str(
+                        dht_metrics.get("last_bootstrap_failure_reason", "") or ""
+                    )
+                    metrics["last_zero_node_lookup_at"] = float(
+                        dht_metrics.get("last_zero_node_lookup_at", 0.0) or 0.0
+                    )
 
                 # Get routing table size from DHT client
                 if dht_client and hasattr(dht_client, "routing_table"):
@@ -1703,6 +1729,21 @@ class IPCServer:
                     ),
                     "routing_table_size": int(
                         metrics.get("routing_table_size", 0) or 0
+                    ),
+                    "bootstrap_success_count": int(
+                        metrics.get("bootstrap_success_count", 0) or 0
+                    ),
+                    "bootstrap_failure_count": int(
+                        metrics.get("bootstrap_failure_count", 0) or 0
+                    ),
+                    "last_bootstrap_reason": str(
+                        metrics.get("last_bootstrap_reason", "") or ""
+                    ),
+                    "last_bootstrap_failure_reason": str(
+                        metrics.get("last_bootstrap_failure_reason", "") or ""
+                    ),
+                    "last_zero_node_lookup_at": float(
+                        metrics.get("last_zero_node_lookup_at", 0.0) or 0.0
                     ),
                 }
                 response = DHTQueryMetricsResponse(**typed_metrics)  # type: ignore[arg-type]
@@ -2234,17 +2275,17 @@ class IPCServer:
                     status=400,
                 )
 
-            # CRITICAL FIX: Use executor pattern for consistency with all other handlers
+            # Note: Use executor pattern for consistency with all other handlers
             # Add timeout protection for add operations
             # This prevents the request from hanging indefinitely if something goes wrong
             # The timeout is generous (120s for magnets) to allow for metadata exchange
             try:
                 # Use executor to add torrent/magnet (consistent with all other handlers)
-                # CRITICAL FIX: Increase timeout for magnets to allow metadata exchange
+                # Note: Increase timeout for magnets to allow metadata exchange
                 # Magnet links need time to fetch metadata from peers, which can take 30-120s
                 timeout = 120.0 if req.path_or_magnet.startswith("magnet:") else 60.0
 
-                # CRITICAL FIX: Wrap executor.execute in additional try-except to catch any
+                # Note: Wrap executor.execute in additional try-except to catch any
                 # unexpected exceptions that might not be caught by the executor itself
                 try:
                     result = await asyncio.wait_for(
@@ -2339,7 +2380,7 @@ class IPCServer:
                     status=500,
                 )
 
-            # CRITICAL FIX: Emit WebSocket event with error isolation
+            # Note: Emit WebSocket event with error isolation
             # WebSocket errors should not prevent the torrent from being added
             # If the torrent was successfully added, return success even if WebSocket fails
             try:
@@ -2358,7 +2399,7 @@ class IPCServer:
                 )
 
             # Return success if torrent was added (even if WebSocket event failed)
-            # CRITICAL FIX: This check should never be reached if the inner try-except
+            # Note: This check should never be reached if the inner try-except
             # handled the case correctly, but we include it as a safety net
             if info_hash_hex:
                 return web.json_response(
@@ -4872,6 +4913,97 @@ class IPCServer:
             stats=stats,
         )
         return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+
+    async def _handle_ui_snapshot(self, _request: Request) -> Response:
+        """Handle GET /api/v1/ui/snapshot - single response for dashboard first-paint."""
+        try:
+            # Global stats
+            stats_result = await self.executor.execute("session.get_global_stats")
+            if not stats_result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=stats_result.error or "Failed to get global stats",
+                        code="SESSION_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            stats = stats_result.data.get("stats", {})
+            global_stats = dict(stats)
+            global_stats.setdefault(
+                "total_download_rate",
+                stats.get("download_rate", stats.get("total_download_rate", 0.0)),
+            )
+            global_stats.setdefault(
+                "total_upload_rate",
+                stats.get("upload_rate", stats.get("total_upload_rate", 0.0)),
+            )
+
+            # Torrent list
+            list_result = await self.executor.execute("torrent.list")
+            torrents_raw = (
+                list_result.data.get("torrents", []) if list_result.success else []
+            )
+            torrents = [
+                t.model_dump() if hasattr(t, "model_dump") else t for t in torrents_raw
+            ]
+
+            # Services status (same shape as GET /services/status)
+            services_status = {"services": {}}
+            if self.session_manager:
+                s = services_status["services"]
+                s["dht"] = {
+                    "enabled": self.session_manager.dht_client is not None,
+                    "status": "running"
+                    if self.session_manager.dht_client
+                    else "stopped",
+                }
+                s["nat"] = {
+                    "enabled": self.session_manager.nat_manager is not None,
+                    "status": "running"
+                    if self.session_manager.nat_manager
+                    else "stopped",
+                }
+                s["tcp_server"] = {
+                    "enabled": self.session_manager.tcp_server is not None,
+                    "status": "running"
+                    if self.session_manager.tcp_server
+                    else "stopped",
+                }
+                s["peer_service"] = {
+                    "enabled": self.session_manager.peer_service is not None,
+                    "status": "running"
+                    if self.session_manager.peer_service
+                    else "stopped",
+                }
+            services_status["services"]["ipc_server"] = {
+                "enabled": True,
+                "status": "running",
+            }
+
+            # Rate samples (truncated for first-paint graph)
+            rate_samples = []
+            try:
+                samples_raw = await self.session_manager.get_rate_samples(60)
+                rate_samples = (samples_raw or [])[-30:]
+            except Exception as e:
+                logger.debug("UI snapshot: rate samples unavailable: %s", e)
+
+            response = UISnapshotResponse(
+                global_stats=global_stats,
+                torrents=torrents,
+                services_status=services_status,
+                rate_samples=rate_samples,
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error building UI snapshot")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="UI_SNAPSHOT_ERROR",
+                ).model_dump(),
+                status=500,
+            )
 
     async def _handle_global_pause_all(self, _request: Request) -> Response:
         """Handle POST /api/v1/global/pause-all."""

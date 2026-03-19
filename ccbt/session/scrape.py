@@ -84,7 +84,7 @@ class ScrapeManager:
                     announce_list=normalized_announce_list,
                     files=[],
                     total_length=torrent_data.get("total_length", 0),
-                    # CRITICAL FIX: Handle None values (common for magnet links)
+                    # Note: Handle None values (common for magnet links)
                     piece_length=(torrent_data.get("file_info") or {}).get(
                         "piece_length", 16384
                     ),

@@ -982,6 +982,17 @@ class LocalSessionAdapter(SessionAdapter):
                     ),  # Output directory where files are saved
                     pieces_completed=status.get("pieces_completed", 0),
                     pieces_total=status.get("pieces_total", 0),
+                    tracker_status=status.get("tracker_status"),
+                    last_tracker_error=status.get("last_tracker_error"),
+                    last_error=status.get("last_error"),
+                    productive_peers=status.get("productive_peers", 0),
+                    requestable_peers=status.get("requestable_peers", 0),
+                    handshake_complete_peers=status.get("handshake_complete_peers", 0),
+                    extension_capable_peers=status.get("extension_capable_peers", 0),
+                    metadata_capable_peers=status.get("metadata_capable_peers", 0),
+                    hash_verification_failures=status.get(
+                        "hash_verification_failures", 0
+                    ),
                 ),
             )
         return torrents
@@ -1017,6 +1028,15 @@ class LocalSessionAdapter(SessionAdapter):
             ),  # Output directory where files are saved
             pieces_completed=status.get("pieces_completed", 0),
             pieces_total=status.get("pieces_total", 0),
+            tracker_status=status.get("tracker_status"),
+            last_tracker_error=status.get("last_tracker_error"),
+            last_error=status.get("last_error"),
+            productive_peers=status.get("productive_peers", 0),
+            requestable_peers=status.get("requestable_peers", 0),
+            handshake_complete_peers=status.get("handshake_complete_peers", 0),
+            extension_capable_peers=status.get("extension_capable_peers", 0),
+            metadata_capable_peers=status.get("metadata_capable_peers", 0),
+            hash_verification_failures=status.get("hash_verification_failures", 0),
         )
 
     async def pause_torrent(self, info_hash: str) -> bool:

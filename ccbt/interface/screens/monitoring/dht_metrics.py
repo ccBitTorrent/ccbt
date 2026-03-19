@@ -70,13 +70,45 @@ class DHTMetricsScreen(MonitoringScreen):  # type: ignore[misc]
             content = self.query_one("#content", Static)
             node_info_widget = self.query_one("#node_info", Static)
 
-            # Get DHT client
+            # Prefer DataProvider in daemon mode (DHT health summary)
+            provider = getattr(self, "_data_provider", None)
+            if provider:
+                try:
+                    summary = await provider.get_dht_health_summary(limit=20)
+                    stats_table = Table(title=_("DHT Health (daemon)"), expand=True, show_header=False, box=None)
+                    stats_table.add_column(_("Metric"), style="cyan", ratio=1)
+                    stats_table.add_column(_("Value"), style="green", ratio=2)
+                    stats_table.add_row(_("Torrents with DHT"), str(summary.get("torrents_with_dht", 0)))
+                    stats_table.add_row(_("Total queries"), str(summary.get("total_queries", 0)))
+                    dht_stats_widget.update(Panel(stats_table, border_style="blue"))
+                    all_items = summary.get("all_items", [])
+                    if all_items:
+                        detail_table = Table(title=_("Per-torrent DHT"), expand=True)
+                        detail_table.add_column(_("Torrent"), style="cyan", ratio=2)
+                        detail_table.add_column(_("Health"), style="green", ratio=1)
+                        detail_table.add_column(_("Queries"), style="yellow", ratio=1)
+                        for item in all_items[:15]:
+                            detail_table.add_row(
+                                str(item.get("info_hash_hex", item.get("info_hash", "")))[:16],
+                                str(item.get("health_label", "-")),
+                                str(item.get("queries_sent", item.get("total_queries", 0))),
+                            )
+                        content.update(Panel(detail_table))
+                        routing_table_widget.update("")
+                    else:
+                        content.update(Panel(_("No DHT metrics per torrent yet."), border_style="dim"))
+                        routing_table_widget.update("")
+                    node_info_widget.update("")
+                except Exception as e:
+                    content.update(Panel(_("Error loading DHT summary: {error}").format(error=str(e)), title=_("Error"), border_style="red"))
+                return
+
+            # Local session: get DHT client
             dht_client = None
             try:
                 from ccbt.discovery.dht import get_dht_client
                 dht_client = get_dht_client()
             except Exception:
-                # Try to get from session
                 if hasattr(self.session, "dht_client"):
                     dht_client = self.session.dht_client
                 elif hasattr(self.session, "dht"):

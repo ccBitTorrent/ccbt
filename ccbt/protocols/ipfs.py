@@ -79,7 +79,7 @@ class IPFSProtocol(Protocol):
         """
         super().__init__(ProtocolType.IPFS)
 
-        # CRITICAL FIX: Store session manager reference for consistency
+        # Note: Store session manager reference for consistency
         # This allows protocol to use shared components if needed in the future
         self.session_manager = session_manager
 

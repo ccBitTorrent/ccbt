@@ -134,7 +134,7 @@ async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
         async def stop(self):
             pass
 
-        # CRITICAL FIX: Mock announce() method with correct signature
+        # Note: Mock announce() method with correct signature
         async def announce(self, td, port=None, event=""):
             announce_called.append(1)
             announce_data.append(td)
@@ -155,7 +155,7 @@ async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
     session._stop_event = asyncio.Event()
     session.config.network.announce_interval = 0.01
     
-    # CRITICAL FIX: Ensure session.info exists for announce loop
+    # Note: Ensure session.info exists for announce loop
     if not hasattr(session, 'info') or session.info is None:
         from ccbt.session.session import TorrentSessionInfo
         session.info = TorrentSessionInfo(

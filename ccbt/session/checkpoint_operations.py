@@ -87,9 +87,9 @@ class CheckpointOperations:
 
             # Validate info hash matches if using explicit torrent file
             if source_type == "file" and torrent_source:
-                from ccbt.core.torrent import TorrentParser
+                from ccbt.session import session as session_module
 
-                parser = TorrentParser()
+                parser = session_module.TorrentParser()
                 torrent_data_model = parser.parse(torrent_source)
                 if isinstance(torrent_data_model, dict):
                     torrent_info_hash = torrent_data_model.get("info_hash")
@@ -225,7 +225,7 @@ class CheckpointOperations:
 
     async def cleanup_completed(self) -> int:
         """Remove checkpoints for completed downloads."""
-        # CRITICAL FIX: Use checkpoint manager from session manager instead of creating new instance
+        # Note: Use checkpoint manager from session manager instead of creating new instance
         # This allows tests to properly mock the checkpoint manager
         checkpoint_manager = getattr(self.manager, "checkpoint_manager", None)
         if not checkpoint_manager:

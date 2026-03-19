@@ -149,7 +149,7 @@ class TestSessionMissingCoverage:
             web_seeds=[],
             selected_indices=[0],
         )
-        session.magnet_info = magnet_info
+        session.torrent_data["magnet_info"] = magnet_info
         session.file_selection_manager = None  # Missing, should be recreated
         
         # Mock piece manager
@@ -190,7 +190,7 @@ class TestSessionMissingCoverage:
             web_seeds=[],
             selected_indices=[0],
         )
-        session.magnet_info = magnet_info
+        session.torrent_data["magnet_info"] = magnet_info
         session.file_selection_manager = Mock()
         
         await session._apply_magnet_file_selection_if_needed()

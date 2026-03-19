@@ -21,7 +21,7 @@ async def test_add_torrent_missing_info_hash_dict(monkeypatch):
 async def test_add_torrent_duplicate(monkeypatch, tmp_path):
     """Test adding duplicate torrent raises ValueError.
     
-    CRITICAL FIX: Mock TorrentParser.parse() to return a dict with announce URL,
+    Note: Mock TorrentParser.parse() to return a dict with announce URL,
     and mock add_torrent_background to prevent session from actually starting,
     which prevents network operations and timeout.
     """
@@ -51,7 +51,7 @@ async def test_add_torrent_duplicate(monkeypatch, tmp_path):
     with patch.object(original_parser, "parse", return_value=torrent_dict):
         mgr = AsyncSessionManager(str(tmp_path))
         
-        # CRITICAL FIX: Mock add_torrent_background to prevent session from starting
+        # Note: Mock add_torrent_background to prevent session from starting
         # This prevents network operations and timeout
         original_add_background = mgr.torrent_addition_handler.add_torrent_background
         mgr.torrent_addition_handler.add_torrent_background = AsyncMock()
@@ -120,7 +120,7 @@ def test_get_peers_for_torrent_invalid_hex_returns_empty():
 def test_load_torrent_exception_returns_none(monkeypatch):
     """Test load_torrent function returns None on exception.
     
-    CRITICAL FIX: load_torrent is a function in torrent_utils, not a method on AsyncSessionManager.
+    Note: load_torrent is a function in torrent_utils, not a method on AsyncSessionManager.
     The test should import and use the function directly.
     """
     from ccbt.session import torrent_utils
@@ -157,7 +157,7 @@ def test_parse_magnet_exception_returns_none(monkeypatch):
 async def test_start_web_interface_raises_not_implemented():
     """Test start_web_interface behavior.
     
-    CRITICAL FIX: This test was hanging due to port conflicts from previous tests.
+    Note: This test was hanging due to port conflicts from previous tests.
     The method actually calls start() which initializes network services (DHT, TCP server).
     We mock start() and IPCServer to prevent network operations and port binding.
     
@@ -169,7 +169,7 @@ async def test_start_web_interface_raises_not_implemented():
 
     mgr = AsyncSessionManager(".")
     
-    # CRITICAL FIX: Mock start() to prevent network operations and port binding
+    # Note: Mock start() to prevent network operations and port binding
     # This prevents the test from hanging on port conflicts
     with patch.object(mgr, "start", new_callable=AsyncMock) as mock_start:
         # Mock IPCServer - it's imported inside the method, so patch at the import location
@@ -449,7 +449,7 @@ def test_dht_property_returns_dht_client():
     assert mgr.dht is None
     
     # Test when dht_client is set
-    # CRITICAL FIX: Don't use spec=AsyncDHTClient as it may be mocked by network fixtures
+    # Note: Don't use spec=AsyncDHTClient as it may be mocked by network fixtures
     # Just use a plain MagicMock
     mock_dht = MagicMock()
     mgr.dht_client = mock_dht

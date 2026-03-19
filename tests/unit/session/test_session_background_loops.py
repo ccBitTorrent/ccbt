@@ -356,7 +356,7 @@ async def test_announce_loop_handles_exception_gracefully(monkeypatch):
             pass
         async def stop(self):
             pass
-        # CRITICAL FIX: Mock announce() method - loop will use this if announce_to_multiple doesn't exist
+        # Note: Mock announce() method - loop will use this if announce_to_multiple doesn't exist
         async def announce(self, td, port=None, event=""):
             call_count.append(1)
             raise RuntimeError("announce failed")  # Always fail
@@ -365,19 +365,19 @@ async def test_announce_loop_handles_exception_gracefully(monkeypatch):
     td = {
         "name": "test",
         "info_hash": b"1" * 20,
-        "announce": "http://tracker.example.com/announce",  # CRITICAL FIX: Need announce URL for loop to run
+        "announce": "http://tracker.example.com/announce",  # Note: Need announce URL for loop to run
         "pieces_info": {"num_pieces": 0, "piece_length": 0, "piece_hashes": [], "total_length": 0},
         "file_info": {"total_length": 0},
     }
 
     session = AsyncTorrentSession(td, ".")
     session.tracker = _Tracker()
-    # CRITICAL FIX: _stop_event must NOT be set initially (is_stopped() checks this)
+    # Note: _stop_event must NOT be set initially (is_stopped() checks this)
     # Create new event that is NOT set
     session._stop_event = asyncio.Event()
     session.config.network.announce_interval = 0.01
     
-    # CRITICAL FIX: Ensure session.info exists and has proper structure
+    # Note: Ensure session.info exists and has proper structure
     # The announce loop needs valid session state
     if not hasattr(session, 'info') or session.info is None:
         from ccbt.session.session import TorrentSessionInfo
@@ -429,13 +429,13 @@ async def test_status_loop_calls_on_status_update(monkeypatch):
     session.on_status_update = _cb
     session._stop_event = asyncio.Event()
     
-    # CRITICAL FIX: StatusLoop uses get_status() method on session (async method)
+    # Note: StatusLoop uses get_status() method on session (async method)
     # Mock get_status to return status dict
     async def mock_get_status():
         return {"progress": 0.5, "peers": 0, "connected_peers": 0, "download_rate": 0.0, "upload_rate": 0.0}
     session.get_status = mock_get_status
     
-    # CRITICAL FIX: Ensure peer_manager doesn't cause AttributeError
+    # Note: Ensure peer_manager doesn't cause AttributeError
     # StatusLoop checks: getattr(self.s.download_manager, "peer_manager", None) or self.s.peer_manager
     # Set it to None to avoid AttributeError
     session.peer_manager = None

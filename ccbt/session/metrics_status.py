@@ -158,6 +158,12 @@ class StatusLoop:
                             status["productive_peers"] = connection_summary.get(
                                 "productive_connections", 0
                             )
+                            status["handshake_complete_peers"] = connection_summary.get(
+                                "handshake_complete_connections", 0
+                            )
+                            status["extension_capable_peers"] = connection_summary.get(
+                                "extension_capable_connections", 0
+                            )
                             status["metadata_capable_peers"] = connection_summary.get(
                                 "metadata_capable_connections", 0
                             )
@@ -171,6 +177,15 @@ class StatusLoop:
                 connected_peers = status.get("connected_peers", 0)
                 productive_peers = status.get("productive_peers", connected_peers)
                 requestable_peers = status.get("requestable_peers", 0)
+                handshake_complete_peers = int(
+                    status.get("handshake_complete_peers", 0) or 0
+                )
+                extension_capable_peers = int(
+                    status.get("extension_capable_peers", 0) or 0
+                )
+                metadata_capable_peers = int(
+                    status.get("metadata_capable_peers", 0) or 0
+                )
                 download_rate = status.get("download_rate", 0.0)
                 upload_rate = status.get("upload_rate", 0.0)
                 download_complete = status.get(
@@ -200,6 +215,15 @@ class StatusLoop:
                         requestable_from_swarm = int(
                             swarm_state.get("requestable_peers", 0) or 0
                         )
+                        handshake_complete_from_swarm = int(
+                            swarm_state.get("handshake_complete_peers", 0) or 0
+                        )
+                        extension_capable_from_swarm = int(
+                            swarm_state.get("extension_capable_peers", 0) or 0
+                        )
+                        metadata_capable_from_swarm = int(
+                            swarm_state.get("metadata_capable_peers", 0) or 0
+                        )
                         piece_info_from_swarm = int(
                             swarm_state.get("peers_with_piece_info", 0) or 0
                         )
@@ -209,6 +233,21 @@ class StatusLoop:
                             productive_peers = productive_from_swarm
                         if requestable_from_swarm > 0 or requestable_peers == 0:
                             requestable_peers = requestable_from_swarm
+                        if (
+                            handshake_complete_from_swarm > 0
+                            or handshake_complete_peers == 0
+                        ):
+                            handshake_complete_peers = handshake_complete_from_swarm
+                        if (
+                            extension_capable_from_swarm > 0
+                            or extension_capable_peers == 0
+                        ):
+                            extension_capable_peers = extension_capable_from_swarm
+                        if (
+                            metadata_capable_from_swarm > 0
+                            or metadata_capable_peers == 0
+                        ):
+                            metadata_capable_peers = metadata_capable_from_swarm
                         if piece_info_from_swarm > 0 or peers_with_piece_info == 0:
                             peers_with_piece_info = piece_info_from_swarm
                 active_block_requests = int(
@@ -216,6 +255,11 @@ class StatusLoop:
                 )
                 hash_verification_failures = int(
                     piece_metrics.get("hash_verification_failures", 0) or 0
+                )
+                metadata_incomplete = bool(
+                    self.s._metadata_is_incomplete()  # noqa: SLF001
+                    if hasattr(self.s, "_metadata_is_incomplete")
+                    else False
                 )
                 tracker_anomalies = 0
                 tracker = getattr(self.s, "tracker", None)
@@ -332,12 +376,128 @@ class StatusLoop:
                                 no_piece_info_marker
                             )
                             self.s.logger.warning(
-                                "STALL_MARKER: metadata is complete but connected peers still have no piece availability "
+                                "STALL_MARKER[connected_no_availability]: metadata is complete but connected peers still have no piece availability "
                                 "(connected=%d, requestable=%d, active_requests=%d, hash_failures=%d): %s",
                                 connected_peers,
                                 requestable_peers,
                                 active_block_requests,
                                 hash_verification_failures,
+                                self.s.info.name,
+                            )
+                    if (
+                        metadata_incomplete
+                        and handshake_complete_peers > 0
+                        and extension_capable_peers == 0
+                    ):
+                        handshake_no_extension_marker = (
+                            connected_peers,
+                            handshake_complete_peers,
+                            metadata_capable_peers,
+                        )
+                        if (
+                            getattr(self.s, "_last_handshake_no_extension_marker", None)
+                            != handshake_no_extension_marker
+                        ):
+                            vars(self.s)["_last_handshake_no_extension_marker"] = (
+                                handshake_no_extension_marker
+                            )
+                            self.s.logger.warning(
+                                "STALL_MARKER[handshake_complete_but_no_extension]: peers are completing the base handshake but none advertise BEP 10 support "
+                                "(connected=%d, handshake_complete=%d, metadata_capable=%d): %s",
+                                connected_peers,
+                                handshake_complete_peers,
+                                metadata_capable_peers,
+                                self.s.info.name,
+                            )
+                    if (
+                        metadata_incomplete
+                        and extension_capable_peers > 0
+                        and metadata_capable_peers == 0
+                    ):
+                        extension_no_metadata_marker = (
+                            connected_peers,
+                            handshake_complete_peers,
+                            extension_capable_peers,
+                        )
+                        if (
+                            getattr(self.s, "_last_extension_no_metadata_marker", None)
+                            != extension_no_metadata_marker
+                        ):
+                            vars(self.s)["_last_extension_no_metadata_marker"] = (
+                                extension_no_metadata_marker
+                            )
+                            self.s.logger.warning(
+                                "STALL_MARKER[extension_complete_but_no_metadata]: peers advertise extension support but none have progressed to ut_metadata capability "
+                                "(connected=%d, handshake_complete=%d, extension_capable=%d): %s",
+                                connected_peers,
+                                handshake_complete_peers,
+                                extension_capable_peers,
+                                self.s.info.name,
+                            )
+                    if (
+                        connected_peers > 0
+                        and peers_with_piece_info > 0
+                        and requestable_peers == 0
+                    ):
+                        no_requestable_marker = (
+                            connected_peers,
+                            peers_with_piece_info,
+                            active_block_requests,
+                            hash_verification_failures,
+                        )
+                        if (
+                            getattr(self.s, "_last_no_requestable_marker", None)
+                            != no_requestable_marker
+                        ):
+                            vars(self.s)["_last_no_requestable_marker"] = (
+                                no_requestable_marker
+                            )
+                            self.s.logger.warning(
+                                "STALL_MARKER[availability_no_requestable_peers]: peers have advertised availability but none are currently requestable "
+                                "(connected=%d, piece_info=%d, active_requests=%d, hash_failures=%d): %s",
+                                connected_peers,
+                                peers_with_piece_info,
+                                active_block_requests,
+                                hash_verification_failures,
+                                self.s.info.name,
+                            )
+                    dht_client = getattr(
+                        getattr(self.s, "session_manager", None), "dht_client", None
+                    )
+                    routing_table_size = 0
+                    if dht_client is not None:
+                        with contextlib.suppress(Exception):
+                            routing_table_size = len(
+                                getattr(
+                                    getattr(dht_client, "routing_table", None),
+                                    "nodes",
+                                    [],
+                                )
+                            )
+                    if (
+                        metadata_incomplete
+                        and routing_table_size == 0
+                        and connected_peers == 0
+                        and productive_peers == 0
+                    ):
+                        zero_node_marker = (
+                            connected_peers,
+                            productive_peers,
+                            routing_table_size,
+                        )
+                        if (
+                            getattr(self.s, "_last_zero_node_dht_marker", None)
+                            != zero_node_marker
+                        ):
+                            vars(self.s)["_last_zero_node_dht_marker"] = (
+                                zero_node_marker
+                            )
+                            self.s.logger.warning(
+                                "STALL_MARKER[zero_node_dht_lookup]: metadata is incomplete, no productive peers exist, and the DHT routing table is empty "
+                                "(connected=%d, productive=%d, routing_table_size=%d): %s",
+                                connected_peers,
+                                productive_peers,
+                                routing_table_size,
                                 self.s.info.name,
                             )
                     if active_block_requests > 0:
@@ -352,7 +512,7 @@ class StatusLoop:
                         if getattr(self.s, "_last_stall_marker", None) != stall_marker:
                             vars(self.s)["_last_stall_marker"] = stall_marker
                             self.s.logger.warning(
-                                "STALL_MARKER: downloading with outstanding requests but zero productive peers "
+                                "STALL_MARKER[requests_outstanding_no_productive_peers]: downloading with outstanding requests but zero productive peers "
                                 "(connected=%d, requestable=%d, piece_info=%d, active_requests=%d, hash_failures=%d): %s",
                                 connected_peers,
                                 requestable_peers,
@@ -378,6 +538,9 @@ class StatusLoop:
                     "connected_peers": connected_peers,
                     "productive_peers": productive_peers,
                     "requestable_peers": requestable_peers,
+                    "handshake_complete_peers": handshake_complete_peers,
+                    "extension_capable_peers": extension_capable_peers,
+                    "metadata_capable_peers": metadata_capable_peers,
                     "peers_with_piece_info": peers_with_piece_info,
                     "download_rate": download_rate,
                     "upload_rate": upload_rate,
@@ -387,7 +550,7 @@ class StatusLoop:
                 }
                 self.s._cached_status = cached_status  # noqa: SLF001
 
-                # CRITICAL FIX: Safety check - if download is complete but files aren't finalized
+                # Note: Safety check - if download is complete but files aren't finalized
                 # This catches cases where completion was detected but finalization failed or was missed
                 if (
                     self.s.piece_manager

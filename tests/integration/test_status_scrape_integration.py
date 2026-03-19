@@ -56,7 +56,7 @@ class TestStatusScrapeIntegration:
         from ccbt.models import CheckpointFormat
         config.disk.checkpoint_format = CheckpointFormat.BINARY
         config.disk.checkpoint_enabled = True
-        # CRITICAL FIX: Add limits config with real integer values to support comparisons
+        # Note: Add limits config with real integer values to support comparisons
         config.limits = MagicMock()
         config.limits.global_down_kib = 0
         config.limits.global_up_kib = 0
@@ -77,7 +77,7 @@ class TestStatusScrapeIntegration:
         with patch("ccbt.session.session.get_config") as mock_get_config:
             mock_get_config.return_value = mock_config
 
-            # CRITICAL FIX: Comprehensive network mocking to prevent port conflicts
+            # Note: Comprehensive network mocking to prevent port conflicts
             mock_tracker = AsyncMock()
             mock_tracker.start = AsyncMock()
             mock_tracker.stop = AsyncMock()
@@ -101,7 +101,7 @@ class TestStatusScrapeIntegration:
             session._make_tcp_server = lambda: None  # type: ignore[method-assign]
 
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
-                # CRITICAL FIX: Mock TorrentAdditionHandler to prevent waiting for session startup
+                # Note: Mock TorrentAdditionHandler to prevent waiting for session startup
                 from ccbt.session.torrent_addition import TorrentAdditionHandler
                 async def mock_wait_for_starting_session(self, session):
                     """Mock to immediately mark session as ready."""
@@ -199,7 +199,7 @@ class TestStatusScrapeIntegration:
         from ccbt.models import ScrapeResult
         from tests.conftest import create_test_torrent_dict
 
-        # CRITICAL FIX: Comprehensive network mocking to prevent timeout
+        # Note: Comprehensive network mocking to prevent timeout
         # Mock AsyncTrackerClient to prevent real network operations
         mock_tracker = AsyncMock()
         mock_tracker.start = AsyncMock()
@@ -218,7 +218,7 @@ class TestStatusScrapeIntegration:
         session_manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
 
         with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
-            # CRITICAL FIX: Mock TorrentAdditionHandler to prevent waiting for session startup
+            # Note: Mock TorrentAdditionHandler to prevent waiting for session startup
             from ccbt.session.torrent_addition import TorrentAdditionHandler
             async def mock_wait_for_starting_session(self, session):
                 """Mock to immediately mark session as ready."""
@@ -294,7 +294,7 @@ class TestStatusScrapeIntegration:
         from rich.console import Console
         from io import StringIO
 
-        # CRITICAL FIX: Comprehensive network mocking to prevent port conflicts
+        # Note: Comprehensive network mocking to prevent port conflicts
         mock_tracker = AsyncMock()
         mock_tracker.start = AsyncMock()
         mock_tracker.stop = AsyncMock()
@@ -318,7 +318,7 @@ class TestStatusScrapeIntegration:
         session_manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
 
         with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
-            # CRITICAL FIX: Mock TorrentAdditionHandler to prevent waiting for session startup
+            # Note: Mock TorrentAdditionHandler to prevent waiting for session startup
             from ccbt.session.torrent_addition import TorrentAdditionHandler
             async def mock_wait_for_starting_session(self, session):
                 """Mock to immediately mark session as ready."""

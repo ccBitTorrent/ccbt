@@ -122,7 +122,7 @@ class TorrentExecutor(CommandExecutor):
 
         logger = logging.getLogger(__name__)
         try:
-            # CRITICAL FIX: Wrap adapter call in try-except to prevent daemon crashes
+            # Note: Wrap adapter call in try-except to prevent daemon crashes
             # Align timeout with IPC server timeout (120s for magnets, 60s for torrents)
             # This prevents conflicts between executor and IPC server timeouts
             try:

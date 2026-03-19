@@ -93,7 +93,7 @@ def interactive_cli(mock_session, mock_config_manager):
     console.print = Mock()
     console.clear = Mock()
     console.print_json = Mock()
-    # CRITICAL FIX: Rich Progress requires console.get_time method
+    # Note: Rich Progress requires console.get_time method
     import time
     console.get_time = Mock(return_value=time.time)
     
@@ -2616,7 +2616,7 @@ async def test_update_download_stats_with_status(interactive_cli):
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
     
-    # CRITICAL FIX: Mock executor.execute to return status data in expected format
+    # Note: Mock executor.execute to return status data in expected format
     from unittest.mock import AsyncMock
     mock_status = {
         "download_rate": 1000.0,

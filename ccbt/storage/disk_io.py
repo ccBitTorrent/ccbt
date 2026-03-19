@@ -57,6 +57,7 @@ from ccbt.config.config import get_config
 from ccbt.config.config_capabilities import SystemCapabilities
 from ccbt.models import PreallocationStrategy
 from ccbt.storage.buffers import get_buffer_manager
+from ccbt.utils.compat import to_thread_compat
 from ccbt.utils.exceptions import DiskError
 from ccbt.utils.logging_config import get_logger
 
@@ -735,7 +736,7 @@ class DiskIOManager:
         if sys.platform == "win32":
             await self._windows_cleanup_delay()
 
-        # CRITICAL FIX: Close Xet deduplication database to prevent Windows file locking issues
+        # Note: Close Xet deduplication database to prevent Windows file locking issues
         # This ensures the database file is properly closed before teardown
         if self._xet_deduplication:
             try:
@@ -781,7 +782,7 @@ class DiskIOManager:
     async def _shutdown_executor_safely(self) -> None:
         """Safely shutdown the ThreadPoolExecutor, waiting for all tasks to complete."""
         try:
-            # CRITICAL FIX: Shutdown executor with wait=True to ensure all tasks complete
+            # Note: Shutdown executor with wait=True to ensure all tasks complete
             # This prevents threads from continuing to run and log after shutdown
             # shutdown(wait=True) will:
             # 1. Prevent new tasks from being submitted
@@ -795,7 +796,7 @@ class DiskIOManager:
             # This allows cancellation to work if needed
             try:
                 await asyncio.wait_for(
-                    asyncio.to_thread(self.executor.shutdown, wait=True),
+                    to_thread_compat(self.executor.shutdown, wait=True),
                     timeout=10.0,
                 )
                 self.logger.debug("Disk I/O executor shutdown completed")
@@ -805,7 +806,7 @@ class DiskIOManager:
                 )
                 # Force shutdown if timeout
                 with contextlib.suppress(Exception):
-                    await asyncio.to_thread(
+                    await to_thread_compat(
                         self.executor.shutdown, wait=False
                     )  # Ignore errors during forced shutdown
         except Exception as e:  # pragma: no cover - Executor shutdown error handling, defensive fallback
@@ -817,7 +818,7 @@ class DiskIOManager:
             with contextlib.suppress(
                 Exception
             ):  # pragma: no cover - Force shutdown fallback, defensive
-                await asyncio.to_thread(
+                await to_thread_compat(
                     self.executor.shutdown, wait=False
                 )  # Ignore errors during forced shutdown
 
@@ -1444,7 +1445,7 @@ class DiskIOManager:
 
     async def _flush_file_writes(self, file_path: Path) -> None:
         """Flush writes for a specific file."""
-        # CRITICAL FIX: Check if manager is shutting down before processing writes
+        # Note: Check if manager is shutting down before processing writes
         # This prevents submitting new writes to executor after shutdown starts
         if not self._running:
             self.logger.debug(
@@ -1520,7 +1521,7 @@ class DiskIOManager:
             # Ignore ring buffer processing errors
             pass  # Ring buffer processing errors are expected
 
-        # CRITICAL FIX: Check again before submitting to executor
+        # Note: Check again before submitting to executor
         # This handles race condition where _running becomes False between checks
         if not self._running:
             self.logger.debug(
@@ -1806,7 +1807,7 @@ class DiskIOManager:
 
                     # Flush any remaining staged data
                     flush_run()
-                    # CRITICAL FIX: Sync file to disk before closing
+                    # Note: Sync file to disk before closing
                     # This ensures all data is written to disk, not just OS buffers
                     try:
                         os.fsync(fd)
@@ -1832,7 +1833,7 @@ class DiskIOManager:
                         self.stats["writes"] += 1
                         self.stats["bytes_written"] += len(data)
                         self._record_write_timing(len(data))
-                    # CRITICAL FIX: Sync file to disk in fallback path
+                    # Note: Sync file to disk in fallback path
                     try:
                         os.fsync(f.fileno())
                     except OSError as fsync_error:
@@ -2143,7 +2144,7 @@ class DiskIOManager:
 
     async def _adjust_workers(self) -> None:
         """Background task to adjust worker count based on queue depth."""
-        # CRITICAL FIX: Wait for initial activity before adjusting workers
+        # Note: Wait for initial activity before adjusting workers
         # This prevents unnecessary recreation at startup when queue is empty
         # Wait 30 seconds to allow system to stabilize and accumulate some work
         await asyncio.sleep(30.0)
@@ -2183,7 +2184,7 @@ class DiskIOManager:
                         min(max_workers, max(min_workers, (total_queue // 50) + 1)),
                     )
 
-                    # CRITICAL FIX: Don't reduce workers if queue is empty and we haven't seen activity
+                    # Note: Don't reduce workers if queue is empty and we haven't seen activity
                     # Only reduce workers if queue has been consistently low for a while
                     # This prevents premature reduction at startup
                     if total_queue == 0 and target_workers < current_workers:

@@ -163,7 +163,7 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                 self._update_task.cancel()
             
             async def update_loop() -> None:
-                # CRITICAL FIX: Use app's event loop for task creation
+                # Note: Use app's event loop for task creation
                 loop = None
                 try:
                     if hasattr(self.app, "loop"):
@@ -175,17 +175,17 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                 
                 while True:
                     try:
-                        # CRITICAL FIX: Only update if widget is visible and attached
+                        # Note: Only update if widget is visible and attached
                         if self.is_attached and self.display:  # type: ignore[attr-defined]
                             await self._update_peer_data()
-                        await asyncio.sleep(1.0)  # CRITICAL FIX: Reduced from 2.0s to 1.0s for tighter updates
+                        await asyncio.sleep(1.0)  # Note: Reduced from 2.0s to 1.0s for tighter updates
                     except asyncio.CancelledError:
                         break
                     except Exception as e:
                         logger.error("Error in peer update loop: %s", e, exc_info=True)
                         await asyncio.sleep(2.0)
             
-            # CRITICAL FIX: Use app's event loop for task creation
+            # Note: Use app's event loop for task creation
             try:
                 if hasattr(self.app, "loop"):
                     self._update_task = self.app.loop.create_task(update_loop())  # type: ignore[attr-defined]
@@ -202,7 +202,7 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
             logger.warning("PerPeerTabContent: Missing data provider, cannot update peer data")
             return
         
-        # CRITICAL FIX: Ensure widget is visible and attached before updating
+        # Note: Ensure widget is visible and attached before updating
         if not self.is_attached or not self.display:  # type: ignore[attr-defined]
             logger.debug("PerPeerTabContent: Widget not attached or not visible, skipping update")
             return
@@ -227,13 +227,13 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
             
             # Update global peers table
             if self._global_peers_table:
-                # CRITICAL FIX: Ensure table is visible and attached before populating
+                # Note: Ensure table is visible and attached before populating
                 if not self._global_peers_table.is_attached or not self._global_peers_table.display:  # type: ignore[attr-defined]
                     logger.debug("PerPeerTabContent: Table not attached or not visible, skipping population")
                     return
                 
                 self._global_peers_table.clear()  # type: ignore[attr-defined]
-                # CRITICAL FIX: Ensure columns exist (clear() might remove them)
+                # Note: Ensure columns exist (clear() might remove them)
                 if not self._global_peers_table.columns:  # type: ignore[attr-defined]
                     self._global_peers_table.add_columns(
                         _("IP:Port"),
@@ -288,7 +288,7 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
             
             logger.debug("PerPeerTabContent: Added %d peers to table", len(peers))
             
-            # CRITICAL FIX: Force table refresh and ensure visibility
+            # Note: Force table refresh and ensure visibility
             if hasattr(self._global_peers_table, "refresh"):
                 self._global_peers_table.refresh()  # type: ignore[attr-defined]
             self._global_peers_table.display = True  # type: ignore[attr-defined]

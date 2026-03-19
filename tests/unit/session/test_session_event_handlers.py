@@ -155,7 +155,7 @@ async def test_on_piece_verified_saves_checkpoint_when_configured(monkeypatch, t
     session = AsyncTorrentSession(td, str(tmp_path))
     session.checkpoint_manager = _CPM()
     session.piece_manager = _PM()
-    # CRITICAL FIX: Update ctx.piece_manager to match session.piece_manager
+    # Note: Update ctx.piece_manager to match session.piece_manager
     # The CheckpointController uses ctx.piece_manager, not session.piece_manager
     session.ctx.piece_manager = session.piece_manager
     session.config.disk.checkpoint_enabled = True

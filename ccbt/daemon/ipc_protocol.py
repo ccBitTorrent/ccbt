@@ -217,6 +217,27 @@ class TorrentStatusResponse(BaseModel):
     )
     pieces_completed: int = Field(0, description="Number of completed pieces")
     pieces_total: int = Field(0, description="Total number of pieces")
+    tracker_status: Optional[str] = Field(None, description="Tracker health state")
+    last_tracker_error: Optional[str] = Field(
+        None, description="Last tracker-specific error"
+    )
+    last_error: Optional[str] = Field(None, description="Last torrent/session error")
+    productive_peers: int = Field(0, description="Peers currently making progress")
+    requestable_peers: int = Field(
+        0, description="Peers currently eligible for requests"
+    )
+    handshake_complete_peers: int = Field(
+        0, description="Peers that completed the base BitTorrent handshake"
+    )
+    extension_capable_peers: int = Field(
+        0, description="Peers that advertised BEP 10 extension support"
+    )
+    metadata_capable_peers: int = Field(
+        0, description="Peers that advertised ut_metadata support"
+    )
+    hash_verification_failures: int = Field(
+        0, description="Pieces rejected after hash verification"
+    )
 
 
 class TorrentListResponse(BaseModel):
@@ -778,6 +799,28 @@ class GlobalStatsResponse(BaseModel):
     )
 
 
+# UI Snapshot (first-paint hydration)
+class UISnapshotResponse(BaseModel):
+    """Single response for dashboard first-paint: global stats, torrent list, services, and minimal rate history."""
+
+    global_stats: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Global session statistics (same shape as session/stats)",
+    )
+    torrents: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of torrent status dicts (same shape as GET /torrents)",
+    )
+    services_status: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Coarse status of dht, nat, tcp_server, peer_service, ipc_server",
+    )
+    rate_samples: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Recent rate samples for graph (timestamp, download_rate, upload_rate); may be truncated",
+    )
+
+
 # Protocol Models
 class ProtocolInfo(BaseModel):
     """Protocol information."""
@@ -1059,6 +1102,22 @@ class DHTQueryMetricsResponse(BaseModel):
     last_query_depth: int = Field(0, description="Query depth of last query")
     last_query_nodes_queried: int = Field(0, description="Nodes queried in last query")
     routing_table_size: int = Field(0, description="Current DHT routing table size")
+    bootstrap_success_count: int = Field(
+        0, description="Number of successful bootstrap or rebootstrap attempts"
+    )
+    bootstrap_failure_count: int = Field(
+        0, description="Number of failed bootstrap or rebootstrap attempts"
+    )
+    last_bootstrap_reason: str = Field(
+        "", description="Reason label for the last bootstrap attempt"
+    )
+    last_bootstrap_failure_reason: str = Field(
+        "", description="Last recorded bootstrap failure reason"
+    )
+    last_zero_node_lookup_at: float = Field(
+        0.0,
+        description="Timestamp of the last lookup that queried zero nodes",
+    )
 
 
 class PeerQualityMetricsResponse(BaseModel):

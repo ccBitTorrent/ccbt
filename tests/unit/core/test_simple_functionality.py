@@ -37,7 +37,7 @@ class TestSimpleFunctionality:
         # Test some basic config values
         assert config.network.max_global_peers == 200
         assert config.disk.write_batch_kib == 64
-        # CRITICAL FIX: piece_selection may be deserialized as string (from config files) or enum (from code)
+        # Note: piece_selection may be deserialized as string (from config files) or enum (from code)
         # Handle both cases - check string value directly or enum value
         piece_selection_value = (
             config.strategy.piece_selection.value

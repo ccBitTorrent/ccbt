@@ -562,7 +562,7 @@ class PeerConnectionHelper:
         if not peer_list:
             return
 
-        # CRITICAL FIX: Validate peer_manager exists before attempting to connect
+        # Note: Validate peer_manager exists before attempting to connect
         # If peer_manager is not ready, queue peers for later connection
         peer_manager = getattr(self.session.download_manager, "peer_manager", None)
         if not peer_manager:
@@ -576,6 +576,7 @@ class PeerConnectionHelper:
             # Add timestamp to each peer for timeout checking
             current_time = time.time()
             for peer in peer_list:
+                peer.setdefault("_discovery_source", peer.get("peer_source", "unknown"))
                 peer["_queued_at"] = current_time
             self.session._queued_peers.extend(peer_list)  # noqa: SLF001
             self.session.logger.debug(
@@ -592,9 +593,50 @@ class PeerConnectionHelper:
             len(peer_list),
             self.session.info.name if hasattr(self.session, "info") else "unknown",
         )
+        recent_failure_snapshot: dict[str, dict[str, Any]] = {}
+        # Intentional access to peer_manager private attrs for failure snapshot (hasattr guarded)
+        if hasattr(peer_manager, "_failed_peer_lock") and hasattr(
+            peer_manager, "_failed_peers"
+        ):
+            async with peer_manager._failed_peer_lock:  # noqa: SLF001  # type: ignore[attr-defined]
+                recent_failure_snapshot = {
+                    key: dict(value)
+                    for key, value in peer_manager._failed_peers.items()  # noqa: SLF001  # type: ignore[attr-defined]
+                }
+        source_outcomes: dict[str, dict[str, int]] = {}
+        for peer in peer_list:
+            source = str(peer.get("peer_source", "unknown") or "unknown")
+            peer.setdefault("_discovery_source", source)
+            peer_key = f"{peer.get('ip', '')}:{peer.get('port', 0)}"
+            source_metrics = source_outcomes.setdefault(
+                source, {"fresh": 0, "recent_failures": 0}
+            )
+            failure_info = recent_failure_snapshot.get(peer_key)
+            if failure_info:
+                peer["_recent_failure_count"] = int(failure_info.get("count", 0) or 0)
+                peer["_recent_failure_reason"] = str(
+                    failure_info.get("reason", "unknown")
+                )
+                peer["_recent_failure_at"] = float(
+                    failure_info.get("timestamp", 0.0) or 0.0
+                )
+                source_metrics["recent_failures"] += 1
+            else:
+                source_metrics["fresh"] += 1
+        if source_outcomes:
+            self.session.logger.info(
+                "Peer attempt provenance for %s: %s",
+                self.session.info.name if hasattr(self.session, "info") else "unknown",
+                ", ".join(
+                    [
+                        f"{source} fresh={metrics['fresh']} retry={metrics['recent_failures']}"
+                        for source, metrics in source_outcomes.items()
+                    ]
+                ),
+            )
         ranked_peers = self._rank_peers_by_quality(peer_list)
 
-        # CRITICAL FIX: Log quality filtering results
+        # Note: Log quality filtering results
         filtered_count = len(peer_list) - len(ranked_peers)
         if filtered_count > 0:
             self.session.logger.debug(
@@ -605,7 +647,7 @@ class PeerConnectionHelper:
                 self.session.info.name if hasattr(self.session, "info") else "unknown",
             )
 
-        # CRITICAL FIX: Add detailed logging for peer connection attempts
+        # Note: Add detailed logging for peer connection attempts
         peer_sources = {}
         for peer in ranked_peers:
             source = peer.get("peer_source", "unknown")
@@ -623,21 +665,18 @@ class PeerConnectionHelper:
 
         # Use ranked peers instead of original list
         peer_list = ranked_peers
+        converted_by_source = self.session._peer_discovery_metrics.get(  # noqa: SLF001
+            "peers_converted_to_attempts_by_source", {}
+        )
+        for source, count in peer_sources.items():
+            if source in converted_by_source:
+                converted_by_source[source] += count
+            else:
+                converted_by_source["unknown"] = (
+                    converted_by_source.get("unknown", 0) + count
+                )
 
         # Update peer discovery metrics
-        for peer in peer_list:
-            source = peer.get("peer_source", "unknown")
-            if (
-                source
-                in self.session._peer_discovery_metrics["peers_discovered_by_source"]  # noqa: SLF001
-            ):
-                self.session._peer_discovery_metrics["peers_discovered_by_source"][  # noqa: SLF001
-                    source
-                ] += 1
-            else:
-                self.session._peer_discovery_metrics["peers_discovered_by_source"][  # noqa: SLF001
-                    "unknown"
-                ] += 1
         self.session._peer_discovery_metrics["connection_attempts"] += len(peer_list)  # noqa: SLF001
         self.session._peer_discovery_metrics["last_peer_discovery_time"] = time.time()  # noqa: SLF001
 
@@ -653,9 +692,9 @@ class PeerConnectionHelper:
                 "..." if len(peer_list) > 5 else "",
             )
 
-        # CRITICAL FIX: Wait for peer_manager to be fully initialized if download has started
+        # Note: Wait for peer_manager to be fully initialized if download has started
         # This handles the race condition where download is started but peer_manager isn't ready yet
-        # CRITICAL FIX: Increased max_wait_attempts and wait_interval for better reliability
+        # Note: Increased max_wait_attempts and wait_interval for better reliability
         max_wait_attempts = 20  # Increased from 10 to allow more time for initialization (10 seconds total)
         wait_interval = 0.5
         peer_manager: Optional[AsyncPeerConnectionManager] = None  # type: ignore[assignment]
@@ -666,7 +705,7 @@ class PeerConnectionHelper:
             peer_manager = getattr(self.session.download_manager, "peer_manager", None)
             peer_manager_source = "download_manager"
 
-            # CRITICAL FIX: Check if peer_manager is fully initialized (has required methods AND is started)
+            # Note: Check if peer_manager is fully initialized (has required methods AND is started)
             if peer_manager and hasattr(peer_manager, "connect_to_peers"):
                 # Verify peer_manager is started (has _running flag or connections dict)
                 # Also check that connections dict exists and is accessible
@@ -738,7 +777,7 @@ class PeerConnectionHelper:
                     )
                     await asyncio.sleep(wait_interval)
                 else:
-                    # CRITICAL FIX: If peer_manager still not ready after max attempts, log detailed diagnostics
+                    # Note: If peer_manager still not ready after max attempts, log detailed diagnostics
                     self.session.logger.warning(
                         "Peer manager not initialized after %d attempts - cannot connect peers. "
                         "download_manager=%s, has_peer_manager=%s, peer_manager_type=%s, "
@@ -770,7 +809,7 @@ class PeerConnectionHelper:
                 len(peer_list),
             )
 
-            # CRITICAL FIX: Process queued peers now that peer_manager is ready
+            # Note: Process queued peers now that peer_manager is ready
             if hasattr(self.session, "_queued_peers") and self.session._queued_peers:  # noqa: SLF001
                 queued_count = len(self.session._queued_peers)  # noqa: SLF001
                 self.session.logger.info(
@@ -828,7 +867,7 @@ class PeerConnectionHelper:
                     if hasattr(self.session, "info")
                     else "unknown",
                 )
-                # CRITICAL FIX: connect_to_peers() returns after scheduling tasks, not after connections complete
+                # Note: connect_to_peers() returns after scheduling tasks, not after connections complete
                 # Wait a short time for connections to establish, then check actual connection count
                 await asyncio.sleep(2.0)  # Give connections time to establish
 
@@ -885,6 +924,10 @@ class PeerConnectionHelper:
                     self.session._peer_discovery_metrics[  # noqa: SLF001
                         "last_peer_connection_time"
                     ] = time.time()
+                    if hasattr(peer_manager, "connections"):
+                        self.session.update_usable_live_peers_by_source(
+                            peer_manager.connections  # type: ignore[attr-defined]
+                        )
                 elif actual_peers > 0:
                     self.session.logger.warning(
                         "Connected to %d peer(s) but none are active yet (total connections: %d, errors: %d, batches_in_progress=%s, summary=%s). "
@@ -899,6 +942,10 @@ class PeerConnectionHelper:
                     self.session._peer_discovery_metrics["connection_successes"] += (  # noqa: SLF001
                         actual_peers
                     )
+                    if hasattr(peer_manager, "connections"):
+                        self.session.update_usable_live_peers_by_source(
+                            peer_manager.connections  # type: ignore[attr-defined]
+                        )
                 elif batches_in_progress:
                     self.session.logger.info(
                         "Peer connection batches are still in progress for %s after scheduling %d peer(s); deferring failure classification",
@@ -917,6 +964,10 @@ class PeerConnectionHelper:
                     self.session._peer_discovery_metrics["connection_failures"] += len(  # noqa: SLF001
                         peer_list
                     )
+                    if hasattr(peer_manager, "connections"):
+                        self.session.update_usable_live_peers_by_source(
+                            peer_manager.connections  # type: ignore[attr-defined]
+                        )
                 # Update cache with new peer count - but use actual connected count
                 # connect_to_peers doesn't guarantee all peers connect, so we check actual connections
                 if hasattr(peer_manager, "connections"):

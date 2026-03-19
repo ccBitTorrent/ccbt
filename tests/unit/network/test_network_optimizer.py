@@ -180,10 +180,15 @@ class TestSocketOptimizer:
     def test_optimize_socket_keepalive_os_error(self, socket_optimizer):
         """Test optimizing socket when keepalive options raise OSError."""
         sock = MagicMock(spec=socket.socket)
+        tcp_keepidle = getattr(
+            socket,
+            "TCP_KEEPIDLE",
+            getattr(socket, "TCP_KEEPALIVE", None),
+        )
         
-        # Make TCP_KEEPIDLE raise OSError
+        # Make platform keepalive-idle option raise OSError
         def mock_setsockopt(*args, **kwargs):
-            if len(args) > 1 and args[1] == socket.TCP_KEEPIDLE:
+            if tcp_keepidle is not None and len(args) > 1 and args[1] == tcp_keepidle:
                 raise OSError("Option not supported")
             return MagicMock()
         

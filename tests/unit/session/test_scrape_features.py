@@ -45,7 +45,7 @@ def mock_config():
     from ccbt.models import CheckpointFormat
     config.disk.checkpoint_format = CheckpointFormat.BINARY  # Real enum value
     config.disk.checkpoint_enabled = True
-    # CRITICAL FIX: Add limits attribute to prevent TypeError
+    # Note: Add limits attribute to prevent TypeError
     config.limits = MagicMock()
     config.limits.global_down_kib = 0
     config.limits.global_up_kib = 0

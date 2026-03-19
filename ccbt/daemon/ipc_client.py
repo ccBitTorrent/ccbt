@@ -70,6 +70,7 @@ from ccbt.daemon.ipc_protocol import (
     TorrentListResponse,
     TorrentStatusResponse,
     TrackerListResponse,
+    UISnapshotResponse,
     WebSocketEvent,
     WebSocketMessage,
     WebSocketSubscribeRequest,
@@ -191,7 +192,7 @@ class IPCClient:
             RuntimeError: If event loop is closed or not in async context
 
         """
-        # CRITICAL FIX: Verify we're in an async context with a running event loop
+        # Note: Verify we're in an async context with a running event loop
         try:
             current_loop = asyncio.get_running_loop()
             if current_loop.is_closed():
@@ -213,7 +214,7 @@ class IPCClient:
                 raise RuntimeError(msg) from e
             raise
 
-        # CRITICAL FIX: Recreate session if it's bound to a different or closed loop
+        # Note: Recreate session if it's bound to a different or closed loop
         # aiohttp.ClientSession binds to the event loop when created. If the session was
         # created in a different loop (e.g., a previous asyncio.run() call), it cannot be
         # used in the current loop even if the old loop is closed.
@@ -230,7 +231,7 @@ class IPCClient:
             if self._session and not self.session.closed:
                 try:
                     await self.session.close()
-                    # CRITICAL FIX: On Windows, wait longer for session cleanup to prevent socket buffer exhaustion
+                    # Note: On Windows, wait longer for session cleanup to prevent socket buffer exhaustion
                     import sys
 
                     if sys.platform == "win32":
@@ -245,7 +246,7 @@ class IPCClient:
                                 except Exception:
                                     pass
                 except Exception as e:
-                    # CRITICAL FIX: Handle WinError 10055 gracefully
+                    # Note: Handle WinError 10055 gracefully
                     import sys
 
                     error_code = getattr(e, "winerror", None) or getattr(
@@ -258,10 +259,10 @@ class IPCClient:
                     else:
                         logger.debug("Error closing session: %s", e)
 
-            # CRITICAL FIX: Create session in the current running loop context
+            # Note: Create session in the current running loop context
             # aiohttp.ClientSession will automatically use the current running loop
             # In aiohttp 3.x+, we don't pass loop parameter (it's deprecated)
-            # CRITICAL FIX: Add connection limits to prevent Windows socket buffer exhaustion (WinError 10055)
+            # Note: Add connection limits to prevent Windows socket buffer exhaustion (WinError 10055)
             # Windows has limited socket buffer space, so we need to limit concurrent connections
             import sys
 
@@ -382,7 +383,7 @@ class IPCClient:
                     )  # Increased wait time on Windows
                     await asyncio.sleep(wait_time)
 
-                    # CRITICAL FIX: On Windows, also close the connector to ensure all sockets are released
+                    # Note: On Windows, also close the connector to ensure all sockets are released
                     if sys.platform == "win32" and hasattr(self._session, "connector"):
                         connector = self.session.connector
                         if connector and not connector.closed:
@@ -396,7 +397,7 @@ class IPCClient:
             except Exception as e:
                 logger.debug(_("Error closing HTTP session: %s"), e)
             finally:
-                # CRITICAL FIX: On Windows, ensure connector is also closed to release all sockets
+                # Note: On Windows, ensure connector is also closed to release all sockets
                 import sys
 
                 if (
@@ -496,7 +497,7 @@ class IPCClient:
             daemon_error_msg = f"Daemon error when adding torrent: {error_msg}"
             raise RuntimeError(daemon_error_msg) from e
         except RuntimeError as e:
-            # CRITICAL FIX: Catch "Event loop is closed" errors specifically
+            # Note: Catch "Event loop is closed" errors specifically
             if "event loop is closed" in str(e).lower():
                 logger.exception(
                     "Event loop is closed when adding torrent to daemon at %s. "
@@ -2208,6 +2209,15 @@ class IPCClient:
             data = await resp.json()
             return GlobalStatsResponse(**data)
 
+    async def get_ui_snapshot(self) -> UISnapshotResponse:
+        """Get dashboard first-paint snapshot (global stats, torrents, services, rate samples).
+
+        Returns:
+            UISnapshotResponse with global_stats, torrents, services_status, rate_samples.
+        """
+        data = await self._get_json("/ui/snapshot")
+        return UISnapshotResponse(**data)
+
     async def global_pause_all(self) -> dict[str, Any]:
         """Pause all torrents.
 
@@ -2888,7 +2898,7 @@ class IPCClient:
             port = parsed.port or DEFAULT_IPC_PORT
 
             # Quick socket test to verify port is open
-            # CRITICAL FIX: On Windows, error 10035 (WSAEWOULDBLOCK) can be a false positive
+            # Note: On Windows, error 10035 (WSAEWOULDBLOCK) can be a false positive
             # Skip socket test if we get this error and proceed to HTTP check
             import sys
 
@@ -3012,7 +3022,7 @@ class IPCClient:
             PID or None if not found or invalid
 
         """
-        # CRITICAL FIX: Use consistent path resolution helper to match daemon
+        # Note: Use consistent path resolution helper to match daemon
         from ccbt.daemon.daemon_manager import _get_daemon_home_dir
 
         home_dir = _get_daemon_home_dir()
@@ -3029,7 +3039,7 @@ class IPCClient:
             return None
 
         try:
-            # CRITICAL FIX: Read with retry to handle race conditions
+            # Note: Read with retry to handle race conditions
             import time
 
             pid_text = None

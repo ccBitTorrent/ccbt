@@ -252,7 +252,7 @@ class TestAsyncSessionManagerErrorPaths:
         from ccbt.discovery.tracker import TrackerResponse
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
 
-        # CRITICAL FIX: Mock tracker client to prevent real network calls that cause timeout
+        # Note: Mock tracker client to prevent real network calls that cause timeout
         mock_tracker_response = TrackerResponse(
             interval=1800,
             peers=[],
@@ -286,7 +286,7 @@ class TestAsyncSessionManagerErrorPaths:
         
         # CRITICAL: Create a fully mocked AsyncTrackerClient instance
         # This prevents any real network calls during session.start()
-        # CRITICAL FIX: Use a real async function for start() that returns immediately
+        # Note: Use a real async function for start() that returns immediately
         # This ensures the coroutine completes immediately when awaited
         async def mock_start():
             """Mock start() that returns immediately."""
@@ -307,7 +307,7 @@ class TestAsyncSessionManagerErrorPaths:
         
         # CRITICAL: Patch AsyncTrackerClient at ALL import locations
         # The session creates the tracker in __init__, so we need to patch it before the session is created
-        # CRITICAL FIX: Use patch.object to patch the instance method directly after session creation
+        # Note: Use patch.object to patch the instance method directly after session creation
         with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker_client), \
              patch("ccbt.discovery.tracker.AsyncTrackerClient", return_value=mock_tracker_client), \
              patch("ccbt.session.announce.AnnounceLoop.run", mock_announce_loop_run), \
@@ -345,7 +345,7 @@ class TestAsyncSessionManagerErrorPaths:
                 },
             }
 
-            # CRITICAL FIX: Patch AsyncTorrentSession.__init__ to patch tracker.start() immediately
+            # Note: Patch AsyncTorrentSession.__init__ to patch tracker.start() immediately
             # This ensures the mock is in place before session.start() is called
             from ccbt.session.session import AsyncTorrentSession
             from unittest.mock import patch as mock_patch
@@ -480,7 +480,7 @@ class TestAsyncSessionManagerErrorPaths:
         # Wait for background tasks to complete and state to stabilize
         await asyncio.sleep(0.2)
 
-        # CRITICAL FIX: Mock get_peers_for_torrent to return empty list to prevent hanging
+        # Note: Mock get_peers_for_torrent to return empty list to prevent hanging
         # The method may block indefinitely if peer_service is not properly initialized
         mock_get_peers = AsyncMock(return_value=[])
         with patch.object(manager, "get_peers_for_torrent", mock_get_peers):

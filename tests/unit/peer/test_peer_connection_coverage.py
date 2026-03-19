@@ -194,7 +194,7 @@ class TestCallbacks:
 
         manager.on_peer_connected = callback
 
-        # CRITICAL FIX: Start the manager before connecting to peers
+        # Note: Start the manager before connecting to peers
         # The manager must be running (_running=True) for _connect_to_peer to proceed
         await manager.start()
 
@@ -203,9 +203,9 @@ class TestCallbacks:
         mock_writer = MagicMock()
         mock_writer.drain = AsyncMock()
         mock_writer.write = MagicMock()
-        # CRITICAL FIX: Mock is_closing to return False - checked after TCP connection
+        # Note: Mock is_closing to return False - checked after TCP connection
         mock_writer.is_closing = Mock(return_value=False)
-        # CRITICAL FIX: Mock get_extra_info for socket optimization code path
+        # Note: Mock get_extra_info for socket optimization code path
         mock_writer.get_extra_info = Mock(return_value=None)
         mock_writer.wait_closed = AsyncMock(return_value=None)
         mock_writer.close = MagicMock()
@@ -215,7 +215,7 @@ class TestCallbacks:
         handshake = Handshake(info_hash, b"test_peer_id_20_byte")
         proper_handshake_data = handshake.encode()  # 68 bytes
         
-        # CRITICAL FIX: Mock readexactly to handle protocol length (1 byte) then remaining (67 bytes)
+        # Note: Mock readexactly to handle protocol length (1 byte) then remaining (67 bytes)
         handshake_calls = {"protocol_len": False, "remaining": False}
         async def readexactly_side_effect(n):
             if n == 1 and not handshake_calls["protocol_len"]:
@@ -235,7 +235,7 @@ class TestCallbacks:
                     with patch.object(manager, "_handle_peer_messages", new_callable=AsyncMock):
                         await manager._connect_to_peer(peer_info)
 
-                        # CRITICAL FIX: Wait for callback to be called (connection is async)
+                        # Note: Wait for callback to be called (connection is async)
                         max_wait = 0.2
                         start_time = asyncio.get_event_loop().time()
                         while not callback_called:
@@ -267,14 +267,14 @@ class TestCallbacks:
         manager.on_piece_received = callback
 
         peer_info = PeerInfo(ip="192.168.1.100", port=6881)
-        # CRITICAL FIX: Use AsyncPeerConnection instead of PeerConnection
+        # Note: Use AsyncPeerConnection instead of PeerConnection
         from ccbt.peer.async_peer_connection import AsyncPeerConnection
         connection = AsyncPeerConnection(peer_info, manager.torrent_data)
         connection.state = ConnectionState.ACTIVE
-        # CRITICAL FIX: Initialize outstanding_requests for AsyncPeerConnection
+        # Note: Initialize outstanding_requests for AsyncPeerConnection
         connection.outstanding_requests = {}
         
-        # CRITICAL FIX: Configure piece_manager.pieces to support subscript access
+        # Note: Configure piece_manager.pieces to support subscript access
         from ccbt.piece.async_piece_manager import PieceState
         mock_piece = Mock()
         mock_piece.state = PieceState.MISSING
@@ -301,7 +301,7 @@ class TestCallbacks:
         manager.on_peer_disconnected = callback
 
         peer_info = PeerInfo(ip="192.168.1.100", port=6881)
-        # CRITICAL FIX: Use AsyncPeerConnection instead of PeerConnection
+        # Note: Use AsyncPeerConnection instead of PeerConnection
         from ccbt.peer.async_peer_connection import AsyncPeerConnection
         connection = AsyncPeerConnection(peer_info, manager.torrent_data)
         connection.state = ConnectionState.CONNECTED
@@ -309,7 +309,7 @@ class TestCallbacks:
         async with manager.connection_lock:
             manager.connections[peer_key] = connection
 
-        # CRITICAL FIX: Use _disconnect_peer instead of _handle_connection_error
+        # Note: Use _disconnect_peer instead of _handle_connection_error
         # _handle_connection_error doesn't exist, but _disconnect_peer handles disconnection
         await manager._disconnect_peer(connection)
 
@@ -409,7 +409,7 @@ class TestMessageHandling:
 
         mock_reader = AsyncMock()
         # First read: length, second read: payload, then raise IncompleteReadError to exit loop gracefully
-        # CRITICAL FIX: Use a valid message type (0-8) so the message reaches the decoder
+        # Note: Use a valid message type (0-8) so the message reaches the decoder
         # Message type 0 = choke, but we'll use type 1 = unchoke (valid message type)
         call_count = [0]
         async def readexactly_side_effect(n):
@@ -456,11 +456,11 @@ class TestMessageHandling:
     async def test_handle_message_keep_alive(self, manager):
         """Test _handle_message with KeepAliveMessage."""
         peer_info = PeerInfo(ip="192.168.1.100", port=6881)
-        # CRITICAL FIX: Use AsyncPeerConnection instead of PeerConnection
+        # Note: Use AsyncPeerConnection instead of PeerConnection
         # _handle_message expects AsyncPeerConnection which has peer_choking attribute
         connection = AsyncPeerConnection(peer_info, manager.torrent_data)
         connection.state = ConnectionState.ACTIVE
-        # CRITICAL FIX: AsyncPeerConnection uses stats.last_activity, not last_activity directly
+        # Note: AsyncPeerConnection uses stats.last_activity, not last_activity directly
         initial_activity = connection.stats.last_activity
 
         await asyncio.sleep(0.01)  # Small delay

@@ -207,7 +207,7 @@ class CheckpointController:
         """
         try:
             # Get checkpoint state from piece manager
-            # CRITICAL FIX: Use session's piece_manager if ctx doesn't have it (for test compatibility)
+            # Note: Use session's piece_manager if ctx doesn't have it (for test compatibility)
             piece_manager = self._ctx.piece_manager
             if not piece_manager and hasattr(session, "piece_manager"):
                 piece_manager = session.piece_manager
@@ -423,7 +423,7 @@ class CheckpointController:
                 # Serialize resume data for storage
                 checkpoint.resume_data = resume_data.model_dump()
 
-            # CRITICAL FIX: Save the enriched checkpoint directly instead of calling _save_once()
+            # Note: Save the enriched checkpoint directly instead of calling _save_once()
             # which would create a new checkpoint from piece manager, losing the enriched metadata
             # Use session's checkpoint_manager if available (for test compatibility), otherwise use _manager
             checkpoint_manager = (

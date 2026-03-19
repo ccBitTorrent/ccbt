@@ -271,7 +271,7 @@ class TonicFile:
 
         """
         info = tonic_data.get("info", {})
-        # CRITICAL FIX: Check for both "file_tree" (from _extract_tonic_data) and "file tree" (from raw bencoded)
+        # Note: Check for both "file_tree" (from _extract_tonic_data) and "file tree" (from raw bencoded)
         # Also check for bytes keys for backward compatibility
         file_tree = (
             info.get("file_tree")  # From _extract_tonic_data (parsed format)

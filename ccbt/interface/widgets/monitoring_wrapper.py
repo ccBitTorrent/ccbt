@@ -7,15 +7,7 @@ tabbed interface graphs section without requiring full screen push.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
-
-if TYPE_CHECKING:
-    from ccbt.session.session import AsyncSessionManager
-else:
-    try:
-        from ccbt.session.session import AsyncSessionManager
-    except ImportError:
-        AsyncSessionManager = None  # type: ignore[assignment, misc]
+from typing import Any, Optional
 
 try:
     from textual.containers import Container, Vertical
@@ -71,7 +63,6 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
         self._screen_type = screen_type
         self._data_provider = data_provider
         self._content_widget: Optional[Static] = None
-        self._monitoring_screen: Optional[Any] = None
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the monitoring wrapper."""
@@ -82,66 +73,11 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
         """Mount the monitoring wrapper and start refresh."""
         try:
             self._content_widget = self.query_one("#monitoring-placeholder", Static)  # type: ignore[attr-defined]
-            
-            # Create appropriate monitoring screen instance
-            self._monitoring_screen = self._create_monitoring_screen()
-            
-            # Start periodic refresh
+            # Content is refreshed via DataProvider only (no Screen instances)
             self.set_interval(2.0, self._refresh_content)  # type: ignore[attr-defined]
-            # Initial refresh
             self.call_later(self._refresh_content)  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error mounting monitoring wrapper: %s", e)
-
-    def _create_monitoring_screen(self) -> Any:  # pragma: no cover
-        """Create the appropriate monitoring screen instance.
-
-        Note: We don't actually mount the Screen - we just use it to call
-        its _refresh_data method and extract content. Screens are meant
-        to be pushed as full overlays, not embedded in containers.
-
-        Returns:
-            MonitoringScreen instance (for method calls only, not for mounting)
-        """
-        screen_map = {
-            "disk_io": "DiskIOMetricsScreen",
-            "system_resources": "SystemResourcesScreen",
-            "network": "NetworkQualityScreen",
-            "performance": "PerformanceMetricsScreen",
-            "queue": "QueueMetricsScreen",
-            "tracker": "TrackerMetricsScreen",
-        }
-        
-        screen_class_name = screen_map.get(self._screen_type)
-        if not screen_class_name:
-            logger.warning("Unknown monitoring screen type: %s", self._screen_type)
-            return None
-        
-        try:
-            # Import the screen class
-            # Note: We create the instance but don't mount it as a Screen
-            # Instead, we call its methods to get data and render it ourselves
-            if screen_class_name == "DiskIOMetricsScreen":
-                from ccbt.interface.screens.monitoring.disk_io import DiskIOMetricsScreen
-                return DiskIOMetricsScreen(self._session, refresh_interval=2.0)
-            elif screen_class_name == "SystemResourcesScreen":
-                from ccbt.interface.screens.monitoring.system_resources import SystemResourcesScreen
-                return SystemResourcesScreen(self._session, refresh_interval=2.0)
-            elif screen_class_name == "NetworkQualityScreen":
-                from ccbt.interface.screens.monitoring.network import NetworkQualityScreen
-                return NetworkQualityScreen(self._session, refresh_interval=2.0)
-            elif screen_class_name == "PerformanceMetricsScreen":
-                from ccbt.interface.screens.monitoring.performance import PerformanceMetricsScreen
-                return PerformanceMetricsScreen(self._session, refresh_interval=2.0)
-            elif screen_class_name == "QueueMetricsScreen":
-                from ccbt.interface.screens.monitoring.queue import QueueMetricsScreen
-                return QueueMetricsScreen(self._session, refresh_interval=2.0)
-            elif screen_class_name == "TrackerMetricsScreen":
-                from ccbt.interface.screens.monitoring.tracker import TrackerMetricsScreen
-                return TrackerMetricsScreen(self._session, refresh_interval=2.0)
-        except Exception as e:
-            logger.debug("Error creating monitoring screen: %s", e)
-            return None
 
     async def _refresh_content(self) -> None:  # pragma: no cover
         """Refresh the monitoring content.
@@ -186,180 +122,77 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
             return None
 
     async def _get_disk_io_content(self) -> str:  # pragma: no cover
-        """Get disk I/O metrics content.
-        
-        Uses the same logic as DiskIOMetricsScreen._refresh_data() but
-        renders to a string for display in our container widget.
-        """
+        """Get disk I/O metrics content from DataProvider (daemon or local)."""
         try:
-            from ccbt.storage.disk_io_init import get_disk_io_manager
-            
-            # Get disk I/O manager (same as DiskIOMetricsScreen)
-            try:
-                disk_io = get_disk_io_manager()
-            except Exception as e:
-                return f"Disk I/O manager not available: {e}"
-            
-            # Get stats (matching DiskIOMetricsScreen logic)
-            # DiskIOMetricsScreen uses disk_io.stats and disk_io.get_cache_stats()
-            stats = disk_io.stats  # type: ignore[attr-defined]
-            cache_stats_data = disk_io.get_cache_stats()  # type: ignore[attr-defined]
-            
-            # Extract I/O stats
-            writes = stats.get("writes", 0)
-            bytes_written = stats.get("bytes_written", 0)
-            read_throughput = stats.get("read_throughput", 0.0)
-            write_throughput = stats.get("write_throughput", 0.0)
-            queue_depth = stats.get("queue_depth", 0)
-            
-            # Extract cache stats
-            cache_entries = cache_stats_data.get("entries", 0)
-            cache_total_size = cache_stats_data.get("total_size", 0)
-            cache_hits = cache_stats_data.get("cache_hits", 0)
-            cache_misses = cache_stats_data.get("cache_misses", 0)
-            
+            if not self._data_provider:
+                return "Data provider not available."
+            metrics = await self._data_provider.get_disk_io_metrics()
+            read_throughput = float(metrics.get("read_throughput", 0.0))
+            write_throughput = float(metrics.get("write_throughput", 0.0))
+            cache_hit_rate = float(metrics.get("cache_hit_rate", 0.0))
+            timing_ms = float(metrics.get("timing_ms", 0.0))
+
+            from io import StringIO
+
             from rich.console import Console
             from rich.panel import Panel
             from rich.table import Table
-            from io import StringIO
-            
-            # I/O Stats table (matching DiskIOMetricsScreen format)
-            io_table = Table(title="Disk I/O Statistics", expand=True, show_header=True)
-            io_table.add_column("Metric", style="cyan", ratio=1)
-            io_table.add_column("Value", style="green", ratio=2)
-            
-            def format_speed(bps: float) -> str:
-                """Format bytes per second."""
+
+            def format_speed(kib_s: float) -> str:
+                bps = kib_s * 1024.0
                 for unit, factor in [("GB/s", 1024**3), ("MB/s", 1024**2), ("KB/s", 1024)]:
                     if bps >= factor:
                         return f"{bps / factor:.2f} {unit}"
                 return f"{bps:.2f} B/s"
-            
+
+            io_table = Table(title="Disk I/O Statistics", expand=True, show_header=True)
+            io_table.add_column("Metric", style="cyan", ratio=1)
+            io_table.add_column("Value", style="green", ratio=2)
             io_table.add_row("Read Throughput", format_speed(read_throughput))
             io_table.add_row("Write Throughput", format_speed(write_throughput))
-            io_table.add_row("Queue Depth", str(queue_depth))
-            
-            # Cache Stats table
-            cache_table = Table(title="Cache Statistics", expand=True, show_header=True)
-            cache_table.add_column("Metric", style="cyan", ratio=1)
-            cache_table.add_column("Value", style="green", ratio=2)
-            
-            def format_bytes(b: float) -> str:
-                """Format bytes in human-readable format."""
-                b_int = int(b)
-                if b_int >= 1024 * 1024 * 1024:
-                    return f"{b_int / (1024**3):.2f} GB"
-                if b_int >= 1024 * 1024:
-                    return f"{b_int / (1024**2):.2f} MB"
-                if b_int >= 1024:
-                    return f"{b_int / 1024:.2f} KB"
-                return f"{b_int} B"
-            
-            cache_table.add_row("Cache Entries", f"{cache_entries:,}")
-            cache_table.add_row("Cache Size", format_bytes(cache_total_size))
-            cache_table.add_row("Cache Hits", f"{cache_hits:,}")
-            cache_table.add_row("Cache Misses", f"{cache_misses:,}")
-            
-            # Calculate hit rate if available
-            total_accesses = cache_hits + cache_misses
-            if total_accesses > 0:
-                hit_rate = (cache_hits / total_accesses) * 100.0
-                cache_table.add_row("Hit Rate", f"{hit_rate:.1f}%")
-            
-            # Render both tables
+            io_table.add_row("Cache Hit Rate", f"{cache_hit_rate:.1f}%")
+            io_table.add_row("Timing (avg ms)", f"{timing_ms:.2f}")
+
             console = Console(file=StringIO(), width=80, height=20)
             console.print(Panel(io_table, title="Disk I/O", border_style="blue"))
-            console.print()
-            console.print(Panel(cache_table, title="Cache", border_style="green"))
-            
             return console.file.getvalue()  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error getting disk I/O content: %s", e)
             return f"Disk I/O Error: {e}"
 
     async def _get_system_resources_content(self) -> str:  # pragma: no cover
-        """Get system resources content.
-        
-        Uses the same logic as SystemResourcesScreen._refresh_data() but
-        renders to a string for display in our container widget.
-        """
+        """Get system resources content from DataProvider (daemon or local)."""
         try:
-            from ccbt.monitoring import get_metrics_collector
-            metrics_collector = get_metrics_collector()
-            
-            if not metrics_collector or not metrics_collector.running:
-                from rich.panel import Panel
-                from rich.console import Console
-                from io import StringIO
-                console = Console(file=StringIO(), width=60, height=5)
-                console.print(Panel(
-                    "Metrics collector not running. Enable metrics in configuration.",
-                    title="System Resources",
-                    border_style="yellow",
-                ))
-                return console.file.getvalue()  # type: ignore[attr-defined]
-            
-            system_metrics = metrics_collector.get_system_metrics()
-            cpu = system_metrics.get("cpu_usage", 0.0)
-            memory = system_metrics.get("memory_usage", 0.0)
-            disk = system_metrics.get("disk_usage", 0.0)
-            process_count = system_metrics.get("process_count", 0)
-            
-            # Network I/O
-            network_io = system_metrics.get("network_io", {})
-            bytes_sent = network_io.get("bytes_sent", 0)
-            bytes_recv = network_io.get("bytes_recv", 0)
-            
+            if not self._data_provider:
+                return "Data provider not available."
+            metrics = await self._data_provider.get_system_metrics()
+            cpu = float(metrics.get("cpu_usage", 0.0))
+            memory = float(metrics.get("memory_usage", 0.0))
+            disk = float(metrics.get("disk_usage", 0.0))
+
+            from io import StringIO
+
             from rich.console import Console
             from rich.panel import Panel
             from rich.table import Table
-            from io import StringIO
-            
-            # Main metrics table (matching SystemResourcesScreen format)
-            table = Table(title="System Resources", expand=True)
-            table.add_column("Resource", style="cyan", ratio=2)
-            table.add_column("Usage", style="green", ratio=2)
-            table.add_column("Progress", style="yellow", ratio=4)
-            
+
             def format_progress_bar(value: float, max_value: float = 100.0) -> str:
-                """Create text progress bar (matching SystemResourcesScreen)."""
                 percentage = min(100.0, max(0.0, (value / max_value) * 100.0))
                 bar_length = 30
                 filled = int((percentage / 100.0) * bar_length)
                 bar = "█" * filled + "░" * (bar_length - filled)
                 return f"[{bar}] {percentage:.1f}%"
-            
+
+            table = Table(title="System Resources", expand=True)
+            table.add_column("Resource", style="cyan", ratio=2)
+            table.add_column("Usage", style="green", ratio=2)
+            table.add_column("Progress", style="yellow", ratio=4)
             table.add_row("CPU", f"{cpu:.1f}%", format_progress_bar(cpu, 100.0))
             table.add_row("Memory", f"{memory:.1f}%", format_progress_bar(memory, 100.0))
             table.add_row("Disk", f"{disk:.1f}%", format_progress_bar(disk, 100.0))
-            table.add_row("Processes", str(process_count), "")
-            
-            # Network I/O table
-            network_table = Table(
-                title="Network I/O", expand=True, show_header=False, box=None
-            )
-            network_table.add_column("Direction", style="cyan", ratio=1)
-            network_table.add_column("Bytes", style="green", ratio=2)
-            network_table.add_column("Formatted", style="dim", ratio=2)
-            
-            def format_bytes(b: float) -> str:
-                """Format bytes to human-readable format."""
-                b_float = float(b)
-                for unit in ["B", "KB", "MB", "GB", "TB"]:
-                    if b_float < 1024.0:
-                        return f"{b_float:.2f} {unit}"
-                    b_float /= 1024.0
-                return f"{b_float:.2f} PB"
-            
-            network_table.add_row("Sent", str(bytes_sent), format_bytes(bytes_sent))
-            network_table.add_row("Received", str(bytes_recv), format_bytes(bytes_recv))
-            
-            # Render both tables
+
             console = Console(file=StringIO(), width=80, height=20)
-            console.print(Panel(table, title="System Resources"))
-            console.print()
-            console.print(Panel(network_table, title="Network I/O"))
-            
+            console.print(Panel(table, title="System Resources", border_style="green"))
             return console.file.getvalue()  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error getting system resources content: %s", e)

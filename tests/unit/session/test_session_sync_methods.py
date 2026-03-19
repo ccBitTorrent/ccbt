@@ -52,6 +52,8 @@ async def test_get_global_stats_with_paused_torrents(monkeypatch):
     from ccbt.session.session import AsyncSessionManager
 
     class _Session:
+        info = type("Info", (), {"status": "paused"})()
+
         async def get_status(self):
             return {"status": "paused"}
 
@@ -72,6 +74,8 @@ async def test_get_global_stats_with_seeding_torrents(monkeypatch):
     from ccbt.session.session import AsyncSessionManager
 
     class _Session:
+        info = type("Info", (), {"status": "seeding"})()
+
         async def get_status(self):
             return {"status": "seeding"}
 
@@ -92,14 +96,20 @@ async def test_get_global_stats_with_mixed_statuses(monkeypatch):
     from ccbt.session.session import AsyncSessionManager
 
     class _Session1:
+        info = type("Info", (), {"status": "downloading"})()
+
         async def get_status(self):
             return {"status": "downloading"}
 
     class _Session2:
+        info = type("Info", (), {"status": "paused"})()
+
         async def get_status(self):
             return {"status": "paused"}
 
     class _Session3:
+        info = type("Info", (), {"status": "seeding"})()
+
         async def get_status(self):
             return {"status": "seeding"}
 

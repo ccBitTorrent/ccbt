@@ -276,12 +276,14 @@ class TestCredentialStoreInitialization:
 
     def test_credential_store_init_default_dir(self):
         """Test CredentialStore initialization with default directory (coverage line 96-102)."""
-        with patch("ccbt.proxy.auth.Path.home") as mock_home:
-            mock_home.return_value = Path("/fake/home")
-            
-            store = CredentialStore()
-            assert store.config_dir == Path("/fake/home") / ".config" / "ccbt"
-            assert store.key_file == store.config_dir / ".proxy_key"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_home = Path(tmpdir)
+            with patch("ccbt.proxy.auth.Path.home") as mock_home:
+                mock_home.return_value = fake_home
+
+                store = CredentialStore()
+                assert store.config_dir == fake_home / ".config" / "ccbt"
+                assert store.key_file == store.config_dir / ".proxy_key"
 
     def test_credential_store_init_custom_dir(self):
         """Test CredentialStore initialization with custom directory."""

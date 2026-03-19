@@ -27,7 +27,7 @@ from ccbt.utils.logging_config import get_logger, log_info_normal
 logger = get_logger(__name__)
 console = Console()
 
-# CRITICAL FIX: Suppress Windows ProactorEventLoop cleanup warnings
+# Note: Suppress Windows ProactorEventLoop cleanup warnings
 # This is a known Python bug (https://bugs.python.org/issue39232) where
 # ProactorEventLoop cleanup raises AttributeError for _ssock during __del__
 # The error occurs during garbage collection and doesn't affect functionality
@@ -324,7 +324,7 @@ def start(
             await daemon_main.run()
 
         try:
-            # CRITICAL FIX: Use asyncio.run() - it properly handles KeyboardInterrupt
+            # Note: Use asyncio.run() - it properly handles KeyboardInterrupt
             # The daemon's run() method also catches KeyboardInterrupt and ensures cleanup
             # On Windows, asyncio.run() should properly propagate KeyboardInterrupt
             asyncio.run(_run_foreground())
@@ -344,7 +344,7 @@ def start(
                         "Shutdown event set from CLI KeyboardInterrupt handler"
                     )
 
-                # CRITICAL FIX: If stop() wasn't called yet (event loop was cancelled before handler ran),
+                # Note: If stop() wasn't called yet (event loop was cancelled before handler ran),
                 # try to ensure shutdown completes in a new event loop
                 if not daemon_main_ref.is_stopping:
                     try:

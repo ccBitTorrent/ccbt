@@ -62,7 +62,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
         display: block;
     }
     
-    /* Left pane: Workflow (File Browser + Controls) - CRITICAL FIX: Swapped to 2fr */
+    /* Left pane: Workflow (File Browser + Controls) - Note: Swapped to 2fr */
     #workflow-pane {
         width: 2fr;
         min-width: 80;
@@ -86,7 +86,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
         display: block;
     }
     
-    /* Right pane: Torrent Insight (Torrents + Per-Torrent) - CRITICAL FIX: Swapped to 1fr */
+    /* Right pane: Torrent Insight (Torrents + Per-Torrent) - Note: Swapped to 1fr */
     #torrent-insight-pane {
         width: 1fr;
         min-width: 60;
@@ -146,7 +146,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
     def compose(self) -> Any:  # pragma: no cover
         """Compose the main tabs container with side-by-side panes.
         
-        CRITICAL FIX: Replaced Tabs with ButtonSelector for better visibility control.
+        Note: Replaced Tabs with ButtonSelector for better visibility control.
         """
         from ccbt.interface.widgets.button_selector import ButtonSelector
         
@@ -185,7 +185,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
             # Initialize workflow pane (left)
             self._workflow_selector = self.query_one("#workflow-selector", ButtonSelector)  # type: ignore[attr-defined]
             self._workflow_content = self.query_one("#workflow-content", Container)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure selector is active and content is visible
+            # Note: Ensure selector is active and content is visible
             if self._workflow_selector:
                 self._workflow_selector.active = "tab-file-browser"  # type: ignore[attr-defined]
             # Load initial content for File Browser tab
@@ -197,7 +197,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
             # Initialize torrent insight pane (right)
             self._torrent_insight_selector = self.query_one("#torrent-insight-selector", ButtonSelector)  # type: ignore[attr-defined]
             self._torrent_insight_content = self.query_one("#torrent-insight-content", Container)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure selector is active and content is visible
+            # Note: Ensure selector is active and content is visible
             if self._torrent_insight_selector:
                 self._torrent_insight_selector.active = "tab-torrents"  # type: ignore[attr-defined]
             # Load initial content for Torrents tab
@@ -292,9 +292,9 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                         id="file-browser-widget"
                     )
                     self._workflow_content.mount(browser)  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Ensure widget is visible and properly mounted
+                    # Note: Ensure widget is visible and properly mounted
                     browser.display = True  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Ensure workflow content container is visible
+                    # Note: Ensure workflow content container is visible
                     if self._workflow_content:
                         self._workflow_content.display = True  # type: ignore[attr-defined]
                     # Schedule refresh after mount completes
@@ -327,7 +327,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                         id="torrent-controls-widget"
                     )
                     self._workflow_content.mount(controls)  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Ensure widget is visible and properly mounted
+                    # Note: Ensure widget is visible and properly mounted
                     controls.display = True  # type: ignore[attr-defined]
                     # Schedule refresh after mount completes
                     def refresh_after_mount() -> None:
@@ -386,7 +386,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                         id="torrents-content"
                     )
                 self._torrent_insight_content.mount(content)  # type: ignore[attr-defined]
-                # CRITICAL FIX: Ensure widget is visible
+                # Note: Ensure widget is visible
                 content.display = True  # type: ignore[attr-defined]
             else:
                 placeholder = Static(_("Torrents tab - Data provider or executor not available"), id="torrents-content")
@@ -415,7 +415,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                     if hasattr(content, "_selected_info_hash"):
                         content._selected_info_hash = self._selected_torrent_hash
                 self._torrent_insight_content.mount(content)  # type: ignore[attr-defined]
-                # CRITICAL FIX: Ensure widget is visible
+                # Note: Ensure widget is visible
                 content.display = True  # type: ignore[attr-defined]
             else:
                 placeholder = Static(_("Per-Torrent tab - Data provider or executor not available"), id="per-torrent-content")
@@ -431,7 +431,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                     id="per-peer-content"
                 )
                 self._torrent_insight_content.mount(content)  # type: ignore[attr-defined]
-                # CRITICAL FIX: Ensure widget is visible
+                # Note: Ensure widget is visible
                 content.display = True  # type: ignore[attr-defined]
             else:
                 placeholder = Static(_("Per-Peer tab - Data provider or executor not available"), id="per-peer-content")
@@ -500,10 +500,10 @@ class MainTabsContainer(Container):  # type: ignore[misc]
         selector_id = getattr(selector, "id", None)
         if selector_id == "workflow-selector":
             self._load_workflow_tab_content(selection_id)
-            # CRITICAL FIX: Refresh content after loading and ensure visibility
+            # Note: Refresh content after loading and ensure visibility
             if selection_id == "tab-file-browser":
                 try:
-                    # CRITICAL FIX: query_one() doesn't accept can_be_none parameter in Textual
+                    # Note: query_one() doesn't accept can_be_none parameter in Textual
                     # Use try/except pattern instead
                     try:
                         file_browser = self._workflow_content.query_one("#file-browser-widget")  # type: ignore[attr-defined]
@@ -519,7 +519,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                     logger.debug("Error refreshing file browser: %s", e)
             elif selection_id == "tab-controls":
                 try:
-                    # CRITICAL FIX: query_one() doesn't accept can_be_none parameter in Textual
+                    # Note: query_one() doesn't accept can_be_none parameter in Textual
                     # Use try/except pattern instead
                     try:
                         controls = self._workflow_content.query_one("#torrent-controls-widget")  # type: ignore[attr-defined]
@@ -536,14 +536,14 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                     logger.debug("Error refreshing torrent controls: %s", e)
         elif selector_id == "torrent-insight-selector":
             self._load_insight_tab_content(selection_id)
-            # CRITICAL FIX: Ensure content area is visible
+            # Note: Ensure content area is visible
             if self._torrent_insight_content:
                 self._torrent_insight_content.display = True  # type: ignore[attr-defined]
-            # CRITICAL FIX: Refresh content after loading
+            # Note: Refresh content after loading
             if selection_id == "tab-torrents":
                 try:
                     from ccbt.interface.screens.torrents_tab import TorrentsTabContent
-                    # CRITICAL FIX: query_one() doesn't accept can_be_none parameter in Textual
+                    # Note: query_one() doesn't accept can_be_none parameter in Textual
                     torrents_content = self._torrent_insight_content.query_one(TorrentsTabContent)  # type: ignore[attr-defined]
                     if torrents_content:
                         # Trigger refresh of active sub-tab
@@ -551,7 +551,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                             from ccbt.interface.screens.torrents_tab import GlobalTorrentsScreen
                             global_screen = torrents_content.query_one(GlobalTorrentsScreen)  # type: ignore[attr-defined]
                             if global_screen and hasattr(global_screen, "refresh_torrents"):
-                                # CRITICAL FIX: refresh_torrents is async, use create_task
+                                # Note: refresh_torrents is async, use create_task
                                 import asyncio
                                 asyncio.create_task(global_screen.refresh_torrents())
                         except Exception:
@@ -561,7 +561,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
             elif selection_id == "tab-per-torrent":
                 try:
                     from ccbt.interface.screens.per_torrent_tab import PerTorrentTabContent
-                    # CRITICAL FIX: query_one() doesn't accept can_be_none parameter in Textual
+                    # Note: query_one() doesn't accept can_be_none parameter in Textual
                     per_torrent_content = self._torrent_insight_content.query_one(PerTorrentTabContent)  # type: ignore[attr-defined]
                     if per_torrent_content and hasattr(per_torrent_content, "refresh"):
                         self.call_later(per_torrent_content.refresh)  # type: ignore[attr-defined]

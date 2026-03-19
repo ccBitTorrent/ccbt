@@ -140,7 +140,16 @@ def _normalize_torrent_read_model(
         "is_private": bool(raw.get("is_private", False)),
         "output_dir": raw.get("output_dir"),
         "tracker_status": raw.get("tracker_status"),
+        "last_tracker_error": raw.get("last_tracker_error"),
         "last_error": raw.get("last_error"),
+        "productive_peers": _to_int(raw.get("productive_peers", 0)),
+        "requestable_peers": _to_int(raw.get("requestable_peers", 0)),
+        "handshake_complete_peers": _to_int(raw.get("handshake_complete_peers", 0)),
+        "extension_capable_peers": _to_int(raw.get("extension_capable_peers", 0)),
+        "metadata_capable_peers": _to_int(raw.get("metadata_capable_peers", 0)),
+        "hash_verification_failures": _to_int(
+            raw.get("hash_verification_failures", 0)
+        ),
         "uptime": _to_float(raw.get("uptime", 0.0)),
         "added_time": _to_float(raw.get("added_time", 0.0)),
         "download_complete": bool(
@@ -919,6 +928,24 @@ class DaemonDataProvider(DataProvider):
             return _normalize_global_stats_read_model(stats)
         return await self._get_cached("global_stats", _fetch)
 
+    async def get_ui_snapshot(self) -> dict[str, Any]:
+        """Get dashboard first-paint snapshot (global stats, torrents, services, rate samples) from daemon."""
+        async def _fetch() -> dict[str, Any]:
+            response = await self._client.get_ui_snapshot()
+            out = response.model_dump()
+            # Normalize global_stats for UI schema
+            if out.get("global_stats"):
+                out["global_stats"] = _normalize_global_stats_read_model(
+                    out["global_stats"],
+                )
+            # Normalize each torrent for UI schema
+            if out.get("torrents"):
+                out["torrents"] = [
+                    _normalize_torrent_read_model(t) for t in out["torrents"]
+                ]
+            return out
+        return await self._get_cached("ui_snapshot", _fetch, ttl=0.0)
+
     async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:
         """Get torrent status from daemon."""
         try:
@@ -1123,10 +1150,15 @@ class DaemonDataProvider(DataProvider):
                     {
                         "url": t.url,
                         "status": t.status,
+                        "tracker_status": t.status,
                         "seeds": t.seeds,
                         "peers": t.peers,
                         "downloaders": t.downloaders,
                         "last_update": t.last_update,
+                        "last_announce": t.last_update,
+                        "interval": 0,
+                        "failure_count": 0,
+                        "backoff_delay": 0.0,
                         "error": t.error,
                     }
                     for t in tracker_list.trackers
@@ -1463,6 +1495,17 @@ class DaemonDataProvider(DataProvider):
 
         return await self._get_cached("dht_health_summary", _fetch, ttl=2.0)
 
+    async def get_nat_status(self) -> dict[str, Any]:
+        """Get NAT status from daemon (DaemonDataProvider only)."""
+        try:
+            response = await self._client.get_nat_status()
+            d = response.model_dump()
+            d.setdefault("active_protocol", d.get("method"))
+            return d
+        except Exception as e:
+            logger.debug("DaemonDataProvider: get_nat_status failed: %s", e)
+            return {}
+
     async def get_peer_quality_distribution(self) -> dict[str, Any]:
         """Aggregate peer quality distribution metrics across all torrents.
         
@@ -1789,13 +1832,18 @@ class DaemonDataProvider(DataProvider):
                                 if count == min_availability and count > 0
                             ][:10]  # Limit to top 10
             
-            # Calculate DHT success ratio
-            dht_success_ratio = 0.0
+            # Only expose a DHT success ratio when the backend provides an explicit
+            # success counter. Derived guesses were misleading during stalled downloads.
+            dht_success_ratio: Optional[float] = None
             if dht_metrics:
-                dht_data = dht_metrics.model_dump() if hasattr(dht_metrics, "model_dump") else dht_metrics
-                queries_total = dht_data.get("queries_total", 0)
-                queries_successful = dht_data.get("queries_successful", 0)
-                if queries_total > 0:
+                dht_data = (
+                    dht_metrics.model_dump()
+                    if hasattr(dht_metrics, "model_dump")
+                    else dht_metrics
+                )
+                queries_total = dht_data.get("total_queries", 0)
+                queries_successful = dht_data.get("queries_successful")
+                if queries_total > 0 and isinstance(queries_successful, (int, float)):
                     dht_success_ratio = queries_successful / queries_total
 
             return {
@@ -1857,7 +1905,7 @@ class DaemonDataProvider(DataProvider):
                 # Fall back to IPC client if executor fails
                 pass
         
-        # CRITICAL FIX: For batch operations and service status, try IPC client directly
+        # Note: For batch operations and service status, try IPC client directly
         # if executor is not available or fails
         if command in ("torrent.batch_pause", "torrent.batch_resume", "torrent.batch_restart", "torrent.batch_remove"):
             try:
@@ -2449,6 +2497,11 @@ class LocalDataProvider(DataProvider):
                     "last_query_depth": 0,
                     "last_query_nodes_queried": 0,
                     "routing_table_size": 0,
+                    "bootstrap_success_count": 0,
+                    "bootstrap_failure_count": 0,
+                    "last_bootstrap_reason": "",
+                    "last_bootstrap_failure_reason": "",
+                    "last_zero_node_lookup_at": 0.0,
                 }
 
                 if dht_metrics:
@@ -2467,6 +2520,21 @@ class LocalDataProvider(DataProvider):
                     metrics["last_query_peers_found"] = last_query.get("peers_found", 0)
                     metrics["last_query_depth"] = last_query.get("depth", 0)
                     metrics["last_query_nodes_queried"] = last_query.get("nodes_queried", 0)
+                    metrics["bootstrap_success_count"] = dht_metrics.get(
+                        "bootstrap_success_count", 0
+                    )
+                    metrics["bootstrap_failure_count"] = dht_metrics.get(
+                        "bootstrap_failure_count", 0
+                    )
+                    metrics["last_bootstrap_reason"] = dht_metrics.get(
+                        "last_bootstrap_reason", ""
+                    )
+                    metrics["last_bootstrap_failure_reason"] = dht_metrics.get(
+                        "last_bootstrap_failure_reason", ""
+                    )
+                    metrics["last_zero_node_lookup_at"] = dht_metrics.get(
+                        "last_zero_node_lookup_at", 0.0
+                    )
 
                 dht_client = getattr(torrent_session, "dht_client", None)
                 if not dht_client and hasattr(torrent_session, "session_manager"):

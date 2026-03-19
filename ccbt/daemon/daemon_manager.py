@@ -29,7 +29,7 @@ DEFAULT_IPC_PORT = 64124
 def _get_daemon_home_dir() -> Path:
     """Get daemon home directory with consistent path resolution.
 
-    CRITICAL FIX: Use multiple methods to ensure consistent path resolution on Windows,
+    Note: Use multiple methods to ensure consistent path resolution on Windows,
     especially with spaces in usernames. Normalize the path to handle case/space differences.
 
     Returns:
@@ -126,7 +126,7 @@ class DaemonManager:
 
         """
         if state_dir is None:
-            # CRITICAL FIX: Use consistent path resolution helper
+            # Note: Use consistent path resolution helper
             home_dir = _get_daemon_home_dir()
             state_dir = home_dir / ".ccbt" / "daemon"
             logger.debug(
@@ -159,7 +159,7 @@ class DaemonManager:
         """
         if self.pid_file.exists():
             try:
-                # CRITICAL FIX: Read with retry and validation to handle race conditions
+                # Note: Read with retry and validation to handle race conditions
                 # Multiple CLI commands might read simultaneously
                 pid_text = None
                 for attempt in range(3):
@@ -239,7 +239,7 @@ class DaemonManager:
             return None
 
         try:
-            # CRITICAL FIX: Read with retry to handle race conditions
+            # Note: Read with retry to handle race conditions
             pid_text = None
             for attempt in range(3):
                 try:
@@ -332,7 +332,7 @@ class DaemonManager:
 
             if sys.platform == "win32":
                 # Windows: use exclusive file creation
-                # CRITICAL FIX: First check if lock file exists and if process is running
+                # Note: First check if lock file exists and if process is running
                 # This handles stale locks from crashed processes
                 if self.lock_file.exists():
                     try:
@@ -411,7 +411,7 @@ class DaemonManager:
                         with contextlib.suppress(OSError, PermissionError):
                             self.lock_file.unlink()  # Ignore - will try to create new lock
 
-                # CRITICAL FIX: Use atomic lock file creation with retry logic
+                # Note: Use atomic lock file creation with retry logic
                 # On Windows, file creation is atomic, but we need to handle race conditions
                 # where multiple processes try to remove stale locks simultaneously
                 max_retries = 3
@@ -594,13 +594,13 @@ class DaemonManager:
         """
         pid = os.getpid()
 
-        # CRITICAL FIX: Acquire lock before writing PID file (if not already acquired)
+        # Note: Acquire lock before writing PID file (if not already acquired)
         # This ensures atomic daemon detection
         if acquire_lock and not self.acquire_lock():
             msg = "Cannot acquire daemon lock file. Another daemon may be starting."
             raise RuntimeError(msg)
 
-        # CRITICAL FIX: Use atomic write to prevent corruption
+        # Note: Use atomic write to prevent corruption
         # Write to temp file first, then rename atomically
         # This ensures PID file is never in a corrupted state
         temp_file = self.pid_file.with_suffix(self.pid_file.suffix + ".tmp")
@@ -676,7 +676,7 @@ class DaemonManager:
 
         # Start process
         try:
-            # CRITICAL FIX: Capture stderr to a log file for background mode
+            # Note: Capture stderr to a log file for background mode
             # This allows debugging daemon startup failures
             log_file = self.state_dir / "daemon_startup.log"
             log_fd: Union[int, Any] = subprocess.DEVNULL
@@ -694,7 +694,7 @@ class DaemonManager:
                 start_new_session=True,
             )
 
-            # CRITICAL FIX: Wait longer and check multiple times
+            # Note: Wait longer and check multiple times
             # This gives the daemon time to initialize and write PID file
             # Increased to 60.0s to account for slow startup (NAT discovery can take ~35s, DHT bootstrap ~8s, etc.)
             max_wait_time = 60.0  # Maximum time to wait (NAT discovery + DHT bootstrap + IPC server startup)
@@ -847,7 +847,7 @@ class DaemonManager:
         # Store reference to shutdown callback for direct access
         self._shutdown_callback = shutdown_callback
 
-        # CRITICAL FIX: Extract daemon instance and shutdown event from callback
+        # Note: Extract daemon instance and shutdown event from callback
         # This allows us to set the event synchronously in signal handler
         daemon_instance = None
         shutdown_event = None
@@ -862,7 +862,7 @@ class DaemonManager:
 
         def signal_handler(signum: int, _frame: Any) -> None:
             """Handle shutdown signal."""
-            # CRITICAL FIX: Prevent multiple signal handler calls
+            # Note: Prevent multiple signal handler calls
             # Check if shutdown is already in progress
             if shutdown_event is not None and shutdown_event.is_set():
                 logger.debug(
@@ -874,7 +874,7 @@ class DaemonManager:
             logger.info("Received signal %d, initiating shutdown", signum)
             self._shutdown_requested = True
 
-            # CRITICAL FIX: Set global shutdown flag early to suppress verbose logging
+            # Note: Set global shutdown flag early to suppress verbose logging
             try:
                 from ccbt.utils.shutdown import set_shutdown
 
@@ -901,7 +901,7 @@ class DaemonManager:
                     "Error scheduling checkpoint save from signal handler: %s", e
                 )
 
-            # CRITICAL FIX: Set shutdown event synchronously FIRST
+            # Note: Set shutdown event synchronously FIRST
             # This ensures shutdown happens even if task creation fails
             # asyncio.Event.set() is thread-safe and works immediately
             if shutdown_event is not None:

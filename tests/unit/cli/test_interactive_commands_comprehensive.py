@@ -9,6 +9,7 @@ Covers all command handlers with full path testing:
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -225,7 +226,7 @@ async def test_cmd_template_apply(interactive_cli):
          patch('ccbt.config.config_templates.ConfigTemplates') as mock_templates, \
          patch('ccbt.config.config.set_config') as mock_set, \
          patch('ccbt.models.Config') as mock_config_model:
-        # CRITICAL FIX: Ensure mock ConfigManager has all required attributes
+        # Note: Ensure mock ConfigManager has all required attributes
         mock_config = Mock()
         mock_config.model_dump.return_value = {"existing": "config"}
         
@@ -305,7 +306,7 @@ async def test_cmd_profile_apply(interactive_cli):
          patch('ccbt.config.config_templates.ConfigProfiles') as mock_profiles, \
          patch('ccbt.config.config.set_config') as mock_set, \
          patch('ccbt.models.Config') as mock_config_model:
-        # CRITICAL FIX: Ensure mock ConfigManager has all required attributes
+        # Note: Ensure mock ConfigManager has all required attributes
         mock_config = Mock()
         mock_config.model_dump.return_value = {"existing": "config"}
         
@@ -338,12 +339,12 @@ async def test_cmd_config_backup_list(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm, \
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
-        mock_config.disk.backup_dir = "/backup/dir"
+        mock_config.disk.backup_dir = "backup/dir"
         mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_backup_instance = Mock()
         mock_backup_instance.list_backups.return_value = [
-            {"timestamp": "2024-01-01", "backup_type": "auto", "description": "desc", "file": Path("/backup/file")},
+            {"timestamp": "2024-01-01", "backup_type": "auto", "description": "desc", "file": Path("backup/file")},
         ]
         mock_backup.return_value = mock_backup_instance
         
@@ -359,7 +360,7 @@ async def test_cmd_config_backup_list_empty(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm, \
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
-        mock_config.disk.backup_dir = "/backup/dir"
+        mock_config.disk.backup_dir = "backup/dir"
         mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_backup_instance = Mock()
@@ -377,11 +378,11 @@ async def test_cmd_config_backup_create(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm, \
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
-        mock_config.disk.backup_dir = "/backup/dir"
+        mock_config.disk.backup_dir = "backup/dir"
         mock_cm.return_value = _create_mock_config_manager(mock_config, config_file="/path/to/config.toml")
         
         mock_backup_instance = Mock()
-        mock_backup_instance.create_backup.return_value = (True, "/backup/file.tar.gz", [])
+        mock_backup_instance.create_backup.return_value = (True, "backup/file.tar.gz", [])
         mock_backup.return_value = mock_backup_instance
         
         await interactive_cli.cmd_config_backup(["create"])
@@ -396,11 +397,11 @@ async def test_cmd_config_backup_create_with_description(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm, \
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
-        mock_config.disk.backup_dir = "/backup/dir"
+        mock_config.disk.backup_dir = "backup/dir"
         mock_cm.return_value = _create_mock_config_manager(mock_config, config_file="/path/to/config.toml")
         
         mock_backup_instance = Mock()
-        mock_backup_instance.create_backup.return_value = (True, "/backup/file.tar.gz", [])
+        mock_backup_instance.create_backup.return_value = (True, "backup/file.tar.gz", [])
         mock_backup.return_value = mock_backup_instance
         
         await interactive_cli.cmd_config_backup(["create", "My backup"])
@@ -414,12 +415,13 @@ async def test_cmd_config_backup_create_no_config_file(interactive_cli):
     """Test cmd_config_backup create when no config file exists (lines 1130-1132)."""
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm:
         mock_config = Mock()
-        mock_config.disk.backup_dir = "/backup/dir"
-        mock_cm.return_value = _create_mock_config_manager(mock_config, config_file=None)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mock_config.disk.backup_dir = str(Path(tmpdir) / "backup")
+            mock_cm.return_value = _create_mock_config_manager(mock_config, config_file=None)
+            
+            await interactive_cli.cmd_config_backup(["create"])
         
-        await interactive_cli.cmd_config_backup(["create"])
-        
-        assert interactive_cli.console.print.called
+            assert interactive_cli.console.print.called
 
 
 @pytest.mark.asyncio
@@ -428,7 +430,7 @@ async def test_cmd_config_backup_restore(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm, \
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
-        mock_config.disk.backup_dir = "/backup/dir"
+        mock_config.disk.backup_dir = "backup/dir"
         mock_cm.return_value = _create_mock_config_manager(mock_config, config_file="/path/to/config.toml")
         
         mock_backup_instance = Mock()
@@ -436,7 +438,7 @@ async def test_cmd_config_backup_restore(interactive_cli):
         mock_backup_instance.restore_backup.return_value = (True, [])
         mock_backup.return_value = mock_backup_instance
         
-        await interactive_cli.cmd_config_backup(["restore", "/backup/file.tar.gz"])
+        await interactive_cli.cmd_config_backup(["restore", "backup/file.tar.gz"])
         
         mock_backup_instance.restore_backup.assert_called_once()
         assert interactive_cli.console.print.called
@@ -448,14 +450,14 @@ async def test_cmd_config_backup_restore_failure(interactive_cli):
     with patch('ccbt.cli.interactive.ConfigManager') as mock_cm, \
          patch('ccbt.config.config_backup.ConfigBackup') as mock_backup:
         mock_config = Mock()
-        mock_config.disk.backup_dir = "/backup/dir"
+        mock_config.disk.backup_dir = "backup/dir"
         mock_cm.return_value = _create_mock_config_manager(mock_config)
         
         mock_backup_instance = Mock()
         mock_backup_instance.restore_backup.return_value = (False, "error")
         mock_backup.return_value = mock_backup_instance
         
-        await interactive_cli.cmd_config_backup(["restore", "/backup/file.tar.gz"])
+        await interactive_cli.cmd_config_backup(["restore", "backup/file.tar.gz"])
         
         assert interactive_cli.console.print.called
 
@@ -612,7 +614,7 @@ async def test_cmd_disk(interactive_cli):
     with patch('ccbt.cli.interactive.get_config') as mock_get_config:
         mock_config = Mock()
         mock_disk = Mock()
-        # CRITICAL FIX: Set all disk config attributes to real values (not Mock) to support arithmetic operations
+        # Note: Set all disk config attributes to real values (not Mock) to support arithmetic operations
         mock_disk.preallocate = True
         mock_disk.write_batch_kib = 1024
         mock_disk.write_buffer_kib = 512
@@ -645,7 +647,7 @@ async def test_cmd_network(interactive_cli):
     with patch('ccbt.cli.interactive.get_config') as mock_get_config:
         mock_config = Mock()
         mock_network = Mock()
-        # CRITICAL FIX: Set all network config attributes to real values (not Mock) to support comparisons and arithmetic
+        # Note: Set all network config attributes to real values (not Mock) to support comparisons and arithmetic
         mock_network.listen_port = 6881
         mock_network.listen_port_tcp = 6881
         mock_network.listen_port_udp = 6881
@@ -1565,7 +1567,7 @@ async def test_update_download_stats(interactive_cli):
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
     
-    # CRITICAL FIX: update_download_stats uses executor.execute(), not session.get_torrent_status()
+    # Note: update_download_stats uses executor.execute(), not session.get_torrent_status()
     # Mock the executor to return proper CommandResult
     status_result = CommandResult(
         success=True,

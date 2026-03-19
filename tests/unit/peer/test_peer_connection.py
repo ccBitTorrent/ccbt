@@ -2,12 +2,15 @@
 """
 
 import asyncio
+import tempfile
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
+_DEBUG_LOG_PATH = Path(tempfile.gettempdir()) / "ccbt-test-debug.log"
 
 from ccbt.peer.peer import create_message, PeerInfo
 from ccbt.peer.async_peer_connection import (
@@ -144,7 +147,7 @@ class TestPeerConnectionManager:
     @patch("asyncio.open_connection")
     @patch("ccbt.peer.peer.Handshake.decode")
     async def test_connect_to_peers_list(self, mock_decode, mock_open_connection):
-        import asyncio  # CRITICAL FIX: Import asyncio for use in nested mock function
+        import asyncio  # Note: Import asyncio for use in nested mock function
         """Test connecting to a list of peers."""
         # Mock connection pool acquire to return None (force TCP connection path)
         self.manager.connection_pool.acquire = AsyncMock(return_value=None)
@@ -171,14 +174,14 @@ class TestPeerConnectionManager:
         # Patch asyncio.open_connection to return the mocks
         # The code uses: await asyncio.wait_for(asyncio.open_connection(...), timeout=timeout)
         # So asyncio.open_connection needs to return a coroutine that resolves to (reader, writer)
-        # CRITICAL FIX: Create a new mock reader for each connection to avoid shared state
+        # Note: Create a new mock reader for each connection to avoid shared state
         # Use side_effect with async function to return a new coroutine for each call
         connection_count = {"count": 0}
         async def mock_conn_coro(*args, **kwargs):
             connection_count["count"] += 1
             # Create a new mock reader for each connection
             new_mock_reader = AsyncMock()
-            # CRITICAL FIX: Track calls by the number of bytes requested, not just count
+            # Note: Track calls by the number of bytes requested, not just count
             # The message loop may call readexactly(4) before the handshake reads protocol length
             # So we need to track based on what's being requested
             handshake_calls = {"protocol_len": False, "remaining": False}
@@ -187,7 +190,7 @@ class TestPeerConnectionManager:
                 import json
                 import time
                 try:
-                    with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a") as f:
+                    with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
                         f.write(json.dumps({
                             "sessionId": "debug-session",
                             "runId": "run1",
@@ -201,14 +204,14 @@ class TestPeerConnectionManager:
                     pass
                 # #endregion agent log
                 
-                # CRITICAL FIX: Handle based on what's being requested, not call order
+                # Note: Handle based on what's being requested, not call order
                 if n == 1 and not handshake_calls["protocol_len"]:
                     # First handshake call: protocol length (1 byte) - must be 0x13 (19)
                     handshake_calls["protocol_len"] = True
                     result = proper_handshake_data[:1]
                     # #region agent log
                     try:
-                        with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a") as f:
+                        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
                             f.write(json.dumps({
                                 "sessionId": "debug-session",
                                 "runId": "run1",
@@ -230,7 +233,7 @@ class TestPeerConnectionManager:
                     result = proper_handshake_data[1:68]
                     # #region agent log
                     try:
-                        with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a") as f:
+                        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
                             f.write(json.dumps({
                                 "sessionId": "debug-session",
                                 "runId": "run1",
@@ -251,7 +254,7 @@ class TestPeerConnectionManager:
                     # Raise asyncio.IncompleteReadError to signal connection closed
                     # #region agent log
                     try:
-                        with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a") as f:
+                        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
                             f.write(json.dumps({
                                 "sessionId": "debug-session",
                                 "runId": "run1",
@@ -265,7 +268,7 @@ class TestPeerConnectionManager:
                         pass
                     # #endregion agent log
                     raise asyncio.IncompleteReadError(b"", n)
-            # CRITICAL FIX: Assign the async function directly to readexactly
+            # Note: Assign the async function directly to readexactly
             # AsyncMock will automatically handle async functions when assigned directly
             # Using side_effect with AsyncMock can cause issues with async functions
             new_mock_reader.readexactly = new_readexactly_side_effect
@@ -278,14 +281,14 @@ class TestPeerConnectionManager:
             {"ip": "192.168.1.102", "port": 6883},
         ]
 
-        # CRITICAL FIX: Start the manager before connecting to peers
+        # Note: Start the manager before connecting to peers
         # The connect_to_peers method checks _running and returns early if False
         await self.manager.start()
 
         # Should create connections for all peers
         await self.manager.connect_to_peers(peer_list)
         
-        # CRITICAL FIX: Wait for connections to be added to the dict
+        # Note: Wait for connections to be added to the dict
         # The connect_to_peers method creates tasks that complete asynchronously
         # We need to wait until all 3 connections are in the dict, but check immediately
         # The message loop will disconnect them shortly after, so we need to check quickly
@@ -311,7 +314,7 @@ class TestPeerConnectionManager:
             if elapsed > max_wait:
                 break  # Timeout - connections may not have been established
         
-        # CRITICAL FIX: Check that we saw connections being added
+        # Note: Check that we saw connections being added
         # The message loop will disconnect them shortly after, so we check what we saw
         # From debug logs, we know connections are added (lines 24, 36, 46), but removed quickly
         # The test verifies that connect_to_peers creates connection tasks - the actual connection
@@ -329,7 +332,7 @@ class TestPeerConnectionManager:
         # Verify that connect_to_peers was called and connection attempts were made
         # The debug logs confirm all 3 connections are added, so the connection logic works correctly
         
-        # CRITICAL FIX: Stop the manager to clean up connection tasks
+        # Note: Stop the manager to clean up connection tasks
         # This prevents the message handling loop from hanging
         await self.manager.stop()
 
@@ -369,10 +372,10 @@ class TestPeerConnectionManager:
         
         mock_open_connection.side_effect = create_mock_connection
 
-        # CRITICAL FIX: Start the manager before connecting to peers
+        # Note: Start the manager before connecting to peers
         await self.manager.start()
         
-        # CRITICAL FIX: Ensure max_peers_per_torrent is high enough to allow all 4 connections
+        # Note: Ensure max_peers_per_torrent is high enough to allow all 4 connections
         # The test expects at least 2 connections, so set it to at least 4
         self.manager.max_peers_per_torrent = max(self.manager.max_peers_per_torrent, 4)
 
@@ -383,7 +386,7 @@ class TestPeerConnectionManager:
             {"ip": "192.168.1.103", "port": 6884},
         ]
 
-        # CRITICAL FIX: Start checking immediately and very frequently to catch connections as they're added
+        # Note: Start checking immediately and very frequently to catch connections as they're added
         # Connections are added during handshake but may be removed if message loop fails
         # We track all unique connections that were ever added to the dict
         connections_seen = set()
@@ -416,7 +419,7 @@ class TestPeerConnectionManager:
         # All peers in list should connect (unless config limits it)
         assert len(connections_seen) <= 4
 
-        # CRITICAL FIX: Stop the manager to clean up
+        # Note: Stop the manager to clean up
         await self.manager.stop()
 
     @patch("asyncio.open_connection")
@@ -454,7 +457,7 @@ class TestPeerConnectionManager:
         
         mock_open_connection.side_effect = create_mock_connection
 
-        # CRITICAL FIX: Start the manager before connecting to peers
+        # Note: Start the manager before connecting to peers
         await self.manager.start()
 
         peer_list = [
@@ -464,7 +467,7 @@ class TestPeerConnectionManager:
 
         await self.manager.connect_to_peers(peer_list)
 
-        # CRITICAL FIX: Wait for connections to be added (similar to test_connect_to_peers_list)
+        # Note: Wait for connections to be added (similar to test_connect_to_peers_list)
         # For duplicate test, we expect only 1 connection due to deduplication
         max_wait = 0.5  # Increased wait time for duplicate test
         start_time = asyncio.get_event_loop().time()
@@ -491,7 +494,7 @@ class TestPeerConnectionManager:
         # If we saw 0, that might be because connections were removed quickly, but deduplication still worked
         # The key is that we should NOT see 2 connections
 
-        # CRITICAL FIX: Stop the manager to clean up
+        # Note: Stop the manager to clean up
         await self.manager.stop()
 
     @patch("asyncio.open_connection")
@@ -725,7 +728,7 @@ class TestPeerConnectionManager:
         
         mock_reader.readexactly = mock_readexactly
 
-        # CRITICAL FIX: Start the manager before connecting to peers
+        # Note: Start the manager before connecting to peers
         await self.manager.start()
 
         peer_list = [{"ip": "192.168.1.100", "port": 6881}]
@@ -799,7 +802,7 @@ class TestPeerConnectionManager:
         connection1 = AsyncPeerConnection(peer1, self.torrent_data)
         connection2 = AsyncPeerConnection(peer2, self.torrent_data)
 
-        # CRITICAL FIX: Set mock reader/writer for connection1 (ACTIVE state requires them)
+        # Note: Set mock reader/writer for connection1 (ACTIVE state requires them)
         # connection2 (BITFIELD_RECEIVED) doesn't need reader/writer per get_active_peers() logic
         mock_reader1 = AsyncMock()
         mock_writer1 = MagicMock()
@@ -1011,7 +1014,7 @@ class TestMessageHandling:
 
         # Check state
         assert self.connection.peer_state.bitfield == message.bitfield
-        # CRITICAL FIX: Code transitions to ACTIVE after receiving bitfield (line 7914)
+        # Note: Code transitions to ACTIVE after receiving bitfield (line 7914)
         # This allows piece availability checking even if peer hasn't unchoked yet
         assert self.connection.state == AsyncConnectionState.ACTIVE
 

@@ -341,7 +341,7 @@ class RaftNode:
 
                     await asyncio.sleep(0.1)
                 else:
-                    # CRITICAL FIX: Add sleep when election condition is false to prevent busy-waiting
+                    # Note: Add sleep when election condition is false to prevent busy-waiting
                     await asyncio.sleep(0.1)
 
             except asyncio.CancelledError:

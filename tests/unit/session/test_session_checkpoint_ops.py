@@ -171,7 +171,7 @@ async def test_save_checkpoint_exception_logs(monkeypatch):
     td = {
         "name": "test",
         "info_hash": b"1" * 20,
-        # CRITICAL FIX: piece_length must be > 0 for TorrentCheckpoint validation
+        # Note: piece_length must be > 0 for TorrentCheckpoint validation
         "pieces_info": {"num_pieces": 1, "piece_length": 16384, "piece_hashes": [b"hash"], "total_length": 16384},
         "file_info": {"total_length": 16384},
     }
@@ -180,7 +180,7 @@ async def test_save_checkpoint_exception_logs(monkeypatch):
     mock_pm = _PM()
     session.download_manager = type("_DM", (), {"piece_manager": mock_pm})()
     
-    # CRITICAL FIX: _save_checkpoint calls checkpoint_controller.save_checkpoint_state()
+    # Note: _save_checkpoint calls checkpoint_controller.save_checkpoint_state()
     # which uses self._ctx.piece_manager first, then falls back to session.piece_manager
     # Ensure checkpoint_controller exists and uses our mocked piece_manager
     if not hasattr(session, 'checkpoint_controller') or session.checkpoint_controller is None:

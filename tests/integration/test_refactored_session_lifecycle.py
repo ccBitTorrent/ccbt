@@ -222,7 +222,7 @@ class TestRefactoredSessionLifecycle:
     @pytest.mark.asyncio
     async def test_add_torrent_with_handler(self, manager, tmp_dir: Path, monkeypatch):
         """Test adding torrent using TorrentAdditionHandler."""
-        # CRITICAL FIX: Add network mocking to prevent timeout
+        # Note: Add network mocking to prevent timeout
         # Disable NAT auto port mapping to prevent 60s wait
         monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
         # Disable DHT to prevent network initialization  

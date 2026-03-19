@@ -496,7 +496,7 @@ class TestQueueIntegration:
                 with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
                     # Start with timeout to prevent hanging
                     try:
-                        # CRITICAL FIX: Increase timeout to 30 seconds to allow for background task initialization
+                        # Note: Increase timeout to 30 seconds to allow for background task initialization
                         # Some background tasks may take time to start even with mocks
                         await asyncio.wait_for(session.start(), timeout=30.0)
                     except asyncio.TimeoutError:
@@ -531,7 +531,7 @@ class TestQueueIntegration:
                         low_idx = priorities.index(TorrentPriority.LOW)
                         assert high_idx < low_idx
 
-                    # CRITICAL FIX: Ensure session is stopped even if test fails
+                    # Note: Ensure session is stopped even if test fails
                     try:
                         # Stop queue manager explicitly first to cancel background tasks
                         if session.queue_manager:

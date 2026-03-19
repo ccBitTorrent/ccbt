@@ -264,12 +264,12 @@ class TestNetworkOperationErrorHandling:
         """Test request_piece_from_peers with peer error (lines 402-442)."""
         peer = mock_peer_connection
         peer.can_request = MagicMock(return_value=True)
-        # CRITICAL FIX: Add required attributes for _request_blocks_normal
+        # Note: Add required attributes for _request_blocks_normal
         peer.get_available_pipeline_slots = MagicMock(return_value=10)
         peer.outstanding_requests = []
         peer.max_pipeline_depth = 16
         
-        # CRITICAL FIX: Add stats with download_rate for peer scoring in _get_peers_for_piece
+        # Note: Add stats with download_rate for peer scoring in _get_peers_for_piece
         peer.stats = MagicMock()
         peer.stats.download_rate = 1024 * 1024  # 1 MB/s (numeric value, not MagicMock)
         
@@ -279,7 +279,7 @@ class TestNetworkOperationErrorHandling:
             peer.bitfield,
         )
         
-        # CRITICAL FIX: Mock peer_manager with _balance_requests_across_peers to use balanced path
+        # Note: Mock peer_manager with _balance_requests_across_peers to use balanced path
         # Also mock get_active_peers to return the peer list for throttling logic
         peer_manager = MagicMock()
         peer_manager.get_active_peers = MagicMock(return_value=[peer])
@@ -299,7 +299,7 @@ class TestNetworkOperationErrorHandling:
             balanced_requests[peer_key].append(request_info)
         peer_manager._balance_requests_across_peers = MagicMock(return_value=balanced_requests)
         
-        # CRITICAL FIX: The exception is caught and logged in _request_blocks_normal,
+        # Note: The exception is caught and logged in _request_blocks_normal,
         # so it doesn't propagate. The test should verify that the error is handled gracefully
         # (no exception raised, but the request fails silently)
         # The implementation catches exceptions to prevent one peer error from stopping all requests
@@ -379,7 +379,7 @@ class TestRequestManagement:
         """Test normal block requesting (lines 463-500)."""
         peer = mock_peer_connection
         peer.can_request = MagicMock(return_value=True)
-        # CRITICAL FIX: Add required attributes for _request_blocks_normal
+        # Note: Add required attributes for _request_blocks_normal
         peer.get_available_pipeline_slots = MagicMock(return_value=10)  # Available slots
         peer.outstanding_requests = []  # Empty list for outstanding requests
         peer.max_pipeline_depth = 16  # Pipeline depth
@@ -393,7 +393,7 @@ class TestRequestManagement:
         piece = piece_manager.pieces[0]
         missing_blocks = piece.get_missing_blocks()
         
-        # CRITICAL FIX: Mock peer_manager with _balance_requests_across_peers to use balanced path
+        # Note: Mock peer_manager with _balance_requests_across_peers to use balanced path
         # Also mock get_active_peers to return the peer list for throttling logic
         peer_manager = MagicMock()
         peer_manager.request_piece = AsyncMock()
@@ -899,7 +899,7 @@ class TestAdditionalCoverageGaps:
         """Test _request_blocks_normal edge cases (lines 488)."""
         peer = mock_peer_connection
         peer.can_request = MagicMock(return_value=True)
-        # CRITICAL FIX: Add required attributes for _request_blocks_normal
+        # Note: Add required attributes for _request_blocks_normal
         peer.get_available_pipeline_slots = MagicMock(return_value=10)
         peer.outstanding_requests = []
         peer.max_pipeline_depth = 16

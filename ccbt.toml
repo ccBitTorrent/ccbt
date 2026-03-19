@@ -1,3 +1,6 @@
+[daemon]
+api_key = "ff9d0dd64490307e5d9f21db8f4677d3270df3ada29fa4937ea5db8db020e7e2"
+
 [network.utp]
 max_retransmits = 15
 max_rate = 2000000

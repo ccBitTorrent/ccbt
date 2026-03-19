@@ -113,6 +113,7 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
                     _("Peers"),
                     _("Downloaders"),
                     _("Last Update"),
+                    _("Error"),
                 )
                 self._trackers_table.zebra_stripes = True
             
@@ -135,7 +136,13 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
             
             if not trackers:
                 self._trackers_table.add_row(
-                    _("N/A"), _("N/A"), _("N/A"), _("N/A"), _("N/A"), _("N/A"), _("No trackers found")
+                    _("N/A"),
+                    _("N/A"),
+                    _("N/A"),
+                    _("N/A"),
+                    _("N/A"),
+                    _("N/A"),
+                    _("No trackers found"),
                 )
                 return
             
@@ -174,7 +181,13 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
             logger.debug("Error refreshing torrent trackers: %s", e)
             self._trackers_table.clear()
             self._trackers_table.add_row(
-                _("Error"), _("Error"), _("Error"), _("Error"), _("Error"), _("Error"), _("Error: {error}").format(error=str(e))
+                _("Error"),
+                _("Error"),
+                _("Error"),
+                _("Error"),
+                _("Error"),
+                _("Error"),
+                _("Error: {error}").format(error=str(e)),
             )
 
     async def action_force_announce(self) -> None:  # pragma: no cover

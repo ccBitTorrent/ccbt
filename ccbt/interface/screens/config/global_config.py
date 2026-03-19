@@ -89,6 +89,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
 
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the screen and populate sections."""
+        self._data_provider = getattr(self.app, "_data_provider", None)
         sections_table = self.query_one("#sections", DataTable)
         sections_table.add_columns("Section", "Description", "Modified")
 
@@ -573,7 +574,7 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
 
         try:
             # Get config - session.config is a ConfigManager, config.config is the Config model
-            # CRITICAL FIX: Add timeout to prevent hanging
+            # Note: Add timeout to prevent hanging
             try:
                 if hasattr(self.session, "config") and hasattr(
                     self.session.config, "config"
@@ -1104,8 +1105,14 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
         try:
             from rich.table import Table
 
-            stats = await self.session.get_global_stats()
-            all_status = await self.session.get_status()
+            provider = getattr(self, "_data_provider", None)
+            if provider:
+                stats = await provider.get_global_stats()
+                torrents_list = await provider.list_torrents()
+                all_status = {t.get("info_hash") or t.get("info_hash_hex", ""): t for t in torrents_list if t.get("info_hash") or t.get("info_hash_hex")}
+            else:
+                stats = await self.session.get_global_stats()
+                all_status = await self.session.get_status()
 
             table = Table(
                 title="Network Quality Metrics",
@@ -1139,11 +1146,9 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
                 :10
             ]:  # Limit to first 10 torrents to avoid blocking
                 try:
-                    # Use timeout to prevent hanging
+                    get_peers = provider.get_torrent_peers(ih) if provider else self.session.get_peers_for_torrent(ih)
                     task = asyncio.create_task(
-                        asyncio.wait_for(
-                            self.session.get_peers_for_torrent(ih), timeout=1.0
-                        )
+                        asyncio.wait_for(get_peers, timeout=1.0)
                     )
                     peer_count_tasks.append(task)
                 except Exception:
@@ -1396,14 +1401,15 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
         try:
             from rich.table import Table
 
-            # Start with network quality metrics (with timeout to prevent blocking)
+            provider = getattr(self, "_data_provider", None)
             try:
-                stats = await asyncio.wait_for(
-                    self.session.get_global_stats(), timeout=2.0
-                )
-                all_status = await asyncio.wait_for(
-                    self.session.get_status(), timeout=2.0
-                )
+                if provider:
+                    stats = await asyncio.wait_for(provider.get_global_stats(), timeout=2.0)
+                    torrents_list = await asyncio.wait_for(provider.list_torrents(), timeout=2.0)
+                    all_status = {t.get("info_hash") or t.get("info_hash_hex", ""): t for t in torrents_list if t.get("info_hash") or t.get("info_hash_hex")}
+                else:
+                    stats = await asyncio.wait_for(self.session.get_global_stats(), timeout=2.0)
+                    all_status = await asyncio.wait_for(self.session.get_status(), timeout=2.0)
             except (asyncio.TimeoutError, Exception):
                 widget.update("")
                 return
@@ -1441,10 +1447,9 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
                 :10
             ]:  # Limit to first 10 torrents to avoid blocking
                 try:
+                    get_peers = provider.get_torrent_peers(ih) if provider else self.session.get_peers_for_torrent(ih)
                     task = asyncio.create_task(
-                        asyncio.wait_for(
-                            self.session.get_peers_for_torrent(ih), timeout=1.0
-                        )
+                        asyncio.wait_for(get_peers, timeout=1.0)
                     )
                     peer_count_tasks.append(task)
                 except Exception:

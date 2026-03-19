@@ -55,7 +55,7 @@ class StateManager:
 
         """
         if state_dir is None:
-            # CRITICAL FIX: Use consistent path resolution helper to match daemon
+            # Note: Use consistent path resolution helper to match daemon
             from ccbt.daemon.daemon_manager import _get_daemon_home_dir
 
             home_dir = _get_daemon_home_dir()

@@ -78,7 +78,7 @@ class TestMagnetDownloadContinuation:
                         mock_dm.start = AsyncMock()
                         mock_dm.start_download = AsyncMock()
                         mock_dm.stop = AsyncMock()
-                        # CRITICAL FIX: Mock get_status() to return a dict, not AsyncMock
+                        # Note: Mock get_status() to return a dict, not AsyncMock
                         # This prevents "Download manager get_status() returned non-dict" errors
                         mock_dm.get_status = AsyncMock(return_value={
                             "status": "downloading",
@@ -177,7 +177,7 @@ class TestMagnetDownloadContinuation:
                         mock_dm.start = AsyncMock()
                         mock_dm.start_download = AsyncMock()
                         mock_dm.stop = AsyncMock()
-                        # CRITICAL FIX: Mock get_status() to return a dict
+                        # Note: Mock get_status() to return a dict
                         mock_dm.get_status = AsyncMock(return_value={
                             "status": "stopped",
                             "progress": 0.0,
@@ -275,13 +275,13 @@ class TestMagnetDownloadContinuation:
             mock_client.start = AsyncMock()
             mock_client.stop = AsyncMock()
             mock_client._generate_peer_id = MagicMock(return_value=b"-CC0101-" + b"x" * 12)
-            # CRITICAL FIX: Mock announce() to return peers for metadata fetch
+            # Note: Mock announce() to return peers for metadata fetch
             # download_magnet() calls announce() first to get peers for metadata fetch
             mock_client.announce = AsyncMock(return_value=mock_tracker_response)
             # Then it calls announce_to_multiple() after metadata is fetched
             mock_client.announce_to_multiple = AsyncMock(return_value=[mock_tracker_response])
 
-            # CRITICAL FIX: Patch fetch_metadata_from_peers in download_manager module where it's imported
+            # Note: Patch fetch_metadata_from_peers in download_manager module where it's imported
             # download_magnet imports it at module level, so patch it where it's used
             with patch("ccbt.session.download_manager.fetch_metadata_from_peers", return_value=mock_metadata):
                 with patch("ccbt.core.magnet.build_torrent_data_from_metadata") as mock_build:
@@ -299,7 +299,7 @@ class TestMagnetDownloadContinuation:
                         },
                     }
 
-                    # CRITICAL FIX: download_magnet() creates AsyncDownloadManager in download_manager.py
+                    # Note: download_magnet() creates AsyncDownloadManager in download_manager.py
                     # So we need to patch it there, not in session.py
                     with patch("ccbt.session.download_manager.AsyncDownloadManager") as mock_dm_class:
                         mock_dm = AsyncMock()
@@ -323,7 +323,7 @@ class TestMagnetDownloadContinuation:
                         mock_dm.piece_manager.num_pieces = 1
                         mock_dm_class.return_value = mock_dm
 
-                        # CRITICAL FIX: download_magnet() creates AsyncTrackerClient directly
+                        # Note: download_magnet() creates AsyncTrackerClient directly
                         # Need to patch it in download_manager.py module
                         with patch("ccbt.session.download_manager.AsyncTrackerClient", return_value=mock_client):
                             with patch("ccbt.session.download_manager.get_config") as mock_get_config:

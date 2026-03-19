@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -122,6 +123,139 @@ async def test_tracker_metadata_exchange_still_runs_with_low_active_count() -> N
 
 
 @pytest.mark.asyncio
+async def test_tracker_metadata_status_tracks_starvation_seconds() -> None:
+    """Metadata status should track starvation duration when swarm is not usable."""
+    from ccbt.session.announce import AnnounceLoop
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "magnet-starvation-test",
+        "info_hash": b"4" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "_metadata_incomplete": True,
+        "pieces_info": None,
+        "file_info": None,
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.handle_magnet_metadata_exchange = AsyncMock(return_value=False)
+    session._peer_discovery_metrics["metadata_starvation_started_at"] = time.time() - 2.0
+
+    loop = AnnounceLoop(session)
+    await loop._maybe_trigger_tracker_metadata_exchange(
+        [{"ip": "192.0.2.1", "port": 6881, "peer_source": "tracker"}],
+        connection_summary={
+            "active_connections": 0,
+            "productive_connections": 0,
+            "requestable_connections": 0,
+            "metadata_capable_connections": 0,
+            "metadata_exchange_active": 0,
+            "peers_with_piece_info": 0,
+        },
+    )
+
+    assert session._peer_discovery_metrics["metadata_starvation_seconds"] >= 1.0
+
+
+def test_session_peer_source_metrics_use_ingress_and_live_connections() -> None:
+    """Peer source metrics should track real ingress counts and live usable peers."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "metric-source-test",
+        "info_hash": b"6" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, ".")
+
+    session.record_discovered_peers(
+        [
+            {"ip": "192.0.2.1", "port": 6881, "peer_source": "tracker"},
+            {"ip": "192.0.2.2", "port": 6882, "peer_source": "dht"},
+            {"ip": "192.0.2.3", "port": 6883, "peer_source": "tracker"},
+        ]
+    )
+
+    tracker_conn = SimpleNamespace(
+        peer_info=SimpleNamespace(peer_source="tracker"),
+        peer_state=SimpleNamespace(bitfield=b"\x80", pieces_we_have=set()),
+        stats=SimpleNamespace(blocks_delivered=0, bytes_downloaded=0),
+        can_request=lambda: True,
+    )
+    dht_conn = SimpleNamespace(
+        peer_info=SimpleNamespace(peer_source="dht"),
+        peer_state=SimpleNamespace(bitfield=None, pieces_we_have=set()),
+        stats=SimpleNamespace(blocks_delivered=0, bytes_downloaded=0),
+        can_request=lambda: False,
+    )
+
+    session.update_usable_live_peers_by_source(
+        {"tracker-peer": tracker_conn, "dht-peer": dht_conn}
+    )
+
+    assert session._peer_discovery_metrics["peers_discovered_by_source"]["tracker"] == 2
+    assert session._peer_discovery_metrics["peers_discovered_by_source"]["dht"] == 1
+    assert session._peer_discovery_metrics["peers_returned_by_source"]["tracker"] == 2
+    assert session._peer_discovery_metrics["peers_returned_by_source"]["dht"] == 1
+    assert session._peer_discovery_metrics["usable_live_peers_by_source"]["tracker"] == 1
+    assert session._peer_discovery_metrics["usable_live_peers_by_source"]["dht"] == 0
+    assert (
+        session._peer_discovery_metrics["payload_capable_live_peers_by_source"][
+            "tracker"
+        ]
+        == 1
+    )
+    assert session._peer_discovery_metrics["usable_peers_formed_by_source"]["tracker"] == 1
+
+
+@pytest.mark.asyncio
+async def test_swarm_recovery_state_uses_live_bitfield_counts_not_event_totals() -> None:
+    """Swarm state should use live bitfield-complete connections, not lifetime event counters."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "live-bitfield-metric-test",
+        "info_hash": b"7" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, ".")
+
+    peer_manager = SimpleNamespace(
+        connections={},
+        get_connection_summary=AsyncMock(
+            return_value={
+                "active_connections": 0,
+                "productive_connections": 0,
+                "requestable_connections": 0,
+                "peers_with_piece_info": 0,
+                "handshake_complete_connections": 1,
+                "bitfield_complete_connections": 0,
+                "metadata_capable_connections": 0,
+                "bitfield_received_events": 4,
+            }
+        ),
+    )
+    session.download_manager.peer_manager = peer_manager
+
+    state = await session.get_swarm_recovery_state()
+
+    assert state["bitfield_complete_peers"] == 0
+
+
+@pytest.mark.asyncio
 async def test_immediate_tracker_connection_schedules_metadata_fallback(
     monkeypatch,
 ) -> None:
@@ -174,6 +308,63 @@ async def test_immediate_tracker_connection_schedules_metadata_fallback(
             break
 
     session.handle_magnet_metadata_exchange.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_immediate_tracker_connection_enforces_batch_caps(monkeypatch) -> None:
+    """Immediate callback should bound peer batch size by per-torrent capacity."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "cap-test",
+        "info_hash": b"2" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "_metadata_incomplete": False,
+        "pieces_info": {"pieces": b""},
+        "file_info": {"total_length": 2048},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.config.network.max_peers_per_torrent = 4
+    session.piece_manager = SimpleNamespace(
+        _metadata_incomplete=False,
+        num_pieces=1,
+        is_downloading=False,
+        start_download=AsyncMock(return_value=None),
+    )
+    session.download_manager.peer_manager = SimpleNamespace(
+        connections={"already:1": object(), "already:2": object()},
+        _connection_batches_in_progress=False,
+    )
+    connect_to_download = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        "ccbt.session.peers.PeerConnectionHelper.connect_peers_to_download",
+        connect_to_download,
+    )
+
+    session._register_immediate_connection_callback()
+    callback = session.tracker.on_peers_received
+    assert callback is not None
+
+    await callback(
+        [
+            {
+                "ip": f"192.0.2.{i}",
+                "port": 6881 + i,
+                "peer_source": "tracker-a" if i % 2 == 0 else "tracker-b",
+            }
+            for i in range(8)
+        ],
+        "udp://tracker.example.com:6969",
+    )
+    for _ in range(30):
+        await asyncio.sleep(0.01)
+        if connect_to_download.await_count:
+            break
+
+    # With 2 existing connections and max peers 4, callback should attempt at most 2 peers.
+    connect_to_download.assert_awaited_once()
+    assert len(connect_to_download.await_args.args[0]) == 2
 
 
 @pytest.mark.asyncio
@@ -352,9 +543,10 @@ async def test_selector_premarked_piece_still_issues_initial_request(
         missing_blocks: list[object],
         available_peers: list[object],
         _peer_manager: object,
-    ) -> None:
+    ) -> int:
         _ = missing_blocks, _peer_manager
         request_calls.append((piece_index, len(available_peers)))
+        return 1
 
     monkeypatch.setattr(piece_manager, "_get_peers_for_piece", fake_get_peers_for_piece)
     monkeypatch.setattr(

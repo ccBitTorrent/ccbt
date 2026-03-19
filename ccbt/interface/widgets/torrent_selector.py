@@ -84,16 +84,16 @@ class TorrentSelector(Container):  # type: ignore[misc]
         """Compose the torrent selector."""
         with Horizontal():
             yield Static("Torrent:", id="torrent-select-label")
-            # CRITICAL FIX: Removed search input - no longer necessary
+            # Note: Removed search input - no longer necessary
             yield Select([("Loading...", "")], id="torrent-select", prompt="Select torrent")
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the torrent selector."""
         try:
-            # CRITICAL FIX: Ensure widget is visible
+            # Note: Ensure widget is visible
             self.display = True  # type: ignore[attr-defined]
             self._select_widget = self.query_one("#torrent-select", Select)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure child widget is visible
+            # Note: Ensure child widget is visible
             if self._select_widget:
                 self._select_widget.display = True  # type: ignore[attr-defined]
             # Load torrent list
@@ -129,11 +129,11 @@ class TorrentSelector(Container):  # type: ignore[misc]
             if options:
                 # Get current selection
                 current_value = self._selected_info_hash
-                # CRITICAL FIX: Clear and repopulate - use set_options with proper format
+                # Note: Clear and repopulate - use set_options with proper format
                 try:
                     self._select_widget.set_options(options)  # type: ignore[attr-defined]
                     logger.debug("TorrentSelector: Set %d options in Select widget", len(options))
-                    # CRITICAL FIX: Force refresh of Select widget to ensure it displays
+                    # Note: Force refresh of Select widget to ensure it displays
                     if hasattr(self._select_widget, "refresh"):
                         self._select_widget.refresh()  # type: ignore[attr-defined]
                     # Restore selection if still valid
@@ -141,7 +141,7 @@ class TorrentSelector(Container):  # type: ignore[misc]
                         # Find index of current selection
                         for idx, (_, ih) in enumerate(options):
                             if ih == current_value:
-                                # CRITICAL FIX: Textual Select expects index or tuple value
+                                # Note: Textual Select expects index or tuple value
                                 try:
                                     self._select_widget.value = idx  # type: ignore[attr-defined]
                                 except (TypeError, ValueError):
@@ -235,7 +235,7 @@ class TorrentSelector(Container):  # type: ignore[misc]
         for idx, (display_name, ih) in enumerate(self._torrent_options):
             if ih == info_hash:
                 try:
-                    # CRITICAL FIX: Textual Select expects index, not tuple
+                    # Note: Textual Select expects index, not tuple
                     self._select_widget.value = idx  # type: ignore[attr-defined]
                     # Force refresh
                     if hasattr(self._select_widget, "refresh"):

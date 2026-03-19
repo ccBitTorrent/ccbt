@@ -330,7 +330,7 @@ class TestHandleResponseScrape:
         future = asyncio.Future()
         client.pending_requests[transaction_id] = future
 
-        # CRITICAL FIX: Set socket ready flag so handle_response processes the response
+        # Note: Set socket ready flag so handle_response processes the response
         # Without this, the response is dropped with "socket not ready" warning
         client._socket_ready = True
 

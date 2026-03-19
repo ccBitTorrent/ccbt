@@ -172,7 +172,7 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
                 )
                 self._torrents_table.zebra_stripes = True
             
-            # CRITICAL FIX: Schedule initial refresh with proper async handling
+            # Note: Schedule initial refresh with proper async handling
             # set_interval doesn't work with async functions directly, use wrapper
             def schedule_refresh() -> None:
                 import asyncio
@@ -182,7 +182,7 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
             # Also refresh immediately
             schedule_refresh()
             
-            # CRITICAL FIX: Ensure widget is visible
+            # Note: Ensure widget is visible
             self.display = True  # type: ignore[attr-defined]
             if self._torrents_table:
                 self._torrents_table.display = True  # type: ignore[attr-defined]
@@ -237,12 +237,12 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
 
     async def refresh_torrents(self) -> None:  # pragma: no cover
         """Refresh torrents table with latest data."""
-        # CRITICAL FIX: Check if widget is visible and attached before refreshing
+        # Note: Check if widget is visible and attached before refreshing
         if not self.is_attached or not self.display:  # type: ignore[attr-defined]
             logger.debug("GlobalTorrentsScreen: Widget not attached or not visible, skipping refresh")
             return
         
-        # CRITICAL FIX: Re-query _torrents_table if it's None (may happen if called before on_mount completes)
+        # Note: Re-query _torrents_table if it's None (may happen if called before on_mount completes)
         if not self._torrents_table:
             try:
                 self._torrents_table = self.query_one("#torrents-table", DataTable)  # type: ignore[attr-defined]
@@ -266,7 +266,7 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
                 logger.debug("GlobalTorrentsScreen: Error re-querying table: %s", e)
                 return
         
-        # CRITICAL FIX: Re-query _data_provider if it's None (should be set in __init__, but check anyway)
+        # Note: Re-query _data_provider if it's None (should be set in __init__, but check anyway)
         if not self._data_provider:
             logger.warning("GlobalTorrentsScreen: Missing data provider, cannot refresh")
             return
@@ -276,7 +276,7 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
 
         try:
             logger.debug("GlobalTorrentsScreen: Fetching torrents from data provider...")
-            # CRITICAL FIX: Use wait_for directly (not wrapped in create_task) to avoid nested timeouts
+            # Note: Use wait_for directly (not wrapped in create_task) to avoid nested timeouts
             # This prevents CancelledError from propagating incorrectly
             try:
                 # Fetch torrents first (most important)
@@ -354,7 +354,7 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
 
             # Clear and repopulate table
             self._torrents_table.clear()
-            # CRITICAL FIX: Ensure columns exist (clear() might remove them)
+            # Note: Ensure columns exist (clear() might remove them)
             if not self._torrents_table.columns:  # type: ignore[attr-defined]
                 self._torrents_table.add_columns(
                     "#",
@@ -419,7 +419,7 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
             
             logger.debug("GlobalTorrentsScreen: Added %d torrents to table", len(torrents))
             
-            # CRITICAL FIX: Force table refresh and ensure visibility
+            # Note: Force table refresh and ensure visibility
             if hasattr(self._torrents_table, "refresh"):
                 self._torrents_table.refresh()  # type: ignore[attr-defined]
             self._torrents_table.display = True  # type: ignore[attr-defined]
@@ -612,7 +612,7 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
                 )
                 self._torrents_table.zebra_stripes = True
             
-            # CRITICAL FIX: Schedule periodic refresh with proper async handling
+            # Note: Schedule periodic refresh with proper async handling
             def schedule_refresh() -> None:
                 import asyncio
                 asyncio.create_task(self.refresh_torrents())
@@ -621,7 +621,7 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
             # Also refresh immediately
             schedule_refresh()
             
-            # CRITICAL FIX: Ensure widget is visible
+            # Note: Ensure widget is visible
             self.display = True  # type: ignore[attr-defined]
             if self._torrents_table:
                 self._torrents_table.display = True  # type: ignore[attr-defined]
@@ -630,12 +630,12 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
 
     async def refresh_torrents(self) -> None:  # pragma: no cover
         """Refresh torrents table with filtered data."""
-        # CRITICAL FIX: Check if widget is visible and attached before refreshing
+        # Note: Check if widget is visible and attached before refreshing
         if not self.is_attached or not self.display:  # type: ignore[attr-defined]
             logger.debug("FilteredTorrentsScreen: Widget not attached or not visible, skipping refresh")
             return
         
-        # CRITICAL FIX: Re-query _torrents_table if it's None (may happen if called before on_mount completes)
+        # Note: Re-query _torrents_table if it's None (may happen if called before on_mount completes)
         if not self._torrents_table:
             try:
                 self._torrents_table = self.query_one("#torrents-table", DataTable)  # type: ignore[attr-defined]
@@ -659,14 +659,14 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
                 logger.debug("FilteredTorrentsScreen: Error re-querying table: %s", e)
                 return
         
-        # CRITICAL FIX: Re-query _data_provider if it's None (should be set in __init__, but check anyway)
+        # Note: Re-query _data_provider if it's None (should be set in __init__, but check anyway)
         if not self._data_provider:
             logger.warning("FilteredTorrentsScreen: Missing data provider, cannot refresh")
             return
         
         try:
             logger.debug("FilteredTorrentsScreen: Fetching torrents from data provider (filter: %s)...", self._filter_status)
-            # CRITICAL FIX: Add timeout to prevent UI hangs, handle CancelledError properly
+            # Note: Add timeout to prevent UI hangs, handle CancelledError properly
             try:
                 torrents = await asyncio.wait_for(
                     self._data_provider.list_torrents(),
@@ -710,14 +710,14 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
                         if t.get("status", "").lower() == self._filter_status.lower()
                     ]
             
-            # CRITICAL FIX: Ensure table is visible before populating
+            # Note: Ensure table is visible before populating
             if not self._torrents_table.is_attached or not self._torrents_table.display:  # type: ignore[attr-defined]
                 logger.debug("FilteredTorrentsScreen: Table not attached or not visible, skipping population")
                 return
             
             # Populate table (same logic as GlobalTorrentsScreen)
             self._torrents_table.clear()
-            # CRITICAL FIX: Ensure columns exist (clear() might remove them)
+            # Note: Ensure columns exist (clear() might remove them)
             if not self._torrents_table.columns:  # type: ignore[attr-defined]
                 self._torrents_table.add_columns(
                     "#",
@@ -779,7 +779,7 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
             
             logger.debug("FilteredTorrentsScreen: Added %d torrents to table", len(torrents))
             
-            # CRITICAL FIX: Force table refresh and ensure visibility
+            # Note: Force table refresh and ensure visibility
             if hasattr(self._torrents_table, "refresh"):
                 self._torrents_table.refresh()  # type: ignore[attr-defined]
             self._torrents_table.display = True  # type: ignore[attr-defined]
@@ -868,7 +868,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         try:
             self._sub_tabs = self.query_one("#torrents-sub-tabs", Tabs)  # type: ignore[attr-defined]
             self._content_area = self.query_one("#torrents-sub-content", Container)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure tab is active and content area is visible
+            # Note: Ensure tab is active and content area is visible
             if self._sub_tabs:
                 self._sub_tabs.active = "sub-tab-global"  # type: ignore[attr-defined]
             if self._content_area:
@@ -889,7 +889,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         if sub_tab_id == self._active_sub_tab_id:
             return
         
-        # CRITICAL FIX: Properly remove existing widgets by ID to prevent duplicate ID errors
+        # Note: Properly remove existing widgets by ID to prevent duplicate ID errors
         # We need to check the parent's children list directly and remove all instances
         try:
             # Get all children and remove them individually to ensure proper cleanup
@@ -935,7 +935,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         if not self._content_area or not self._data_provider:
             return
         
-        # CRITICAL FIX: Determine target screen ID and check if it already exists
+        # Note: Determine target screen ID and check if it already exists
         target_screen_id = None
         if sub_tab_id == "sub-tab-global":
             target_screen_id = "global-screen"
@@ -950,7 +950,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         elif sub_tab_id == "sub-tab-inactive":
             target_screen_id = "inactive-screen"
         
-        # CRITICAL FIX: Double-check that no widget with the target ID exists before mounting
+        # Note: Double-check that no widget with the target ID exists before mounting
         # Check parent's children list directly to find all instances
         if target_screen_id:
             try:
@@ -987,9 +987,9 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="global-screen"
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure screen is visible
+            # Note: Ensure screen is visible
             screen.display = True  # type: ignore[attr-defined]
-            # CRITICAL FIX: Trigger refresh after mounting to populate data
+            # Note: Trigger refresh after mounting to populate data
             def refresh_after_mount() -> None:
                 import asyncio
                 if hasattr(screen, "refresh_torrents"):
@@ -1005,9 +1005,9 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="downloading-screen"
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure screen is visible
+            # Note: Ensure screen is visible
             screen.display = True  # type: ignore[attr-defined]
-            # CRITICAL FIX: Trigger refresh after mounting to populate data
+            # Note: Trigger refresh after mounting to populate data
             def refresh_after_mount() -> None:
                 import asyncio
                 if hasattr(screen, "refresh_torrents"):
@@ -1023,9 +1023,9 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="seeding-screen"
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure screen is visible
+            # Note: Ensure screen is visible
             screen.display = True  # type: ignore[attr-defined]
-            # CRITICAL FIX: Trigger refresh after mounting to populate data
+            # Note: Trigger refresh after mounting to populate data
             def refresh_after_mount() -> None:
                 import asyncio
                 if hasattr(screen, "refresh_torrents"):
@@ -1042,9 +1042,9 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="completed-screen"
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure screen is visible
+            # Note: Ensure screen is visible
             screen.display = True  # type: ignore[attr-defined]
-            # CRITICAL FIX: Trigger refresh after mounting to populate data
+            # Note: Trigger refresh after mounting to populate data
             def refresh_after_mount() -> None:
                 import asyncio
                 if hasattr(screen, "refresh_torrents"):
@@ -1061,9 +1061,9 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="active-screen"
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure screen is visible
+            # Note: Ensure screen is visible
             screen.display = True  # type: ignore[attr-defined]
-            # CRITICAL FIX: Trigger refresh after mounting to populate data
+            # Note: Trigger refresh after mounting to populate data
             def refresh_after_mount() -> None:
                 import asyncio
                 if hasattr(screen, "refresh_torrents"):
@@ -1080,9 +1080,9 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="inactive-screen"
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure screen is visible
+            # Note: Ensure screen is visible
             screen.display = True  # type: ignore[attr-defined]
-            # CRITICAL FIX: Trigger refresh after mounting to populate data
+            # Note: Trigger refresh after mounting to populate data
             def refresh_after_mount() -> None:
                 import asyncio
                 if hasattr(screen, "refresh_torrents"):
@@ -1100,7 +1100,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         tab_id = getattr(tab, "id", None)
         if tab_id:
             self._load_sub_tab_content(tab_id)
-            # CRITICAL FIX: Refresh content after loading sub-tab
+            # Note: Refresh content after loading sub-tab
             self.call_later(self._refresh_active_sub_tab)  # type: ignore[attr-defined]
 
     async def _refresh_active_sub_tab(self) -> None:  # pragma: no cover
@@ -1110,7 +1110,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         
         try:
             if self._active_sub_tab_id == "sub-tab-global":
-                # CRITICAL FIX: query_one() doesn't accept can_be_none parameter in Textual
+                # Note: query_one() doesn't accept can_be_none parameter in Textual
                 try:
                     screen = self.query_one(GlobalTorrentsScreen)  # type: ignore[attr-defined]
                     if screen and hasattr(screen, "refresh_torrents"):

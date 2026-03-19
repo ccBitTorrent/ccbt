@@ -1197,7 +1197,7 @@ class MetricsCollector:
             except Exception:  # pragma: no cover - keep defaults on failure
                 pass
 
-        # CRITICAL FIX: Collect connection health metrics from all active sessions
+        # Note: Collect connection health metrics from all active sessions
         sessions = (
             getattr(
                 self._session, "torrents", getattr(self._session, "_sessions", None)
@@ -1287,7 +1287,7 @@ class MetricsCollector:
             except Exception:
                 pass
 
-        # CRITICAL FIX: Collect NAT mapping status metrics
+        # Note: Collect NAT mapping status metrics
         if (
             self._session
             and hasattr(self._session, "nat_manager")

@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ccbt.daemon.ipc_protocol import EventType, TorrentStatusResponse
+from ccbt.daemon.ipc_protocol import (
+    DHTQueryMetricsResponse,
+    EventType,
+    TorrentStatusResponse,
+)
 from ccbt.interface.data_provider import DaemonDataProvider, LocalDataProvider
 
 pytestmark = [pytest.mark.unit, pytest.mark.interface]
@@ -193,6 +197,101 @@ async def test_daemon_and_local_providers_share_torrent_status_shape() -> None:
 
 
 @pytest.mark.asyncio
+async def test_daemon_provider_preserves_extended_torrent_status_fields() -> None:
+    """Daemon provider should preserve tracker and swarm health extensions."""
+    info_hash = "d" * 40
+    client = MagicMock()
+    client.get_torrent_status = AsyncMock(
+        return_value=TorrentStatusResponse(
+            info_hash=info_hash,
+            name="Extended",
+            status="downloading",
+            progress=0.1,
+            download_rate=0.0,
+            upload_rate=0.0,
+            num_peers=2,
+            num_seeds=0,
+            total_size=100,
+            downloaded=10,
+            uploaded=0,
+            tracker_status="degraded",
+            last_tracker_error="timeout",
+            last_error="metadata pending",
+            productive_peers=0,
+            requestable_peers=0,
+            handshake_complete_peers=2,
+            extension_capable_peers=2,
+            metadata_capable_peers=1,
+            hash_verification_failures=3,
+        )
+    )
+
+    provider = DaemonDataProvider(client)
+    status = await provider.get_torrent_status(info_hash)
+
+    assert status is not None
+    assert status["tracker_status"] == "degraded"
+    assert status["last_tracker_error"] == "timeout"
+    assert status["productive_peers"] == 0
+    assert status["requestable_peers"] == 0
+    assert status["handshake_complete_peers"] == 2
+    assert status["extension_capable_peers"] == 2
+    assert status["metadata_capable_peers"] == 1
+    assert status["hash_verification_failures"] == 3
+
+
+@pytest.mark.asyncio
+async def test_daemon_provider_tracker_rows_include_screen_compat_aliases() -> None:
+    """Tracker rows should expose both canonical and legacy screen field names."""
+    client = MagicMock()
+    client.get_torrent_trackers = AsyncMock(
+        return_value=SimpleNamespace(
+            trackers=[
+                SimpleNamespace(
+                    url="udp://tracker.example:80/announce",
+                    status="timeout",
+                    seeds=0,
+                    peers=12,
+                    downloaders=4,
+                    last_update=123.0,
+                    error="timed out",
+                )
+            ]
+        )
+    )
+
+    provider = DaemonDataProvider(client)
+    trackers = await provider.get_torrent_trackers("e" * 40)
+
+    assert len(trackers) == 1
+    assert trackers[0]["status"] == "timeout"
+    assert trackers[0]["tracker_status"] == "timeout"
+    assert trackers[0]["last_update"] == 123.0
+    assert trackers[0]["last_announce"] == 123.0
+
+
+@pytest.mark.asyncio
+async def test_daemon_piece_health_avoids_guessed_dht_success_ratio() -> None:
+    """Piece health should not invent a DHT success ratio without a success counter."""
+    client = MagicMock()
+    client.get_torrent_piece_availability = AsyncMock(return_value=[1, 0, 2])
+    client.get_torrent_piece_selection_metrics = AsyncMock(return_value={})
+    client.get_torrent_dht_metrics = AsyncMock(
+        return_value=DHTQueryMetricsResponse(
+            info_hash="f" * 40,
+            total_queries=4,
+            total_peers_found=0,
+        )
+    )
+    client.get_torrent_peer_quality = AsyncMock(return_value=None)
+
+    provider = DaemonDataProvider(client)
+    piece_health = await provider.get_piece_health("f" * 40)
+
+    assert piece_health["dht_success_ratio"] is None
+
+
+@pytest.mark.asyncio
 async def test_local_provider_lists_xet_folders_with_flattened_status() -> None:
     """Local XET folder reads should expose the normalized workspace schema."""
     session = MagicMock()
@@ -334,3 +433,51 @@ async def test_daemon_provider_invalidates_media_caches_on_media_events() -> Non
     assert f"media_status_{info_hash}" not in provider._cache
     assert f"torrent_status_{info_hash}" not in provider._cache
     assert f"torrent_files_{info_hash}" not in provider._cache
+
+
+def test_ui_snapshot_response_shape() -> None:
+    """UISnapshotResponse must have global_stats, torrents, services_status, rate_samples."""
+    from ccbt.daemon.ipc_protocol import UISnapshotResponse
+
+    empty = UISnapshotResponse()
+    assert "global_stats" in empty.model_dump()
+    assert "torrents" in empty.model_dump()
+    assert "services_status" in empty.model_dump()
+    assert "rate_samples" in empty.model_dump()
+    assert isinstance(empty.global_stats, dict)
+    assert isinstance(empty.torrents, list)
+    assert isinstance(empty.rate_samples, list)
+
+    filled = UISnapshotResponse(
+        global_stats={"num_torrents": 1, "download_rate": 0.0},
+        torrents=[{"info_hash": "a" * 40, "name": "x"}],
+        services_status={"services": {"dht": {"enabled": True}}},
+        rate_samples=[{"timestamp": 0.0, "download_rate": 0.0, "upload_rate": 0.0}],
+    )
+    assert filled.global_stats["num_torrents"] == 1
+    assert len(filled.torrents) == 1
+    assert len(filled.rate_samples) == 1
+
+
+@pytest.mark.asyncio
+async def test_daemon_provider_get_ui_snapshot_returns_canonical_keys() -> None:
+    """DaemonDataProvider.get_ui_snapshot returns dict with global_stats, torrents, services_status, rate_samples."""
+    from ccbt.daemon.ipc_protocol import UISnapshotResponse
+
+    client = MagicMock()
+    client.get_ui_snapshot = AsyncMock(
+        return_value=UISnapshotResponse(
+            global_stats={"num_torrents": 0, "download_rate": 0.0, "upload_rate": 0.0},
+            torrents=[],
+            services_status={},
+            rate_samples=[],
+        )
+    )
+    provider = DaemonDataProvider(client)
+    snapshot = await provider.get_ui_snapshot()
+    assert isinstance(snapshot, dict)
+    assert "global_stats" in snapshot
+    assert "torrents" in snapshot
+    assert "services_status" in snapshot
+    assert "rate_samples" in snapshot
+    client.get_ui_snapshot.assert_awaited()

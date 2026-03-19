@@ -83,11 +83,11 @@ def mock_config():
         enable_encryption=False,
         encryption_mode="disabled",
     )
-    # CRITICAL FIX: Add required limits config attribute
+    # Note: Add required limits config attribute
     config.limits = SimpleNamespace(
         per_peer_up_kib=0,  # Unlimited
     )
-    # CRITICAL FIX: Add required nat config attribute
+    # Note: Add required nat config attribute
     config.nat = SimpleNamespace(
         auto_map_ports=False,
     )

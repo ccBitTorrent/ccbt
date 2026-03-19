@@ -85,7 +85,7 @@ def build_msearch_request(search_target: Optional[str] = None) -> bytes:
         search_target = UPNP_IGD_SERVICE_TYPE
 
     # Build M-SEARCH message
-    # CRITICAL FIX: MX (Maximum wait time) should be at least 1-5 seconds
+    # Note: MX (Maximum wait time) should be at least 1-5 seconds
     # Some routers need time to respond, so we use 3 seconds
     msg = (
         f"M-SEARCH * HTTP/1.1\r\n"
@@ -121,7 +121,7 @@ def parse_ssdp_response(response: bytes) -> dict[str, str]:
 async def discover_upnp_devices() -> list[dict[str, str]]:
     """Discover UPnP IGD devices via SSDP with retry logic.
 
-    CRITICAL FIX: Uses asyncio for socket operations and properly joins multicast group.
+    Note: Uses asyncio for socket operations and properly joins multicast group.
     On Windows, multicast requires proper interface binding and group membership.
 
     Returns:
@@ -137,7 +137,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
         set()
     )  # Cache clearing: track seen devices to avoid duplicates
 
-    # CRITICAL FIX: Get local network interfaces for proper multicast binding
+    # Note: Get local network interfaces for proper multicast binding
     import sys
 
     # Try to get local IP address for multicast interface binding
@@ -159,15 +159,15 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-            # CRITICAL FIX: Windows-specific multicast configuration
+            # Note: Windows-specific multicast configuration
             if sys.platform == "win32":
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-                # CRITICAL FIX: Set multicast TTL (required on Windows)
+                # Note: Set multicast TTL (required on Windows)
                 # TTL of 2 allows packets to traverse one router hop (local network)
                 sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
 
-                # CRITICAL FIX: Set multicast interface BEFORE binding
+                # Note: Set multicast interface BEFORE binding
                 # This tells Windows which interface to use for sending multicast
                 if local_ip:
                     try:
@@ -180,7 +180,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         logger.debug("Failed to set multicast interface: %s", e)
                         # Continue - some systems don't require this
 
-            # CRITICAL FIX: Bind to INADDR_ANY (0.0.0.0) to receive on all interfaces
+            # Note: Bind to INADDR_ANY (0.0.0.0) to receive on all interfaces
             # Binding to specific port 0 lets OS choose ephemeral port
             # On Windows, binding to 0.0.0.0:0 is required for multicast
             try:
@@ -197,7 +197,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         logger.debug("Failed to bind to local IP: %s", e2)
                         raise
 
-            # CRITICAL FIX: Join multicast group properly
+            # Note: Join multicast group properly
             # IP_ADD_MEMBERSHIP is required to receive multicast packets
             multicast_ip = socket.inet_aton(SSDP_MULTICAST_IP)
             if local_ip:
@@ -249,11 +249,11 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
 
             multicast_addr = (SSDP_MULTICAST_IP, SSDP_MULTICAST_PORT)
 
-            # CRITICAL FIX: Set socket to non-blocking BEFORE sending (required for asyncio)
+            # Note: Set socket to non-blocking BEFORE sending (required for asyncio)
             # This must be done after binding but before sending
             sock.setblocking(False)
 
-            # CRITICAL FIX: Send M-SEARCH requests for both service type and device type
+            # Note: Send M-SEARCH requests for both service type and device type
             # Some routers only respond to device type searches, not service type
             search_targets = [
                 UPNP_IGD_SERVICE_TYPE,  # Try service type first
@@ -287,12 +287,12 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         "Failed to send M-SEARCH request for %s: %s", search_target, e
                     )
 
-            # CRITICAL FIX: Wait a bit after sending before listening for responses
+            # Note: Wait a bit after sending before listening for responses
             # Routers need time to process M-SEARCH and send responses
             # MX header says 3 seconds, so wait at least 0.5s before checking
             await asyncio.sleep(0.5)
 
-            # CRITICAL FIX: Use asyncio for non-blocking socket operations
+            # Note: Use asyncio for non-blocking socket operations
             # Socket is already set to non-blocking above
             start_time = asyncio.get_event_loop().time()
             responses_received = 0
@@ -336,7 +336,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         location[:100] if location else "(empty)",
                     )
 
-                    # CRITICAL FIX: Check multiple UPnP service types
+                    # Note: Check multiple UPnP service types
                     is_igd = (
                         UPNP_IGD_SERVICE_TYPE in st
                         or UPNP_IGD_DEVICE_TYPE in nt

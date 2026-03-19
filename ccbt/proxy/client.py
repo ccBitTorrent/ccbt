@@ -334,7 +334,7 @@ class ProxyClient:
                 try:
                     if not session.closed:
                         await session.close()
-                        # CRITICAL FIX: Wait for session to fully close (especially on Windows)
+                        # Note: Wait for session to fully close (especially on Windows)
                         import sys
 
                         if sys.platform == "win32":
@@ -342,7 +342,7 @@ class ProxyClient:
                         else:
                             await asyncio.sleep(0.1)
 
-                        # CRITICAL FIX: Close connector explicitly to ensure complete cleanup
+                        # Note: Close connector explicitly to ensure complete cleanup
                         if hasattr(session, "connector") and session.connector:
                             connector = session.connector
                             if not connector.closed:
@@ -366,7 +366,7 @@ class ProxyClient:
                     logger.warning(  # pragma: no cover - tested but requires ProxyConnector
                         "Error closing proxy pool %s: %s", pool_key, e
                     )  # pragma: no cover
-                    # CRITICAL FIX: Even if close() fails, try to clean up connector
+                    # Note: Even if close() fails, try to clean up connector
                     try:
                         if hasattr(session, "connector") and session.connector:
                             connector = session.connector

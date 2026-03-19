@@ -42,10 +42,10 @@ class DiscoveryController:
                 return
 
             # Filter peers by quality before deduplication
-            # CRITICAL FIX: When peer count is very low, skip quality filtering to maximize connections
+            # Note: When peer count is very low, skip quality filtering to maximize connections
             filtered_peers = await self._filter_peers_by_quality(peers)
 
-            # CRITICAL FIX: If quality filtering removed too many peers and we have very few connections,
+            # Note: If quality filtering removed too many peers and we have very few connections,
             # relax filtering or skip it entirely
             if len(filtered_peers) < len(peers) * 0.5:  # More than 50% filtered
                 # Check current peer count - if very low, use all peers
@@ -116,17 +116,17 @@ class DiscoveryController:
 
         def callback_wrapper(peers: list[tuple[str, int]]) -> None:
             """Create async task for peer processing from synchronous callback."""
-            # CRITICAL FIX: Add error handling for task creation and execution
+            # Note: Add error handling for task creation and execution
             try:
                 task = self._tasks.create_task(
                     process_with_dedup(peers), name="dht_peers_dedup"
                 )
 
-                # CRITICAL FIX: Add done callback to log errors if task fails
+                # Note: Add done callback to log errors if task fails
                 def task_done_callback(task: asyncio.Task) -> None:
                     """Handle task completion and log errors."""
                     try:
-                        # CRITICAL FIX: Check if task was cancelled before checking exception
+                        # Note: Check if task was cancelled before checking exception
                         # task.exception() raises CancelledError if task was cancelled
                         if task.cancelled():
                             # Task was cancelled (likely during shutdown) - don't log as error
@@ -182,7 +182,7 @@ class DiscoveryController:
                 else:
                     pass
 
-        # CRITICAL FIX: Pass info_hash to add_peer_callback to register callback per info_hash
+        # Note: Pass info_hash to add_peer_callback to register callback per info_hash
         # This ensures callbacks are only invoked for the correct torrent
         # The callback wrapper already filters by info_hash via the discovery controller,
         # but registering with info_hash ensures better performance and correctness
@@ -253,7 +253,7 @@ class DiscoveryController:
             pass
 
         # RELAXED: Use very relaxed threshold to allow slower peers
-        # CRITICAL FIX: Ultra-relaxed threshold for ultra-low peer counts
+        # Note: Ultra-relaxed threshold for ultra-low peer counts
         if connected_peers < 3:
             quality_threshold = (
                 0.0  # No filtering for ultra-low peer count - accept all peers

@@ -589,6 +589,7 @@ class TestAsyncTrackerClient:
     def test_handle_tracker_failure_new(self, client):
         """Test handling tracker failure for new tracker."""
         url = "http://tracker.example.com"
+        client.config.network.retry_base_delay = 1.0
 
         # Mock random to remove jitter for deterministic test
         with patch("random.uniform", return_value=0.0):
@@ -602,6 +603,7 @@ class TestAsyncTrackerClient:
     def test_handle_tracker_failure_existing(self, client):
         """Test handling tracker failure for existing tracker."""
         url = "http://tracker.example.com"
+        client.config.network.retry_base_delay = 1.0
         session = TrackerSession(url=url, failure_count=2, backoff_delay=4.0)
         client.sessions[url] = session
 
@@ -935,6 +937,40 @@ class TestAsyncTrackerClient:
 
         assert result == {}
 
+    @pytest.mark.asyncio
+    async def test_immediate_connection_coalesces_and_dedupes_peer_batches(self, client) -> None:
+        """Immediate connection batches from tracker responses should merge within debounce window."""
+        received: list[tuple[str, list[dict[str, Any]]]] = []
+
+        async def callback(peers: list[dict[str, Any]], tracker_url: str) -> None:
+            received.append((tracker_url, peers))
+
+        await client.start()
+        client.on_peers_received = callback
+        tracker_url = "udp://127.0.0.1:6969"
+
+        await client._call_immediate_connection(
+            [
+                {"ip": "192.0.2.1", "port": 6881, "peer_source": "tracker"},
+                {"ip": "192.0.2.2", "port": 6882, "peer_source": "tracker"},
+            ],
+            tracker_url,
+        )
+        await client._call_immediate_connection(
+            [
+                {"ip": "192.0.2.2", "port": 6882, "peer_source": "tracker"},
+                {"ip": "192.0.2.3", "port": 6883, "peer_source": "tracker"},
+            ],
+            tracker_url,
+        )
+
+        await asyncio.sleep(0.3)
+        await client.stop()
+
+        assert len(received) == 1
+        assert received[0][0] == tracker_url
+        assert len(received[0][1]) == 3
+
 
 class TestTrackerClientExpanded:
     """Expanded tests for TrackerClient (synchronous)."""
@@ -976,6 +1012,7 @@ class TestTrackerClientExpanded:
     def test_handle_tracker_failure_new(self):
         """Test handling tracker failure for new tracker."""
         url = "http://tracker.example.com"
+        self.client.config.network.retry_base_delay = 1.0
 
         # Mock random to remove jitter for deterministic test
         with patch("random.uniform", return_value=0.0):

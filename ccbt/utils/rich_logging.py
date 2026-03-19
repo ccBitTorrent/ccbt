@@ -234,7 +234,7 @@ class CorrelationRichHandler(RichHandler):  # type: ignore[misc]
             # Both console.markup=True and handler.markup=True are set in __init__
             super().emit(record)
         except Exception:
-            # CRITICAL FIX: Prevent circular logging errors
+            # Note: Prevent circular logging errors
             # If logging fails, don't try to log the error (which could fail again)
             # Instead, silently ignore or use sys.stderr as last resort
             self.handleError(record)
@@ -362,7 +362,7 @@ def create_rich_handler(
         return handler
 
     if console is None:
-        # CRITICAL FIX: Create Rich Console with file=sys.stdout and explicit markup=True
+        # Note: Create Rich Console with file=sys.stdout and explicit markup=True
         # This ensures immediate output without buffering and proper markup processing
         import sys
 

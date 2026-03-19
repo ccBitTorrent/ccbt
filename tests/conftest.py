@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import random
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -28,7 +29,12 @@ except ImportError:
 
 # #region agent log
 # Debug logging helper
-_DEBUG_LOG_PATH = Path(__file__).parent.parent / ".cursor" / "debug.log"
+_DEBUG_LOG_PATH = Path(
+    os.environ.get(
+        "CCBT_TEST_DEBUG_LOG",
+        str(Path(tempfile.gettempdir()) / "ccbt-test-debug.log"),
+    )
+)
 def _debug_log(hypothesis_id: str, location: str, message: str, data: Optional[dict] = None):
     """Write debug log entry in NDJSON format."""
     try:
@@ -348,7 +354,7 @@ def cleanup_singleton_resources():
         # Only reset NetworkOptimizer if it exists and has active cleanup thread
         if _network_optimizer is not None:
             pool = _network_optimizer.connection_pool
-            # CRITICAL FIX: Check for connection_pool existence before accessing
+            # Note: Check for connection_pool existence before accessing
             if pool is not None and pool._cleanup_task is not None:
                 # #region agent log
                 _debug_log("A", "conftest.py:cleanup_singleton_resources", "NetworkOptimizer has cleanup task", {"thread_alive": pool._cleanup_task.is_alive()})
@@ -360,7 +366,7 @@ def cleanup_singleton_resources():
                     # #endregion
                     # Call stop to properly shutdown the thread with timeout protection
                     try:
-                        # CRITICAL FIX: Add timeout wrapper to prevent hanging
+                        # Note: Add timeout wrapper to prevent hanging
                         import threading
                         stop_completed = threading.Event()
                         def stop_with_timeout():
@@ -381,7 +387,7 @@ def cleanup_singleton_resources():
                         # #region agent log
                         _debug_log("A", "conftest.py:cleanup_singleton_resources", "pool.stop() completed, sleeping 0.5s", {})
                         # #endregion
-                        # CRITICAL FIX: Increase sleep from 0.1s to 0.5s to ensure cleanup completes
+                        # Note: Increase sleep from 0.1s to 0.5s to ensure cleanup completes
                         time.sleep(0.5)
                         # #region agent log
                         _debug_log("A", "conftest.py:cleanup_singleton_resources", "Sleep completed", {})
@@ -397,13 +403,13 @@ def cleanup_singleton_resources():
                 _debug_log("A", "conftest.py:cleanup_singleton_resources", "Resetting NetworkOptimizer", {})
                 # #endregion
                 reset_network_optimizer()
-                # CRITICAL FIX: Explicitly clear pool reference
+                # Note: Explicitly clear pool reference
                 pool = None
                 # #region agent log
                 _debug_log("A", "conftest.py:cleanup_singleton_resources", "NetworkOptimizer reset completed", {})
                 # #endregion
         
-        # CRITICAL FIX: Force cleanup all ConnectionPool instances (not just singleton)
+        # Note: Force cleanup all ConnectionPool instances (not just singleton)
         # This ensures any ConnectionPool instances created outside the singleton are also cleaned up
         try:
             from ccbt.utils.network_optimizer import force_cleanup_all_connection_pools
@@ -421,24 +427,22 @@ def cleanup_singleton_resources():
             # Try to stop if running (async, but best effort)
             if _GLOBAL_METRICS_COLLECTOR.running:
                 try:
-                    import asyncio
-                    # Try to get existing loop, create new one if needed
+                    # Use a short-lived loop only when no loop is currently running.
+                    # This avoids run_until_complete() against pytest-managed loops.
                     try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_closed():
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
+                        asyncio.get_running_loop()
+                        has_running_loop = True
                     except RuntimeError:
-                        # No event loop, create new one
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                    
-                    if not loop.is_running():
+                        has_running_loop = False
+
+                    if not has_running_loop:
                         try:
                             # #region agent log
                             _debug_log("C", "conftest.py:cleanup_singleton_resources", "Calling MetricsCollector.stop()", {})
                             # #endregion
-                            loop.run_until_complete(_GLOBAL_METRICS_COLLECTOR.stop())
+                            asyncio.run(
+                                asyncio.wait_for(_GLOBAL_METRICS_COLLECTOR.stop(), timeout=1.5)
+                            )
                             # #region agent log
                             _debug_log("C", "conftest.py:cleanup_singleton_resources", "MetricsCollector.stop() completed", {})
                             # #endregion
@@ -884,7 +888,7 @@ def create_interactive_cli(session, console=None):
         console.print = Mock()
         console.clear = Mock()
         console.print_json = Mock()
-        # CRITICAL FIX: Rich Progress requires console.get_time method
+        # Note: Rich Progress requires console.get_time method
         import time
         console.get_time = Mock(return_value=time.time)
     
@@ -1120,7 +1124,7 @@ async def session_manager(tmp_path, request):
                                         await asyncio.wait_for(
                                             tracker_session.close(), timeout=1.0
                                         )
-                                        # CRITICAL FIX: Close connector explicitly to ensure complete cleanup
+                                        # Note: Close connector explicitly to ensure complete cleanup
                                         if hasattr(tracker_session, "connector") and tracker_session.connector:
                                             connector = tracker_session.connector
                                             if not connector.closed:
@@ -1191,7 +1195,7 @@ async def session_manager(tmp_path, request):
                 except Exception:
                     pass  # Ignore errors during cleanup
             
-            # CRITICAL FIX: Stop TCP server explicitly before checking port release
+            # Note: Stop TCP server explicitly before checking port release
             if hasattr(session, "tcp_server") and session.tcp_server:
                 try:
                     # Stop TCP server if it has a stop method
@@ -1225,7 +1229,7 @@ async def session_manager(tmp_path, request):
                 except Exception:
                     pass  # Best effort - port may already be released
             
-            # CRITICAL FIX: Verify DHT port is released
+            # Note: Verify DHT port is released
             if hasattr(session, "dht_client") and session.dht_client:
                 try:
                     # Check if DHT client has a port attribute

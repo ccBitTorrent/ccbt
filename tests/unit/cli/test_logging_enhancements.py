@@ -38,7 +38,7 @@ class TestCorrelationRichHandler:
         console = Console(file=StringIO(), width=80)
         handler = CorrelationRichHandler(console=console)
         assert handler.console is console
-        # CRITICAL FIX: Icons are always False (removed per user preference)
+        # Note: Icons are always False (removed per user preference)
         assert handler.show_icons is False
         assert handler.show_colors is True
 
@@ -58,7 +58,7 @@ class TestCorrelationRichHandler:
 
     def test_level_icons(self):
         """Test that level icons are defined (icons removed, dict is empty)."""
-        # CRITICAL FIX: Icons were removed per user preference, so LEVEL_ICONS is empty
+        # Note: Icons were removed per user preference, so LEVEL_ICONS is empty
         # The test now verifies that LEVEL_ICONS exists but is empty (as per implementation)
         assert isinstance(CorrelationRichHandler.LEVEL_ICONS, dict)
         assert len(CorrelationRichHandler.LEVEL_ICONS) == 0  # Icons removed

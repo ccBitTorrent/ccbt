@@ -17,7 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Protocol, Union, cast
 
 import aiohttp
 
@@ -25,6 +25,25 @@ from ccbt.config.config import get_config
 from ccbt.core.bencode import BencodeDecoder
 from ccbt.models import PeerInfo
 from ccbt.utils.version import get_user_agent
+
+
+class _UDPTrackerAnnounceProtocol(Protocol):
+    """Protocol for UDP tracker client used in announce path (ty/socket_ready)."""
+
+    @property
+    def socket_ready(self) -> bool: ...
+
+    async def announce_to_tracker_full(
+        self,
+        url: str,
+        torrent_data: dict[str, Any],
+        *,
+        port: Optional[int] = None,
+        uploaded: int = 0,
+        downloaded: int = 0,
+        left: int = 0,
+        event: Any = None,
+    ) -> Optional[Any]: ...
 
 
 class TrackerError(Exception):
@@ -201,8 +220,12 @@ class AsyncTrackerClient:
         self._xet_chunk_registry: dict[tuple[bytes, Optional[str]], list[PeerInfo]] = {}
 
         self.logger = logging.getLogger(__name__)
+        self._immediate_connection_window = 0.25
+        self._immediate_connection_lock: asyncio.Lock = asyncio.Lock()
+        self._pending_immediate_peers: dict[str, list[dict[str, Any]]] = {}
+        self._immediate_connection_tasks: dict[str, asyncio.Task[None]] = {}
 
-        # CRITICAL FIX: Immediate peer connection callback
+        # Note: Immediate peer connection callback
         # This allows sessions to connect peers immediately when tracker responses arrive
         # instead of waiting for the announce loop to process them
         self.on_peers_received: Optional[
@@ -250,9 +273,42 @@ class AsyncTrackerClient:
         self, peers: list[dict[str, Any]], tracker_url: str
     ) -> None:
         """Call immediate connection callback asynchronously."""
-        if self.on_peers_received:
+        if not peers:
+            return
+        if not self.on_peers_received:
+            return
+
+        self._pending_immediate_peers.setdefault(tracker_url, [])
+
+        async with self._immediate_connection_lock:
+            pending_batch = self._pending_immediate_peers[tracker_url]
+            seen_peer_keys = {
+                (peer.get("ip"), peer.get("port")) for peer in pending_batch
+            }
+            for peer in peers:
+                peer_key = (peer.get("ip"), peer.get("port"))
+                if peer_key not in seen_peer_keys:
+                    pending_batch.append(peer)
+                    seen_peer_keys.add(peer_key)
+
+            if tracker_url not in self._immediate_connection_tasks:
+                self._immediate_connection_tasks[tracker_url] = asyncio.create_task(  # noqa: RUF006
+                    self._flush_immediate_connection(tracker_url)
+                )
+
+    async def _flush_immediate_connection(self, tracker_url: str) -> None:
+        """Flush merged immediate peers after debounce window and invoke callback."""
+        try:
+            await asyncio.sleep(self._immediate_connection_window)
+
+            async with self._immediate_connection_lock:
+                peers = self._pending_immediate_peers.pop(tracker_url, [])
+                self._immediate_connection_tasks.pop(tracker_url, None)
+
+            if not peers:
+                return
+
             try:
-                # Call the callback - it should be async-safe
                 if asyncio.iscoroutinefunction(self.on_peers_received):
                     await self.on_peers_received(peers, tracker_url)
                 else:
@@ -263,10 +319,12 @@ class AsyncTrackerClient:
                     e,
                     exc_info=True,
                 )
+        except asyncio.CancelledError:
+            return
 
     async def start(self) -> None:
         """Start the async tracker client."""
-        # CRITICAL FIX: Close existing session if it exists before creating a new one
+        # Note: Close existing session if it exists before creating a new one
         # This prevents resource leaks when start() is called multiple times
         if self.session and not self.session.closed:
             try:
@@ -451,15 +509,15 @@ class AsyncTrackerClient:
         # Clear task reference
         self._announce_task = None
 
-        # CRITICAL FIX: Properly close HTTP session to prevent "Unclosed client session" warnings
+        # Note: Properly close HTTP session to prevent "Unclosed client session" warnings
         if self.session:
             try:
-                # CRITICAL FIX: Ensure session is fully closed before setting to None
+                # Note: Ensure session is fully closed before setting to None
                 # Use context manager pattern to ensure cleanup even if close() raises
                 if not self.session.closed:
-                    # CRITICAL FIX: Close all connectors to ensure complete cleanup
+                    # Note: Close all connectors to ensure complete cleanup
                     await self.session.close()
-                    # CRITICAL FIX: Wait longer for session to fully close (especially on Windows)
+                    # Note: Wait longer for session to fully close (especially on Windows)
                     # This prevents "Unclosed client session" warnings
                     # On Windows, aiohttp sessions may need more time to fully close
                     import sys
@@ -469,7 +527,7 @@ class AsyncTrackerClient:
                     else:
                         await asyncio.sleep(0.1)
 
-                    # CRITICAL FIX: Close connector explicitly to ensure complete cleanup
+                    # Note: Close connector explicitly to ensure complete cleanup
                     # This is especially important on Windows where connector cleanup can be delayed
                     if hasattr(self.session, "connector") and self.session.connector:
                         connector = self.session.connector
@@ -483,14 +541,14 @@ class AsyncTrackerClient:
                             except Exception as e:
                                 self.logger.debug("Error closing connector: %s", e)
 
-                    # CRITICAL FIX: Verify session is actually closed
+                    # Note: Verify session is actually closed
                     if not self.session.closed:
                         self.logger.warning(
                             "HTTP session not fully closed after close() call"
                         )
             except Exception as e:
                 self.logger.debug("Error closing HTTP session: %s", e)
-                # CRITICAL FIX: Even if close() fails, try to clean up connector
+                # Note: Even if close() fails, try to clean up connector
                 try:
                     if hasattr(self.session, "connector") and self.session.connector:
                         connector = self.session.connector
@@ -506,7 +564,7 @@ class AsyncTrackerClient:
                 except Exception:
                     pass
             finally:
-                # CRITICAL FIX: Always set to None even if close() fails
+                # Note: Always set to None even if close() fails
                 self.session = None
 
         # Stop tracker health manager
@@ -918,7 +976,7 @@ class AsyncTrackerClient:
             raise TrackerError(msg)
 
         try:
-            # CRITICAL FIX: Validate torrent_data is a dict before accessing it
+            # Note: Validate torrent_data is a dict before accessing it
             # Log immediately for debugging
             self.logger.debug(
                 "tracker.announce() called with torrent_data type=%s, is_list=%s, is_dict=%s",
@@ -958,7 +1016,7 @@ class AsyncTrackerClient:
 
             # Set left to total file size if not specified
             if left is None:
-                # CRITICAL FIX: Handle missing or None file_info - validate torrent_data is dict first
+                # Note: Handle missing or None file_info - validate torrent_data is dict first
                 if isinstance(torrent_data, dict):
                     file_info = torrent_data.get("file_info")
                     if file_info and isinstance(file_info, dict):
@@ -972,7 +1030,7 @@ class AsyncTrackerClient:
                 else:
                     left = 0  # Default to 0 if file_info not available
 
-            # CRITICAL FIX: Use large but reasonable value for magnet links without metadata
+            # Note: Use large but reasonable value for magnet links without metadata
             # left=0 means "completed download" to trackers, so they won't return peers
             # Using max int64 (2^63-1) may confuse some trackers, so use a large reasonable value instead
             # 1TB (1099511627776 bytes) is large enough to indicate "unknown size, downloading full file"
@@ -1001,7 +1059,7 @@ class AsyncTrackerClient:
                         )
                     left = large_left
 
-            # CRITICAL FIX: Validate required fields before building URL
+            # Note: Validate required fields before building URL
             # Handle both dict and object access patterns
             announce_url = (
                 torrent_data.get("announce")
@@ -1029,7 +1087,7 @@ class AsyncTrackerClient:
                 msg = "No peer_id in torrent data"
                 raise TrackerError(msg)
 
-            # CRITICAL FIX: Ensure info_hash and peer_id are bytes, not strings
+            # Note: Ensure info_hash and peer_id are bytes, not strings
             # Convert hex strings to bytes if needed
             if isinstance(info_hash_raw, str):
                 # Try to decode as hex string (40 chars = 20 bytes, 64 chars = 32 bytes for v2/XET)
@@ -1135,7 +1193,7 @@ class AsyncTrackerClient:
                 event,
             )
 
-            # CRITICAL FIX: Detect UDP trackers and route to UDP client
+            # Note: Detect UDP trackers and route to UDP client
             # Normalize URL first to ensure proper format detection
             normalized_url = self._normalize_tracker_url(announce_url)
 
@@ -1177,7 +1235,7 @@ class AsyncTrackerClient:
 
             if is_udp:
                 # Route to UDP tracker client
-                # CRITICAL FIX: Singleton pattern removed - use session_manager.udp_tracker_client
+                # Note: Singleton pattern removed - use session_manager.udp_tracker_client
                 # Socket must be initialized during daemon startup and never recreated
                 # This prevents WinError 10022 on Windows and ensures proper socket lifecycle
                 udp_client = None
@@ -1193,7 +1251,7 @@ class AsyncTrackerClient:
                         "Using session manager's initialized UDP tracker client"
                     )
 
-                # CRITICAL FIX: Handle missing UDP tracker client gracefully
+                # Note: Handle missing UDP tracker client gracefully
                 # If UDP tracker client is not available (e.g., port binding failed),
                 # log warning and skip UDP tracker announce, but continue with HTTP trackers
                 if udp_client is None:
@@ -1208,19 +1266,18 @@ class AsyncTrackerClient:
                     # This allows downloads to work even if UDP tracker client initialization failed
                     return None
 
-                # CRITICAL FIX: Validate socket is ready before use
+                # Note: Validate socket is ready before use
                 # Socket should NEVER be recreated - if invalid, fail gracefully
                 # Type narrowing: udp_client is guaranteed to be non-None after check above
-                from ccbt.discovery.tracker_udp_client import AsyncUDPTrackerClient
-
-                if not isinstance(udp_client, AsyncUDPTrackerClient):
-                    self.logger.warning("UDP tracker client type mismatch")
+                if not hasattr(udp_client, "announce_to_tracker_full"):
+                    self.logger.warning("UDP tracker client missing announce API")
                     return None
 
+                udp_client_typed = cast("_UDPTrackerAnnounceProtocol", udp_client)
                 if (
                     udp_client.transport is None  # type: ignore[attr-defined]
                     or udp_client.transport.is_closing()  # type: ignore[attr-defined]
-                    or not udp_client.socket_ready
+                    or not udp_client_typed.socket_ready
                 ):
                     # CRITICAL: Socket should have been initialized during daemon startup
                     # If it's invalid here, this indicates a serious initialization issue
@@ -1232,7 +1289,7 @@ class AsyncTrackerClient:
                         udp_client.transport.is_closing()  # type: ignore[attr-defined]
                         if udp_client.transport  # type: ignore[attr-defined]
                         else None,
-                        udp_client.socket_ready,
+                        udp_client_typed.socket_ready,
                     )
                     msg = (
                         "UDP tracker client socket is invalid. "
@@ -1267,8 +1324,8 @@ class AsyncTrackerClient:
                         single_tracker_data = torrent_data
 
                     # Use the full response method to get interval, seeders, leechers
-                    # CRITICAL FIX: Pass port parameter to UDP tracker client to use external port
-                    udp_result = await udp_client.announce_to_tracker_full(
+                    # Note: Pass port parameter to UDP tracker client to use external port
+                    udp_result = await udp_client_typed.announce_to_tracker_full(
                         tracker_url,
                         single_tracker_data,
                         port=port,  # Use external port from NAT manager if available
@@ -1282,17 +1339,29 @@ class AsyncTrackerClient:
                         self._increment_session_metric(
                             tracker_host, "udp_timeout_count"
                         )
-                        fallback_url = announce_url.replace("udp://", "http://", 1)
-                        self._increment_session_metric(
-                            tracker_host, "http_fallback_attempt_count"
+                        fallback_url = self._find_http_fallback_url(
+                            torrent_data, normalized_url
                         )
-                        self.logger.info(
-                            "UDP tracker announce failed for %s, trying HTTP fallback: %s",
-                            normalized_url,
-                            fallback_url,
-                        )
-                        normalized_url = fallback_url
-                        is_udp = False
+                        if fallback_url:
+                            self._increment_session_metric(
+                                tracker_host, "http_fallback_attempt_count"
+                            )
+                            self.logger.info(
+                                "UDP tracker announce failed for %s, trying explicit HTTP fallback: %s",
+                                normalized_url,
+                                fallback_url,
+                            )
+                            normalized_url = fallback_url
+                            is_udp = False
+                        else:
+                            self._increment_session_metric(
+                                tracker_host, "http_fallback_invalid_count"
+                            )
+                            self.logger.warning(
+                                "UDP tracker announce failed for %s and no explicit HTTP fallback tracker is configured; treating tracker as UDP-only",
+                                normalized_url,
+                            )
+                            return None
                     else:
                         # UDP announce succeeded - return result
                         peers, interval, seeders, leechers = udp_result
@@ -1308,22 +1377,35 @@ class AsyncTrackerClient:
                     self._increment_session_metric(
                         tracker_host, "udp_connect_failure_count"
                     )
-                    fallback_url = announce_url.replace("udp://", "http://", 1)
-                    self._increment_session_metric(
-                        tracker_host, "http_fallback_attempt_count"
+                    fallback_url = self._find_http_fallback_url(
+                        torrent_data, normalized_url
                     )
-                    self.logger.debug(
-                        "UDP tracker announce failed for %s: %s, trying HTTP fallback %s",
-                        normalized_url,
-                        udp_error,
-                        fallback_url,
-                    )
-                    normalized_url = fallback_url
-                    is_udp = False
+                    if fallback_url:
+                        self._increment_session_metric(
+                            tracker_host, "http_fallback_attempt_count"
+                        )
+                        self.logger.debug(
+                            "UDP tracker announce failed for %s: %s, trying explicit HTTP fallback %s",
+                            normalized_url,
+                            udp_error,
+                            fallback_url,
+                        )
+                        normalized_url = fallback_url
+                        is_udp = False
+                    else:
+                        self._increment_session_metric(
+                            tracker_host, "http_fallback_invalid_count"
+                        )
+                        self.logger.warning(
+                            "UDP tracker announce failed for %s: %s, and no explicit HTTP fallback tracker exists (UDP-only path)",
+                            normalized_url,
+                            udp_error,
+                        )
+                        return None
 
             if not is_udp:
                 # HTTP tracker announce (including fallback from UDP)
-                # CRITICAL FIX: Handle HTTP tracker announce (including fallback from UDP)
+                # Note: Handle HTTP tracker announce (including fallback from UDP)
                 if normalized_url.startswith(("http://", "https://")):
                     self.logger.debug(
                         "Using HTTP tracker for %s",
@@ -1382,7 +1464,7 @@ class AsyncTrackerClient:
             if is_udp and udp_result is not None:
                 udp_peers, udp_interval, udp_seeders, udp_leechers = udp_result
                 # Log if we got a response but no peers - this is unusual
-                # CRITICAL FIX: Enhanced warning for 0 peers from trackers
+                # Note: Enhanced warning for 0 peers from trackers
                 # This is especially important for popular torrents where 0 peers is unusual
                 if (
                     not udp_peers
@@ -1403,8 +1485,8 @@ class AsyncTrackerClient:
                     )
 
                     # Convert UDP response to TrackerResponse format
-                    # CRITICAL FIX: Convert dict peers to PeerInfo objects for type consistency
-                    # CRITICAL FIX: Log UDP peer count before conversion
+                    # Note: Convert dict peers to PeerInfo objects for type consistency
+                    # Note: Log UDP peer count before conversion
                     raw_peer_count = len(udp_peers) if udp_peers else 0
                     if raw_peer_count > 0:
                         self.logger.info(
@@ -1458,7 +1540,7 @@ class AsyncTrackerClient:
                                 peer_dict,
                             )
 
-                    # CRITICAL FIX: Log conversion results at INFO/WARNING level for visibility
+                    # Note: Log conversion results at INFO/WARNING level for visibility
                     if conversion_errors > 0:
                         self.logger.warning(
                             "Converted %d/%d peers from UDP tracker %s (skipped %d invalid)",
@@ -1676,6 +1758,31 @@ class AsyncTrackerClient:
             self.logger.warning("No tracker URLs provided for announce_to_multiple")
             return []
 
+        ranked_urls = self.rank_trackers(tracker_urls)
+        scheduled_urls: list[str] = []
+        deferred_urls: list[tuple[float, str]] = []
+        current_time = time.time()
+        for url in ranked_urls:
+            session = self.sessions.get(url)
+            if session is None:
+                self.sessions[url] = TrackerSession(url=url)
+                session = self.sessions[url]
+            backoff_until = session.last_failure + session.backoff_delay
+            if session.failure_count > 0 and current_time < backoff_until:
+                deferred_urls.append((backoff_until - current_time, url))
+                continue
+            scheduled_urls.append(url)
+        if not scheduled_urls and deferred_urls:
+            deferred_urls.sort(key=lambda item: item[0])
+            scheduled_urls.append(deferred_urls[0][1])
+        if len(scheduled_urls) != len(tracker_urls):
+            self.logger.info(
+                "Announce scheduler deferred %d tracker(s) still in backoff; scheduling %d tracker(s) this cycle",
+                len(tracker_urls) - len(scheduled_urls),
+                len(scheduled_urls),
+            )
+        tracker_urls = scheduled_urls
+
         # Log tracker types for debugging
         udp_count = sum(1 for url in tracker_urls if url.startswith("udp://"))
         http_count = len(tracker_urls) - udp_count
@@ -1718,7 +1825,7 @@ class AsyncTrackerClient:
             len(tasks),
         )
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        # CRITICAL FIX: Ensure all task exceptions are retrieved to prevent "Task exception was never retrieved" warnings
+        # Note: Ensure all task exceptions are retrieved to prevent "Task exception was never retrieved" warnings
         # Even with return_exceptions=True, Python requires explicit exception retrieval to avoid warnings
         for task, result in zip(tasks, results):
             if isinstance(result, Exception):
@@ -1747,7 +1854,7 @@ class AsyncTrackerClient:
             url = url_to_task.get(task, "unknown")
             tracker_type = "UDP" if url.startswith("udp://") else "HTTP/HTTPS"
 
-            # CRITICAL FIX: Enhanced logging to diagnose why responses aren't being processed
+            # Note: Enhanced logging to diagnose why responses aren't being processed
             self.logger.info(
                 "🔍 ANNOUNCE_TO_MULTIPLE: Processing result for %s tracker %s (result_type=%s, is_TrackerResponse=%s)",
                 tracker_type,
@@ -1768,7 +1875,7 @@ class AsyncTrackerClient:
                     type(result.peers).__name__ if result.peers else "None",
                 )
             elif result is None:
-                # CRITICAL FIX: Handle None result (UDP tracker skipped due to missing client)
+                # Note: Handle None result (UDP tracker skipped due to missing client)
                 tracker_type = "UDP" if url.startswith("udp://") else "HTTP/HTTPS"
                 skipped_count += 1
                 self.logger.debug(
@@ -1779,7 +1886,7 @@ class AsyncTrackerClient:
             elif isinstance(result, Exception):
                 tracker_type = "UDP" if url.startswith("udp://") else "HTTP/HTTPS"
                 failed_trackers.append((url, result))
-                # CRITICAL FIX: Log tracker failures at warning level, not debug
+                # Note: Log tracker failures at warning level, not debug
                 # This helps diagnose why peer discovery is failing
                 error_msg = str(result)
                 error_type = type(result).__name__
@@ -1835,7 +1942,7 @@ class AsyncTrackerClient:
             skipped_count,
         )
 
-        # CRITICAL FIX: Log each successful response's peer count for diagnostics
+        # Note: Log each successful response's peer count for diagnostics
         for i, resp in enumerate(successful_responses):
             peer_count = (
                 len(resp.peers) if resp and hasattr(resp, "peers") and resp.peers else 0
@@ -1909,7 +2016,7 @@ class AsyncTrackerClient:
                 left,
                 event,
             )
-            # CRITICAL FIX: Handle None return (UDP tracker skipped)
+            # Note: Handle None return (UDP tracker skipped)
             if result is None:
                 return None
             return result
@@ -1987,6 +2094,45 @@ class AsyncTrackerClient:
 
         """
         return self._normalize_tracker_url(url)
+
+    def _find_http_fallback_url(
+        self, torrent_data: dict[str, Any], udp_tracker_url: str
+    ) -> Optional[str]:
+        """Find an explicit HTTP(S) fallback tracker from torrent metadata."""
+        announce_list = torrent_data.get("announce_list", [])
+        for tier in announce_list:
+            if not isinstance(tier, list):
+                continue
+            for candidate in tier:
+                if not isinstance(candidate, str):
+                    continue
+                try:
+                    normalized_candidate = self._normalize_tracker_url(candidate)
+                except Exception:
+                    self.logger.debug(
+                        "Skipping invalid tracker candidate %r after normalize failed",
+                        candidate,
+                        exc_info=True,
+                    )
+                    continue
+                if normalized_candidate == udp_tracker_url:
+                    continue
+                if normalized_candidate.startswith(("http://", "https://")):
+                    return normalized_candidate
+
+        announce_url = torrent_data.get("announce")
+        if isinstance(announce_url, str):
+            try:
+                normalized_announce = self._normalize_tracker_url(announce_url)
+            except Exception:
+                return None
+            if (
+                normalized_announce != udp_tracker_url
+                and normalized_announce.startswith(("http://", "https://"))
+            ):
+                return normalized_announce
+
+        return None
 
     def _normalize_tracker_url(self, url: str) -> str:
         """Normalize and validate tracker URL to prevent malformed URLs.
@@ -2148,7 +2294,7 @@ class AsyncTrackerClient:
             msg = f"Unsupported tracker URL scheme: {parsed.scheme} in {url}"
             raise TrackerError(msg)
 
-        # CRITICAL FIX: Strip paths from UDP URLs
+        # Note: Strip paths from UDP URLs
         # UDP trackers don't use paths (unlike HTTP trackers), but magnet links may include them
         if parsed.scheme == "udp" and parsed.path:
             # Remove path from UDP URL (e.g., udp://host:port/announce -> udp://host:port)
@@ -2156,7 +2302,7 @@ class AsyncTrackerClient:
             # Re-parse to get updated URL
             parsed = urllib.parse.urlparse(url)
 
-        # CRITICAL FIX: Additional validation for UDP URLs
+        # Note: Additional validation for UDP URLs
         # Ensure UDP URLs have valid hostname and port
         if parsed.scheme == "udp":
             if not parsed.hostname:
@@ -2209,14 +2355,14 @@ class AsyncTrackerClient:
             Complete tracker URL with query parameters
 
         """
-        # CRITICAL FIX: Normalize tracker URL before building query string
+        # Note: Normalize tracker URL before building query string
         try:
             base_url = self._normalize_tracker_url(base_url)
         except TrackerError:
             self.logger.exception("Invalid tracker URL: %s", base_url)
             raise
 
-        # CRITICAL FIX: URL encode binary parameters correctly
+        # Note: URL encode binary parameters correctly
         # BitTorrent spec requires raw binary data to be URL-encoded, not hex-encoded
         # Use quote() for binary data, then manually build query string to avoid double-encoding
         info_hash_encoded = urllib.parse.quote(info_hash, safe="")
@@ -2232,7 +2378,7 @@ class AsyncTrackerClient:
             f"downloaded={downloaded}",
             f"left={left}",
             "compact=1",
-            "numwant=200",  # CRITICAL FIX: Request up to 200 peers (tracker may return fewer)
+            "numwant=200",  # Note: Request up to 200 peers (tracker may return fewer)
             # This helps with discoverability - more peers = better connectivity
         ]
 
@@ -2329,7 +2475,7 @@ class AsyncTrackerClient:
             raise TrackerError(msg) from e
         except aiohttp.ClientError as e:  # pragma: no cover - ClientError path tested via exception injection, but coverage tool may not track exception handler execution perfectly
             self._increment_session_metric(tracker_host, "error_count")
-            # CRITICAL FIX: Provide specific error messages instead of generic "Network error"
+            # Note: Provide specific error messages instead of generic "Network error"
             # Enhanced error messages to distinguish HTTP vs UDP tracker failures
             error_type = type(e).__name__
             parsed_url = urllib.parse.urlparse(url)
@@ -2617,7 +2763,7 @@ class AsyncTrackerClient:
                 incomplete if incomplete is not None else "N/A",
             )
 
-            # CRITICAL FIX: IMMEDIATE CONNECTION PATH - Connect peers as soon as they arrive
+            # Note: IMMEDIATE CONNECTION PATH - Connect peers as soon as they arrive
             # This bypasses the announce loop and connects peers immediately
             if peer_info_list and len(peer_info_list) > 0:
                 self.logger.info(
@@ -3246,7 +3392,7 @@ class TrackerClient:
             msg = f"HTTP {e.code}"
             raise TrackerError(msg) from e
         except urllib.error.URLError as e:
-            # CRITICAL FIX: Provide specific error messages instead of generic "Network error"
+            # Note: Provide specific error messages instead of generic "Network error"
             error_reason = (
                 str(e.reason) if hasattr(e, "reason") and e.reason else str(e)
             )

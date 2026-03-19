@@ -137,6 +137,13 @@ class TestAsyncPieceManagerVerification:
         assert piece.state != PieceState.VERIFIED
 
     @pytest.mark.asyncio
+    async def test_verification_counters_are_exposed(self, piece_manager):
+        """Verification counters should be exported for stall diagnostics."""
+        counters = piece_manager.get_verification_counters()
+        assert counters["piece_hash_verification_successes"] == 0
+        assert counters["piece_hash_verification_failures"] == 0
+
+    @pytest.mark.asyncio
     async def test_verify_piece_hash_exception(self, piece_manager):
         """Test hash verification with exception."""
         piece_index = 0
@@ -351,6 +358,34 @@ class TestAsyncPieceManagerPieceSelector:
         )
 
     @pytest.mark.asyncio
+    async def test_select_pieces_continues_with_requestable_metadata_only_peer(
+        self, piece_manager
+    ):
+        """Metadata-only peers should still drive optimistic payload bootstrap attempts."""
+        schedule_pending_resume = MagicMock()
+        fake_peer = SimpleNamespace(
+            peer_info=SimpleNamespace(ip="203.0.113.11", port=6881),
+            can_request=lambda: True,
+            peer_state=SimpleNamespace(pieces_we_have=set()),
+        )
+        piece_manager.is_downloading = True
+        piece_manager._metadata_incomplete = False
+        piece_manager._retry_requested_pieces = AsyncMock()
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=MagicMock(return_value=[fake_peer]),
+            _schedule_pending_resume=schedule_pending_resume,
+            connections={"203.0.113.11:6881": fake_peer},
+        )
+        piece_manager.peer_availability.clear()
+
+        await piece_manager._select_pieces()
+
+        schedule_pending_resume.assert_called_once_with(
+            reason="piece_selector_no_piece_info"
+        )
+        piece_manager._retry_requested_pieces.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_endgame_mode_activation(self, piece_manager):
         """Test endgame mode activation."""
         piece_manager.is_downloading = True
@@ -421,7 +456,7 @@ class TestAsyncPieceManagerHandlePieceBlock:
         piece_index = 0
         piece = piece_manager.pieces[piece_index]
 
-        # CRITICAL FIX: Set correct piece hash that matches the test data
+        # Note: Set correct piece hash that matches the test data
         # The test data is b"x" * block.length for each block, so we need to calculate
         # the hash of the complete piece data
         piece_data = b"x" * piece.length
@@ -750,6 +785,177 @@ class TestAsyncPieceManagerEdgeCases:
         assert sum(
             1 for peer in available_peers if peer in (unknown_peer_a, unknown_peer_b)
         ) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_peers_for_piece_raises_probe_budget_for_degraded_bootstrap(self):
+        """A metadata-complete swarm with only unknown requestable peers should probe more than one peer."""
+        torrent_data = {
+            "info_hash": b"\x0E" * 20,
+            "file_info": {
+                "name": "bootstrap.bin",
+                "total_length": 65536,
+                "type": "single",
+            },
+            "pieces_info": {
+                "num_pieces": 1,
+                "piece_length": 65536,
+                "piece_hashes": [b"\x01" * 20],
+                "total_length": 65536,
+            },
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        await piece_manager.update_from_metadata(torrent_data)
+
+        def build_unknown_peer(port: int):
+            peer = MagicMock()
+            peer.peer_info = PeerInfo(ip="198.51.100.40", port=port)
+            peer.can_request.return_value = True
+            peer.get_available_pipeline_slots.return_value = 8
+            peer.outstanding_requests = {}
+            peer.max_pipeline_depth = 8
+            peer.peer_choking = False
+            peer.am_interested = True
+            peer.peer_interested = False
+            peer.state = SimpleNamespace(value="active")
+            peer.stats = SimpleNamespace(download_rate=0.0)
+            peer.peer_state = SimpleNamespace(pieces_we_have=set(), bitfield=b"")
+            peer.is_active.return_value = True
+            return peer
+
+        unknown_peer_a = build_unknown_peer(6881)
+        unknown_peer_b = build_unknown_peer(6882)
+        unknown_peer_c = build_unknown_peer(6883)
+        peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [unknown_peer_a, unknown_peer_b, unknown_peer_c],
+            connections={},
+        )
+
+        available_peers = await piece_manager._get_peers_for_piece(0, peer_manager)
+
+        assert len(available_peers) == 2
+        assert all(peer in available_peers for peer in (unknown_peer_a, unknown_peer_b))
+
+    @pytest.mark.asyncio
+    async def test_request_blocks_normal_keeps_requested_state_for_optimistic_retry(self):
+        """Optimistic bootstrap should retain REQUESTED state when probes are not immediately capable."""
+        torrent_data = {
+            "info_hash": b"\x0F" * 20,
+            "file_info": {
+                "name": "retry.bin",
+                "total_length": 65536,
+                "type": "single",
+            },
+            "pieces_info": {
+                "num_pieces": 1,
+                "piece_length": 65536,
+                "piece_hashes": [b"\x01" * 20],
+                "total_length": 65536,
+            },
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        await piece_manager.update_from_metadata(torrent_data)
+
+        unknown_peer = MagicMock()
+        unknown_peer.peer_info = PeerInfo(ip="198.51.100.50", port=6881)
+        unknown_peer.can_request.return_value = True
+        unknown_peer.get_available_pipeline_slots.return_value = 8
+        unknown_peer.outstanding_requests = {}
+        unknown_peer.max_pipeline_depth = 8
+        unknown_peer.peer_choking = False
+        unknown_peer.am_interested = True
+        unknown_peer.peer_interested = False
+        unknown_peer.state = SimpleNamespace(value="active")
+        unknown_peer.stats = SimpleNamespace(download_rate=0.0)
+        unknown_peer.peer_state = SimpleNamespace(pieces_we_have=set(), bitfield=b"")
+        unknown_peer.is_active.return_value = True
+
+        piece_manager._requested_pieces_per_peer[str(unknown_peer.peer_info)] = {0}
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.REQUESTED
+
+        peer_manager = SimpleNamespace(
+            _balance_requests_across_peers=lambda requests, peers, min_allocation_per_peer=1: {},
+            request_piece=AsyncMock(),
+        )
+        requests_sent = await piece_manager._request_blocks_normal(
+            0,
+            piece.get_missing_blocks(),
+            [unknown_peer],
+            peer_manager,
+        )
+
+        assert requests_sent == 0
+        assert piece_manager.pieces[0].state == PieceState.REQUESTED
+
+    @pytest.mark.asyncio
+    async def test_request_piece_from_peers_keeps_request_state_when_no_requestable_peers(self):
+        """When no requestable peers are available, keep REQUESTED state and avoid churn."""
+        torrent_data = {
+            "info_hash": b"\x10" * 20,
+            "file_info": {
+                "name": "no_requestable.bin",
+                "total_length": 16384,
+                "type": "single",
+            },
+            "pieces_info": {
+                "num_pieces": 1,
+                "piece_length": 16384,
+                "piece_hashes": [b"\x01" * 20],
+                "total_length": 16384,
+            },
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        await piece_manager.update_from_metadata(torrent_data)
+
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.REQUESTED
+        piece.request_count = 0
+        piece.requests_dispatched = 0
+        piece.last_request_time = 0.0
+        piece_manager.peer_availability = {"198.51.100.50:6881": SimpleNamespace(pieces={0})}
+
+        peer_manager = SimpleNamespace(get_active_peers=lambda: [], connections={})
+        with patch.object(
+            piece_manager,
+            "_get_peers_for_piece",
+            AsyncMock(return_value=[]),
+        ):
+            await piece_manager.request_piece_from_peers(0, peer_manager)
+
+        assert piece.state == PieceState.REQUESTED
+        assert piece.requests_dispatched == 0
+        assert piece_manager._piece_selection_metrics["no_requestable_peers"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_clear_stale_requested_skips_when_no_requests_dispatched(self):
+        """Pieces with no outbound requests should skip stale reset while in REQUESTED."""
+        torrent_data = {
+            "info_hash": b"\x11" * 20,
+            "file_info": {
+                "name": "no_requestable_reset.bin",
+                "total_length": 16384,
+                "type": "single",
+            },
+            "pieces_info": {
+                "num_pieces": 1,
+                "piece_length": 16384,
+                "piece_hashes": [b"\x01" * 20],
+                "total_length": 16384,
+            },
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        await piece_manager.update_from_metadata(torrent_data)
+
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.REQUESTED
+        piece.requests_dispatched = 0
+        piece.request_count = 0
+        piece.last_request_time = 0.0
+        piece.last_activity_time = 0.0
+        piece._requested_pieces_per_peer = {}
+
+        await piece_manager._clear_stale_requested_pieces(timeout=1.0)
+        assert piece.state == PieceState.REQUESTED
 
     @pytest.mark.asyncio
     async def test_update_from_metadata_rebuilds_deferred_checkpoint_layout(self):

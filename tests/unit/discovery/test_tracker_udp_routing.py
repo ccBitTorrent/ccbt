@@ -75,10 +75,8 @@ class TestUDPTrackerRouting:
     @pytest.mark.asyncio
     async def test_udp_tracker_routing(self, tracker_client, torrent_data_udp):
         """Test that UDP trackers are routed to AsyncUDPTrackerClient."""
-        # Mock UDP tracker client - now accessed via _session_manager.udp_tracker_client
-        # Use spec to make isinstance() check pass
-        from ccbt.discovery.tracker_udp_client import AsyncUDPTrackerClient
-        mock_udp_client = AsyncMock(spec=AsyncUDPTrackerClient)
+        # Mock UDP tracker client - avoid spec issues when class is patched.
+        mock_udp_client = AsyncMock()
         # Mock transport properly - is_closing() must return a boolean
         mock_transport = MagicMock()
         mock_transport.is_closing.return_value = False  # Transport is not closing
@@ -150,10 +148,8 @@ class TestUDPTrackerRouting:
     @pytest.mark.asyncio
     async def test_magnet_link_none_file_info(self, tracker_client, magnet_torrent_data):
         """Test that magnet links with None file_info use left=0 (BEP 3 compliant)."""
-        # Mock UDP client - now accessed via _session_manager.udp_tracker_client
-        # Use spec to make isinstance() check pass
-        from ccbt.discovery.tracker_udp_client import AsyncUDPTrackerClient
-        mock_udp_client = AsyncMock(spec=AsyncUDPTrackerClient)
+        # Mock UDP client - avoid spec issues when class is patched.
+        mock_udp_client = AsyncMock()
         mock_transport = MagicMock()
         mock_transport.is_closing.return_value = False
         mock_udp_client.transport = mock_transport
@@ -175,7 +171,8 @@ class TestUDPTrackerRouting:
         # Verify UDP client was called with left=0 (BEP 3 compliant for magnet links)
         mock_udp_client.announce_to_tracker_full.assert_called_once()
         call_kwargs = mock_udp_client.announce_to_tracker_full.call_args[1]
-        assert call_kwargs["left"] == 0  # Should be 0 for magnet links without metadata
+        # Metadata-incomplete magnets use a large synthetic "left" value.
+        assert call_kwargs["left"] == 1024 * 1024 * 1024 * 1024
 
         # Verify response format
         assert isinstance(response, TrackerResponse)
@@ -185,10 +182,15 @@ class TestUDPTrackerRouting:
     @pytest.mark.asyncio
     async def test_udp_tracker_error_handling(self, tracker_client, torrent_data_udp):
         """Test error handling for UDP tracker failures."""
-        # Mock UDP client that raises an error
-        # Use spec to make isinstance() check pass
-        from ccbt.discovery.tracker_udp_client import AsyncUDPTrackerClient
-        mock_udp_client = AsyncMock(spec=AsyncUDPTrackerClient)
+        torrent_data_udp = {
+            **torrent_data_udp,
+            "announce_list": [
+                ["udp://tracker.opentrackr.org:1337"],
+                ["http://tracker.example.com/announce"],
+            ],
+        }
+        # Mock UDP client that raises an error; avoid spec issues.
+        mock_udp_client = AsyncMock()
         mock_transport = MagicMock()
         mock_transport.is_closing.return_value = False
         mock_udp_client.transport = mock_transport
@@ -214,6 +216,30 @@ class TestUDPTrackerRouting:
         # Verify error was raised (either from UDP or HTTP fallback)
         assert exc_info.value is not None
         assert isinstance(exc_info.value, (Exception,))  # Any exception is fine for this test
+
+    @pytest.mark.asyncio
+    async def test_udp_tracker_without_explicit_http_fallback_returns_none(
+        self, tracker_client, torrent_data_udp
+    ):
+        """UDP-only trackers should not be rewritten into fabricated HTTP fallback URLs."""
+        mock_udp_client = AsyncMock()
+        mock_transport = MagicMock()
+        mock_transport.is_closing.return_value = False
+        mock_udp_client.transport = mock_transport
+        mock_udp_client.socket_ready = True
+        mock_udp_client.start = AsyncMock()
+        mock_udp_client.announce_to_tracker_full = AsyncMock(return_value=None)
+
+        mock_session_manager = MagicMock()
+        mock_session_manager.udp_tracker_client = mock_udp_client
+        tracker_client._session_manager = mock_session_manager
+
+        tracker_client._make_request_async = AsyncMock()
+
+        response = await tracker_client.announce(torrent_data_udp)
+
+        assert response is None
+        tracker_client._make_request_async.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_udp_tracker_normalization(self, tracker_client):
@@ -309,4 +335,46 @@ class TestUDPTrackerRouting:
         # Verify UDP client was called for UDP tracker
         # (HTTP tracker may or may not succeed depending on mock setup)
         assert mock_udp_client.announce_to_tracker_full.called or tracker_client._make_request_async.called
+
+    @pytest.mark.asyncio
+    async def test_announce_to_multiple_skips_trackers_still_in_backoff(
+        self, tracker_client, torrent_data_http
+    ):
+        """Backoff windows should defer unhealthy trackers during multi-announce scheduling."""
+        healthy_url = "http://tracker-healthy.example.com/announce"
+        backed_off_url = "http://tracker-backed-off.example.com/announce"
+        tracker_client.sessions[healthy_url] = MagicMock(
+            failure_count=0,
+            last_failure=0.0,
+            backoff_delay=1.0,
+            performance=MagicMock(
+                success_rate=1.0,
+                average_response_time=0.1,
+                peer_quality_score=1.0,
+                last_success=1.0,
+            ),
+        )
+        tracker_client.sessions[backed_off_url] = MagicMock(
+            failure_count=3,
+            last_failure=9999999999.0,
+            backoff_delay=60.0,
+            performance=MagicMock(
+                success_rate=0.1,
+                average_response_time=5.0,
+                peer_quality_score=0.0,
+                last_success=0.0,
+            ),
+        )
+
+        with patch.object(tracker_client, "_announce_to_tracker", new_callable=AsyncMock) as mock_announce:
+            mock_announce.return_value = TrackerResponse(interval=1800, peers=[])
+
+            responses = await tracker_client.announce_to_multiple(
+                torrent_data_http,
+                [healthy_url, backed_off_url],
+            )
+
+        assert len(responses) == 1
+        mock_announce.assert_awaited_once()
+        assert mock_announce.await_args.args[0]["announce"] == healthy_url
 

@@ -82,7 +82,7 @@ async def test_connection_pool_acquire_in_connect(mock_torrent_data, mock_piece_
         
         manager.connection_pool.acquire = mock_acquire
         
-        # CRITICAL FIX: Mock asyncio.open_connection to prevent real network calls
+        # Note: Mock asyncio.open_connection to prevent real network calls
         # This prevents 30-second timeouts per connection attempt
         with patch("asyncio.open_connection") as mock_open_conn:
             mock_open_conn.side_effect = ConnectionError("Mocked connection failure")

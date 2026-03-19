@@ -202,6 +202,42 @@ class TestAsyncUDPTrackerClientConnection:
     """Test UDP tracker connection handling."""
 
     @pytest.mark.asyncio
+    async def test_wait_for_response_prunes_stale_pending_requests(self) -> None:
+        """Stale pending requests should be pruned before adding a new one."""
+        client = AsyncUDPTrackerClient()
+        await client.start()
+
+        stale_future = asyncio.Future()
+        stale_tid = 111
+        client.pending_requests[stale_tid] = stale_future
+        client._pending_request_timestamps[stale_tid] = time.time() - 120.0
+
+        result = await client._wait_for_response(222, timeout=0.01)
+        assert result is None
+        assert stale_tid not in client.pending_requests
+        assert 222 not in client.pending_requests
+
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_response_enforces_pending_request_cap(self) -> None:
+        """Incoming requests beyond cap should drop oldest pending requests."""
+        client = AsyncUDPTrackerClient()
+        client._max_pending_requests = 1
+        await client.start()
+
+        old_future = asyncio.Future()
+        client.pending_requests[333] = old_future
+        client._pending_request_timestamps[333] = time.time()
+
+        result = await client._wait_for_response(444, timeout=0.01)
+        assert result is None
+        assert 333 not in client.pending_requests
+        assert 444 not in client.pending_requests
+
+        await client.stop()
+
+    @pytest.mark.asyncio
     async def test_connect_without_transport(self):
         """Test connecting without transport raises error."""
         client = AsyncUDPTrackerClient()
@@ -343,7 +379,7 @@ class TestAsyncUDPTrackerClientResponseHandling:
     def test_handle_response_connect(self):
         """Test handling CONNECT response."""
         client = AsyncUDPTrackerClient()
-        # CRITICAL FIX: Set socket ready flag so handle_response doesn't drop the response
+        # Note: Set socket ready flag so handle_response doesn't drop the response
         client._socket_ready = True
         # Also mock transport to ensure socket health checks pass
         from unittest.mock import Mock
@@ -370,7 +406,7 @@ class TestAsyncUDPTrackerClientResponseHandling:
     def test_handle_response_announce(self):
         """Test handling ANNOUNCE response."""
         client = AsyncUDPTrackerClient()
-        # CRITICAL FIX: Set socket ready flag so handle_response doesn't drop the response
+        # Note: Set socket ready flag so handle_response doesn't drop the response
         client._socket_ready = True
         # Also mock transport to ensure socket health checks pass
         from unittest.mock import Mock
@@ -409,7 +445,7 @@ class TestAsyncUDPTrackerClientResponseHandling:
     def test_handle_response_error(self):
         """Test handling ERROR response."""
         client = AsyncUDPTrackerClient()
-        # CRITICAL FIX: Set socket ready flag so handle_response doesn't drop the response
+        # Note: Set socket ready flag so handle_response doesn't drop the response
         client._socket_ready = True
         # Also mock transport to ensure socket health checks pass
         from unittest.mock import Mock

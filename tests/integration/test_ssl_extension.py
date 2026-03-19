@@ -45,7 +45,7 @@ class TestSSLExtensionIntegration:
         
         assert message_id == ExtensionMessageType.EXTENDED
         
-        # CRITICAL FIX: Use decode_handshake method which properly handles bencode decoding
+        # Note: Use decode_handshake method which properly handles bencode decoding
         # and converts bytes keys to strings
         extensions = protocol_ext.decode_handshake(handshake_data)
 

@@ -78,7 +78,7 @@ class UTPSocketManager:
     def __init__(self):
         """Initialize uTP socket manager.
 
-        CRITICAL FIX: Singleton pattern removed. This should be initialized at daemon startup
+        Note: Singleton pattern removed. This should be initialized at daemon startup
         via start_utp_socket_manager() and stored in AsyncSessionManager.utp_socket_manager.
         """
         self.config = get_config()

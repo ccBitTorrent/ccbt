@@ -77,7 +77,7 @@ def get_disk_io_manager() -> DiskIOManager:
 async def init_disk_io(manager: Optional[Any] = None) -> Optional[DiskIOManager]:
     """Initialize and start disk I/O manager.
 
-    CRITICAL FIX: Singleton pattern removed. This function now accepts an optional
+    Note: Singleton pattern removed. This function now accepts an optional
     session_manager parameter. If provided, it will use the disk_io_manager from
     the session manager. Otherwise, it falls back to the deprecated singleton.
 
@@ -113,7 +113,7 @@ async def init_disk_io(manager: Optional[Any] = None) -> Optional[DiskIOManager]
     logger = logging.getLogger(__name__)
 
     try:
-        # CRITICAL FIX: Use disk I/O manager from session manager if available
+        # Note: Use disk I/O manager from session manager if available
         disk_io_manager = None
         if manager and hasattr(manager, "disk_io_manager") and manager.disk_io_manager:
             disk_io_manager = manager.disk_io_manager

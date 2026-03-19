@@ -166,7 +166,7 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
         """Mount the torrent controls."""
         try:
             logger.info("TorrentControlsWidget.on_mount: Starting mount process")
-            # CRITICAL FIX: Re-query selector if not found
+            # Note: Re-query selector if not found
             if not self._torrent_selector:
                 try:
                     self._torrent_selector = self.query_one("#torrent-selector", Select)  # type: ignore[attr-defined]
@@ -177,12 +177,12 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
                     self.call_after_refresh(lambda: self._retry_selector_query())  # type: ignore[attr-defined]
                     return
             
-            # CRITICAL FIX: Verify data provider is available
+            # Note: Verify data provider is available
             if not self._data_provider:
                 logger.warning("TorrentControlsWidget.on_mount: Data provider is None")
                 return
             
-            # CRITICAL FIX: Initial refresh on mount - only if both are available
+            # Note: Initial refresh on mount - only if both are available
             if self._torrent_selector and self._data_provider:
                 await self._refresh_torrent_list()
             
@@ -192,7 +192,7 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
             def schedule_refresh() -> None:
                 """Schedule async refresh (wrapper for set_interval)."""
                 try:
-                    # CRITICAL FIX: Only schedule if widget is properly initialized
+                    # Note: Only schedule if widget is properly initialized
                     if self._torrent_selector and self._data_provider:
                         asyncio.create_task(self._refresh_torrent_list())
                     else:
@@ -200,11 +200,11 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
                 except Exception as e:
                     logger.debug("Error scheduling torrent list refresh: %s", e)
             
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
             # Only set up refresh task if widget is properly initialized
             if self._torrent_selector and self._data_provider:
-                # CRITICAL FIX: Reduced interval from 5.0s to 1.0s for tighter updates
+                # Note: Reduced interval from 5.0s to 1.0s for tighter updates
                 self._refresh_task = self.set_interval(1.0, schedule_refresh)  # type: ignore[attr-defined]
                 logger.debug("TorrentControlsWidget.on_mount: Set up periodic refresh")
         except Exception as e:
@@ -225,7 +225,7 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
                                 asyncio.create_task(self._refresh_torrent_list())
                         except Exception as e:
                             logger.debug("Error scheduling torrent list refresh: %s", e)
-                    # CRITICAL FIX: Reduced interval from 5.0s to 1.0s for tighter updates
+                    # Note: Reduced interval from 5.0s to 1.0s for tighter updates
                     self._refresh_task = self.set_interval(1.0, schedule_refresh)  # type: ignore[attr-defined]
                     # Trigger initial refresh
                     asyncio.create_task(self._refresh_torrent_list())
@@ -348,12 +348,12 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
 
     async def _refresh_torrent_list(self) -> None:  # pragma: no cover
         """Refresh the torrent selector list."""
-        # CRITICAL FIX: Check if widget is visible and attached before refreshing
+        # Note: Check if widget is visible and attached before refreshing
         if not self.is_attached or not self.display:  # type: ignore[attr-defined]
             logger.debug("TorrentControlsWidget: Widget not attached or not visible, skipping refresh")
             return
         
-        # CRITICAL FIX: Re-query selector if it's None (may happen if called before on_mount completes)
+        # Note: Re-query selector if it's None (may happen if called before on_mount completes)
         if not self._torrent_selector:
             try:
                 self._torrent_selector = self.query_one("#torrent-selector", Select)  # type: ignore[attr-defined]
@@ -371,7 +371,7 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
 
         try:
             logger.debug("TorrentControlsWidget: Fetching torrents from data provider...")
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             try:
                 torrents = await asyncio.wait_for(
                     self._data_provider.list_torrents(),
@@ -394,7 +394,7 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
                 name = torrent.get("name", info_hash[:8])
                 options.append((name, info_hash))
 
-            # CRITICAL FIX: Ensure selector is visible before updating
+            # Note: Ensure selector is visible before updating
             if not self._torrent_selector.is_attached or not self._torrent_selector.display:  # type: ignore[attr-defined]
                 logger.debug("TorrentControlsWidget: Selector not attached or not visible")
                 return
@@ -420,7 +420,7 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
         """Handle button presses."""
-        # CRITICAL FIX: Ensure widget is still attached and valid before accessing
+        # Note: Ensure widget is still attached and valid before accessing
         if not self.is_attached or not self.display:  # type: ignore[attr-defined]
             logger.debug("TorrentControlsWidget: Widget not attached or not visible, ignoring button press")
             return

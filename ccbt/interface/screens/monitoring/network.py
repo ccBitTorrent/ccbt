@@ -64,9 +64,15 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
             content = self.query_one("#content", Static)
             peer_quality = self.query_one("#peer_quality", Static)
 
-            # Get global stats
-            stats = await self.session.get_global_stats()
-            all_status = await self.session.get_status()
+            # Prefer DataProvider for reads (daemon parity)
+            provider = getattr(self, "_data_provider", None)
+            if provider:
+                stats = await provider.get_global_stats()
+                torrents_list = await provider.list_torrents()
+                all_status = {t.get("info_hash") or t.get("info_hash_hex", ""): t for t in torrents_list if t.get("info_hash") or t.get("info_hash_hex")}
+            else:
+                stats = await self.session.get_global_stats()
+                all_status = await self.session.get_status()
 
             # Global network stats
             global_table = Table(
@@ -95,8 +101,11 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
                 "Global Upload Rate", format_speed(stats.get("upload_rate", 0.0))
             )
 
-            # Calculate bandwidth utilization
-            config = self.session.config
+            # Calculate bandwidth utilization (config: session or get_config for daemon)
+            config = getattr(self.session, "config", None)
+            if not config and provider:
+                from ccbt.config.config import get_config
+                config = get_config()
             if config and hasattr(config, "network"):
                 max_download = getattr(config.network, "max_download_speed", 0)
                 max_upload = getattr(config.network, "max_upload_speed", 0)
@@ -114,10 +123,12 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
 
             # Add network connection statistics (RTT, bandwidth, BDP)
             try:
-                from ccbt.monitoring import get_metrics_collector
-
-                mc = get_metrics_collector()
-                perf_data = mc.get_performance_metrics()
+                if provider:
+                    perf_data = await provider.get_network_timing_metrics()
+                else:
+                    from ccbt.monitoring import get_metrics_collector
+                    mc = get_metrics_collector()
+                    perf_data = mc.get_performance_metrics()
 
                 # RTT statistics
                 rtt_ms = perf_data.get("network_rtt_ms", 0.0)
@@ -207,7 +218,10 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
             # Peer connection quality (for first torrent if available)
             if all_status:
                 first_ih = next(iter(all_status.keys()))
-                peers = await self.session.get_peers_for_torrent(first_ih)
+                if provider:
+                    peers = await provider.get_torrent_peers(first_ih)
+                else:
+                    peers = await self.session.get_peers_for_torrent(first_ih)
                 if peers:
                     # Calculate aggregate peer metrics
                     total_peers = len(peers)

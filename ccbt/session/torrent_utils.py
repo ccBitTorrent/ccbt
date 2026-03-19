@@ -36,7 +36,7 @@ def get_torrent_info(
             files = torrent_data.get("files", [])
             if not files:
                 # Check if in file_info
-                # CRITICAL FIX: Handle None values (common for magnet links)
+                # Note: Handle None values (common for magnet links)
                 file_info_dict = torrent_data.get("file_info") or {}
                 if isinstance(file_info_dict, dict) and "files" in file_info_dict:
                     files = file_info_dict["files"]
@@ -161,7 +161,7 @@ def normalize_torrent_data(
         TypeError: If torrent_data is a list or invalid type
 
     """
-    # CRITICAL FIX: Validate torrent_data is not a list
+    # Note: Validate torrent_data is not a list
     if isinstance(td, list):
         error_msg = (
             f"torrent_data cannot be a list, got {type(td)}. "
@@ -336,7 +336,7 @@ def parse_magnet_link(
             magnet_info.info_hash,  # pragma: no cover - Build minimal torrent data from magnet, tested via integration tests
             magnet_info.display_name,  # pragma: no cover - Build minimal torrent data from magnet, tested via integration tests
             magnet_info.trackers,
-            magnet_info.web_seeds,  # CRITICAL FIX: Pass web seeds from magnet link
+            magnet_info.web_seeds,  # Note: Pass web seeds from magnet link
         )
     except Exception:  # pragma: no cover - defensive: parse_magnet error handling, returns None on failure
         if logger:

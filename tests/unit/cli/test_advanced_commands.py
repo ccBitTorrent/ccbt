@@ -77,7 +77,7 @@ class TestPerformanceCommand:
         
         assert result.exit_code == 0
         assert "Applied Optimizations" in result.output
-        # CRITICAL FIX: The command now applies optimizations directly instead of just suggesting them
+        # Note: The command now applies optimizations directly instead of just suggesting them
         # Check that optimizations were actually applied by verifying the table shows changes
         assert "Old Value" in result.output
         assert "New Value" in result.output

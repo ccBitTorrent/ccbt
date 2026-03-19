@@ -88,7 +88,7 @@ class TestXetFileDeduplication:
         """Test deduplicating file with duplicate."""
         file_path1 = tmp_path / "file1.txt"
         file_path2 = tmp_path / "file2.txt"
-        # CRITICAL FIX: file_hash must be exactly 32 bytes (Pydantic validation requirement)
+        # Note: file_hash must be exactly 32 bytes (Pydantic validation requirement)
         file_hash = b"DUPLICATE" * 4  # 9 * 4 = 36 bytes, but we need 32, so use 4 * 8 = 32
         file_hash = file_hash[:32]  # Ensure exactly 32 bytes
 

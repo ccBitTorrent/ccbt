@@ -8,7 +8,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import tempfile
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -19,6 +21,7 @@ from click.testing import CliRunner
 cli_main = importlib.import_module("ccbt.cli.main")
 
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
+_DEBUG_LOG_PATH = Path(tempfile.gettempdir()) / "ccbt-test-debug.log"
 
 
 def _make_cfg() -> Any:
@@ -149,7 +152,7 @@ def _run_coro_locally(coro):
     """Run a coroutine in a new event loop."""
     # #region agent log
     import json
-    with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a") as f:
+    with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps({"sessionId": "debug-session", "runId": "run1", "hypothesisId": "H5", "location": "test_main.py:_run_coro_locally", "message": "_run_coro_locally called", "data": {"coro_type": str(type(coro)), "coro_repr": str(coro)[:200]}, "timestamp": int(__import__("time").time() * 1000)}) + "\n")
     # #endregion
     loop = asyncio.new_event_loop()
@@ -341,7 +344,7 @@ class TestMainEntry:
                         }
                         mock_dm_class.return_value = mock_dm_instance
 
-                        # CRITICAL FIX: Mock DHT client to prevent background refresh loop from hanging
+                        # Note: Mock DHT client to prevent background refresh loop from hanging
                         # The DHT client starts background tasks (_refresh_loop, _cleanup_loop) that run indefinitely
                         # Mock the DHT client so it doesn't start these tasks
                         with patch("ccbt.discovery.dht.DHTClient") as mock_dht_class:

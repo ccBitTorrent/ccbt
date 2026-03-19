@@ -56,7 +56,7 @@ def mock_console():
     console.print = Mock()
     console.clear = Mock()
     console.print_json = Mock()
-    # CRITICAL FIX: Rich Progress requires console.get_time method
+    # Note: Rich Progress requires console.get_time method
     console.get_time = Mock(return_value=time.time)
     return console
 

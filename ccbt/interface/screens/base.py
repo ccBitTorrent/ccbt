@@ -66,6 +66,7 @@ class ConfigScreen(Screen):  # type: ignore[misc]
         self.session = session
         self.config_manager = session.config if hasattr(session, "config") else None
         self._has_unsaved_changes = False
+        self._data_provider: Optional[Any] = None
         # Provide per-screen logger for subclasses (many expect self.logger)
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__qualname__}"
@@ -319,11 +320,15 @@ class MonitoringScreen(Screen):  # type: ignore[misc]
         self._refresh_interval_id: Optional[Any] = None
         # Command executor for executing CLI commands (will be set in on_mount to avoid circular import)
         self._command_executor: Optional[Any] = None
+        # DataProvider from app when available (daemon-first reads)
+        self._data_provider: Optional[Any] = None
         # Status bar reference (will be set in on_mount if available)
         self.statusbar: Optional[Static] = None
 
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the screen and start refresh interval."""
+        # Use app's data provider when available (daemon parity: reads via DataProvider)
+        self._data_provider = getattr(self.app, "_data_provider", None)
         # Initialize command executor (import here to avoid circular import)
         if self._command_executor is None:
             # Import CommandExecutor from commands module

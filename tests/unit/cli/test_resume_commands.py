@@ -60,7 +60,7 @@ class TestResumeCLI:
         session_manager = AsyncSessionManager(str(self.temp_path))
         
         try:
-            # CRITICAL FIX: resume_from_checkpoint is on checkpoint_ops, not session_manager directly
+            # Note: resume_from_checkpoint is on checkpoint_ops, not session_manager directly
             # Mock the resume operation
             with patch.object(session_manager.checkpoint_ops, "resume_from_checkpoint") as mock_resume:
                 mock_resume.return_value = "test_hash_1234567890"
@@ -110,7 +110,7 @@ class TestResumeCLI:
         session_manager = AsyncSessionManager(str(self.temp_path))
         
         try:
-            # CRITICAL FIX: load_torrent is a function in torrent_utils, not a method
+            # Note: load_torrent is a function in torrent_utils, not a method
             from ccbt.session import torrent_utils
             
             # Test torrent loading function exists and can be called
@@ -157,7 +157,7 @@ class TestResumeCLI:
         session_manager = AsyncSessionManager(str(self.temp_path))
         
         try:
-            # CRITICAL FIX: resume_from_checkpoint is on checkpoint_ops, not session_manager directly
+            # Note: resume_from_checkpoint is on checkpoint_ops, not session_manager directly
             # Test resume with missing source
             try:
                 await session_manager.checkpoint_ops.resume_from_checkpoint(
@@ -178,7 +178,7 @@ class TestResumeCLI:
         session_manager = AsyncSessionManager(str(self.temp_path))
         
         try:
-            # CRITICAL FIX: list_resumable is on checkpoint_ops, not session_manager directly
+            # Note: list_resumable is on checkpoint_ops, not session_manager directly
             # Test checkpoint listing functionality
             checkpoints = await session_manager.checkpoint_ops.list_resumable()
             assert isinstance(checkpoints, list)

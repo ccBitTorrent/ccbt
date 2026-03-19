@@ -178,7 +178,7 @@ class ConfigManager:
         env_config = self._get_env_config()
         config_data = self._merge_config(config_data, env_config)
 
-        # CRITICAL FIX: Apply Windows-specific connection limits to prevent socket buffer exhaustion
+        # Note: Apply Windows-specific connection limits to prevent socket buffer exhaustion
         # Windows has stricter limits on socket buffers (WinError 10055)
         if IS_WINDOWS and "network" in config_data:
             network_config = config_data.get("network", {})

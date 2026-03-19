@@ -66,6 +66,10 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --dev
+
+      - name: Prepare test report directories
+        run: |
+          mkdir -p site/reports
       
       - name: Check for port conflicts
         run: |
@@ -98,6 +102,8 @@ jobs:
       
       - name: Run tests with coverage
         shell: bash
+        env:
+          CCBT_TEST_DEBUG_LOG: /tmp/ccbt-test-debug.log
         run: |
           # Exclude compatibility tests from main test run (they run separately)
           uv run pytest -c dev/pytest.ini tests/ \

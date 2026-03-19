@@ -28,6 +28,11 @@ class DHTDiscoverySetup:
             "query_depths": [],
             "nodes_queried": [],
             "query_durations": [],
+            "bootstrap_success_count": 0,
+            "bootstrap_failure_count": 0,
+            "last_bootstrap_reason": "",
+            "last_bootstrap_failure_reason": "",
+            "last_zero_node_lookup_at": 0.0,
             "last_query": {
                 "duration": 0.0,
                 "peers_found": 0,
@@ -36,12 +41,126 @@ class DHTDiscoverySetup:
             },
         }
         self._aggressive_mode = False
-        # CRITICAL FIX: Track last DHT query time to enforce minimum delay between queries
+        # Note: Track last DHT query time to enforce minimum delay between queries
         # This prevents overwhelming the DHT network and getting blacklisted
         self._last_dht_query_time = 0.0
         self._min_dht_query_interval = (
             15.0  # Minimum 15 seconds between DHT queries (prevents peer blacklisting)
         )
+        self._empty_routing_cycles = 0
+        self._query_zero_nodes_cycles = 0
+        self._health_state = "bootstrapping"
+        self._last_rebootstrap_attempt = 0.0
+        self._rebootstrap_cooldown = 30.0
+
+    def _set_health_state(self, state: str) -> None:
+        """Track the current DHT health state for diagnostics and recovery."""
+        self._health_state = state
+
+    async def _maybe_rebootstrap(self, dht_client: Any, reason: str) -> bool:
+        """Attempt a throttled DHT rebootstrap when the routing state is degraded."""
+        if not hasattr(dht_client, "rebootstrap"):
+            return False
+        now = time.monotonic()
+        if now - self._last_rebootstrap_attempt < self._rebootstrap_cooldown:
+            return False
+        self._last_rebootstrap_attempt = now
+        self._set_health_state("recovering")
+        self.logger.warning("DHT recovery: rebootstrap triggered (%s)", reason)
+        try:
+            rebootstrap_result = dht_client.rebootstrap()
+            if asyncio.iscoroutine(rebootstrap_result):
+                success = await rebootstrap_result
+            else:
+                success = bool(rebootstrap_result)
+        except Exception as exc:
+            self._set_health_state("stalled")
+            self.logger.warning("DHT rebootstrap failed (%s): %s", reason, exc)
+            return False
+        self._set_health_state("healthy" if success else "degraded")
+        return bool(success)
+
+    async def _ensure_bootstrap_ready(
+        self,
+        dht_client: Any,
+        *,
+        reason: str,
+        timeout: float,
+        min_nodes: int = 1,
+    ) -> int:
+        """Ensure the DHT has at least a minimal routing table before querying."""
+        routing_nodes = getattr(getattr(dht_client, "routing_table", None), "nodes", [])
+        routing_table_size = len(routing_nodes)
+        if routing_table_size >= min_nodes:
+            return routing_table_size
+
+        self.logger.info(
+            "DHT bootstrap required for %s (routing table: %d nodes, min required: %d)",
+            reason,
+            routing_table_size,
+            min_nodes,
+        )
+        bootstrap_succeeded = False
+        try:
+            if hasattr(dht_client, "rebootstrap"):
+                bootstrap_succeeded = await asyncio.wait_for(
+                    dht_client.rebootstrap(),
+                    timeout=timeout,
+                )
+            elif hasattr(dht_client, "wait_for_bootstrap"):
+                bootstrap_succeeded = await dht_client.wait_for_bootstrap(
+                    timeout=timeout
+                )
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                "DHT bootstrap timed out for %s after %.1fs",
+                reason,
+                timeout,
+            )
+        except Exception as bootstrap_error:
+            self.logger.warning(
+                "DHT bootstrap failed for %s: %s",
+                reason,
+                bootstrap_error,
+            )
+
+        routing_table_size = len(
+            getattr(getattr(dht_client, "routing_table", None), "nodes", [])
+        )
+        query_metrics = self._dht_query_metrics
+        query_metrics["bootstrap_success_count"] = int(
+            getattr(dht_client, "bootstrap_success_count", 0) or 0
+        )
+        query_metrics["bootstrap_failure_count"] = int(
+            getattr(dht_client, "bootstrap_failure_count", 0) or 0
+        )
+        query_metrics["last_bootstrap_reason"] = str(
+            getattr(dht_client, "last_bootstrap_reason", "")
+        )
+        query_metrics["last_bootstrap_failure_reason"] = str(
+            getattr(dht_client, "last_bootstrap_failure_reason", "")
+        )
+        query_metrics["last_zero_node_lookup_at"] = float(
+            getattr(dht_client, "last_zero_node_lookup_at", 0.0) or 0.0
+        )
+        if routing_table_size >= min_nodes:
+            self._set_health_state("healthy")
+            self.logger.info(
+                "DHT bootstrap ready for %s (routing table: %d nodes, success=%s)",
+                reason,
+                routing_table_size,
+                bootstrap_succeeded,
+            )
+        else:
+            self._set_health_state("stalled")
+            self.logger.warning(
+                "DHT bootstrap did not yield enough routing nodes for %s (routing table: %d nodes, success=%s, failure_reason=%s)",
+                reason,
+                routing_table_size,
+                bootstrap_succeeded,
+                getattr(dht_client, "last_bootstrap_failure_reason", "unknown"),
+            )
+        return routing_table_size
 
     async def _get_swarm_recovery_state(self) -> dict[str, Any]:
         """Return swarm recovery state, even for lightweight session stubs used in tests."""
@@ -88,7 +207,7 @@ class DHTDiscoverySetup:
             self.session.config.discovery.enable_dht,
         )
 
-        # CRITICAL FIX: Set up DHT discovery if DHT client exists, even if not fully bootstrapped yet
+        # Note: Set up DHT discovery if DHT client exists, even if not fully bootstrapped yet
         # The discovery task will wait for bootstrap to complete before querying
         if (
             self.session.session_manager
@@ -115,7 +234,7 @@ class DHTDiscoverySetup:
             # Set up DHT discovery
             await self._setup_dht_callbacks_and_discovery()
 
-            # CRITICAL FIX: Set peer_manager reference on DHT client for adaptive timeout calculation
+            # Note: Set peer_manager reference on DHT client for adaptive timeout calculation
             # This allows DHT queries to use longer timeouts in desperation mode (few peers)
             dht_client = self.session.session_manager.dht_client
             if dht_client and hasattr(dht_client, "set_peer_manager"):
@@ -191,7 +310,7 @@ class DHTDiscoverySetup:
 
             """
             try:
-                # CRITICAL FIX: Add defensive checks for session readiness before processing peers
+                # Note: Add defensive checks for session readiness before processing peers
                 # Check if session is stopped/not ready
                 if not self.session.is_ready():
                     return
@@ -203,7 +322,7 @@ class DHTDiscoverySetup:
                     )
                     return
 
-                # CRITICAL FIX: Add detailed logging for DHT peer discovery
+                # Note: Add detailed logging for DHT peer discovery
                 self.logger.info(
                     "🔍 DHT CALLBACK: Discovered %d peer(s) for torrent %s (info_hash: %s)",
                     len(peers),
@@ -218,7 +337,7 @@ class DHTDiscoverySetup:
                         ", ".join(f"{ip}:{port}" for ip, port in sample_peers),
                     )
 
-                # CRITICAL FIX: Check download_manager exists with retry logic
+                # Note: Check download_manager exists with retry logic
                 if not self.session.download_manager:
                     self.logger.warning(
                         "DHT peers discovered but session not ready for %s (session may not be ready yet)",
@@ -242,6 +361,8 @@ class DHTDiscoverySetup:
                     }
                     for ip, port in peers
                 ]
+                with contextlib.suppress(Exception):
+                    self.session.record_discovered_peers(peer_list)
 
                 if not peer_list:
                     self.logger.debug(
@@ -250,14 +371,14 @@ class DHTDiscoverySetup:
                     )
                     return
 
-                # CRITICAL FIX: Log peer conversion details
+                # Note: Log peer conversion details
                 self.logger.debug(
                     "Converted %d DHT peer(s) to peer_list format for %s",
                     len(peer_list),
                     self.session.info.name,
                 )
 
-                # CRITICAL FIX: For magnet links, try metadata exchange first if metadata not available
+                # Note: For magnet links, try metadata exchange first if metadata not available
                 metadata_fetched = await self._handle_magnet_metadata_exchange(
                     peer_list
                 )
@@ -267,7 +388,7 @@ class DHTDiscoverySetup:
                     self.session.download_manager, "_download_started", False
                 )
                 if not download_started:
-                    # CRITICAL FIX: Check if download is already starting to prevent duplicate calls
+                    # Note: Check if download is already starting to prevent duplicate calls
                     # This prevents infinite loops when DHT callback is triggered multiple times
                     is_starting = getattr(self.session, "_dht_download_starting", False)
                     if not is_starting:
@@ -290,7 +411,7 @@ class DHTDiscoverySetup:
 
                     helper = PeerConnectionHelper(self.session)
                     try:
-                        # CRITICAL FIX: Verify session is ready before attempting connection
+                        # Note: Verify session is ready before attempting connection
                         # Add retry logic for timing issues where session may not be ready yet
                         if not self.session.is_ready():
                             self.logger.warning(
@@ -327,7 +448,7 @@ class DHTDiscoverySetup:
                             len(peer_list),
                             self.session.info.name,
                         )
-                        # CRITICAL FIX: Verify peer_manager exists and check connection status after a delay
+                        # Note: Verify peer_manager exists and check connection status after a delay
                         await asyncio.sleep(1.0)  # Give connections time to establish
                         peer_manager = getattr(
                             self.session.download_manager, "peer_manager", None
@@ -376,7 +497,7 @@ class DHTDiscoverySetup:
                     "Critical error in DHT peer discovery handler for %s",
                     self.session.info.name,
                 )
-                # CRITICAL FIX: Don't let errors stop peer discovery - log and continue
+                # Note: Don't let errors stop peer discovery - log and continue
                 # The discovery loop will retry on next iteration
 
         return on_dht_peers_discovered
@@ -505,7 +626,7 @@ class DHTDiscoverySetup:
                         fetch_metadata_from_peers,
                     )
 
-                    # CRITICAL FIX: Increase metadata fetching timeout to 60 seconds
+                    # Note: Increase metadata fetching timeout to 60 seconds
                     # Magnet links may need more time to fetch metadata, especially for less popular torrents
                     metadata = await fetch_metadata_from_peers(
                         self.session.info.info_hash,
@@ -533,7 +654,7 @@ class DHTDiscoverySetup:
                         await self._merge_fetched_metadata(updated_torrent_data)
                         metadata_fetched = True
 
-                        # CRITICAL FIX: Notify download manager that metadata is now available
+                        # Note: Notify download manager that metadata is now available
                         # This allows download to proceed if it was waiting for metadata
                         if hasattr(
                             self.session.download_manager, "on_metadata_available"
@@ -582,7 +703,7 @@ class DHTDiscoverySetup:
             metadata_fetched: Whether metadata was successfully fetched
 
         """
-        # CRITICAL FIX: Prevent duplicate calls to _start_download_with_dht_peers
+        # Note: Prevent duplicate calls to _start_download_with_dht_peers
         # This prevents infinite loops when DHT callback is triggered multiple times
         async with self.session.dht_download_start_lock:
             # Check if download is already started
@@ -607,7 +728,7 @@ class DHTDiscoverySetup:
             # Mark as starting to prevent concurrent calls
             self.session.dht_download_starting = True
 
-        # CRITICAL FIX: Validate torrent_data is not a list before calling start_download
+        # Note: Validate torrent_data is not a list before calling start_download
         if isinstance(self.session.torrent_data, list):
             self.logger.error(
                 "Cannot start download: torrent_data is a list, not dict or TorrentInfo."
@@ -640,14 +761,14 @@ class DHTDiscoverySetup:
             )
             await self.session.download_manager.start_download(peer_list)
 
-            # CRITICAL FIX: Set status to 'downloading' immediately after start_download() regardless of peer count
+            # Note: Set status to 'downloading' immediately after start_download() regardless of peer count
             self.session.info.status = "downloading"
             self.logger.info(
                 "Status set to 'downloading' immediately after start_download() with %d DHT-discovered peers",
                 len(peer_list),
             )
 
-            # CRITICAL FIX: Set peer_manager reference on DHT client for adaptive timeout calculation
+            # Note: Set peer_manager reference on DHT client for adaptive timeout calculation
             # This allows DHT queries to use longer timeouts in desperation mode (few peers)
             dht_client = self.session.session_manager.dht_client
             if dht_client and hasattr(dht_client, "set_peer_manager"):
@@ -696,7 +817,7 @@ class DHTDiscoverySetup:
             self.logger.exception("Failed to start download with DHT peers")
             raise
         finally:
-            # CRITICAL FIX: Clear the starting flag even if exception occurs
+            # Note: Clear the starting flag even if exception occurs
             # This allows retry if download start fails
             async with self.session.dht_download_start_lock:
                 self.session.dht_download_starting = False
@@ -766,17 +887,17 @@ class DHTDiscoverySetup:
             on_dht_peers_discovered_with_dedup: Deduplicated peer discovery handler
 
         """
-        # CRITICAL FIX: Add callback invocation counter to verify callbacks are called
+        # Note: Add callback invocation counter to verify callbacks are called
         if not hasattr(self.session, "_dht_callback_invocation_count"):
             self.session.dht_callback_invocation_count = 0
 
         # Register DHT callback (DHT expects sync callback, wrap it)
         def dht_callback_wrapper(peers: list[tuple[str, int]]) -> None:
             """Convert sync DHT callback to an async task."""
-            # CRITICAL FIX: Increment callback invocation counter
+            # Note: Increment callback invocation counter
             self.session.increment_dht_callback_count()
 
-            # CRITICAL FIX: Add logging to verify callback is being called
+            # Note: Add logging to verify callback is being called
             self.logger.info(
                 "DHT callback triggered for %s: received %d peer(s) from DHT client (info_hash: %s, invocation #%d)",
                 self.session.info.name,
@@ -785,7 +906,7 @@ class DHTDiscoverySetup:
                 self.session.dht_callback_invocation_count,
             )
 
-            # CRITICAL FIX: Add error handling for task creation and execution
+            # Note: Add error handling for task creation and execution
             def task_done_callback(task: asyncio.Task) -> None:
                 """Handle task completion and log errors."""
                 try:
@@ -805,7 +926,7 @@ class DHTDiscoverySetup:
                     )
 
             if not peers:
-                # CRITICAL FIX: Still process empty peer list - this indicates query completed
+                # Note: Still process empty peer list - this indicates query completed
                 # The discovery loop needs to know the query finished even if no peers found
                 self.logger.info(
                     "DHT callback received empty peer list for %s (query completed, no peers found)",
@@ -834,7 +955,7 @@ class DHTDiscoverySetup:
                     len(peers),
                     self.session.info.name,
                 )
-                # CRITICAL FIX: Log peer addresses for debugging
+                # Note: Log peer addresses for debugging
                 if peers:
                     sample_peers = peers[:5]
                     self.logger.debug(
@@ -844,7 +965,7 @@ class DHTDiscoverySetup:
                     )
                 return
 
-            # CRITICAL FIX: Add detailed logging before creating task
+            # Note: Add detailed logging before creating task
             self.logger.debug(
                 "Creating async task to process %d DHT-discovered peer(s) for %s",
                 len(peers),
@@ -929,13 +1050,13 @@ class DHTDiscoverySetup:
             )
         else:
             # Fallback to direct registration if discovery controller unavailable
-            # CRITICAL FIX: Use info_hash parameter for callback filtering
+            # Note: Use info_hash parameter for callback filtering
             self.session.session_manager.dht_client.add_peer_callback(  # type: ignore[union-attr]
                 dht_callback_wrapper,
                 info_hash=self.session.info.info_hash,
             )
 
-        # CRITICAL FIX: Verify callback is in DHT client's peer_callbacks_by_hash after registration
+        # Note: Verify callback is in DHT client's peer_callbacks_by_hash after registration
         # Since we register with info_hash, the callback should be in peer_callbacks_by_hash, not peer_callbacks
         # Add retry mechanism to handle timing issues where callback may not be immediately visible
         dht_client = self.session.session_manager.dht_client
@@ -950,7 +1071,7 @@ class DHTDiscoverySetup:
                 await asyncio.sleep(retry_delay)
 
             if dht_client and hasattr(dht_client, "peer_callbacks_by_hash"):
-                # CRITICAL FIX: Check peer_callbacks_by_hash for info_hash-specific callbacks
+                # Note: Check peer_callbacks_by_hash for info_hash-specific callbacks
                 # When registered with info_hash, callback should be in peer_callbacks_by_hash[info_hash]
                 try:
                     if info_hash in dht_client.peer_callbacks_by_hash:
@@ -1002,6 +1123,10 @@ class DHTDiscoverySetup:
                 global_callbacks_count,
                 info_hash.hex()[:16] + "...",
             )
+            with contextlib.suppress(Exception):
+                metrics = getattr(self.session, "_peer_discovery_metrics", None)
+                if isinstance(metrics, dict):
+                    metrics["dht_callback_missing"] = False
         else:
             # Enhanced logging for debugging callback structure
             callback_structure_info = "unknown"
@@ -1025,6 +1150,10 @@ class DHTDiscoverySetup:
                 info_hash.hex()[:16] + "...",
                 callback_structure_info,
             )
+            with contextlib.suppress(Exception):
+                metrics = getattr(self.session, "_peer_discovery_metrics", None)
+                if isinstance(metrics, dict):
+                    metrics["dht_callback_missing"] = True
 
     async def _trigger_initial_query(self) -> None:
         """Trigger immediate initial DHT get_peers query after callback registration."""
@@ -1035,7 +1164,7 @@ class DHTDiscoverySetup:
         async def trigger_initial_dht_query() -> None:
             """Trigger immediate DHT get_peers query after callback registration.
 
-            CRITICAL FIX: For magnet links, be more aggressive about DHT queries
+            Note: For magnet links, be more aggressive about DHT queries
             since there are no trackers initially. Query even if routing table is small.
             """
             try:
@@ -1044,7 +1173,7 @@ class DHTDiscoverySetup:
 
                 routing_table_size = len(dht_client.routing_table.nodes)
 
-                # CRITICAL FIX: For magnet links, query even with small routing table
+                # Note: For magnet links, query even with small routing table
                 # Magnet links rely heavily on DHT for peer discovery
                 is_magnet = (
                     hasattr(self.session, "torrent_data")
@@ -1057,70 +1186,27 @@ class DHTDiscoverySetup:
                     if routing_table_size == 0 and is_magnet:
                         self.logger.info(
                             "Triggering immediate DHT get_peers query for magnet link %s "
-                            "(routing table empty but will query anyway - magnet links need DHT)",
+                            "(routing table empty - attempting public rebootstrap first)",
                             self.session.info.name,
                         )
-                        try:
-                            self.logger.info(
-                                "Routing table is empty for %s, attempting DHT re-bootstrap before get_peers",
-                                self.session.info.name,
-                            )
-                            await asyncio.wait_for(
-                                dht_client._bootstrap(),  # noqa: SLF001
-                                timeout=10.0,
-                            )
-                            routing_table_size = len(dht_client.routing_table.nodes)
-                            self.logger.info(
-                                "DHT re-bootstrap finished for %s (routing table: %d nodes)",
-                                self.session.info.name,
-                                routing_table_size,
-                            )
-                        except asyncio.TimeoutError:
+                        routing_table_size = await self._ensure_bootstrap_ready(
+                            dht_client,
+                            reason=f"initial_query:{self.session.info.name}",
+                            timeout=10.0,
+                            min_nodes=1,
+                        )
+                        if routing_table_size <= 0:
                             self.logger.warning(
-                                "DHT re-bootstrap timed out for %s; continuing with empty routing table",
+                                "Skipping initial DHT get_peers for %s because bootstrap still has no routing nodes",
                                 self.session.info.name,
                             )
-                        except Exception as bootstrap_error:
-                            self.logger.warning(
-                                "DHT re-bootstrap failed for %s: %s",
-                                self.session.info.name,
-                                bootstrap_error,
-                            )
+                            return
                     else:
                         self.logger.info(
                             "Triggering immediate DHT get_peers query for %s (routing table: %d nodes)",
                             self.session.info.name,
                             routing_table_size,
                         )
-
-                    # For magnet links, wait a bit longer for bootstrap if routing table is empty
-                    if routing_table_size == 0 and is_magnet:
-                        recovery_wait_budget = getattr(
-                            self.session,
-                            "recovery_wait_budget",
-                            lambda *_args, **kwargs: kwargs.get("fast_wait", 0.5),
-                        )
-                        wait_budget = recovery_wait_budget(
-                            await self._get_swarm_recovery_state(),
-                            base_wait=2.0,
-                            fast_wait=0.5,
-                        )
-                        self.logger.debug(
-                            "Waiting up to %.1fs for DHT bootstrap before querying magnet link %s",
-                            wait_budget,
-                            self.session.info.name,
-                        )
-                        checks = max(1, int(wait_budget / 0.5))
-                        # Wait briefly for bootstrap, but don't let empty routing tables stall recovery.
-                        for _ in range(checks):
-                            await asyncio.sleep(0.5)
-                            routing_table_size = len(dht_client.routing_table.nodes)
-                            if routing_table_size > 0:
-                                self.logger.info(
-                                    "DHT bootstrap completed (routing table: %d nodes), proceeding with query",
-                                    routing_table_size,
-                                )
-                                break
 
                     try:
                         # Use longer timeout for magnet links (they need more time to find peers)
@@ -1142,7 +1228,7 @@ class DHTDiscoverySetup:
                                 len(peers),
                                 self.session.info.name,
                             )
-                            # CRITICAL FIX: Trigger metadata exchange immediately when DHT peers are found
+                            # Note: Trigger metadata exchange immediately when DHT peers are found
                             # Don't wait for tracker peers - use DHT peers for metadata exchange
                             if is_magnet:
                                 self.logger.info(
@@ -1201,7 +1287,7 @@ class DHTDiscoverySetup:
         if not dht_client:
             return
 
-        # CRITICAL FIX: Ensure DHT discovery task is started
+        # Note: Ensure DHT discovery task is started
         self.logger.info(
             "🔍 DHT DISCOVERY: Creating discovery background task for %s",
             self.session.info.name,
@@ -1226,9 +1312,7 @@ class DHTDiscoverySetup:
         # IMPROVEMENT: Aggressive peer discovery for popular torrents
         # Adaptive retry logic based on torrent popularity and download activity
         # Standard exponential backoff: 60s → 120s → 240s → 480s → 960s → 1920s (32min max)
-        initial_retry_interval = (
-            60.0  # Start with 60 seconds (1 minute, standard DHT interval)
-        )
+        initial_retry_interval = 30.0
         max_retry_interval = (
             1920.0  # Cap at 32 minutes (standard exponential backoff maximum)
         )
@@ -1244,7 +1328,7 @@ class DHTDiscoverySetup:
         # Track torrent popularity and activity
         aggressive_mode = False
 
-        # CRITICAL FIX: Wait for DHT bootstrap to complete (max 120 seconds for slow networks)
+        # Note: Wait for DHT bootstrap to complete (max 120 seconds for slow networks)
         # Increased timeout to 120s to handle slow networks and routers
         bootstrap_timeout = 120.0
         self.logger.info(
@@ -1259,19 +1343,21 @@ class DHTDiscoverySetup:
 
         if bootstrap_complete:
             routing_table_size = len(dht_client.routing_table.nodes)
+            self._set_health_state("healthy")
             self.logger.info(
                 "DHT bootstrap completed with %d nodes in routing table",
                 routing_table_size,
             )
         else:
             routing_table_size = len(dht_client.routing_table.nodes)
+            self._set_health_state("degraded" if routing_table_size > 0 else "stalled")
             self.logger.warning(
                 "DHT bootstrap timeout after %.1fs (routing table: %d nodes). "
                 "Discovery may not work optimally, but will continue in degraded mode...",
                 bootstrap_timeout,
                 routing_table_size,
             )
-            # CRITICAL FIX: Continue DHT discovery even if bootstrap fails (degraded mode)
+            # Note: Continue DHT discovery even if bootstrap fails (degraded mode)
             # This allows peer discovery to work with a smaller routing table
             if routing_table_size > 0:
                 self.logger.info(
@@ -1299,7 +1385,7 @@ class DHTDiscoverySetup:
 
         while not self.session.stopped:
             try:
-                # CRITICAL FIX: Wait for connection batches to complete before starting DHT
+                # Note: Wait for connection batches to complete before starting DHT
                 # User requirement: "peer count low checks should only start basically after the first batches of connections are exhausted"
                 # Check if connection batches are currently in progress
                 if self.session.download_manager and hasattr(
@@ -1402,7 +1488,7 @@ class DHTDiscoverySetup:
                                     # Continue waiting - don't proceed until batches complete
                                     continue
 
-                # CRITICAL FIX: Also check tracker peer connection timestamp (secondary check)
+                # Note: Also check tracker peer connection timestamp (secondary check)
                 # This ensures we wait for tracker responses to be processed
                 import time as time_module
 
@@ -1434,10 +1520,36 @@ class DHTDiscoverySetup:
                     )
                     await asyncio.sleep(capped_wait)
 
-                # CRITICAL FIX: Wait until we have minimum peers before starting DHT
+                # Note: Wait until we have minimum peers before starting DHT
                 # This prevents aggressive DHT queries that can cause blacklisting
                 current_peer_count = 0
                 current_download_rate = 0.0
+                routing_table_size = len(getattr(dht_client.routing_table, "nodes", []))
+                if routing_table_size == 0:
+                    self._empty_routing_cycles += 1
+                    self._set_health_state("stalled")
+                    self.logger.warning(
+                        "DHT recovery state=bootstrap_empty cycle=%d for %s (routing table has 0 nodes)",
+                        self._empty_routing_cycles,
+                        self.session.info.name,
+                    )
+                    if self._empty_routing_cycles >= 2:
+                        await self._maybe_rebootstrap(
+                            dht_client,
+                            reason=(
+                                f"empty_routing_table cycle={self._empty_routing_cycles}"
+                            ),
+                        )
+                else:
+                    if self._empty_routing_cycles > 0:
+                        self.logger.info(
+                            "DHT recovery state=bootstrap_recovered for %s after %d empty cycle(s) (routing table: %d nodes)",
+                            self.session.info.name,
+                            self._empty_routing_cycles,
+                            routing_table_size,
+                        )
+                    self._empty_routing_cycles = 0
+                    self._set_health_state("healthy")
 
                 swarm_state = await self._get_swarm_recovery_state()
                 current_peer_count = int(swarm_state["active_peers"])
@@ -1502,6 +1614,23 @@ class DHTDiscoverySetup:
                     and not metadata_incomplete
                     and not fail_fast_low_peers
                 ):
+                    if current_peer_count <= 1 and current_requestable_peers == 0:
+                        self.logger.warning(
+                            "🧭 DHT DISCOVERY: Active peer count is severely low (%d <= 1) with 0 requestable peers. Running short-path bootstrap recheck.",
+                            current_peer_count,
+                        )
+                        routing_table_size = await self._ensure_bootstrap_ready(
+                            dht_client,
+                            reason=(
+                                f"short_path_recovery:{self.session.info.name}"
+                            ),
+                            timeout=10.0,
+                            min_nodes=1,
+                        )
+                        dht_started = routing_table_size >= 1
+                        if dht_started:
+                            continue
+
                     self.logger.info(
                         "⏸️ DHT DISCOVERY: Waiting for minimum peers (%d/%d) with usable swarm state (productive=%d, requestable=%d, piece_info=%d). Sleeping 30s before recheck...",
                         current_peer_count,
@@ -1537,7 +1666,7 @@ class DHTDiscoverySetup:
                 ) or (not dht_started and fail_fast_low_peers):
                     dht_started = True
 
-                # CRITICAL FIX: Use conservative DHT settings to avoid blacklisting
+                # Note: Use conservative DHT settings to avoid blacklisting
                 # Reduced query frequency and parameters
                 max_peers_per_torrent = (
                     self.session.config.network.max_peers_per_torrent
@@ -1563,11 +1692,11 @@ class DHTDiscoverySetup:
                     else current_peer_count < 3
                 )  # <10% of max or <3 peers = ultra low
 
-                # CRITICAL FIX: Use conservative aggressive mode - only for popular/active torrents
+                # Note: Use conservative aggressive mode - only for popular/active torrents
                 # Don't enable aggressive mode for low peer counts to avoid blacklisting
                 new_aggressive_mode = (is_popular or is_active) and is_below_limit
 
-                # CRITICAL FIX: Use conservative DHT query intervals to avoid blacklisting
+                # Note: Use conservative DHT query intervals to avoid blacklisting
                 # Minimum 60 seconds between queries (standard DHT interval)
                 dht_retry_interval = max(
                     60.0, initial_retry_interval
@@ -1670,7 +1799,7 @@ class DHTDiscoverySetup:
                             max_peers_per_query,
                         )
                     elif is_below_limit:
-                        # CRITICAL FIX: Aggressive discovery when below connection limit
+                        # Note: Aggressive discovery when below connection limit
                         # Scale interval based on how far we are from the limit
                         # All intervals use 30s minimum to prevent peer blacklisting
                         if (
@@ -1717,7 +1846,7 @@ class DHTDiscoverySetup:
                     )
 
                 # Trigger DHT get_peers query
-                # CRITICAL FIX: Add detailed logging for DHT queries
+                # Note: Add detailed logging for DHT queries
                 mode_str = "AGGRESSIVE" if aggressive_mode else "NORMAL"
                 self.logger.info(
                     "🔍 DHT DISCOVERY: Starting get_peers query for %s [%s] (routing table: %d nodes, info_hash: %s, callbacks: %d, current peers: %d/%d, download: %.1f KB/s, next retry: %.1fs)",
@@ -1731,11 +1860,11 @@ class DHTDiscoverySetup:
                     current_download_rate / 1024.0,
                     dht_retry_interval,
                 )
-                # CRITICAL FIX: Improved timeout and parallel query strategy
+                # Note: Improved timeout and parallel query strategy
                 # Use adaptive timeout: start with 30s, increase for later attempts
                 # DHT queries may need more time to explore the network, especially for less popular torrents
                 query_start_time = asyncio.get_event_loop().time()
-                # CRITICAL FIX: Increased DHT timeout to handle slow DHT nodes and network latency
+                # Note: Increased DHT timeout to handle slow DHT nodes and network latency
                 # Many DHT nodes are slow to respond, especially for less popular torrents
                 # Start with 45s base timeout and scale up to 90s max for better discovery success
                 base_timeout = 45.0  # Increased from 30s to 45s
@@ -1754,21 +1883,25 @@ class DHTDiscoverySetup:
                 )
 
                 try:
-                    # CRITICAL FIX: Enforce minimum delay between DHT queries to prevent overwhelming the network
+                    # Note: Enforce minimum delay between DHT queries to prevent overwhelming the network
                     # This prevents peers from blacklisting us due to too frequent queries
                     import time as time_module
 
                     current_time = time_module.time()
                     time_since_last_query = current_time - self._last_dht_query_time
-                    if time_since_last_query < self._min_dht_query_interval:
-                        wait_time = self._min_dht_query_interval - time_since_last_query
+                    effective_min_interval = self._min_dht_query_interval
+                    if metadata_incomplete and current_peer_count == 0:
+                        # Magnet metadata starvation path: allow quicker retries.
+                        effective_min_interval = min(effective_min_interval, 5.0)
+                    if time_since_last_query < effective_min_interval:
+                        wait_time = effective_min_interval - time_since_last_query
                         self.logger.info(
                             "⏸️ DHT RATE LIMIT: Waiting %.1fs before query (last query: %.1fs ago, min interval: %.1fs) to prevent peer blacklisting",
                             wait_time,
                             time_since_last_query,
-                            self._min_dht_query_interval,
+                            effective_min_interval,
                         )
-                        # CRITICAL FIX: Use interruptible sleep that checks _stopped frequently
+                        # Note: Use interruptible sleep that checks _stopped frequently
                         # This ensures the loop exits quickly when shutdown is requested
                         sleep_interval = min(
                             wait_time, 1.0
@@ -1788,7 +1921,7 @@ class DHTDiscoverySetup:
                     if aggressive_mode:
                         # Aggressive mode: use aggressive configuration values
                         if is_ultra_low:
-                            # CRITICAL FIX: Use reasonable parameters even for ultra-low peer count
+                            # Note: Use reasonable parameters even for ultra-low peer count
                             # Ultra-aggressive parameters (alpha=16, k=64, max_depth=20) were causing peers to blacklist us
                             # Use BEP 5 compliant values: alpha=4, k=8, max_depth=10 for better peer acceptance
                             # Slightly increase from normal but stay within reasonable bounds
@@ -1823,7 +1956,7 @@ class DHTDiscoverySetup:
                             self.session.config.discovery.dht_normal_max_depth
                         )
 
-                    # CRITICAL FIX: get_peers() will invoke callbacks automatically when peers are found
+                    # Note: get_peers() will invoke callbacks automatically when peers are found
                     # We still call it to trigger the query, but callbacks handle peer connection
                     # Use asyncio.wait_for with timeout to ensure query completes
                     peers = await asyncio.wait_for(
@@ -1849,6 +1982,21 @@ class DHTDiscoverySetup:
                     )
                     query_metrics["total_peers_found"] = (
                         int(query_metrics.get("total_peers_found", 0) or 0) + peer_count
+                    )
+                    query_metrics["bootstrap_success_count"] = int(
+                        getattr(dht_client, "bootstrap_success_count", 0) or 0
+                    )
+                    query_metrics["bootstrap_failure_count"] = int(
+                        getattr(dht_client, "bootstrap_failure_count", 0) or 0
+                    )
+                    query_metrics["last_bootstrap_reason"] = str(
+                        getattr(dht_client, "last_bootstrap_reason", "")
+                    )
+                    query_metrics["last_bootstrap_failure_reason"] = str(
+                        getattr(dht_client, "last_bootstrap_failure_reason", "")
+                    )
+                    query_metrics["last_zero_node_lookup_at"] = float(
+                        getattr(dht_client, "last_zero_node_lookup_at", 0.0) or 0.0
                     )
                     query_durations = cast(
                         "list[float]", query_metrics.get("query_durations", [])
@@ -1877,6 +2025,35 @@ class DHTDiscoverySetup:
                             query_metrics["query_depths"] = query_depths_list[-100:]
                         if len(nodes_queried_list) > 100:  # type: ignore[arg-type]
                             query_metrics["nodes_queried"] = nodes_queried_list[-100:]
+                    if nodes_queried == 0:
+                        self._query_zero_nodes_cycles += 1
+                        self._set_health_state("degraded")
+                        self.logger.warning(
+                            "DHT recovery state=query_zero_nodes cycle=%d for %s (routing table: %d nodes, depth=%d)",
+                            self._query_zero_nodes_cycles,
+                            self.session.info.name,
+                            routing_table_size,
+                            query_depth,
+                        )
+                        if self._query_zero_nodes_cycles >= 2:
+                            await self._maybe_rebootstrap(
+                                dht_client,
+                                reason=(
+                                    "query_zero_nodes "
+                                    f"cycle={self._query_zero_nodes_cycles}"
+                                ),
+                            )
+                    else:
+                        if self._query_zero_nodes_cycles > 0:
+                            self.logger.info(
+                                "DHT recovery state=query_nodes_recovered for %s after %d zero-node cycle(s) (nodes_queried=%d)",
+                                self.session.info.name,
+                                self._query_zero_nodes_cycles,
+                                nodes_queried,
+                            )
+                        self._query_zero_nodes_cycles = 0
+                        if routing_table_size > 0:
+                            self._set_health_state("healthy")
 
                     # Update last query metrics
                     self._dht_query_metrics["last_query"] = {
@@ -1916,7 +2093,7 @@ class DHTDiscoverySetup:
                         peer_count,
                     )
 
-                    # CRITICAL FIX: Even if get_peers returns empty, callbacks may have been invoked
+                    # Note: Even if get_peers returns empty, callbacks may have been invoked
                     # with peers discovered during the query. The callback handles peer connection.
                     # This is normal DHT behavior - peers are connected via callbacks, not return value
                     if peer_count > 0:
@@ -1932,7 +2109,7 @@ class DHTDiscoverySetup:
                             "DHT get_peers returned empty for %s (this is normal - callbacks handle peer discovery)",
                             self.session.info.name,
                         )
-                        # CRITICAL FIX: Verify peers were actually connected via callback
+                        # Note: Verify peers were actually connected via callback
                         # If not, try fallback connection after a short delay
                         await asyncio.sleep(2.0)  # Give callbacks time to connect
                         peer_manager = getattr(
@@ -2037,11 +2214,11 @@ class DHTDiscoverySetup:
                                             e,
                                         )
                 except asyncio.TimeoutError:
-                    # CRITICAL FIX: Even on timeout, callbacks may have been invoked with partial results
+                    # Note: Even on timeout, callbacks may have been invoked with partial results
                     # The query may have found some peers before timing out
                     query_duration = asyncio.get_event_loop().time() - query_start_time
 
-                    # CRITICAL FIX: Progressive timeout increase for retries
+                    # Note: Progressive timeout increase for retries
                     # Timeout already increases with attempt_count, but log the progression
                     timeout_progression = f"{base_timeout:.1f}s → {timeout:.1f}s (attempt {attempt_count})"
 
@@ -2062,7 +2239,7 @@ class DHTDiscoverySetup:
                     )
                     peers = []  # Return empty list on timeout (but callbacks may have been invoked)
                 except Exception as query_error:
-                    # CRITICAL FIX: Handle all exceptions gracefully - don't stop the discovery loop
+                    # Note: Handle all exceptions gracefully - don't stop the discovery loop
                     query_duration = asyncio.get_event_loop().time() - query_start_time
                     self.logger.warning(
                         "DHT get_peers query error for %s after %.2fs: %s (will retry in %.1fs)",
@@ -2075,12 +2252,12 @@ class DHTDiscoverySetup:
                     peers = []  # Return empty list on error
                     consecutive_failures += 1
 
-                # CRITICAL FIX: Check if peers were found (either directly or via callbacks)
+                # Note: Check if peers were found (either directly or via callbacks)
                 # Callbacks should have been invoked during get_peers() call
                 # We check both the returned peers and whether callbacks were invoked
                 peer_count = len(peers) if peers else 0
 
-                # CRITICAL FIX: Even if get_peers returns empty, callbacks may have been invoked
+                # Note: Even if get_peers returns empty, callbacks may have been invoked
                 # with peers discovered during the query. The callback handles peer connection.
                 # So we don't treat empty return as failure - callbacks may have connected peers.
                 if peer_count > 0:
@@ -2094,7 +2271,7 @@ class DHTDiscoverySetup:
                     # Reset retry interval on success
                     dht_retry_interval = initial_retry_interval
                 else:
-                    # CRITICAL FIX: Empty return doesn't mean failure - callbacks may have been invoked
+                    # Note: Empty return doesn't mean failure - callbacks may have been invoked
                     # Only increment failure count if we're sure no peers were found
                     # Check if we have active connections to determine if callbacks worked
                     has_active_peers = False
@@ -2126,7 +2303,7 @@ class DHTDiscoverySetup:
                                 "Bootstrap may not have completed."
                             )
                         elif consecutive_failures < max_consecutive_failures:
-                            # CRITICAL FIX: Improved exponential backoff with jitter to prevent thundering herd
+                            # Note: Improved exponential backoff with jitter to prevent thundering herd
                             # For first few failures, use reasonable retry (30s minimum to prevent blacklisting)
                             import random
 
@@ -2167,7 +2344,7 @@ class DHTDiscoverySetup:
                                 routing_table_size,
                             )
                     else:
-                        # CRITICAL FIX: We have active peers even though get_peers returned empty
+                        # Note: We have active peers even though get_peers returned empty
                         # This can happen if:
                         # 1. Peers were connected from a previous query (callbacks invoked earlier)
                         # 2. Peers were connected via trackers or PEX
@@ -2188,7 +2365,7 @@ class DHTDiscoverySetup:
                         else:
                             dht_retry_interval = initial_retry_interval
 
-                # CRITICAL FIX: Make discovery more aggressive when peer count is low
+                # Note: Make discovery more aggressive when peer count is low
                 # Check current peer count and adjust wait time accordingly
                 current_peer_count = 0
                 if (
@@ -2216,7 +2393,7 @@ class DHTDiscoverySetup:
                     else 0.0
                 )
 
-                # CRITICAL FIX: Use reasonable wait time when peer count is low
+                # Note: Use reasonable wait time when peer count is low
                 # Respect minimum query interval (30s) to prevent peer blacklisting
                 if current_peer_count < 5:
                     # Critically low: use minimum interval (30s) to prevent blacklisting
@@ -2252,7 +2429,7 @@ class DHTDiscoverySetup:
                     consecutive_failures,
                     attempt_count,
                 )
-                # CRITICAL FIX: Use interruptible sleep that checks _stopped frequently
+                # Note: Use interruptible sleep that checks _stopped frequently
                 # This ensures the loop exits quickly when shutdown is requested
                 sleep_interval = min(wait_time, 1.0)  # Check at least every second
                 elapsed = 0.0
@@ -2290,7 +2467,7 @@ class DHTDiscoverySetup:
                     wait_time,
                     consecutive_failures,
                 )
-                # CRITICAL FIX: Use interruptible sleep that checks _stopped frequently
+                # Note: Use interruptible sleep that checks _stopped frequently
                 # This ensures the loop exits quickly when shutdown is requested
                 sleep_interval = min(wait_time, 1.0)  # Check at least every second
                 elapsed = 0.0

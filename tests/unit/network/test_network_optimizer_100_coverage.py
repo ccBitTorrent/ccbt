@@ -279,15 +279,16 @@ def test_optimize_socket_keepalive_options_error(socket_optimizer):
         mock_config.network.socket_adaptive_buffers = False
         mock_config.network.socket_enable_window_scaling = False
         mock_get_config.return_value = mock_config
+        tcp_keepidle = getattr(
+            socket,
+            "TCP_KEEPIDLE",
+            getattr(socket, "TCP_KEEPALIVE", None),
+        )
         
         with patch.object(socket_optimizer, '_get_max_buffer_size', return_value=65536):
-            # Make setsockopt raise AttributeError for TCP_KEEPIDLE after SO_KEEPALIVE
-            call_count = 0
+            # Make setsockopt raise AttributeError for keepalive idle option.
             def side_effect(*args, **kwargs):
-                nonlocal call_count
-                call_count += 1
-                # First call is SO_KEEPALIVE, second is TCP_KEEPIDLE
-                if call_count == 3:  # Third call is TCP_KEEPIDLE (after duplicate SO_KEEPALIVE)
+                if tcp_keepidle is not None and len(args) > 1 and args[1] == tcp_keepidle:
                     raise AttributeError("TCP_KEEPIDLE not available")
                 return None
             

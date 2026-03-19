@@ -158,7 +158,7 @@ class TestPiecePredictor:
         piece_info = predictor.piece_info[0]
         assert piece_info.download_start_time == performance_data["download_start_time"]
         assert piece_info.download_complete_time == performance_data["download_complete_time"]
-        # CRITICAL FIX: Use approximate comparison for floating-point duration
+        # Note: Use approximate comparison for floating-point duration
         # Floating-point arithmetic can introduce small precision errors
         assert abs(piece_info.download_duration - 2.0) < 0.001
         assert piece_info.download_speed == 8192.0

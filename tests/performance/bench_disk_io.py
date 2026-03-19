@@ -107,7 +107,7 @@ async def run_case(size_bytes: int, iterations: int) -> BenchmarkResult:
                 read_throughput_bytes_per_s=read_throughput,
             )
             
-            # CRITICAL FIX: Stop manager and close all file handles BEFORE temp directory cleanup
+            # Note: Stop manager and close all file handles BEFORE temp directory cleanup
             # This prevents Windows file locking issues (PermissionError [WinError 32])
             # Force flush all pending operations first
             if hasattr(manager, '_flush_all_writes'):

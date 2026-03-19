@@ -73,7 +73,7 @@ class HybridProtocol(Protocol):
         """
         super().__init__(ProtocolType.HYBRID)
 
-        # CRITICAL FIX: Store session manager reference
+        # Note: Store session manager reference
         # This allows protocols to use shared components (UDP tracker, DHT, WebRTC manager, etc.)
         self.session_manager = session_manager
 
@@ -104,7 +104,7 @@ class HybridProtocol(Protocol):
     def _initialize_sub_protocols(self) -> None:
         """Initialize sub-protocols based on strategy.
 
-        CRITICAL FIX: Pass session_manager to protocol constructors to ensure
+        Note: Pass session_manager to protocol constructors to ensure
         they use shared components (UDP tracker, DHT, WebRTC manager, etc.)
         """
         if self.strategy.use_bittorrent:
@@ -119,7 +119,7 @@ class HybridProtocol(Protocol):
             if WebTorrentProtocol is None:
                 msg = "WebTorrentProtocol is not available. Install aiortc: uv sync --extra webrtc"
                 raise ImportError(msg)
-            # CRITICAL FIX: Pass session_manager to WebTorrentProtocol
+            # Note: Pass session_manager to WebTorrentProtocol
             # This ensures it uses shared WebSocket server and WebRTC manager
             self.sub_protocols[ProtocolType.WEBTORRENT] = WebTorrentProtocol(
                 session_manager=self.session_manager
@@ -129,7 +129,7 @@ class HybridProtocol(Protocol):
             )
 
         if self.strategy.use_ipfs:
-            # CRITICAL FIX: Pass session_manager to IPFSProtocol
+            # Note: Pass session_manager to IPFSProtocol
             # This ensures consistency and allows IPFS to use shared components if needed
             self.sub_protocols[ProtocolType.IPFS] = IPFSProtocol(
                 session_manager=self.session_manager
@@ -140,7 +140,7 @@ class HybridProtocol(Protocol):
             try:
                 from ccbt.protocols.xet import XetProtocol
 
-                # CRITICAL FIX: Pass session_manager to XetProtocol if it supports it
+                # Note: Pass session_manager to XetProtocol if it supports it
                 self.sub_protocols[ProtocolType.XET] = XetProtocol()
                 self.protocol_weights[ProtocolType.XET] = self.strategy.xet_weight
             except ImportError:

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from aiohttp import web
 
 from ccbt.models import PieceSelectionStrategy, PieceState
+from ccbt.utils.compat import to_thread_compat
 from ccbt.utils.events import Event, emit_event
 
 if TYPE_CHECKING:
@@ -291,11 +292,11 @@ class MediaStreamRuntime:
     ) -> None:
         """Write the selected byte range to the client."""
         remaining = end - start + 1
-        handle = await asyncio.to_thread(_open_seek, self.file_path, start)
+        handle = await to_thread_compat(_open_seek, self.file_path, start)
         try:
             while remaining > 0:
                 read_size = min(self.chunk_size, remaining)
-                chunk = await asyncio.to_thread(handle.read, read_size)
+                chunk = await to_thread_compat(handle.read, read_size)
                 if not chunk:
                     break
                 await response.write(chunk)
@@ -303,7 +304,7 @@ class MediaStreamRuntime:
                 async with self._lock:
                     self.bytes_served += len(chunk)
         finally:
-            await asyncio.to_thread(handle.close)
+            await to_thread_compat(handle.close)
 
     async def _wait_for_requested_bytes(self, start_offset: int) -> int:
         """Wait briefly for the requested range to become locally readable."""
@@ -338,10 +339,10 @@ class MediaStreamRuntime:
 
     async def _estimate_available_bytes(self, start_offset: int) -> int:
         """Estimate how many contiguous bytes are locally readable."""
-        exists = await asyncio.to_thread(self.file_path.exists)
+        exists = await to_thread_compat(self.file_path.exists)
         if not exists:
             return 0
-        stat_result = await asyncio.to_thread(self.file_path.stat)
+        stat_result = await to_thread_compat(self.file_path.stat)
         on_disk_size = min(stat_result.st_size, self.file_size)
         mapper = getattr(self.file_selection_manager, "mapper", None)
         pieces = getattr(self.piece_manager, "pieces", None)
