@@ -16,6 +16,7 @@ import socket
 import struct
 import sys
 import time
+from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Optional
@@ -127,6 +128,17 @@ class AsyncUDPTrackerClient:
         self._pending_request_timestamps: dict[int, float] = {}
         self._max_pending_requests: int = 128
         self._pending_request_stale_after: float = 30.0
+        self._pending_request_budget_base: int = 128
+        self._pending_request_budget_min: int = 8
+        self._pending_request_budget_per_tracker: int = 16
+        self._pending_request_budget_window: float = 60.0
+        self._pending_request_success_history: deque[float] = deque(maxlen=512)
+        self._pending_request_stale_history: deque[float] = deque(maxlen=512)
+        self._adaptive_pending_request_budget: int = self._pending_request_budget_base
+        self._last_budget_refresh: float = 0.0
+        self._budget_refresh_interval: float = 1.0
+        self._pending_cleanup_interval: float = 30.0
+        self._last_pending_cleanup: float = 0.0
 
         # Background tasks
         self._cleanup_task: Optional[asyncio.Task] = None
@@ -173,6 +185,92 @@ class AsyncUDPTrackerClient:
 
         """
         return self._socket_ready
+
+    def _record_pending_request_result(self, *, stale: bool, now: Optional[float] = None) -> None:
+        """Record completion history for adaptive transaction budgeting."""
+        event_time = time.time() if now is None else now
+        if stale:
+            self._pending_request_stale_history.append(event_time)
+        else:
+            self._pending_request_success_history.append(event_time)
+
+    def _trim_request_history(self, now: float) -> None:
+        """Trim stale completion history entries from the tracking window."""
+        cutoff = now - self._pending_request_budget_window
+        while (
+            self._pending_request_stale_history
+            and self._pending_request_stale_history[0] < cutoff
+        ):
+            self._pending_request_stale_history.popleft()
+        while (
+            self._pending_request_success_history
+            and self._pending_request_success_history[0] < cutoff
+        ):
+            self._pending_request_success_history.popleft()
+
+    def _get_adaptive_pending_request_budget(self, now: float) -> int:
+        """Calculate adaptive transaction budget from tracker and response history."""
+        if now - self._last_budget_refresh < self._budget_refresh_interval:
+            return self._adaptive_pending_request_budget
+
+        self._last_budget_refresh = now
+
+        connected_trackers = sum(
+            1
+            for session in self.sessions.values()
+            if session.is_connected
+            or session.last_response_time is not None
+            or session.connection_time > 0
+        )
+        tracker_count = max(1, connected_trackers or len(self.sessions))
+        adaptive_budget = min(
+            self._pending_request_budget_base,
+            max(
+                self._pending_request_budget_min,
+                tracker_count * self._pending_request_budget_per_tracker,
+            ),
+        )
+
+        self._trim_request_history(now)
+        total_samples = len(self._pending_request_stale_history) + len(
+            self._pending_request_success_history
+        )
+        if total_samples >= 6:
+            stale_ratio = len(self._pending_request_stale_history) / total_samples
+            if stale_ratio >= 0.45:
+                adaptive_budget = max(
+                    self._pending_request_budget_min, adaptive_budget // 2
+                )
+            elif stale_ratio <= 0.15 and total_samples >= 12:
+                adaptive_budget = min(
+                    self._pending_request_budget_base, adaptive_budget + 8
+                )
+
+        if self._socket_error_count > 0:
+            adaptive_budget = max(
+                self._pending_request_budget_min, adaptive_budget // 2
+            )
+
+        self._adaptive_pending_request_budget = adaptive_budget
+        return adaptive_budget
+
+    def _get_effective_pending_request_cap(self) -> int:
+        """Return final transaction cap including manual override."""
+        now = time.time()
+        self._get_adaptive_pending_request_budget(now)
+        effective_cap = min(self._max_pending_requests, self._adaptive_pending_request_budget)
+        if self._max_pending_requests >= self._pending_request_budget_min:
+            return max(self._pending_request_budget_min, effective_cap)
+        return effective_cap
+
+    def _cleanup_stale_pending_requests(self, now: Optional[float] = None) -> int:
+        """Clean up stale pending transactions outside normal response flow."""
+        current_time = now or time.time()
+        return self._prune_stale_pending_requests(
+            now=current_time,
+            timeout=self._pending_request_stale_after,
+            additional_new=0,
+        )
 
     async def announce_chunk(
         self,
@@ -1102,7 +1200,14 @@ class AsyncUDPTrackerClient:
 
         return host, port
 
-    async def _connect_to_tracker(self, session: TrackerSession) -> None:
+    async def _connect_to_tracker(
+        self,
+        session: TrackerSession,
+        *,
+        max_retries: int = 5,
+        retry_delay: float = 1.0,
+        base_timeout: float = 10.0,
+    ) -> None:
         """Connect to a UDP tracker with health check and retry logic.
 
         CRITICAL: Socket must be initialized during daemon startup. Socket recreation
@@ -1111,8 +1216,12 @@ class AsyncUDPTrackerClient:
         # Validate socket is ready before use
         self._validate_socket_ready()
 
-        max_retries = 5
-        retry_delay = 1.0
+        if max_retries <= 0:
+            max_retries = 1
+        if retry_delay < 0.0:
+            retry_delay = 0.0
+        if base_timeout < 0.0:
+            base_timeout = 0.1
 
         for attempt in range(max_retries):
             try:
@@ -1322,7 +1431,6 @@ class AsyncUDPTrackerClient:
                 # Wait for response with timeout
                 # Note: Reduce timeout when socket errors are occurring
                 # If socket has recent errors, use shorter timeout to fail faster
-                base_timeout = 10.0  # Reduced from 20.0s
                 if self._socket_error_count > 0:
                     # Reduce timeout when socket is having issues
                     base_timeout = max(
@@ -2041,6 +2149,7 @@ class AsyncUDPTrackerClient:
         self, now: float, timeout: float, additional_new: int = 0
     ) -> int:
         """Drop stale pending requests and enforce request cap."""
+        effective_cap = self._get_effective_pending_request_cap()
         cutoff = now - max(timeout, self._pending_request_stale_after)
         stale_tids = [
             transaction_id
@@ -2052,6 +2161,7 @@ class AsyncUDPTrackerClient:
             self._pending_request_timestamps.pop(transaction_id, None)
             if future is not None and not future.done():
                 future.cancel()
+            self._record_pending_request_result(stale=True, now=now)
             self.logger.warning(
                 "Cancelling stale tracker request transaction_id=%d (age=%.1fs)",
                 transaction_id,
@@ -2059,8 +2169,8 @@ class AsyncUDPTrackerClient:
             )
 
         projected_count = len(self.pending_requests) + additional_new
-        if projected_count > self._max_pending_requests:
-            overflow = projected_count - self._max_pending_requests
+        if projected_count > effective_cap:
+            overflow = projected_count - effective_cap
             oldest = sorted(
                 self._pending_request_timestamps.items(), key=lambda item: item[1]
             )
@@ -2069,6 +2179,7 @@ class AsyncUDPTrackerClient:
                 self._pending_request_timestamps.pop(transaction_id, None)
                 if future is not None and not future.done():
                     future.cancel()
+                self._record_pending_request_result(stale=True, now=now)
                 self.logger.warning(
                     "Dropping oldest tracker request to enforce cap: transaction_id=%d, age=%.1fs",
                     transaction_id,
@@ -2100,8 +2211,16 @@ class AsyncUDPTrackerClient:
 
         try:
             return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.CancelledError:
+            self._record_pending_request_result(stale=True, now=time.time())
+            self.logger.debug(
+                "Tracker response future cancelled for transaction_id=%d",
+                transaction_id,
+            )
+            return None
         except asyncio.TimeoutError:
             # Note: Enhanced logging for timeouts - this is a common failure mode
+            self._record_pending_request_result(stale=True, now=time.time())
             self.logger.warning(
                 "Timeout waiting for tracker response (transaction_id=%d, timeout=%.1fs). "
                 "This may indicate: (1) Tracker is slow/unresponsive, (2) Network issues, "
@@ -2274,6 +2393,7 @@ class AsyncUDPTrackerClient:
                         transaction_id=transaction_id,
                         connection_id=connection_id,
                     )
+                    self._record_pending_request_result(stale=False, now=time.time())
                     future.set_result(response)
 
             elif action == TrackerAction.ANNOUNCE.value:
@@ -2442,6 +2562,7 @@ class AsyncUDPTrackerClient:
                         seeders=seeders,
                         peers=peers,
                     )
+                    self._record_pending_request_result(stale=False, now=time.time())
                     future.set_result(response)
 
                     # Note: IMMEDIATE CONNECTION PATH - Connect peers as soon as they arrive
@@ -2495,6 +2616,7 @@ class AsyncUDPTrackerClient:
                         downloaded=downloaded,
                         incomplete=incomplete,
                     )
+                    self._record_pending_request_result(stale=False, now=time.time())
                     future.set_result(response)
 
             elif action == TrackerAction.ERROR.value:
@@ -2504,6 +2626,7 @@ class AsyncUDPTrackerClient:
                     transaction_id=transaction_id,
                     error_message=error_message,
                 )
+                self._record_pending_request_result(stale=False, now=time.time())
                 future.set_result(response)
 
         except Exception as e:  # pragma: no cover - Exception handling in response parsing, hard to trigger reliably in tests
@@ -2515,10 +2638,11 @@ class AsyncUDPTrackerClient:
         """Background task to clean up old sessions."""
         while True:  # pragma: no cover - Background loop, tested via cancellation
             try:
-                await asyncio.sleep(300.0)  # Clean every 5 minutes
-                await (
-                    self._cleanup_sessions()
-                )  # pragma: no cover - Tested via direct calls
+                await asyncio.sleep(self._pending_cleanup_interval)
+                self._last_pending_cleanup = time.time()
+                now = self._last_pending_cleanup
+                await self._cleanup_sessions()
+                self._cleanup_stale_pending_requests(now=now)
             except asyncio.CancelledError:
                 break  # pragma: no cover - Cancellation tested separately
             except Exception:  # pragma: no cover - Exception handling tested separately

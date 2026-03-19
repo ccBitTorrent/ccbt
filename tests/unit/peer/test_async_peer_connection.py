@@ -889,6 +889,143 @@ async def test_monitor_unchoke_timeout_triggers_hard_recovery(monkeypatch, peer_
 
 
 @pytest.mark.asyncio
+async def test_connect_to_peers_preserves_peer_completion_context(monkeypatch, peer_manager):
+    """Completion context hints are carried per peer into _connect_to_peer inputs."""
+    peer_manager._running = True
+    captured_peers = []
+
+    async def fake_connect_to_peer(peer_info: PeerInfo) -> None:
+        captured_peers.append(peer_info)
+        return None
+
+    monkeypatch.setattr(peer_manager, "_connect_to_peer", fake_connect_to_peer)
+
+    peer_list = [
+        {"ip": "192.0.2.1", "port": 6881, "is_seeder": False, "completion_percent": 0.25},
+        {"ip": "192.0.2.2", "port": 6882, "complete": True, "completion_percent": 0.0},
+    ]
+
+    await peer_manager.connect_to_peers(peer_list)
+
+    by_ip = {peer.ip: peer for peer in captured_peers}
+    assert by_ip["192.0.2.1"].is_seeder is False
+    assert by_ip["192.0.2.1"].completion_percent == 0.25
+    assert by_ip["192.0.2.2"].is_seeder is True
+    assert by_ip["192.0.2.2"].completion_percent == 0.0
+
+
+@pytest.mark.asyncio
+async def test_handle_unchoke_uses_seed_anchor_retry_budget(monkeypatch, peer_manager):
+    """Seed-anchor peers get higher unchoke retry/requester budgets for faster recovery."""
+    connection = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.1", port=6881),
+        peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.CHOKED
+    connection.peer_choking = True
+    connection.am_interested = False
+    peer_manager._set_connection_completion_context(
+        connection, is_seeder=True, completion_percent=1.0
+    )
+
+    peer_manager._send_interested = AsyncMock()
+    peer_manager.piece_manager._select_pieces = AsyncMock()
+    peer_manager.piece_manager._retry_requested_pieces = AsyncMock()
+
+    from ccbt.peer.peer import UnchokeMessage
+
+    await peer_manager._handle_unchoke(connection, UnchokeMessage())
+    await asyncio.sleep(0.05)
+
+    peer_manager.piece_manager._select_pieces.assert_awaited_once()
+    peer_manager.piece_manager._retry_requested_pieces.assert_awaited_once_with(
+        connection,
+        max_retry_count=5,
+        max_requesters=3,
+    )
+    peer_manager._send_interested.assert_awaited_once_with(connection)
+
+
+@pytest.mark.asyncio
+async def test_handle_unchoke_uses_default_retry_budget_for_non_seed_anchor(peer_manager):
+    """Non-anchor peers keep the default unchoke retry/requester budgets."""
+    connection = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.2", port=6882),
+        peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.CHOKED
+    connection.peer_choking = True
+    connection.am_interested = False
+    peer_manager._set_connection_completion_context(
+        connection, is_seeder=False, completion_percent=0.35
+    )
+
+    from ccbt.peer.peer import UnchokeMessage
+
+    peer_manager._send_interested = AsyncMock()
+    peer_manager.piece_manager._select_pieces = AsyncMock()
+    peer_manager.piece_manager._retry_requested_pieces = AsyncMock()
+
+    await peer_manager._handle_unchoke(connection, UnchokeMessage())
+    await asyncio.sleep(0.05)
+
+    peer_manager.piece_manager._retry_requested_pieces.assert_awaited_once_with(
+        connection,
+        max_retry_count=4,
+        max_requesters=2,
+    )
+
+
+@pytest.mark.asyncio
+async def test_monitor_unchoke_timeout_defers_seed_anchor_before_recovery(monkeypatch, peer_manager, peer_info):
+    """Seed-anchor peers get a short grace period before hard-unchoke recovery."""
+    from ccbt.utils.events import Event
+
+    connection = AsyncPeerConnection(
+        peer_info=peer_info,
+        torrent_data=peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.CHOKED
+    connection.peer_choking = True
+    connection.peer_interested = True
+    connection.am_interested = True
+    peer_manager._set_connection_completion_context(
+        connection, is_seeder=True, completion_percent=1.0
+    )
+    peer_manager.connections[str(peer_info)] = connection
+
+    disconnect_mock = AsyncMock()
+    record_failure_mock = AsyncMock()
+    schedule_mock = MagicMock()
+    emit_event_mock = AsyncMock()
+
+    monkeypatch.setattr(peer_manager, "_disconnect_peer", disconnect_mock)
+    monkeypatch.setattr(peer_manager, "_record_connection_failure", record_failure_mock)
+    monkeypatch.setattr(peer_manager, "_schedule_pending_resume", schedule_mock)
+    monkeypatch.setattr("ccbt.utils.events.emit_event", emit_event_mock)
+
+    async def fast_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", fast_sleep)
+
+    await peer_manager._monitor_unchoke_timeout(
+        connection, connection_start_time=time.time() - 76.0
+    )
+
+    disconnect_mock.assert_awaited_once()
+    record_failure_mock.assert_awaited_once()
+    assert (
+        getattr(connection, "_seed_anchor_unchoke_deferrals", 0)
+        == 2
+    )
+    assert emit_event_mock.await_count == 1
+
+    recovery_event = emit_event_mock.call_args.args[0]
+    assert isinstance(recovery_event, Event)
+    assert recovery_event.data["recovery_state"]["seed_anchor"] is True
+
+@pytest.mark.asyncio
 async def test_classify_connection_failure_recognizes_transient_and_terminal_errors(peer_manager):
     """Classify known protocol errors as terminal and network failures as transient."""
     assert peer_manager._classify_connection_failure(ConnectionRefusedError("connection refused")) == (

@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import logging
 import random
+import math
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runt
 
 from ccbt.config.config import get_config
 from ccbt.models import MessageType
+from ccbt.monitoring import get_metrics_collector
 from ccbt.peer.peer import (
     BitfieldMessage,
     CancelMessage,
@@ -118,6 +120,12 @@ class PeerStats:
     unexpected_pieces_useful: int = (
         0  # Number of unexpected pieces that were actually needed
     )
+    choke_state_ratio: float = 0.0  # Exponential ratio of recent choke state
+    choke_streak: int = 0  # Recent consecutive choke transitions
+    last_choke_ratio_update: float = 0.0  # Last timestamp for choke ratio decay
+    last_peer_choked_state: Optional[bool] = None
+    choke_only_penalty: float = 0.0  # Decayed penalty for repeated choke-only behavior
+    last_choke_only_penalty_update: float = 0.0  # Timestamp for choke-only penalty decay
     timeout_adjustment_factor: float = (
         1.0  # Dynamic timeout adjustment (reduced when unexpected pieces are useful)
     )
@@ -234,7 +242,94 @@ class AsyncPeerConnection:
         """Check if connection has timed out."""
         return time.time() - self.stats.last_activity > timeout
 
-    def can_request(self) -> bool:
+    def _decay_and_record_choke_ratio(
+        self,
+        is_choked: bool,
+    ) -> float:
+        """Track recent choke ratio with decay so bad bursts recover over time."""
+        stats = self.stats
+        if (
+            stats.last_peer_choked_state is not None
+            and stats.last_peer_choked_state != is_choked
+        ):
+            with contextlib.suppress(Exception):
+                get_metrics_collector().increment_counter("peer_choke_state_transitions")
+        stats.last_peer_choked_state = is_choked
+
+        now = time.time()
+        decay_window = 120.0
+        last_update = max(stats.last_choke_ratio_update, 0.0)
+        elapsed = max(0.0, now - last_update) if last_update > 0 else 0.0
+        blend = 1.0 if last_update <= 0 else min(1.0, elapsed / decay_window)
+
+        # Decay the existing ratio toward the current choke state so single bursts don't persist.
+        target_ratio = 1.0 if is_choked else 0.0
+        stats.choke_state_ratio = (
+            stats.choke_state_ratio * (1.0 - blend) + target_ratio * blend
+        )
+
+        if is_choked:
+            stats.choke_streak += 1
+        else:
+            stats.choke_streak = 0
+
+        stats.last_choke_ratio_update = now
+        return min(1.0, max(0.0, stats.choke_state_ratio))
+
+    def _decayed_choke_only_penalty(self, connection: AsyncPeerConnection) -> float:
+        """Return decayed choke-only penalty with health recovery."""
+        stats = connection.stats
+        half_life = max(
+            0.0,
+            float(getattr(self, "_choke_penalty_decay_half_life_s", 90.0)),
+        )
+        if half_life <= 0.0:
+            return float(getattr(stats, "choke_only_penalty", 0.0))
+
+        now = time.time()
+        last_update = max(
+            getattr(stats, "last_choke_only_penalty_update", 0.0),
+            0.0,
+        )
+        if last_update <= 0.0:
+            return float(getattr(stats, "choke_only_penalty", 0.0))
+
+        elapsed = now - last_update
+        if elapsed <= 0.0:
+            return float(getattr(stats, "choke_only_penalty", 0.0))
+
+        decay_factor = math.exp(-(elapsed / half_life) * math.log(2))
+        return float(max(0.0, getattr(stats, "choke_only_penalty", 0.0) * decay_factor))
+
+    def _update_choke_only_penalty(
+        self, connection: AsyncPeerConnection, *, is_choke_transition: bool
+    ) -> float:
+        """Track decayed choke-only penalty with recovery after unchokes."""
+        stats = connection.stats
+        decayed_penalty = self._decayed_choke_only_penalty(connection)
+        base = max(
+            0.0,
+            float(getattr(self, "_choke_only_penalty_base", 1.0)),
+        )
+        penalty_cap = max(
+            0.0,
+            float(getattr(self, "_choke_only_penalty_cap", 3.0)),
+        )
+
+        if is_choke_transition:
+            decayed_penalty = min(penalty_cap, decayed_penalty + base)
+        else:
+            decayed_penalty = min(penalty_cap, decayed_penalty)
+
+        stats.choke_only_penalty = decayed_penalty
+        stats.last_choke_only_penalty_update = time.time()
+        return decayed_penalty
+
+    def can_request(
+        self,
+        *,
+        require_recent_piece_availability: bool = False,
+    ) -> bool:
         """Check if we can make new requests.
 
         Note: According to BitTorrent protocol, we should be "interested" before requesting,
@@ -246,6 +341,20 @@ class AsyncPeerConnection:
         pipeline_available = len(self.outstanding_requests) < self.max_pipeline_depth
 
         can_req = is_active and not_choking and pipeline_available
+
+        if require_recent_piece_availability:
+            confidence_window = float(
+                getattr(self, "_piece_availability_confidence_window_s", 0.0)
+            )
+            if confidence_window > 0:
+                last_availability_signal = float(
+                    getattr(self, "_last_piece_availability_at", 0.0)
+                )
+                now = time.time()
+                if last_availability_signal <= 0.0:
+                    can_req = False
+                elif now - last_availability_signal > confidence_window:
+                    can_req = False
 
         # Log when can_request() returns False to help diagnose issues
         if not can_req:
@@ -609,8 +718,42 @@ class AsyncPeerConnectionManager:
         # Backoff intervals: 15s (1st), 30s (2nd), 60s (3rd), 120s (4th), 240s (5th), 600s (max)
         self._failed_peers: dict[
             str, dict[str, Any]
-        ] = {}  # peer_key -> {"timestamp": float, "count": int, "reason": str, "is_terminal": bool, "peer_source": str, "is_seeder": bool}
+        ] = {}  # peer_key -> {"timestamp": float, "count": int, "reason": str, "is_terminal": bool, "peer_source": str, "is_seeder": bool, "timeout_class": str, "is_transient": bool, "family": str}
         self._failed_peer_lock = asyncio.Lock()
+        self._failed_family_backoff_scores: dict[str, float] = {}
+        self._failed_family_backoff_last_seen: dict[str, float] = {}
+        self._failed_family_decay_window = 300.0  # 5 minutes
+        self._choke_penalty_decay_half_life_s = float(
+            getattr(
+                self.config.network,
+                "choke_penalty_decay_half_life_s",
+                90.0,
+            )
+        )
+        self._choke_only_penalty_base = float(
+            getattr(
+                self.config.network,
+                "choke_only_penalty_base",
+                1.0,
+            )
+        )
+        self._choke_only_penalty_cap = float(
+            getattr(
+                self.config.network,
+                "choke_only_penalty_cap",
+                3.0,
+            )
+        )
+        self._piece_availability_confidence_window_s = 15.0
+        try:
+            from ccbt.session.swarm_stability_defaults import PIECE_SELECTION_DEFAULTS
+
+            self._piece_availability_confidence_window_s = float(
+                PIECE_SELECTION_DEFAULTS.get("min_confidence_window_s", 15.0)
+            )
+        except Exception:
+            # Keep conservative default when defaults module is unavailable.
+            self._piece_availability_confidence_window_s = 15.0
         # BitTorrent: optimized retry intervals for better connection success and swarm health
         # Standard exponential backoff: 10s initial, doubles each time, max 5 minutes
         self._min_retry_interval = (
@@ -697,7 +840,9 @@ class AsyncPeerConnectionManager:
         # BitTorrent: debouncing for piece selection triggers from Have messages
         # Prevent excessive piece selection calls from duplicate Have messages
         self._last_piece_selection_trigger: float = 0.0
-        self._piece_selection_debounce_interval: float = 0.1  # 100ms debounce interval
+        self._piece_selection_debounce_interval_base: float = 0.1  # 100ms baseline debounce
+        self._piece_selection_debounce_interval: float = self._piece_selection_debounce_interval_base
+        self._piece_selection_debounce_interval_max: float = 2.0
         self._piece_selection_debounce_lock = asyncio.Lock()
 
         # Callbacks
@@ -968,9 +1113,162 @@ class AsyncPeerConnectionManager:
         peer_dict["peer_source"] = getattr(peer_info, "peer_source", "tracker")
         if hasattr(peer_info, "is_seeder"):
             peer_dict["is_seeder"] = peer_info.is_seeder
+        if hasattr(peer_info, "completion_percent"):
+            peer_dict["completion_percent"] = peer_info.completion_percent
         if hasattr(peer_info, "complete"):
             peer_dict["complete"] = peer_info.complete
         return peer_dict
+
+    @staticmethod
+    def _set_runtime_attr(target: Any, name: str, value: Any) -> None:
+        """Store ad-hoc metadata on pydantic models and runtime objects."""
+        try:
+            setattr(target, name, value)
+        except Exception:
+            with contextlib.suppress(Exception):
+                object.__setattr__(target, name, value)
+
+    @staticmethod
+    def _coerce_bool_flag(value: Any) -> bool:
+        """Parse bool-like values safely for peer metadata flags."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(int(value))
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            return normalized in {"1", "true", "yes", "y", "on"}
+        return False
+
+    @staticmethod
+    def _coerce_completion_percent(value: Any) -> float:
+        """Normalize completion percent-like values to a 0.0-1.0 float."""
+        if value is None:
+            return 0.0
+        try:
+            normalized = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        if normalized != normalized:
+            return 0.0
+        if normalized > 1.0:
+            if normalized <= 100:
+                normalized = normalized / 100.0
+            else:
+                normalized = 1.0
+        if normalized < 0.0:
+            return 0.0
+        if normalized > 1.0:
+            return 1.0
+        return normalized
+
+    def _set_connection_completion_context(
+        self,
+        connection: AsyncPeerConnection,
+        *,
+        is_seeder: bool,
+        completion_percent: float,
+    ) -> None:
+        """Persist completion context on a live connection for reuse."""
+        completion = self._coerce_completion_percent(completion_percent)
+        if completion >= 1.0:
+            is_seeder = True
+        self._set_runtime_attr(connection, "is_seeder", bool(is_seeder))
+        self._set_runtime_attr(connection, "completion_percent", completion)
+        self._set_runtime_attr(connection, "_completion_context_authoritative", True)
+        self._set_runtime_attr(connection, "_completion_context_updated_at", time.time())
+
+    def _set_peer_info_completion_context(
+        self,
+        peer_info: PeerInfo,
+        *,
+        is_seeder: bool = False,
+        completion_percent: Any = None,
+    ) -> None:
+        """Persist completion context on peer discovery hints."""
+        completion = self._coerce_completion_percent(completion_percent)
+        effective_seeder = self._coerce_bool_flag(is_seeder) or completion >= 0.999
+        self._set_runtime_attr(peer_info, "is_seeder", bool(effective_seeder))
+        self._set_runtime_attr(peer_info, "completion_percent", completion)
+
+    def _seeded_connection_from_info(self, connection: AsyncPeerConnection) -> None:
+        """Transfer discovery-time completion hints to the active connection."""
+        if getattr(connection, "_completion_context_authoritative", False):
+            return
+        is_seeder = self._coerce_bool_flag(getattr(connection.peer_info, "is_seeder", False))
+        completion = self._coerce_completion_percent(
+            getattr(connection.peer_info, "completion_percent", None)
+        )
+        if is_seeder or completion > 0:
+            self._set_connection_completion_context(
+                connection,
+                is_seeder=is_seeder,
+                completion_percent=completion,
+            )
+        self._set_runtime_attr(
+            connection,
+            "_piece_availability_confidence_window_s",
+            float(self._piece_availability_confidence_window_s),
+        )
+
+    def _get_connection_completion_context(
+        self, connection: AsyncPeerConnection
+    ) -> tuple[bool, float]:
+        """Return cached or derived `(is_seeder, completion_percent)` for a connection."""
+        if getattr(connection, "_completion_context_authoritative", False):
+            return bool(getattr(connection, "is_seeder", False)), float(
+                getattr(connection, "completion_percent", 0.0)
+            )
+
+        completion_percent = 0.0
+        piece_manager = getattr(self, "piece_manager", None)
+        num_pieces = int(getattr(piece_manager, "num_pieces", 0) or 0)
+        if num_pieces > 0:
+            bitfield = getattr(connection.peer_state, "bitfield", None)
+            if bitfield:
+                bits_set = sum(
+                    1
+                    for i in range(min(num_pieces, len(bitfield)))
+                    if bitfield[i]
+                )
+                completion_percent = bits_set / num_pieces
+            else:
+                pieces_have = getattr(connection.peer_state, "pieces_we_have", None)
+                if pieces_have:
+                    completion_percent = min(
+                        1.0, len(pieces_have) / float(num_pieces)
+                    )
+
+            is_seeder = completion_percent >= 0.999
+            self._set_connection_completion_context(
+                connection, is_seeder=is_seeder, completion_percent=completion_percent
+            )
+            return is_seeder, completion_percent
+
+        return bool(getattr(connection, "is_seeder", False)), float(
+            getattr(connection, "completion_percent", 0.0)
+        )
+
+    def _is_seed_anchor_connection(self, connection: AsyncPeerConnection) -> bool:
+        """Return whether a connection should be treated as a sticky high-value seeder."""
+        is_seeder, completion_percent = self._get_connection_completion_context(connection)
+        return bool(is_seeder or completion_percent >= 0.999)
+
+    def _is_sustained_underperformance(self, connection: AsyncPeerConnection) -> bool:
+        """Return True when a peer shows repeated choke/failure underperformance."""
+        stats = connection.stats
+        choke_streak = int(getattr(stats, "choke_streak", 0))
+        consecutive_failures = int(getattr(stats, "consecutive_failures", 0))
+        choke_ratio = float(getattr(stats, "choke_state_ratio", 0.0))
+        choke_only_penalty = float(getattr(stats, "choke_only_penalty", 0.0))
+        penalty_cap = max(0.0, float(self._choke_only_penalty_cap))
+        choke_only_pressure = choke_only_penalty / penalty_cap if penalty_cap > 0 else 0.0
+        return (
+            consecutive_failures >= 3
+            or choke_streak >= 8
+            or (choke_streak >= 4 and choke_ratio >= 0.95)
+            or choke_only_pressure >= 0.75
+        )
 
     async def _resume_pending_batches(self, reason: str) -> None:
         """Resume pending peer connections if slots are available."""
@@ -1033,16 +1331,51 @@ class AsyncPeerConnectionManager:
             return f"{peer.ip}:{peer.port}"
         return str(peer)
 
+    def _get_ip_family(self, peer: Any) -> str:
+        """Return IP family from peer or peer key."""
+        ip_address = None
+
+        if hasattr(peer, "ip"):
+            ip_address = getattr(peer, "ip", None)
+        elif hasattr(peer, "peer_info") and hasattr(peer.peer_info, "ip"):
+            ip_address = getattr(peer.peer_info, "ip", None)
+        else:
+            # Best-effort parse from peer key format like ip:port
+            ip_text = str(peer)
+            if ip_text and ":" in ip_text and "[" not in ip_text:
+                # IPv4-ish or unbracketed malformed case
+                ip_address = ip_text.rsplit(":", 1)[0]
+
+        if not ip_address:
+            return "unknown"
+
+        try:
+            import ipaddress
+
+            parsed = ipaddress.ip_address(str(ip_address))
+            return "ipv6" if parsed.version == 6 else "ipv4"
+        except ValueError:
+            return "unknown"
+
     def _classify_connection_failure(
         self, failure: BaseException | str
     ) -> tuple[str, bool]:
-        """Classify a connection failure and return reason and retryability.
+        """Classify a connection failure and return legacy reason + retryability."""
+        reason, is_temporary, _, _ = self._classify_connection_failure_detailed(
+            failure
+        )
+        return reason, is_temporary
+
+    def _classify_connection_failure_detailed(
+        self, failure: BaseException | str
+    ) -> tuple[str, bool, str, bool]:
+        """Classify a connection failure and return reason and retryability metadata.
 
         Args:
             failure: Exception instance or error string.
 
         Returns:
-            Tuple of (failure_reason, is_temporary).
+            Tuple of (failure_reason, is_temporary, timeout_class, is_transient).
         """
         if isinstance(failure, BaseException):
             error_text = str(failure).lower()
@@ -1051,44 +1384,53 @@ class AsyncPeerConnectionManager:
             error_text = str(failure).lower()
             error_type = error_text
 
+        timeout_class = "none"
+        is_transient = True
+
         # Cancellation is transient.
         if isinstance(failure, asyncio.CancelledError):
-            return ("connection_cancelled", True)
+            return ("connection_cancelled", True, "cancelled", True)
         if isinstance(failure, asyncio.TimeoutError) or (
             "timeout" in error_text and "winerror 121" not in error_text
         ):
-            return ("timeout", True)
+            if "handshake" in error_text:
+                timeout_class = "handshake"
+            elif "bitfield" in error_text:
+                timeout_class = "bitfield"
+            else:
+                timeout_class = "network"
+            return ("timeout", True, timeout_class, True)
         if isinstance(failure, asyncio.IncompleteReadError) or (
             "incomplete" in error_text and "read" in error_text
         ):
-            return ("incomplete_read", True)
+            return ("incomplete_read", True, "transport", True)
         if isinstance(failure, ConnectionResetError) or "connection reset" in error_text:
-            return ("connection_reset", True)
+            return ("connection_reset", True, "transport", True)
         if isinstance(failure, ConnectionRefusedError) or (
             "connection refused" in error_text
             or "winerror 10061" in error_text
         ):
-            return ("connection_refused", True)
+            return ("connection_refused", True, "transport", True)
         if isinstance(failure, ConnectionAbortedError):
             # Usually transient in P2P environments
-            return ("connection_aborted", True)
+            return ("connection_aborted", True, "transport", True)
         if isinstance(failure, OSError):
             errno_value = getattr(failure, "errno", None)
             if errno_value == 121 or "winerror 121" in error_text:
-                return ("semaphore_timeout", True)
+                return ("semaphore_timeout", True, "semaphore", True)
             if errno_value == 10061 or "winerror 10061" in error_text:
-                return ("connection_refused", True)
+                return ("connection_refused", True, "transport", True)
             if errno_value == 10054 or errno_value == 104:
-                return ("connection_reset", True)
+                return ("connection_reset", True, "transport", True)
             if errno_value == 10053 or errno_value == 10052:
-                return ("protocol_error", False)
+                return ("protocol_error", False, "protocol", False)
         if (
             "connection reset" in error_text
             or "reset by peer" in error_text
         ):
-            return ("connection_reset", True)
+            return ("connection_reset", True, "transport", True)
         if isinstance(failure, MessageError):
-            return ("protocol_error", False)
+            return ("protocol_error", False, "protocol", False)
         if (
             "info hash" in error_text
             or "mismatch" in error_text
@@ -1096,11 +1438,17 @@ class AsyncPeerConnectionManager:
             or "protocol error" in error_text
             or "protocol_error" in error_text
         ):
-            return ("protocol_error", False)
+            return ("protocol_error", False, "protocol", False)
         if isinstance(failure, PeerConnectionError):
             if "handshake" in error_type and "invalid" in error_text:
-                return ("protocol_error", False)
-        return ("connection_error", True)
+                return ("protocol_error", False, "protocol", False)
+        if "no active torrent" in error_text:
+            timeout_class = "registration_lag"
+            is_transient = True
+        if "dns" in error_text or "temporary failure in name resolution" in error_text:
+            is_transient = True
+            timeout_class = "dns"
+        return ("connection_error", True, timeout_class, is_transient)
 
     def _calculate_failure_backoff_interval(
         self,
@@ -1108,9 +1456,13 @@ class AsyncPeerConnectionManager:
         fail_reason: str,
         is_terminal: bool,
         active_peer_count: int,
+        fail_timeout_class: str = "none",
+        ip_family: str = "unknown",
     ) -> float:
         """Calculate backoff interval for failed peers."""
         fail_reason = (fail_reason or "").lower()
+        fail_timeout_class = (fail_timeout_class or "").lower()
+        ip_family = (ip_family or "unknown").lower()
 
         base_interval = self._min_retry_interval
         backoff_multiplier = self._backoff_multiplier
@@ -1121,7 +1473,27 @@ class AsyncPeerConnectionManager:
         if fail_reason in {"protocol_error", "handshake_mismatch", "invalid_handshake"}:
             backoff_multiplier = max(backoff_multiplier, 3.0)
             max_backoff = max(base_interval, self._max_retry_interval * 0.5)
-        elif fail_reason in {"timeout", "connection_refused", "connection_reset"}:
+        elif fail_reason == "timeout":
+            # Family-aware timeout ladder:
+            # for repeated transport failures on one family, keep a moderate escalation
+            family_penalty = self._failed_family_backoff_scores.get(ip_family, 0.0)
+            family_decay = max(
+                0.0,
+                1.0
+                - (time.time() - self._failed_family_backoff_last_seen.get(
+                    ip_family, time.time()
+                ))
+                / self._failed_family_decay_window,
+            )
+            family_boost = 1.0 + min(0.5, family_penalty * family_decay * 0.2)
+            base_interval *= family_boost
+
+            if fail_timeout_class == "handshake":
+                # Rotate transport handling for repeated handshake issues and keep backoff predictable.
+                backoff_multiplier = max(1.0, backoff_multiplier * 0.95)
+            else:
+                backoff_multiplier = max(1.0, backoff_multiplier * 0.8)
+        elif fail_reason in {"connection_refused", "connection_reset"}:
             backoff_multiplier = max(1.0, backoff_multiplier * 0.8)
 
         # Terminal failures should not be retried aggressively.
@@ -1739,7 +2111,7 @@ class AsyncPeerConnectionManager:
             # Use up to 2x base_depth or max_depth, whichever is higher
             # This allows 120 base_depth to become 240, but cap at max_depth
             return min(max_depth, max(base_depth * 2, max_depth))
-        if rtt < 0.05:  # Low latency (10-50ms) - good connection
+        if rtt <= 0.05:  # Low latency (10-50ms inclusive) - good connection
             # Use 1.5x base_depth, capped at max_depth
             return min(max_depth, int(base_depth * 1.5))
         if rtt < 0.1:  # Medium latency (50-100ms) - average connection
@@ -2240,6 +2612,7 @@ class AsyncPeerConnectionManager:
 
         # Create peer connection
         connection = AsyncPeerConnection(peer_info, self.torrent_data)
+        self._seeded_connection_from_info(connection)
         connection.reader = reader
         connection.writer = writer
         connection.state = ConnectionState.HANDSHAKE_RECEIVED
@@ -2967,14 +3340,37 @@ class AsyncPeerConnectionManager:
             regular_peers = []
 
             for peer_data in peer_list:
+                if not isinstance(peer_data, dict):
+                    peer_data_dict = {
+                        "ip": getattr(peer_data, "ip", None),
+                        "port": getattr(peer_data, "port", None),
+                        "peer_source": getattr(
+                            peer_data, "peer_source", "tracker"
+                        ),
+                        "is_seeder": self._coerce_bool_flag(
+                            getattr(peer_data, "is_seeder", False)
+                        ),
+                        "completion_percent": self._coerce_completion_percent(
+                            getattr(peer_data, "completion_percent", None)
+                        ),
+                    }
+                    if peer_data_dict["ip"] is None or peer_data_dict["port"] is None:
+                        continue
+                    peer_data = peer_data_dict
                 # Check if peer is reported as a seeder by tracker
-                is_seeder = peer_data.get("is_seeder", False) or peer_data.get(
-                    "complete", False
+                is_seeder = self._coerce_bool_flag(peer_data.get("is_seeder", False))
+                if not is_seeder:
+                    is_seeder = self._coerce_bool_flag(peer_data.get("complete", False))
+                completion_percent = self._coerce_completion_percent(
+                    peer_data.get("completion_percent", peer_data.get("completion", None))
                 )
+                enriched_peer = dict(peer_data)
+                enriched_peer["_is_seeder_hint"] = is_seeder
+                enriched_peer["_completion_percent_hint"] = completion_percent
                 if is_seeder:
-                    potential_seeders.append(peer_data)
+                    potential_seeders.append(enriched_peer)
                 else:
-                    regular_peers.append(peer_data)
+                    regular_peers.append(enriched_peer)
 
             # Prioritize seeders first, then regular peers
             peer_list_sorted = potential_seeders + regular_peers
@@ -3028,6 +3424,13 @@ class AsyncPeerConnectionManager:
                         peer_source=peer_data.get(
                             "peer_source", "tracker"
                         ),  # Default to tracker for tracker responses
+                    )
+                    self._set_peer_info_completion_context(
+                        peer_info,
+                        is_seeder=peer_data.get("_is_seeder_hint", False),
+                        completion_percent=peer_data.get(
+                            "_completion_percent_hint", 0.0
+                        ),
                     )
                 except (KeyError, TypeError) as e:
                     error_msg = (
@@ -3109,13 +3512,21 @@ class AsyncPeerConnectionManager:
                     fail_count = fail_info.get("count", 1)
                     fail_reason = fail_info.get("reason", "unknown")
                     fail_is_terminal = bool(fail_info.get("is_terminal", False))
+                    fail_timeout_class = fail_info.get("timeout_class", "none")
+                    effective_fail_count = (
+                        1 if fail_timeout_class == "registration_lag" else fail_count
+                    )
 
                     backoff_interval = self._calculate_failure_backoff_interval(
-                        fail_count=fail_count,
+                        fail_count=effective_fail_count,
                         fail_reason=fail_reason,
                         is_terminal=fail_is_terminal,
                         active_peer_count=active_peer_count,
+                        fail_timeout_class=fail_timeout_class,
+                        ip_family=fail_info.get("family", "unknown"),
                     )
+                    if fail_timeout_class == "registration_lag":
+                        backoff_interval = min(backoff_interval, 10.0)
 
                     # Check if backoff period has elapsed
                     elapsed = current_time - fail_time
@@ -3809,9 +4220,13 @@ class AsyncPeerConnectionManager:
                                 connection_stats["failed"] += 1
 
                             # BitTorrent: record failure with exponential backoff tracking
-                            failure_reason, is_temporary = self._classify_connection_failure(
-                                conn_result
-                            )
+                            (
+                                failure_reason,
+                                is_temporary,
+                                timeout_class,
+                                is_transient,
+                            ) = self._classify_connection_failure_detailed(conn_result)
+                            peer_family = self._get_ip_family(peer_info)
                             error_str = str(conn_result)
 
                             if failure_reason == "timeout":
@@ -3828,6 +4243,19 @@ class AsyncPeerConnectionManager:
                             async with self._failed_peer_lock:
                                 if is_temporary:
                                     # Only track temporary failures for retry logic
+                                    now = time.time()
+                                    decay_window = self._failed_family_decay_window
+                                    family_score = self._failed_family_backoff_scores.get(
+                                        peer_family, 0.0
+                                    )
+                                    family_last_seen = self._failed_family_backoff_last_seen.get(
+                                        peer_family, now
+                                    )
+                                    family_decay = max(
+                                        0.0,
+                                        1.0 - (now - family_last_seen) / decay_window,
+                                    )
+
                                     if peer_key in self._failed_peers:
                                         # Increment failure count for exponential backoff
                                         fail_info = self._failed_peers[peer_key]
@@ -3837,12 +4265,21 @@ class AsyncPeerConnectionManager:
                                         fail_info["timestamp"] = time.time()
                                         fail_info["reason"] = failure_reason
                                         fail_info["is_terminal"] = not is_temporary
+                                        fail_info["is_transient"] = is_transient
+                                        fail_info["timeout_class"] = timeout_class
+                                        fail_info["family"] = peer_family
                                         fail_info["peer_source"] = getattr(
                                             peer_info, "peer_source", "unknown"
                                         )
                                         fail_info["is_seeder"] = bool(
                                             getattr(peer_info, "is_seeder", False)
                                         )
+                                        self._failed_family_backoff_scores[peer_family] = (
+                                            min(5.0, family_score * family_decay + 1.0)
+                                            if is_transient
+                                            else family_score * family_decay
+                                        )
+                                        self._failed_family_backoff_last_seen[peer_family] = now
                                         fail_count = fail_info["count"]
                                     else:
                                         # First failure
@@ -3851,6 +4288,9 @@ class AsyncPeerConnectionManager:
                                             "count": 1,
                                             "reason": failure_reason,
                                             "is_terminal": not is_temporary,
+                                            "is_transient": is_transient,
+                                            "timeout_class": timeout_class,
+                                            "family": peer_family,
                                             "peer_source": getattr(
                                                 peer_info, "peer_source", "unknown"
                                             ),
@@ -3858,6 +4298,12 @@ class AsyncPeerConnectionManager:
                                                 getattr(peer_info, "is_seeder", False)
                                             ),
                                         }
+                                        self._failed_family_backoff_scores[peer_family] = (
+                                            min(5.0, family_score * family_decay + 1.0)
+                                            if is_transient
+                                            else 0.0
+                                        )
+                                        self._failed_family_backoff_last_seen[peer_family] = now
                                         fail_count = 1
                                 else:
                                     # Permanent failure - don't track for retry, but log it
@@ -3870,12 +4316,26 @@ class AsyncPeerConnectionManager:
 
                             # Calculate backoff interval for logging (only for temporary failures)
                             if is_temporary and fail_count > 0:
+                                effective_fail_count = (
+                                    1
+                                    if timeout_class == "registration_lag"
+                                    else fail_count
+                                )
                                 backoff_interval = self._calculate_failure_backoff_interval(
-                                    fail_count=fail_count,
+                                    fail_count=effective_fail_count,
                                     fail_reason=failure_reason,
                                     is_terminal=not is_temporary,
                                     active_peer_count=active_peer_count,
+                                    fail_timeout_class=timeout_class,
+                                    ip_family=peer_family,
                                 )
+                                if timeout_class == "registration_lag":
+                                    backoff_interval = min(backoff_interval, 10.0)
+                                family_penalty = (
+                                    self._failed_family_backoff_scores.get(peer_family, 0.0)
+                                )
+                                if family_penalty > 0.0:
+                                    backoff_interval *= 1.0 + min(0.5, family_penalty * 0.1)
                             else:
                                 backoff_interval = 0  # No retry for permanent failures
 
@@ -4539,6 +4999,7 @@ class AsyncPeerConnectionManager:
                             elif isinstance(conn_obj, AsyncPeerConnection):
                                 # Already an AsyncPeerConnection, use it directly
                                 connection = conn_obj
+                                self._seeded_connection_from_info(connection)
                                 # Connection batch: ensure callbacks are set on reused connection
                                 if self._on_peer_connected:
                                     connection.on_peer_connected = (
@@ -4586,6 +5047,7 @@ class AsyncPeerConnectionManager:
                 # Initialize connection early to track state (if not already set from pool)
                 if connection is None:
                     connection = AsyncPeerConnection(peer_info, self.torrent_data)
+                    self._seeded_connection_from_info(connection)
                     # Initialize per-peer upload rate limit from config
                     connection.per_peer_upload_limit_kib = (
                         self.per_peer_upload_limit_kib
@@ -4612,6 +5074,7 @@ class AsyncPeerConnectionManager:
                         peer_info=peer_info,
                         torrent_data=self.torrent_data,
                     )
+                    self._seeded_connection_from_info(connection)
                     # Set adaptive pipeline depth
                     connection.max_pipeline_depth = self._calculate_pipeline_depth(
                         connection
@@ -4731,6 +5194,7 @@ class AsyncPeerConnectionManager:
                         torrent_data=self.torrent_data,
                         webtorrent_protocol=self.webtorrent_protocol,
                     )
+                    self._seeded_connection_from_info(connection)
                     # Set adaptive pipeline depth
                     connection.max_pipeline_depth = self._calculate_pipeline_depth(
                         connection
@@ -4767,6 +5231,7 @@ class AsyncPeerConnectionManager:
                     # Create standard TCP connection (fallback or default)
                     if connection is None:
                         connection = AsyncPeerConnection(peer_info, self.torrent_data)
+                        self._seeded_connection_from_info(connection)
                         connection.state = ConnectionState.CONNECTING
                         # Set adaptive pipeline depth
                         connection.max_pipeline_depth = self._calculate_pipeline_depth(
@@ -5279,6 +5744,7 @@ class AsyncPeerConnectionManager:
                             connection = AsyncPeerConnection(
                                 peer_info, self.torrent_data
                             )
+                            self._seeded_connection_from_info(connection)
                             connection.per_peer_upload_limit_kib = (
                                 self.per_peer_upload_limit_kib
                             )
@@ -5318,6 +5784,7 @@ class AsyncPeerConnectionManager:
                                 connection = AsyncPeerConnection(
                                     peer_info, self.torrent_data
                                 )
+                                self._seeded_connection_from_info(connection)
                                 connection.per_peer_upload_limit_kib = (
                                     self.per_peer_upload_limit_kib
                                 )
@@ -5755,7 +6222,7 @@ class AsyncPeerConnectionManager:
 
                     # Record handshake failure for local blacklist source
                     await self._record_connection_failure(
-                        peer_info, "handshake_failure", error_type
+                    peer_info, "handshake_failure", error_type, failure=e
                     )
 
                     # Note: Close connection before raising error
@@ -6430,7 +6897,7 @@ class AsyncPeerConnectionManager:
 
                 # Record connection failure for local blacklist source
                 await self._record_connection_failure(
-                    peer_info, "connection_failure", error_type
+                    peer_info, "connection_failure", error_type, failure=error_type
                 )
 
                 if connection and connection.writer is not None:
@@ -6454,7 +6921,11 @@ class AsyncPeerConnectionManager:
                 raise
 
     async def _record_connection_failure(
-        self, peer_info: PeerInfo, failure_type: str, error_type: str
+        self,
+        peer_info: PeerInfo,
+        failure_type: str,
+        error_type: str,
+        failure: BaseException | str | None = None,
     ) -> None:
         """Record connection failure for local blacklist source.
 
@@ -6462,9 +6933,21 @@ class AsyncPeerConnectionManager:
             peer_info: Peer information
             failure_type: Type of failure ("handshake_failure", "connection_failure")
             error_type: Error type name
+            failure: Raw failure for classification and metrics
 
         """
         try:
+            fail_timeout_class = "none"
+            if failure is not None:
+                _, _, fail_timeout_class, _ = self._classify_connection_failure_detailed(
+                    failure
+                )
+                if fail_timeout_class == "registration_lag":
+                    with contextlib.suppress(Exception):
+                        get_metrics_collector().increment_counter(
+                            "registration_lag_handshake_failures"
+                        )
+
             # Try to get SecurityManager through session or config
             # This is optional - if SecurityManager is not available, we skip recording
             from ccbt.config.config import get_config
@@ -6502,6 +6985,19 @@ class AsyncPeerConnectionManager:
             self.logger.debug(
                 "Failed to record connection failure for local blacklist: %s",
                 peer_info,
+                exc_info=True,
+            )
+
+    def _record_observability_counter(self, metric_name: str, value: int = 1) -> None:
+        """Record an observability counter with a defensive fallback."""
+        if value <= 0:
+            return
+        try:
+            get_metrics_collector().increment_counter(metric_name, value=value)
+        except Exception:
+            self.logger.debug(
+                "Failed to record observability metric %s",
+                metric_name,
                 exc_info=True,
             )
 
@@ -6985,6 +7481,14 @@ class AsyncPeerConnectionManager:
                         await handler(connection, message)  # type: ignore[misc]  # Handler is async
                     else:
                         # Fallback: handle inline if handler not available
+                        if not choking_before:
+                            connection._update_choke_only_penalty(
+                                connection, is_choke_transition=True
+                            )
+                        else:
+                            connection._update_choke_only_penalty(
+                                connection, is_choke_transition=False
+                            )
                         connection.peer_choking = (
                             True  # pragma: no cover - Same context
                         )
@@ -7010,6 +7514,9 @@ class AsyncPeerConnectionManager:
                         await handler(connection, message)  # type: ignore[misc]  # Handler is async
                     else:
                         # Fallback: handle inline if handler not available
+                        connection._update_choke_only_penalty(
+                            connection, is_choke_transition=choking_before
+                        )
                         connection.peer_choking = (
                             False  # pragma: no cover - Same context
                         )
@@ -8322,16 +8829,123 @@ class AsyncPeerConnectionManager:
             )
             raise
 
+    def _refresh_piece_selection_cadence_from_choke_transition(
+        self,
+        connection: AsyncPeerConnection,
+        *,
+        is_unchoke_transition: bool,
+    ) -> float:
+        """Adjust piece-selection debounce based on observed choke behavior.
+
+        Choke-heavy peers increase selection delay to reduce request churn.
+        Repeated unchokes relax the delay so scheduling can return to baseline
+        as peers become more stable.
+        """
+        stats = getattr(connection, "stats", None)
+        if stats is None:
+            self._piece_selection_debounce_interval = self._piece_selection_debounce_interval_base
+            return self._piece_selection_debounce_interval
+
+        choke_ratio = float(getattr(stats, "choke_state_ratio", 0.0))
+        choke_ratio = max(0.0, min(1.0, choke_ratio))
+        choke_only_penalty = float(getattr(stats, "choke_only_penalty", 0.0))
+        choke_penalty_cap = float(max(1.0, getattr(self, "_choke_only_penalty_cap", 3.0)))
+        choke_only_pressure = min(1.0, choke_only_penalty / choke_penalty_cap)
+        choke_streak = max(0, min(12, int(getattr(stats, "choke_streak", 0))))
+        choke_streak_pressure = choke_streak / 12.0
+
+        target_interval = self._piece_selection_debounce_interval_base
+        target_interval += 0.35 * choke_ratio
+        target_interval += 0.25 * choke_only_pressure
+        target_interval += 0.15 * choke_streak_pressure
+
+        if is_unchoke_transition:
+            # Allow cadence to recover after stable unchoke transitions.
+            target_interval *= 0.85
+        self._piece_selection_debounce_interval = max(
+            self._piece_selection_debounce_interval_base,
+            min(
+                self._piece_selection_debounce_interval_max,
+                (self._piece_selection_debounce_interval * 0.6)
+                + (target_interval * 0.4),
+            ),
+        )
+        return self._piece_selection_debounce_interval
+
+    async def _schedule_piece_selection_if_ready(
+        self,
+        connection: AsyncPeerConnection,
+        *,
+        reason: str,
+        schedule_task: bool = False,
+    ) -> bool:
+        """Debounce piece-selection triggers and schedule/await when allowed."""
+        if not self.piece_manager or not hasattr(self.piece_manager, "_select_pieces"):
+            return False
+
+        if not getattr(self.piece_manager, "is_downloading", False):
+            return False
+
+        import time
+
+        current_time = time.time()
+        async with self._piece_selection_debounce_lock:
+            time_since_last_trigger = (
+                current_time - self._last_piece_selection_trigger
+            )
+            if time_since_last_trigger < self._piece_selection_debounce_interval:
+                self.logger.debug(
+                    "Skipping piece selection trigger from %s (debounced, last trigger %.3fs ago)",
+                    reason,
+                    time_since_last_trigger,
+                )
+                return False
+
+            self._last_piece_selection_trigger = current_time
+
+        select_pieces = getattr(self.piece_manager, "_select_pieces", None)
+        if select_pieces is None:
+            return False
+
+        if schedule_task:
+            selected = select_pieces()
+            if asyncio.iscoroutine(selected):
+                task = asyncio.create_task(selected)
+                _ = task  # Store reference to avoid unused variable warning
+        else:
+            selected = select_pieces()
+            if asyncio.iscoroutine(selected):
+                await selected
+
+        self.logger.debug(
+            "Triggered piece selection from %s",
+            reason,
+        )
+        return True
+
     async def _handle_choke(
         self,
         connection: AsyncPeerConnection,
         _message: ChokeMessage,
     ) -> None:
         """Handle choke message."""
+        was_choking = connection.peer_choking
         connection.peer_choking = True
         connection.state = ConnectionState.CHOKED
         cancelled_requests = list(connection.outstanding_requests.keys())
         connection.outstanding_requests.clear()
+        connection.stats.last_activity = time.time()
+        if not was_choking:
+            connection._update_choke_only_penalty(connection, is_choke_transition=True)
+            connection._decay_and_record_choke_ratio(is_choked=True)
+        else:
+            connection._decay_and_record_choke_ratio(is_choked=True)
+            connection._update_choke_only_penalty(
+                connection, is_choke_transition=False
+            )
+        self._refresh_piece_selection_cadence_from_choke_transition(
+            connection, is_unchoke_transition=False
+        )
         if self.piece_manager and hasattr(self.piece_manager, "handle_peer_choked"):
             try:
                 await self.piece_manager.handle_peer_choked(connection)
@@ -8356,17 +8970,39 @@ class AsyncPeerConnectionManager:
         """Handle unchoke message."""
         state_before = connection.state.value
         choking_before = connection.peer_choking
+        self._get_connection_completion_context(connection)
+        is_seed_anchor = self._is_seed_anchor_connection(connection)
 
         connection.peer_choking = False
         connection.state = ConnectionState.ACTIVE
+        if choking_before:
+            connection._decay_and_record_choke_ratio(is_choked=False)
+            connection._update_choke_only_penalty(
+                connection, is_choke_transition=False
+            )
+            self._set_runtime_attr(connection, "_last_unchoke_at", time.time())
+            self._set_runtime_attr(
+                connection,
+                "_seed_anchor_unchoke_count",
+                int(getattr(connection, "_seed_anchor_unchoke_count", 0)) + 1,
+            )
+            self._set_runtime_attr(connection, "_seed_anchor_unchoke_deferrals", 0)
+        else:
+            connection._update_choke_only_penalty(
+                connection, is_choke_transition=False
+            )
+        self._refresh_piece_selection_cadence_from_choke_transition(
+            connection, is_unchoke_transition=choking_before
+        )
 
         self.logger.info(
-            "Peer %s UNCHOKED us - can now request pieces (state: %s -> %s, choking: %s -> %s)",
+            "Peer %s UNCHOKED us - can now request pieces (state: %s -> %s, choking: %s -> %s, seed_anchor=%s)",
             connection.peer_info,
             state_before,
             connection.state.value,
             choking_before,
             connection.peer_choking,
+            is_seed_anchor,
         )
 
         # Validate state transition
@@ -8406,6 +9042,8 @@ class AsyncPeerConnectionManager:
             else False,
             connection.peer_info,
         )
+        unchoke_retry_limit = 5 if is_seed_anchor else 4
+        unchoke_requester_limit = 3 if is_seed_anchor else 2
         if self.piece_manager and hasattr(self.piece_manager, "_select_pieces"):
 
             async def trigger_piece_selection_with_retry() -> None:
@@ -8468,13 +9106,14 @@ class AsyncPeerConnectionManager:
                             )
                             return
 
-                        # Trigger piece selection
-                        select_pieces = getattr(
-                            self.piece_manager, "_select_pieces", None
-                        )
-                        if select_pieces:
-                            await select_pieces()
+                        if not await self._schedule_piece_selection_if_ready(
+                            connection,
+                            reason="UNCHOKE",
+                            schedule_task=False,
+                        ):
+                            return
 
+                        # Trigger piece selection
                         # Note: Also retry pieces that were stuck in REQUESTED state
                         # This ensures pieces that couldn't be requested earlier (due to no unchoked peers)
                         # are retried immediately when peers become available
@@ -8483,7 +9122,11 @@ class AsyncPeerConnectionManager:
                         )
                         if retry_method:
                             try:
-                                await retry_method()
+                                await retry_method(
+                                    connection,
+                                    max_retry_count=unchoke_retry_limit,
+                                    max_requesters=unchoke_requester_limit,
+                                )
                                 self.logger.debug(
                                     "Successfully retried REQUESTED pieces after UNCHOKE from %s",
                                     connection.peer_info,
@@ -8563,18 +9206,44 @@ class AsyncPeerConnectionManager:
             connection_start_time: Timestamp when connection was established
 
         """
+        anchor_timeout = 75.0
         unchoke_timeout = 30.0  # 30 seconds
         check_interval = 5.0  # Check every 5 seconds
+        max_anchor_deferrals = 2
 
         try:
             while connection.is_connected():
                 await asyncio.sleep(check_interval)
 
                 elapsed = time.time() - connection_start_time
+                is_seed_anchor = self._is_seed_anchor_connection(connection)
+                effective_timeout = anchor_timeout if is_seed_anchor else unchoke_timeout
+                if is_seed_anchor and self._is_sustained_underperformance(connection):
+                    effective_timeout = unchoke_timeout
 
                 # If peer is still choking after timeout, classify as hard recovery
-                if elapsed >= unchoke_timeout and connection.peer_choking:
+                if elapsed >= effective_timeout and connection.peer_choking:
                     peer_key = self._get_peer_key(connection)
+                    underperformance = self._is_sustained_underperformance(connection)
+                    if is_seed_anchor and not underperformance:
+                        deferral_count = int(
+                            getattr(connection, "_seed_anchor_unchoke_deferrals", 0)
+                        )
+                        if deferral_count < max_anchor_deferrals:
+                            self._set_runtime_attr(
+                                connection,
+                                "_seed_anchor_unchoke_deferrals",
+                                deferral_count + 1,
+                            )
+                            self.logger.info(
+                                "Deferring hard-unchoke recovery for seed-anchor peer %s after %.1fs (deferrals=%s/%s) while waiting for stable unchoke behavior.",
+                                connection.peer_info,
+                                elapsed,
+                                deferral_count + 1,
+                                max_anchor_deferrals,
+                            )
+                            continue
+
                     async def _collect_recovery_state() -> tuple[int, int, int, int]:
                         active = 0
                         requestable = 0
@@ -8602,6 +9271,14 @@ class AsyncPeerConnectionManager:
                         "peer_interested": connection.peer_interested,
                         "am_interested": connection.am_interested,
                         "outstanding_requests": len(connection.outstanding_requests),
+                        "seed_anchor": is_seed_anchor,
+                        "seed_anchor_deferrals": int(
+                            getattr(connection, "_seed_anchor_unchoke_deferrals", 0)
+                        ),
+                        "underperformance": underperformance,
+                        "completion_percent": float(
+                            getattr(connection, "completion_percent", 0.0)
+                        ),
                         "active_peer_count": active_count,
                         "requestable_peer_count": requestable_count,
                         "productive_peer_count": productive_count,
@@ -8625,7 +9302,10 @@ class AsyncPeerConnectionManager:
                     )
 
                     await self._record_connection_failure(
-                        connection.peer_info, "connection_failure", "stale_unchoke_timeout"
+                    connection.peer_info,
+                    "connection_failure",
+                    "stale_unchoke_timeout",
+                    failure="stale_unchoke_timeout",
                     )
                     async with self._failed_peer_lock:
                         now = time.time()
@@ -8752,6 +9432,7 @@ class AsyncPeerConnectionManager:
 
         # Not a duplicate - process normally
         connection.peer_state.pieces_we_have.add(piece_index)
+        self._set_runtime_attr(connection, "_last_piece_availability_at", time.time())
         peer_key = self._get_peer_key(connection)
         self._mark_peer_quality_verified(peer_key, "have_message", connection)
 
@@ -8798,6 +9479,9 @@ class AsyncPeerConnectionManager:
             have_messages_count,
             has_bitfield,
         )
+
+        # Persist completion context after HAVE updates so seeder detection improves over time.
+        self._get_connection_completion_context(connection)
 
         # Note: Update piece frequency in piece manager for rarest-first selection
         if self.piece_manager and hasattr(self.piece_manager, "update_peer_have"):
@@ -8900,50 +9584,15 @@ class AsyncPeerConnectionManager:
             )
 
         # Note: Trigger piece selection if download is active (with debouncing)
-        if (
-            self.piece_manager
-            and hasattr(self.piece_manager, "is_downloading")
-            and getattr(self.piece_manager, "is_downloading", False)
-        ):
+        if self.piece_manager and hasattr(self.piece_manager, "_select_pieces"):
             try:
-                if hasattr(self.piece_manager, "_select_pieces"):
-                    # Note: Debounce piece selection triggers to prevent excessive calls
-                    import time
-
-                    current_time = time.time()
-
-                    async with self._piece_selection_debounce_lock:
-                        time_since_last_trigger = (
-                            current_time - self._last_piece_selection_trigger
-                        )
-
-                        if (
-                            time_since_last_trigger
-                            >= self._piece_selection_debounce_interval
-                        ):
-                            # Enough time has passed - trigger immediately
-                            self._last_piece_selection_trigger = current_time
-                            select_pieces = getattr(
-                                self.piece_manager, "_select_pieces", None
-                            )
-                            if select_pieces:
-                                task = asyncio.create_task(select_pieces())
-                            _ = task  # Store reference to avoid unused variable warning
-                            self.logger.debug(
-                                "Triggered piece selection after Have message from %s (piece %s)",
-                                connection.peer_info,
-                                piece_index,
-                            )
-                        else:
-                            # Too soon since last trigger - skip this one
-                            self.logger.debug(
-                                "Skipping piece selection trigger (debounced, last trigger %.3fs ago)",
-                                time_since_last_trigger,
-                            )
-            except Exception:
-                self.logger.exception(
-                    "Error triggering piece selection after Have message"
+                await self._schedule_piece_selection_if_ready(
+                    connection,
+                    reason=f"HAVE:{piece_index}",
+                    schedule_task=True,
                 )
+            except Exception:
+                self.logger.exception("Error triggering piece selection after Have message")
 
     async def _handle_bitfield(
         self,
@@ -9036,6 +9685,7 @@ class AsyncPeerConnectionManager:
             )
 
         connection.peer_state.bitfield = message.bitfield
+        self._set_runtime_attr(connection, "_last_piece_availability_at", time.time())
         connection.state = ConnectionState.BITFIELD_RECEIVED
         self._record_connection_stage("bitfield_received")
         peer_key = self._get_peer_key(connection)
@@ -9154,8 +9804,8 @@ class AsyncPeerConnectionManager:
         # For seeders, this is critical as they have all pieces and should be prioritized
         if self.piece_manager and hasattr(self.piece_manager, "_select_pieces"):
             # Check if peer is a seeder (100% complete) or near-seeder (90%+)
-            is_seeder = getattr(connection, "is_seeder", False)
-            completion_percent = getattr(connection, "completion_percent", 0.0)
+            is_seed_anchor = self._is_seed_anchor_connection(connection)
+            completion_percent = float(getattr(connection, "completion_percent", 0.0))
 
             async def trigger_piece_selection_after_bitfield() -> None:
                 """Trigger piece selection after bitfield with retry logic."""
@@ -9179,24 +9829,24 @@ class AsyncPeerConnectionManager:
                         if select_pieces:
                             await select_pieces()
 
-                            if is_seeder:
-                                self.logger.info(
-                                    "✅ SEEDER ENGAGEMENT: Triggered piece selection after bitfield from seeder %s (100%% complete) - ready to request pieces when unchoked",
-                                    connection.peer_info,
-                                )
-                            elif completion_percent >= 0.9:
-                                self.logger.info(
-                                    "✅ HIGH-VALUE PEER: Triggered piece selection after bitfield from near-seeder %s (%.1f%% complete) - ready to request pieces when unchoked",
-                                    connection.peer_info,
-                                    completion_percent * 100,
-                                )
-                            else:
-                                self.logger.debug(
-                                    "Triggered piece selection after bitfield from %s (completion: %.1f%%)",
-                                    connection.peer_info,
-                                    completion_percent * 100,
-                                )
-                            return
+                        if is_seed_anchor:
+                            self.logger.info(
+                                "✅ SEEDER ENGAGEMENT: Triggered piece selection after bitfield from seeder %s (100%% complete) - ready to request pieces when unchoked",
+                                connection.peer_info,
+                            )
+                        elif completion_percent >= 0.9:
+                            self.logger.info(
+                                "✅ HIGH-VALUE PEER: Triggered piece selection after bitfield from near-seeder %s (%.1f%% complete) - ready to request pieces when unchoked",
+                                connection.peer_info,
+                                completion_percent * 100,
+                            )
+                        else:
+                            self.logger.debug(
+                                "Triggered piece selection after bitfield from %s (completion: %.1f%%)",
+                                connection.peer_info,
+                                completion_percent * 100,
+                            )
+                        return
                     except Exception as e:
                         if attempt < max_retries - 1:
                             self.logger.debug(
@@ -9259,10 +9909,11 @@ class AsyncPeerConnectionManager:
                         bits_set / num_pieces if num_pieces > 0 else 0.0
                     )
                     is_seeder = completion_percent >= 1.0
-
-                    # Store seeder status in connection for later use
-                    connection.is_seeder = is_seeder
-                    connection.completion_percent = completion_percent
+                    self._set_connection_completion_context(
+                        connection,
+                        is_seeder=is_seeder,
+                        completion_percent=completion_percent,
+                    )
 
                 self.logger.info(
                     "Updated piece manager with bitfield from %s (pieces: %d, bitfield_length: %d bytes, num_pieces: %d, completion: %.1f%%, is_seeder: %s)",
@@ -10452,6 +11103,7 @@ class AsyncPeerConnectionManager:
                 fail_info = self._failed_peers[peer_key]
                 fail_count = fail_info.get("count", 1)
                 fail_timestamp = fail_info.get("timestamp", 0.0)
+                fail_family = fail_info.get("family", "unknown")
 
                 # Calculate backoff interval
                 backoff_interval = min(
@@ -10459,6 +11111,18 @@ class AsyncPeerConnectionManager:
                     * (self._backoff_multiplier ** (fail_count - 1)),
                     self._max_retry_interval,
                 )
+                family_score = self._failed_family_backoff_scores.get(
+                    fail_family, 0.0
+                )
+                family_decay = max(
+                    0.0,
+                    1.0
+                    - (time.time() - self._failed_family_backoff_last_seen.get(
+                        fail_family, fail_timestamp
+                    ))
+                    / self._failed_family_decay_window,
+                )
+                backoff_interval *= 1.0 + min(0.5, family_score * family_decay * 0.15)
 
                 # Check if backoff period has expired
                 elapsed = time.time() - fail_timestamp
@@ -10592,13 +11256,35 @@ class AsyncPeerConnectionManager:
                         fail_timestamp = fail_info.get("timestamp", 0.0)
                         fail_reason = fail_info.get("reason", "unknown")
                         fail_is_terminal = bool(fail_info.get("is_terminal", False))
+                        fail_family = fail_info.get("family", "unknown")
+                        fail_timeout_class = fail_info.get("timeout_class", "none")
+                        effective_fail_count = (
+                            1 if fail_timeout_class == "registration_lag" else fail_count
+                        )
 
                         backoff_interval = self._calculate_failure_backoff_interval(
-                            fail_count=fail_count,
+                            fail_count=effective_fail_count,
                             fail_reason=fail_reason,
                             is_terminal=fail_is_terminal,
                             active_peer_count=active_peer_count,
+                            fail_timeout_class=fail_timeout_class,
+                            ip_family=fail_family,
                         )
+                        if fail_timeout_class == "registration_lag":
+                            backoff_interval = min(backoff_interval, 10.0)
+                        family_score = self._failed_family_backoff_scores.get(
+                            fail_family, 0.0
+                        )
+                        family_decay = max(
+                            0.0,
+                            1.0
+                            - (current_time - self._failed_family_backoff_last_seen.get(
+                                fail_family, current_time
+                            ))
+                            / self._failed_family_decay_window,
+                        )
+                        family_penalty = min(0.5, family_score * family_decay * 0.15)
+                        backoff_interval *= 1.0 + family_penalty
 
                         # Check if backoff period has expired
                         elapsed = current_time - fail_timestamp
@@ -10632,12 +11318,11 @@ class AsyncPeerConnectionManager:
                     for peer_key, fail_info in retry_candidates[:retry_count]:
                         try:
                             # Parse peer_key (format: "ip:port")
-                            parts = peer_key.split(":")
-                            if len(parts) == 2:
-                                ip, port_str = parts
+                            ip, separator, port_str = peer_key.rpartition(":")
+                            if separator:
                                 try:
                                     port = int(port_str)
-                                    peer_dict = {"ip": ip, "port": port}
+                                    peer_dict = {"ip": ip.strip("[]"), "port": port}
 
                                     # Attempt reconnection
                                     await self.connect_to_peers([peer_dict])
@@ -11026,6 +11711,33 @@ class AsyncPeerConnectionManager:
                 connection.peer_info,
                 connection.stats.consecutive_failures,
                 max_failures,
+            )
+            return True
+
+        # Note: Decayed choke-only penalty. Remove peers only when choke bursts persist long enough.
+        # This avoids permanent removal from short choke storms.
+        if (
+            connection.stats.choke_streak >= 5
+            and connection.stats.choke_state_ratio >= 0.9
+            and active_peer_count >= min_peers_before_recycling
+        ):
+            self.logger.debug(
+                "Recycling peer %s: sustained choke streak=%d with high choke ratio=%.2f",
+                connection.peer_info,
+                connection.stats.choke_streak,
+                connection.stats.choke_state_ratio,
+            )
+            return True
+        choke_only_penalty = float(getattr(connection.stats, "choke_only_penalty", 0.0))
+        penalty_cap = max(0.0, float(self._choke_only_penalty_cap))
+        choke_only_pressure = choke_only_penalty / penalty_cap if penalty_cap > 0 else 0.0
+        if choke_only_pressure >= 0.75 and active_peer_count >= min_peers_before_recycling:
+            self.logger.debug(
+                "Recycling peer %s: sustained choke-only penalty=%.2f/%.2f (%.2f)",
+                connection.peer_info,
+                choke_only_penalty,
+                penalty_cap,
+                choke_only_pressure,
             )
             return True
 
@@ -11700,6 +12412,8 @@ class AsyncPeerConnectionManager:
 
         """
         stats = connection.stats
+        stats.choke_only_penalty = connection._decayed_choke_only_penalty(connection)
+        stats.last_choke_only_penalty_update = time.time()
 
         # Normalize download rate (max expected: 10MB/s = 1.0)
         max_download_rate = 10 * 1024 * 1024  # 10MB/s
@@ -11732,6 +12446,18 @@ class AsyncPeerConnectionManager:
         # Penalize consecutive failures: 1.0 - min(1.0, failures / 10)
         error_score = 1.0 - min(1.0, stats.consecutive_failures / 10.0)
 
+        # Choke-state score: peers that are frequently choked should be used less aggressively.
+        # Use decayed consecutive-choke ratio to avoid permanently penalizing short bursts.
+        choke_state_score = 1.0 - min(
+            1.0,
+            connection._decay_and_record_choke_ratio(connection.peer_choking),
+        )
+        choke_only_penalty = float(stats.choke_only_penalty)
+        choke_only_cap = max(0.0, float(self._choke_only_penalty_cap))
+        choke_only_penalty_factor = (
+            min(1.0, choke_only_penalty / choke_only_cap) if choke_only_cap > 0 else 0.0
+        )
+
         # Connection stability (time since last activity)
         # Longer idle time = potentially worse (but not too penalizing)
         current_time = time.time()
@@ -11748,6 +12474,8 @@ class AsyncPeerConnectionManager:
             + upload_rate_score * 0.2
             + latency_score * 0.05  # Reduced from 0.2 to 0.05
             + error_score * 0.1
+            + choke_state_score * 0.1
+            - choke_only_penalty_factor * 0.15
             + base_score  # Added base score
         )
 

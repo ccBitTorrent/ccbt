@@ -112,7 +112,7 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
             
             # Clear and repopulate table
             self._peers_table.clear()
-            for peer in peers:
+            for idx, peer in enumerate(peers):
                 ip = peer.get("ip", "Unknown")
                 port = peer.get("port", 0)
                 download_rate = peer.get("download_rate", 0.0)
@@ -142,8 +142,8 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
                     status_parts.append(_("Uploading"))
                 status = ", ".join(status_parts) if status_parts else _("Idle")
                 
-                # Use IP:port as key for row identification
-                row_key = f"{ip}:{port}"
+                # Include peer index to avoid key collisions for repeated endpoints
+                row_key = f"{ip}:{port}|{idx}"
                 self._peers_table.add_row(
                     ip,
                     str(port),
@@ -169,9 +169,10 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
                     self.app.notify(_("No peer selected"), severity="warning")  # type: ignore[attr-defined]
                 return
             
-            # Parse IP:port from key
+            # Parse IP:port from key format "<ip>:<port>|<index>"
             try:
-                ip, port_str = selected_key.rsplit(":", 1)
+                peer_key = selected_key.split("|", 1)[0]
+                ip, port_str = peer_key.rsplit(":", 1)
                 port = int(port_str)
             except (ValueError, AttributeError):
                 if hasattr(self, "app"):

@@ -249,7 +249,7 @@ class TestAsyncUDPTrackerClientConnection:
     @pytest.mark.asyncio
     async def test_connect_timeout(self):
         """Test connection timeout handling."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
 
         # Use a non-existent tracker
@@ -261,7 +261,9 @@ class TestAsyncUDPTrackerClientConnection:
 
         # Should timeout and raise
         with pytest.raises(ConnectionError):
-            await client._connect_to_tracker(session)
+            await client._connect_to_tracker(
+                session, max_retries=2, retry_delay=0.0, base_timeout=0.05
+            )
 
         await client.stop()
 
@@ -523,6 +525,44 @@ class TestAsyncUDPTrackerClientResponseHandling:
         assert not future.done()
 
 
+class TestAsyncUDPTrackerClientAdaptiveBudget:
+    """Test adaptive UDP pending request budgeting."""
+
+    def test_adaptive_budget_reduces_on_high_stale_ratio(self):
+        """High stale ratio should reduce effective pending budget."""
+        client = AsyncUDPTrackerClient()
+        now = time.time()
+        client._pending_request_budget_base = 20
+        client._pending_request_budget_per_tracker = 10
+        client._pending_request_budget_min = 8
+        client._pending_request_budget_window = 60.0
+        client._socket_error_count = 0
+        client._last_budget_refresh = 0.0
+        client._pending_request_success_history.extend(now for _ in range(1))
+        client._pending_request_stale_history.extend(now for _ in range(8))
+
+        effective_cap = client._get_effective_pending_request_cap()
+
+        assert effective_cap == 8
+
+    def test_adaptive_budget_increases_on_low_stale_ratio(self):
+        """Low stale ratio should allow budget growth up to base."""
+        client = AsyncUDPTrackerClient()
+        now = time.time()
+        client._pending_request_budget_base = 20
+        client._pending_request_budget_per_tracker = 10
+        client._pending_request_budget_min = 8
+        client._pending_request_budget_window = 60.0
+        client._socket_error_count = 0
+        client._last_budget_refresh = 0.0
+        client._pending_request_success_history.extend(now for _ in range(12))
+        client._pending_request_stale_history.extend(now for _ in range(1))
+
+        effective_cap = client._get_effective_pending_request_cap()
+
+        assert effective_cap == 18
+
+
 class TestAsyncUDPTrackerClientWaitForResponse:
     """Test waiting for tracker responses."""
 
@@ -607,6 +647,26 @@ class TestAsyncUDPTrackerClientCleanup:
 
         await client._cleanup_sessions()
         assert len(client.sessions) == 1
+
+    def test_cleanup_stale_pending_requests_records_stale_outcomes(self):
+        """Stale pending request cleanup should drop requests and record stale outcomes."""
+        client = AsyncUDPTrackerClient()
+        stale_time = time.time() - 120.0
+        future_1 = asyncio.Future()
+        future_2 = asyncio.Future()
+        client.pending_requests[111] = future_1
+        client._pending_request_timestamps[111] = stale_time
+        client.pending_requests[222] = future_2
+        client._pending_request_timestamps[222] = stale_time
+
+        cleaned = client._cleanup_stale_pending_requests(now=stale_time + client._pending_request_stale_after + 1)
+
+        assert cleaned == 2
+        assert 111 not in client.pending_requests
+        assert 222 not in client.pending_requests
+        assert future_1.cancelled()
+        assert future_2.cancelled()
+        assert len(client._pending_request_stale_history) == 2
 
 
 class TestAsyncUDPTrackerClientScrape:

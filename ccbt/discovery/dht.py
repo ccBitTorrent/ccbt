@@ -510,11 +510,22 @@ class AsyncDHTClient:
         # Bootstrap node performance tracking
         # Maps (host, port) -> performance metrics
         self.bootstrap_performance: dict[tuple[str, int], dict[str, Any]] = {}
+        self._bootstrap_attempt_failures: dict[tuple[str, int], int] = {}
+        self._bootstrap_attempt_timestamps: dict[tuple[str, int], float] = {}
+        discovery_cfg = getattr(self.config, "discovery", None)
+        self._dht_bootstrap_retries_max = int(
+            getattr(discovery_cfg, "dht_bootstrap_retries_max", 3)
+        )
+        self._dht_bootstrap_memo_ttl_s = float(
+            getattr(discovery_cfg, "dht_bootstrap_memo_ttl_s", 120.0)
+        )
         self.bootstrap_success_count = 0
         self.bootstrap_failure_count = 0
         self.last_bootstrap_reason = "not_started"
         self.last_bootstrap_failure_reason = ""
         self.last_zero_node_lookup_at = 0.0
+        self.last_bootstrap_state = "idle"
+        self.last_lookup_state = "idle"
         self._empty_table_rebootstrap_attempts = 0
         self._max_empty_table_rebootstrap_attempts = 3
         self._last_empty_table_rebootstrap_at = 0.0
@@ -756,13 +767,15 @@ class AsyncDHTClient:
         """Bootstrap the DHT by finding initial nodes."""
         self.last_bootstrap_reason = reason
         self.last_bootstrap_failure_reason = ""
+        self.last_bootstrap_state = f"starting:{reason}"
         self.logger.info("Bootstrapping DHT...")
         self.last_zero_node_lookup_at = 0.0
+        start_time = time.time()
+        self._prune_bootstrap_attempt_state(start_time)
 
         # Note: Add overall timeout to bootstrap process (30 seconds max)
         # This prevents hanging indefinitely if all bootstrap nodes are unreachable
         bootstrap_timeout = 30.0
-        start_time = time.time()
 
         # Try to find nodes from bootstrap servers
         for host, port in self.bootstrap_nodes:
@@ -774,6 +787,7 @@ class AsyncDHTClient:
                     len(self.routing_table.nodes),
                 )
                 self.last_bootstrap_failure_reason = "bootstrap_timeout"
+                self.last_bootstrap_state = "failed:bootstrap_timeout"
                 break
 
             if not await self._bootstrap_step(host, port):
@@ -805,10 +819,12 @@ class AsyncDHTClient:
             self.bootstrap_success_count += 1
             self._empty_table_rebootstrap_attempts = 0
             self._empty_table_rebootstrap_backoff = 1.0
+            self.last_bootstrap_state = "succeeded"
         else:
             self.bootstrap_failure_count += 1
             if not self.last_bootstrap_failure_reason:
                 self.last_bootstrap_failure_reason = "no_nodes_discovered"
+            self.last_bootstrap_state = f"failed:{self.last_bootstrap_failure_reason}"
         self.logger.info(
             "Bootstrap completed with %d nodes", len(self.routing_table.nodes)
         )
@@ -829,6 +845,43 @@ class AsyncDHTClient:
             self.bootstrap_nodes = original_nodes
         return len(self.routing_table.nodes) > 0
 
+    def _can_attempt_bootstrap_node(self, bootstrap_key: tuple[str, int]) -> bool:
+        """Return whether a bootstrap node can be retried now."""
+        now = time.time()
+        failure_count = self._bootstrap_attempt_failures.get(bootstrap_key, 0)
+        last_failure = self._bootstrap_attempt_timestamps.get(bootstrap_key, 0.0)
+        if failure_count < self._dht_bootstrap_retries_max:
+            return True
+        if now - last_failure > self._dht_bootstrap_memo_ttl_s:
+            self._bootstrap_attempt_failures.pop(bootstrap_key, None)
+            self._bootstrap_attempt_timestamps.pop(bootstrap_key, None)
+            return True
+        return False
+
+    def _mark_bootstrap_attempt_failed(self, bootstrap_key: tuple[str, int]) -> None:
+        """Track failed bootstrap attempts for deduplication."""
+        self._bootstrap_attempt_failures[bootstrap_key] = (
+            self._bootstrap_attempt_failures.get(bootstrap_key, 0) + 1
+        )
+        self._bootstrap_attempt_timestamps[bootstrap_key] = time.time()
+
+    def _mark_bootstrap_attempt_succeeded(self, bootstrap_key: tuple[str, int]) -> None:
+        """Reset cached bootstrap failure state after a successful bootstrap."""
+        self._bootstrap_attempt_failures.pop(bootstrap_key, None)
+        self._bootstrap_attempt_timestamps.pop(bootstrap_key, None)
+
+    def _prune_bootstrap_attempt_state(self, now: float | None = None) -> None:
+        """Prune stale bootstrap failure records."""
+        current_time = now if now is not None else time.time()
+        stale_keys = [
+            bootstrap_key
+            for bootstrap_key, last_failure in self._bootstrap_attempt_timestamps.items()
+            if current_time - last_failure > self._dht_bootstrap_memo_ttl_s
+        ]
+        for bootstrap_key in stale_keys:
+            self._bootstrap_attempt_failures.pop(bootstrap_key, None)
+            self._bootstrap_attempt_timestamps.pop(bootstrap_key, None)
+
     def _schedule_zero_node_rebootstrap(self, reason: str = "empty_routing_table") -> bool:
         """Schedule a bounded rebootstrap when routing table is empty."""
         now = time.monotonic()
@@ -838,6 +891,7 @@ class AsyncDHTClient:
                 self._empty_table_rebootstrap_attempts,
                 reason,
             )
+            self.last_bootstrap_state = "suppressed:rebootstrap_limit_reached"
             return False
 
         cooldown = self._empty_table_rebootstrap_backoff
@@ -847,6 +901,7 @@ class AsyncDHTClient:
                 cooldown - (now - self._last_empty_table_rebootstrap_at),
                 reason,
             )
+            self.last_bootstrap_state = "suppressed:empty_table_cooldown"
             return False
 
         self._last_empty_table_rebootstrap_at = now
@@ -854,6 +909,7 @@ class AsyncDHTClient:
         self._empty_table_rebootstrap_backoff = min(
             self._empty_table_rebootstrap_backoff * 2.0, 60.0
         )
+        self.last_bootstrap_state = "scheduled:empty_table_rebootstrap"
         self.logger.warning(
             "DHT bootstrap retries: scheduling bounded rebootstrap %d/%d for %s",
             self._empty_table_rebootstrap_attempts,
@@ -866,6 +922,7 @@ class AsyncDHTClient:
                 await self.rebootstrap()
             except Exception as exc:  # pragma: no cover - defensive logging
                 self.logger.debug("DHT scheduled rebootstrap failed: %s", exc)
+                self.last_bootstrap_state = f"failed:{type(exc).__name__}"
 
         asyncio.create_task(_run())
         return True
@@ -876,6 +933,14 @@ class AsyncDHTClient:
         Tracks performance for dynamic bootstrap node selection.
         """
         bootstrap_key = (host, port)
+        if not self._can_attempt_bootstrap_node(bootstrap_key):
+            self.logger.debug(
+                "Skipping bootstrap node %s:%s due recent duplicate failures",
+                host,
+                port,
+            )
+            self.last_bootstrap_failure_reason = f"bootstrap_retry_suppressed:{host}:{port}"
+            return False
         start_time = time.time()
 
         try:
@@ -914,6 +979,7 @@ class AsyncDHTClient:
                 addr = (addr_info[0][4][0], port)
             except asyncio.TimeoutError:
                 self.last_bootstrap_failure_reason = f"dns_timeout:{host}:{port}"
+                self._mark_bootstrap_attempt_failed(bootstrap_key)
                 self.logger.debug(
                     "DNS resolution timeout for bootstrap node %s:%s", host, port
                 )
@@ -922,6 +988,7 @@ class AsyncDHTClient:
                 self.last_bootstrap_failure_reason = (
                     f"dns_failed:{host}:{port}:{type(dns_error).__name__}"
                 )
+                self._mark_bootstrap_attempt_failed(bootstrap_key)
                 self.logger.debug(
                     "DNS resolution failed for bootstrap node %s:%s: %s",
                     host,
@@ -935,6 +1002,7 @@ class AsyncDHTClient:
 
             # Track successful bootstrap
             response_time = time.time() - start_time
+            self._mark_bootstrap_attempt_succeeded(bootstrap_key)
             if bootstrap_key not in self.bootstrap_performance:
                 self.bootstrap_performance[bootstrap_key] = {
                     "success_count": 0,
@@ -959,6 +1027,7 @@ class AsyncDHTClient:
             self.last_bootstrap_failure_reason = (
                 f"bootstrap_failed:{host}:{port}:{type(e).__name__}"
             )
+            self._mark_bootstrap_attempt_failed(bootstrap_key)
 
             # Track failed bootstrap
             response_time = time.time() - start_time
@@ -1506,16 +1575,19 @@ class AsyncDHTClient:
                 "Skipping DHT get_peers for private torrent %s (BEP 27)",
                 info_hash.hex()[:8],
             )
+            self.last_lookup_state = "skipped_private"
             return []
 
         # Use a set to track unique peers (deduplication)
         peers_set: set[tuple[str, int]] = set()
         queried_nodes: set[bytes] = set()
+        self.last_lookup_state = "started"
 
         # Get initial k closest nodes
         closest_nodes = self.routing_table.get_closest_nodes(info_hash, k)
         closest_set: set[DHTNode] = set(closest_nodes)
         if not closest_set:
+            self.last_lookup_state = "empty_routing_table"
             self.last_zero_node_lookup_at = time.time()
             self.logger.warning(
                 "DHT lookup for %s cannot start because the routing table is empty (queried 0 nodes). "
@@ -1531,6 +1603,7 @@ class AsyncDHTClient:
                 "k": k,
                 "max_depth": max_depth if max_depth is not None else 10,
                 "zero_node_lookup": True,
+                "lookup_state": self.last_lookup_state,
                 "empty_table_retry_scheduled": self._schedule_zero_node_rebootstrap(
                     reason=f"get_peers:{info_hash.hex()[:8]}"
                 ),
@@ -1914,6 +1987,14 @@ class AsyncDHTClient:
             "max_depth": effective_max_depth,
             "zero_node_lookup": len(queried_nodes) == 0,
         }
+        if len(queried_nodes) == 0:
+            self.last_lookup_state = "query_zero_nodes"
+        elif not peers:
+            self.last_lookup_state = "empty_peer_set"
+        else:
+            self.last_lookup_state = "peers_found"
+
+        self._last_query_metrics["lookup_state"] = self.last_lookup_state
         if len(queried_nodes) == 0:
             self.last_zero_node_lookup_at = time.time()
             self.logger.warning(
@@ -2979,6 +3060,8 @@ class AsyncDHTClient:
             "bootstrap_failure_count": self.bootstrap_failure_count,
             "last_bootstrap_reason": self.last_bootstrap_reason,
             "last_bootstrap_failure_reason": self.last_bootstrap_failure_reason,
+            "last_bootstrap_state": self.last_bootstrap_state,
+            "last_lookup_state": self.last_lookup_state,
             "last_zero_node_lookup_at": self.last_zero_node_lookup_at,
         }
 

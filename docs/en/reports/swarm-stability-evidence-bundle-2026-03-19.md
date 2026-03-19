@@ -1,0 +1,141 @@
+# Swarm Stability Evidence Bundle
+
+## Scope and objective
+
+Bundle ID: `global-evidence`
+
+Primary goal:
+
+- create a reproducible evidence package for the 03/19/26 run that captures the exact windows and metric counts used by this plan.
+
+## Evidence input and exact window
+
+- `some.log` and `latest.log` window (from attached run): `03/19/26 13:23:53` to `03/19/26 13:38:45`.
+- Event signatures used:
+  - `PIECE_SELECTOR: Called`
+  - `No available peers for piece`
+  - `Handshake timeout`
+  - `No active torrent`
+  - `Removed` / `Cleaned up` cleanup transitions
+  - `routing table is empty` / `Bootstrap timeout` / `0 nodes`
+
+## Baseline metrics (run-scoped)
+
+These metrics are derived from the attached run evidence and used as the starting baseline for all milestone gates.
+
+| Signature | Count |
+| - | -: |
+| `PIECE_SELECTOR: Called` | 100 |
+| `No available peers for piece` | 59 |
+| `Handshake timeout` | 7 |
+| `No active torrent` | 9 |
+| `Removed 42 unhealthy connections` | 6 |
+| `Cleaned up 21 stale connections` | 15 |
+| DHT `Bootstrap...0 nodes`/empty table markers | 3 |
+
+## Derived deltas and rates
+
+Window duration: 15 minutes exactly (900 seconds).
+
+- `PIECE_SELECTOR` cadence: `100 / 900 = 0.111 calls/s` ≈ `6.67 calls/min`
+- `No available peers` pressure: `59 / 100 = 0.59` of selector cycles
+- `No available peers` cadence: `59 / 900 = 0.065/s` ≈ `3.9/min`
+- `Handshake timeout` cadence: `7 / 900 = 0.0078/s` ≈ `0.47/min`
+- `No active torrent` cadence: `9 / 900 = 0.01/s` ≈ `0.6/min`
+- Raw cleanup burst signal: `42 unhealthy + 21 stale` removals per 900s = `63 removals / 900 = 0.07/s` ≈ `4.2/min`
+
+## Core loop windows
+
+For reproducibility this run should be split into three analysis windows. Use the extraction script below and persist the outputs:
+
+1. Selector spin window
+   - Pattern: `PIECE_SELECTOR: Called`
+2. Low-peer collapse window
+   - Patterns: `Very low peer count`, `0 active`, and `Removed ... unhealthy connections` / `Cleaned up ... stale connections`
+3. Bootstrap/zero-state oscillation window
+   - Patterns: `Bootstrap timeout`, `routing table is empty`, `0 nodes`
+
+The exact line ranges depend on the raw `some.log` / `latest.log` files. The script persists them automatically.
+
+## Reproducible extraction recipe
+
+Run from repo root with both logs available:
+
+```powershell
+python -c "from pathlib import Path; import re, datetime as dt, argparse, json, math
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--start', default='2026-03-19T13:23:53', help='Window start in %Y-%m-%dT%H:%M:%S')
+parser.add_argument('--end', default='2026-03-19T13:38:45', help='Window end in %Y-%m-%dT%H:%M:%S')
+parser.add_argument('--latest-log', default='latest.log')
+parser.add_argument('--some-log', default='some.log')
+parser.add_argument('--out', default='docs/en/reports/swarm-stability-evidence.json')
+args = parser.parse_args()
+
+TS_RE = re.compile(r'\\[(\\d{2})/(\\d{2})/(\\d{2}) (\\d{2}:\\d{2}:\\d{2})\\]')
+
+sig_map = {
+    'piece_selector': 'PIECE_SELECTOR: Called',
+    'no_available_peers': 'No available peers for piece',
+    'handshake_timeout': 'Handshake timeout',
+    'no_active_torrent': 'No active torrent',
+    'removed_unhealthy': 'Removed 42 unhealthy connections',
+    'cleaned_stale': 'Cleaned up 21 stale connections',
+    'bootstrap_zero': '0 nodes',
+    'routing_empty': 'routing table is empty',
+}
+
+window_start = dt.datetime.fromisoformat(args.start)
+window_end = dt.datetime.fromisoformat(args.end)
+
+def in_window(line: str) -> bool:
+    m = TS_RE.search(line)
+    if not m:
+        return False
+    mm, dd, yy, t = m.groups()
+    ts = dt.datetime.fromisoformat(f'20{yy}-{mm}-{dd}T{t}')
+    return window_start <= ts <= window_end
+
+def analyze(path: Path):
+    counts = {k: [] for k in sig_map}
+    if not path.exists():
+        return counts, {}
+    with path.open('r', encoding='utf-8', errors='ignore') as fp:
+        for idx, line in enumerate(fp, start=1):
+            if not in_window(line):
+                continue
+            for key, sig in sig_map.items():
+                if sig in line:
+                    counts[key].append(idx)
+    spans = {k: {'count': len(v), 'first_line': v[0] if v else None, 'last_line': v[-1] if v else None} for k, v in counts.items()}
+    return counts, spans
+
+artifacts = {'latest': Path(args.latest_log), 'some': Path(args.some_log)}
+summary = {
+    'window_start': args.start,
+    'window_end': args.end,
+    'files': {},
+}
+
+for name, p in artifacts.items():
+    _, spans = analyze(p)
+    summary['files'][name] = spans
+
+summary['dur_secs'] = int((window_end - window_start).total_seconds())
+Path('docs/en/reports').mkdir(parents=True, exist_ok=True)
+Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+Path(args.out).write_text(json.dumps(summary, indent=2), encoding='utf-8')
+print(json.dumps(summary, indent=2))
+"
+```
+
+## Evidence package outputs
+
+- `docs/en/reports/swarm-stability-evidence.json` (generated by the command above)
+- `docs/en/reports/swarm-stability-evidence-bundle-2026-03-19.md` (this file)
+
+## Verification expectations for later milestones
+
+- Baseline signature counts above must be reproducible from the same window on rerun.
+- `No available peers for piece / PIECE_SELECTOR` ratio should be tracked and compared on each gate.
+- Cleanup burst line windows should be persisted and checked against low-peer floor targets.

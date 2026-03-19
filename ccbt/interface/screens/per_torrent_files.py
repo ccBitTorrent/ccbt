@@ -148,8 +148,9 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
             
             # Clear and repopulate table
             self._files_table.clear()
-            for file_info in files:
+            for idx, file_info in enumerate(files):
                 path = file_info.get("path", "Unknown")
+                file_index = file_info.get("index", idx)
                 size = file_info.get("size", 0)
                 progress = file_info.get("progress", 0.0)
                 priority = file_info.get("priority", "normal")
@@ -174,14 +175,15 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
                 # Format selected
                 selected_str = "✓" if selected else "✗"
                 
-                # Use path as key for row identification
+                # Use stable key including explicit index to avoid collisions
+                row_key = f"{file_index}|{path}"
                 self._files_table.add_row(
                     path,
                     size_str,
                     progress_str,
                     priority_str,
                     selected_str,
-                    key=path,
+                    key=row_key,
                 )
         except Exception as e:
             logger.debug("Error refreshing files: %s", e)
@@ -260,12 +262,16 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
                 self.app.notify(_("No file selected"), severity="warning")  # type: ignore[attr-defined]
                 return
             
+            _, _, file_path = selected_key.partition("|")
+            if not file_path:
+                file_path = selected_key
+
             # Get file index from the files list
             files = await self._data_provider.get_torrent_files(self._info_hash)
             file_index = None
             current_priority = "normal"
             for idx, file_info in enumerate(files):
-                if file_info.get("path") == selected_key:
+                if file_info.get("path") == file_path:
                     file_index = file_info.get("index", idx)
                     current_priority = file_info.get("priority", "normal")
                     break

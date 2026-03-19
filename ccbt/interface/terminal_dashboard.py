@@ -503,8 +503,15 @@ class TerminalDashboard(App):  # type: ignore[misc]
         self.alert_manager = get_alert_manager()
         self.metrics_collector = get_metrics_collector()
         self._poll_task: Optional[asyncio.Task] = None
+        self._poll_pending: bool = False
         self._filter_input: Optional[Input] = None
         self._filter_text: str = ""
+        self._last_reactive_event: Optional[float] = None
+        self._last_poll_started_at: Optional[float] = None
+        self._last_poll_completed_at: Optional[float] = None
+        self._adaptive_poll_min: float = 1.0
+        self._adaptive_poll_max: float = 10.0
+        self._adaptive_poll_stale_threshold: float = 8.0
         self._last_status: dict[str, dict[str, Any]] = {}
         self._compact = False
         # Command executor for CLI command integration
@@ -712,6 +719,54 @@ class TerminalDashboard(App):  # type: ignore[misc]
         ("ctrl+m", "navigation_menu", _("Menu")),
     ]
 
+    def _mark_reactive_activity(self) -> None:
+        """Track the latest reactive event timestamp."""
+        self._last_reactive_event = time.time()
+        self._update_poll_interval()
+
+    def _compute_poll_interval(self) -> float:
+        """Compute adaptive poll interval based on WebSocket freshness."""
+        if not self._reactive_manager:
+            return self.refresh_interval
+        if self._last_reactive_event is None:
+            return max(self.refresh_interval, self._adaptive_poll_min)
+        age = time.time() - self._last_reactive_event
+        if age <= self._adaptive_poll_stale_threshold:
+            return self.refresh_interval
+        if age <= self._adaptive_poll_stale_threshold * 2:
+            return min(max(self.refresh_interval * 2, self._adaptive_poll_min), self._adaptive_poll_max)
+        return self._adaptive_poll_max
+
+    def _update_poll_interval(self) -> None:
+        """Update polling cadence without replacing a deliberately long manual interval."""
+        if not self._reactive_manager:
+            return
+        new_interval = self._compute_poll_interval()
+        if (
+            abs(new_interval - self.refresh_interval) > 0.05
+            and new_interval != 0.0
+        ):
+            self.refresh_interval = new_interval
+            with contextlib.suppress(Exception):
+                self.set_interval(self.refresh_interval, self._schedule_poll)
+
+    def _invalidate_ui_cache(
+        self, event_type: EventType, data: dict[str, Any]
+    ) -> None:
+        """Invalidate provider cache from dashboard event."""
+        self._mark_reactive_activity()
+        self._schedule_poll()
+        if not self._data_provider:
+            return
+        info_hash = data.get("info_hash")
+        if hasattr(self._data_provider, "invalidate_on_event"):
+            self._data_provider.invalidate_on_event(event_type, info_hash)
+        elif hasattr(self._data_provider, "invalidate_cache"):
+            # Fallback to coarse invalidation
+            self._data_provider.invalidate_cache("torrent_list")
+            self._data_provider.invalidate_cache("global_stats")
+            self._data_provider.invalidate_cache("swarm_health")
+
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the dashboard and start session polling."""
         # Textual lifecycle method - requires full app mount context to test
@@ -779,19 +834,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             
             def on_torrent_status_changed(data: dict[str, Any]) -> None:
                 """Handle torrent status change event."""
-                # Use enhanced invalidate_on_event method
-                if hasattr(self, "_data_provider") and self._data_provider:
-                    if hasattr(self._data_provider, "invalidate_on_event"):
-                        info_hash = data.get("info_hash", "")
-                        self._data_provider.invalidate_on_event(
-                            EventType.TORRENT_STATUS_CHANGED.value,
-                            info_hash if info_hash else None,
-                        )
-                    elif hasattr(self._data_provider, "invalidate_cache"):
-                        # Fallback to manual invalidation
-                        self._data_provider.invalidate_cache("torrent_list")
-                        self._data_provider.invalidate_cache("global_stats")
-                # Trigger UI refresh (includes graphs section)
+                self._invalidate_ui_cache(EventType.TORRENT_STATUS_CHANGED, data)
                 self._schedule_poll()
                 # Note: Also explicitly refresh active torrent screens
                 try:
@@ -821,13 +864,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             
             def on_global_stats_updated(data: dict[str, Any]) -> None:
                 """Handle global stats update event."""
-                # Use enhanced invalidate_on_event method
-                if hasattr(self, "_data_provider") and self._data_provider:
-                    if hasattr(self._data_provider, "invalidate_on_event"):
-                        self._data_provider.invalidate_on_event(
-                            EventType.GLOBAL_STATS_UPDATED.value,
-                            None,
-                        )
+                self._invalidate_ui_cache(EventType.GLOBAL_STATS_UPDATED, data)
                 # Update graphs section immediately
                 if self.graphs_section:
                     # Update graphs with event data
@@ -835,39 +872,16 @@ class TerminalDashboard(App):  # type: ignore[misc]
             
             def on_piece_completed(data: dict[str, Any]) -> None:
                 """Handle piece completion event."""
-                if hasattr(self, "_data_provider") and self._data_provider:
-                    if hasattr(self._data_provider, "invalidate_on_event"):
-                        info_hash = data.get("info_hash", "")
-                        self._data_provider.invalidate_on_event(
-                            EventType.PIECE_COMPLETED.value,
-                            info_hash if info_hash else None,
-                        )
+                self._invalidate_ui_cache(EventType.PIECE_COMPLETED, data)
             
             def on_progress_updated(data: dict[str, Any]) -> None:
                 """Handle progress update event."""
-                if hasattr(self, "_data_provider") and self._data_provider:
-                    if hasattr(self._data_provider, "invalidate_on_event"):
-                        info_hash = data.get("info_hash", "")
-                        self._data_provider.invalidate_on_event(
-                            EventType.PROGRESS_UPDATED.value,
-                            info_hash if info_hash else None,
-                        )
+                self._invalidate_ui_cache(EventType.PROGRESS_UPDATED, data)
             
             # Note: Register torrent added event callback
             def on_torrent_added(data: dict[str, Any]) -> None:
                 """Handle torrent added event."""
-                # Use enhanced invalidate_on_event method
-                if hasattr(self, "_data_provider") and self._data_provider:
-                    if hasattr(self._data_provider, "invalidate_on_event"):
-                        info_hash = data.get("info_hash", "")
-                        self._data_provider.invalidate_on_event(
-                            EventType.TORRENT_ADDED.value,
-                            info_hash if info_hash else None,
-                        )
-                    elif hasattr(self._data_provider, "invalidate_cache"):
-                        # Fallback to manual invalidation
-                        self._data_provider.invalidate_cache("torrent_list")
-                        self._data_provider.invalidate_cache("swarm_health")
+                self._invalidate_ui_cache(EventType.TORRENT_ADDED, data)
                 # Note: Refresh torrent list screens immediately
                 try:
                     from ccbt.interface.screens.torrents_tab import (
@@ -965,18 +979,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # Note: Register completion event callback to show user-facing dialog
             def on_torrent_completed(data: dict[str, Any]) -> None:
                 """Handle torrent completion event and show dialog."""
-                # Use enhanced invalidate_on_event method
-                if hasattr(self, "_data_provider") and self._data_provider:
-                    if hasattr(self._data_provider, "invalidate_on_event"):
-                        info_hash = data.get("info_hash", "")
-                        self._data_provider.invalidate_on_event(
-                            EventType.TORRENT_COMPLETED.value,
-                            info_hash if info_hash else None,
-                        )
-                    elif hasattr(self._data_provider, "invalidate_cache"):
-                        # Fallback to manual invalidation
-                        self._data_provider.invalidate_cache("torrent_list")
-                        self._data_provider.invalidate_cache("global_stats")
+                self._invalidate_ui_cache(EventType.TORRENT_COMPLETED, data)
                 info_hash_hex = data.get("info_hash", "")
                 name = data.get("name", "")
                 if info_hash_hex and name:
@@ -1066,7 +1069,12 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         info_hash = event.data.get("info_hash")
                         if not info_hash:
                             return
-                        removed = event.data.get("event") == EventType.TORRENT_REMOVED.value
+                        event_value = event.data.get("event", "")
+                        removed = event_value in {
+                            EventType.TORRENT_REMOVED,
+                            EventType.TORRENT_REMOVED.value,
+                            EventType.TORRENT_REMOVED.name,
+                        }
                         if not hasattr(self, "_last_status"):
                             self._last_status = {}
                         if removed:
@@ -1075,6 +1083,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
                             status = await self._data_provider.get_torrent_status(info_hash)
                             if status:
                                 self._last_status[info_hash] = status
+                        self._mark_reactive_activity()
+                        self._schedule_poll()
                         self._apply_filter_and_update()
                     
                     async def on_peer_metrics(event: Any) -> None:
@@ -1084,16 +1094,20 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         info_hash = event.data.get("info_hash")
                         if not info_hash or not getattr(self, "peers", None):
                             return
+                        self._mark_reactive_activity()
                         peers = await self._data_provider.get_torrent_peers(info_hash)
                         self.peers.update_from_peers(peers)
+                        self._schedule_poll()
 
                     async def on_tracker_event(event: Any) -> None:
                         """Refresh tracker views on tracker events."""
+                        self._mark_reactive_activity()
                         data = getattr(event, "data", {}) or {}
                         await _refresh_per_torrent_tab(data.get("info_hash"))
 
                     async def on_metadata_event(event: Any) -> None:
                         """Refresh metadata-dependent views."""
+                        self._mark_reactive_activity()
                         data = getattr(event, "data", {}) or {}
                         await _refresh_per_torrent_tab(data.get("info_hash"))
                     
@@ -1146,11 +1160,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
             logger.debug("Alert manager initialization failed", exc_info=True)
         
         # Start polling (reduced frequency when WebSocket updates are active)
-        fallback_interval = self.refresh_interval
-        if self._reactive_manager:
-            fallback_interval = max(self.refresh_interval, 30.0)
-            self.refresh_interval = fallback_interval
-        self.set_interval(fallback_interval, self._schedule_poll)
+        self._mark_reactive_activity()
+        self._update_poll_interval()
+        self.set_interval(self.refresh_interval, self._schedule_poll)
         
         # Trigger initial poll immediately to load torrents and stats
         self.call_later(self._schedule_poll)  # type: ignore[attr-defined]
@@ -1334,10 +1346,39 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 # Mark as ended even if clear failed to prevent infinite retries
                 self._splash_ended = True
     
+    def _refresh_poll_interval(self, *, forced: bool = False) -> float:
+        """Apply adaptive polling logic while keeping baseline for manual mode."""
+        if forced or not self._reactive_manager:
+            interval = self.refresh_interval
+        else:
+            interval = self._compute_poll_interval()
+            self.refresh_interval = interval
+            self._update_poll_interval()
+        logger.debug(
+            "Poll interval computed: %.2fs (reactive_manager=%s)",
+            interval,
+            self._reactive_manager is not None,
+        )
+        return interval
+
+    def _log_poll_result(
+        self, source: str, snapshot_used: bool, stale_status_count: int
+    ) -> None:
+        """Log the origin and completeness of this poll for observability."""
+        logger.debug(
+            "Dashboard poll complete via %s (snapshot=%s, stale_status=%s)",
+            source,
+            snapshot_used,
+            stale_status_count,
+        )
+
     def _schedule_poll(self) -> None:  # pragma: no cover
         # UI refresh scheduler - requires Textual set_interval and task management
         if self._poll_task and not self._poll_task.done():
+            self._poll_pending = True
             return
+        # Refresh interval is adaptive in reactive mode and fixed otherwise
+        self._refresh_poll_interval()
         self._poll_task = asyncio.create_task(self._poll_once())
 
     async def _get_torrent_detailed_metrics(
@@ -1435,6 +1476,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
         # per-torrent details still polled; time-series (rate samples) can use snapshot.rate_samples.
         
         try:
+            poll_started_at = time.time()
+            stale_status_count = 0
+            poll_source = "scheduled"
             if not self._data_provider:
                 logger.error("Data provider is None - cannot poll for updates")
                 if self.statusbar:
@@ -1459,6 +1503,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         timeout=10.0,
                     )
                     if snapshot and isinstance(snapshot, dict):
+                        poll_source = "ui_snapshot"
                         stats = snapshot.get("global_stats")
                         torrents_list = snapshot.get("torrents", [])
                         all_status = {
@@ -1480,6 +1525,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
 
             # Fallback: separate get_global_stats and list_torrents
             if not used_snapshot:
+                poll_source = "fallback"
                 try:
                     stats = await asyncio.wait_for(
                         self._data_provider.get_global_stats(),
@@ -1543,6 +1589,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         for info_hash, status in previous_status.items()
                         if isinstance(status, dict)
                     }
+                    stale_status_count = len(all_status)
 
             self._last_status = all_status
             self._apply_filter_and_update()
@@ -1777,6 +1824,11 @@ class TerminalDashboard(App):  # type: ignore[misc]
             alerts_grid.add_row(rules_renderable, act_renderable)
             if getattr(self, "alerts", None) is not None:
                 self.alerts.update(Panel(alerts_grid, title=_("Alerts")))
+            self._log_poll_result(
+                source=poll_source,
+                snapshot_used=used_snapshot,
+                stale_status_count=stale_status_count,
+            )
         except Exception as e:
             # Log the error for debugging
             logger.exception("Error in dashboard poll")
@@ -1795,6 +1847,25 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 except Exception:
                     # If even cached data fails, just log it
                     logger.debug("Error applying cached status", exc_info=True)
+            used_snapshot = False
+            with contextlib.suppress(Exception):
+                self._log_poll_result(
+                    source=poll_source,
+                    snapshot_used=used_snapshot,
+                    stale_status_count=stale_status_count,
+                )
+        finally:
+            self._last_poll_completed_at = time.time()
+            if poll_started_at:
+                logger.debug(
+                    "Poll duration: %.2fs for source=%s",
+                    self._last_poll_completed_at - poll_started_at,
+                    poll_source,
+                )
+            self._poll_task = None
+            if self._poll_pending:
+                self._poll_pending = False
+                self._schedule_poll()
 
     async def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Unmount the dashboard and stop session."""

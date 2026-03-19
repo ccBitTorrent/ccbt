@@ -146,7 +146,7 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
                 )
                 return
             
-            for tracker in trackers:
+            for idx, tracker in enumerate(trackers):
                 url = tracker.get("url", "N/A")
                 status = tracker.get("status", "unknown")
                 seeds = tracker.get("seeds", 0)
@@ -175,7 +175,7 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
                     str(downloaders),
                     last_update_str,
                     error_str,
-                    key=url,
+                    key=f"{url}|{idx}",
                 )
         except Exception as e:
             logger.debug("Error refreshing torrent trackers: %s", e)
@@ -266,6 +266,11 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
                 if hasattr(self, "app"):
                     self.app.notify(_("No tracker selected"), severity="warning")  # type: ignore[attr-defined]
                 return
+            tracker_url = selected_key.split("|", 1)[0]
+            if not tracker_url:
+                if hasattr(self, "app"):
+                    self.app.notify(_("Invalid tracker selection"), severity="error")  # type: ignore[attr-defined]
+                return
             
             # Try to use executor command if available
             # Note: This may not exist yet - will need to be implemented
@@ -273,12 +278,12 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
                 result = await self._command_executor.execute_command(
                     "torrent.remove_tracker",
                     info_hash=self._info_hash,
-                    tracker_url=selected_key,
+                    tracker_url=tracker_url,
                 )
                 
                 if result and hasattr(result, "success") and result.success:
                     if hasattr(self, "app"):
-                        self.app.notify(_("Tracker removed: {url}").format(url=selected_key), severity="success")  # type: ignore[attr-defined]
+                        self.app.notify(_("Tracker removed: {url}").format(url=tracker_url), severity="success")  # type: ignore[attr-defined]
                     # Refresh trackers list
                     await self.refresh_trackers()
                 else:

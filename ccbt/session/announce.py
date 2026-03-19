@@ -510,6 +510,60 @@ class AnnounceLoop:
     async def run(self) -> None:
         """Run the announce loop."""
         base_announce_interval = float(self.s.config.network.announce_interval)
+
+        def _tracker_seed_ratio(response: Any) -> float:
+            complete = getattr(response, "complete", None)
+            incomplete = getattr(response, "incomplete", None)
+            if complete is None and incomplete is None:
+                return 0.0
+            try:
+                complete_value = max(0.0, float(complete))
+            except (TypeError, ValueError):
+                complete_value = 0.0
+            try:
+                incomplete_value = max(0.0, float(incomplete))
+            except (TypeError, ValueError):
+                incomplete_value = 0.0
+            total = complete_value + incomplete_value
+            if total <= 0:
+                return 0.0
+            return min(1.0, complete_value / total)
+
+        def _normalize_tracker_peer(
+            peer: Any, utility_signal: float = 0.0
+        ) -> dict[str, Any] | None:
+            try:
+                if hasattr(peer, "ip") and hasattr(peer, "port"):
+                    ip_value = peer.ip
+                    port_value = peer.port
+                    peer_ssl = getattr(peer, "ssl_capable", None)
+                elif isinstance(peer, dict):
+                    ip_value = peer.get("ip")
+                    port_value = peer.get("port")
+                    peer_ssl = peer.get("ssl_capable")
+                else:
+                    return None
+                if ip_value is None or port_value is None:
+                    return None
+                port_int = int(port_value)
+                if port_int <= 0 or port_int > 65535:
+                    return None
+                try:
+                    utility = float(utility_signal)
+                except (TypeError, ValueError):
+                    utility = 0.0
+                utility = max(0.0, min(1.0, utility))
+                return {
+                    "ip": str(ip_value),
+                    "port": port_int,
+                    "peer_source": "tracker",
+                    "ssl_capable": peer_ssl,
+                    "_tracker_seed_ratio": utility,
+                    "_replacement_priority": utility + (0.1 if bool(peer_ssl) else 0.0),
+                }
+            except (ValueError, TypeError):
+                return None
+
         while not self.s.is_stopped():
             # Set connecting state
             self.s.tracker_connection_status = "connecting"
@@ -726,13 +780,34 @@ class AnnounceLoop:
                     # Use the first response as a template (for interval, etc.)
                     response = successful_responses[0] if successful_responses else None
                     if response and all_peers:
-                        # Replace peers with aggregated list from all trackers
-                        response.peers = all_peers
+                        # Replace peers with enriched list from all trackers and prioritize utility.
+                        ranked_tracker_peers: list[dict[str, Any]] = []
+                        for tracker_response in successful_responses:
+                            seed_ratio = _tracker_seed_ratio(tracker_response)
+                            tracker_peers = getattr(tracker_response, "peers", None) or []
+                            for tracker_peer in tracker_peers:
+                                normalized_peer = _normalize_tracker_peer(
+                                    tracker_peer, utility_signal=seed_ratio
+                                )
+                                if normalized_peer:
+                                    ranked_tracker_peers.append(normalized_peer)
+
+                        ranked_tracker_peers.sort(
+                            key=lambda peer: (
+                                float(peer.get("_replacement_priority", 0.0)),
+                                bool(peer.get("ssl_capable")),
+                                peer.get("ip"),
+                                peer.get("port"),
+                            ),
+                            reverse=True,
+                        )
+                        response.peers = ranked_tracker_peers
                         self.s.logger.info(
-                            "Aggregated %d peer(s) from %d successful tracker response(s)",
-                            len(all_peers),
+                            "Aggregated and prioritized %d peer(s) from %d successful tracker response(s)",
+                            len(ranked_tracker_peers),
                             len(successful_responses),
                         )
+                        all_peers = ranked_tracker_peers
                 else:
                     # Fallback to single announce if announce_to_multiple not available
                     response = await self.s.tracker.announce(td, port=announce_port)
@@ -906,33 +981,29 @@ class AnnounceLoop:
                                 )
                                 else []
                             ):
-                                try:
-                                    if hasattr(p, "ip") and hasattr(p, "port"):
-                                        peer_list.append(
-                                            {
-                                                "ip": p.ip,
-                                                "port": p.port,
-                                                "peer_source": "tracker",
-                                                "ssl_capable": getattr(
-                                                    p, "ssl_capable", None
-                                                ),
-                                            }
+                                normalized = _normalize_tracker_peer(p, utility_signal=0.0)
+                                if normalized:
+                                    # Allow response-specific utility if this was already enriched.
+                                    normalized["_replacement_priority"] = float(
+                                        normalized.get("_replacement_priority", 0.0)
+                                    ) + (
+                                        float(
+                                            normalized.get(
+                                                "_tracker_seed_ratio", 0.0
+                                            )
                                         )
-                                    elif (
-                                        isinstance(p, dict)
-                                        and "ip" in p
-                                        and "port" in p
-                                    ):
-                                        peer_list.append(
-                                            {
-                                                "ip": str(p["ip"]),
-                                                "port": int(p["port"]),
-                                                "peer_source": "tracker",
-                                                "ssl_capable": p.get("ssl_capable"),
-                                            }
-                                        )
-                                except (ValueError, TypeError, KeyError):
-                                    pass
+                                    )
+                                    peer_list.append(normalized)
+
+                            peer_list.sort(
+                                key=lambda peer: (
+                                    float(peer.get("_replacement_priority", 0.0)),
+                                    bool(peer.get("ssl_capable")),
+                                    peer.get("ip"),
+                                    peer.get("port"),
+                                ),
+                                reverse=True,
+                            )
 
                             # Queue peers for later connection (using same mechanism as DHT)
                             if peer_list:
@@ -963,46 +1034,49 @@ class AnnounceLoop:
                         # The response object now contains all peers from all successful trackers
                         for p in (
                             response.peers
-                            if (
-                                response
-                                and hasattr(response, "peers")
-                                and response.peers
-                            )
-                            else []
-                        ):
-                            try:
-                                if hasattr(p, "ip") and hasattr(p, "port"):
-                                    peer_list.append(
-                                        {
-                                            "ip": p.ip,
-                                            "port": p.port,
-                                            "peer_source": "tracker",
-                                            "ssl_capable": getattr(
-                                                p, "ssl_capable", None
-                                            ),
-                                        }
-                                    )
-                                elif isinstance(p, dict) and "ip" in p and "port" in p:
-                                    peer_list.append(
-                                        {
-                                            "ip": str(p["ip"]),
-                                            "port": int(p["port"]),
-                                            "peer_source": "tracker",
-                                            "ssl_capable": p.get("ssl_capable"),
-                                        }
-                                    )
-                                else:
-                                    self.s.logger.warning(
-                                        "⚠️ TRACKER PEER CONNECTION: Skipping invalid peer from tracker response: %s (type: %s)",
-                                        p,
-                                        type(p).__name__,
-                                    )
-                            except (ValueError, TypeError, KeyError) as peer_error:
-                                self.s.logger.debug(
-                                    "Error processing peer from tracker: %s (error: %s)",
-                                    p,
-                                    peer_error,
+                                if (
+                                    response
+                                    and hasattr(response, "peers")
+                                    and response.peers
                                 )
+                                else []
+                        ):
+                            normalized = _normalize_tracker_peer(p, utility_signal=0.0)
+                            if normalized:
+                                if isinstance(p, dict):
+                                    prior_priority = float(
+                                        p.get("_replacement_priority", 0.0)
+                                    )
+                                    prior_seed_ratio = float(
+                                        p.get("_tracker_seed_ratio", 0.0)
+                                    )
+                                    if prior_seed_ratio > 0:
+                                        normalized["_tracker_seed_ratio"] = prior_seed_ratio
+                                    normalized["_replacement_priority"] = max(
+                                        float(
+                                            normalized.get(
+                                                "_replacement_priority", 0.0
+                                            )
+                                        ),
+                                        prior_priority,
+                                    )
+                                peer_list.append(normalized)
+                            else:
+                                self.s.logger.warning(
+                                    "⚠️ TRACKER PEER CONNECTION: Skipping invalid peer from tracker response: %s (type: %s)",
+                                    p,
+                                    type(p).__name__,
+                                )
+
+                        peer_list.sort(
+                            key=lambda peer: (
+                                float(peer.get("_replacement_priority", 0.0)),
+                                bool(peer.get("ssl_capable")),
+                                peer.get("ip"),
+                                peer.get("port"),
+                            ),
+                            reverse=True,
+                        )
 
                         if peer_list:
                             # Note: Deduplicate peers before connecting

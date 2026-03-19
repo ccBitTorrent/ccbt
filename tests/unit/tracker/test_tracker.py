@@ -156,6 +156,35 @@ class TestTrackerClient:
         with pytest.raises(TrackerError, match="Tracker failure"):
             self.client._parse_response(encoded_response)
 
+    def test_parse_response_non_bencode_payload(self):
+        """Test rejecting non-bencode tracker responses."""
+        response_data = b"<html><body>tracker down for maintenance</body></html>"
+
+        with pytest.raises(TrackerError, match="Invalid tracker payload"):
+            self.client._parse_response(response_data)
+
+    def test_parse_response_dictionary_peer_type_hardening(self):
+        """Test dictionary peer payload ignores invalid peer entries but keeps valid ones."""
+        response_data = {
+            b"interval": 1800,
+            b"peers": [
+                {b"ip": b"192.168.1.100", b"port": 6881},
+                {"ip": "198.51.100.5", "port": "6881"},
+                {b"ip": b"", b"port": 6881},
+                {"ip": "invalid", "port": "not_a_number"},
+                "invalid-entry",
+            ],
+        }
+
+        encoded_response = encode(response_data)
+        response = self.client._parse_response(encoded_response)
+
+        assert len(response["peers"]) == 2
+        assert response["peers"][0]["ip"] == "192.168.1.100"
+        assert response["peers"][0]["port"] == 6881
+        assert response["peers"][1]["ip"] == "198.51.100.5"
+        assert response["peers"][1]["port"] == 6881
+
     def test_parse_response_missing_fields(self):
         """Test parsing response missing required fields."""
         # Missing interval

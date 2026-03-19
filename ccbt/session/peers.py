@@ -366,8 +366,10 @@ class PeerConnectionHelper:
         Quality factors:
         1. Historical performance (if available from security manager)
         2. Connection success rate
-        3. Geographic proximity (lower latency estimate)
-        4. Upload/download ratio (if available)
+        3. Seeder/completion status
+        4. Throughput estimate
+        5. Source quality
+        6. Geographic proximity (lower latency estimate)
 
         Args:
             peer_list: List of peer dictionaries
@@ -426,7 +428,70 @@ class PeerConnectionHelper:
             score += success_rate * 0.2
             factors.append(f"success={success_rate:.2f}")
 
-            # Factor 3: Source quality (0.0-1.0, weight: 0.2)
+            # Factor 3: Seeder/completion status bonus
+            def _to_bool_flag(value: Any) -> bool:
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, str):
+                    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+                if isinstance(value, (int, float)):
+                    return value != 0
+                return False
+
+            is_seeder = _to_bool_flag(peer.get("is_seeder", False))
+            is_complete = _to_bool_flag(peer.get("complete", False))
+            completion_percent = 0.0
+            completion_raw = peer.get("completion_percent", 0.0)
+            try:
+                completion_percent = float(completion_raw) if completion_raw else 0.0
+            except (TypeError, ValueError):
+                completion_percent = 0.0
+            if completion_percent > 1.0:
+                completion_percent /= 100.0
+            completion_percent = max(0.0, min(1.0, completion_percent))
+
+            if is_seeder or is_complete:
+                completion_bonus = 0.35
+                factors.append("completion=seeder")
+            elif completion_percent >= 0.9:
+                completion_bonus = 0.18
+                factors.append(f"completion={completion_percent:.1%}")
+            elif completion_percent >= 0.7:
+                completion_bonus = 0.08
+                factors.append(f"completion={completion_percent:.1%}")
+            else:
+                completion_bonus = 0.0
+
+            score += completion_bonus
+
+            # Factor 4: Throughput estimate (download/upload throughput proxy)
+            throughput_rate = 0.0
+            try:
+                throughput_rate = max(
+                    float(peer.get("download_rate", 0.0) or 0.0),
+                    float(peer.get("upload_rate", 0.0) or 0.0),
+                )
+            except (TypeError, ValueError):
+                throughput_rate = 0.0
+
+            if throughput_rate <= 0.0 and hasattr(self.session, "download_manager"):
+                peer_manager = getattr(self.session.download_manager, "peer_manager", None)
+                if peer_manager is not None and hasattr(peer_manager, "connections"):
+                    existing_conn = peer_manager.connections.get(peer_key)
+                    if existing_conn is not None and hasattr(existing_conn, "stats"):
+                        throughput_rate = max(
+                            float(getattr(existing_conn.stats, "download_rate", 0.0) or 0.0),
+                            float(getattr(existing_conn.stats, "upload_rate", 0.0) or 0.0),
+                        )
+
+            max_throughput_reference = 10.0 * 1024.0 * 1024.0
+            throughput_score = min(1.0, throughput_rate / max_throughput_reference)
+            throughput_bonus = throughput_score * 0.2
+            score += throughput_bonus
+            if throughput_rate > 0:
+                factors.append(f"throughput={throughput_rate:.0f}B/s")
+
+            # Factor 5: Source quality (0.0-1.0, weight: 0.2)
             # DHT and tracker peers are generally more reliable than PEX
             source = peer.get("peer_source", "unknown")
             source_scores = {
@@ -441,7 +506,7 @@ class PeerConnectionHelper:
             score += source_score * 0.2
             factors.append(f"source={source}")
 
-            # Factor 4: Geographic proximity estimate (0.0-1.0, weight: 0.05 - reduced to allow distant peers)
+            # Factor 6: Geographic proximity estimate (0.0-1.0, weight: 0.05 - reduced to allow distant peers)
             # RELAXED: Reduced weight from 0.2 to 0.05 to allow connecting to slower/distant peers
             # Simple heuristic: assume peers from same country/region have lower latency
             # For now, use a simple hash-based estimate (can be improved with GeoIP)
@@ -471,8 +536,6 @@ class PeerConnectionHelper:
         avg_score = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
 
         # Type assertions for metrics dict access
-        from typing import cast
-
         quality_metrics = cast("dict[str, Any]", self._peer_quality_metrics)
         quality_metrics["total_rankings"] = (
             int(quality_metrics.get("total_rankings", 0) or 0) + 1

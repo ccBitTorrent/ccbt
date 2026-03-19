@@ -13,6 +13,8 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
+from ccbt.monitoring import get_metrics_collector
+
 try:
     import psutil
 
@@ -130,6 +132,12 @@ class PeerConnectionPool:
         # Warmup tracking
         self._warmup_attempts = 0
         self._warmup_successes = 0
+        self._soft_cleanup_marks: dict[str, float] = {}
+        self._cleanup_reason_counts: dict[str, int] = {
+            "stale_only": 0,
+            "protocol_error": 0,
+            "hard_timeout": 0,
+        }
 
         self.logger = logging.getLogger(__name__)
 
@@ -539,6 +547,17 @@ class PeerConnectionPool:
         warmup_success_rate = (
             (warmup_successes / warmup_attempts * 100) if warmup_attempts > 0 else 0.0
         )
+        cleanup_reason_counts = dict(
+            getattr(
+                self,
+                "_cleanup_reason_counts",
+                {
+                    "stale_only": 0,
+                    "protocol_error": 0,
+                    "hard_timeout": 0,
+                },
+            )
+        )
 
         return {
             "total_connections": total_connections,
@@ -560,6 +579,7 @@ class PeerConnectionPool:
             "average_connection_lifetime": average_lifetime,
             "connection_establishment_time": avg_establishment_time,
             "warmup_success_rate": warmup_success_rate,
+            "cleanup_reason_counts": cleanup_reason_counts,
         }
 
     async def _create_connection(self, peer_info: PeerInfo) -> Optional[Any]:
@@ -1466,6 +1486,18 @@ class PeerConnectionPool:
     async def _perform_health_checks(self) -> None:
         """Perform health checks on all connections with quality-based prioritization."""
         current_time = time.time()
+        cleanup_reason_counts = dict(
+            getattr(
+                self,
+                "_cleanup_reason_counts",
+                {
+                    "stale_only": 0,
+                    "protocol_error": 0,
+                    "hard_timeout": 0,
+                },
+            )
+        )
+        unhealthy_connection_reasons: dict[str, str] = {}
 
         # Grace period for new connections (don't check bandwidth/quality for connections less than this old)
         # Note: self.config is already NetworkConfig, not Config, so don't access .network
@@ -1474,9 +1506,77 @@ class PeerConnectionPool:
             if self.config
             else 60.0
         )  # 60 seconds grace period
+        complete_peer_protection_window = (
+            getattr(self.config, "complete_peer_cleanup_protection_s", 12.0)
+            if self.config
+            else 12.0
+        )
+        complete_peer_min_health_level = 1
+        connection_pool_pressure = (
+            (self.max_connections - getattr(self.semaphore, "_value", self.max_connections))
+            / self.max_connections
+            if self.max_connections
+            else 0.0
+        )
+        pool_under_pressure = connection_pool_pressure >= 0.8
+
+        def _is_complete_peer(peer_id_inner: str) -> bool:
+            connection = self.pool.get(peer_id_inner)
+            if not connection:
+                return False
+            conn_obj = (
+                connection.get("connection")
+                if isinstance(connection, dict)
+                else connection
+            )
+            peer_info = None
+            if isinstance(connection, dict):
+                peer_info = connection.get("peer_info")
+            if peer_info is None:
+                peer_info = getattr(conn_obj, "peer_info", None)
+            if peer_info is not None:
+                if bool(getattr(peer_info, "is_seeder", False)) or bool(
+                    getattr(peer_info, "complete", False)
+                ):
+                    return True
+            return bool(getattr(conn_obj, "is_seeder", False)) or bool(
+                getattr(conn_obj, "complete", False)
+            )
+
+        def _is_complete_peer_eligible_for_retention(peer_id_inner: str) -> bool:
+            if not _is_complete_peer(peer_id_inner):
+                return False
+            metrics_inner = self.metrics.get(peer_id_inner)
+            if not metrics_inner or not metrics_inner.is_healthy:
+                return False
+            if metrics_inner.health_level < complete_peer_min_health_level:
+                return False
+            return (
+                current_time - metrics_inner.last_used
+                <= complete_peer_protection_window
+            )
 
         unhealthy_connections = []
         low_quality_connections = []
+        low_peer_threshold = (
+            getattr(self.config, "low_peer_threshold", 0) if self.config else 0
+        )
+        low_peer_cleanup_window = (
+            getattr(self.config, "stale_cleanup_two_phase_window_s", 2.5)
+            if self.config
+            else 2.5
+        )
+        low_peer_cleanup_suppression = (
+            float(getattr(self.config, "low_peer_cleanup_suppression_factor", 0.0))
+            if self.config
+            else 0.0
+        )
+        soft_fail_cleanup_enabled = (
+            low_peer_threshold > 0
+            and low_peer_cleanup_suppression > 0.0
+            and len(self.metrics) <= low_peer_threshold
+        )
+        soft_fail_marks = getattr(self, "_soft_cleanup_marks", {})
 
         # IMPROVEMENT: Evaluate connections by quality, not just health
         for peer_id, metrics in self.metrics.items():
@@ -1487,11 +1587,13 @@ class PeerConnectionPool:
             if current_time - metrics.last_used > self.max_idle_time:
                 self.logger.debug("Connection %s is idle too long", peer_id)
                 metrics.is_healthy = False
+                unhealthy_connection_reasons[peer_id] = "hard_timeout"
 
             # Check usage count
             if metrics.usage_count >= self.max_usage_count:
                 self.logger.debug("Connection %s exceeded usage count", peer_id)
                 metrics.is_healthy = False
+                unhealthy_connection_reasons.setdefault(peer_id, "protocol_error")
 
             # Check error rate (only for established connections)
             # Note: Check errors even for new connections if error count is very high
@@ -1506,10 +1608,12 @@ class PeerConnectionPool:
                             peer_id,
                         )
                         metrics.is_healthy = False
+                        unhealthy_connection_reasons[peer_id] = "protocol_error"
                 else:
                     # Established connection - use normal threshold
                     self.logger.debug("Connection %s has too many errors", peer_id)
                     metrics.is_healthy = False
+                    unhealthy_connection_reasons[peer_id] = "protocol_error"
 
             # IMPROVEMENT: Check connection quality (bandwidth, performance)
             # Only check quality for connections that have had time to establish
@@ -1548,7 +1652,9 @@ class PeerConnectionPool:
                     unhealthy_connections.append(peer_id)
                 elif is_low_quality:
                     # Low quality but not unhealthy - mark for potential replacement
-                    low_quality_connections.append((peer_id, quality_score))
+                    low_quality_connections.append(
+                        (peer_id, quality_score, _is_complete_peer(peer_id))
+                    )
             # New connection - give it time to establish
             # Only mark as unhealthy if it has critical errors or is idle
             elif metrics.errors > 20:  # Very high error rate even for new connections
@@ -1556,9 +1662,31 @@ class PeerConnectionPool:
                     "Connection %s has too many errors (new connection)", peer_id
                 )
                 metrics.is_healthy = False
+                unhealthy_connection_reasons[peer_id] = "protocol_error"
 
             if not metrics.is_healthy:
+                unhealthy_connection_reasons.setdefault(peer_id, "protocol_error")
                 unhealthy_connections.append(peer_id)
+
+        final_unhealthy_connections: list[str] = []
+        for peer_id in unhealthy_connections:
+            reason = unhealthy_connection_reasons.get(peer_id, "protocol_error")
+            if soft_fail_cleanup_enabled and reason != "hard_timeout":
+                first_seen = soft_fail_marks.get(peer_id)
+                if first_seen is None:
+                    soft_fail_marks[peer_id] = current_time
+                    continue
+                if current_time - first_seen < low_peer_cleanup_window:
+                    continue
+                soft_fail_marks.pop(peer_id, None)
+            final_unhealthy_connections.append(peer_id)
+
+        for peer_id in list(soft_fail_marks):
+            if peer_id not in unhealthy_connections:
+                soft_fail_marks.pop(peer_id, None)
+
+        self._soft_cleanup_marks = soft_fail_marks
+        unhealthy_connections = final_unhealthy_connections
 
         # Remove unhealthy connections immediately
         for peer_id in unhealthy_connections:
@@ -1577,7 +1705,18 @@ class PeerConnectionPool:
             low_quality_connections.sort(key=lambda x: x[1])
             # Remove bottom 10% of low-quality connections
             num_to_remove = max(1, len(low_quality_connections) // 10)
-            for peer_id, _ in low_quality_connections[:num_to_remove]:
+            num_removed = 0
+            for peer_id, _, is_complete in low_quality_connections[:num_to_remove]:
+                if (
+                    pool_under_pressure
+                    and is_complete
+                    and _is_complete_peer_eligible_for_retention(peer_id)
+                ):
+                    self.logger.debug(
+                        "Retaining healthy complete peer %s during pressure cleanup",
+                        peer_id,
+                    )
+                    continue
                 self.logger.debug(
                     "Removing low-quality connection %s (pool utilization: %.1f%%)",
                     peer_id,
@@ -1585,13 +1724,28 @@ class PeerConnectionPool:
                 )
                 await self._remove_connection(peer_id)
                 self.semaphore.release()
+                num_removed += 1
+            if num_removed > 0:
+                num_to_remove = num_removed
 
         if unhealthy_connections:
+            self._cleanup_reason_counts = cleanup_reason_counts
             self.logger.info(
                 "Removed %d unhealthy connections", len(unhealthy_connections)
             )
+            for reason in unhealthy_connection_reasons.values():
+                cleanup_reason_counts[reason] = (
+                    cleanup_reason_counts.get(reason, 0) + 1
+                )
+            self.logger.debug(
+                "Health cleanup reasons: stale_only=%d protocol_error=%d hard_timeout=%d",
+                cleanup_reason_counts["stale_only"],
+                cleanup_reason_counts["protocol_error"],
+                cleanup_reason_counts["hard_timeout"],
+            )
+        else:
+            self._cleanup_reason_counts = cleanup_reason_counts
         if low_quality_connections and pool_utilization > 0.8:
-            num_removed = max(1, len(low_quality_connections) // 10)
             self.logger.debug(
                 "Evaluated %d low-quality connections (pool utilization: %.1f%%, removed: %d)",
                 len(low_quality_connections),
@@ -1617,6 +1771,7 @@ class PeerConnectionPool:
                                     "healthy_connections": len(self.metrics)
                                     - len(unhealthy_connections)
                                     - num_removed,
+                                    "cleanup_reasons": cleanup_reason_counts,
                                 },
                             )
                         )
@@ -1629,20 +1784,223 @@ class PeerConnectionPool:
     async def _cleanup_stale_connections(self) -> None:
         """Clean up stale connections."""
         current_time = time.time()
+        cleanup_reason_counts = dict(
+            getattr(
+                self,
+                "_cleanup_reason_counts",
+                {
+                    "stale_only": 0,
+                    "protocol_error": 0,
+                    "hard_timeout": 0,
+                },
+            )
+        )
+        complete_peer_protection_window = getattr(
+            self.config, "complete_peer_cleanup_protection_s", 12.0
+        )
+        connection_pool_pressure = (
+            (self.max_connections - getattr(self.semaphore, "_value", self.max_connections))
+            / self.max_connections
+            if self.max_connections
+            else 0.0
+        )
+        pool_under_pressure = connection_pool_pressure >= 0.8
+        inflight_protection_grace = getattr(
+            self.config, "inflight_protection_grace_s", 10.0
+        )
+        stale_connection_marks = getattr(self, "_stale_connection_marks", {})
+        stale_confirmation_window = getattr(
+            self.config,
+            "connection_pool_stale_confirmation_window",
+            30.0,
+        )
+        new_connection_grace_period = getattr(
+            self.config,
+            "connection_pool_new_connection_grace_period",
+            30.0,
+        )
+        stale_scale = (
+            3.0 if len(self.metrics) <= 2 else 2.0 if len(self.metrics) <= 5 else 1.0
+        )
+        low_peer_threshold = (
+            getattr(self.config, "low_peer_threshold", 0) if self.config else 0
+        )
+        low_peer_cleanup_suppression = (
+            float(getattr(self.config, "low_peer_cleanup_suppression_factor", 1.0))
+            if self.config
+            else 1.0
+        )
+        stale_health_scale_low_peer = (
+            float(getattr(self.config, "stale_health_scale_low_peer", stale_scale))
+            if self.config
+            else stale_scale
+        )
+        if low_peer_threshold > 0 and low_peer_cleanup_suppression > 0.0:
+            if len(self.metrics) <= low_peer_threshold:
+                stale_scale = max(
+                    stale_scale, stale_health_scale_low_peer * low_peer_cleanup_suppression
+                )
+        stale_threshold = self.max_idle_time * 2 * stale_scale
+        hard_timeout_threshold = stale_threshold * 2
 
-        stale_connections = []
+        stale_connections: list[str] = []
 
-        for peer_id, metrics in self.metrics.items():
-            if current_time - metrics.last_used > self.max_idle_time * 2:
-                stale_connections.append(peer_id)
+        def _is_complete_peer(peer_id_inner: str) -> bool:
+            connection = self.pool.get(peer_id_inner)
+            if not connection:
+                return False
+            conn_obj = (
+                connection.get("connection")
+                if isinstance(connection, dict)
+                else connection
+            )
+            peer_info = None
+            if isinstance(connection, dict):
+                peer_info = connection.get("peer_info")
+            if peer_info is None:
+                peer_info = getattr(conn_obj, "peer_info", None)
+            if peer_info is not None:
+                if bool(getattr(peer_info, "is_seeder", False)) or bool(
+                    getattr(peer_info, "complete", False)
+                ):
+                    return True
+            return bool(getattr(conn_obj, "is_seeder", False)) or bool(
+                getattr(conn_obj, "complete", False)
+            )
+
+        def _can_retain_complete(peer_id_inner: str) -> bool:
+            if not pool_under_pressure or not _is_complete_peer(peer_id_inner):
+                return False
+            metrics_inner = self.metrics.get(peer_id_inner)
+            if not metrics_inner or not metrics_inner.is_healthy:
+                return False
+            return (
+                current_time - metrics_inner.last_used
+                <= complete_peer_protection_window
+            )
+
+        for peer_id, metrics in list(self.metrics.items()):
+            # New connections with no observed activity are still protected briefly,
+            # but only until they also exceed the stale threshold based on last usage.
+            if (
+                current_time - metrics.created_at < new_connection_grace_period
+                and current_time - metrics.last_used < new_connection_grace_period
+            ):
+                stale_connection_marks.pop(peer_id, None)
+                continue
+
+            if current_time - metrics.last_used <= stale_threshold:
+                stale_connection_marks.pop(peer_id, None)
+                continue
+
+            connection = self.pool.get(peer_id)
+            has_inflight_requests = False
+            if connection is not None:
+                if isinstance(connection, dict):
+                    conn_obj = connection.get("connection", connection)
+                else:
+                    conn_obj = connection
+                for request_attr in (
+                    "outstanding_requests",
+                    "active_requests",
+                    "_in_flight_requests",
+                    "in_flight_requests",
+                ):
+                    value = getattr(conn_obj, request_attr, None)
+                    if isinstance(value, dict | list | set | tuple):
+                        has_inflight_requests = bool(value)
+                        if has_inflight_requests:
+                            break
+                    elif isinstance(value, int):
+                        has_inflight_requests = value > 0
+                        if has_inflight_requests:
+                            break
+
+            age = current_time - metrics.last_used
+            if (
+                has_inflight_requests
+                and age < (hard_timeout_threshold + inflight_protection_grace)
+            ):
+                if _can_retain_complete(peer_id):
+                    stale_connection_marks.pop(peer_id, None)
+                    continue
+                stale_connection_marks[peer_id] = current_time
+                continue
+
+            if _can_retain_complete(peer_id):
+                stale_connection_marks.pop(peer_id, None)
+                continue
+
+            first_seen = stale_connection_marks.get(peer_id)
+            if first_seen is None:
+                stale_connection_marks[peer_id] = current_time
+                continue
+
+            if current_time - first_seen < stale_confirmation_window:
+                continue
+
+            stale_connections.append(peer_id)
+            stale_connection_marks.pop(peer_id, None)
+
+        for peer_id in list(stale_connection_marks):
+            if peer_id not in self.metrics:
+                stale_connection_marks.pop(peer_id, None)
+
+        self._stale_connection_marks = stale_connection_marks
+        cleanup_reason_counts["stale_only"] += len(stale_connections)
+        if cleanup_reason_counts["stale_only"] > 0:
+            try:
+                get_metrics_collector().increment_counter(
+                    "stale_cleanup_removed_total",
+                    value=cleanup_reason_counts["stale_only"],
+                )
+            except Exception:
+                self.logger.debug(
+                    "Failed to record stale cleanup removed metric",
+                    exc_info=True,
+                )
+        self._cleanup_reason_counts = cleanup_reason_counts
 
         for peer_id in stale_connections:
             await self._remove_connection(peer_id)
-
             self.semaphore.release()
 
         if stale_connections:
-            self.logger.info("Cleaned up %d stale connections", len(stale_connections))
+            pool_utilization = (
+                (self.max_connections - getattr(self.semaphore, "_value", self.max_connections))
+                / self.max_connections
+                if self.max_connections
+                else 0.0
+            )
+            self.logger.info(
+                "Cleaned up %d stale connections after two-phase validation (reasons: stale_only=%d)",
+                len(stale_connections),
+                cleanup_reason_counts["stale_only"],
+            )
+            try:
+                from ccbt.utils.events import Event, EventType, emit_event
+
+                asyncio.create_task(  # noqa: RUF006
+                    emit_event(
+                        Event(
+                            event_type=EventType.CONNECTION_POOL_QUALITY_CLEANUP.value,
+                            data={
+                                "unhealthy_removed": 0,
+                                "low_quality_removed": 0,
+                                "stale_removed": len(stale_connections),
+                                "pool_utilization": pool_utilization,
+                                "total_connections": len(self.metrics),
+                                "healthy_connections": len(self.metrics) - len(stale_connections),
+                                "cleanup_reasons": cleanup_reason_counts,
+                            },
+                        )
+                    )
+                )
+            except Exception as e:
+                self.logger.debug(
+                    "Failed to emit connection pool stale cleanup event: %s",
+                    e,
+                )
 
     async def _warmup_single_connection(self, peer_info: PeerInfo) -> None:
         """Warmup a single connection.

@@ -76,6 +76,7 @@ from ccbt.utils.compat import sha1_compat
 from ccbt.utils.events import Event, EventType, emit_event
 from ccbt.utils.logging_config import get_logger
 from ccbt.utils.metrics import Metrics
+from ccbt.session.swarm_stability_defaults import PEER_DISCOVERY_DEFAULTS
 
 # Expose TorrentParser at module level for test patching
 TorrentParser = _TorrentParser
@@ -176,8 +177,10 @@ class AsyncTorrentSession:
         self._tracker_immediate_connect_burst_total = 24
         self._last_tracker_metadata_fallback_at: float = 0.0
         self._tracker_metadata_fallback_in_progress: bool = False
+        self._piece_map_revalidated_after_metadata: bool = False
         self._low_peers_since: Optional[float] = None
         self._low_peers_lock = asyncio.Lock()
+        self._low_peer_recovery_suppressed_until: float = 0.0
 
         # Task tracking for piece verification and download completion
         # These are sets to track asyncio tasks and prevent garbage collection
@@ -1249,6 +1252,25 @@ class AsyncTorrentSession:
                             "fail_fast_dht_timeout",
                             30.0,
                         )
+                        low_peer_threshold = self.session._low_peer_threshold()
+                        low_peer_window = self.session._low_peer_suppression_window_s()
+                        low_peer_state = (
+                            not metadata_incomplete
+                            and active_peer_count <= low_peer_threshold
+                        )
+                        if low_peer_state and low_peer_window > 0.0:
+                            low_peer_recovery_now = time.time()
+                            if (
+                                low_peer_recovery_now
+                                < self.session._low_peer_recovery_suppressed_until
+                            ):
+                                self.session.logger.debug(
+                                    "🧱 DHT SKIP: Low-peer recovery for %s is suppressed for %.1fs more",
+                                    self.session.info.name,
+                                    self.session._low_peer_recovery_suppressed_until
+                                    - low_peer_recovery_now,
+                                )
+                                return
                         fail_fast_triggered = False
                         current_time = time.monotonic()
                         if (
@@ -1509,13 +1531,18 @@ class AsyncTorrentSession:
                         elif active_peer_count >= min_peers_before_dht:
                             async with self.session._low_peers_lock:
                                 self.session._low_peers_since = None
+                            self.session._low_peer_recovery_suppressed_until = 0.0
 
                         if (
                             active_peer_count < min_peers_before_dht
                             and not fail_fast_triggered
                         ):
+                            if low_peer_state and low_peer_window > 0.0:
+                                self.session._low_peer_recovery_suppressed_until = (
+                                    time.time() + low_peer_window
+                                )
                             self.session.logger.info(
-                                "⏸️ DHT SKIP: Swarm still below DHT threshold (active=%d, productive=%d, requestable=%d, piece_info=%d; minimum=%d). "
+                                "DHT skip: swarm still below DHT threshold (active=%d, productive=%d, requestable=%d, piece_info=%d; minimum=%d). "
                                 "Skipping immediate DHT discovery to avoid blacklisting.",
                                 active_peer_count,
                                 productive_peers,
@@ -1530,7 +1557,7 @@ class AsyncTorrentSession:
                             and active_peer_count < min_peers_before_dht
                         ):
                             self.session.logger.info(
-                                "Triggering immediate DHT discovery via fail-fast recovery (active=%d, productive=%d, requestable=%d, piece_info=%d, threshold=%d)...",
+                                "Preparing source-tier tracker handoff: trying tracker recovery before DHT fallback (active=%d, productive=%d, requestable=%d, piece_info=%d, threshold=%d)...",
                                 active_peer_count,
                                 productive_peers,
                                 requestable_peers,
@@ -1539,7 +1566,7 @@ class AsyncTorrentSession:
                             )
                         else:
                             self.session.logger.info(
-                                "Triggering immediate DHT discovery (active=%d, productive=%d, requestable=%d, piece_info=%d, threshold=%d)...",
+                                "Preparing source-tier tracker handoff: trying tracker recovery before DHT fallback (active=%d, productive=%d, requestable=%d, piece_info=%d, threshold=%d)...",
                                 active_peer_count,
                                 productive_peers,
                                 requestable_peers,
@@ -1547,7 +1574,135 @@ class AsyncTorrentSession:
                                 min_peers_before_dht,
                             )
 
-                        # Trigger immediate DHT query if DHT is enabled
+                        async def immediate_announce() -> bool:
+                            """Run immediate tracker batch; return True when tracker source is exhausted."""
+                            try:
+                                td: dict[str, Any]
+                                if isinstance(self.session.torrent_data, TorrentInfoModel):
+                                    td = {
+                                        "info_hash": self.session.torrent_data.info_hash,
+                                        "name": self.session.torrent_data.name,
+                                        "announce": getattr(
+                                            self.session.torrent_data,
+                                            "announce",
+                                            "",
+                                        ),
+                                    }
+                                else:
+                                    td = self.session.torrent_data
+
+                                tracker_urls = self.session._collect_trackers(td)
+                                if not tracker_urls:
+                                    self.session.logger.debug(
+                                        "Tracker handoff source exhausted: no tracker URLs available for %s",
+                                        self.session.info.name,
+                                    )
+                                    return True
+
+                                listen_port = (
+                                    self.session.config.network.listen_port_tcp
+                                    or self.session.config.network.listen_port
+                                )
+                                announce_port = listen_port
+                                nat_manager = getattr(
+                                    self.session.session_manager, "nat_manager", None
+                                )
+                                if nat_manager is not None:
+                                    with contextlib.suppress(Exception):
+                                        external_port = await nat_manager.get_external_port(
+                                            listen_port,
+                                            "tcp",
+                                        )
+                                        if external_port is not None:
+                                            announce_port = external_port
+                                responses = await self.session.tracker.announce_to_multiple(
+                                    td,
+                                    tracker_urls,
+                                    port=announce_port,
+                                )
+                                aggregated_peers = []
+                                for response in responses:
+                                    if response and getattr(response, "peers", None):
+                                        aggregated_peers.extend(response.peers)
+                                if not aggregated_peers:
+                                    self.session.logger.info(
+                                        "Immediate tracker handoff batch exhausted for %s: %d tracker response(s), %d usable peers",
+                                        self.session.info.name,
+                                        len(responses),
+                                        len(aggregated_peers),
+                                    )
+                                    return True
+
+                                if not self.session.download_manager:
+                                    self.session.logger.warning(
+                                        "Skipping immediate tracker connection handoff for %s because download manager is not available",
+                                        self.session.info.name,
+                                    )
+                                    return False
+
+                                peer_manager = getattr(
+                                    self.session.download_manager,
+                                    "peer_manager",
+                                    None,
+                                )
+                                if peer_manager:
+                                    peer_list = [
+                                        {
+                                            "ip": p.ip,
+                                            "port": p.port,
+                                            "peer_source": "tracker",
+                                        }
+                                        for p in aggregated_peers
+                                        if hasattr(p, "ip") and hasattr(p, "port")
+                                    ]
+                                    if peer_list:
+                                        helper = PeerConnectionHelper(self.session)
+                                        await helper.connect_peers_to_download(peer_list)
+                                        self.session.logger.info(
+                                            "Immediate tracker handoff returned %d peer(s) across %d successful tracker response(s)",
+                                            len(peer_list),
+                                            len(responses),
+                                        )
+                                        return False
+
+                                # Fallback: queue peers for later connection attempts.
+                                self.session.logger.warning(
+                                    "Immediate tracker handoff queued %d peer(s) for later connection because peer manager is not ready for %s",
+                                    len(aggregated_peers),
+                                    self.session.info.name,
+                                )
+                                return False
+                            except Exception as e:
+                                self.session.logger.debug(
+                                    "Failed to perform immediate tracker announce: %s",
+                                    e,
+                                )
+                                return True
+
+                        tracker_batch_exhausted = True
+                        if (
+                            hasattr(self.session, "_announce_task")
+                            and self.session._announce_task
+                            and not self.session._announce_task.done()
+                        ):
+                            tracker_batch_exhausted = await immediate_announce()
+                        elif (
+                            hasattr(self.session, "_announce_task")
+                            and self.session._announce_task
+                            and self.session._announce_task.done()
+                        ):
+                            self.session.logger.debug(
+                                "Skipping immediate tracker handoff: announce loop task has completed (periodic announces no longer running)"
+                            )
+
+                        if not tracker_batch_exhausted:
+                            self.session.logger.info(
+                                "Tracker handoff for %s returned usable peers; skipping DHT fallback for this cycle",
+                                self.session.info.name,
+                            )
+                            return
+
+                        # Trigger immediate DHT query if tracker batch was exhausted and DHT is enabled
                         # Note: Rate limit immediate DHT queries to prevent peer disconnections
                         # Check if we've triggered an immediate query recently (within last 60 seconds)
                         current_time = time.time()
@@ -1556,7 +1711,9 @@ class AsyncTorrentSession:
                             self.session, last_immediate_query_key, 0
                         )
                         min_interval_between_immediate_queries = (
-                            60.0  # Increased from 10s to 60s to prevent blacklisting
+                            low_peer_window
+                            if low_peer_state and low_peer_window > 0.0
+                            else 60.0  # Increased from 10s to 60s to prevent blacklisting
                         )
 
                         if (
@@ -1583,15 +1740,23 @@ class AsyncTorrentSession:
                                     else None
                                 )
                                 if dht_client:
-                                    # Note: Use very conservative parameters to prevent blacklisting
-                                    # Reduced query parameters to avoid overwhelming the DHT network
+                                    if (
+                                        low_peer_state
+                                        and low_peer_window > 0.0
+                                    ):
+                                        self.session._low_peer_recovery_suppressed_until = (
+                                            current_time + low_peer_window
+                                        )
+
+                                    # Note: Use very conservative parameters to prevent
+                                    # blacklisting while still recovering quickly.
                                     setattr(
                                         self.session,
                                         last_immediate_query_key,
                                         current_time,
                                     )
                                     self.session.logger.info(
-                                        "Triggering immediate DHT get_peers query for %s (max_peers=50, conservative params to prevent blacklisting)",
+                                        "Tracker handoff exhausted for %s; triggering immediate DHT get_peers query (max_peers=50, conservative params to prevent blacklisting)",
                                         self.session.info.name,
                                     )
                                     discovered_peers = await dht_client.get_peers(
@@ -1634,121 +1799,16 @@ class AsyncTorrentSession:
                                                     len(discovered_peers),
                                                     len(peer_list),
                                                 )
+                                else:
+                                    self.session.logger.warning(
+                                        "Immediate DHT query skipped: DHT client is unavailable"
+                                    )
                             except Exception as e:
                                 self.session.logger.warning(
                                     "Failed to trigger immediate DHT query: %s",
                                     e,
                                     exc_info=True,
                                 )
-
-                        # Trigger immediate tracker announce if trackers are available
-                        # Only schedule when announce loop is still running (task not done)
-                        if (
-                            hasattr(self.session, "_announce_task")
-                            and self.session._announce_task
-                            and not self.session._announce_task.done()
-                        ):
-
-                            async def immediate_announce() -> None:
-                                try:
-                                    td: dict[str, Any]
-                                    if isinstance(
-                                        self.session.torrent_data, TorrentInfoModel
-                                    ):
-                                        td = {
-                                            "info_hash": self.session.torrent_data.info_hash,
-                                            "name": self.session.torrent_data.name,
-                                            "announce": getattr(
-                                                self.session.torrent_data,
-                                                "announce",
-                                                "",
-                                            ),
-                                        }
-                                    else:
-                                        td = self.session.torrent_data
-
-                                    tracker_urls = self.session._collect_trackers(td)
-                                    if tracker_urls:
-                                        listen_port = (
-                                            self.session.config.network.listen_port_tcp
-                                            or self.session.config.network.listen_port
-                                        )
-                                        announce_port = listen_port
-                                        nat_manager = getattr(
-                                            self.session.session_manager,
-                                            "nat_manager",
-                                            None,
-                                        )
-                                        if nat_manager is not None:
-                                            with contextlib.suppress(Exception):
-                                                external_port = (
-                                                    await nat_manager.get_external_port(
-                                                        listen_port,
-                                                        "tcp",
-                                                    )
-                                                )
-                                                if external_port is not None:
-                                                    announce_port = external_port
-                                        responses = await self.session.tracker.announce_to_multiple(
-                                            td,
-                                            tracker_urls,
-                                            port=announce_port,
-                                        )
-                                        aggregated_peers = []
-                                        for response in responses:
-                                            if response and getattr(
-                                                response,
-                                                "peers",
-                                                None,
-                                            ):
-                                                aggregated_peers.extend(response.peers)
-                                        if (
-                                            aggregated_peers
-                                            and self.session.download_manager
-                                        ):
-                                            peer_manager = getattr(
-                                                self.session.download_manager,
-                                                "peer_manager",
-                                                None,
-                                            )
-                                            if peer_manager:
-                                                peer_list = [
-                                                    {
-                                                        "ip": p.ip,
-                                                        "port": p.port,
-                                                        "peer_source": "tracker",
-                                                    }
-                                                    for p in aggregated_peers
-                                                    if hasattr(p, "ip")
-                                                    and hasattr(p, "port")
-                                                ]
-                                                if peer_list:
-                                                    helper = PeerConnectionHelper(
-                                                        self.session
-                                                    )
-                                                    await helper.connect_peers_to_download(
-                                                        peer_list
-                                                    )
-                                                    self.session.logger.info(
-                                                        "Immediate tracker announce returned %d peer(s) across %d successful tracker response(s)",
-                                                        len(peer_list),
-                                                        len(responses),
-                                                    )
-                                except Exception as e:
-                                    self.session.logger.debug(
-                                        "Failed to perform immediate tracker announce: %s",
-                                        e,
-                                    )
-
-                            _ = asyncio.create_task(immediate_announce())  # noqa: RUF006
-                        elif (
-                            hasattr(self.session, "_announce_task")
-                            and self.session._announce_task
-                            and self.session._announce_task.done()
-                        ):
-                            self.session.logger.debug(
-                                "Skipping immediate tracker announce: announce loop task has completed (periodic announces no longer running)"
-                            )
 
                 # Register event handler
                 handler = PeerCountLowHandler(self)
@@ -3606,6 +3666,29 @@ class AsyncTorrentSession:
             300,
         )
 
+    def _peer_discovery_setting(self, setting_name: str, fallback: float | int) -> float | int:
+        """Read peer discovery tuning values from config if available."""
+        discovery = getattr(self.config, "discovery", None)
+        return getattr(discovery, setting_name, fallback)
+
+    def _low_peer_threshold(self) -> int:
+        """Configured threshold for the low-peer suppression path."""
+        return int(
+            self._peer_discovery_setting(
+                "low_peer_threshold",
+                int(PEER_DISCOVERY_DEFAULTS["low_peer_threshold"]),
+            )
+        )
+
+    def _low_peer_suppression_window_s(self) -> float:
+        """Suppression window in seconds for repeated low-peer recovery actions."""
+        return float(
+            self._peer_discovery_setting(
+                "low_peer_suppression_window_s",
+                float(PEER_DISCOVERY_DEFAULTS["low_peer_suppression_window_s"]),
+            )
+        )
+
     def get_recently_processed_peers(self) -> set[Any]:
         """Get recently processed peers set (keys only; for backward compatibility).
 
@@ -3961,8 +4044,31 @@ class AsyncTorrentSession:
             and int(file_info.get("total_length", 0) or 0) == 0
         )
 
+    def _session_metadata_is_available(self) -> bool:
+        """Check whether session metadata is sufficient to rebuild piece maps."""
+        if not isinstance(self.torrent_data, dict):
+            return False
+
+        if self.torrent_data.get("_metadata_incomplete"):
+            return False
+        pieces_info = self.torrent_data.get("pieces_info")
+        if not isinstance(pieces_info, dict):
+            return False
+
+        if int(pieces_info.get("piece_length", 0) or 0) <= 0:
+            return False
+
+        total_length = int(pieces_info.get("total_length", 0) or 0)
+        num_pieces = int(pieces_info.get("num_pieces", 0) or 0)
+        if total_length > 0 or num_pieces > 0:
+            return True
+
+        piece_hashes = pieces_info.get("piece_hashes")
+        return isinstance(piece_hashes, (list, tuple)) and len(piece_hashes) > 0
+
     async def _get_swarm_recovery_state(self) -> dict[str, Any]:
         """Summarize swarm usefulness for recovery and stall decisions."""
+        await self._revalidate_piece_maps_if_metadata_available()
         metadata_incomplete = self._metadata_is_incomplete()
         state: dict[str, Any] = {
             "metadata_incomplete": metadata_incomplete,
@@ -4079,6 +4185,37 @@ class AsyncTorrentSession:
                 metrics["metadata_starvation_started_at"] = 0.0
                 metrics["metadata_starvation_seconds"] = 0.0
         return state
+
+    async def _revalidate_piece_maps_if_metadata_available(self) -> None:
+        """Refresh piece maps after metadata becomes available."""
+        if self._piece_map_revalidated_after_metadata:
+            return
+
+        if not self._session_metadata_is_available():
+            return
+
+        piece_manager = getattr(self, "piece_manager", None)
+        if piece_manager is None:
+            return
+
+        update_from_metadata = getattr(piece_manager, "update_from_metadata", None)
+        if not callable(update_from_metadata):
+            return
+
+        try:
+            await update_from_metadata(self.torrent_data)
+            self._piece_map_revalidated_after_metadata = True
+            self.logger.info(
+                "SESSION_METADATA_REVALIDATE: Piece maps rebuilt after metadata availability for %s",
+                self.info.name,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "SESSION_METADATA_REVALIDATE: failed to rebuild piece maps for %s: %s",
+                self.info.name,
+                exc,
+                exc_info=True,
+            )
 
     async def get_swarm_recovery_state(self) -> dict[str, Any]:
         """Public wrapper for swarm recovery state."""

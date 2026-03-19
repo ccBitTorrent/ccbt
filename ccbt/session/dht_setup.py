@@ -7,6 +7,9 @@ import contextlib
 import time
 from typing import Any
 
+from ccbt.session.swarm_stability_defaults import PEER_DISCOVERY_DEFAULTS
+from ccbt.monitoring import get_metrics_collector
+
 
 class DHTDiscoverySetup:
     """Sets up and manages DHT peer discovery for a torrent session."""
@@ -20,6 +23,9 @@ class DHTDiscoverySetup:
         """
         self.session = session
         self.logger = session.logger
+        discovery_defaults = PEER_DISCOVERY_DEFAULTS
+        discovery_config = getattr(session, "config", None)
+        discovery_settings = getattr(discovery_config, "discovery", None)
 
         # IMPROVEMENT: Track DHT query metrics
         self._dht_query_metrics = {
@@ -51,20 +57,133 @@ class DHTDiscoverySetup:
         self._query_zero_nodes_cycles = 0
         self._health_state = "bootstrapping"
         self._last_rebootstrap_attempt = 0.0
-        self._rebootstrap_cooldown = 30.0
+        self._rebootstrap_cooldown = float(
+            getattr(
+                discovery_settings,
+                "bootstrap_retry_memo_ttl_s",
+                discovery_defaults["bootstrap_retry_memo_ttl_s"],
+            )
+        )
+        self._low_peer_threshold = int(
+            getattr(
+                discovery_settings,
+                "low_peer_threshold",
+                discovery_defaults["low_peer_threshold"],
+            )
+        )
+        self._low_peer_suppression_window_s = float(
+            getattr(
+                discovery_settings,
+                "low_peer_suppression_window_s",
+                discovery_defaults["low_peer_suppression_window_s"],
+            )
+        )
+        self._dht_zero_state_reprobe_wait_s = float(
+            getattr(
+                discovery_settings,
+                "dht_zero_state_reprobe_wait_s",
+                discovery_defaults["dht_zero_state_reprobe_wait_s"],
+            )
+        )
+        self._dht_bootstrap_memo_ttl_s = float(
+            getattr(
+                discovery_settings,
+                "dht_bootstrap_memo_ttl_s",
+                discovery_defaults["dht_bootstrap_memo_ttl_s"],
+            )
+        )
+        self._bootstrap_retry_memo_ttl_s = float(
+            getattr(
+                discovery_settings,
+                "bootstrap_retry_memo_ttl_s",
+                discovery_defaults["bootstrap_retry_memo_ttl_s"],
+            )
+        )
+        self._dht_bootstrap_retries_max = int(
+            getattr(
+                discovery_settings,
+                "dht_bootstrap_retries_max",
+                discovery_defaults["dht_bootstrap_retries_max"],
+            )
+        )
+        self._dht_empty_state_backoff_factor = float(
+            getattr(
+                discovery_settings,
+                "dht_empty_state_backoff_factor",
+                discovery_defaults["dht_empty_state_backoff_factor"],
+            )
+        )
+        self._bootstrap_retry_attempts: dict[str, int] = {}
+        self._bootstrap_retry_last_attempt: dict[str, float] = {}
 
     def _set_health_state(self, state: str) -> None:
         """Track the current DHT health state for diagnostics and recovery."""
         self._health_state = state
 
+    def _normalize_bootstrap_reason(self, reason: str) -> str:
+        """Normalize bootstrap reason for memoized recovery attempts."""
+        if reason.startswith("empty_routing_table"):
+            return "empty_routing_table"
+        if reason.startswith("query_zero_nodes"):
+            return "query_zero_nodes"
+        return reason
+
+    def _prune_bootstrap_retry_memo(self, now: float) -> None:
+        """Remove stale bootstrap retries from dedupe bookkeeping."""
+        for reason_key in list(self._bootstrap_retry_last_attempt):
+            ttl = (
+                self._dht_bootstrap_memo_ttl_s
+                if reason_key == "empty_routing_table"
+                else self._bootstrap_retry_memo_ttl_s
+            )
+            if now - self._bootstrap_retry_last_attempt.get(reason_key, 0.0) > ttl:
+                self._bootstrap_retry_last_attempt.pop(reason_key, None)
+                self._bootstrap_retry_attempts.pop(reason_key, None)
+
+    def _can_attempt_bootstrap_recovery(self, reason: str) -> bool:
+        """Apply dedupe caps before attempting rebootstrap."""
+        now = time.monotonic()
+        self._prune_bootstrap_retry_memo(now)
+        reason_key = self._normalize_bootstrap_reason(reason)
+
+        if now - self._last_rebootstrap_attempt < self._rebootstrap_cooldown:
+            return False
+
+        attempt_count = self._bootstrap_retry_attempts.get(reason_key, 0)
+        if attempt_count >= self._dht_bootstrap_retries_max:
+            self.logger.debug(
+                "DHT rebootstrap dedupe suppressed due retry limit: reason=%s (attempts=%d)",
+                reason_key,
+                attempt_count,
+            )
+            return False
+
+        ttl = (
+            self._dht_bootstrap_memo_ttl_s
+            if reason_key == "empty_routing_table"
+            else self._bootstrap_retry_memo_ttl_s
+        )
+        last_attempt = self._bootstrap_retry_last_attempt.get(reason_key, 0.0)
+        if now - last_attempt < ttl:
+            self.logger.debug(
+                "DHT rebootstrap dedupe suppressed: reason=%s (last_attempt=%.1fs ago, ttl=%.1fs)",
+                reason_key,
+                now - last_attempt,
+                ttl,
+            )
+            return False
+
+        self._last_rebootstrap_attempt = now
+        self._bootstrap_retry_attempts[reason_key] = attempt_count + 1
+        self._bootstrap_retry_last_attempt[reason_key] = now
+        return True
+
     async def _maybe_rebootstrap(self, dht_client: Any, reason: str) -> bool:
         """Attempt a throttled DHT rebootstrap when the routing state is degraded."""
         if not hasattr(dht_client, "rebootstrap"):
             return False
-        now = time.monotonic()
-        if now - self._last_rebootstrap_attempt < self._rebootstrap_cooldown:
+        if not self._can_attempt_bootstrap_recovery(reason):
             return False
-        self._last_rebootstrap_attempt = now
         self._set_health_state("recovering")
         self.logger.warning("DHT recovery: rebootstrap triggered (%s)", reason)
         try:
@@ -78,6 +197,9 @@ class DHTDiscoverySetup:
             self.logger.warning("DHT rebootstrap failed (%s): %s", reason, exc)
             return False
         self._set_health_state("healthy" if success else "degraded")
+        if success:
+            reason_key = self._normalize_bootstrap_reason(reason)
+            self._bootstrap_retry_attempts.pop(reason_key, None)
         return bool(success)
 
     async def _ensure_bootstrap_ready(
@@ -1534,12 +1656,24 @@ class DHTDiscoverySetup:
                         self.session.info.name,
                     )
                     if self._empty_routing_cycles >= 2:
-                        await self._maybe_rebootstrap(
+                        did_rebootstrap = await self._maybe_rebootstrap(
                             dht_client,
                             reason=(
                                 f"empty_routing_table cycle={self._empty_routing_cycles}"
                             ),
                         )
+                        if not did_rebootstrap:
+                            backoff_wait = (
+                                self._dht_zero_state_reprobe_wait_s
+                                * self._dht_empty_state_backoff_factor
+                            )
+                            self.logger.debug(
+                                "DHT recovery state=bootstrap_empty_recovery_backoff for %s (%d empty cycles): waiting %.1fs before next bootstrap attempt",
+                                self.session.info.name,
+                                self._empty_routing_cycles,
+                                backoff_wait,
+                            )
+                            await asyncio.sleep(backoff_wait)
                 else:
                     if self._empty_routing_cycles > 0:
                         self.logger.info(
@@ -1614,10 +1748,14 @@ class DHTDiscoverySetup:
                     and not metadata_incomplete
                     and not fail_fast_low_peers
                 ):
-                    if current_peer_count <= 1 and current_requestable_peers == 0:
+                    if (
+                        current_peer_count <= self._low_peer_threshold
+                        and current_requestable_peers == 0
+                    ):
                         self.logger.warning(
-                            "🧭 DHT DISCOVERY: Active peer count is severely low (%d <= 1) with 0 requestable peers. Running short-path bootstrap recheck.",
+                            "🧭 DHT DISCOVERY: Active peer count is severely low (%d <= %d) with 0 requestable peers. Running short-path bootstrap recheck.",
                             current_peer_count,
+                            self._low_peer_threshold,
                         )
                         routing_table_size = await self._ensure_bootstrap_ready(
                             dht_client,
@@ -1631,15 +1769,22 @@ class DHTDiscoverySetup:
                         if dht_started:
                             continue
 
+                    low_peer_wait_s = (
+                        self._low_peer_suppression_window_s
+                        if current_peer_count <= self._low_peer_threshold
+                        and self._low_peer_suppression_window_s > 0.0
+                        else 30.0
+                    )
                     self.logger.info(
-                        "⏸️ DHT DISCOVERY: Waiting for minimum peers (%d/%d) with usable swarm state (productive=%d, requestable=%d, piece_info=%d). Sleeping 30s before recheck...",
+                        "⏸️ DHT DISCOVERY: Waiting for minimum peers (%d/%d) with usable swarm state (productive=%d, requestable=%d, piece_info=%d). Sleeping %.1fs before recheck...",
                         current_peer_count,
                         min_peers_before_dht,
                         current_productive_peers,
                         current_requestable_peers,
                         peers_with_piece_info,
+                        low_peer_wait_s,
                     )
-                    await asyncio.sleep(30.0)
+                    await asyncio.sleep(low_peer_wait_s)
                     continue
 
                 if (
@@ -2010,6 +2155,11 @@ class DHTDiscoverySetup:
                     query_depth = 0
                     nodes_queried = 0
                     last_metrics = getattr(dht_client, "_last_query_metrics", None)
+                    lookup_state = (
+                        last_metrics.get("lookup_state", "")
+                        if last_metrics
+                        else ""
+                    )
                     if last_metrics:
                         query_depth = last_metrics.get("depth", 0)
                         nodes_queried = last_metrics.get("nodes_queried", 0)
@@ -2025,8 +2175,18 @@ class DHTDiscoverySetup:
                             query_metrics["query_depths"] = query_depths_list[-100:]
                         if len(nodes_queried_list) > 100:  # type: ignore[arg-type]
                             query_metrics["nodes_queried"] = nodes_queried_list[-100:]
-                    if nodes_queried == 0:
+                    if nodes_queried == 0 and lookup_state == "empty_routing_table":
+                        self._set_health_state("stalled")
+                        self.logger.warning(
+                            "DHT recovery state=empty_routing_table for %s; query could not start because routing table was empty.",
+                            self.session.info.name,
+                        )
+                    elif nodes_queried == 0:
                         self._query_zero_nodes_cycles += 1
+                        with contextlib.suppress(Exception):
+                            get_metrics_collector().increment_counter(
+                                "bootstrap_zero_state_count"
+                            )
                         self._set_health_state("degraded")
                         self.logger.warning(
                             "DHT recovery state=query_zero_nodes cycle=%d for %s (routing table: %d nodes, depth=%d)",
@@ -2061,6 +2221,10 @@ class DHTDiscoverySetup:
                         "peers_found": peer_count,
                         "depth": query_depth,
                         "nodes_queried": nodes_queried,
+                        "lookup_state": lookup_state,
+                        "bootstrap_state": str(
+                            getattr(dht_client, "last_bootstrap_state", "")
+                        ),
                     }
 
                     # IMPROVEMENT: Emit event for iterative lookup completion
@@ -2077,6 +2241,10 @@ class DHTDiscoverySetup:
                                     "query_duration": query_duration,
                                     "query_depth": query_depth,
                                     "nodes_queried": nodes_queried,
+                                "lookup_state": lookup_state,
+                                "bootstrap_state": str(
+                                    getattr(dht_client, "last_bootstrap_state", "")
+                                ),
                                     "aggressive_mode": aggressive_mode,
                                 },
                             )
@@ -2217,6 +2385,8 @@ class DHTDiscoverySetup:
                     # Note: Even on timeout, callbacks may have been invoked with partial results
                     # The query may have found some peers before timing out
                     query_duration = asyncio.get_event_loop().time() - query_start_time
+                    with contextlib.suppress(Exception):
+                        setattr(dht_client, "last_lookup_state", "query_timeout")
 
                     # Note: Progressive timeout increase for retries
                     # Timeout already increases with attempt_count, but log the progression
@@ -2241,6 +2411,8 @@ class DHTDiscoverySetup:
                 except Exception as query_error:
                     # Note: Handle all exceptions gracefully - don't stop the discovery loop
                     query_duration = asyncio.get_event_loop().time() - query_start_time
+                    with contextlib.suppress(Exception):
+                        setattr(dht_client, "last_lookup_state", "query_error")
                     self.logger.warning(
                         "DHT get_peers query error for %s after %.2fs: %s (will retry in %.1fs)",
                         self.session.info.name,

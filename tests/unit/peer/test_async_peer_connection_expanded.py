@@ -200,6 +200,26 @@ class TestAsyncPeerConnection:
         async_peer_connection.outstanding_requests = {}
         assert async_peer_connection.can_request()
 
+    def test_can_request_requires_fresh_piece_availability(
+        self, async_peer_connection
+    ):
+        """can_request rejects stale piece-availability markers when required."""
+        async_peer_connection.state = ConnectionState.ACTIVE
+        async_peer_connection.peer_choking = False
+        async_peer_connection.max_pipeline_depth = 2
+        async_peer_connection.outstanding_requests = {}
+        async_peer_connection._piece_availability_confidence_window_s = 15.0
+        async_peer_connection._last_piece_availability_at = time.time() - 30.0
+
+        assert not async_peer_connection.can_request(
+            require_recent_piece_availability=True
+        )
+
+        async_peer_connection._last_piece_availability_at = time.time()
+        assert async_peer_connection.can_request(
+            require_recent_piece_availability=True
+        )
+
     def test_get_available_pipeline_slots(self, async_peer_connection):
         """Test getting available pipeline slots."""
         async_peer_connection.max_pipeline_depth = 10
@@ -470,6 +490,7 @@ class TestAsyncPeerConnectionManagerMessageHandling:
         async_peer_manager._send_interested = AsyncMock()
         async_peer_manager.piece_manager._select_pieces = AsyncMock()
         async_peer_manager.piece_manager._retry_requested_pieces = AsyncMock()
+        async_peer_manager.piece_manager.is_downloading = True
 
         await async_peer_manager._handle_unchoke(connection, UnchokeMessage())
         await asyncio.sleep(0.05)
@@ -477,6 +498,52 @@ class TestAsyncPeerConnectionManagerMessageHandling:
         async_peer_manager._send_interested.assert_awaited_once_with(connection)
         async_peer_manager.piece_manager._select_pieces.assert_awaited()
         async_peer_manager.piece_manager._retry_requested_pieces.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_choke_updates_piece_selection_cadence(self, async_peer_manager):
+        """Choke state updates should increase piece-selection debounce."""
+        connection = AsyncPeerConnection(
+            PeerInfo(ip="127.0.0.1", port=6881),
+            async_peer_manager.torrent_data,
+        )
+        connection.state = ConnectionState.ACTIVE
+        connection.peer_choking = False
+        connection.stats.choke_state_ratio = 0.9
+        connection.stats.choke_only_penalty = 2.0
+        connection.stats.choke_streak = 9
+        async_peer_manager._piece_selection_debounce_interval = (
+            async_peer_manager._piece_selection_debounce_interval_base
+        )
+
+        await async_peer_manager._handle_choke(connection, ChokeMessage())
+
+        assert (
+            async_peer_manager._piece_selection_debounce_interval
+            > async_peer_manager._piece_selection_debounce_interval_base
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_unchoke_couples_piece_selection_to_choke_cadence(self, async_peer_manager):
+        """High choke pressure should suppress immediate unchoke-triggered retries."""
+        connection = AsyncPeerConnection(
+            PeerInfo(ip="127.0.0.1", port=6881),
+            async_peer_manager.torrent_data,
+        )
+        connection.state = ConnectionState.CHOKED
+        connection.peer_choking = True
+        connection.stats.choke_state_ratio = 1.0
+        connection.stats.choke_only_penalty = 3.0
+        connection.stats.choke_streak = 12
+        async_peer_manager.piece_manager._select_pieces = AsyncMock()
+        async_peer_manager.piece_manager._retry_requested_pieces = AsyncMock()
+        async_peer_manager.piece_manager.is_downloading = True
+        async_peer_manager._last_piece_selection_trigger = time.time()
+
+        await async_peer_manager._handle_unchoke(connection, UnchokeMessage())
+        await asyncio.sleep(0.05)
+
+        async_peer_manager.piece_manager._select_pieces.assert_not_awaited()
+        async_peer_manager.piece_manager._retry_requested_pieces.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_handle_interested(self, async_peer_manager):

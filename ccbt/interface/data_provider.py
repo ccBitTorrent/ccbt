@@ -16,10 +16,12 @@ from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.daemon.ipc_client import IPCClient
+    from ccbt.daemon.ipc_protocol import EventType
     from ccbt.session.session import AsyncSessionManager
 else:
     try:
         from ccbt.daemon.ipc_client import IPCClient
+        from ccbt.daemon.ipc_protocol import EventType
         from ccbt.session.session import AsyncSessionManager
     except ImportError:
         IPCClient = None  # type: ignore[assignment, misc]
@@ -744,6 +746,9 @@ class DaemonDataProvider(DataProvider):
         self._cache: dict[str, tuple[Any, float]] = {}
         self._cache_ttl = 1.0  # 1.0 second TTL - balanced for responsiveness and reduced redundant requests
         self._cache_lock = asyncio.Lock()
+        self._cache_invalidation_keys: set[str] = set()
+        self._cache_invalidate_all: bool = False
+        self._cache_invalidation_task: Optional[asyncio.Task[None]] = None
     
     def get_adapter(self) -> Optional[Any]:
         """Get the DaemonInterfaceAdapter instance for widget registration.
@@ -766,16 +771,54 @@ class DaemonDataProvider(DataProvider):
         Returns:
             Cached or freshly fetched data
         """
-        ttl = ttl or self._cache_ttl
+        if ttl is None:
+            ttl = self._cache_ttl
         async with self._cache_lock:
             if key in self._cache:
                 value, timestamp = self._cache[key]
-                if time.time() - timestamp < ttl:
+                age = time.time() - timestamp
+                if ttl > 0 and age < ttl:
+                    logger.debug(
+                        "Cache hit for key=%s (age=%.3fs, ttl=%.3fs)",
+                        key,
+                        age,
+                        ttl,
+                    )
                     return value
+                logger.debug(
+                    "Cache miss due expiry for key=%s (age=%.3fs, ttl=%.3fs)",
+                    key,
+                    age,
+                    ttl,
+                )
             # Cache miss or expired, fetch new data
+            logger.debug("Fetching fresh value for cache key=%s", key)
             value = await fetch_func()
             self._cache[key] = (value, time.time())
+            logger.debug("Cache updated for key=%s", key)
             return value
+
+    async def _flush_cache_invalidations(self) -> None:
+        """Flush queued cache invalidations under a single lock."""
+        try:
+            while True:
+                async with self._cache_lock:
+                    if self._cache_invalidate_all:
+                        self._cache_invalidate_all = False
+                        self._cache_invalidation_keys.clear()
+                        self._cache.clear()
+                        logger.debug("Cache flush cleared all cache entries")
+                        continue
+                    if not self._cache_invalidation_keys:
+                        break
+                    keys_to_clear = set(self._cache_invalidation_keys)
+                    self._cache_invalidation_keys.clear()
+                for cache_key in keys_to_clear:
+                    self._cache.pop(cache_key, None)
+                    logger.debug("Cache key cleared: %s", cache_key)
+            return
+        finally:
+            self._cache_invalidation_task = None
 
     def invalidate_cache(self, key: Optional[str] = None) -> None:  # pragma: no cover
         """Invalidate cache entry or all cache if key is None.
@@ -783,38 +826,69 @@ class DaemonDataProvider(DataProvider):
         Args:
             key: Cache key to invalidate, or None to invalidate all cache
         """
-        async def _invalidate() -> None:
-            async with self._cache_lock:
-                if key is None:
-                    self._cache.clear()
-                elif key in self._cache:
-                    del self._cache[key]
-        
-        # Run in background if event loop is running
+        # Aggregate invalidation requests so event bursts serialize predictably.
+        if key is None:
+            self._cache_invalidate_all = True
+            self._cache_invalidation_keys.clear()
+        else:
+            self._cache_invalidation_keys.add(key)
+
+        # Run in background if event loop is running.
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                asyncio.create_task(_invalidate())
+                if (
+                    self._cache_invalidation_task is None
+                    or self._cache_invalidation_task.done()
+                ):
+                    self._cache_invalidation_task = asyncio.create_task(
+                        self._flush_cache_invalidations(),
+                    )
             else:
-                loop.run_until_complete(_invalidate())
+                if key is None:
+                    self._cache.clear()
+                elif key in self._cache:
+                    self._cache.pop(key, None)
         except Exception:
             # If no event loop, just clear synchronously (not ideal but safe)
             if key is None:
                 self._cache.clear()
             elif key in self._cache:
                 del self._cache[key]
-    
-    def invalidate_on_event(self, event_type: str, info_hash: Optional[str] = None) -> None:
+
+    @staticmethod
+    def _normalize_event_type(
+        event_type: EventType | str,
+    ) -> Optional[EventType]:
+        """Normalize event type input from enum or string payloads."""
+        if isinstance(event_type, EventType):
+            return event_type
+        if not isinstance(event_type, str):
+            return None
+        try:
+            return EventType(event_type)
+        except ValueError:
+            event_type_name = event_type.upper()
+            if event_type_name in EventType.__members__:
+                return EventType[event_type_name]
+        logger.debug("Unknown event type encountered in cache invalidation: %s", event_type)
+        return None
+
+    def invalidate_on_event(
+        self, event_type: EventType | str, info_hash: Optional[str] = None
+    ) -> None:
         """Invalidate cache based on event type.
         
         Args:
             event_type: Event type (e.g., "PROGRESS_UPDATED", "PIECE_COMPLETED")
             info_hash: Optional torrent info hash for targeted invalidation
-        """
-        from ccbt.daemon.ipc_protocol import EventType
+        """    
+        normalized_event_type = self._normalize_event_type(event_type)
+        if normalized_event_type is None:
+            return
         
         # Map event types to cache keys
-        if event_type == EventType.PROGRESS_UPDATED:
+        if normalized_event_type == EventType.PROGRESS_UPDATED:
             # Progress events - invalidate progress-related caches
             self.invalidate_cache("global_stats")  # Contains average progress
             self.invalidate_cache("swarm_health")  # May contain progress data
@@ -822,14 +896,14 @@ class DaemonDataProvider(DataProvider):
                 self.invalidate_cache(f"torrent_status_{info_hash}")  # Contains progress
                 self.invalidate_cache(f"per_torrent_performance_{info_hash}")  # Contains progress
                 self.invalidate_cache(f"piece_health_{info_hash}")  # May be affected by progress
-        elif event_type == EventType.GLOBAL_STATS_UPDATED:
+        elif normalized_event_type == EventType.GLOBAL_STATS_UPDATED:
             # Global stats updated - invalidate global stats and swarm health
             self.invalidate_cache("global_stats")
             self.invalidate_cache("swarm_health")
             if info_hash:
                 self.invalidate_cache(f"per_torrent_performance_{info_hash}")
                 self.invalidate_cache(f"piece_health_{info_hash}")
-        elif event_type in (
+        elif normalized_event_type in (
             EventType.PIECE_REQUESTED,
             EventType.PIECE_DOWNLOADED,
             EventType.PIECE_VERIFIED,
@@ -840,9 +914,9 @@ class DaemonDataProvider(DataProvider):
                 self.invalidate_cache(f"piece_health_{info_hash}")
                 self.invalidate_cache(f"per_torrent_performance_{info_hash}")  # Contains piece counts
                 # PIECE_COMPLETED also affects torrent status (piece counts)
-                if event_type == EventType.PIECE_COMPLETED:
+                if normalized_event_type == EventType.PIECE_COMPLETED:
                     self.invalidate_cache(f"torrent_status_{info_hash}")
-        elif event_type in (
+        elif normalized_event_type in (
             EventType.TORRENT_STATUS_CHANGED,
             EventType.TORRENT_ADDED,
             EventType.TORRENT_REMOVED,
@@ -859,7 +933,7 @@ class DaemonDataProvider(DataProvider):
                 self.invalidate_cache(f"torrent_status_{info_hash}")
                 self.invalidate_cache(f"torrent_files_{info_hash}")
                 self.invalidate_cache(f"trackers_{info_hash}")
-        elif event_type in (
+        elif normalized_event_type in (
             EventType.TRACKER_ANNOUNCE_STARTED,
             EventType.TRACKER_ANNOUNCE_SUCCESS,
             EventType.TRACKER_ANNOUNCE_ERROR,
@@ -868,7 +942,7 @@ class DaemonDataProvider(DataProvider):
                 self.invalidate_cache(f"trackers_{info_hash}")
                 self.invalidate_cache(f"torrent_status_{info_hash}")
                 self.invalidate_cache(f"per_torrent_performance_{info_hash}")
-        elif event_type in (
+        elif normalized_event_type in (
             EventType.METADATA_READY,
             EventType.METADATA_FETCH_STARTED,
             EventType.METADATA_FETCH_PROGRESS,
@@ -881,7 +955,7 @@ class DaemonDataProvider(DataProvider):
                 self.invalidate_cache(f"torrent_files_{info_hash}")
                 self.invalidate_cache(f"torrent_status_{info_hash}")
                 self.invalidate_cache(f"piece_health_{info_hash}")
-        elif event_type in (
+        elif normalized_event_type in (
             EventType.XET_FOLDER_ADDED,
             EventType.XET_FOLDER_REMOVED,
             EventType.XET_FOLDER_CHANGED,
@@ -893,7 +967,7 @@ class DaemonDataProvider(DataProvider):
             if info_hash:
                 self.invalidate_cache(f"xet_folder_status_{info_hash}")
             self.invalidate_cache("global_stats")
-        elif event_type in (
+        elif normalized_event_type in (
             EventType.MEDIA_STREAM_STARTED,
             EventType.MEDIA_STREAM_BUFFERING,
             EventType.MEDIA_STREAM_READY,

@@ -54,6 +54,42 @@ async def test_local_provider_uses_single_torrent_status_path() -> None:
 
 
 @pytest.mark.asyncio
+async def test_daemon_provider_ttl_zero_disables_cache() -> None:
+    """ttl=0.0 must force a fresh fetch on every cache access."""
+    client = MagicMock()
+    provider = DaemonDataProvider(client)
+    fetch_calls = 0
+
+    async def _fetch() -> int:
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return fetch_calls
+
+    assert await provider._get_cached("ttl_test", _fetch, ttl=0.0) == 1
+    assert await provider._get_cached("ttl_test", _fetch, ttl=0.0) == 2
+    assert fetch_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_daemon_provider_on_event_allows_string_event_types() -> None:
+    """String event type values should normalize and clear the intended cache keys."""
+    provider = DaemonDataProvider(MagicMock())
+    info_hash = "g" * 40
+    provider._cache = {
+        f"trackers_{info_hash}": (["x"], 0.0),
+        f"torrent_files_{info_hash}": (["y"], 0.0),
+        f"torrent_status_{info_hash}": ({}, 0.0),
+    }
+
+    provider.invalidate_on_event("TRACKER_ANNOUNCE_SUCCESS", info_hash)
+    await asyncio.sleep(0.01)
+
+    assert f"trackers_{info_hash}" not in provider._cache
+    assert f"torrent_files_{info_hash}" not in provider._cache
+    assert f"torrent_status_{info_hash}" not in provider._cache
+
+
+@pytest.mark.asyncio
 async def test_daemon_provider_invalidate_on_tracker_and_metadata_events() -> None:
     """Tracker/metadata events should clear targeted cache entries."""
     provider = DaemonDataProvider(MagicMock())
@@ -75,6 +111,26 @@ async def test_daemon_provider_invalidate_on_tracker_and_metadata_events() -> No
     assert f"torrent_status_{info_hash}" not in provider._cache
     assert "metrics" not in provider._cache
     assert "global_kpis" not in provider._cache
+
+
+@pytest.mark.asyncio
+async def test_daemon_provider_batch_invalidates_cache_keys() -> None:
+    """Concurrent invalidation calls should aggregate and clear all queued entries."""
+    provider = DaemonDataProvider(MagicMock())
+    provider._cache = {
+        "a": ("alpha", 0.0),
+        "b": ("beta", 0.0),
+        "c": ("gamma", 0.0),
+    }
+
+    provider.invalidate_cache("a")
+    provider.invalidate_cache("b")
+    provider.invalidate_cache(None)
+    provider.invalidate_cache("c")
+
+    await asyncio.sleep(0.02)
+
+    assert provider._cache == {}
 
 
 @pytest.mark.asyncio

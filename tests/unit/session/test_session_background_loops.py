@@ -458,6 +458,106 @@ async def test_status_loop_calls_on_status_update(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout_fast
+async def test_announce_loop_prioritizes_tracker_replacement_peers(monkeypatch):
+    """Higher-utility tracker peers from higher-seed-ratio responses should stay ahead of others."""
+    from ccbt.session.announce import AnnounceController, AnnounceLoop
+    from ccbt.session.session import AsyncTorrentSession, TorrentSessionInfo
+
+    td = {
+        "name": "test",
+        "info_hash": b"1" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {"num_pieces": 0, "piece_length": 0, "piece_hashes": [], "total_length": 0},
+        "file_info": {"total_length": 0},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session._stop_event = asyncio.Event()
+    session.config.network.announce_interval = 0.01
+    if not hasattr(session, "info") or session.info is None:
+        session.info = TorrentSessionInfo(
+            info_hash=b"1" * 20,
+            name="test",
+            status="downloading",
+        )
+
+    low_ratio_peer = SimpleNamespace(ip="9.0.0.1", port=6882, ssl_capable=False)
+    high_ratio_peer = SimpleNamespace(ip="1.0.0.1", port=6881, ssl_capable=False)
+    high_ratio_response = SimpleNamespace(
+        peers=[high_ratio_peer], complete=100, incomplete=0, interval=30
+    )
+    low_ratio_response = SimpleNamespace(
+        peers=[low_ratio_peer], complete=0, incomplete=100, interval=30
+    )
+
+    async def announce_to_multiple(self, _td, _urls, port=None, event=""):
+        return [high_ratio_response, low_ratio_response]
+
+    session.tracker = type("T", (), {"announce_to_multiple": announce_to_multiple})()
+    # Ensure collect_trackers returns a URL so loop reaches announce_to_multiple
+    def collect_trackers(self, _td):
+        return ["http://tracker.example.com/announce"]
+
+    monkeypatch.setattr(
+        AnnounceController,
+        "collect_trackers",
+        collect_trackers,
+    )
+    session.get_swarm_recovery_state = AsyncMock(
+        return_value={
+            "active_peers": 0,
+            "productive_peers": 0,
+            "requestable_peers": 0,
+            "peers_with_piece_info": 0,
+        }
+    )
+
+    connected_peer_lists = []
+
+    class _MockPeerConnectionHelper:
+        def __init__(self, _session):  # noqa: ARG002
+            # keep lightweight helper stub
+            pass
+
+        async def connect_peers_to_download(self, peers):
+            connected_peer_lists.append(peers)
+
+    monkeypatch.setattr(
+        "ccbt.session.peers.PeerConnectionHelper",
+        _MockPeerConnectionHelper,
+    )
+
+    session.download_manager = SimpleNamespace(
+        peer_manager=SimpleNamespace(),
+        _download_started=True,
+    )
+
+    # Keep this test fast and deterministic in the presence of sleeps.
+    original_sleep = asyncio.sleep
+
+    async def fast_sleep(secs):
+        await original_sleep(min(secs, 0.01))
+
+    monkeypatch.setattr("ccbt.session.announce.asyncio.sleep", fast_sleep)
+
+    loop = AnnounceLoop(session)
+    task = asyncio.create_task(loop.run())
+    await asyncio.sleep(0.05)
+    session._stop_event.set()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert len(connected_peer_lists) == 1
+    first_batch = connected_peer_lists[0]
+    assert first_batch[0]["ip"] == high_ratio_peer.ip
+    assert first_batch[1]["ip"] == low_ratio_peer.ip
+    assert first_batch[0]["_replacement_priority"] > first_batch[1]["_replacement_priority"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_announce_loop_stays_alive_when_peers_queued_no_peer_manager(monkeypatch):
     """When tracker returns peers but peer_manager is not ready, loop queues peers and continues (does not exit)."""
     from ccbt.session.announce import AnnounceController, AnnounceLoop
@@ -488,13 +588,13 @@ async def test_announce_loop_stays_alive_when_peers_queued_no_peer_manager(monke
     response_with_peers = type("R", (), {"peers": [peer_obj]})()
     call_count = []
 
-    async def announce_to_multiple(_td, _urls, port=None, event=""):
+    async def announce_to_multiple(self, _td, _urls, port=None, event=""):
         call_count.append(1)
         return [response_with_peers]
 
     session.tracker = type("T", (), {"announce_to_multiple": announce_to_multiple})()
     # Ensure collect_trackers returns a URL so the loop reaches announce_to_multiple
-    def collect_trackers(_td):
+    def collect_trackers(self, _td):
         return ["http://tracker.example.com/announce"]
 
     monkeypatch.setattr(

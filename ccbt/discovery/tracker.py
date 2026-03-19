@@ -1428,7 +1428,7 @@ class AsyncTrackerClient:
                     response_data = await self._make_request_async(tracker_url)
 
                     # Parse response
-                    response = self._parse_response_async(response_data)
+                    response = self._parse_response_async(response_data, normalized_url)
 
                     # Track performance
                     response_time = time.time() - start_time
@@ -1631,7 +1631,7 @@ class AsyncTrackerClient:
                 response_data = await self._make_request_async(tracker_url)
 
                 # Parse response
-                response = self._parse_response_async(response_data)
+                response = self._parse_response_async(response_data, normalized_url)
 
                 # Track performance
                 response_time = time.time() - start_time
@@ -1759,6 +1759,27 @@ class AsyncTrackerClient:
             return []
 
         ranked_urls = self.rank_trackers(tracker_urls)
+        normalized_urls: list[str] = []
+        for candidate_url in ranked_urls:
+            try:
+                normalized_candidate = self._normalize_tracker_url(candidate_url)
+            except TrackerError as exc:
+                tracker_host = urllib.parse.urlparse(candidate_url).hostname or "unknown"
+                self._increment_session_metric(tracker_host, "invalid_payload_count")
+                self.logger.warning(
+                    "Skipping invalid tracker URL %s in multi-announce scheduling: %s",
+                    candidate_url,
+                    exc,
+                )
+                continue
+            if normalized_candidate not in normalized_urls:
+                normalized_urls.append(normalized_candidate)
+
+        if not normalized_urls:
+            self.logger.warning("No valid tracker URLs available after normalization")
+            return []
+
+        ranked_urls = normalized_urls
         scheduled_urls: list[str] = []
         deferred_urls: list[tuple[float, str]] = []
         current_time = time.time()
@@ -2151,6 +2172,14 @@ class AsyncTrackerClient:
             msg = f"Invalid tracker URL: {url}"
             raise TrackerError(msg)
 
+        if "\x00" in url or "\r" in url or "\n" in url or "\t" in url:
+            msg = f"Rejected unsafe tracker URL control characters: {url}"
+            raise TrackerError(msg)
+
+        if len(url) > 2048:
+            msg = "Tracker URL exceeds maximum length for safe parsing"
+            raise TrackerError(msg)
+
         # Decode any double-encoded URLs multiple times if needed
         # Some torrents may have URLs that are already URL-encoded
         max_decode_attempts = 3
@@ -2292,6 +2321,10 @@ class AsyncTrackerClient:
 
         if parsed.scheme not in ("http", "https", "udp"):
             msg = f"Unsupported tracker URL scheme: {parsed.scheme} in {url}"
+            raise TrackerError(msg)
+
+        if parsed.username is not None or parsed.password is not None:
+            msg = f"Tracker URL contains credentials and is rejected: {url}"
             raise TrackerError(msg)
 
         # Note: Strip paths from UDP URLs
@@ -2557,7 +2590,106 @@ class AsyncTrackerClient:
                 max_delay,
             )
 
-    def _parse_response_async(self, response_data: bytes) -> TrackerResponse:
+    @staticmethod
+    def _classify_non_bencode_payload(response_data: bytes) -> Optional[str]:
+        """Classify tracker payloads that are not valid bencode candidates."""
+        if not response_data:
+            return "empty payload"
+        if not isinstance(response_data, (bytes, bytearray)):
+            return f"non-bytes payload: {type(response_data).__name__}"
+
+        prefix = bytes(response_data).lstrip()[:64].lower()
+        if not prefix:
+            return "whitespace-only payload"
+        if prefix.startswith((b"<", b"<?xml", b"<!doctype")):
+            return "html/xml payload"
+        if prefix.startswith((b"{", b"[")):
+            return "json-like payload"
+        if prefix.startswith((b"0", b"1", b"2", b"3", b"4", b"5", b"6", b"7", b"8", b"9")):
+            return "plain/integer payload"
+        return None
+
+    @staticmethod
+    def _coerce_tracker_int(
+        value: Any,
+        field_name: str,
+        tracker_url: str = "",
+        allow_missing: bool = False,
+    ) -> Optional[int]:
+        """Coerce tracker numeric fields to int with strict validation."""
+        if value is None:
+            if allow_missing:
+                return None
+            msg = f"Missing {field_name} in tracker response"
+            if tracker_url:
+                msg = f"{msg} for {tracker_url}"
+            raise TrackerError(msg)
+
+        if isinstance(value, bool):
+            value = int(value)
+
+        if isinstance(value, int):
+            return value
+
+        if isinstance(value, (bytes, bytearray)):
+            try:
+                value = bytes(value).decode("utf-8", errors="ignore").strip()
+            except Exception as exc:
+                raise TrackerError(
+                    f"Invalid {field_name} in tracker response for {tracker_url}: {value!r}"
+                ) from exc
+
+        if not isinstance(value, str):
+            raise TrackerError(
+                f"Invalid {field_name} type {type(value).__name__} in tracker response for {tracker_url}"
+            )
+
+        try:
+            return int(value.strip())
+        except (TypeError, ValueError) as exc:
+            raise TrackerError(
+                f"Invalid {field_name} value '{value}' in tracker response for {tracker_url}"
+            ) from exc
+
+    @staticmethod
+    def _coerce_tracker_peer_port(peer_port_raw: Any) -> int:
+        """Coerce peer port values from tracker peers list."""
+        if isinstance(peer_port_raw, bool):
+            peer_port = int(peer_port_raw)
+        elif isinstance(peer_port_raw, int):
+            peer_port = peer_port_raw
+        elif isinstance(peer_port_raw, (bytes, bytearray)):
+            peer_port_bytes = bytes(peer_port_raw)
+            if len(peer_port_bytes) == 2:
+                peer_port = int.from_bytes(peer_port_bytes, "big")
+            else:
+                peer_port = int(peer_port_bytes.decode("utf-8", errors="ignore").strip())
+        else:
+            peer_port = int(peer_port_raw)
+
+        if not isinstance(peer_port, int):
+            raise ValueError("port must be int after coercion")
+        if peer_port <= 0 or peer_port > 65535:
+            raise ValueError(f"port out of range: {peer_port}")
+        return peer_port
+
+    @staticmethod
+    def _coerce_tracker_peer_ip(peer_ip_raw: Any) -> str:
+        """Coerce peer IP values from tracker peers list."""
+        if isinstance(peer_ip_raw, bytes):
+            peer_ip = peer_ip_raw.decode("utf-8", errors="ignore").strip()
+        elif isinstance(peer_ip_raw, bytearray):
+            peer_ip = bytes(peer_ip_raw).decode("utf-8", errors="ignore").strip()
+        elif isinstance(peer_ip_raw, str):
+            peer_ip = peer_ip_raw.strip()
+        else:
+            raise ValueError(f"invalid ip type {type(peer_ip_raw).__name__}")
+
+        if not peer_ip:
+            raise ValueError("empty peer ip")
+        return peer_ip
+
+    def _parse_response_async(self, response_data: bytes, tracker_url: str = "") -> TrackerResponse:
         """Parse tracker response asynchronously.
 
         Args:
@@ -2571,6 +2703,14 @@ class AsyncTrackerClient:
 
         """
         try:
+            payload_issue = self._classify_non_bencode_payload(response_data)
+            if payload_issue:
+                msg = (
+                    f"Invalid tracker payload ({payload_issue}) "
+                    f"for {tracker_url or 'unknown tracker'}"
+                )
+                raise TrackerError(msg)
+
             # Decode bencoded response
             decoder = BencodeDecoder(response_data)
             decoded = decoder.decode()
@@ -2591,7 +2731,11 @@ class AsyncTrackerClient:
                 raise TrackerError(msg)
 
             # Extract basic fields
-            interval = decoded[b"interval"]
+            interval = self._coerce_tracker_int(
+                decoded[b"interval"],
+                "interval",
+                tracker_url=tracker_url,
+            )
             peers_data = decoded[b"peers"]
 
             # Parse peers - handle both compact (bytes) and dictionary (list) formats
@@ -2607,37 +2751,21 @@ class AsyncTrackerClient:
                         peer_ip_raw = peer_info.get(b"ip") or peer_info.get("ip")
                         peer_port_raw = peer_info.get(b"port") or peer_info.get("port")
 
-                        # Decode IP if it's bytes
-                        if isinstance(peer_ip_raw, bytes):
-                            peer_ip = peer_ip_raw.decode("utf-8", errors="ignore")
-                        elif isinstance(peer_ip_raw, str):
-                            peer_ip = peer_ip_raw
-                        else:
+                        try:
+                            peer_ip = self._coerce_tracker_peer_ip(peer_ip_raw)
+                            peer_port = self._coerce_tracker_peer_port(peer_port_raw)
+                        except Exception as exc:
                             self.logger.warning(
-                                "Invalid peer IP type in dictionary format: %s, skipping peer",
-                                type(peer_ip_raw),
+                                    "Skipping invalid tracker peer from %s: %s (ip=%r, port=%r)",
+                                    tracker_url,
+                                    exc,
+                                    peer_ip_raw,
+                                    peer_port_raw,
                             )
                             continue
 
-                        # Convert port to int
-                        if isinstance(peer_port_raw, (int, bytes)):
-                            peer_port = (
-                                int(peer_port_raw)
-                                if isinstance(peer_port_raw, int)
-                                else int.from_bytes(peer_port_raw, "big")
-                            )
-                        else:
-                            try:
-                                peer_port = int(peer_port_raw)
-                            except (ValueError, TypeError):
-                                self.logger.warning(
-                                    "Invalid peer port in dictionary format: %s, skipping peer",
-                                    peer_port_raw,
-                                )
-                                continue
-
                         # Validate peer IP and port
-                        if peer_ip and peer_port and (1 <= peer_port <= 65535):
+                        if peer_ip and peer_port:
                             peers_dict_list.append(
                                 {
                                     "ip": peer_ip,
@@ -2708,6 +2836,18 @@ class AsyncTrackerClient:
             # Extract optional fields
             complete = decoded.get(b"complete")
             incomplete = decoded.get(b"incomplete")
+            parsed_complete = self._coerce_tracker_int(
+                complete,
+                "complete",
+                tracker_url=tracker_url,
+                allow_missing=True,
+            )
+            parsed_incomplete = self._coerce_tracker_int(
+                incomplete,
+                "incomplete",
+                tracker_url=tracker_url,
+                allow_missing=True,
+            )
             download_url = decoded.get(b"download_url")
             if download_url and isinstance(download_url, bytes):
                 download_url = download_url.decode("utf-8")
@@ -2759,8 +2899,8 @@ class AsyncTrackerClient:
                 interval,
                 len(peers_dict_list),
                 len(peer_info_list),
-                complete if complete is not None else "N/A",
-                incomplete if incomplete is not None else "N/A",
+                parsed_complete if parsed_complete is not None else "N/A",
+                parsed_incomplete if parsed_incomplete is not None else "N/A",
             )
 
             # Note: IMMEDIATE CONNECTION PATH - Connect peers as soon as they arrive
@@ -2797,8 +2937,8 @@ class AsyncTrackerClient:
             return TrackerResponse(
                 interval=interval,
                 peers=peer_info_list,
-                complete=complete,
-                incomplete=incomplete,
+                complete=parsed_complete,
+                incomplete=parsed_incomplete,
                 download_url=download_url,
                 tracker_id=tracker_id,
                 warning_message=warning_message,
@@ -3420,9 +3560,117 @@ class TrackerClient:
             msg = f"Request failed: {e}"
             raise TrackerError(msg) from e
 
+    @staticmethod
+    def _classify_non_bencode_payload(response_data: bytes) -> Optional[str]:
+        """Classify tracker payloads that are not valid bencode candidates."""
+        if not response_data:
+            return "empty payload"
+        if not isinstance(response_data, (bytes, bytearray)):
+            return f"non-bytes payload: {type(response_data).__name__}"
+
+        prefix = bytes(response_data).lstrip()[:64].lower()
+        if not prefix:
+            return "whitespace-only payload"
+        if prefix.startswith((b"<", b"<?xml", b"<!doctype")):
+            return "html/xml payload"
+        if prefix.startswith((b"{", b"[")):
+            return "json-like payload"
+        if prefix.startswith(
+            (b"0", b"1", b"2", b"3", b"4", b"5", b"6", b"7", b"8", b"9")
+        ):
+            return "plain/integer payload"
+        return None
+
+    @staticmethod
+    def _coerce_tracker_int(
+        value: Any,
+        field_name: str,
+        tracker_url: str = "",
+        allow_missing: bool = False,
+    ) -> Optional[int]:
+        """Coerce tracker numeric fields to int with strict validation."""
+        if value is None:
+            if allow_missing:
+                return None
+            msg = f"Missing {field_name} in tracker response"
+            if tracker_url:
+                msg = f"{msg} for {tracker_url}"
+            raise TrackerError(msg)
+
+        if isinstance(value, bool):
+            value = int(value)
+
+        if isinstance(value, int):
+            return value
+
+        if isinstance(value, (bytes, bytearray)):
+            try:
+                value = bytes(value).decode("utf-8", errors="ignore").strip()
+            except Exception as exc:
+                raise TrackerError(
+                    f"Invalid {field_name} in tracker response for {tracker_url}: {value!r}"
+                ) from exc
+
+        if not isinstance(value, str):
+            raise TrackerError(
+                f"Invalid {field_name} type {type(value).__name__} in tracker response for {tracker_url}"
+            )
+
+        try:
+            return int(value.strip())
+        except (TypeError, ValueError) as exc:
+            raise TrackerError(
+                f"Invalid {field_name} value '{value}' in tracker response for {tracker_url}"
+            ) from exc
+
+    @staticmethod
+    def _coerce_tracker_peer_port(peer_port_raw: Any) -> int:
+        """Coerce peer port values from tracker peers list."""
+        if isinstance(peer_port_raw, bool):
+            peer_port = int(peer_port_raw)
+        elif isinstance(peer_port_raw, int):
+            peer_port = peer_port_raw
+        elif isinstance(peer_port_raw, (bytes, bytearray)):
+            peer_port_bytes = bytes(peer_port_raw)
+            if len(peer_port_bytes) == 2:
+                peer_port = int.from_bytes(peer_port_bytes, "big")
+            else:
+                peer_port = int(peer_port_bytes.decode("utf-8", errors="ignore").strip())
+        else:
+            peer_port = int(peer_port_raw)
+
+        if not isinstance(peer_port, int):
+            raise ValueError("port must be int after coercion")
+        if peer_port <= 0 or peer_port > 65535:
+            raise ValueError(f"port out of range: {peer_port}")
+        return peer_port
+
+    @staticmethod
+    def _coerce_tracker_peer_ip(peer_ip_raw: Any) -> str:
+        """Coerce peer IP values from tracker peers list."""
+        if isinstance(peer_ip_raw, bytes):
+            peer_ip = peer_ip_raw.decode("utf-8", errors="ignore").strip()
+        elif isinstance(peer_ip_raw, bytearray):
+            peer_ip = bytes(peer_ip_raw).decode("utf-8", errors="ignore").strip()
+        elif isinstance(peer_ip_raw, str):
+            peer_ip = peer_ip_raw.strip()
+        else:
+            raise ValueError(f"invalid ip type {type(peer_ip_raw).__name__}")
+
+        if not peer_ip:
+            raise ValueError("empty peer ip")
+        return peer_ip
+
     def _parse_response(self, response_data: bytes) -> dict[str, Any]:
         """Parse tracker response."""
         try:
+            payload_issue = self._classify_non_bencode_payload(response_data)
+            if payload_issue:
+                msg = (
+                    f"Invalid tracker payload ({payload_issue}) for tracker response"
+                )
+                raise TrackerError(msg)
+
             # Decode bencoded response
             decoder = BencodeDecoder(response_data)
             decoded = decoder.decode()
@@ -3446,7 +3694,7 @@ class TrackerClient:
                 raise TrackerError(msg)
 
             # Extract response data
-            interval = decoded[b"interval"]
+            interval = self._coerce_tracker_int(decoded[b"interval"], "interval")
 
             # Parse peers
             peers = []
@@ -3459,11 +3707,23 @@ class TrackerClient:
                     # Dictionary format
                     for peer_info in peers_data:
                         if isinstance(peer_info, dict):
-                            peer_ip = peer_info.get(b"ip", b"").decode(
-                                "utf-8",
-                                errors="ignore",
+                            peer_ip_raw = peer_info.get(b"ip") or peer_info.get("ip")
+                            peer_port_raw = peer_info.get(b"port") or peer_info.get(
+                                "port"
                             )
-                            peer_port = peer_info.get(b"port", 0)
+
+                            try:
+                                peer_ip = self._coerce_tracker_peer_ip(peer_ip_raw)
+                                peer_port = self._coerce_tracker_peer_port(peer_port_raw)
+                            except Exception as exc:
+                                self.logger.warning(
+                                    "Skipping invalid peer entry: %s (ip=%r, port=%r)",
+                                    exc,
+                                    peer_ip_raw,
+                                    peer_port_raw,
+                                )
+                                continue
+
                             if peer_ip and peer_port:
                                 peers.append(
                                     {
@@ -3474,8 +3734,16 @@ class TrackerClient:
                                 )
 
             # Optional fields
-            complete = decoded.get(b"complete")
-            incomplete = decoded.get(b"incomplete")
+            parsed_complete = self._coerce_tracker_int(
+                decoded.get(b"complete"),
+                "complete",
+                allow_missing=True,
+            )
+            parsed_incomplete = self._coerce_tracker_int(
+                decoded.get(b"incomplete"),
+                "incomplete",
+                allow_missing=True,
+            )
             download_url = (
                 decoded.get(b"download_url", b"").decode("utf-8", errors="ignore")
                 if b"download_url" in decoded
@@ -3499,8 +3767,8 @@ class TrackerClient:
             return {
                 "interval": interval,
                 "peers": peers,
-                "complete": complete,
-                "incomplete": incomplete,
+                "complete": parsed_complete,
+                "incomplete": parsed_incomplete,
                 "download_url": download_url,
                 "tracker_id": tracker_id,
                 "warning_message": warning_message,
