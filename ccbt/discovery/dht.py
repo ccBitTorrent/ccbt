@@ -870,7 +870,7 @@ class AsyncDHTClient:
         self._bootstrap_attempt_failures.pop(bootstrap_key, None)
         self._bootstrap_attempt_timestamps.pop(bootstrap_key, None)
 
-    def _prune_bootstrap_attempt_state(self, now: float | None = None) -> None:
+    def _prune_bootstrap_attempt_state(self, now: Optional[float] = None) -> None:
         """Prune stale bootstrap failure records."""
         current_time = now if now is not None else time.time()
         stale_keys = [
@@ -882,10 +882,15 @@ class AsyncDHTClient:
             self._bootstrap_attempt_failures.pop(bootstrap_key, None)
             self._bootstrap_attempt_timestamps.pop(bootstrap_key, None)
 
-    def _schedule_zero_node_rebootstrap(self, reason: str = "empty_routing_table") -> bool:
+    def _schedule_zero_node_rebootstrap(
+        self, reason: str = "empty_routing_table"
+    ) -> bool:
         """Schedule a bounded rebootstrap when routing table is empty."""
         now = time.monotonic()
-        if self._empty_table_rebootstrap_attempts >= self._max_empty_table_rebootstrap_attempts:
+        if (
+            self._empty_table_rebootstrap_attempts
+            >= self._max_empty_table_rebootstrap_attempts
+        ):
             self.logger.debug(
                 "DHT empty routing rebootstrap suppressed after %d attempts: %s",
                 self._empty_table_rebootstrap_attempts,
@@ -924,7 +929,8 @@ class AsyncDHTClient:
                 self.logger.debug("DHT scheduled rebootstrap failed: %s", exc)
                 self.last_bootstrap_state = f"failed:{type(exc).__name__}"
 
-        asyncio.create_task(_run())
+        bootstrap_task = asyncio.create_task(_run())
+        _ = bootstrap_task
         return True
 
     async def _bootstrap_step(self, host: str, port: int) -> bool:
@@ -939,7 +945,9 @@ class AsyncDHTClient:
                 host,
                 port,
             )
-            self.last_bootstrap_failure_reason = f"bootstrap_retry_suppressed:{host}:{port}"
+            self.last_bootstrap_failure_reason = (
+                f"bootstrap_retry_suppressed:{host}:{port}"
+            )
             return False
         start_time = time.time()
 

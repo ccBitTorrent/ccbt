@@ -7,8 +7,8 @@ import contextlib
 import time
 from typing import Any
 
-from ccbt.session.swarm_stability_defaults import PEER_DISCOVERY_DEFAULTS
 from ccbt.monitoring import get_metrics_collector
+from ccbt.session.swarm_stability_defaults import PEER_DISCOVERY_DEFAULTS
 
 
 class DHTDiscoverySetup:
@@ -113,6 +113,14 @@ class DHTDiscoverySetup:
                 discovery_defaults["dht_empty_state_backoff_factor"],
             )
         )
+        self._dht_batch_wait_defer_cycles = int(
+            getattr(
+                discovery_settings,
+                "dht_batch_wait_defer_cycles",
+                3,
+            )
+        )
+        self._batch_wait_force_count = 0
         self._bootstrap_retry_attempts: dict[str, int] = {}
         self._bootstrap_retry_last_attempt: dict[str, float] = {}
 
@@ -1575,6 +1583,7 @@ class DHTDiscoverySetup:
                                             swarm_state.get("peers_with_piece_info", 0)
                                         ),
                                     )
+                                    self._batch_wait_force_count = 0
                                     break
                                 if (
                                     connection_batches_in_progress
@@ -1584,12 +1593,14 @@ class DHTDiscoverySetup:
                                         "⏸️ DHT DISCOVERY: Connection batches are still marked in progress after %.1fs but no active peers remain. Proceeding with DHT evaluation immediately.",
                                         waited,
                                     )
+                                    self._batch_wait_force_count = 0
                                     break
                                 if not connection_batches_in_progress:
                                     self.logger.info(
                                         "✅ DHT DISCOVERY: Connection batches completed after %.1fs. Checking peer count before starting DHT...",
                                         waited,
                                     )
+                                    self._batch_wait_force_count = 0
                                     break
                             else:
                                 active_peer_count_during_wait = 0
@@ -1606,9 +1617,25 @@ class DHTDiscoverySetup:
                                     self.logger.warning(
                                         "⏸️ DHT DISCOVERY: No active peers remain while batches are still marked in progress. Proceeding with DHT evaluation anyway.",
                                     )
-                                else:
-                                    # Continue waiting - don't proceed until batches complete
-                                    continue
+                                    self._batch_wait_force_count = 0
+                                    break
+                                self._batch_wait_force_count += 1
+                                if (
+                                    self._batch_wait_force_count
+                                    >= self._dht_batch_wait_defer_cycles
+                                ):
+                                    self.logger.warning(
+                                        "⏸️ DHT DISCOVERY: Connection-batch defer reached hard cap (%d/%d). Proceeding with DHT evaluation to avoid deadlock.",
+                                        self._batch_wait_force_count,
+                                        self._dht_batch_wait_defer_cycles,
+                                    )
+                                    self._batch_wait_force_count = 0
+                                    break
+
+                                # Continue waiting - don't proceed until batches complete
+                                continue
+                    else:
+                        self._batch_wait_force_count = 0
 
                 # Note: Also check tracker peer connection timestamp (secondary check)
                 # This ensures we wait for tracker responses to be processed
@@ -1759,9 +1786,7 @@ class DHTDiscoverySetup:
                         )
                         routing_table_size = await self._ensure_bootstrap_ready(
                             dht_client,
-                            reason=(
-                                f"short_path_recovery:{self.session.info.name}"
-                            ),
+                            reason=(f"short_path_recovery:{self.session.info.name}"),
                             timeout=10.0,
                             min_nodes=1,
                         )
@@ -2156,9 +2181,7 @@ class DHTDiscoverySetup:
                     nodes_queried = 0
                     last_metrics = getattr(dht_client, "_last_query_metrics", None)
                     lookup_state = (
-                        last_metrics.get("lookup_state", "")
-                        if last_metrics
-                        else ""
+                        last_metrics.get("lookup_state", "") if last_metrics else ""
                     )
                     if last_metrics:
                         query_depth = last_metrics.get("depth", 0)
@@ -2241,10 +2264,10 @@ class DHTDiscoverySetup:
                                     "query_duration": query_duration,
                                     "query_depth": query_depth,
                                     "nodes_queried": nodes_queried,
-                                "lookup_state": lookup_state,
-                                "bootstrap_state": str(
-                                    getattr(dht_client, "last_bootstrap_state", "")
-                                ),
+                                    "lookup_state": lookup_state,
+                                    "bootstrap_state": str(
+                                        getattr(dht_client, "last_bootstrap_state", "")
+                                    ),
                                     "aggressive_mode": aggressive_mode,
                                 },
                             )
@@ -2386,7 +2409,7 @@ class DHTDiscoverySetup:
                     # The query may have found some peers before timing out
                     query_duration = asyncio.get_event_loop().time() - query_start_time
                     with contextlib.suppress(Exception):
-                        setattr(dht_client, "last_lookup_state", "query_timeout")
+                        dht_client.last_lookup_state = "query_timeout"
 
                     # Note: Progressive timeout increase for retries
                     # Timeout already increases with attempt_count, but log the progression
@@ -2412,7 +2435,7 @@ class DHTDiscoverySetup:
                     # Note: Handle all exceptions gracefully - don't stop the discovery loop
                     query_duration = asyncio.get_event_loop().time() - query_start_time
                     with contextlib.suppress(Exception):
-                        setattr(dht_client, "last_lookup_state", "query_error")
+                        dht_client.last_lookup_state = "query_error"
                     self.logger.warning(
                         "DHT get_peers query error for %s after %.2fs: %s (will retry in %.1fs)",
                         self.session.info.name,

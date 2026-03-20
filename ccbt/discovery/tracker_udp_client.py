@@ -186,7 +186,9 @@ class AsyncUDPTrackerClient:
         """
         return self._socket_ready
 
-    def _record_pending_request_result(self, *, stale: bool, now: Optional[float] = None) -> None:
+    def _record_pending_request_result(
+        self, *, stale: bool, now: Optional[float] = None
+    ) -> None:
         """Record completion history for adaptive transaction budgeting."""
         event_time = time.time() if now is None else now
         if stale:
@@ -258,7 +260,9 @@ class AsyncUDPTrackerClient:
         """Return final transaction cap including manual override."""
         now = time.time()
         self._get_adaptive_pending_request_budget(now)
-        effective_cap = min(self._max_pending_requests, self._adaptive_pending_request_budget)
+        effective_cap = min(
+            self._max_pending_requests, self._adaptive_pending_request_budget
+        )
         if self._max_pending_requests >= self._pending_request_budget_min:
             return max(self._pending_request_budget_min, effective_cap)
         return effective_cap
@@ -1218,8 +1222,7 @@ class AsyncUDPTrackerClient:
 
         if max_retries <= 0:
             max_retries = 1
-        if retry_delay < 0.0:
-            retry_delay = 0.0
+        retry_delay = max(retry_delay, 0.0)
         if base_timeout < 0.0:
             base_timeout = 0.1
 

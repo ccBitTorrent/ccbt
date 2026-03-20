@@ -1,6 +1,7 @@
 """Tests for tracker communication functionality.
 """
 
+import time
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
@@ -9,7 +10,13 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
 
 from ccbt.core.bencode import encode
-from ccbt.discovery.tracker import TrackerClient, TrackerError
+from ccbt.discovery.tracker import (
+    AsyncTrackerClient,
+    TrackerClient,
+    TrackerError,
+    TrackerResponse,
+    TrackerSession,
+)
 
 
 class TestTrackerClient:
@@ -347,3 +354,212 @@ class TestTrackerClient:
             # Check that peer_id was added
             assert "peer_id" in self.torrent_data
             assert self.torrent_data["peer_id"].startswith(b"-CC0101-")
+
+
+
+class TestAsyncTrackerClientTrackerResilience:
+    """Tests for tracker resilience behavior in AsyncTrackerClient."""
+
+    @pytest.mark.asyncio
+    async def test_announce_to_multiple_skips_quarantined_trackers(self):
+        """Quarantined trackers should not be announced until cooldown passes."""
+        client = AsyncTrackerClient()
+        client.session = Mock()
+        client.health_manager._known_good_trackers = set()
+
+        bad_url = "http://invalid.tracker.example/announce"
+        client.sessions[bad_url] = TrackerSession(
+            url=bad_url,
+            quarantine_until=time.time() + 120.0,
+            quarantine_reason="invalid payload",
+        )
+
+        async def fake_announce(
+            torrent_data: dict[str, object], *_args: object, **_kwargs: object
+        ) -> TrackerResponse:
+            return TrackerResponse(interval=1800, peers=[])
+
+        with patch.object(client, "_announce_to_tracker", new=fake_announce):
+            responses = await client.announce_to_multiple(
+                {
+                    "announce": "http://fallback.tracker.example/announce",
+                    "info_hash": b"x" * 20,
+                    "peer_id": b"-CC0101-" + b"x" * 12,
+                    "file_info": {"total_length": 12345},
+                },
+                [bad_url],
+            )
+
+        assert responses == []
+
+    @pytest.mark.asyncio
+    async def test_announce_to_multiple_uses_fallback_for_quarantined_trackers(self):
+        """Fallback trackers should still run when active trackers are temporarily quarantined."""
+        client = AsyncTrackerClient()
+        client.session = Mock()
+
+        bad_url = "http://invalid.tracker.example/announce"
+        fallback_url = "http://fallback.tracker.example/announce"
+        client.sessions[bad_url] = TrackerSession(
+            url=bad_url,
+            quarantine_until=time.time() + 120.0,
+            quarantine_reason="invalid payload",
+        )
+        client.health_manager._known_good_trackers = {fallback_url}
+
+        announced_urls: list[str] = []
+
+        async def fake_announce(
+            torrent_data: dict[str, object], *_args: object, **_kwargs: object
+        ) -> TrackerResponse:
+            announced_urls.append(str(torrent_data["announce"]))
+            return TrackerResponse(interval=1800, peers=[])
+
+        with patch.object(client, "_announce_to_tracker", new=fake_announce):
+            responses = await client.announce_to_multiple(
+                {
+                    "announce": "http://invalid.tracker.example/announce",
+                    "info_hash": b"x" * 20,
+                    "peer_id": b"-CC0101-" + b"x" * 12,
+                    "file_info": {"total_length": 12345},
+                },
+                [bad_url],
+            )
+
+        assert len(responses) == 1
+        assert announced_urls == [fallback_url]
+
+    @pytest.mark.asyncio
+    async def test_announce_to_multiple_uses_fallback_for_backed_off_trackers(self):
+        """Backoff-skipped trackers should still fan out to fallback trackers."""
+        client = AsyncTrackerClient()
+        client.session = Mock()
+
+        bad_url = "http://rate-limited.tracker.example/announce"
+        fallback_url = "http://fallback.tracker.example/announce"
+        client.sessions[bad_url] = TrackerSession(
+            url=bad_url,
+            failure_count=1,
+            backoff_delay=120.0,
+            last_failure=time.time(),
+        )
+        client.health_manager._known_good_trackers = {fallback_url}
+
+        announced_urls: list[str] = []
+
+        async def fake_announce(
+            torrent_data: dict[str, object], *_args: object, **_kwargs: object
+        ) -> TrackerResponse:
+            announced_urls.append(str(torrent_data["announce"]))
+            return TrackerResponse(interval=1800, peers=[])
+
+        with patch.object(client, "_announce_to_tracker", new=fake_announce):
+            responses = await client.announce_to_multiple(
+                {
+                    "announce": bad_url,
+                    "info_hash": b"x" * 20,
+                    "peer_id": b"-CC0101-" + b"x" * 12,
+                    "file_info": {"total_length": 12345},
+                },
+                [bad_url],
+            )
+
+        assert len(responses) == 1
+        assert announced_urls == [fallback_url]
+
+    @pytest.mark.asyncio
+    async def test_announce_to_multiple_fallback_preserves_healthy_trackers(self):
+        """A single bad tracker should not suppress a healthy tracker in the same announce batch."""
+        client = AsyncTrackerClient()
+        client.session = Mock()
+
+        bad_url = "http://bad.tracker.example/announce"
+        good_url = "http://good.tracker.example/announce"
+        client.sessions[bad_url] = TrackerSession(
+            url=bad_url,
+            quarantine_until=time.time() + 120.0,
+            quarantine_reason="invalid payload",
+        )
+
+        announced_urls: list[str] = []
+
+        async def fake_announce(
+            torrent_data: dict[str, object], *_args: object, **_kwargs: object
+        ) -> TrackerResponse:
+            announced_urls.append(str(torrent_data["announce"]))
+            return TrackerResponse(interval=1800, peers=[])
+
+        with patch.object(client, "_announce_to_tracker", new=fake_announce):
+            await client.announce_to_multiple(
+                {
+                    "announce": "http://good.tracker.example/announce",
+                    "info_hash": b"x" * 20,
+                    "peer_id": b"-CC0101-" + b"x" * 12,
+                    "file_info": {"total_length": 12345},
+                },
+                [bad_url, good_url],
+            )
+
+        assert announced_urls == [good_url]
+
+    @pytest.mark.asyncio
+    async def test_announce_to_multiple_continues_after_timeout_tracker_error(self):
+        """Timeouts from one tracker should not block successful responses from others."""
+        client = AsyncTrackerClient()
+        client.session = Mock()
+
+        timeout_url = "http://timeout.tracker.example/announce"
+        healthy_url = "http://healthy.tracker.example/announce"
+
+        announced_urls: list[str] = []
+
+        async def fake_announce(
+            torrent_data: dict[str, object], *_args: object, **_kwargs: object
+        ) -> TrackerResponse:
+            announce_url = str(torrent_data["announce"])
+            announced_urls.append(announce_url)
+            if announce_url == timeout_url:
+                raise TimeoutError("Timeout waiting for tracker response")
+            return TrackerResponse(interval=1800, peers=[])
+
+        with patch.object(client, "_announce_to_tracker", new=fake_announce):
+            responses = await client.announce_to_multiple(
+                {
+                    "announce": timeout_url,
+                    "info_hash": b"x" * 20,
+                    "peer_id": b"-CC0101-" + b"x" * 12,
+                    "file_info": {"total_length": 12345},
+                },
+                [timeout_url, healthy_url],
+            )
+
+        assert len(responses) == 1
+        assert len(announced_urls) == 2
+        assert timeout_url in announced_urls
+        assert healthy_url in announced_urls
+
+    def test_tracker_session_quarantine_on_repeated_invalid_payload_failures(self):
+        """Invalid payload failures should increase streak and eventually quarantine a tracker."""
+        client = AsyncTrackerClient()
+        tracker_url = "http://invalid.tracker.example/announce"
+
+        client._handle_tracker_failure(
+            tracker_url,
+            failure_reason="Invalid tracker payload (not bencode)",
+        )
+        first_session = client.sessions[tracker_url]
+        assert first_session.failure_streak == 1
+        assert first_session.quarantine_until == 0.0
+
+        client._handle_tracker_failure(
+            tracker_url,
+            failure_reason="Invalid tracker payload (not bencode)",
+        )
+        second_session = client.sessions[tracker_url]
+        assert second_session.failure_streak == 2
+        assert second_session.quarantine_until > time.time()
+
+
+
+
+

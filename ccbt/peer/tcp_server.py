@@ -269,7 +269,9 @@ class IncomingPeerServer:
         """Build deterministic key for inbound registration probation."""
         return f"{info_hash.hex()}|{peer_ip}:{peer_port}"
 
-    def _should_probation_inbound(self, info_hash: bytes, peer_ip: str, peer_port: int) -> bool:
+    def _should_probation_inbound(
+        self, info_hash: bytes, peer_ip: str, peer_port: int
+    ) -> bool:
         """Allow one bounded probation attempt for each peer/info_hash pair."""
         key = self._get_inbound_probation_key(info_hash, peer_ip, peer_port)
         attempts = self._inbound_registration_probation.get(key, 0)
@@ -299,7 +301,8 @@ class IncomingPeerServer:
         try:
             session = None
             deadline = (
-                asyncio.get_event_loop().time() + self._inbound_registration_probation_window
+                asyncio.get_event_loop().time()
+                + self._inbound_registration_probation_window
             )
             while (
                 session is None
@@ -311,7 +314,9 @@ class IncomingPeerServer:
                         handshake.info_hash
                     )
                 if session is None:
-                    await asyncio.sleep(self._inbound_registration_probation_retry_interval)
+                    await asyncio.sleep(
+                        self._inbound_registration_probation_retry_interval
+                    )
 
             if session is None:
                 elapsed = asyncio.get_event_loop().time() - start_time
@@ -342,7 +347,9 @@ class IncomingPeerServer:
                 await writer.wait_closed()
                 return
 
-            await session.accept_incoming_peer(reader, writer, handshake, peer_ip, peer_port)
+            await session.accept_incoming_peer(
+                reader, writer, handshake, peer_ip, peer_port
+            )
         except Exception:
             self.logger.exception(
                 "Error during inbound probation resolution for %s:%d",
@@ -355,7 +362,9 @@ class IncomingPeerServer:
             except Exception:
                 pass
         finally:
-            await self._release_inbound_probation(handshake.info_hash, peer_ip, peer_port)
+            await self._release_inbound_probation(
+                handshake.info_hash, peer_ip, peer_port
+            )
 
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -447,7 +456,9 @@ class IncomingPeerServer:
 
             if session is None:
                 elapsed = asyncio.get_event_loop().time() - start_time
-                if self._should_probation_inbound(handshake.info_hash, peer_ip, peer_port):
+                if self._should_probation_inbound(
+                    handshake.info_hash, peer_ip, peer_port
+                ):
                     self.logger.debug(
                         "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
                         "Entering bounded registration probation for this peer.",
@@ -456,7 +467,7 @@ class IncomingPeerServer:
                         peer_port,
                         elapsed,
                     )
-                    asyncio.create_task(
+                    probation_task = asyncio.create_task(
                         self._await_session_for_inbound_peer(
                             reader,
                             writer,
@@ -466,6 +477,7 @@ class IncomingPeerServer:
                             start_time,
                         )
                     )
+                    _ = probation_task
                     return
                 # Note: Check if any sessions exist at all
                 # If no sessions are registered, this is expected during startup - use DEBUG level

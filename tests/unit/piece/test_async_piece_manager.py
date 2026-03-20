@@ -302,6 +302,50 @@ class TestAsyncPieceManagerPieceSelector:
         assert task.done()
 
     @pytest.mark.asyncio
+    async def test_piece_selector_no_progress_gate_engages_and_releases_after_progress(
+        self, piece_manager
+    ):
+        """No-progress gate should pause briefly and resume once selector work progresses."""
+        piece_manager.is_downloading = True
+        piece_manager._no_progress_stall_threshold = 1
+        piece_manager._no_progress_pause_s = 0.01
+        piece_manager._no_progress_streak = 0
+        piece_manager._no_progress_stall_until = 0.0
+        piece_manager._piece_selection_metrics["selection_no_progress_streak"] = 0
+        piece_manager._piece_selection_metrics["no_progress_gate_events"] = 0
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.MISSING
+
+        select_calls = 0
+        sleep_calls = 0
+        original_sleep = asyncio.sleep
+
+        async def fake_select_pieces() -> None:
+            nonlocal select_calls
+            select_calls += 1
+            if select_calls == 4:
+                piece.state = PieceState.DOWNLOADING
+
+        async def fast_sleep(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            await original_sleep(0.001)
+            if sleep_calls > 120:
+                piece_manager._stopping = True
+
+        piece_manager._select_pieces = fake_select_pieces
+
+        with patch("ccbt.piece.async_piece_manager.asyncio.sleep", new=fast_sleep):
+            task = asyncio.create_task(piece_manager._piece_selector())
+            await asyncio.sleep(0)
+            await asyncio.wait_for(task, timeout=0.5)
+
+        assert select_calls >= 2
+        assert piece_manager._piece_selection_metrics["no_progress_gate_events"] >= 1
+        assert piece.state == PieceState.DOWNLOADING
+        assert task.done()
+
+    @pytest.mark.asyncio
     async def test_select_pieces_not_downloading(self, piece_manager):
         """Test select_pieces when not downloading."""
         piece_manager.is_downloading = False
@@ -1254,6 +1298,52 @@ class TestAsyncPieceManagerEdgeCases:
         await piece_manager._retry_requested_pieces(peer_b, max_retry_count=1)
 
         assert piece_manager.request_piece_from_peers.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_requested_pieces_cleans_invalid_peer_map_keys_on_failure(
+        self, piece_manager
+    ):
+        """Retry failure path should recover when peer key mappings are malformed."""
+        piece_manager.pieces[0].state = PieceState.REQUESTED
+        piece_manager.pieces[0].request_count = 3
+        piece_manager.pieces[0].last_request_time = time.time() - 120.0
+        piece_manager.pieces[0].requests_dispatched = 1
+        piece_manager.pieces[0].last_activity_time = 0.0
+        piece_manager._retry_request_debounce_s = 0.0
+        piece_manager._retry_from_active_max_attempts = 0
+
+        malformed_peer_key = object()
+        piece_manager._requested_pieces_per_peer[malformed_peer_key] = {0}
+
+        focus_peer = SimpleNamespace(
+            peer_info=PeerInfo(ip="198.51.100.90", port=6881),
+            can_request=lambda: True,
+            peer_choking=False,
+            am_interested=True,
+            peer_interested=False,
+            state=SimpleNamespace(value="active"),
+            stats=SimpleNamespace(download_rate=8.0),
+            peer_state=SimpleNamespace(pieces_we_have={0}, bitfield=b"\x80"),
+            is_active=lambda: True,
+        )
+        piece_manager.peer_availability[str(focus_peer.peer_info)] = SimpleNamespace(pieces={0})
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [focus_peer]
+        )
+        piece_manager.request_piece_from_peers = AsyncMock(
+            side_effect=RuntimeError("retry path")
+        )
+        piece_manager.logger = MagicMock()
+
+        await piece_manager._retry_requested_pieces(focus_peer, max_retry_count=1)
+
+        assert piece_manager.request_piece_from_peers.await_count == 1
+        assert malformed_peer_key not in piece_manager._requested_pieces_per_peer
+        assert piece_manager.pieces[0].state == PieceState.MISSING
+        assert any(
+            (args and isinstance(args[0], str) and "Failed to retry piece" in args[0])
+            for args, _ in piece_manager.logger.warning.call_args_list
+        )
 
     @pytest.mark.asyncio
     async def test_request_blocks_normal_keeps_requested_state_for_optimistic_retry(self):

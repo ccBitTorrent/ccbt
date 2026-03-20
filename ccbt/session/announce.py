@@ -531,7 +531,7 @@ class AnnounceLoop:
 
         def _normalize_tracker_peer(
             peer: Any, utility_signal: float = 0.0
-        ) -> dict[str, Any] | None:
+        ) -> Optional[dict[str, Any]]:
             try:
                 if hasattr(peer, "ip") and hasattr(peer, "port"):
                     ip_value = peer.ip
@@ -784,7 +784,9 @@ class AnnounceLoop:
                         ranked_tracker_peers: list[dict[str, Any]] = []
                         for tracker_response in successful_responses:
                             seed_ratio = _tracker_seed_ratio(tracker_response)
-                            tracker_peers = getattr(tracker_response, "peers", None) or []
+                            tracker_peers = (
+                                getattr(tracker_response, "peers", None) or []
+                            )
                             for tracker_peer in tracker_peers:
                                 normalized_peer = _normalize_tracker_peer(
                                     tracker_peer, utility_signal=seed_ratio
@@ -981,16 +983,16 @@ class AnnounceLoop:
                                 )
                                 else []
                             ):
-                                normalized = _normalize_tracker_peer(p, utility_signal=0.0)
+                                normalized = _normalize_tracker_peer(
+                                    p, utility_signal=0.0
+                                )
                                 if normalized:
                                     # Allow response-specific utility if this was already enriched.
                                     normalized["_replacement_priority"] = float(
                                         normalized.get("_replacement_priority", 0.0)
                                     ) + (
                                         float(
-                                            normalized.get(
-                                                "_tracker_seed_ratio", 0.0
-                                            )
+                                            normalized.get("_tracker_seed_ratio", 0.0)
                                         )
                                     )
                                     peer_list.append(normalized)
@@ -1034,12 +1036,12 @@ class AnnounceLoop:
                         # The response object now contains all peers from all successful trackers
                         for p in (
                             response.peers
-                                if (
-                                    response
-                                    and hasattr(response, "peers")
-                                    and response.peers
-                                )
-                                else []
+                            if (
+                                response
+                                and hasattr(response, "peers")
+                                and response.peers
+                            )
+                            else []
                         ):
                             normalized = _normalize_tracker_peer(p, utility_signal=0.0)
                             if normalized:
@@ -1051,12 +1053,12 @@ class AnnounceLoop:
                                         p.get("_tracker_seed_ratio", 0.0)
                                     )
                                     if prior_seed_ratio > 0:
-                                        normalized["_tracker_seed_ratio"] = prior_seed_ratio
+                                        normalized["_tracker_seed_ratio"] = (
+                                            prior_seed_ratio
+                                        )
                                     normalized["_replacement_priority"] = max(
                                         float(
-                                            normalized.get(
-                                                "_replacement_priority", 0.0
-                                            )
+                                            normalized.get("_replacement_priority", 0.0)
                                         ),
                                         prior_priority,
                                     )

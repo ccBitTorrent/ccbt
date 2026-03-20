@@ -475,13 +475,20 @@ class PeerConnectionHelper:
                 throughput_rate = 0.0
 
             if throughput_rate <= 0.0 and hasattr(self.session, "download_manager"):
-                peer_manager = getattr(self.session.download_manager, "peer_manager", None)
+                peer_manager = getattr(
+                    self.session.download_manager, "peer_manager", None
+                )
                 if peer_manager is not None and hasattr(peer_manager, "connections"):
                     existing_conn = peer_manager.connections.get(peer_key)
                     if existing_conn is not None and hasattr(existing_conn, "stats"):
                         throughput_rate = max(
-                            float(getattr(existing_conn.stats, "download_rate", 0.0) or 0.0),
-                            float(getattr(existing_conn.stats, "upload_rate", 0.0) or 0.0),
+                            float(
+                                getattr(existing_conn.stats, "download_rate", 0.0)
+                                or 0.0
+                            ),
+                            float(
+                                getattr(existing_conn.stats, "upload_rate", 0.0) or 0.0
+                            ),
                         )
 
             max_throughput_reference = 10.0 * 1024.0 * 1024.0

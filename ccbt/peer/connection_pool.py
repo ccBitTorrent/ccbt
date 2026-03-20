@@ -1513,7 +1513,10 @@ class PeerConnectionPool:
         )
         complete_peer_min_health_level = 1
         connection_pool_pressure = (
-            (self.max_connections - getattr(self.semaphore, "_value", self.max_connections))
+            (
+                self.max_connections
+                - getattr(self.semaphore, "_value", self.max_connections)
+            )
             / self.max_connections
             if self.max_connections
             else 0.0
@@ -1534,11 +1537,11 @@ class PeerConnectionPool:
                 peer_info = connection.get("peer_info")
             if peer_info is None:
                 peer_info = getattr(conn_obj, "peer_info", None)
-            if peer_info is not None:
-                if bool(getattr(peer_info, "is_seeder", False)) or bool(
-                    getattr(peer_info, "complete", False)
-                ):
-                    return True
+            if peer_info is not None and (
+                bool(getattr(peer_info, "is_seeder", False))
+                or bool(getattr(peer_info, "complete", False))
+            ):
+                return True
             return bool(getattr(conn_obj, "is_seeder", False)) or bool(
                 getattr(conn_obj, "complete", False)
             )
@@ -1734,9 +1737,7 @@ class PeerConnectionPool:
                 "Removed %d unhealthy connections", len(unhealthy_connections)
             )
             for reason in unhealthy_connection_reasons.values():
-                cleanup_reason_counts[reason] = (
-                    cleanup_reason_counts.get(reason, 0) + 1
-                )
+                cleanup_reason_counts[reason] = cleanup_reason_counts.get(reason, 0) + 1
             self.logger.debug(
                 "Health cleanup reasons: stale_only=%d protocol_error=%d hard_timeout=%d",
                 cleanup_reason_counts["stale_only"],
@@ -1799,7 +1800,10 @@ class PeerConnectionPool:
             self.config, "complete_peer_cleanup_protection_s", 12.0
         )
         connection_pool_pressure = (
-            (self.max_connections - getattr(self.semaphore, "_value", self.max_connections))
+            (
+                self.max_connections
+                - getattr(self.semaphore, "_value", self.max_connections)
+            )
             / self.max_connections
             if self.max_connections
             else 0.0
@@ -1835,11 +1839,15 @@ class PeerConnectionPool:
             if self.config
             else stale_scale
         )
-        if low_peer_threshold > 0 and low_peer_cleanup_suppression > 0.0:
-            if len(self.metrics) <= low_peer_threshold:
-                stale_scale = max(
-                    stale_scale, stale_health_scale_low_peer * low_peer_cleanup_suppression
-                )
+        if (
+            low_peer_threshold > 0
+            and low_peer_cleanup_suppression > 0.0
+            and len(self.metrics) <= low_peer_threshold
+        ):
+            stale_scale = max(
+                stale_scale,
+                stale_health_scale_low_peer * low_peer_cleanup_suppression,
+            )
         stale_threshold = self.max_idle_time * 2 * stale_scale
         hard_timeout_threshold = stale_threshold * 2
 
@@ -1859,11 +1867,11 @@ class PeerConnectionPool:
                 peer_info = connection.get("peer_info")
             if peer_info is None:
                 peer_info = getattr(conn_obj, "peer_info", None)
-            if peer_info is not None:
-                if bool(getattr(peer_info, "is_seeder", False)) or bool(
-                    getattr(peer_info, "complete", False)
-                ):
-                    return True
+            if peer_info is not None and (
+                bool(getattr(peer_info, "is_seeder", False))
+                or bool(getattr(peer_info, "complete", False))
+            ):
+                return True
             return bool(getattr(conn_obj, "is_seeder", False)) or bool(
                 getattr(conn_obj, "complete", False)
             )
@@ -1917,9 +1925,8 @@ class PeerConnectionPool:
                             break
 
             age = current_time - metrics.last_used
-            if (
-                has_inflight_requests
-                and age < (hard_timeout_threshold + inflight_protection_grace)
+            if has_inflight_requests and age < (
+                hard_timeout_threshold + inflight_protection_grace
             ):
                 if _can_retain_complete(peer_id):
                     stale_connection_marks.pop(peer_id, None)
@@ -1967,7 +1974,10 @@ class PeerConnectionPool:
 
         if stale_connections:
             pool_utilization = (
-                (self.max_connections - getattr(self.semaphore, "_value", self.max_connections))
+                (
+                    self.max_connections
+                    - getattr(self.semaphore, "_value", self.max_connections)
+                )
                 / self.max_connections
                 if self.max_connections
                 else 0.0
@@ -1990,7 +2000,8 @@ class PeerConnectionPool:
                                 "stale_removed": len(stale_connections),
                                 "pool_utilization": pool_utilization,
                                 "total_connections": len(self.metrics),
-                                "healthy_connections": len(self.metrics) - len(stale_connections),
+                                "healthy_connections": len(self.metrics)
+                                - len(stale_connections),
                                 "cleanup_reasons": cleanup_reason_counts,
                             },
                         )

@@ -65,6 +65,7 @@ from ccbt.session.peer_events import PeerEventsBinder
 from ccbt.session.peers import PeerConnectionHelper, PeerManagerInitializer, PexBinder
 from ccbt.session.scrape import ScrapeManager
 from ccbt.session.status_aggregation import StatusAggregator
+from ccbt.session.swarm_stability_defaults import PEER_DISCOVERY_DEFAULTS
 from ccbt.session.tasks import TaskSupervisor
 from ccbt.session.torrent_addition import TorrentAdditionHandler
 from ccbt.session.torrent_utils import get_torrent_info
@@ -76,7 +77,6 @@ from ccbt.utils.compat import sha1_compat
 from ccbt.utils.events import Event, EventType, emit_event
 from ccbt.utils.logging_config import get_logger
 from ccbt.utils.metrics import Metrics
-from ccbt.session.swarm_stability_defaults import PEER_DISCOVERY_DEFAULTS
 
 # Expose TorrentParser at module level for test patching
 TorrentParser = _TorrentParser
@@ -1578,7 +1578,9 @@ class AsyncTorrentSession:
                             """Run immediate tracker batch; return True when tracker source is exhausted."""
                             try:
                                 td: dict[str, Any]
-                                if isinstance(self.session.torrent_data, TorrentInfoModel):
+                                if isinstance(
+                                    self.session.torrent_data, TorrentInfoModel
+                                ):
                                     td = {
                                         "info_hash": self.session.torrent_data.info_hash,
                                         "name": self.session.torrent_data.name,
@@ -1609,16 +1611,20 @@ class AsyncTorrentSession:
                                 )
                                 if nat_manager is not None:
                                     with contextlib.suppress(Exception):
-                                        external_port = await nat_manager.get_external_port(
-                                            listen_port,
-                                            "tcp",
+                                        external_port = (
+                                            await nat_manager.get_external_port(
+                                                listen_port,
+                                                "tcp",
+                                            )
                                         )
                                         if external_port is not None:
                                             announce_port = external_port
-                                responses = await self.session.tracker.announce_to_multiple(
-                                    td,
-                                    tracker_urls,
-                                    port=announce_port,
+                                responses = (
+                                    await self.session.tracker.announce_to_multiple(
+                                        td,
+                                        tracker_urls,
+                                        port=announce_port,
+                                    )
                                 )
                                 aggregated_peers = []
                                 for response in responses:
@@ -1657,7 +1663,9 @@ class AsyncTorrentSession:
                                     ]
                                     if peer_list:
                                         helper = PeerConnectionHelper(self.session)
-                                        await helper.connect_peers_to_download(peer_list)
+                                        await helper.connect_peers_to_download(
+                                            peer_list
+                                        )
                                         self.session.logger.info(
                                             "Immediate tracker handoff returned %d peer(s) across %d successful tracker response(s)",
                                             len(peer_list),
@@ -1740,10 +1748,7 @@ class AsyncTorrentSession:
                                     else None
                                 )
                                 if dht_client:
-                                    if (
-                                        low_peer_state
-                                        and low_peer_window > 0.0
-                                    ):
+                                    if low_peer_state and low_peer_window > 0.0:
                                         self.session._low_peer_recovery_suppressed_until = (
                                             current_time + low_peer_window
                                         )
@@ -2248,6 +2253,7 @@ class AsyncTorrentSession:
                 return
 
             import time as time_module
+
             connection_start_time = time_module.time()
 
             cooldown_until = self._tracker_immediate_connection_cooldown_until
@@ -2267,7 +2273,9 @@ class AsyncTorrentSession:
             # Use timestamp to handle multiple concurrent callbacks - extend the time if needed
             max_wait_time = 4.0 if self._metadata_is_incomplete() else 2.0
             max_peers_per_torrent = getattr(
-                self.config.network, "max_peers_per_torrent", self._tracker_immediate_connect_burst_total
+                self.config.network,
+                "max_peers_per_torrent",
+                self._tracker_immediate_connect_burst_total,
             )
             configured_max_peers = (
                 max_peers_per_torrent
@@ -2537,11 +2545,13 @@ class AsyncTorrentSession:
                             "✅ IMMEDIATE CONNECTION: Tracker peer connection wait period expired (flag cleared, DHT can now start if needed)"
                         )
                     else:
-                        peer_manager = (
-                            getattr(self.download_manager, "peer_manager", None)
+                        peer_manager = getattr(
+                            self.download_manager, "peer_manager", None
                         )
                         batches_active = bool(
-                            getattr(peer_manager, "_connection_batches_in_progress", False)
+                            getattr(
+                                peer_manager, "_connection_batches_in_progress", False
+                            )
                             if peer_manager
                             else False
                         )
@@ -3666,7 +3676,9 @@ class AsyncTorrentSession:
             300,
         )
 
-    def _peer_discovery_setting(self, setting_name: str, fallback: float | int) -> float | int:
+    def _peer_discovery_setting(
+        self, setting_name: str, fallback: float
+    ) -> Union[float, int]:
         """Read peer discovery tuning values from config if available."""
         discovery = getattr(self.config, "discovery", None)
         return getattr(discovery, setting_name, fallback)

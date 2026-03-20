@@ -12,7 +12,7 @@ import mimetypes
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
     from ccbt.daemon.ipc_client import IPCClient
@@ -858,7 +858,7 @@ class DaemonDataProvider(DataProvider):
 
     @staticmethod
     def _normalize_event_type(
-        event_type: EventType | str,
+        event_type: Union[EventType, str],
     ) -> Optional[EventType]:
         """Normalize event type input from enum or string payloads."""
         if isinstance(event_type, EventType):
@@ -875,7 +875,7 @@ class DaemonDataProvider(DataProvider):
         return None
 
     def invalidate_on_event(
-        self, event_type: EventType | str, info_hash: Optional[str] = None
+        self, event_type: Union[EventType, str], info_hash: Optional[str] = None
     ) -> None:
         """Invalidate cache based on event type.
         

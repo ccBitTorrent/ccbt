@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import ipaddress
 import logging
 import re
@@ -17,7 +18,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Protocol, Union, cast
+from typing import Any, Awaitable, Callable, Optional, Protocol, Union, cast
 
 import aiohttp
 
@@ -165,8 +166,11 @@ class TrackerSession:
     min_interval: Optional[int] = None
     tracker_id: Optional[str] = None
     failure_count: int = 0
+    failure_streak: int = 0
     last_failure: float = 0.0
     backoff_delay: float = 1.0
+    quarantine_until: float = 0.0
+    quarantine_reason: Optional[str] = None
     performance: TrackerPerformance = None  # type: ignore[assignment]
     # Statistics from last tracker response (announce or scrape)
     last_complete: Optional[int] = None  # Number of seeders (complete peers)
@@ -229,7 +233,7 @@ class AsyncTrackerClient:
         # This allows sessions to connect peers immediately when tracker responses arrive
         # instead of waiting for the announce loop to process them
         self.on_peers_received: Optional[
-            Callable[[Union[list[PeerInfo], list[dict[str, Any]]], str], None]
+            Callable[[list[dict[str, Any]], str], Union[Awaitable[None], None]]
         ] = None
 
     async def announce_chunk(
@@ -292,7 +296,7 @@ class AsyncTrackerClient:
                     seen_peer_keys.add(peer_key)
 
             if tracker_url not in self._immediate_connection_tasks:
-                self._immediate_connection_tasks[tracker_url] = asyncio.create_task(  # noqa: RUF006
+                self._immediate_connection_tasks[tracker_url] = asyncio.create_task(
                     self._flush_immediate_connection(tracker_url)
                 )
 
@@ -309,10 +313,12 @@ class AsyncTrackerClient:
                 return
 
             try:
-                if asyncio.iscoroutinefunction(self.on_peers_received):
-                    await self.on_peers_received(peers, tracker_url)
-                else:
-                    self.on_peers_received(peers, tracker_url)
+                callback = self.on_peers_received
+                if callback is None:
+                    return
+                result = callback(peers, tracker_url)
+                if inspect.isawaitable(result):
+                    await result
             except Exception as e:
                 self.logger.warning(
                     "Error in immediate peer connection callback: %s",
@@ -791,6 +797,57 @@ class AsyncTrackerClient:
 
         # Return ranked URLs
         return [url for _, url in tracker_scores]
+
+    @staticmethod
+    def _is_invalid_payload_failure(failure_reason: Optional[str]) -> bool:
+        if not failure_reason:
+            return False
+        normalized_reason = failure_reason.lower()
+        return any(
+            marker in normalized_reason
+            for marker in (
+                "invalid tracker payload",
+                "non-bencode",
+                "parse tracker response",
+                "invalid tracker",
+                "not bencode",
+            )
+        )
+
+    def _apply_tracker_quarantine(
+        self,
+        session: TrackerSession,
+        failure_reason: Optional[str] = None,
+        failure_count: Optional[int] = None,
+    ) -> None:
+        failure_reason = failure_reason or "unclassified tracker failure"
+        failure_streak = (
+            failure_count if failure_count is not None else session.failure_streak
+        )
+        should_quarantine = failure_streak >= 2 and self._is_invalid_payload_failure(
+            failure_reason
+        )
+        if not should_quarantine:
+            return
+
+        cooldown_seconds = float(
+            getattr(
+                self.config.network,
+                "tracker_payload_failure_quarantine_seconds",
+                120.0,
+            )
+        )
+        if cooldown_seconds < 0.0:
+            cooldown_seconds = 120.0
+        session.quarantine_until = time.time() + cooldown_seconds
+        session.quarantine_reason = failure_reason[:240]
+        self.logger.warning(
+            "Tracker %s quarantined for %.1fs after %d invalid payload failures: %s",
+            session.url,
+            cooldown_seconds,
+            failure_streak,
+            failure_reason,
+        )
 
     def _calculate_adaptive_interval(
         self,
@@ -1684,7 +1741,7 @@ class AsyncTrackerClient:
                 )
 
             if announce_url:
-                self._handle_tracker_failure(announce_url)
+                self._handle_tracker_failure(announce_url, failure_reason=str(e))
 
             # Emit tracker announce error event
             try:
@@ -1764,7 +1821,9 @@ class AsyncTrackerClient:
             try:
                 normalized_candidate = self._normalize_tracker_url(candidate_url)
             except TrackerError as exc:
-                tracker_host = urllib.parse.urlparse(candidate_url).hostname or "unknown"
+                tracker_host = (
+                    urllib.parse.urlparse(candidate_url).hostname or "unknown"
+                )
                 self._increment_session_metric(tracker_host, "invalid_payload_count")
                 self.logger.warning(
                     "Skipping invalid tracker URL %s in multi-announce scheduling: %s",
@@ -1782,24 +1841,46 @@ class AsyncTrackerClient:
         ranked_urls = normalized_urls
         scheduled_urls: list[str] = []
         deferred_urls: list[tuple[float, str]] = []
+        quarantined_urls: set[str] = set()
+        fallback_urls: list[str] = []
         current_time = time.time()
         for url in ranked_urls:
             session = self.sessions.get(url)
             if session is None:
                 self.sessions[url] = TrackerSession(url=url)
                 session = self.sessions[url]
+
+            if session.quarantine_until and current_time < session.quarantine_until:
+                quarantined_urls.add(url)
+                continue
+
             backoff_until = session.last_failure + session.backoff_delay
             if session.failure_count > 0 and current_time < backoff_until:
                 deferred_urls.append((backoff_until - current_time, url))
                 continue
             scheduled_urls.append(url)
+
+        if not scheduled_urls:
+            # If all announced trackers were skipped, try a deterministic healthy fallback set.
+            fallback_urls = self.get_fallback_trackers(exclude_urls=set(ranked_urls))
+            if fallback_urls:
+                for fallback_url in fallback_urls:
+                    if fallback_url not in scheduled_urls:
+                        scheduled_urls.append(fallback_url)
+                    if len(scheduled_urls) >= 3:
+                        break
+            elif deferred_urls:
+                deferred_urls.sort(key=lambda item: item[0])
+                scheduled_urls.append(deferred_urls[0][1])
+
         if not scheduled_urls and deferred_urls:
             deferred_urls.sort(key=lambda item: item[0])
             scheduled_urls.append(deferred_urls[0][1])
         if len(scheduled_urls) != len(tracker_urls):
             self.logger.info(
-                "Announce scheduler deferred %d tracker(s) still in backoff; scheduling %d tracker(s) this cycle",
+                "Announce scheduler deferred %d tracker(s) still in backoff and %d quarantined; scheduling %d tracker(s) this cycle",
                 len(tracker_urls) - len(scheduled_urls),
+                len(quarantined_urls),
                 len(scheduled_urls),
             )
         tracker_urls = scheduled_urls
@@ -2544,6 +2625,9 @@ class AsyncTrackerClient:
         session.interval = response.interval
         session.tracker_id = response.tracker_id
         session.failure_count = 0  # Reset failure count on success
+        session.failure_streak = 0
+        session.quarantine_until = 0.0
+        session.quarantine_reason = None
 
         # Store statistics from tracker response (announce responses contain complete/incomplete)
         # Note: downloaded count is only available in scrape responses, which are handled separately
@@ -2557,7 +2641,9 @@ class AsyncTrackerClient:
         if response.complete is not None or response.incomplete is not None:
             session.last_scrape_time = time.time()
 
-    def _handle_tracker_failure(self, url: str) -> None:
+    def _handle_tracker_failure(
+        self, url: str, failure_reason: Optional[str] = None
+    ) -> None:
         """Handle tracker failure with exponential backoff and jitter."""
         if url not in self.sessions:
             self.sessions[url] = TrackerSession(url=url)
@@ -2565,6 +2651,7 @@ class AsyncTrackerClient:
         session = self.sessions[url]
         session.failure_count += 1
         session.last_failure = time.time()
+        session.failure_streak += 1
 
         # Record failure in health manager
         self.health_manager.record_tracker_result(url, False)
@@ -2590,6 +2677,12 @@ class AsyncTrackerClient:
                 max_delay,
             )
 
+        self._apply_tracker_quarantine(
+            session,
+            failure_reason=failure_reason,
+            failure_count=session.failure_streak,
+        )
+
     @staticmethod
     def _classify_non_bencode_payload(response_data: bytes) -> Optional[str]:
         """Classify tracker payloads that are not valid bencode candidates."""
@@ -2605,7 +2698,9 @@ class AsyncTrackerClient:
             return "html/xml payload"
         if prefix.startswith((b"{", b"[")):
             return "json-like payload"
-        if prefix.startswith((b"0", b"1", b"2", b"3", b"4", b"5", b"6", b"7", b"8", b"9")):
+        if prefix.startswith(
+            (b"0", b"1", b"2", b"3", b"4", b"5", b"6", b"7", b"8", b"9")
+        ):
             return "plain/integer payload"
         return None
 
@@ -2635,21 +2730,27 @@ class AsyncTrackerClient:
             try:
                 value = bytes(value).decode("utf-8", errors="ignore").strip()
             except Exception as exc:
-                raise TrackerError(
-                    f"Invalid {field_name} in tracker response for {tracker_url}: {value!r}"
-                ) from exc
+                msg = (
+                    f"Invalid {field_name} in tracker response for {tracker_url}: "
+                    f"{value!r}"
+                )
+                raise TrackerError(msg) from exc
 
         if not isinstance(value, str):
-            raise TrackerError(
-                f"Invalid {field_name} type {type(value).__name__} in tracker response for {tracker_url}"
+            msg = (
+                f"Invalid {field_name} type {type(value).__name__} "
+                f"in tracker response for {tracker_url}"
             )
+            raise TrackerError(msg)
 
         try:
             return int(value.strip())
         except (TypeError, ValueError) as exc:
-            raise TrackerError(
-                f"Invalid {field_name} value '{value}' in tracker response for {tracker_url}"
-            ) from exc
+            msg = (
+                f"Invalid {field_name} value '{value}' in tracker response for "
+                f"{tracker_url}"
+            )
+            raise TrackerError(msg) from exc
 
     @staticmethod
     def _coerce_tracker_peer_port(peer_port_raw: Any) -> int:
@@ -2663,14 +2764,18 @@ class AsyncTrackerClient:
             if len(peer_port_bytes) == 2:
                 peer_port = int.from_bytes(peer_port_bytes, "big")
             else:
-                peer_port = int(peer_port_bytes.decode("utf-8", errors="ignore").strip())
+                peer_port = int(
+                    peer_port_bytes.decode("utf-8", errors="ignore").strip()
+                )
         else:
             peer_port = int(peer_port_raw)
 
         if not isinstance(peer_port, int):
-            raise ValueError("port must be int after coercion")
+            msg = "port must be int after coercion"
+            raise TypeError(msg)
         if peer_port <= 0 or peer_port > 65535:
-            raise ValueError(f"port out of range: {peer_port}")
+            msg = f"port out of range: {peer_port}"
+            raise ValueError(msg)
         return peer_port
 
     @staticmethod
@@ -2683,17 +2788,22 @@ class AsyncTrackerClient:
         elif isinstance(peer_ip_raw, str):
             peer_ip = peer_ip_raw.strip()
         else:
-            raise ValueError(f"invalid ip type {type(peer_ip_raw).__name__}")
+            msg = f"invalid ip type {type(peer_ip_raw).__name__}"
+            raise TypeError(msg)
 
         if not peer_ip:
-            raise ValueError("empty peer ip")
+            msg = "empty peer ip"
+            raise ValueError(msg)
         return peer_ip
 
-    def _parse_response_async(self, response_data: bytes, tracker_url: str = "") -> TrackerResponse:
+    def _parse_response_async(
+        self, response_data: bytes, tracker_url: str = ""
+    ) -> TrackerResponse:
         """Parse tracker response asynchronously.
 
         Args:
             response_data: Raw response data from tracker
+            tracker_url: Tracker URL used for context in error messages.
 
         Returns:
             TrackerResponse object
@@ -2756,11 +2866,11 @@ class AsyncTrackerClient:
                             peer_port = self._coerce_tracker_peer_port(peer_port_raw)
                         except Exception as exc:
                             self.logger.warning(
-                                    "Skipping invalid tracker peer from %s: %s (ip=%r, port=%r)",
-                                    tracker_url,
-                                    exc,
-                                    peer_ip_raw,
-                                    peer_port_raw,
+                                "Skipping invalid tracker peer from %s: %s (ip=%r, port=%r)",
+                                tracker_url,
+                                exc,
+                                peer_ip_raw,
+                                peer_port_raw,
                             )
                             continue
 
@@ -2935,7 +3045,7 @@ class AsyncTrackerClient:
                         )
 
             return TrackerResponse(
-                interval=interval,
+                interval=self._coerce_interval(interval),
                 peers=peer_info_list,
                 complete=parsed_complete,
                 incomplete=parsed_incomplete,
@@ -2949,6 +3059,14 @@ class AsyncTrackerClient:
                 raise
             msg = f"Failed to parse tracker response: {e}"
             raise TrackerError(msg) from e
+
+    @staticmethod
+    def _coerce_interval(interval: Optional[int]) -> int:
+        """Validate required tracker interval."""
+        if interval is None:
+            msg = "Missing required tracker interval"
+            raise TrackerError(msg)
+        return interval
 
     def _parse_compact_peers(self, peers_data: bytes) -> list[dict[str, Any]]:
         """Parse compact peer format.
@@ -3607,21 +3725,27 @@ class TrackerClient:
             try:
                 value = bytes(value).decode("utf-8", errors="ignore").strip()
             except Exception as exc:
-                raise TrackerError(
-                    f"Invalid {field_name} in tracker response for {tracker_url}: {value!r}"
-                ) from exc
+                msg = (
+                    f"Invalid {field_name} in tracker response for {tracker_url}: "
+                    f"{value!r}"
+                )
+                raise TrackerError(msg) from exc
 
         if not isinstance(value, str):
-            raise TrackerError(
-                f"Invalid {field_name} type {type(value).__name__} in tracker response for {tracker_url}"
+            msg = (
+                f"Invalid {field_name} type {type(value).__name__} "
+                f"in tracker response for {tracker_url}"
             )
+            raise TrackerError(msg)
 
         try:
             return int(value.strip())
         except (TypeError, ValueError) as exc:
-            raise TrackerError(
-                f"Invalid {field_name} value '{value}' in tracker response for {tracker_url}"
-            ) from exc
+            msg = (
+                f"Invalid {field_name} value '{value}' in tracker response for "
+                f"{tracker_url}"
+            )
+            raise TrackerError(msg) from exc
 
     @staticmethod
     def _coerce_tracker_peer_port(peer_port_raw: Any) -> int:
@@ -3635,14 +3759,18 @@ class TrackerClient:
             if len(peer_port_bytes) == 2:
                 peer_port = int.from_bytes(peer_port_bytes, "big")
             else:
-                peer_port = int(peer_port_bytes.decode("utf-8", errors="ignore").strip())
+                peer_port = int(
+                    peer_port_bytes.decode("utf-8", errors="ignore").strip()
+                )
         else:
             peer_port = int(peer_port_raw)
 
         if not isinstance(peer_port, int):
-            raise ValueError("port must be int after coercion")
+            msg = "port must be int after coercion"
+            raise TypeError(msg)
         if peer_port <= 0 or peer_port > 65535:
-            raise ValueError(f"port out of range: {peer_port}")
+            msg = f"port out of range: {peer_port}"
+            raise ValueError(msg)
         return peer_port
 
     @staticmethod
@@ -3655,10 +3783,12 @@ class TrackerClient:
         elif isinstance(peer_ip_raw, str):
             peer_ip = peer_ip_raw.strip()
         else:
-            raise ValueError(f"invalid ip type {type(peer_ip_raw).__name__}")
+            msg = f"invalid ip type {type(peer_ip_raw).__name__}"
+            raise TypeError(msg)
 
         if not peer_ip:
-            raise ValueError("empty peer ip")
+            msg = "empty peer ip"
+            raise ValueError(msg)
         return peer_ip
 
     def _parse_response(self, response_data: bytes) -> dict[str, Any]:
@@ -3666,9 +3796,7 @@ class TrackerClient:
         try:
             payload_issue = self._classify_non_bencode_payload(response_data)
             if payload_issue:
-                msg = (
-                    f"Invalid tracker payload ({payload_issue}) for tracker response"
-                )
+                msg = f"Invalid tracker payload ({payload_issue}) for tracker response"
                 raise TrackerError(msg)
 
             # Decode bencoded response
@@ -3714,7 +3842,9 @@ class TrackerClient:
 
                             try:
                                 peer_ip = self._coerce_tracker_peer_ip(peer_ip_raw)
-                                peer_port = self._coerce_tracker_peer_port(peer_port_raw)
+                                peer_port = self._coerce_tracker_peer_port(
+                                    peer_port_raw
+                                )
                             except Exception as exc:
                                 self.logger.warning(
                                     "Skipping invalid peer entry: %s (ip=%r, port=%r)",

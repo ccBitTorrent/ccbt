@@ -139,3 +139,19 @@ print(json.dumps(summary, indent=2))
 - Baseline signature counts above must be reproducible from the same window on rerun.
 - `No available peers for piece / PIECE_SELECTOR` ratio should be tracked and compared on each gate.
 - Cleanup burst line windows should be persisted and checked against low-peer floor targets.
+
+## Latest validation snapshot (Mar 20, 2026)
+
+- Recovery-focused test suites run and passing:
+  - `tests/unit/tracker/test_tracker.py`
+  - `tests/unit/piece/test_async_piece_manager.py`
+  - `tests/unit/session/test_dht_recovery_deadlock.py`
+  - `tests/unit/tracker/test_tracker_udp_client_comprehensive.py`
+  - `tests/unit/session/test_session_background_loops.py`
+- New recovery markers and counters observed or asserted in this pass:
+  - `⚠️ PIECE_SELECTOR: No-progress gate engaged...` (logged when bounded gate activates)
+  - `PIECE_MANAGER: Resetting stale piece ...` / `PIECE_MANAGER: Resetting unreceived blocks ...`
+  - `piece_selector_no_progress_gate_engaged_total` (new observability counter)
+  - `piece_retry_request_exception_recovery_total` (new observability counter)
+- Validation command used:
+  - `uv run pytest -c dev/pytest.ini tests/unit/tracker/test_tracker.py tests/unit/piece/test_async_piece_manager.py tests/unit/session/test_dht_recovery_deadlock.py tests/unit/tracker/test_tracker_udp_client_comprehensive.py tests/unit/session/test_session_background_loops.py -q`
