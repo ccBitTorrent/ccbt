@@ -559,14 +559,12 @@ async def start_basic_magnet_download(
                 if hasattr(torrent_status, "status"):
                     current_status = torrent_status.status
                     current_progress = getattr(torrent_status, "progress", 0.0)
-                    connected_peers = getattr(torrent_status, "num_peers", 0)
+                    connected_peers = int(getattr(torrent_status, "connected_peers", 0))
                     download_rate = getattr(torrent_status, "download_rate", 0.0)
                 elif isinstance(torrent_status, dict):
                     current_status = torrent_status.get("status", "unknown")
                     current_progress = torrent_status.get("progress", 0.0)
-                    connected_peers = torrent_status.get(
-                        "connected_peers", torrent_status.get("num_peers", 0)
-                    )
+                    connected_peers = int(torrent_status.get("connected_peers", 0) or 0)
                     download_rate = torrent_status.get("download_rate", 0.0)
                 else:
                     current_status = "unknown"

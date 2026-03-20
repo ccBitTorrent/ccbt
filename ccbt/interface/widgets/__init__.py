@@ -6,12 +6,10 @@ from ccbt.interface.widgets.core_widgets import (
     GlobalTorrentMetricsPanel,
     GraphsSectionContainer,
     Overview,
-    PeersTable,
     QuickStatsPanel,
     SpeedSparklines,
     SummaryCards,
     SwarmHotspotsTable,
-    TorrentsTable,
 )
 from ccbt.interface.widgets.config_wrapper import ConfigScreenWrapper
 from ccbt.interface.widgets.file_browser import FileBrowserWidget
@@ -54,7 +52,6 @@ __all__ = [
     "MetricsTableWidget",
     "MonitoringScreenWrapper",
     "Overview",
-    "PeersTable",
     "PieceAvailabilityHealthBar",
     "PeerQualityDistributionWidget",
     "GlobalKPIsPanel",
@@ -70,7 +67,6 @@ __all__ = [
     "SummaryCards",
     "TorrentControlsWidget",
     "TorrentSelector",
-    "TorrentsTable",
     "UploadDownloadGraphWidget",
     "PeerQualitySummaryWidget",
     "LanguageSelectorWidget",

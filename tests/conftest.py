@@ -548,54 +548,8 @@ def cleanup_singleton_resources():
             # Best-effort cleanup
             pass
         
-        # Reset UTPSocketManager singleton to prevent state pollution in uTP tests
-        try:
-            from ccbt.transport.utp_socket import UTPSocketManager
-            # Stop and reset the singleton if it exists
-            if UTPSocketManager._instance is not None:
-                instance = UTPSocketManager._instance
-                # Try to stop if initialized
-                if instance._initialized and instance.transport is not None:
-                    try:
-                        import asyncio
-                        # Try to get existing loop, create new one if needed
-                        try:
-                            loop = asyncio.get_event_loop()
-                            if loop.is_closed():
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                        except RuntimeError:
-                            # No event loop, create new one
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                        
-                        if not loop.is_running():
-                            try:
-                                # Stop the socket manager
-                                loop.run_until_complete(instance.stop())
-                            except (RuntimeError, Exception):
-                                # If stop fails, just mark as not initialized
-                                instance._initialized = False
-                                if instance.transport:
-                                    try:
-                                        instance.transport.close()
-                                    except Exception:
-                                        pass
-                                    instance.transport = None
-                    except (RuntimeError, Exception):
-                        # Can't stop cleanly, just mark as not initialized
-                        instance._initialized = False
-                        if instance.transport:
-                            try:
-                                instance.transport.close()
-                            except Exception:
-                                pass
-                            instance.transport = None
-                # Always reset the singleton
-                UTPSocketManager._instance = None
-        except Exception:
-            # Best-effort cleanup
-            pass
+        # UTPSocketManager singleton compatibility path removed.
+        # Compatibility managers are now owned by sessions and must be cleaned up there.
         
         # Reset PluginManager singleton to prevent state pollution
         try:
@@ -608,43 +562,8 @@ def cleanup_singleton_resources():
             # Best-effort cleanup
             pass
         
-        # Reset DiskIOManager singleton to prevent state pollution
-        try:
-            from ccbt.storage.disk_io_init import _GLOBAL_DISK_IO_MANAGER
-            import ccbt.storage.disk_io_init as disk_io_module
-            if _GLOBAL_DISK_IO_MANAGER is not None:
-                # Try to stop if running (async, but best effort)
-                if _GLOBAL_DISK_IO_MANAGER._running:  # noqa: SLF001
-                    try:
-                        import asyncio
-                        # Try to get existing loop, create new one if needed
-                        try:
-                            loop = asyncio.get_event_loop()
-                            if loop.is_closed():
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                        except RuntimeError:
-                            # No event loop, create new one
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                        
-                        if not loop.is_running():
-                            try:
-                                loop.run_until_complete(_GLOBAL_DISK_IO_MANAGER.stop())
-                            except (RuntimeError, Exception):
-                                # If stop fails, mark as not running
-                                _GLOBAL_DISK_IO_MANAGER._running = False  # noqa: SLF001
-                        else:
-                            # Loop is running, can't use run_until_complete
-                            _GLOBAL_DISK_IO_MANAGER._running = False  # noqa: SLF001
-                    except (RuntimeError, Exception):
-                        # No event loop or other issue, just mark as not running
-                        _GLOBAL_DISK_IO_MANAGER._running = False  # noqa: SLF001
-                # Always reset the singleton to None to prevent state pollution
-                disk_io_module._GLOBAL_DISK_IO_MANAGER = None
-        except Exception:
-            # Best-effort cleanup
-            pass
+        # DiskIOManager is no longer stored as a global singleton.
+        # Compatibility instances created via get_disk_io_manager() are session-owned in tests.
     except Exception as e:
         # #region agent log
         _debug_log("A", "conftest.py:cleanup_singleton_resources", "Exception in cleanup_singleton_resources outer try", {"error": str(e), "error_type": type(e).__name__})

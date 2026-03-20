@@ -3,7 +3,7 @@
 Covers:
 - CorrelationFilter.filter() - correlation ID handling
 - StructuredFormatter.format() - all code paths
-- ColoredFormatter.format() - all code paths
+- Plain fallback formatter usage in setup_logging
 - setup_logging() - all configuration paths
 - LoggingContext - context manager lifecycle
 - log_exception() - CCBTError vs generic exception paths
@@ -25,16 +25,18 @@ pytestmark = [pytest.mark.unit]
 from ccbt.models import LogLevel, ObservabilityConfig
 from ccbt.utils.exceptions import CCBTError
 from ccbt.utils.logging_config import (
-    ColoredFormatter,
     CorrelationFilter,
     LoggingContext,
     StructuredFormatter,
     get_correlation_id,
     get_logger,
+    log_with_verbosity,
     log_exception,
     set_correlation_id,
     setup_logging,
+    TRACE_LOG_LEVEL,
 )
+from ccbt.cli.verbosity import VerbosityManager
 
 
 class TestCorrelationFilter:
@@ -215,114 +217,15 @@ class TestStructuredFormatter:
         assert data["custom_metric"] == 42
 
 
-class TestColoredFormatter:
-    """Test ColoredFormatter format method."""
+class TestPlainFormatterFallback:
+    """Test plain fallback formatter setup in setup_logging()."""
 
-    def test_format_debug_level(self):
-        """Test ColoredFormatter.format() - DEBUG level (lines 114-120)."""
-        # ColoredFormatter needs a format string to work properly
-        formatter = ColoredFormatter(
-            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    def test_plain_formatter_fallback_formats_messages(self):
+        """Test that plain fallback formatter formats messages."""
+        formatter = logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s: %(message)s"
         )
-        
-        record = logging.LogRecord(
-            name="test",
-            level=logging.DEBUG,
-            pathname="test.py",
-            lineno=1,
-            msg="Debug message",
-            args=(),
-            exc_info=None,
-        )
-        
-        result = formatter.format(record)
-        
-        # Level name should be colored (formatter modifies record.levelname in place)
-        # Check that DEBUG appears in the formatted result
-        assert "DEBUG" in result or "Debug message" in result
 
-    def test_format_info_level(self):
-        """Test ColoredFormatter.format() - INFO level."""
-        formatter = ColoredFormatter(
-            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s"
-        )
-        
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="test.py",
-            lineno=1,
-            msg="Info message",
-            args=(),
-            exc_info=None,
-        )
-        
-        result = formatter.format(record)
-        assert "INFO" in result or "Info message" in result
-
-    def test_format_warning_level(self):
-        """Test ColoredFormatter.format() - WARNING level."""
-        formatter = ColoredFormatter(
-            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s"
-        )
-        
-        record = logging.LogRecord(
-            name="test",
-            level=logging.WARNING,
-            pathname="test.py",
-            lineno=1,
-            msg="Warning message",
-            args=(),
-            exc_info=None,
-        )
-        
-        result = formatter.format(record)
-        assert "WARNING" in result or "Warning message" in result
-
-    def test_format_error_level(self):
-        """Test ColoredFormatter.format() - ERROR level."""
-        formatter = ColoredFormatter(
-            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s"
-        )
-        
-        record = logging.LogRecord(
-            name="test",
-            level=logging.ERROR,
-            pathname="test.py",
-            lineno=1,
-            msg="Error message",
-            args=(),
-            exc_info=None,
-        )
-        
-        result = formatter.format(record)
-        assert "ERROR" in result or "Error message" in result
-
-    def test_format_critical_level(self):
-        """Test ColoredFormatter.format() - CRITICAL level."""
-        formatter = ColoredFormatter(
-            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s"
-        )
-        
-        record = logging.LogRecord(
-            name="test",
-            level=logging.CRITICAL,
-            pathname="test.py",
-            lineno=1,
-            msg="Critical message",
-            args=(),
-            exc_info=None,
-        )
-        
-        result = formatter.format(record)
-        assert "CRITICAL" in result or "Critical message" in result
-
-    def test_format_with_correlation_id(self):
-        """Test ColoredFormatter.format() - with correlation_id attribute (lines 122-124)."""
-        formatter = ColoredFormatter(
-            fmt="%(asctime)s %(levelname)s %(correlation_id)s %(name)s: %(message)s"
-        )
-        
         record = logging.LogRecord(
             name="test",
             level=logging.INFO,
@@ -332,34 +235,9 @@ class TestColoredFormatter:
             args=(),
             exc_info=None,
         )
-        record.correlation_id = "test-correlation-123"
-        
-        result = formatter.format(record)
-        
-        # Correlation ID should be formatted with brackets
-        # The format method modifies record.correlation_id in place
-        assert "test-correlation-123" in result
 
-    def test_format_without_correlation_id(self):
-        """Test ColoredFormatter.format() - without correlation_id attribute (lines 125-126)."""
-        formatter = ColoredFormatter(
-            fmt="%(asctime)s %(levelname)s %(correlation_id)s %(name)s: %(message)s"
-        )
-        
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="test.py",
-            lineno=1,
-            msg="Test message",
-            args=(),
-            exc_info=None,
-        )
-        # Don't set correlation_id - formatter will set it to "" if missing
-        
         result = formatter.format(record)
-        
-        # Should handle missing correlation_id gracefully (sets to "")
+        assert "INFO" in result
         assert "Test message" in result
 
 
@@ -485,14 +363,14 @@ class TestSetupLogging:
         logger = logging.getLogger("ccbt")
         handler = logger.handlers[0]
         # When Rich is available, RichHandler is used which has its own formatter
-        # When Rich is not available, StreamHandler with colored formatter is used
+        # When Rich is not available, StreamHandler with plain formatter is used
         from ccbt.utils.rich_logging import RichHandler
         if isinstance(handler, RichHandler):
             # RichHandler is used - it has its own internal formatting
             assert hasattr(handler, "console") or hasattr(handler, "rich_tracebacks")
         else:
-            # StreamHandler should use colored formatter when Rich is not available
-            assert isinstance(handler.formatter, ColoredFormatter)
+            # StreamHandler should use plain formatter when Rich is not available
+            assert isinstance(handler.formatter, logging.Formatter)
 
     def test_setup_logging_with_file_structured(self):
         """Test setup_logging() - file handler with structured logging (line 190)."""
@@ -580,6 +458,41 @@ class TestSetupLogging:
         corr_id = get_correlation_id()
         # May be None or previous value, but not auto-generated
         # We can't assert None here because it might have been set elsewhere
+
+    def test_setup_logging_accepts_effective_trace_level(self):
+        """Test setup_logging() honors an explicit effective TRACE override."""
+        config = ObservabilityConfig(
+            log_level=LogLevel.INFO,
+            log_file=None,
+            structured_logging=False,
+            log_correlation_id=False,
+        )
+
+        setup_logging(config, effective_log_level="TRACE")
+        logger = logging.getLogger("ccbt")
+        assert logger.level == TRACE_LOG_LEVEL
+
+
+class TestVerbosityAwareLogging:
+    """Tests for verbosity-aware logging helpers."""
+
+    def test_log_with_verbosity_for_trace_level(self):
+        """Trace logging should route through logger.trace when available."""
+        logger = logging.getLogger("test.trace")
+        verbosity_manager = VerbosityManager.from_count(3)  # TRACE
+
+        with patch.object(logger, "trace") as mock_trace, patch.object(
+            logger, "log"
+        ) as mock_log:
+            log_with_verbosity(
+                logger,
+                verbosity_manager,
+                TRACE_LOG_LEVEL,
+                "Trace message for diagnostics",
+            )
+
+        mock_trace.assert_called_once()
+        mock_log.assert_not_called()
 
 
 class TestGetLogger:

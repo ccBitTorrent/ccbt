@@ -10,13 +10,6 @@ from ccbt.interface.screens.base import (
     MonitoringScreen,
     PerTorrentConfigScreen,
 )
-# Note: tabbed_base.py Screen classes are deprecated/unused.
-# The new implementation uses Container widgets instead of Screen classes.
-# from ccbt.interface.screens.tabbed_base import (
-#     PerTorrentTabScreen,
-#     PreferencesTabScreen,
-#     TorrentsTabScreen,
-# )
 
 __all__ = [
     "ConfigScreen",
@@ -25,7 +18,4 @@ __all__ = [
     "GlobalConfigScreen",
     "MonitoringScreen",
     "PerTorrentConfigScreen",
-    # "PerTorrentTabScreen",  # Deprecated - use Container widgets instead
-    # "PreferencesTabScreen",  # Deprecated - use Container widgets instead
-    # "TorrentsTabScreen",  # Deprecated - use Container widgets instead
 ]

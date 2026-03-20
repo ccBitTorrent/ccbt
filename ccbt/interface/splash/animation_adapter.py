@@ -166,23 +166,6 @@ class AnimationAdapter:
             update_callback=update_callback,
         )
     
-    def update_message(self, message: str) -> None:
-        """Update message overlay.
-        
-        Note: Messages are now automatically captured from logging system.
-        This method is kept for backward compatibility.
-        
-        Args:
-            message: Message to display (ignored - use logging instead)
-        """
-        # Messages are now captured from logging system automatically
-        # This method is kept for backward compatibility but does nothing
-        pass
-    
-    def clear_messages(self) -> None:
-        """Clear message overlay (deprecated - no-op)."""
-        pass
-    
     def render_frame_with_overlay(
         self,
         frame_content: Any,

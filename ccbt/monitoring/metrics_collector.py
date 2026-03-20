@@ -1057,9 +1057,15 @@ class MetricsCollector:
 
         # Collect disk I/O metrics if available
         try:
-            from ccbt.storage.disk_io_init import get_disk_io_manager
+            disk_io = (
+                self._session.disk_io_manager
+                if self._session and getattr(self._session, "disk_io_manager", None)
+                else None
+            )
+            if disk_io is None:
+                from ccbt.storage.disk_io_init import get_disk_io_manager
 
-            disk_io = get_disk_io_manager()
+                disk_io = get_disk_io_manager()
             # Access private members for disk I/O state checking
             if disk_io and hasattr(disk_io, "_running") and disk_io._running:  # noqa: SLF001
                 stats = disk_io.stats

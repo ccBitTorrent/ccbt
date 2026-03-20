@@ -37,10 +37,6 @@ class TestRefactoredSessionLifecycle:
     @pytest.fixture
     def manager(self, tmp_dir: Path) -> AsyncSessionManager:
         """Create session manager instance."""
-        # Reset uTP socket manager singleton to avoid port conflicts
-        from ccbt.transport.utp_socket import UTPSocketManager
-        UTPSocketManager._instance = None  # Reset singleton
-        
         manager = AsyncSessionManager(output_dir=str(tmp_dir))
         # Disable uTP to avoid port conflicts in tests
         manager.config.network.enable_utp = False

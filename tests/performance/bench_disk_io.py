@@ -207,6 +207,12 @@ def main() -> int:
         choices=["auto", "pre-commit", "commit", "both", "none"],
         help="Recording mode for benchmark results",
     )
+    parser.add_argument(
+        "--json-out",
+        type=Path,
+        default=None,
+        help="Write benchmark JSON artifact to this path (or directory) for CI",
+    )
     
     args = parser.parse_args()
     
@@ -240,6 +246,7 @@ def main() -> int:
         config_name=config_name,
         results=results,
         record_mode=args.record_mode,
+        json_out=args.json_out,
     )
     
     # Also write legacy format for compatibility

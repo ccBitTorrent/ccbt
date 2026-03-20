@@ -65,8 +65,6 @@ class DiskIOMetricsScreen(MonitoringScreen):  # type: ignore[misc]
     async def _refresh_data(self) -> None:  # pragma: no cover
         """Refresh disk I/O metrics display."""
         try:
-            from ccbt.storage.disk_io_init import get_disk_io_manager
-
             content = self.query_one("#content", Static)
             io_stats = self.query_one("#io_stats", Static)
             cache_stats = self.query_one("#cache_stats", Static)
@@ -74,7 +72,11 @@ class DiskIOMetricsScreen(MonitoringScreen):  # type: ignore[misc]
 
             # Get disk I/O manager
             try:
-                disk_io = get_disk_io_manager()
+                disk_io = getattr(self.session, "disk_io_manager", None)
+                if disk_io is None:
+                    from ccbt.storage.disk_io_init import get_disk_io_manager
+
+                    disk_io = get_disk_io_manager()
             except Exception as e:
                 content.update(
                     Panel(

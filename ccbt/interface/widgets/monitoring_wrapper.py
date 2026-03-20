@@ -237,15 +237,15 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
             
             global_table.add_row("Total Torrents", str(stats.get("num_torrents", 0)))
             global_table.add_row("Active Torrents", str(stats.get("num_active", 0)))
-            global_table.add_row("Total Download Rate", format_speed(stats.get("total_download_rate", 0.0)))
-            global_table.add_row("Total Upload Rate", format_speed(stats.get("total_upload_rate", 0.0)))
+            global_table.add_row("Total Download Rate", format_speed(stats.get("download_rate", 0.0)))
+            global_table.add_row("Total Upload Rate", format_speed(stats.get("upload_rate", 0.0)))
             
             # Calculate peer statistics
             total_peers = 0
             total_seeds = 0
             for status in all_status.values():
-                total_peers += status.get("connected_peers", status.get("num_peers", 0))
-                total_seeds += status.get("active_peers", status.get("num_seeds", 0))
+                total_peers += status.get("connected_peers", 0)
+                total_seeds += status.get("active_peers", 0)
             
             global_table.add_row("Total Peers", str(total_peers))
             global_table.add_row("Total Seeds", str(total_seeds))

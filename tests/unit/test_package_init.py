@@ -4,8 +4,6 @@ Target: 95%+ coverage for ccbt/__init__.py.
 """
 
 import asyncio
-import importlib
-from unittest.mock import patch
 
 import pytest
 
@@ -52,14 +50,6 @@ class TestPackageInit:
         assert hasattr(ccbt, "parse_magnet")
         assert hasattr(ccbt, "get_config")
         assert hasattr(ccbt, "init_config")
-
-    def test_getattr_async_main(self):
-        """Test __getattr__ for async_main."""
-        import ccbt
-
-        # Should return the async_main module
-        async_main = ccbt.__getattr__("async_main")
-        assert async_main is not None
 
     def test_getattr_invalid_attribute(self):
         """Test __getattr__ raises AttributeError for invalid attribute."""

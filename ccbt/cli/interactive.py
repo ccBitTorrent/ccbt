@@ -510,6 +510,16 @@ class InteractiveCLI:
             ),
             style="white",
         )
+        status_text.append("\n")
+        status_text.append(
+            _("Tip: full option catalog and file merge → "),
+            style="dim",
+        )
+        status_text.append("btbt config describe", style="cyan")
+        status_text.append(" / ", style="dim")
+        status_text.append("btbt config apply", style="cyan")
+        status_text.append(" / ", style="dim")
+        status_text.append("btbt config schema", style="cyan")
 
         return Panel(status_text, title=_("Status"))
 
@@ -1610,7 +1620,7 @@ Available Commands:
             if self.session and hasattr(self.session, "disk_io_manager"):
                 disk_io = self.session.disk_io_manager
             else:
-                # Fallback to deprecated singleton
+                # Fallback to compatibility singleton
                 from ccbt.storage.disk_io_init import get_disk_io_manager
 
                 with contextlib.suppress(Exception):
@@ -2844,7 +2854,7 @@ Available Commands:
         self.console.print(_("[green]Imported configuration[/green]"))
 
     async def cmd_config_schema(self, args: list[str]) -> None:
-        """Show configuration JSON schema.
+        """Show configuration JSON schema (same data as ``btbt config schema``).
 
         Usage:
           config_schema [model]
@@ -2860,16 +2870,25 @@ Available Commands:
         self.console.print_json(data=json.loads(json.dumps(data)))
 
     async def cmd_config(self, args: list[str]) -> None:
-        """Show or modify configuration at runtime.
+        """Show or modify in-memory configuration at runtime.
 
         Usage:
           config show [section|key.path]
           config get <key.path>
           config set <key.path> <value>
           config reload
+
+        For every option path, defaults, and validated TOML edits, use the shell:
+        ``btbt config describe``, ``btbt config set``, ``btbt config apply``,
+        ``btbt config import``.
         """
         if not args:
-            self.console.print(_("Usage: config [show|get|set|reload] ..."))
+            self.console.print(
+                _(
+                    "Usage: config [show|get|set|reload] ...\n"
+                    "Shell: btbt config describe | apply | import | schema"
+                )
+            )
             return
         sub = args[0]
         cm = ConfigManager(None)

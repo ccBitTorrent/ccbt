@@ -1108,6 +1108,42 @@ class DHTQueryMetricsResponse(BaseModel):
     bootstrap_failure_count: int = Field(
         0, description="Number of failed bootstrap or rebootstrap attempts"
     )
+    bootstrap_recovery_attempts: int = Field(
+        0,
+        description="Number of bootstrap recovery attempts (including rebootstrap and fallback)",
+    )
+    bootstrap_health_state: str = Field(
+        "unknown", description="Current bootstrap health state"
+    )
+    bootstrap_zero_state_count: int = Field(
+        0,
+        description="Count of times bootstrap completed with zero routing-table nodes",
+    )
+    bootstrap_zero_nodes_last_reason: str = Field(
+        "", description="Reason from the last zero-node bootstrap outcome"
+    )
+    rebootstrap_attempt_count: int = Field(
+        0, description="Number of rebootstrap attempts"
+    )
+    rebootstrap_success_count: int = Field(
+        0, description="Number of successful rebootstrap attempts"
+    )
+    rebootstrap_failure_count: int = Field(
+        0, description="Number of failed rebootstrap attempts"
+    )
+    rebootstrap_last_outcome: str = Field(
+        "not_attempted", description="Last rebootstrap attempt outcome"
+    )
+    rebootstrap_last_reason: str = Field(
+        "", description="Reason label for last rebootstrap attempt"
+    )
+    rebootstrap_last_source: str = Field("", description="Source of last rebootstrap")
+    rebootstrap_health_state: str = Field(
+        "unknown", description="Current rebootstrap health state"
+    )
+    rebootstrap_consecutive_failures: int = Field(
+        0, description="Consecutive rebootstrap failures"
+    )
     last_bootstrap_reason: str = Field(
         "", description="Reason label for the last bootstrap attempt"
     )

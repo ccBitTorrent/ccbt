@@ -1103,10 +1103,8 @@ class IPCServer:
                     progress=status.get("progress", 0.0),
                     pieces_completed=status.get("pieces_completed", 0),
                     pieces_total=status.get("pieces_total", 0),
-                    connected_peers=status.get(
-                        "connected_peers", status.get("num_peers", 0)
-                    ),
-                    active_peers=status.get("active_peers", status.get("num_seeds", 0)),
+                    connected_peers=int(status.get("connected_peers", 0)),
+                    active_peers=int(status.get("active_peers", 0)),
                     top_peers=top_peers,
                     bytes_downloaded=status.get("downloaded", 0),
                     bytes_uploaded=status.get("uploaded", 0),
@@ -1442,12 +1440,8 @@ class IPCServer:
                     "pieces_completed": status.get("pieces_completed", 0),
                     "pieces_total": status.get("pieces_total", 0),
                     "progress": status.get("progress", 0.0),
-                    "connected_peers": status.get(
-                        "connected_peers", status.get("num_peers", 0)
-                    ),
-                    "active_peers": status.get(
-                        "active_peers", status.get("num_seeds", 0)
-                    ),
+                    "connected_peers": int(status.get("connected_peers", 0)),
+                    "active_peers": int(status.get("active_peers", 0)),
                 }
 
                 # Add enhanced metrics if available
@@ -1624,6 +1618,18 @@ class IPCServer:
                     "routing_table_size": 0,
                     "bootstrap_success_count": 0,
                     "bootstrap_failure_count": 0,
+                    "bootstrap_recovery_attempts": 0,
+                    "bootstrap_health_state": "unknown",
+                    "bootstrap_zero_state_count": 0,
+                    "bootstrap_zero_nodes_last_reason": "",
+                    "rebootstrap_attempt_count": 0,
+                    "rebootstrap_success_count": 0,
+                    "rebootstrap_failure_count": 0,
+                    "rebootstrap_last_outcome": "not_attempted",
+                    "rebootstrap_last_reason": "",
+                    "rebootstrap_last_source": "",
+                    "rebootstrap_health_state": "unknown",
+                    "rebootstrap_consecutive_failures": 0,
                     "last_bootstrap_reason": "",
                     "last_bootstrap_failure_reason": "",
                     "last_zero_node_lookup_at": 0.0,
@@ -1672,6 +1678,45 @@ class IPCServer:
                     )
                     metrics["bootstrap_failure_count"] = int(
                         dht_metrics.get("bootstrap_failure_count", 0) or 0
+                    )
+                    metrics["bootstrap_recovery_attempts"] = int(
+                        dht_metrics.get("bootstrap_recovery_attempts", 0) or 0
+                    )
+                    metrics["bootstrap_health_state"] = str(
+                        dht_metrics.get("bootstrap_health_state", "unknown")
+                        or "unknown"
+                    )
+                    metrics["bootstrap_zero_state_count"] = int(
+                        dht_metrics.get("bootstrap_zero_state_count", 0) or 0
+                    )
+                    metrics["bootstrap_zero_nodes_last_reason"] = str(
+                        dht_metrics.get("bootstrap_zero_nodes_last_reason", "") or ""
+                    )
+                    metrics["rebootstrap_attempt_count"] = int(
+                        dht_metrics.get("rebootstrap_attempt_count", 0) or 0
+                    )
+                    metrics["rebootstrap_success_count"] = int(
+                        dht_metrics.get("rebootstrap_success_count", 0) or 0
+                    )
+                    metrics["rebootstrap_failure_count"] = int(
+                        dht_metrics.get("rebootstrap_failure_count", 0) or 0
+                    )
+                    metrics["rebootstrap_last_outcome"] = str(
+                        dht_metrics.get("rebootstrap_last_outcome", "not_attempted")
+                        or "not_attempted"
+                    )
+                    metrics["rebootstrap_last_reason"] = str(
+                        dht_metrics.get("rebootstrap_last_reason", "") or ""
+                    )
+                    metrics["rebootstrap_last_source"] = str(
+                        dht_metrics.get("rebootstrap_last_source", "") or ""
+                    )
+                    metrics["rebootstrap_health_state"] = str(
+                        dht_metrics.get("rebootstrap_health_state", "unknown")
+                        or "unknown"
+                    )
+                    metrics["rebootstrap_consecutive_failures"] = int(
+                        dht_metrics.get("rebootstrap_consecutive_failures", 0) or 0
                     )
                     metrics["last_bootstrap_reason"] = str(
                         dht_metrics.get("last_bootstrap_reason", "") or ""
@@ -1735,6 +1780,43 @@ class IPCServer:
                     ),
                     "bootstrap_failure_count": int(
                         metrics.get("bootstrap_failure_count", 0) or 0
+                    ),
+                    "bootstrap_recovery_attempts": int(
+                        metrics.get("bootstrap_recovery_attempts", 0) or 0
+                    ),
+                    "bootstrap_health_state": str(
+                        metrics.get("bootstrap_health_state", "unknown") or "unknown"
+                    ),
+                    "bootstrap_zero_state_count": int(
+                        metrics.get("bootstrap_zero_state_count", 0) or 0
+                    ),
+                    "bootstrap_zero_nodes_last_reason": str(
+                        metrics.get("bootstrap_zero_nodes_last_reason", "") or ""
+                    ),
+                    "rebootstrap_attempt_count": int(
+                        metrics.get("rebootstrap_attempt_count", 0) or 0
+                    ),
+                    "rebootstrap_success_count": int(
+                        metrics.get("rebootstrap_success_count", 0) or 0
+                    ),
+                    "rebootstrap_failure_count": int(
+                        metrics.get("rebootstrap_failure_count", 0) or 0
+                    ),
+                    "rebootstrap_last_outcome": str(
+                        metrics.get("rebootstrap_last_outcome", "not_attempted")
+                        or "not_attempted"
+                    ),
+                    "rebootstrap_last_reason": str(
+                        metrics.get("rebootstrap_last_reason", "") or ""
+                    ),
+                    "rebootstrap_last_source": str(
+                        metrics.get("rebootstrap_last_source", "") or ""
+                    ),
+                    "rebootstrap_health_state": str(
+                        metrics.get("rebootstrap_health_state", "unknown") or "unknown"
+                    ),
+                    "rebootstrap_consecutive_failures": int(
+                        metrics.get("rebootstrap_consecutive_failures", 0) or 0
                     ),
                     "last_bootstrap_reason": str(
                         metrics.get("last_bootstrap_reason", "") or ""
@@ -2062,9 +2144,7 @@ class IPCServer:
                             download_rate=float(status.get("download_rate", 0.0)),
                             upload_rate=float(status.get("upload_rate", 0.0)),
                             connected_peers=int(
-                                status.get(
-                                    "connected_peers", status.get("num_peers", 0)
-                                ),
+                                status.get("connected_peers", 0),
                             ),
                             active_peers=active_peers,
                             progress=float(status.get("progress", 0.0)),

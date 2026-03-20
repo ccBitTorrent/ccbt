@@ -193,8 +193,8 @@ class TorrentInfoScreen(Container):  # type: ignore[misc]
             table.add_row(_("Upload Speed"), format_speed(upload_rate))
             
             # Peers
-            num_peers = status.get("connected_peers", status.get("num_peers", 0))
-            num_seeds = status.get("active_peers", status.get("num_seeds", 0))
+            num_peers = status.get("connected_peers", 0)
+            num_seeds = status.get("active_peers", 0)
             table.add_row(_("Peers"), str(num_peers))
             table.add_row(_("Seeds"), str(num_seeds))
             

@@ -234,7 +234,12 @@ def test_apply_discovery_strategy_disk_observability_and_limits():
             "log_correlation_id": True,
         },
     )
+    assert cfg.observability.log_level == "DEBUG"
     assert cfg.observability.enable_metrics is True
+    assert cfg.observability.metrics_port == 9091
+    assert cfg.observability.metrics_interval == 2.5
+    assert cfg.observability.structured_logging is True
+    assert cfg.observability.log_correlation_id is True
 
     _apply_limit_overrides(cfg, {"download_limit": 1234, "upload_limit": 4321})
     assert cfg.network.global_down_kib == 1234

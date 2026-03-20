@@ -224,12 +224,10 @@ class TestUTPConnection:
         mock_socket_manager = AsyncMock()
         mock_socket_manager.get_transport = Mock(return_value=mock_transport)
         mock_socket_manager.register_connection = Mock()
+        utp_connection.utp_socket_manager = mock_socket_manager
 
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance", return_value=mock_socket_manager
-        ):
-            await utp_connection.initialize_transport()
-            assert utp_connection.transport == mock_transport
+        await utp_connection.initialize_transport()
+        assert utp_connection.transport == mock_transport
 
     @pytest.mark.asyncio
     async def test_connect_timeout(self, utp_connection):
@@ -609,12 +607,10 @@ class TestUTPConnection:
         # Mock socket manager
         mock_socket_manager = AsyncMock()
         mock_socket_manager.unregister_connection = Mock()
+        utp_connection.utp_socket_manager = mock_socket_manager
 
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance", return_value=mock_socket_manager
-        ):
-            await utp_connection.close()
-            assert utp_connection.state == UTPConnectionState.CLOSED
+        await utp_connection.close()
+        assert utp_connection.state == UTPConnectionState.CLOSED
 
     def test_calculate_target_window(self, mock_config, remote_addr):
         """Test window size calculation."""
@@ -710,15 +706,6 @@ class TestUTPSocketManager:
         with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
             from ccbt.transport.utp_socket import UTPSocketManager
 
-            # Reset singleton
-            if UTPSocketManager._instance is not None:
-                try:
-                    await UTPSocketManager._instance.stop()
-                except Exception:
-                    pass
-                UTPSocketManager._instance = None
-                await asyncio.sleep(0.5)
-
             # Mock socket creation to avoid port conflicts
             mock_transport = MagicMock()
             mock_protocol = MagicMock()
@@ -731,22 +718,12 @@ class TestUTPSocketManager:
                 manager = await UTPSocketManager.get_instance()
                 yield manager
                 await manager.stop()
-                UTPSocketManager._instance = None
 
     @pytest.mark.asyncio
-    async def test_socket_manager_singleton(self, mock_config):
-        """Test singleton pattern."""
+    async def test_socket_manager_returns_independent_instances(self, mock_config):
+        """Test compatibility get_instance returns dedicated managers."""
         with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
             from ccbt.transport.utp_socket import UTPSocketManager
-
-            # Ensure previous instance is stopped and cleaned up
-            if UTPSocketManager._instance is not None:
-                try:
-                    await UTPSocketManager._instance.stop()
-                except Exception:
-                    pass
-                UTPSocketManager._instance = None
-                await asyncio.sleep(0.5)
 
             # Mock socket creation to avoid port conflicts
             mock_transport = MagicMock()
@@ -762,10 +739,9 @@ class TestUTPSocketManager:
                 with patch.object(loop, "create_datagram_endpoint", side_effect=mock_create_datagram_endpoint):
                     manager1 = await UTPSocketManager.get_instance()
                     manager2 = await UTPSocketManager.get_instance()
-                    assert manager1 is manager2
+                    assert manager1 is not manager2
 
                     await manager1.stop()
-                    UTPSocketManager._instance = None
 
     @pytest.mark.asyncio
     async def test_register_connection(self, socket_manager, mock_config, remote_addr):
@@ -874,14 +850,7 @@ class TestUTPIntegration:
                 from ccbt.transport.utp_socket import UTPSocketManager
 
                 # Ensure previous instance is stopped and cleaned up
-                if UTPSocketManager._instance is not None:
-                    try:
-                        await UTPSocketManager._instance.stop()
-                    except Exception:
-                        pass
-                    UTPSocketManager._instance = None
-                    # Give Windows time to release the port (TIME_WAIT state)
-                    await asyncio.sleep(0.5)
+                # Compatibility singleton removed; get_instance creates dedicated managers.
 
                 # Create two connections (simulating peer-to-peer)
                 addr1 = ("127.0.0.1", 6881)
@@ -922,7 +891,6 @@ class TestUTPIntegration:
                         # In real scenario, conn2 would receive SYN and respond with SYN-ACK
                     finally:
                         await socket_manager.stop()
-                        UTPSocketManager._instance = None
 
                         # Cleanup
                         try:
@@ -1483,12 +1451,10 @@ class TestUTPIntegration:
             # Mock socket manager to raise error
             mock_socket_manager = AsyncMock()
             mock_socket_manager.unregister_connection = Mock(side_effect=Exception("Error"))
+            conn.utp_socket_manager = mock_socket_manager
 
-            with patch(
-                "ccbt.transport.utp_socket.UTPSocketManager.get_instance", return_value=mock_socket_manager
-            ):
-                await conn.close()
-                assert conn.state == UTPConnectionState.CLOSED
+            await conn.close()
+            assert conn.state == UTPConnectionState.CLOSED
 
     @pytest.mark.asyncio
     async def test_send_loop_exception(self, mock_config, remote_addr):
@@ -1705,13 +1671,7 @@ class TestUTPIntegration:
             from ccbt.transport.utp_socket import UTPSocketManager
 
             # Ensure previous instance is stopped and cleaned up
-            if UTPSocketManager._instance is not None:
-                try:
-                    await UTPSocketManager._instance.stop()
-                except Exception:
-                    pass
-                UTPSocketManager._instance = None
-                await asyncio.sleep(0.5)
+            # Compatibility singleton removed; no singleton cleanup needed.
 
             # Mock socket creation to avoid port conflicts
             mock_transport = MagicMock()
@@ -1726,7 +1686,7 @@ class TestUTPIntegration:
                 try:
                     await manager.stop()
                 finally:
-                    UTPSocketManager._instance = None
+                    pass
 
                 # Should handle gracefully
                 assert manager.transport is None or True  # May be None after stop
@@ -1737,7 +1697,7 @@ class TestUTPIntegration:
         with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
             from ccbt.transport.utp_socket import UTPSocketManager
 
-            UTPSocketManager._instance = None
+            # Compatibility singleton removed; no singleton reset required.
 
             with patch("asyncio.get_event_loop") as mock_loop:
                 mock_loop.side_effect = Exception("Error")
@@ -1750,14 +1710,7 @@ class TestUTPIntegration:
         with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
             from ccbt.transport.utp_socket import UTPSocketManager, UTPProtocol
 
-            # Ensure previous instance is stopped and cleaned up
-            if UTPSocketManager._instance is not None:
-                try:
-                    await UTPSocketManager._instance.stop()
-                except Exception:
-                    pass
-                UTPSocketManager._instance = None
-                await asyncio.sleep(0.5)
+            # Compatibility singleton removed; get_instance creates dedicated managers.
 
             # Mock socket creation to avoid port conflicts
             mock_transport = MagicMock()
@@ -1777,7 +1730,6 @@ class TestUTPIntegration:
                     # Should handle gracefully (log debug)
                 finally:
                     await manager.stop()
-                    UTPSocketManager._instance = None
 
 
 class TestUTPConfig:

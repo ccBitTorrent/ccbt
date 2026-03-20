@@ -183,6 +183,20 @@ class TestAsyncUDPTrackerClientStartStop:
         # The important thing is that stop() doesn't crash
 
     @pytest.mark.asyncio
+    async def test_start_is_idempotent_when_already_ready(self):
+        """Start should be a no-op once the UDP socket is healthy."""
+        client = AsyncUDPTrackerClient()
+        await client.start()
+        first_transport = client.transport
+        first_socket = client.socket
+
+        await client.start()
+        assert client.transport is first_transport
+        assert client.socket is first_socket
+
+        await client.stop()
+
+    @pytest.mark.asyncio
     async def test_stop_cancels_pending_requests(self):
         """Test that stop cancels pending requests."""
         client = AsyncUDPTrackerClient()
@@ -427,7 +441,14 @@ class TestAsyncUDPTrackerClientResponseHandling:
         peer1 = socket.inet_aton("192.168.1.1") + struct.pack("!H", 6881)
         peer2 = socket.inet_aton("192.168.1.2") + struct.pack("!H", 6882)
         response_data = (
-            struct.pack("!IIIII", TrackerAction.ANNOUNCE.value, transaction_id, interval, leechers, seeders)
+            struct.pack(
+                "!IIIII",
+                TrackerAction.ANNOUNCE.value,
+                transaction_id,
+                interval,
+                leechers,
+                seeders,
+            )
             + peer1
             + peer2
         )
@@ -494,6 +515,71 @@ class TestAsyncUDPTrackerClientResponseHandling:
 
         # Should not crash
         client.handle_response(response_data, ("127.0.0.1", 6969))
+
+    def test_handle_response_unknown_transaction_triggers_late_connection(self):
+        """Unmatched ANNOUNCE responses should still trigger immediate connection."""
+        client = AsyncUDPTrackerClient()
+        client._socket_ready = True
+
+        called = []
+
+        def on_peers_received(peers, tracker_url):
+            called.append((tuple((p["ip"], p["port"]) for p in peers), tracker_url))
+
+        client.on_peers_received = on_peers_received
+
+        transaction_id = 99999
+        interval = 1800
+        leechers = 5
+        seeders = 10
+        peer1 = socket.inet_aton("192.168.1.1") + struct.pack("!H", 6881)
+        peer2 = socket.inet_aton("192.168.1.2") + struct.pack("!H", 6882)
+        response_data = (
+            struct.pack("!IIIII", TrackerAction.ANNOUNCE.value, transaction_id, interval, leechers, seeders)
+            + peer1
+            + peer2
+        )
+
+        client.handle_response(response_data, ("127.0.0.1", 6969))
+
+        assert called
+        peers, tracker_url = called[0]
+        assert len(peers) == 2
+        assert peers[0] == ("192.168.1.1", 6881)
+        assert "127.0.0.1:6969" in tracker_url
+
+    def test_handle_response_unknown_transaction_suppresses_expected_stale_warning(self):
+        """Late responses for known stale transaction IDs should be logged as debug only."""
+        client = AsyncUDPTrackerClient()
+        stale_id = 99999
+        client._socket_ready = True
+        client.socket = Mock()
+        client.transport = Mock()
+        client._mark_stale_transaction(stale_id, now=time.time())
+        log_warning = Mock()
+        client.logger.warning = log_warning  # type: ignore[method-assign]
+
+        response_data = struct.pack("!II", TrackerAction.CONNECT.value, stale_id)
+        client.handle_response(response_data, ("127.0.0.1", 6969))
+
+        assert log_warning.call_count == 0
+
+    def test_handle_response_unknown_transaction_warns_after_stale_window(self):
+        """Stale tracking should expire after allowlist window and log warning again."""
+        client = AsyncUDPTrackerClient()
+        stale_id = 99998
+        client._socket_ready = True
+        client.socket = Mock()
+        client.transport = Mock()
+        client._stale_response_allowlist_seconds = 1.0
+        client._stale_response_transaction_ids[stale_id] = time.time() - 10.0
+        log_warning = Mock()
+        client.logger.warning = log_warning  # type: ignore[method-assign]
+
+        response_data = struct.pack("!II", TrackerAction.CONNECT.value, stale_id)
+        client.handle_response(response_data, ("127.0.0.1", 6969))
+
+        assert log_warning.call_count == 1
 
     def test_handle_response_already_done(self):
         """Test handling response for already completed request."""

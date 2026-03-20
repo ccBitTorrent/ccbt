@@ -25,6 +25,7 @@ from ccbt.interface.splash.animation_executor import AnimationExecutor
 from ccbt.interface.splash.animation_helpers import AnimationController
 from ccbt.interface.splash.ascii_art.logo_1 import LOGO_1
 from ccbt.interface.splash.sequence_generator import SequenceGenerator
+from ccbt.utils import style_policy
 
 
 class SplashScreen:
@@ -1021,7 +1022,10 @@ class SplashScreen:
             except Exception as e:
                 # Log error but continue
                 if self.console:
-                    self.console.print(f"[red]Animation error: {e}[/red]")
+                    self.console.print(
+                        f"{style_policy.markup('Animation error: ', style_policy.ERROR_STYLE)}"
+                        f"{style_policy.markup(str(e), style_policy.ERROR_STYLE)}"
+                    )
                 continue
     async def _execute_with_textual(self, config: AnimationConfig) -> None:
         """Execute animation with Textual widget updates."""

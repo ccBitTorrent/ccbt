@@ -1278,9 +1278,9 @@ def test_checkpoints_verify_valid_and_invalid(monkeypatch):
         assert result.exit_code == 2
 
 
-    @patch("ccbt.cli.main.ConfigManager")
+    @patch("ccbt.cli.config_commands.ConfigManager")
     def test_config_command_exception(self, mock_config_manager):
-        """Test config command exception handling (lines 842-852)."""
+        """Test config command exception handling when ConfigManager fails."""
         from click.testing import CliRunner
         from ccbt.cli.main import cli
 
@@ -1288,7 +1288,8 @@ def test_checkpoints_verify_valid_and_invalid(monkeypatch):
         mock_config_manager.side_effect = Exception("Config error")
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["config"], catch_exceptions=False)
+        # Config is a command group; use a subcommand that loads ConfigManager
+        result = runner.invoke(cli, ["config", "show"], catch_exceptions=False)
 
         # Exception should be caught and displayed
         assert "Error" in result.output or result.exit_code != 0

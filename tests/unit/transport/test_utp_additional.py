@@ -364,7 +364,7 @@ async def test_utp_socket_manager_error_received(mock_config):
     with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
         from ccbt.transport.utp_socket import UTPProtocol, UTPSocketManager
 
-        UTPSocketManager._instance = None
+        # Compatibility singleton removed; get_instance now creates dedicated instances.
 
         # Mock socket creation to avoid actual socket operations
         with patch("asyncio.get_event_loop") as mock_loop:
@@ -385,7 +385,7 @@ async def test_utp_socket_manager_start_already_initialized(mock_config):
     with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
         from ccbt.transport.utp_socket import UTPSocketManager
 
-        UTPSocketManager._instance = None
+        # Compatibility singleton removed; get_instance now creates dedicated instances.
 
         # Mock socket creation to avoid actual socket operations
         with patch("asyncio.get_event_loop") as mock_loop:
@@ -405,7 +405,7 @@ async def test_utp_socket_manager_stop_not_initialized(mock_config):
     with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
         from ccbt.transport.utp_socket import UTPSocketManager
 
-        UTPSocketManager._instance = None
+        # Compatibility singleton removed; get_instance now creates dedicated instances.
 
         # Mock socket creation to avoid actual socket operations
         with patch("asyncio.get_event_loop") as mock_loop:
@@ -423,7 +423,7 @@ async def test_utp_socket_manager_stop_close_error(mock_config):
     with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
         from ccbt.transport.utp_socket import UTPSocketManager
 
-        UTPSocketManager._instance = None
+        # Compatibility singleton removed; get_instance now creates dedicated instances.
 
         # Mock socket creation to avoid actual socket operations
         with patch("asyncio.get_event_loop") as mock_loop:
@@ -460,7 +460,7 @@ async def test_utp_socket_manager_handle_syn_unknown(mock_config):
     with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
         from ccbt.transport.utp_socket import UTPSocketManager
 
-        UTPSocketManager._instance = None
+        # Compatibility singleton removed; get_instance now creates dedicated instances.
 
         # Mock socket creation to avoid actual socket operations
         with patch("asyncio.get_event_loop") as mock_loop:
@@ -490,7 +490,7 @@ async def test_utp_socket_manager_handle_packet_parse_error(mock_config):
     with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
         from ccbt.transport.utp_socket import UTPSocketManager
 
-        UTPSocketManager._instance = None
+        # Compatibility singleton removed; get_instance now creates dedicated instances.
 
         # Mock socket creation to avoid actual socket operations
         with patch("asyncio.get_event_loop") as mock_loop:
@@ -512,7 +512,7 @@ async def test_utp_socket_manager_handle_packet_index_error(mock_config):
     with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
         from ccbt.transport.utp_socket import UTPSocketManager
 
-        UTPSocketManager._instance = None
+        # Compatibility singleton removed; no instance reset required.
 
         # Mock socket creation to avoid actual socket operations
         with patch("asyncio.get_event_loop") as mock_loop:

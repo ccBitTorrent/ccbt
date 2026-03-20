@@ -1056,9 +1056,11 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
         try:
             from rich.table import Table
 
-            from ccbt.storage.disk_io_init import get_disk_io_manager
+            disk_io = getattr(self.session, "disk_io_manager", None)
+            if disk_io is None:
+                from ccbt.storage.disk_io_init import get_disk_io_manager
 
-            disk_io = get_disk_io_manager()
+                disk_io = get_disk_io_manager()
             if not disk_io or not disk_io._running:  # type: ignore[attr-defined]
                 widget.update("")
                 return
@@ -1309,7 +1311,6 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
 
             from ccbt.config.config import get_config
             from ccbt.config.config_capabilities import SystemCapabilities
-            from ccbt.storage.disk_io_init import get_disk_io_manager
 
             # Start with disk I/O metrics
             await self._display_disk_io_metrics(widget)
@@ -1363,7 +1364,11 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
             )
 
             # Combine with I/O stats if available
-            disk_io = get_disk_io_manager()
+            disk_io = getattr(self.session, "disk_io_manager", None)
+            if disk_io is None:
+                from ccbt.storage.disk_io_init import get_disk_io_manager
+
+                disk_io = get_disk_io_manager()
             if disk_io and disk_io._running:  # type: ignore[attr-defined]
                 stats = disk_io.stats
                 cache_stats = disk_io.get_cache_stats()

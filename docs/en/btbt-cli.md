@@ -91,11 +91,12 @@ Discovery options (see [ccbt/cli/main.py](https://github.com/ccBittorrent/ccbt/b
 - `--disable-udp-trackers`: Disable UDP trackers
 
 Observability options (see [ccbt/cli/main.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/main.py) — `_apply_observability_overrides`):
-- `--log-level <str>`: Log level (DEBUG|INFO|WARNING|ERROR|CRITICAL)
+- `--log-level <str>`: Log level (DEBUG|TRACE|INFO|WARNING|ERROR|CRITICAL)
 - `--log-file <path>`: Log file path
 - `--enable-metrics`: Enable metrics collection
 - `--disable-metrics`: Disable metrics collection
 - `--metrics-port <int>`: Metrics port
+- `--metrics-interval <float>`: Metrics collection interval in seconds
 
 ### magnet
 
@@ -492,20 +493,18 @@ uv run btbt files priority abc123... 2 maximum
 
 ## Configuration Commands
 
-Configuration command group: [ccbt/cli/config_commands.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands.py)
+The `config` command group is defined in [ccbt/cli/config_group.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_group.py). Core handlers live in [ccbt/cli/config_commands.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands.py); additional subcommands (schema, import, export, template, profile, backup, diff, auto-tune, etc.) are implemented in [ccbt/cli/config_commands_extended.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands_extended.py) and are **registered on the same** `btbt config` group (there is no separate `config-extended` CLI).
 
 ### config
 
-Manage configuration.
-
-Implementation: [ccbt/cli/main.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/main.py) — `config`
+Manage configuration (show, get, set, apply, describe, validate, migrate, reset, plus extended subcommands above).
 
 Usage:
 ```bash
-uv run btbt config [subcommand]
+uv run btbt config --help
+uv run btbt config describe --format table
+uv run btbt config set network.listen_port 6882 --dry-run
 ```
-
-Extended configuration commands: [ccbt/cli/config_commands_extended.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands_extended.py)
 
 See [Configuration Guide](configuration.md) for detailed configuration options.
 
@@ -564,8 +563,8 @@ uv run btbt test [options]
 Global options defined in: [ccbt/cli/main.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/main.py) — `cli`
 
 - `--config <path>`: Configuration file path
-- `--verbose`: Verbose output
-- `--debug`: Debug mode
+- `--verbose/-v`: Verbose output (`-v`: info, `-vv`: debug, `-vvv`: trace)
+- `--debug/-d`: Debug mode (deprecated alias for `-vv`)
 
 ### CLI Overrides
 

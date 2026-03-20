@@ -370,7 +370,11 @@ View metrics via CLI: [ccbt/cli/monitoring_commands.py:metrics](https://github.c
 
 ## Benchmarking
 
-Performance benchmark scripts are in `tests/performance/` (hash verification, disk I/O, piece assembly, loopback throughput, encryption). Run all: [tests/scripts/bench_all.py](https://github.com/ccBittorrent/ccbt/blob/main/tests/scripts/bench_all.py). Example config: [example-config-performance.toml](examples/example-config-performance.toml). For recording modes, storage locations, and per-run vs timeseries data, see [Benchmarks](reports/benchmarks/index.md).
+Benchmark scripts are in `tests/performance/` (`bench_hash_verify.py`, `bench_disk_io.py`, `bench_piece_assembly.py`, `bench_loopback_throughput.py`, `bench_encryption.py`) and use `tests/performance/example-config-performance.toml` for shared tuning.
+
+Pre-commit no longer runs benchmarks. All benchmark execution and regression checks now run in CI via `.github/workflows/benchmark.yml` so developer workflow stays fast while still enforcing performance guardrails.
+
+Latest generated comparison output and trend charts are published in [Benchmarks](reports/benchmarks/index.md), with CI-managed snapshots committed under `docs/en/reports/benchmarks/generated/`.
 
 ### Test and Coverage Artifacts
 
@@ -382,9 +386,15 @@ When running the full test suite (pre-push/CI), artifacts are emitted to:
 
 These integrate with Codecov; flags in `dev/.codecov.yml` are aligned to `ccbt/` subpackages to attribute coverage accurately (e.g., `peer`, `piece`, `protocols`, `extensions`). The coverage HTML report is automatically integrated into the documentation via the `mkdocs-coverage` plugin, which reads from `site/reports/htmlcov/` and renders it in [reports/coverage.md](reports/coverage.md).
 
-#### Legacy Benchmark Artifacts
+### Benchmark Documentation Artifacts
 
-Legacy benchmark artifacts are still written to `site/reports/benchmarks/artifacts/` for backward compatibility when using the `--output-dir` argument. However, the new recording system is recommended for tracking performance over time.
+The current benchmarking workflow is documented in [Benchmark index](reports/benchmarks/index.md). CI now writes:
+
+- `docs/en/reports/benchmarks/generated/comparison_latest.md` for the most recent comparison table
+- `docs/en/reports/benchmarks/generated/trend_charts.md` for trend graphs
+- `docs/en/reports/benchmarks/generated/benchmark_history.json` for bounded trend history used by docs rendering
+
+These files are committed by CI so they are available in Read the Docs and repository snapshots.
 
 ## Best Practices
 

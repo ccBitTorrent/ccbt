@@ -6,11 +6,18 @@ import json
 import logging
 import os
 import platform
+import statistics
 import subprocess
 import sys
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Iterable, Literal, Optional
+
+DimensionKey = str
+MetricName = str
+DimensionValue = Any
+
 
 # Configure logging
 logging.basicConfig(
@@ -20,13 +27,75 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_DIMENSION_KEYS: set[str] = {
+    "size_bytes",
+    "piece_size_bytes",
+    "block_size_bytes",
+    "payload_bytes",
+    "pipeline_depth",
+    "dh_key_size",
+    "iterations",
+    "data_size_bytes",
+    "block_size",
+    "buffer_size",
+    "cipher",
+    "operation",
+    "role",
+    "stream_type",
+    "transfer_type",
+    "connection_type",
+}
+
+_METRIC_HINTS = (
+    "elapsed",
+    "throughput",
+    "duration",
+    "latency",
+    "overhead",
+    "stall",
+    "memory",
+    "bytes_processed",
+    "bytes_transferred",
+)
+
+
+def _platform_info() -> Dict[str, str]:
+    return {"system": platform.system(), "release": platform.release(), "python": sys.version.split()[0]}
+
+
+def _to_dict(result: Any) -> Dict[str, Any]:
+    """Convert a benchmark result item to a JSON-serializable dictionary."""
+    if isinstance(result, dict):
+        return dict(result)
+    if hasattr(result, "__dict__"):
+        if is_dataclass(result):
+            return asdict(result)
+        return dict(result.__dict__)
+    return {"result": str(result)}
+
+
+def _to_dict_list(results: Iterable[Any]) -> list[dict[str, Any]]:
+    return [_to_dict(item) for item in results]
+
+
+def _is_metric_field(name: str, value: Any) -> bool:
+    if name in _DIMENSION_KEYS:
+        return False
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    lower = name.lower()
+    if lower in {"size_bytes", "iterations"}:
+        return False
+    if any(hint in lower for hint in _METRIC_HINTS):
+        return True
+    if lower.endswith("_s") or lower.endswith("_ms") or lower.endswith("_ms_per_x"):
+        return True
+    # By default, keep any unknown numeric values as metrics so render side can still compare.
+    return True
+
 
 def get_git_metadata() -> Dict[str, Any]:
-    """Get git metadata for the current repository state.
-
-    Returns:
-        Dictionary with git metadata: commit_hash, commit_hash_short, branch, author, is_dirty
-    """
+    """Get git metadata for the current repository state."""
     metadata: Dict[str, Any] = {
         "commit_hash": None,
         "commit_hash_short": None,
@@ -36,7 +105,6 @@ def get_git_metadata() -> Dict[str, Any]:
     }
 
     try:
-        # Get commit hash
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             capture_output=True,
@@ -52,7 +120,6 @@ def get_git_metadata() -> Dict[str, Any]:
         logger.debug(f"Failed to get commit hash: {e}")
 
     try:
-        # Get branch name
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True,
@@ -64,11 +131,9 @@ def get_git_metadata() -> Dict[str, Any]:
             metadata["branch"] = result.stdout.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
         logger.debug(f"Failed to get branch: {e}")
-        # Fallback to environment variable
         metadata["branch"] = os.environ.get("GIT_BRANCH") or os.environ.get("BRANCH_NAME")
 
     try:
-        # Get author
         result = subprocess.run(
             ["git", "config", "user.name"],
             capture_output=True,
@@ -79,14 +144,12 @@ def get_git_metadata() -> Dict[str, Any]:
         if result.returncode == 0:
             metadata["author"] = result.stdout.strip()
         else:
-            # Fallback to environment variable
             metadata["author"] = os.environ.get("GIT_AUTHOR_NAME") or os.environ.get("USER") or os.environ.get("USERNAME")
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
         logger.debug(f"Failed to get author: {e}")
         metadata["author"] = os.environ.get("GIT_AUTHOR_NAME") or os.environ.get("USER") or os.environ.get("USERNAME")
 
     try:
-        # Check if working tree is dirty
         result = subprocess.run(
             ["git", "diff", "--quiet"],
             capture_output=True,
@@ -98,6 +161,77 @@ def get_git_metadata() -> Dict[str, Any]:
         logger.debug(f"Failed to check dirty status: {e}")
 
     return metadata
+
+
+def summarize_results_for_docs(
+    benchmark_name: str,
+    config_name: str,
+    results: list[Any],
+    git_meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build compact benchmark summaries for documentation rendering.
+
+    The returned structure normalizes per-case fields into scenario groups to keep comparisons stable.
+    """
+    serialized = _to_dict_list(results)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    by_scenario: dict[str, tuple[dict[DimensionKey, DimensionValue], dict[MetricName, list[float]]]] = {}
+
+    for index, item in enumerate(serialized):
+        dimensions: dict[DimensionKey, DimensionValue] = {}
+        metric_values: dict[MetricName, list[float]] = {}
+        for key, value in item.items():
+            if _is_metric_field(key, value):
+                metric_values.setdefault(key, []).append(float(value))
+            else:
+                dimensions[key] = value
+
+        if not dimensions:
+            dimensions = {"_index": index}
+
+        dimension_items = sorted(dimensions.items(), key=lambda item: item[0])
+        scenario_key = ",".join(f"{key}={json.dumps(value, sort_keys=True)}" for key, value in dimension_items)
+
+        existing = by_scenario.get(scenario_key)
+        if existing is None:
+            by_scenario[scenario_key] = (dimensions, {k: [v] for k, v in metric_values.items()})
+            continue
+
+        _, existing_metrics = existing
+        for metric, values in metric_values.items():
+            existing_metrics.setdefault(metric, []).extend(values)
+
+    scenarios: list[dict[str, Any]] = []
+    for scenario_key, (dimensions, metric_values) in by_scenario.items():
+        metrics: dict[str, Any] = {}
+        for metric, values in metric_values.items():
+            if not values:
+                continue
+            metrics[metric] = {
+                "count": len(values),
+                "mean": statistics.mean(values),
+                "min": min(values),
+                "max": max(values),
+            }
+
+        scenarios.append(
+            {
+                "scenario": scenario_key,
+                "dimensions": dimensions,
+                "metrics": metrics,
+            }
+        )
+
+    return {
+        "benchmark": benchmark_name,
+        "config": config_name,
+        "generated_at": timestamp,
+        "meta": {
+            "git": git_meta,
+            "platform": _platform_info(),
+        },
+        "scenarios": scenarios,
+    }
 
 
 def determine_record_mode(
@@ -166,38 +300,21 @@ def write_per_run_json(
     commit_short = git_meta.get("commit_hash_short") or "unknown"
     filename = f"{benchmark_name}-{timestamp_str}-{commit_short}.json"
 
-    # Build metadata
+    results_dict = _to_dict_list(results)
+
     meta = {
         "benchmark": benchmark_name,
         "config": config_name,
         "timestamp": timestamp.isoformat(),
-        "platform": {
-            "system": platform.system(),
-            "release": platform.release(),
-            "python": sys.version.split()[0],
-        },
+        "platform": _platform_info(),
         "git": git_meta,
     }
 
-    # Convert results to dict (handle both dataclass and dict)
-    results_dict = []
-    for r in results:
-        if hasattr(r, "__dict__"):
-            # Try asdict first (for dataclasses)
-            try:
-                from dataclasses import asdict
-
-                results_dict.append(asdict(r))
-            except (TypeError, AttributeError):
-                # Fallback to __dict__
-                results_dict.append(r.__dict__)
-        elif isinstance(r, dict):
-            results_dict.append(r)
-        else:
-            # Try to convert to dict
-            results_dict.append({"result": str(r)})
-
-    data = {"meta": meta, "results": results_dict}
+    data = {
+        "meta": meta,
+        "results": results_dict,
+        "summary": summarize_results_for_docs(benchmark_name, config_name, results, git_meta),
+    }
 
     # Write JSON file
     path = runs_dir / filename
@@ -241,20 +358,7 @@ def update_time_series(
     else:
         data = {"entries": []}
 
-    # Convert results to dict
-    results_dict = []
-    for r in results:
-        if hasattr(r, "__dict__"):
-            try:
-                from dataclasses import asdict
-
-                results_dict.append(asdict(r))
-            except (TypeError, AttributeError):
-                results_dict.append(r.__dict__)
-        elif isinstance(r, dict):
-            results_dict.append(r)
-        else:
-            results_dict.append({"result": str(r)})
+    results_dict = _to_dict_list(results)
 
     # Create new entry
     new_entry = {
@@ -287,6 +391,7 @@ def record_benchmark_results(
     results: list[Any],
     record_mode: str,
     output_base: Optional[Path] = None,
+    json_out: Optional[Path] = None,
 ) -> tuple[Optional[Path], Optional[Path]]:
     """Record benchmark results according to the specified mode.
 
@@ -296,6 +401,7 @@ def record_benchmark_results(
         results: List of benchmark results
         record_mode: Recording mode ('auto', 'pre-commit', 'commit', 'both', 'none')
         output_base: Base directory for output (defaults to docs/reports/benchmarks)
+        json_out: Optional explicit JSON output path or directory for CI artifacts
 
     Returns:
         Tuple of (per_run_path, timeseries_path), either can be None
@@ -308,6 +414,31 @@ def record_benchmark_results(
 
     # Determine actual record mode
     actual_mode = determine_record_mode(record_mode)
+
+    if json_out is not None:
+        json_out_path = Path(json_out)
+        if json_out_path.suffix.lower() != ".json":
+            commit_short = git_meta.get("commit_hash_short") or "unknown"
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+            json_out_path = json_out_path / f"{benchmark_name}-{timestamp}-{commit_short}.json"
+        payload = {
+            "meta": {
+                "benchmark": benchmark_name,
+                "config": config_name,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "platform": _platform_info(),
+                "git": git_meta,
+            },
+            "results": _to_dict_list(results),
+            "summary": summarize_results_for_docs(benchmark_name, config_name, results, git_meta),
+        }
+        json_out_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with json_out_path.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+            logger.info(f"Wrote benchmark JSON artifact: {json_out_path}")
+        except OSError as e:
+            logger.error(f"Failed to write benchmark JSON artifact: {e}")
 
     if actual_mode == "none":
         return (None, None)

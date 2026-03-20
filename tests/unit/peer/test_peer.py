@@ -16,11 +16,11 @@ from ccbt.peer.peer import (
     HaveMessage,
     InterestedMessage,
     KeepAliveMessage,
-    MessageDecoder,
+    AsyncMessageDecoder,
     MessageError,
     MessageType,
     NotInterestedMessage,
-    PeerInfo,
+    PeerInfoModel,
     PeerState,
     PieceMessage,
     RequestMessage,
@@ -515,13 +515,13 @@ class TestCancelMessage:
         assert message.length == 8192
 
 
-class TestMessageDecoder:
-    """Test cases for MessageDecoder."""
+class TestAsyncMessageDecoder:
+    """Test cases for AsyncMessageDecoder."""
     pytestmark = [pytest.mark.asyncio]
 
     async def test_decode_keepalive(self):
         """Test decoding keep-alive message."""
-        decoder = MessageDecoder()
+        decoder = AsyncMessageDecoder()
         await decoder.feed_data(struct.pack("!I", 0))
         message = await decoder.get_message()
 
@@ -530,7 +530,7 @@ class TestMessageDecoder:
 
     async def test_decode_choke(self):
         """Test decoding choke message."""
-        decoder = MessageDecoder()
+        decoder = AsyncMessageDecoder()
         await decoder.feed_data(struct.pack("!IB", 1, MessageType.CHOKE))
         message = await decoder.get_message()
 
@@ -539,7 +539,7 @@ class TestMessageDecoder:
 
     async def test_decode_have(self):
         """Test decoding have message."""
-        decoder = MessageDecoder()
+        decoder = AsyncMessageDecoder()
         # Full message: length(5) + id(4) + piece_index(42)
         await decoder.feed_data(memoryview(struct.pack("!IBI", 5, MessageType.HAVE, 42)))
         message = await decoder.get_message()
@@ -550,7 +550,7 @@ class TestMessageDecoder:
 
     async def test_decode_bitfield(self):
         """Test decoding bitfield message."""
-        decoder = MessageDecoder()
+        decoder = AsyncMessageDecoder()
         bitfield = b"\xff\x00"
         # Full message: length(3) + id(5) + bitfield
         encoded = (
@@ -567,7 +567,7 @@ class TestMessageDecoder:
 
     async def test_decode_partial_data(self):
         """Test decoding with partial data."""
-        decoder = MessageDecoder()
+        decoder = AsyncMessageDecoder()
 
         # Add partial message (only length)
         await decoder.feed_data(struct.pack("!I", 5))
@@ -583,7 +583,7 @@ class TestMessageDecoder:
 
     async def test_decode_multiple_messages(self):
         """Test decoding multiple messages in one data chunk."""
-        decoder = MessageDecoder()
+        decoder = AsyncMessageDecoder()
 
         # Create multiple messages (each with full length field)
         messages_data = (
@@ -610,7 +610,7 @@ class TestMessageDecoder:
 
     async def test_decode_piece_message(self):
         """Test decoding piece message."""
-        decoder = MessageDecoder()
+        decoder = AsyncMessageDecoder()
 
         block = b"x" * 100
         # Full message: length(109) + id(7) + piece_index(5) + begin(1000) + block(100)
@@ -703,7 +703,7 @@ class TestPeerInfo:
 
     def test_creation(self):
         """Test creating peer info."""
-        peer = PeerInfo(ip="192.168.1.100", port=6881)
+        peer = PeerInfoModel(ip="192.168.1.100", port=6881)
 
         assert peer.ip == "192.168.1.100"
         assert peer.port == 6881
@@ -712,11 +712,11 @@ class TestPeerInfo:
     def test_creation_with_peer_id(self):
         """Test creating peer info with peer ID."""
         peer_id = b"peer_id_20_bytes____"
-        peer = PeerInfo(ip="192.168.1.100", port=6881, peer_id=peer_id)
+        peer = PeerInfoModel(ip="192.168.1.100", port=6881, peer_id=peer_id)
 
         assert peer.peer_id == peer_id
 
     def test_string_representation(self):
         """Test string representation of peer info."""
-        peer = PeerInfo(ip="192.168.1.100", port=6881)
+        peer = PeerInfoModel(ip="192.168.1.100", port=6881)
         assert str(peer) == "192.168.1.100:6881"

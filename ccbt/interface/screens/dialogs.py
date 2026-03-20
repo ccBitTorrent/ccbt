@@ -1441,7 +1441,7 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
                 return
 
             if status and self._status_widget:
-                peers = status.get("connected_peers", status.get("num_peers", 0))
+                peers = status.get("connected_peers", 0)
                 self._status_widget.update(  # type: ignore[attr-defined]
                     _("Connected to {peers} peer(s), fetching metadata...").format(
                         peers=peers

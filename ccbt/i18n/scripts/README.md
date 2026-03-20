@@ -80,6 +80,26 @@ python -m ccbt.i18n.scripts.check_completeness --lang hi
 - Fuzzy translations (need review)
 - Completion percentage
 
+### 4b. `export_untranslated.py`
+Exports canonical POT msgids and per-locale untranslated lists for translator handoff.
+
+**Usage:**
+```bash
+python -m ccbt.i18n.scripts.export_untranslated \
+  --out-dir docs/en/implementation-plans/i18n-untranslated
+```
+
+### 5. `fill_english.py`
+Fill empty English `msgstr` entries with their `msgid` value. The canonical script is
+`ccbt.i18n.fill_english`, while `ccbt.i18n.scripts.fill_english` remains a compatibility
+wrapper.
+
+**Usage:**
+```bash
+python -m ccbt.i18n.fill_english
+python -m ccbt.i18n.scripts.fill_english
+```
+
 ### 5. `validate_po.py`
 Validates .po file format.
 

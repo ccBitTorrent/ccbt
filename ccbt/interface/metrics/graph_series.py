@@ -203,7 +203,7 @@ SERIES_REGISTRY: Dict[str, GraphMetricSeries] = {
         color="bright_blue",
         category=SeriesCategory.NETWORK,
         description="Number of connected peers",
-        source_path=("torrent_stats", "num_peers"),
+        source_path=("torrent_stats", "connected_peers"),
     ),
     "torrent_seeds_connected": GraphMetricSeries(
         key="torrent_seeds_connected",
@@ -212,7 +212,7 @@ SERIES_REGISTRY: Dict[str, GraphMetricSeries] = {
         color="bright_cyan",
         category=SeriesCategory.NETWORK,
         description="Number of connected seeds",
-        source_path=("torrent_stats", "num_seeds"),
+        source_path=("torrent_stats", "active_peers"),
     ),
     "torrent_piece_download_rate": GraphMetricSeries(
         key="torrent_piece_download_rate",

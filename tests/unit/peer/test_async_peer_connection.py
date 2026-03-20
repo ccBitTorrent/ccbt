@@ -19,6 +19,8 @@ from ccbt.peer.peer_connection import (
     PeerConnection,
 )
 from ccbt.utils.exceptions import MessageError
+from ccbt.utils.shutdown import clear_shutdown, set_shutdown
+from ccbt.utils.events import PeerCountLowEvent
 
 
 @pytest.fixture
@@ -293,6 +295,147 @@ async def test_connect_to_peers_connection_failure(peer_manager, peer_info):
 
 
 @pytest.mark.asyncio
+async def test_connect_to_peers_outer_timeout_matches_adaptive_handshake(peer_manager, peer_info, monkeypatch):
+    """Per-peer timeout in connect_to_peers should follow adaptive handshake timeout."""
+    peer_list = [{"ip": peer_info.ip, "port": peer_info.port}]
+    adaptive_timeout = 0.25
+    monkeypatch.setattr(
+        peer_manager,
+        "_calculate_adaptive_handshake_timeout",
+        lambda: adaptive_timeout,
+    )
+
+    # _connect_to_peer is patched to avoid inner transport logic; it must exceed the
+    # outer timeout so the wrapper path is exercised.
+    async def slow_connect(_: PeerInfo) -> None:
+        await asyncio.sleep(adaptive_timeout * 4)
+
+    peer_manager._connect_to_peer = AsyncMock(side_effect=slow_connect)
+
+    original_wait_for = asyncio.wait_for
+    captured_timeouts: list[float] = []
+
+    async def tracking_wait_for(awaitable, timeout, *args, **kwargs):
+        captured_timeouts.append(timeout)
+        return await original_wait_for(awaitable, timeout=timeout, *args, **kwargs)
+
+    with patch("ccbt.peer.async_peer_connection.asyncio.wait_for", side_effect=tracking_wait_for):
+        await peer_manager.connect_to_peers(peer_list)
+
+    # The wrapper in connect_to_peers should be using the adaptive handshake timeout
+    # value (possibly normalized by connect_to_peers logic).
+    assert captured_timeouts
+    assert captured_timeouts[0] == adaptive_timeout
+    assert len(peer_manager.connections) == 0
+
+
+@pytest.mark.asyncio
+async def test_connect_to_peers_guarded_inflight_duplicate_peers(peer_manager, peer_info, monkeypatch):
+    """connect_to_peers should not launch duplicate concurrent handshakes for the same peer."""
+    peer_list = [
+        {"ip": peer_info.ip, "port": peer_info.port},
+        {"ip": peer_info.ip, "port": peer_info.port},
+    ]
+    adaptive_timeout = 0.2
+    monkeypatch.setattr(
+        peer_manager,
+        "_calculate_adaptive_handshake_timeout",
+        lambda: adaptive_timeout,
+    )
+
+    # Hold the first connection attempt so the duplicate can be observed.
+    async def slow_connect(_: PeerInfo) -> None:
+        await asyncio.sleep(adaptive_timeout * 5)
+
+    peer_manager._connect_to_peer = AsyncMock(side_effect=slow_connect)
+
+    await peer_manager.connect_to_peers(peer_list)
+
+    assert peer_manager._connect_to_peer.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_connect_to_peers_requeues_aborted_batch_peers(peer_manager, monkeypatch):
+    """Peers aborted due to batch control should be re-queued for retry."""
+    peer_manager._running = True
+    peer_manager._pending_peer_queue = []
+    peer_manager._pending_peer_keys = set()
+    peer_manager.max_peers_per_torrent = 10
+
+    async def connect_with_split_results(peer: PeerInfo) -> None:
+        if peer.port <= 6883:
+            return
+        # This branch is intentionally slow to trigger early-batch control cancellation.
+        await asyncio.sleep(1.0)
+
+    monkeypatch.setattr(
+        peer_manager,
+        "_connect_to_peer",
+        AsyncMock(side_effect=connect_with_split_results),
+    )
+    monkeypatch.setattr(
+        peer_manager,
+        "_calculate_adaptive_handshake_timeout",
+        lambda: 0.25,
+    )
+
+    peer_list = [
+        {"ip": "203.0.113.10", "port": 6881 + idx, "peer_source": "tracker"}
+        for idx in range(6)
+    ]
+
+    await peer_manager.connect_to_peers(peer_list)
+
+    pending_ports = sorted(peer.port for peer in peer_manager._pending_peer_queue)
+    assert pending_ports == [6884, 6885, 6886]
+    for idx in range(3, 6):
+        assert (
+            f"203.0.113.10:{6881 + idx}" not in peer_manager._failed_peers
+        )
+@pytest.mark.asyncio
+async def test_connect_to_peers_skips_active_healthy_duplicate(peer_manager, peer_info, monkeypatch):
+    """Duplicate active connections with valid transport should be skipped."""
+    connection = AsyncPeerConnection(peer_info, peer_manager.torrent_data)
+    connection.state = ConnectionState.ACTIVE
+    connection.peer_state.bitfield = b"\xff"
+    connection.stats.last_activity = time.time()
+    connection.reader = AsyncMock()
+    connection.writer = MagicMock()
+    connection.writer.is_closing = MagicMock(return_value=False)
+    peer_manager.connections[str(peer_info)] = connection
+
+    connect_mock = AsyncMock()
+    monkeypatch.setattr(peer_manager, "_connect_to_peer", connect_mock)
+
+    await peer_manager.connect_to_peers([{"ip": peer_info.ip, "port": peer_info.port}])
+
+    assert connect_mock.await_count == 0
+    assert len(peer_manager.connections) == 1
+
+
+@pytest.mark.asyncio
+async def test_connect_to_peers_retries_when_stale_incomplete_connection_exists(peer_manager, peer_info, monkeypatch):
+    """Peers with stale/incomplete transport should be removed and retried."""
+    connection = AsyncPeerConnection(peer_info, peer_manager.torrent_data)
+    connection.state = ConnectionState.ACTIVE
+    connection.peer_state.bitfield = None
+    connection.peer_state.pieces_we_have = set()
+    connection.stats.last_activity = time.time() - 45.0
+    connection.reader = AsyncMock()
+    connection.writer = MagicMock()
+    connection.writer.is_closing = MagicMock(return_value=False)
+    peer_manager.connections[str(peer_info)] = connection
+
+    connect_mock = AsyncMock()
+    monkeypatch.setattr(peer_manager, "_connect_to_peer", connect_mock)
+
+    await peer_manager.connect_to_peers([{"ip": peer_info.ip, "port": peer_info.port}])
+
+    assert connect_mock.await_count == 1
+    assert len(peer_manager.connections) == 0
+
+
+@pytest.mark.asyncio
 async def test_connect_to_peers_enqueues_when_at_capacity(peer_manager, monkeypatch):
     """Peers should be deferred when active connections already at capacity."""
     peer_manager._running = True
@@ -326,6 +469,66 @@ async def test_connect_to_peers_enqueues_when_at_capacity(peer_manager, monkeypa
     assert connect_mock.await_count == 0
     assert resume_mock.called
     assert peer_manager._connection_batches_in_progress is False
+
+
+@pytest.mark.asyncio
+async def test_connect_to_peers_uses_pipeline_with_low_active_peer_count(peer_manager, monkeypatch):
+    """Low active peer counts should still run the full connection pipeline."""
+    peer_manager._running = True
+    peer_manager.max_peers_per_torrent = 10
+    peer_manager.connections.clear()
+
+    peer_list = [
+        {"ip": f"198.51.100.{idx}", "port": 6100 + idx, "peer_source": "tracker"}
+        for idx in range(3)
+    ]
+
+    connect_mock = AsyncMock(side_effect=lambda peer: None)
+    monkeypatch.setattr(peer_manager, "_connect_to_peer", connect_mock)
+    monkeypatch.setattr(
+        peer_manager,
+        "_rank_peers_for_connection",
+        AsyncMock(side_effect=lambda peers: peers),
+    )
+
+    await peer_manager.connect_to_peers(peer_list)
+
+    assert connect_mock.await_count == len(peer_list)
+
+
+@pytest.mark.asyncio
+async def test_connect_to_peers_all_fail_triggers_low_peer_recovery_event(peer_manager, monkeypatch):
+    """A complete-batch failure path should still emit a PeerCountLowEvent."""
+    peer_manager._running = True
+    peer_manager.max_peers_per_torrent = 60
+    peer_manager.config.network.enable_fail_fast_dht = True
+    peer_manager.config.network.max_concurrent_connection_attempts = 60
+    peer_manager._connect_to_peer = AsyncMock(side_effect=ConnectionError("refused"))
+    peer_manager._calculate_adaptive_handshake_timeout = lambda: 0.01
+
+    emitted_events: list[object] = []
+
+    class _EventBus:
+        async def emit(self, event: object) -> None:
+            emitted_events.append(event)
+
+    peer_manager._event_bus = _EventBus()
+
+    peer_list = [
+        {"ip": "198.51.100.1", "port": 6200 + idx}
+        for idx in range(95)
+    ]
+
+    monkeypatch.setattr(
+        peer_manager,
+        "_rank_peers_for_connection",
+        AsyncMock(side_effect=lambda peers: peers),
+    )
+
+    await peer_manager.connect_to_peers(peer_list)
+
+    assert len(peer_manager.connections) == 0
+    assert any(isinstance(event, PeerCountLowEvent) for event in emitted_events)
 
 
 @pytest.mark.asyncio
@@ -759,7 +962,7 @@ async def test_get_peer_bitfields(peer_manager):
 
 
 @pytest.mark.asyncio
-async def test_shutdown(peer_manager):
+async def test_stop(peer_manager):
     """Test manager shutdown."""
     # Create a connection
     peer_info = PeerInfo(ip="127.0.0.1", port=6881)
@@ -775,10 +978,64 @@ async def test_shutdown(peer_manager):
     peer_manager.connections[str(peer_info)] = connection
 
     # Shutdown manager
-    await peer_manager.shutdown()
+    await peer_manager.stop()
 
     # All connections should be removed
     assert len(peer_manager.connections) == 0
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_stale_message_loop_task(peer_manager, peer_info):
+    """Stop should cancel tracked message-loop tasks even if connection is stale."""
+    connection = AsyncPeerConnection(peer_info=peer_info, torrent_data=peer_manager.torrent_data)
+    connection.state = ConnectionState.ACTIVE
+    peer_manager.connections[str(peer_info)] = connection
+
+    async def idle_message_loop() -> None:
+        await asyncio.Event().wait()
+
+    message_loop_task = asyncio.create_task(
+        idle_message_loop(), name="test-stale-message-loop"
+    )
+    peer_manager._register_message_loop_task(message_loop_task)
+    connection.connection_task = message_loop_task
+
+    async with peer_manager.connection_lock:
+        peer_manager.connections.pop(str(peer_info), None)
+
+    await peer_manager.stop()
+
+    assert message_loop_task.done()
+    assert message_loop_task.cancelled()
+    assert len(peer_manager._message_loop_tasks) == 0
+
+
+@pytest.mark.asyncio
+async def test_handle_peer_messages_exits_early_when_shutting_down(
+    peer_manager, peer_info, monkeypatch
+):
+    """Message loop should stop immediately when shutdown is in progress."""
+    connection = AsyncPeerConnection(peer_info=peer_info, torrent_data=peer_manager.torrent_data)
+    connection.state = ConnectionState.ACTIVE
+    connection.reader = AsyncMock()
+    connection.reader.readexactly = AsyncMock()
+    connection.writer = MagicMock()
+    connection.writer.close = MagicMock()
+    connection.writer.write = MagicMock()
+    connection.writer.drain = AsyncMock()
+    connection.writer.wait_closed = AsyncMock()
+
+    # Avoid keepalive chatter in this focused test
+    monkeypatch.setattr(peer_manager, "_keepalive_sender", AsyncMock())
+
+    set_shutdown()
+    try:
+        task = asyncio.create_task(peer_manager._handle_peer_messages(connection))
+        await asyncio.wait_for(task, timeout=1.0)
+    finally:
+        clear_shutdown()
+
+    connection.reader.readexactly.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -795,6 +1052,7 @@ async def test_connection_summary_exposes_lifecycle_stage_counters(peer_manager)
             "bitfield_received": 0,
         }
     )
+    peer_manager._unchoke_retry_hits = 4
 
     summary = await peer_manager.get_connection_summary()
 
@@ -804,6 +1062,7 @@ async def test_connection_summary_exposes_lifecycle_stage_counters(peer_manager)
     assert summary["tcp_open_cancelled"] == 1
     assert summary["handshake_sent"] == 1
     assert summary["handshake_received"] == 1
+    assert summary["unchoke_retry_hits"] == 4
 
 
 @pytest.mark.asyncio
@@ -826,6 +1085,54 @@ async def test_connection_summary_separates_live_bitfield_count_from_events(
 
     assert summary["bitfield_received_events"] == 5
     assert summary["bitfield_complete_connections"] == 0
+
+
+@pytest.mark.asyncio
+async def test_update_choking_with_missing_connection_start_time_uses_safe_fallback(
+    peer_manager,
+):
+    """_update_choking should ignore missing connection_start_time values safely."""
+    peer_manager.config.network.max_upload_slots = 1
+
+    fast_peer = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.1", port=6881),
+        peer_manager.torrent_data,
+    )
+    fast_peer.state = ConnectionState.ACTIVE
+    fast_peer.am_choking = True
+    fast_peer.am_interested = True
+    fast_peer.peer_choking = True
+    fast_peer.stats.upload_rate = 1_500_000
+    fast_peer.connection_start_time = time.time() - 120.0
+    fast_peer.writer = MagicMock()
+    fast_peer.writer.drain = AsyncMock()
+    fast_peer.writer.write = MagicMock()
+    fast_peer.writer.close = MagicMock()
+    fast_peer.writer.wait_closed = AsyncMock()
+
+    missing_start_peer = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.2", port=6882),
+        peer_manager.torrent_data,
+    )
+    missing_start_peer.state = ConnectionState.ACTIVE
+    missing_start_peer.am_choking = False
+    missing_start_peer.am_interested = True
+    missing_start_peer.peer_choking = True
+    missing_start_peer.stats.upload_rate = 100_000
+    missing_start_peer.connection_start_time = None
+    missing_start_peer.writer = MagicMock()
+    missing_start_peer.writer.drain = AsyncMock()
+    missing_start_peer.writer.write = MagicMock()
+    missing_start_peer.writer.close = MagicMock()
+    missing_start_peer.writer.wait_closed = AsyncMock()
+
+    peer_manager.connections["127.0.0.1:6881"] = fast_peer
+    peer_manager.connections["127.0.0.2:6882"] = missing_start_peer
+
+    # No exception should be raised while calculating age with missing start time.
+    await peer_manager._update_choking()
+
+    assert missing_start_peer.am_interested is True
 
 
 @pytest.mark.asyncio
@@ -915,6 +1222,39 @@ async def test_connect_to_peers_preserves_peer_completion_context(monkeypatch, p
 
 
 @pytest.mark.asyncio
+async def test_accept_incoming_sets_connection_start_time(monkeypatch, peer_manager):
+    """Incoming peers should have connection_start_time recorded immediately."""
+    peer_ip = "203.0.113.10"
+    peer_port = 6889
+    reader = AsyncMock()
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    writer.write = MagicMock()
+    writer.close = MagicMock()
+    writer.wait_closed = AsyncMock()
+
+    handshake = MagicMock()
+    handshake.info_hash = peer_manager.torrent_data["info_hash"]
+    handshake.peer_id = b"incoming_test_peer_id"
+
+    monkeypatch.setattr(peer_manager, "_send_bitfield", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_send_unchoke", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_attempt_ssl_negotiation", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_handle_peer_messages", AsyncMock())
+    monkeypatch.setattr("ccbt.utils.events.emit_event", AsyncMock())
+
+    before_accept = time.time()
+    await peer_manager.accept_incoming(reader, writer, handshake, peer_ip, peer_port)
+    after_accept = time.time()
+
+    peer_key = f"{peer_ip}:{peer_port}"
+    assert peer_key in peer_manager.connections
+    connection = peer_manager.connections[peer_key]
+    assert connection.connection_start_time is not None
+    assert before_accept <= connection.connection_start_time <= after_accept
+
+
+@pytest.mark.asyncio
 async def test_handle_unchoke_uses_seed_anchor_retry_budget(monkeypatch, peer_manager):
     """Seed-anchor peers get higher unchoke retry/requester budgets for faster recovery."""
     connection = AsyncPeerConnection(
@@ -974,6 +1314,66 @@ async def test_handle_unchoke_uses_default_retry_budget_for_non_seed_anchor(peer
         max_retry_count=4,
         max_requesters=2,
     )
+
+
+@pytest.mark.asyncio
+async def test_handle_unchoke_tracks_piece_selection_task_for_cleanup(peer_manager):
+    """Stop should cancel pending piece-selection task triggered by unchoke."""
+    connection = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.3", port=6883),
+        peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.CHOKED
+    connection.peer_choking = True
+    connection.am_interested = False
+    peer_manager.piece_manager.is_downloading = True
+    peer_manager._send_interested = AsyncMock()
+
+    started = asyncio.Event()
+
+    async def delayed_select() -> None:
+        started.set()
+        await asyncio.sleep(10)
+
+    peer_manager.piece_manager._select_pieces = delayed_select
+    peer_manager.piece_manager._retry_requested_pieces = AsyncMock()
+
+    from ccbt.peer.peer import UnchokeMessage
+
+    await peer_manager._handle_unchoke(connection, UnchokeMessage())
+    await asyncio.wait_for(started.wait(), timeout=1.0)
+    assert len(peer_manager._piece_selection_trigger_tasks) >= 1
+
+    await peer_manager.stop()
+    assert len(peer_manager._piece_selection_trigger_tasks) == 0
+
+
+@pytest.mark.asyncio
+async def test_handle_unchoke_skips_piece_selection_when_shutting_down(peer_manager):
+    """Shutting down should prevent new unchoke-triggered piece selection."""
+    connection = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.4", port=6884),
+        peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.CHOKED
+    connection.peer_choking = True
+    connection.am_interested = False
+    peer_manager.piece_manager.is_downloading = True
+    peer_manager._send_interested = AsyncMock()
+
+    peer_manager.piece_manager._select_pieces = AsyncMock()
+    peer_manager.piece_manager._retry_requested_pieces = AsyncMock()
+
+    from ccbt.peer.peer import UnchokeMessage
+
+    set_shutdown()
+    try:
+        await peer_manager._handle_unchoke(connection, UnchokeMessage())
+        await asyncio.sleep(0)
+        assert len(peer_manager._piece_selection_trigger_tasks) == 0
+        peer_manager.piece_manager._select_pieces.assert_not_called()
+    finally:
+        clear_shutdown()
 
 
 @pytest.mark.asyncio
@@ -1039,6 +1439,77 @@ async def test_classify_connection_failure_recognizes_transient_and_terminal_err
 
 
 @pytest.mark.asyncio
+async def test_infer_disconnect_stage_recognizes_protocol_errors_before_handshake(peer_manager):
+    """Pre-active disconnect reasons should preserve protocol error details."""
+    connection = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.20", port=6881),
+        peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.HANDSHAKE_SENT
+    connection.error_message = "Invalid protocol length from 127.0.0.20: 20 (expected 19)"
+
+    assert (
+        peer_manager._infer_disconnect_stage(connection) == "invalid_protocol_length"
+    )
+
+    connection.error_message = "Invalid protocol handshake from peer"
+    assert peer_manager._infer_disconnect_stage(connection) == "invalid_protocol"
+
+    connection.error_message = "Handshake timeout from 127.0.0.20 (no response after 10.0s)"
+    assert peer_manager._infer_disconnect_stage(connection) == "handshake_timeout"
+
+
+@pytest.mark.asyncio
+async def test_infer_disconnect_stage_handles_incomplete_read(peer_manager):
+    """Pre-active disconnect reasons should preserve incomplete read failures."""
+    connection = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.21", port=6881),
+        peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.HANDSHAKE_RECEIVED
+    connection.error_message = "IncompleteReadError: peer closed"
+
+    assert peer_manager._infer_disconnect_stage(connection) == "incomplete_read"
+
+
+@pytest.mark.asyncio
+async def test_disconnect_peer_records_specific_failure_stage(peer_manager, monkeypatch):
+    """_disconnect_peer should record disconnect_* counters using inferred failure stage."""
+    connection = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.22", port=6881),
+        peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.HANDSHAKE_SENT
+    connection.error_message = "Invalid protocol length from 127.0.0.22: 20 (expected 19)"
+    connection.writer = None
+    connection.connection_task = None
+    connection.outstanding_requests = {}
+
+    peer_manager.connections[str(connection.peer_info)] = connection
+    monkeypatch.setattr(
+        peer_manager.connection_pool,
+        "release",
+        AsyncMock(return_value=None),
+    )
+
+    recorded_stages: list[str] = []
+
+    def capture_stage(stage: str) -> None:
+        recorded_stages.append(stage)
+
+    monkeypatch.setattr(
+        peer_manager,
+        "_record_connection_stage",
+        capture_stage,
+    )
+
+    await peer_manager._disconnect_peer(connection)
+
+    assert "disconnect_invalid_protocol_length" in recorded_stages
+    assert connection.last_disconnect_stage == "invalid_protocol_length"
+    assert str(connection.peer_info) not in peer_manager.connections
+
+@pytest.mark.asyncio
 async def test_rank_peers_prioritizes_verified_and_history(peer_manager):
     """Verified peers and good failure histories should be prioritized."""
     productive_peer = PeerInfo(ip="127.0.0.10", port=7000, peer_source="tracker")
@@ -1093,3 +1564,89 @@ async def test_rank_peers_penalizes_terminal_failures_more_than_transient(peer_m
     assert len(ranked) == 2
     assert ranked[0] == transient_peer
     assert ranked[1] == terminal_peer
+
+
+def test_keepalive_interval_uses_state_aware_timeouts(peer_manager):
+    """Keep-alive intervals should be state-aware and deterministic."""
+    connection = AsyncPeerConnection(
+        PeerInfo(ip="127.0.0.101", port=6200),
+        peer_manager.torrent_data,
+    )
+
+    connection.state = ConnectionState.CHOKED
+    assert peer_manager._get_keepalive_interval(connection) == 90.0
+    assert peer_manager._get_message_loop_timeout(connection) == 180.0
+
+    connection.state = ConnectionState.ACTIVE
+    assert peer_manager._get_keepalive_interval(connection) == 120.0
+    assert peer_manager._get_message_loop_timeout(connection) == 240.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "state,expected_timeout",
+    [
+        (ConnectionState.CHOKED, 180.0),
+        (ConnectionState.ACTIVE, 240.0),
+    ],
+)
+async def test_handle_peer_messages_keeps_quiet_healthy_peer_with_state_aligned_timeout(
+    peer_manager,
+    peer_info,
+    monkeypatch,
+    state,
+    expected_timeout,
+):
+    """Quiet peers should honor state-aligned message-loop timeouts and stay alive."""
+    connection = AsyncPeerConnection(
+        peer_info,
+        peer_manager.torrent_data,
+    )
+    connection.state = state
+    connection.reader = AsyncMock()
+
+    async def mock_readexactly(_n: int) -> bytes:
+        # Simulate one keep-alive-sized frame, then stop the connection.
+        connection.state = ConnectionState.DISCONNECTED
+        return b"\x00\x00\x00\x00"
+
+    connection.reader.readexactly = mock_readexactly
+
+    captured_timeouts: list[float] = []
+    original_wait_for = asyncio.wait_for
+
+    async def tracking_wait_for(awaitable, timeout, *args, **kwargs):
+        captured_timeouts.append(timeout)
+        return await original_wait_for(awaitable, timeout=timeout, *args, **kwargs)
+
+    monkeypatch.setattr(
+        peer_manager,
+        "_keepalive_sender",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(peer_manager, "_disconnect_peer", AsyncMock())
+    connection.error_message = ""
+
+    with patch(
+        "ccbt.peer.async_peer_connection.asyncio.wait_for",
+        side_effect=tracking_wait_for,
+    ):
+        await peer_manager._handle_peer_messages(connection)
+
+    assert captured_timeouts
+    assert captured_timeouts[0] == expected_timeout
+    assert connection.error_message != "message_length_read_timeout"
+    peer_manager._disconnect_peer.assert_awaited_once()
+
+
+def test_safe_loop_duration_handles_invalid_and_missing_timestamps(peer_manager):
+    """Compute loop duration safely when connection start timestamps are missing or invalid."""
+    now = time.time()
+
+    assert peer_manager._safe_loop_duration(now, None) == 0.0
+    assert peer_manager._safe_loop_duration(now, 0.0) == 0.0
+    assert peer_manager._safe_loop_duration(now, -5.0) == 0.0
+    assert peer_manager._safe_loop_duration(now, now + 30.0) == 0.0
+
+    elapsed = 1.5
+    assert peer_manager._safe_loop_duration(now, now - elapsed) == elapsed

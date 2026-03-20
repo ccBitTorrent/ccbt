@@ -1,7 +1,5 @@
 """Structured logging configuration for ccBitTorrent.
 
-from __future__ import annotations
-
 Provides comprehensive logging setup with correlation IDs, structured output,
 and configurable log levels.
 """
@@ -17,7 +15,7 @@ import time
 import uuid
 from contextvars import ContextVar
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from ccbt.utils.exceptions import CCBTError
 from ccbt.utils.rich_logging import (
@@ -35,6 +33,29 @@ correlation_id: ContextVar[Optional[str]] = cast(
     "ContextVar[Optional[str]]",
     ContextVar("correlation_id", default=None),
 )
+
+TRACE_LOG_LEVEL = 5
+TRACE_LOG_LEVEL_NAME = "TRACE"
+
+
+def _register_trace_level() -> None:
+    """Register a dedicated TRACE logging level."""
+    if logging.getLevelName(TRACE_LOG_LEVEL) == "Level 5":
+        logging.addLevelName(TRACE_LOG_LEVEL, TRACE_LOG_LEVEL_NAME)
+
+    if not hasattr(logging, "TRACE"):
+        cast("Any", logging).TRACE = TRACE_LOG_LEVEL
+
+        def log_trace(
+            self: logging.Logger, msg: Any, *args: Any, **kwargs: Any
+        ) -> None:
+            if self.isEnabledFor(TRACE_LOG_LEVEL):
+                self._log(TRACE_LOG_LEVEL, msg, args, **kwargs)
+
+        logging.Logger.trace = log_trace  # type: ignore[method-assign, attr-defined]
+
+
+_register_trace_level()
 
 
 class CorrelationFilter(logging.Filter):
@@ -113,45 +134,6 @@ class StructuredFormatter(logging.Formatter):
                 return f"Logging error: {record.levelname} {record.name}"
 
 
-class ColoredFormatter(logging.Formatter):
-    """Colored formatter for console output (legacy, uses Rich now).
-
-    Deprecated: Use RichHandler instead. Kept for backward compatibility.
-    """
-
-    COLORS: ClassVar[dict[str, str]] = {
-        "DEBUG": "\033[36m",  # Cyan
-        "INFO": "\033[32m",  # Green
-        "WARNING": "\033[33m",  # Yellow
-        "ERROR": "\033[31m",  # Red
-        "CRITICAL": "\033[35m",  # Magenta
-    }
-    RESET: ClassVar[str] = "\033[0m"
-
-    def format(self, record: logging.LogRecord) -> str:
-        """Format log record with color coding."""
-        try:
-            # Add color to level name
-            if record.levelname in self.COLORS:
-                record.levelname = (
-                    f"{self.COLORS[record.levelname]}{record.levelname}{self.RESET}"
-                )
-
-            # Add correlation ID if available
-            if hasattr(record, "correlation_id"):
-                record.correlation_id = f"[{record.correlation_id}]"
-            else:
-                record.correlation_id = ""
-
-            return super().format(record)
-        except Exception:
-            # Note: Fallback to simple format if formatting fails
-            try:
-                return f"{record.levelname} {record.name}: {record.getMessage()}"
-            except Exception:
-                return f"Logging error: {record.levelname} {record.name}"
-
-
 def _generate_timestamped_log_filename(base_path: Optional[str]) -> str:
     """Generate a unique timestamped log file name.
 
@@ -196,11 +178,46 @@ def _generate_timestamped_log_filename(base_path: Optional[str]) -> str:
     return str(base_dir / log_filename)
 
 
-def setup_logging(config: ObservabilityConfig) -> None:
+def _resolve_log_level(level: Union[int, str, Any]) -> int:
+    """Resolve a logging level value into a numeric constant."""
+    if isinstance(level, int):
+        return level
+
+    if hasattr(level, "value"):
+        level = level.value
+
+    if not isinstance(level, str):
+        return logging.INFO
+
+    level_name = level.upper()
+    level_map = {
+        "TRACE": TRACE_LOG_LEVEL,
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+    return level_map.get(level_name, logging.INFO)
+
+
+def setup_logging(
+    config: ObservabilityConfig,
+    effective_log_level: Optional[Union[int, str]] = None,
+) -> None:
     """Set up logging configuration with Rich support.
 
-    Log files are automatically timestamped with format: ccbt-YYYYMMDD-HHMMSS-<random>.log
+    Log files are automatically timestamped with format: ccbt-YYYYMMDD-HHMMSS-<random>.log.
+
+    Args:
+        config: Observability configuration
+        effective_log_level: Optional logging level override (verbosity-aware)
+
     """
+    configured_log_level = _resolve_log_level(
+        effective_log_level if effective_log_level is not None else config.log_level
+    )
+
     # Generate timestamped log file name if log_file is specified
     actual_log_file = config.log_file
     if config.log_file:
@@ -210,7 +227,7 @@ def setup_logging(config: ObservabilityConfig) -> None:
 
     # Try to use RichHandler for console output
     try:
-        rich_handler = create_rich_handler(level=config.log_level.value)
+        rich_handler = create_rich_handler(level=configured_log_level)
         use_rich = True
     except Exception:
         # Fallback to standard handler if Rich not available
@@ -222,8 +239,8 @@ def setup_logging(config: ObservabilityConfig) -> None:
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            "colored": {
-                "()": ColoredFormatter,
+            "plain": {
+                "()": logging.Formatter,
                 "format": "%(asctime)s %(levelname)s %(correlation_id)s %(name)s.%(funcName)s: %(message)s",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
@@ -244,13 +261,13 @@ def setup_logging(config: ObservabilityConfig) -> None:
         "handlers": {},
         "loggers": {
             "ccbt": {
-                "level": config.log_level.value,
+                "level": configured_log_level,
                 "handlers": [],
                 "propagate": False,
             },
         },
         "root": {
-            "level": config.log_level.value,
+            "level": configured_log_level,
             "handlers": [],
         },
     }
@@ -260,8 +277,8 @@ def setup_logging(config: ObservabilityConfig) -> None:
         # Use RichHandler for console - we'll add it directly after dictConfig
         logging_config["handlers"]["console"] = {
             "class": "logging.StreamHandler",
-            "level": config.log_level.value,
-            "formatter": "colored",
+            "level": configured_log_level,
+            "formatter": "plain",
             "filters": ["correlation"],
             "stream": sys.stdout,
         }
@@ -269,8 +286,8 @@ def setup_logging(config: ObservabilityConfig) -> None:
         # Fallback to standard StreamHandler
         logging_config["handlers"]["console"] = {
             "class": "logging.StreamHandler",
-            "level": config.log_level.value,
-            "formatter": "colored" if not config.structured_logging else "structured",
+            "level": configured_log_level,
+            "formatter": "plain" if not config.structured_logging else "structured",
             "filters": ["correlation"],
             "stream": sys.stdout,
             # Note: Disable buffering for real-time log output
@@ -285,7 +302,7 @@ def setup_logging(config: ObservabilityConfig) -> None:
     if config.log_file:
         logging_config["handlers"]["file"] = {
             "class": "logging.handlers.RotatingFileHandler",
-            "level": config.log_level.value,
+            "level": configured_log_level,
             "formatter": "structured" if config.structured_logging else "simple",
             "filters": ["correlation"],
             "filename": actual_log_file,  # Use timestamped filename
@@ -604,8 +621,20 @@ def log_with_verbosity(
         logger.log(level, message, *args, **kwargs)
         return
 
+    if level == TRACE_LOG_LEVEL and kwargs.get("exc_info") is None:
+        should_show_stack_trace = bool(
+            getattr(verbosity_manager, "should_show_stack_trace", lambda: False)()
+        )
+        if should_show_stack_trace and level >= logging.WARNING:
+            kwargs["exc_info"] = True
+
     # Check if should log based on verbosity
     if verbosity_manager.should_log(level):
+        if level == TRACE_LOG_LEVEL:
+            trace_fn = getattr(logger, "trace", None)
+            if callable(trace_fn):
+                trace_fn(message, *args, **kwargs)
+                return
         logger.log(level, message, *args, **kwargs)
 
 

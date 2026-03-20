@@ -7,12 +7,14 @@ to accept incoming peer connections from other BitTorrent clients.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import socket
 from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.config.config import get_config
 from ccbt.utils.exceptions import HandshakeError
+from ccbt.utils.shutdown import is_shutting_down
 
 if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
@@ -41,6 +43,16 @@ class IncomingPeerServer:
         self._inbound_registration_probation: dict[str, int] = {}
         self._inbound_registration_probation_window = 8.0
         self._inbound_registration_probation_retry_interval = 0.5
+        self._probation_tasks: set[asyncio.Task[None]] = set()
+
+    def _register_probation_task(self, task: asyncio.Task[None]) -> None:
+        """Track background probation task for shutdown cleanup."""
+        self._probation_tasks.add(task)
+
+        def _on_task_done(done_task: asyncio.Task[None]) -> None:
+            self._probation_tasks.discard(done_task)
+
+        task.add_done_callback(_on_task_done)
 
     async def start(self) -> None:
         """Start the TCP server.
@@ -53,7 +65,7 @@ class IncomingPeerServer:
             return
 
         if not self.config.network.enable_tcp:
-            self.logger.info("TCP transport disabled, skipping TCP server startup")
+            self.logger.debug("TCP transport disabled, skipping TCP server startup")
             return
 
         listen_interface = self.config.network.listen_interface or "0.0.0.0"  # nosec B104 - Network service must bind to all interfaces to accept peer connections
@@ -151,7 +163,7 @@ class IncomingPeerServer:
                 raise RuntimeError(msg)
 
             self._running = True
-            self.logger.info(
+            self.logger.debug(
                 "TCP server started on %s (interface=%s, port=%d, sockets=%d)",
                 ", ".join(server_addresses) if server_addresses else "unknown",
                 listen_interface,
@@ -178,9 +190,29 @@ class IncomingPeerServer:
         ENHANCEMENT: Explicitly close all sockets to ensure immediate port release.
         """
         if not self._running:
+            if self._probation_tasks:
+                probation_tasks = set(self._probation_tasks)
+                self._probation_tasks.clear()
+                for task in probation_tasks:
+                    task.cancel()
+                    with contextlib.suppress(Exception):
+                        await asyncio.wait_for(task, timeout=0.5)
             return
 
         self._running = False
+
+        probation_tasks = set(self._probation_tasks)
+        self._probation_tasks.clear()
+        for task in probation_tasks:
+            task.cancel()
+
+        for task in probation_tasks:
+            try:
+                await asyncio.wait_for(task, timeout=2.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+            except Exception as exc:
+                self.logger.debug("Error while stopping probation task: %s", exc)
 
         if self.server:
             # CRITICAL: Explicitly close all sockets before closing server to ensure immediate port release
@@ -219,7 +251,7 @@ class IncomingPeerServer:
                 self.logger.debug("Error waiting for server to close: %s", e)
 
             self.server = None
-            self.logger.info("TCP server stopped")
+            self.logger.debug("TCP server stopped")
 
     def is_serving(self) -> bool:
         """Check if the TCP server is currently serving.
@@ -298,6 +330,14 @@ class IncomingPeerServer:
         start_time: float,
     ) -> None:
         """Retry inbound session lookup briefly before closing stalled handshakes."""
+        if is_shutting_down() or not self._running:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return
+
         try:
             session = None
             deadline = (
@@ -308,6 +348,7 @@ class IncomingPeerServer:
                 session is None
                 and asyncio.get_event_loop().time() < deadline
                 and self._running
+                and not is_shutting_down()
             ):
                 if self.session_manager is not None:
                     session = await self.session_manager.get_session_for_info_hash(
@@ -319,6 +360,10 @@ class IncomingPeerServer:
                     )
 
             if session is None:
+                if not self._running or is_shutting_down():
+                    writer.close()
+                    await writer.wait_closed()
+                    return
                 elapsed = asyncio.get_event_loop().time() - start_time
                 self.logger.debug(
                     "No active torrent for info_hash %s from %s:%d after probation wait %.1fs.",
@@ -343,6 +388,10 @@ class IncomingPeerServer:
                     peer_port,
                     handshake.info_hash.hex()[:16],
                 )
+                writer.close()
+                await writer.wait_closed()
+                return
+            if is_shutting_down() or not self._running:
                 writer.close()
                 await writer.wait_closed()
                 return
@@ -386,6 +435,14 @@ class IncomingPeerServer:
             peer_ip, peer_port = "unknown", 0
 
         self.logger.debug("Incoming connection from %s:%d", peer_ip, peer_port)
+
+        if is_shutting_down() or not self._running:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return
 
         try:
             # Read first byte to determine protocol length
@@ -444,6 +501,8 @@ class IncomingPeerServer:
             while (
                 session is None
                 and (asyncio.get_event_loop().time() - start_time) < max_wait_time
+                and self._running
+                and not is_shutting_down()
             ):
                 if self.session_manager is not None:
                     session = await self.session_manager.get_session_for_info_hash(
@@ -455,6 +514,10 @@ class IncomingPeerServer:
                     await asyncio.sleep(check_interval)
 
             if session is None:
+                if is_shutting_down() or not self._running:
+                    writer.close()
+                    await writer.wait_closed()
+                    return
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if self._should_probation_inbound(
                     handshake.info_hash, peer_ip, peer_port
@@ -477,7 +540,7 @@ class IncomingPeerServer:
                             start_time,
                         )
                     )
-                    _ = probation_task
+                    self._register_probation_task(probation_task)
                     return
                 # Note: Check if any sessions exist at all
                 # If no sessions are registered, this is expected during startup - use DEBUG level
@@ -509,6 +572,11 @@ class IncomingPeerServer:
                         peer_port,
                         elapsed,
                     )
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            if is_shutting_down() or not self._running:
                 writer.close()
                 await writer.wait_closed()
                 return

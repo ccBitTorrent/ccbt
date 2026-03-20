@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -47,8 +48,8 @@ async def test_local_provider_uses_single_torrent_status_path() -> None:
     assert result["info_hash"] == expected["info_hash"]
     assert result["connected_peers"] == 7
     assert result["active_peers"] == 3
-    assert result["num_peers"] == 7
-    assert result["num_seeds"] == 3
+    assert "num_peers" not in result
+    assert "num_seeds" not in result
     session.get_torrent_status.assert_awaited_once_with("a" * 40)
     session.get_status.assert_not_called()
 
@@ -87,6 +88,45 @@ async def test_daemon_provider_on_event_allows_string_event_types() -> None:
     assert f"trackers_{info_hash}" not in provider._cache
     assert f"torrent_files_{info_hash}" not in provider._cache
     assert f"torrent_status_{info_hash}" not in provider._cache
+
+
+@pytest.mark.asyncio
+async def test_daemon_provider_get_peer_metrics_normalizes_rates() -> None:
+    """DaemonDataProvider should project peer rate fields to canonical names."""
+    client = MagicMock()
+    client.get_peer_metrics = AsyncMock(
+        return_value=SimpleNamespace(
+            model_dump=lambda: {
+                "total_peers": 2,
+                "active_peers": 1,
+                "peers": [
+                    {
+                        "ip": "127.0.0.1",
+                        "port": 6881,
+                        "total_download_rate": 4096.0,
+                        "total_upload_rate": 1024.0,
+                    },
+                    {
+                        "ip": "10.0.0.1",
+                        "port": 51413,
+                        "download_rate": 3072.0,
+                        "upload_rate": 2048.0,
+                    },
+                ],
+            }
+        )
+    )
+
+    provider = DaemonDataProvider(client)
+    metrics = await provider.get_peer_metrics()
+
+    assert metrics["total_peers"] == 2
+    assert metrics["peers"][0]["download_rate"] == 4096.0
+    assert metrics["peers"][0]["upload_rate"] == 1024.0
+    assert metrics["peers"][1]["download_rate"] == 3072.0
+    assert metrics["peers"][1]["upload_rate"] == 2048.0
+    assert "total_download_rate" not in metrics["peers"][0]
+    assert "total_upload_rate" not in metrics["peers"][0]
 
 
 @pytest.mark.asyncio
@@ -135,7 +175,7 @@ async def test_daemon_provider_batch_invalidates_cache_keys() -> None:
 
 @pytest.mark.asyncio
 async def test_daemon_provider_global_stats_maps_canonical_rates() -> None:
-    """Global stats should expose canonical and compatibility rate keys."""
+    """Global stats should expose canonical rate keys."""
     response = SimpleNamespace(
         num_torrents=3,
         num_active=2,
@@ -154,15 +194,15 @@ async def test_daemon_provider_global_stats_maps_canonical_rates() -> None:
 
     assert stats["download_rate"] == 1250.0
     assert stats["upload_rate"] == 640.0
-    assert stats["total_download_rate"] == 1250.0
-    assert stats["total_upload_rate"] == 640.0
+    assert "total_download_rate" not in stats
+    assert "total_upload_rate" not in stats
     assert stats["connected_peers"] == 7
     assert stats["uptime"] == 12.0
 
 
 @pytest.mark.asyncio
-async def test_local_provider_list_torrents_adds_compat_aliases() -> None:
-    """Local torrent lists should expose the same UI-facing aliases as daemon mode."""
+async def test_local_provider_list_torrents_exposes_canonical_peer_keys() -> None:
+    """Local torrent lists should expose canonical peer key names."""
     session = MagicMock()
     session.get_status = AsyncMock(
         return_value={
@@ -190,8 +230,8 @@ async def test_local_provider_list_torrents_adds_compat_aliases() -> None:
     assert len(torrents) == 1
     assert torrents[0]["connected_peers"] == 4
     assert torrents[0]["active_peers"] == 1
-    assert torrents[0]["num_peers"] == 4
-    assert torrents[0]["num_seeds"] == 1
+    assert "num_peers" not in torrents[0]
+    assert "num_seeds" not in torrents[0]
 
 
 @pytest.mark.asyncio
@@ -249,7 +289,6 @@ async def test_daemon_and_local_providers_share_torrent_status_shape() -> None:
     assert daemon_status is not None
     assert set(local_status) == set(daemon_status)
     assert daemon_status["connected_peers"] == 6
-    assert daemon_status["num_peers"] == 6
 
 
 @pytest.mark.asyncio
@@ -468,6 +507,85 @@ async def test_daemon_provider_media_helpers_surface_candidates_and_status() -> 
         "info_hash": "d" * 40,
         "state": "ready",
     }
+
+
+@pytest.mark.asyncio
+async def test_local_provider_dht_health_summary_exposes_bootstrap_metrics() -> None:
+    """Local provider should propagate bootstrap health metrics into DHT summary."""
+
+    class _DummyLock:
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+            return False
+
+    info_hash = "a" * 40
+    info_hash_bytes = bytes.fromhex(info_hash)
+    dht_setup = SimpleNamespace(
+        _dht_query_metrics={
+            "bootstrap_recovery_attempts": 3,
+            "bootstrap_health_state": "degraded",
+            "bootstrap_zero_state_count": 2,
+            "bootstrap_zero_nodes_last_reason": "empty_routing_table",
+            "rebootstrap_attempt_count": 4,
+            "rebootstrap_success_count": 1,
+            "rebootstrap_failure_count": 3,
+            "rebootstrap_last_outcome": "failure",
+            "rebootstrap_last_reason": "summary",
+            "rebootstrap_last_source": "rebootstrap",
+            "rebootstrap_health_state": "degraded",
+            "rebootstrap_consecutive_failures": 3,
+            "bootstrap_success_count": 0,
+            "bootstrap_failure_count": 1,
+            "query_depths": [2, 3],
+            "nodes_queried": [8, 12],
+            "total_queries": 5,
+            "total_peers_found": 1,
+            "last_query": {"duration": 0.2, "peers_found": 0, "depth": 2, "nodes_queried": 4},
+            "last_bootstrap_reason": "",
+            "last_bootstrap_failure_reason": "",
+            "last_zero_node_lookup_at": 0.0,
+        },
+        _aggressive_mode=False,
+    )
+    torrent_session = SimpleNamespace(
+        _dht_setup=dht_setup,
+        dht_client=SimpleNamespace(routing_table=SimpleNamespace(nodes=[1, 2, 3])),
+    )
+    session = MagicMock()
+    session.lock = _DummyLock()
+    session.torrents = {info_hash_bytes: torrent_session}
+    session.get_status = AsyncMock(
+        return_value={
+            info_hash: {
+                "info_hash": info_hash,
+                "name": "sample",
+                "status": "downloading",
+                "progress": 0.1,
+                "download_rate": 1.0,
+                "upload_rate": 0.0,
+                "connected_peers": 1,
+                "active_peers": 0,
+                "total_size": 100,
+                "downloaded": 10,
+                "uploaded": 0,
+                "pieces_completed": 1,
+                "pieces_total": 10,
+            }
+        }
+    )
+
+    provider = LocalDataProvider(session)
+    summary = await provider.get_dht_health_summary()
+
+    assert summary["total_bootstrap_recovery_attempts"] == 3
+    assert summary["total_bootstrap_zero_state_count"] == 2
+    assert summary["bootstrap_health_state"] == "degraded"
+    item = summary["all_items"][0]
+    assert item["bootstrap_recovery_attempts"] == 3
+    assert item["bootstrap_health_state"] == "degraded"
+    assert item["bootstrap_zero_nodes_last_reason"] == "empty_routing_table"
 
 
 @pytest.mark.asyncio

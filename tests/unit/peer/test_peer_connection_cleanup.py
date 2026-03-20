@@ -400,14 +400,14 @@ class TestKeepAliveMessageHandling:
         assert connection.stats.last_activity > 0.0
 
 
-class TestShutdownTaskCancellation:
-    """Test task cancellation during shutdown (lines 815-818)."""
+class TestStopTaskCancellation:
+    """Test task cancellation during stop (lines 815-818)."""
 
     @pytest.mark.asyncio
-    async def test_shutdown_cancels_pending_tasks(
+    async def test_stop_cancels_pending_tasks(
         self, mock_torrent_data, mock_piece_manager
     ):
-        """Test that shutdown cancels connection tasks that are not done (lines 815-818)."""
+        """Test that stop cancels connection tasks that are not done (lines 815-818)."""
         manager = AsyncPeerConnectionManager(
             mock_torrent_data, mock_piece_manager
         )
@@ -439,7 +439,7 @@ class TestShutdownTaskCancellation:
             assert not connection.connection_task.done()
 
         # Shutdown should cancel all tasks
-        await manager.shutdown()
+        await manager.stop()
 
         # Verify all tasks were cancelled
         for connection in connections:
@@ -447,10 +447,10 @@ class TestShutdownTaskCancellation:
             assert connection.connection_task.cancelled()
 
     @pytest.mark.asyncio
-    async def test_shutdown_handles_already_done_tasks(
+    async def test_stop_handles_already_done_tasks(
         self, mock_torrent_data, mock_piece_manager
     ):
-        """Test that shutdown handles tasks that are already done."""
+        """Test that stop handles tasks that are already done."""
         manager = AsyncPeerConnectionManager(
             mock_torrent_data, mock_piece_manager
         )
@@ -476,16 +476,16 @@ class TestShutdownTaskCancellation:
         assert connection.connection_task.done()
 
         # Shutdown should not raise errors
-        await manager.shutdown()
+        await manager.stop()
 
         # Task should still be done
         assert connection.connection_task.done()
 
     @pytest.mark.asyncio
-    async def test_shutdown_handles_connections_without_tasks(
+    async def test_stop_handles_connections_without_tasks(
         self, mock_torrent_data, mock_piece_manager
     ):
-        """Test that shutdown handles connections without connection_task."""
+        """Test that stop handles connections without connection_task."""
         manager = AsyncPeerConnectionManager(
             mock_torrent_data, mock_piece_manager
         )
@@ -502,7 +502,7 @@ class TestShutdownTaskCancellation:
             manager.connections[str(peer_info)] = connection
 
         # Shutdown should not raise errors
-        await manager.shutdown()
+        await manager.stop()
 
         # Connection should still be in error state (from disconnect_all)
         assert connection.state == ConnectionState.ERROR

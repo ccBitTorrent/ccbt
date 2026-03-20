@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from io import StringIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from rich.console import Console
@@ -15,6 +15,7 @@ from rich.console import Console
 pytestmark = [pytest.mark.cli, pytest.mark.unit]
 
 from ccbt.cli.verbosity import VerbosityManager
+from ccbt.utils.logging_config import TRACE_LOG_LEVEL
 from ccbt.utils.console_utils import (
     log_operation,
     log_result,
@@ -38,8 +39,6 @@ class TestCorrelationRichHandler:
         console = Console(file=StringIO(), width=80)
         handler = CorrelationRichHandler(console=console)
         assert handler.console is console
-        # Note: Icons are always False (removed per user preference)
-        assert handler.show_icons is False
         assert handler.show_colors is True
 
     def test_init_without_console(self):
@@ -50,10 +49,7 @@ class TestCorrelationRichHandler:
     def test_init_with_options(self):
         """Test CorrelationRichHandler initialization with options."""
         console = Console(file=StringIO(), width=80)
-        handler = CorrelationRichHandler(
-            console=console, show_icons=False, show_colors=False
-        )
-        assert handler.show_icons is False
+        handler = CorrelationRichHandler(console=console, show_colors=False)
         assert handler.show_colors is False
 
     def test_level_icons(self):
@@ -70,6 +66,8 @@ class TestCorrelationRichHandler:
         assert "WARNING" in CorrelationRichHandler.LEVEL_COLORS
         assert "ERROR" in CorrelationRichHandler.LEVEL_COLORS
         assert "CRITICAL" in CorrelationRichHandler.LEVEL_COLORS
+        assert "TRACE" in CorrelationRichHandler.LEVEL_COLORS
+        assert CorrelationRichHandler.LEVEL_COLORS["TRACE"] == "dim"
 
     def test_emit_with_correlation_id(self):
         """Test that emit adds correlation ID to record."""
@@ -131,6 +129,11 @@ class TestCreateRichHandler:
         handler = create_rich_handler(level=logging.DEBUG)
         assert handler.level == logging.DEBUG
 
+    def test_create_rich_handler_with_trace_level(self):
+        """Test creating Rich handler with explicit TRACE level."""
+        handler = create_rich_handler(level=TRACE_LOG_LEVEL)
+        assert handler.level == TRACE_LOG_LEVEL
+
     def test_create_rich_handler_with_console(self):
         """Test creating Rich handler with console."""
         console = Console(file=StringIO(), width=80)
@@ -139,10 +142,7 @@ class TestCreateRichHandler:
 
     def test_create_rich_handler_with_options(self):
         """Test creating Rich handler with options."""
-        handler = create_rich_handler(
-            show_icons=False, show_colors=False, show_path=True
-        )
-        assert handler.show_icons is False
+        handler = create_rich_handler(show_colors=False, show_path=True)
         assert handler.show_colors is False
 
 

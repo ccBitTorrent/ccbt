@@ -267,8 +267,8 @@ class StateManager:
                     e,
                 )
 
-            # Canonical internal uses connected_peers; state model uses num_peers
-            num_peers = status.get("connected_peers", status.get("num_peers", 0))
+            # Canonical internal keys are `connected_peers` / `active_peers`.
+            num_peers = status.get("connected_peers", 0)
             torrents[info_hash_hex] = TorrentState(
                 info_hash=info_hash_hex,
                 name=status.get("name", "Unknown"),

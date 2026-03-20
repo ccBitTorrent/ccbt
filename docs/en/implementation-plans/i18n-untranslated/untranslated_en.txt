@@ -1,0 +1,324 @@
+LANGUAGE: en
+TOTAL: 1883
+UNTRANSLATED: 162
+
+
+  [cyan]Matching Rules:[/cyan] None
+
+  [cyan]Matching Rules:[/cyan] {count}
+
+Available Commands:
+  help          - Show this help message
+  status        - Show current status
+  peers         - Show connected peers
+  files         - Show file information
+  pause         - Pause download
+  resume        - Resume download
+  stop          - Stop download
+  quit          - Quit application
+  clear         - Clear screen
+        
+
+[bold cyan]Cache Statistics:[/bold cyan]
+
+[bold cyan]File Selection[/bold cyan]
+
+[bold]Active Port Mappings:[/bold]
+
+[bold]File selection[/bold]
+
+[bold]IP Filter Statistics[/bold]
+
+
+[bold]IP Filter Test[/bold]
+
+
+[bold]Runtime Status:[/bold]
+
+[bold]Sample chunks (last {limit} accessed):[/bold]
+
+
+[bold]Statistics:[/bold]
+
+[bold]Total: {count} rules[/bold]
+
+[cyan]Connection Diagnostics[/cyan]
+
+
+[cyan]Proxy Statistics:[/cyan]
+
+[cyan]Status:[/cyan] {status}
+
+[dim]Press Ctrl+I in main dashboard to manage IPFS content and peers[/dim]
+
+[dim]Press Ctrl+N in main dashboard to manage NAT settings globally[/dim]
+
+[dim]Press Ctrl+R in main dashboard to view scrape results[/dim]
+
+[dim]Press Ctrl+U in main dashboard to configure uTP settings globally[/dim]
+
+[dim]Press Ctrl+X in main dashboard to manage Xet settings globally[/dim]
+
+[green]Diagnostic complete![/green]
+
+[green]✓ Discovery successful![/green]
+
+[green]✓[/green] No connection issues detected
+
+[yellow]2. DHT Status[/yellow]
+
+[yellow]3. Tracker Configuration[/yellow]
+
+[yellow]4. NAT Configuration[/yellow]
+
+[yellow]5. Listen Port[/yellow]
+
+[yellow]6. Session Initialization Test[/yellow]
+
+[yellow]Commands:[/yellow]
+
+[yellow]Connection Issues[/yellow]
+
+[yellow]Download interrupted by user[/yellow]
+
+[yellow]File selection cancelled, using defaults[/yellow]
+
+[yellow]Session Summary[/yellow]
+
+[yellow]Shutting down daemon...[/yellow]
+
+[yellow]TCP Server Status[/yellow]
+
+[yellow]Tracker Scrape Statistics:[/yellow]
+
+[yellow]Use: files select <index>, files deselect <index>, files priority <index> <priority>[/yellow]
+
+[yellow]Warning: No peers connected after 30 seconds[/yellow]
+
+[yellow]✗ No NAT devices discovered[/yellow]
+  [cyan]priority <index> <priority>[/cyan] - Set priority (do_not_download/low/normal/high/maximum)
+Authentication failed when checking daemon status at %s (status %d). This usually indicates an API key mismatch. Check that the API key in config matches the daemon's API key.
+CRITICAL: PID file exists (initial=%s, current=%s, path=%s) but code reached local session creation! This will cause port conflicts. Aborting.
+Cached: {cache_size}, Total Seeders: {seeders}, Total Leechers: {leechers}
+Cannot connect to daemon at %s: %s (daemon may not be running or IPC server not started)
+Client error checking daemon status at %s: %s (daemon may be starting up)
+Configuration: {type}
+
+This configuration section is not yet fully implemented.
+Connections: {connections} | Packets: {sent}/{received} | Bytes: {bytes_sent}/{bytes_received}
+Could not connect to daemon (no PID file): %s - will create local session
+DHT client not available. DHT metrics require DHT to be enabled and running.
+Daemon PID file exists but API key not found in config. Cannot route to daemon. Please check daemon configuration.
+Daemon PID file exists but cannot connect to daemon (error: {error}).
+The daemon may be starting up or may have crashed.
+
+To resolve:
+  1. Run 'btbt daemon status' to check daemon state
+  2. Check if IPC server is running on the configured port
+  3. Verify API key in config matches daemon's API key
+  4. If daemon crashed, restart it: 'btbt daemon start'
+  5. If you want to run locally, stop the daemon: 'btbt daemon exit'
+Daemon PID file exists but cannot connect to daemon: {error}
+
+To resolve:
+  1. Run 'btbt daemon status' to check daemon state
+  2. Check IPC port configuration matches daemon port
+  3. If daemon crashed, restart it: 'btbt daemon start'
+  4. If you want to run locally, stop the daemon: 'btbt daemon exit'
+Daemon PID file exists but daemon is not accessible after {elapsed:.1f}s.
+The daemon may be starting up or may have crashed.
+
+To resolve:
+  1. Run 'btbt daemon status' to check daemon state
+  2. Check daemon logs for startup errors
+  3. If daemon crashed, restart it: 'btbt daemon start'
+  4. If you want to run locally, stop the daemon: 'btbt daemon exit'
+Daemon PID file exists but daemon is not responding (timeout after {elapsed:.1f}s).
+The daemon may be starting up or may have crashed.
+
+To resolve:
+  1. Run 'btbt daemon status' to check daemon state
+  2. Check daemon logs for errors
+  3. If daemon crashed, restart it: 'btbt daemon start'
+  4. If you want to run locally, stop the daemon: 'btbt daemon exit'
+Daemon PID file exists but daemon is not responding after {max_total_wait:.1f}s.
+Possible causes:
+  - Daemon is still starting up (wait a few seconds and try again)
+  - Daemon crashed (check logs or run 'btbt daemon status')
+  - IPC server is not accessible (check firewall/network settings)
+
+To resolve:
+  1. Run 'btbt daemon status' to check if daemon is actually running
+  2. If daemon is not running, remove stale PID file: 'btbt daemon exit --force'
+  3. If you want to run locally instead, stop the daemon: 'btbt daemon exit'
+Daemon PID file exists but error occurred while connecting: {error}.
+The daemon may be starting up or may have crashed.
+
+To resolve:
+  1. Run 'btbt daemon status' to check daemon state
+  2. Check daemon logs for connection errors
+  3. Verify IPC server is accessible on the configured port
+  4. If daemon crashed, restart it: 'btbt daemon start'
+  5. If you want to run locally, stop the daemon: 'btbt daemon exit'
+Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...
+Daemon connection timeout (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...
+Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...
+Daemon is marked as running but not accessible after %d attempts (elapsed %.1fs)
+Daemon is not running. File management commands require the daemon to be running.
+Start the daemon with: 'btbt daemon start'
+Daemon is not running. NAT management commands require the daemon to be running.
+Start the daemon with: 'btbt daemon start'
+Daemon is not running. Queue management commands require the daemon to be running.
+Start the daemon with: 'btbt daemon start'
+Daemon is not running. Scrape commands require the daemon to be running.
+Start the daemon with: 'btbt daemon start'
+Enter the directory where files should be downloaded:
+
+Leave empty to use current directory.
+Enter the path to a .torrent file or a magnet link:
+
+Examples:
+  /path/to/file.torrent
+  magnet:?xt=urn:btih:...
+Error checking daemon accessibility (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...
+Error checking daemon accessibility after %d attempts (elapsed %.1fs): %s
+Error checking if daemon is running (Windows-specific issue?): %s - PID file exists, will attempt IPC connection
+File: {name}
+Port: {port}
+Bytes served: {bytes_served}
+Clients: {clients}
+Last range: {start} - {end}
+Readable bytes: {available}
+Last error: {error}
+Full configuration editing requires navigating to the Global Config screen
+IPFS Protocol Options:
+
+IPFS enables content-addressed storage and peer-to-peer content sharing.
+Content can be accessed via IPFS CID after download.
+Invalid locale '{current_locale}' specified. Falling back to 'en'. Available locales: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu
+Invalid tracker URL format. Must start with http://, https://, or udp://
+NAT Traversal Options:
+
+NAT traversal (NAT-PMP/UPnP) automatically maps ports on your router.
+This allows peers to connect to you directly, improving download speeds.
+No daemon detected (PID file doesn't exist), creating local session. PID file path: %s
+Others can join with: ccbt tonic sync "{link}" --output <directory>
+Per-torrent configuration - Data provider/Executor or torrent not available
+Resume from checkpoint if available:
+
+If enabled, the download will resume from the last checkpoint.
+Scrape Options:
+
+Scraping queries tracker statistics (seeders, leechers, completed downloads).
+Auto-scrape will automatically scrape the tracker when the torrent is added.
+Security manager not available. Security scanning requires local session mode.
+Security scan completed. {blocked} blocked connections, {events} security events detected.
+Select files to download and set priorities:
+  Space: Toggle selection
+  P: Change priority
+  A: Select all
+  D: Deselect all
+Select queue priority for this torrent:
+
+Higher priority torrents will be started first.
+Set rate limits for this torrent:
+
+Enter 0 or leave empty for unlimited.
+Socket connection test to %s:%d failed (result=%d). Port may not be open or firewall blocking. Proceeding with HTTP check anyway.
+Socket test returned 10035 (WSAEWOULDBLOCK) on Windows for %s:%d. This may be a false positive - proceeding with HTTP check.
+Start a stream to expose a localhost HTTP URL for VLC or another external player. Native in-terminal video embedding is out of scope.
+Start daemon in background without waiting for completion (faster startup)
+State: stopped
+Selected file index: {index}
+State: {state}
+URL: {url}
+Buffer readiness: {buffer:.0%}
+Timeout checking daemon accessibility (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...
+Timeout checking daemon status at %s (daemon may be starting up or overloaded)
+Unknown operation '{operation}' requested but daemon PID file exists. This should not happen - please report this as a bug.
+Usage: metrics show [system|performance|all] | metrics export [json|prometheus] [output]
+Verification complete: {verified} verified, {failed} failed out of {total}
+Windows-specific error checking daemon (os.kill() issue): %s - no PID file found, will create local session
+Xet Protocol Options:
+
+Xet enables content-defined chunking and deduplication.
+Useful for reducing storage when downloading similar content.
+[cyan]Downloading: {progress:.1f}% ({rate:.2f} MB/s, {peers} peers)[/cyan]
+[dim]Consider using daemon commands or stop the daemon first: 'btbt daemon exit'[/dim]
+[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]
+[dim]Try running with --foreground flag to see detailed error output:[/dim]
+[green]CA certificates path set to {path}. Configuration saved to {config_file}[/green]
+[green]Client certificate set. Configuration saved to {config_file}[/green]
+[green]Optimizations applied successfully![/green]
+[yellow]Note: Some changes may require restart to take effect.[/yellow]
+[green]Restored checkpoint for: {name}[/green]
+Info hash: {hash}
+[green]SSL certificate verification enabled. Configuration saved to {config_file}[/green]
+[green]SSL for peers disabled. Configuration saved to {config_file}[/green]
+[green]SSL for peers enabled (experimental). Configuration saved to {config_file}[/green]
+[green]SSL for trackers disabled. Configuration saved to {config_file}[/green]
+[green]SSL for trackers enabled. Configuration saved to {config_file}[/green]
+[green]TLS protocol version set to {version}. Configuration saved to {config_file}[/green]
+[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)
+[red]Dashboard requires daemon mode. The --no-daemon option is deprecated and not supported.[/red]
+[red]Failed to start daemon. Cannot proceed without daemon.[/red]
+[yellow]Please check:[/yellow]
+  1. Daemon logs for startup errors
+  2. Port conflicts (check if port is already in use)
+  3. Permissions (ensure you have permission to start daemon)
+
+[cyan]To start daemon manually: 'btbt daemon start'[/cyan]
+[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]
+[red]IP filter not initialized. Please enable it in configuration.[/red]
+[red]Invalid priority. Use: do_not_download/low/normal/high/maximum[/red]
+[red]Invalid priority: {priority}. Use: do_not_download/low/normal/high/maximum[/red]
+[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)
+[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting
+[yellow]API key not found in config, cannot get detailed status[/yellow]
+[yellow]CA certificates path set to {path} (configuration not persisted - no config file)[/yellow]
+[yellow]CA certificates path set to {path} (skipped write in test mode)[/yellow]
+[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]
+[yellow]Client certificate set (configuration not persisted - no config file)[/yellow]
+[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]
+[yellow]No file list available within {timeout}s, continuing with default selection.[/yellow]
+[yellow]No optimizations were applied (already optimal or unsupported)[/yellow]
+[yellow]Note: This change is temporary and will be lost on restart. Use config file for persistent changes.[/yellow]
+[yellow]Please provide the original torrent file or magnet link[/yellow]
+[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]
+[yellow]SSL certificate verification disabled (not recommended). Configuration saved to {config_file}[/yellow]
+[yellow]SSL certificate verification disabled (not recommended, configuration not persisted - no config file)[/yellow]
+[yellow]SSL certificate verification disabled (not recommended, skipped write in test mode)[/yellow]
+[yellow]SSL certificate verification enabled (configuration not persisted - no config file)[/yellow]
+[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]
+[yellow]SSL for peers disabled (configuration not persisted - no config file)[/yellow]
+[yellow]SSL for peers enabled (experimental, configuration not persisted - no config file)[/yellow]
+[yellow]SSL for peers enabled (experimental, skipped write in test mode)[/yellow]
+[yellow]SSL for trackers disabled (configuration not persisted - no config file)[/yellow]
+[yellow]SSL for trackers enabled (configuration not persisted - no config file)[/yellow]
+[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]
+[yellow]TLS protocol version set to {version} (configuration not persisted - no config file)[/yellow]
+[yellow]TLS protocol version set to {version} (skipped write in test mode)[/yellow]
+[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]
+[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]
+[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]
+[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]
+[yellow]Torrent not found or not active. Resume data will be automatically saved when torrent completes.[/yellow]
+[yellow]Use --list/--list-active, --add, --remove, --clear-active, --test, --load or --save[/yellow]
+[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]
+[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]
+[yellow]Warning: Daemon is running. Diagnostics will test local session which may cause port conflicts.[/yellow]
+[dim]Consider stopping the daemon first: 'btbt daemon exit'[/dim]
+
+[yellow]Warning: Daemon is running. Starting local session may cause port conflicts.[/yellow]
+[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]
+[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet
+[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})
+help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema
+uTP (uTorrent Transport Protocol) Options:
+
+uTP provides reliable, ordered delivery over UDP with delay-based congestion control (BEP 29).
+Useful for better performance on networks with high latency or packet loss.
+{connection}  Torrents: {torrents}  Active: {active}  Paused: {paused}  Seeding: {seeding}  D: {download}B/s  U: {upload}B/s
+{msg}
+
+PID file path: {path}

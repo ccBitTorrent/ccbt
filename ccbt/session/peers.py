@@ -79,6 +79,8 @@ class PeerManagerInitializer:
                 max_peers_per_torrent=max_peers_per_torrent,
             )
             pm.session_manager = session_manager  # type: ignore[attr-defined]
+            pm.extension_manager = getattr(session_manager, "extension_manager", None)
+            pm.utp_socket_manager = getattr(session_manager, "utp_socket_manager", None)
 
             # Wire security/private flags if available
             if hasattr(download_manager, "security_manager"):
@@ -165,7 +167,6 @@ class PexBinder:
             try:
                 import struct
 
-                from ccbt.extensions.manager import get_extension_manager
                 from ccbt.extensions.pex import PEXMessageType
                 from ccbt.extensions.protocol import ExtensionMessageType
 
@@ -195,7 +196,12 @@ class PexBinder:
                     )
                     return False
 
-                extension_manager = get_extension_manager()
+                extension_manager = getattr(session, "extension_manager", None)
+                if extension_manager is None:
+                    session.logger.debug(
+                        "Extension manager not available for PEX message send"
+                    )
+                    return False
                 extension_protocol = extension_manager.get_extension("protocol")
                 if not extension_protocol:
                     session.logger.debug("Extension protocol not available for PEX")
@@ -976,6 +982,32 @@ class PeerConnectionHelper:
                         if hasattr(conn, "error") and getattr(conn, "error", None):
                             connection_errors += 1
 
+                if not isinstance(connection_summary, dict):
+                    connection_summary = {}
+                    metadata_incomplete = bool(
+                        getattr(
+                            self.session.piece_manager, "_metadata_incomplete", False
+                        )
+                    )
+                session_obj = cast("Any", self.session)
+                requestable_connections = int(
+                    connection_summary.get("requestable_connections", 0) or 0
+                )
+                productive_connections = int(
+                    connection_summary.get("productive_connections", 0) or 0
+                )
+                session_obj.record_peer_connection_batch_metrics(
+                    peer_manager_source,
+                    attempted_peers=len(peer_list),
+                    active_connections=actual_peers,
+                    requestable_connections=requestable_connections,
+                    productive_connections=productive_connections,
+                    metadata_incomplete=metadata_incomplete,
+                    batches_in_progress=batches_in_progress,
+                    connection_manager_summary=connection_summary,
+                    connection_successes=0,
+                )
+
                 # Enhanced logging for connection results
                 if active_peers > 0:
                     self.session.logger.info(
@@ -988,12 +1020,17 @@ class PeerConnectionHelper:
                         connection_summary,
                     )
                     # Update connection success metrics
-                    self.session._peer_discovery_metrics["connection_successes"] += (  # noqa: SLF001
-                        active_peers
+                    session_obj.record_peer_connection_batch_metrics(
+                        peer_manager_source,
+                        attempted_peers=len(peer_list),
+                        active_connections=actual_peers,
+                        requestable_connections=requestable_connections,
+                        productive_connections=productive_connections,
+                        metadata_incomplete=metadata_incomplete,
+                        batches_in_progress=batches_in_progress,
+                        connection_manager_summary=connection_summary,
+                        connection_successes=active_peers,
                     )
-                    self.session._peer_discovery_metrics[  # noqa: SLF001
-                        "last_peer_connection_time"
-                    ] = time.time()
                     if hasattr(peer_manager, "connections"):
                         self.session.update_usable_live_peers_by_source(
                             peer_manager.connections  # type: ignore[attr-defined]
@@ -1009,8 +1046,16 @@ class PeerConnectionHelper:
                         connection_summary,
                     )
                     # Partial success - count as successes for now (may become active later)
-                    self.session._peer_discovery_metrics["connection_successes"] += (  # noqa: SLF001
-                        actual_peers
+                    session_obj.record_peer_connection_batch_metrics(
+                        peer_manager_source,
+                        attempted_peers=len(peer_list),
+                        active_connections=actual_peers,
+                        requestable_connections=requestable_connections,
+                        productive_connections=productive_connections,
+                        metadata_incomplete=metadata_incomplete,
+                        batches_in_progress=batches_in_progress,
+                        connection_manager_summary=connection_summary,
+                        connection_successes=actual_peers,
                     )
                     if hasattr(peer_manager, "connections"):
                         self.session.update_usable_live_peers_by_source(
@@ -1023,17 +1068,24 @@ class PeerConnectionHelper:
                         len(peer_list),
                     )
                 else:
-                    self.session.logger.warning(
-                        "Failed to connect to any of %d peer(s) (attempted via %s peer_manager, summary=%s). "
-                        "This may indicate network issues, firewall blocking, or peers being unreachable.",
-                        len(peer_list),
-                        peer_manager_source,
-                        connection_summary,
-                    )
-                    # Update connection failure metrics
-                    self.session._peer_discovery_metrics["connection_failures"] += len(  # noqa: SLF001
-                        peer_list
-                    )
+                    low_peer_recovery_mode = len(peer_list) <= 30 and active_peers < 3
+                    if low_peer_recovery_mode:
+                        self.session.logger.debug(
+                            "Low-peer recovery path: connection attempt to %d peer(s) via %s yielded no active peers; "
+                            "deferring failure penalty to avoid aggressive recycle/retry churn.",
+                            len(peer_list),
+                            peer_manager_source,
+                        )
+                    else:
+                        self.session.logger.warning(
+                            "Failed to connect to any of %d peer(s) (attempted via %s peer_manager, summary=%s). "
+                            "This may indicate network issues, firewall blocking, or peers being unreachable.",
+                            len(peer_list),
+                            peer_manager_source,
+                            connection_summary,
+                        )
+                        # Update connection failure metrics
+                        session_obj.record_peer_connection_failures(len(peer_list))
                     if hasattr(peer_manager, "connections"):
                         self.session.update_usable_live_peers_by_source(
                             peer_manager.connections  # type: ignore[attr-defined]

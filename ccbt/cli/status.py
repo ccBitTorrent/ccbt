@@ -195,9 +195,14 @@ async def show_status(session: AsyncSessionManager, console: Console) -> None:
 
     if session.config.network.enable_utp:
         try:
-            from ccbt.transport.utp_socket import UTPSocketManager
-
-            socket_manager = await UTPSocketManager.get_instance()
+            socket_manager = getattr(session, "utp_socket_manager", None) or getattr(
+                getattr(session, "session_manager", None), "utp_socket_manager", None
+            )
+            if socket_manager is None:
+                _utp_socket_manager_not_initialized = (
+                    "uTP socket manager not initialized"
+                )
+                raise RuntimeError(_utp_socket_manager_not_initialized)
             stats = socket_manager.get_statistics()
             utp_status = _("Enabled")
             utp_details = _(

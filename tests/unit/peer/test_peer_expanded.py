@@ -22,7 +22,6 @@ from ccbt.peer.peer import (
     InterestedMessage,
     KeepAliveMessage,
     MessageBuffer,
-    MessageDecoder,
     NotInterestedMessage,
     OptimizedMessageDecoder,
     PeerState,
@@ -425,7 +424,7 @@ class TestMessageBuffer:
         assert stats["buffer_capacity"] == buffer.max_size
 
 
-class TestAsyncMessageDecoder:
+class TestMessageDecoderFactoryBehavior:
     """Test cases for AsyncMessageDecoder."""
 
     @pytest.fixture
@@ -550,12 +549,12 @@ class TestAsyncMessageDecoder:
         assert "pool_sizes" in stats
 
 
-class TestMessageDecoder:
-    """Test cases for MessageDecoder (backward compatibility wrapper)."""
+class TestAsyncMessageDecoder:
+    """Test cases for AsyncMessageDecoder."""
 
     def test_initialization(self):
-        """Test MessageDecoder initialization."""
-        decoder = MessageDecoder()
+        """Test AsyncMessageDecoder initialization."""
+        decoder = AsyncMessageDecoder()
         assert isinstance(decoder, AsyncMessageDecoder)
         assert decoder.buffer == bytearray()
 

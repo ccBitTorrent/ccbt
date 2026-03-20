@@ -412,8 +412,8 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
                     torrent.get("status", "unknown"),
                     down_str,
                     up_str,
-                    str(torrent.get("connected_peers", torrent.get("num_peers", 0))),
-                    str(torrent.get("active_peers", torrent.get("num_seeds", 0))),
+                    str(torrent.get("connected_peers", 0)),
+                    str(torrent.get("active_peers", 0)),
                     key=info_hash,
                 )
             
@@ -772,8 +772,8 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
                     torrent.get("status", "unknown"),
                     down_str,
                     up_str,
-                    str(torrent.get("connected_peers", torrent.get("num_peers", 0))),
-                    str(torrent.get("active_peers", torrent.get("num_seeds", 0))),
+                    str(torrent.get("connected_peers", 0)),
+                    str(torrent.get("active_peers", 0)),
                     key=info_hash,
                 )
             

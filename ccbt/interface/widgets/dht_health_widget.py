@@ -137,6 +137,22 @@ class DHTHealthWidget(Static):  # type: ignore[misc]
         stats_text.append("   ")
         stats_text.append(f"{_('Total Queries')}: ", style="bold cyan")
         stats_text.append(str(total_queries), style="white")
+        stats_text.append("   ")
+        stats_text.append(
+            f"{_('Bootstrap recovery attempts')}: ",
+            style="bold cyan",
+        )
+        stats_text.append(
+            str(int(summary.get("total_bootstrap_recovery_attempts", 0))), style="white"
+        )
+        stats_text.append("   ")
+        stats_text.append(
+            f"{_('Bootstrap health')}: ",
+            style="bold cyan",
+        )
+        stats_text.append(
+            str(summary.get("bootstrap_health_state", "unknown")), style="white"
+        )
 
         table = Table(expand=True, box=None, pad_edge=False)
         table.add_column(_("Torrent"), ratio=2, overflow="fold")

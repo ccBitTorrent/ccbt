@@ -20,8 +20,8 @@ if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runt
     )
 
 from ccbt.peer.peer import (
-    MessageDecoder,
-    PeerInfo,
+    AsyncMessageDecoder,
+    PeerInfoModel,
     PeerState,
 )
 
@@ -49,13 +49,13 @@ class PeerConnectionError(Exception):
 class PeerConnection:
     """Represents an async connection to a single peer."""
 
-    peer_info: PeerInfo
+    peer_info: PeerInfoModel
     torrent_data: dict[str, Any]
     reader: Optional[Union[asyncio.StreamReader, EncryptedStreamReader]] = None
     writer: Optional[Union[asyncio.StreamWriter, EncryptedStreamWriter]] = None
     state: ConnectionState = ConnectionState.DISCONNECTED
     peer_state: PeerState = field(default_factory=PeerState)
-    message_decoder: MessageDecoder = field(default_factory=MessageDecoder)
+    message_decoder: AsyncMessageDecoder = field(default_factory=AsyncMessageDecoder)
     last_activity: float = field(default_factory=time.time)
     connection_task: Optional[asyncio.Task] = None
     error_message: Optional[str] = None

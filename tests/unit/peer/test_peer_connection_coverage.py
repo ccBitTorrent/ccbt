@@ -837,12 +837,12 @@ class TestConnectionErrorHandling:
             assert str(peer_info) not in manager.connections
 
 
-class TestShutdown:
-    """Test shutdown paths."""
+class TestStop:
+    """Test stop paths."""
 
     @pytest.mark.asyncio
-    async def test_shutdown_task_cancellation(self, manager):
-        """Test shutdown cancels pending connection tasks."""
+    async def test_stop_task_cancellation(self, manager):
+        """Test stop cancels pending connection tasks."""
         peer_info = PeerInfo(ip="192.168.1.100", port=6881)
         connection = PeerConnection(peer_info, manager.torrent_data)
         connection.state = ConnectionState.CONNECTED
@@ -855,7 +855,7 @@ class TestShutdown:
         manager.connections[str(peer_info)] = connection
 
         # Shutdown should cancel task
-        await manager.shutdown()
+        await manager.stop()
 
         # Task should be cancelled
         assert connection.connection_task.cancelled() or connection.connection_task.done()

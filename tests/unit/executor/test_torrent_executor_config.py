@@ -16,6 +16,7 @@ import pytest
 
 from ccbt.executor.base import CommandResult
 from ccbt.executor.torrent_executor import TorrentExecutor
+from ccbt.daemon.ipc_protocol import TorrentStatusResponse
 
 pytestmark = [pytest.mark.unit, pytest.mark.executor]
 
@@ -264,6 +265,32 @@ class TestTorrentExecutorConfigCommands:
         mock_adapter.reset_torrent_options.assert_called_once_with(
             info_hash, key=key
         )
+
+    @pytest.mark.asyncio
+    async def test_torrent_status_returns_canonical_peer_fields(self, executor, mock_adapter):
+        """torrent.status should expose canonical peer fields in command payload."""
+        info_hash = "a" * 40
+        mock_adapter.get_torrent_status = AsyncMock(
+            return_value=TorrentStatusResponse(
+                info_hash=info_hash,
+                name="test",
+                status="downloading",
+                progress=0.25,
+                download_rate=10.0,
+                upload_rate=5.0,
+                num_peers=4,
+                num_seeds=2,
+                total_size=1_000,
+                downloaded=250,
+                uploaded=125,
+            )
+        )
+
+        result = await executor.execute("torrent.status", info_hash=info_hash)
+
+        assert result.success is True
+        assert result.data["status"]["connected_peers"] == 4
+        assert result.data["status"]["active_peers"] == 2
 
     @pytest.mark.asyncio
     async def test_reset_torrent_options_failure(self, executor, mock_adapter):

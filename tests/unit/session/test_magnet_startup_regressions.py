@@ -65,6 +65,29 @@ async def test_announce_loop_fetches_metadata_when_tracker_connects_stall(
     async def fast_sleep(seconds: float) -> None:
         await original_sleep(min(seconds, 0.01))
 
+    mocked_time = 1000.0
+
+    async def fake_recovery_state() -> dict[str, int | bool]:
+        return {
+            "metadata_incomplete": True,
+            "active_peers": 1,
+            "productive_peers": 1,
+            "requestable_peers": 1,
+            "peers_with_piece_info": 1,
+            "handshake_complete_peers": 0,
+            "extension_capable_peers": 0,
+            "bitfield_complete_peers": 0,
+            "metadata_capable_peers": 0,
+            "active_block_requests": 0,
+            "download_rate": 0.0,
+            "has_metadata_progress_path": False,
+            "has_usable_download_path": False,
+            "degraded_swarm": False,
+        }
+
+    def fake_time() -> float:
+        return mocked_time
+
     async def fake_connect_to_peers(
         self: object, peers: list[dict[str, object]]
     ) -> None:
@@ -120,6 +143,64 @@ async def test_tracker_metadata_exchange_still_runs_with_low_active_count() -> N
     )
 
     session.handle_magnet_metadata_exchange.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_peer_connection_helper_records_recovery_snapshot(monkeypatch) -> None:
+    """Peer connection helper should record peer-count, requestable, and metadata state."""
+    from ccbt.session.peers import PeerConnectionHelper
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "recovery-metrics-test",
+        "info_hash": b"9" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.piece_manager._metadata_incomplete = True
+    connect_call_count = 0
+
+    async def fake_connect_to_peers(peers):
+        nonlocal connect_call_count
+        connect_call_count += 1
+        _ = peers
+
+    session.download_manager.peer_manager = SimpleNamespace(
+        connect_to_peers=AsyncMock(side_effect=fake_connect_to_peers),
+        connections={},
+        _connection_batches_in_progress=False,
+        get_connection_summary=AsyncMock(
+            return_value={
+                "active_connections": 1,
+                "productive_connections": 1,
+                "requestable_connections": 2,
+                "peers_with_piece_info": 1,
+            }
+        ),
+    )
+
+    helper = PeerConnectionHelper(session)
+    original_sleep = asyncio.sleep
+
+    async def fast_sleep(seconds: float) -> None:
+        await original_sleep(min(seconds, 0.01))
+
+    monkeypatch.setattr("ccbt.session.peers.asyncio.sleep", fast_sleep)
+    await helper.connect_peers_to_download([{"ip": "203.0.113.1", "port": 6881}])
+
+    assert connect_call_count == 1
+    last_snapshot = session._peer_discovery_metrics["last_peer_connection_batch"]
+    assert last_snapshot["attempted_peers"] == 1
+    assert last_snapshot["requestable_connections"] == 2
+    assert last_snapshot["metadata_incomplete"] is True
+    assert last_snapshot["productive_connections"] == 1
 
 
 @pytest.mark.asyncio
@@ -365,6 +446,190 @@ async def test_immediate_tracker_connection_enforces_batch_caps(monkeypatch) -> 
     # With 2 existing connections and max peers 4, callback should attempt at most 2 peers.
     connect_to_download.assert_awaited_once()
     assert len(connect_to_download.await_args.args[0]) == 2
+
+
+@pytest.mark.asyncio
+async def test_immediate_tracker_connection_enforces_fallback_cooldown(
+    monkeypatch,
+) -> None:
+    """Immediate callback should not retry metadata fallback until cooldown expires."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "magnet-cooldown-test",
+        "info_hash": b"3" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "_metadata_incomplete": True,
+        "pieces_info": None,
+        "file_info": None,
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.handle_magnet_metadata_exchange = AsyncMock(return_value=False)
+    session.download_manager.peer_manager = SimpleNamespace(connections={})
+    session.piece_manager._metadata_incomplete = True
+
+    async def fake_connect_to_peers(
+        self: object, peers: list[dict[str, object]]
+    ) -> None:
+        _ = self, peers
+
+    original_sleep = asyncio.sleep
+
+    async def fast_sleep(seconds: float) -> None:
+        await original_sleep(min(seconds, 0.01))
+
+    mocked_time = 1000.0
+
+    async def fake_recovery_state() -> dict[str, int | bool]:
+        return {
+            "metadata_incomplete": True,
+            "active_peers": 1,
+            "requestable_peers": 1,
+            "productive_peers": 1,
+            "peers_with_piece_info": 1,
+            "handshake_complete_peers": 0,
+            "extension_capable_peers": 0,
+            "bitfield_complete_peers": 0,
+            "metadata_capable_peers": 0,
+            "active_block_requests": 0,
+            "download_rate": 0.0,
+            "has_metadata_progress_path": False,
+            "has_usable_download_path": False,
+            "degraded_swarm": False,
+        }
+
+    def fake_time() -> float:
+        return mocked_time
+
+    monkeypatch.setattr(
+        "ccbt.session.session.asyncio.sleep",
+        fast_sleep,
+    )
+    monkeypatch.setattr(
+        "ccbt.session.peers.PeerConnectionHelper.connect_peers_to_download",
+        fake_connect_to_peers,
+    )
+    monkeypatch.setattr(session, "_get_swarm_recovery_state", fake_recovery_state)
+    monkeypatch.setattr("time.time", fake_time)
+
+    session._register_immediate_connection_callback()
+    callback = session.tracker.on_peers_received
+    assert callback is not None
+
+    peers = [{"ip": "192.0.2.10", "port": 6881, "peer_source": "tracker"}]
+    tracker_url = "udp://tracker.example:1337"
+
+    await callback(peers, tracker_url)
+    for _ in range(40):
+        await original_sleep(0.01)
+        if session.handle_magnet_metadata_exchange.await_count >= 1:
+            break
+    assert session.handle_magnet_metadata_exchange.await_count == 1
+
+    await callback(peers, tracker_url)
+    await original_sleep(0.02)
+    assert session.handle_magnet_metadata_exchange.await_count == 1
+
+    mocked_time = 1005.0
+    await callback(peers, tracker_url)
+    await original_sleep(0.02)
+    assert session.handle_magnet_metadata_exchange.await_count == 1
+
+    mocked_time = 1016.0
+    await callback(peers, tracker_url)
+    for _ in range(40):
+        await original_sleep(0.01)
+        if session.handle_magnet_metadata_exchange.await_count >= 2:
+            break
+    assert session.handle_magnet_metadata_exchange.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_immediate_tracker_connection_fallback_clears_in_progress_on_failure(
+    monkeypatch,
+) -> None:
+    """Fallback guard flag must be cleared if the fallback task raises an error."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "magnet-fallback-failure-test",
+        "info_hash": b"4" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "_metadata_incomplete": True,
+        "pieces_info": None,
+        "file_info": None,
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.handle_magnet_metadata_exchange = AsyncMock(side_effect=RuntimeError("boom"))
+    session.download_manager.peer_manager = SimpleNamespace(connections={})
+    session.piece_manager._metadata_incomplete = True
+
+    async def fake_connect_to_peers(
+        self: object, peers: list[dict[str, object]]
+    ) -> None:
+        _ = self, peers
+
+    original_sleep = asyncio.sleep
+
+    async def fast_sleep(_seconds: float) -> None:
+        await original_sleep(min(_seconds, 0.01))
+
+    mocked_time = 1000.0
+
+    async def fake_recovery_state() -> dict[str, int | bool]:
+        return {
+            "metadata_incomplete": True,
+            "active_peers": 0,
+            "requestable_peers": 0,
+            "productive_peers": 0,
+            "peers_with_piece_info": 0,
+            "handshake_complete_peers": 0,
+            "extension_capable_peers": 0,
+            "bitfield_complete_peers": 0,
+            "metadata_capable_peers": 0,
+            "active_block_requests": 0,
+            "download_rate": 0.0,
+            "has_metadata_progress_path": False,
+            "has_usable_download_path": False,
+            "degraded_swarm": False,
+        }
+
+    def fake_time() -> float:
+        return mocked_time
+
+    monkeypatch.setattr(
+        "ccbt.session.session.asyncio.sleep",
+        fast_sleep,
+    )
+    monkeypatch.setattr(
+        "ccbt.session.peers.PeerConnectionHelper.connect_peers_to_download",
+        fake_connect_to_peers,
+    )
+    monkeypatch.setattr(session, "_get_swarm_recovery_state", fake_recovery_state)
+    monkeypatch.setattr("time.time", fake_time)
+
+    session._register_immediate_connection_callback()
+    callback = session.tracker.on_peers_received
+    assert callback is not None
+
+    peers = [{"ip": "192.0.2.20", "port": 6881, "peer_source": "tracker"}]
+    tracker_url = "udp://tracker.example:1337"
+
+    await callback(peers, tracker_url)
+    for _ in range(80):
+        await original_sleep(0.01)
+        if session.handle_magnet_metadata_exchange.await_count >= 1:
+            break
+    assert session.handle_magnet_metadata_exchange.await_count == 1
+    assert session._tracker_metadata_fallback_in_progress is False
+
+    mocked_time = 1016.0
+    await callback(peers, tracker_url)
+    for _ in range(80):
+        await original_sleep(0.01)
+        if session.handle_magnet_metadata_exchange.await_count >= 2:
+            break
+    assert session.handle_magnet_metadata_exchange.await_count == 2
 
 
 @pytest.mark.asyncio

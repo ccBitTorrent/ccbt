@@ -129,8 +129,12 @@ class TestStatusAggregator:
         mock_session.download_manager.get_status = AsyncMock(return_value={})
         mock_session.output_dir = "."
         mock_session.is_private = False
+        mock_session.torrent_file_path = "/tmp/test.torrent"
+        mock_session.magnet_uri = "magnet:?xt=urn:btih:test"
 
         status = await aggregator.get_torrent_status()
 
         assert status["tracker_status"] == "connected"
+        assert status["torrent_file_path"] == "/tmp/test.torrent"
+        assert status["magnet_uri"] == "magnet:?xt=urn:btih:test"
 

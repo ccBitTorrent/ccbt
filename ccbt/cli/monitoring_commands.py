@@ -29,19 +29,12 @@ SESSION_CREATION_FAILED_MSG = "Session creation failed"
     help="Path to alert rules JSON to load on start",
 )
 @click.option(
-    "--no-daemon",
-    is_flag=True,
-    help="[DEPRECATED] Dashboard requires daemon; option is ignored",
-)
-@click.option(
     "--no-splash",
     "-a",
     is_flag=True,
     help="Disable splash screen (useful for debugging)",
 )
-def dashboard(
-    refresh: float, rules: Optional[str], no_daemon: bool, no_splash: bool
-) -> None:
+def dashboard(refresh: float, rules: Optional[str], no_splash: bool) -> None:
     """Start terminal monitoring dashboard (Textual)."""
     console = Console()
 
@@ -63,25 +56,14 @@ def dashboard(
 
     # Start splash screen if enabled (only for daemon mode)
     splash_manager = None
-    if not no_daemon:
-        splash_manager, _splash_thread = _show_startup_splash(
-            no_splash=no_splash,
-            verbosity_count=verbosity_count,
-            console=console,
-        )
-
+    splash_manager, _splash_thread = _show_startup_splash(
+        no_splash=no_splash,
+        verbosity_count=verbosity_count,
+        console=console,
+    )
     session: Optional[Any] = (
         None  # Optional[AsyncSessionManager | DaemonInterfaceAdapter]
     )
-
-    if no_daemon:
-        console.print(
-            _(
-                "[red]Dashboard requires daemon mode. "
-                "The --no-daemon option is deprecated and not supported.[/red]"
-            )
-        )
-        raise click.ClickException(DAEMON_STARTUP_FAILED_MSG)
     # ALWAYS use daemon - try to ensure it's running
     try:
         success, ipc_client = asyncio.run(
@@ -101,8 +83,7 @@ def dashboard(
                     "  1. Daemon logs for startup errors\n"
                     "  2. Port conflicts (check if port is already in use)\n"
                     "  3. Permissions (ensure you have permission to start daemon)\n\n"
-                    "[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
-                    "[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]"
+                    "[cyan]To start daemon manually: 'btbt daemon start'[/cyan]"
                 )
             )
             raise click.ClickException(DAEMON_STARTUP_FAILED_MSG)
@@ -145,20 +126,20 @@ def dashboard(
         # Clear splash on interrupt
         if splash_manager:
             with contextlib.suppress(Exception):
-                splash_manager.clear_progress_messages()
+                splash_manager.stop_splash()
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
         # Clear splash on error
         if splash_manager:
             with contextlib.suppress(Exception):
-                splash_manager.clear_progress_messages()
+                splash_manager.stop_splash()
         console.print(_("[red]Dashboard error: {e}[/red]").format(e=e))
         raise
     finally:
         # Ensure splash is cleared on exit
         if splash_manager:
             try:
-                splash_manager.clear_progress_messages()
+                splash_manager.stop_splash()
                 # Restore log level if it was suppressed
                 import logging
 

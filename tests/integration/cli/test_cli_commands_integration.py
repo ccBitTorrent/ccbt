@@ -71,20 +71,41 @@ class TestCLICommandsIntegration:
     def test_config_command_group(self):
         """Test config command group and subcommands."""
         runner = CliRunner()
-        
+
         # Test config group
         result = runner.invoke(cli, ["config", "--help"])
         assert result.exit_code == 0, "Config command group should work"
-        
+
         # Test config subcommands (if any)
-        config_subcommands = ["get", "set", "show", "reset"]
+        config_subcommands = [
+            "get",
+            "set",
+            "show",
+            "reset",
+            "describe",
+            "apply",
+            "schema",
+            "import",
+        ]
         for subcmd in config_subcommands:
             result = runner.invoke(cli, ["config", subcmd, "--help"])
             # May fail if subcommand doesn't exist, but shouldn't fail with Phase 2 errors
             if result.exit_code != 0:
-                # Check it's not a Phase 2-related error
-                assert "TypeError" not in result.output and "AttributeError" not in result.output, \
+                assert "TypeError" not in result.output, (
                     f"Config subcommand '{subcmd}' should not have Phase 2 errors"
+                )
+                assert "AttributeError" not in result.output, (
+                    f"Config subcommand '{subcmd}' should not have Phase 2 errors"
+                )
+
+    def test_config_extended_not_registered_at_top_level(self):
+        """Former ``config-extended`` group is folded into ``config`` only."""
+        runner = CliRunner()
+        root = runner.invoke(cli, ["--help"])
+        assert root.exit_code == 0
+        assert "config-extended" not in root.output
+        bad = runner.invoke(cli, ["config-extended", "--help"])
+        assert bad.exit_code != 0
 
     def test_daemon_command_group(self):
         """Test daemon command group and subcommands."""

@@ -72,9 +72,22 @@ def _empty_dht_summary() -> dict[str, Any]:
         "torrents_with_dht": 0,
         "aggressive_enabled": 0,
         "total_queries": 0,
+        "total_bootstrap_recovery_attempts": 0,
+        "total_bootstrap_zero_state_count": 0,
+        "bootstrap_health_state": "unknown",
         "items": [],
         "all_items": [],
     }
+
+
+def _aggregate_bootstrap_health_state(states: list[str]) -> str:
+    """Normalize bootstrap health states to the worst known state."""
+    if not states:
+        return "unknown"
+    for state in ("critical", "stalled", "degraded", "healthy", "excellent"):
+        if state in states:
+            return state
+    return "unknown"
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -109,14 +122,12 @@ def _guess_media_metadata(path: str) -> tuple[Optional[str], bool]:
 
 def _normalize_torrent_read_model(
     raw: dict[str, Any],
-    *,
-    include_compat_aliases: bool = True,
 ) -> dict[str, Any]:
     """Normalize a torrent status payload into the canonical UI schema.
 
     Internal session status uses canonical keys such as `connected_peers` and
-    `active_peers`. IPC transport uses `num_peers` and `num_seeds`. UI layers
-    should read the canonical keys only; compatibility aliases are temporary.
+    `active_peers`. IPC transport uses `num_peers` and `num_seeds`, which are
+    normalized to canonical names here.
     """
     connected_peers = _to_int(
         raw.get("connected_peers", raw.get("num_peers", raw.get("peers", 0))),
@@ -158,16 +169,11 @@ def _normalize_torrent_read_model(
             raw.get("download_complete", raw.get("completed", False)),
         ),
     }
-    if include_compat_aliases:
-        normalized["num_peers"] = connected_peers
-        normalized["num_seeds"] = active_peers
     return normalized
 
 
 def _normalize_global_stats_read_model(
     raw: dict[str, Any],
-    *,
-    include_compat_aliases: bool = True,
 ) -> dict[str, Any]:
     """Normalize global stats into the canonical UI schema."""
     download_rate = _to_float(
@@ -193,9 +199,8 @@ def _normalize_global_stats_read_model(
             "uptime": _to_float(raw.get("uptime", 0.0)),
         },
     )
-    if include_compat_aliases:
-        normalized["total_download_rate"] = download_rate
-        normalized["total_upload_rate"] = upload_rate
+    normalized.pop("total_download_rate", None)
+    normalized.pop("total_upload_rate", None)
     return normalized
 
 
@@ -234,6 +239,20 @@ def _normalize_xet_folder_read_model(raw: dict[str, Any]) -> dict[str, Any]:
             "error": normalized.get("error", raw.get("error")),
         }
     )
+    return normalized
+
+
+def _normalize_peer_metric(peer: dict[str, Any]) -> dict[str, Any]:
+    """Normalize peer metrics to dashboard-friendly canonical rate keys."""
+    normalized = dict(peer)
+    normalized["download_rate"] = _to_float(
+        peer.get("download_rate", peer.get("total_download_rate", 0.0))
+    )
+    normalized["upload_rate"] = _to_float(
+        peer.get("upload_rate", peer.get("total_upload_rate", 0.0))
+    )
+    normalized.pop("total_download_rate", None)
+    normalized.pop("total_upload_rate", None)
     return normalized
 
 
@@ -293,7 +312,7 @@ class DataProvider(ABC):
         Returns:
             Dictionary with global statistics including:
             - num_torrents, num_active, num_paused, num_seeding
-            - total_download_rate, total_upload_rate
+            - download_rate, upload_rate
             - total_downloaded, total_uploaded
             - connected_peers, uptime
         """
@@ -942,6 +961,7 @@ class DaemonDataProvider(DataProvider):
                 self.invalidate_cache(f"trackers_{info_hash}")
                 self.invalidate_cache(f"torrent_status_{info_hash}")
                 self.invalidate_cache(f"per_torrent_performance_{info_hash}")
+                self.invalidate_cache(f"torrent_files_{info_hash}")
         elif normalized_event_type in (
             EventType.METADATA_READY,
             EventType.METADATA_FETCH_STARTED,
@@ -1486,7 +1506,17 @@ class DaemonDataProvider(DataProvider):
         async def _fetch() -> dict[str, Any]:
             try:
                 response = await self._client.get_peer_metrics()
-                return response.model_dump()
+                metrics = response.model_dump()
+                peers = metrics.get("peers", [])
+                if isinstance(peers, list):
+                    normalized_peers = [
+                        _normalize_peer_metric(peer)
+                        if isinstance(peer, dict)
+                        else peer
+                        for peer in peers
+                    ]
+                    metrics["peers"] = normalized_peers
+                return metrics
             except Exception as e:
                 logger.error("Error fetching peer metrics: %s", e, exc_info=True)
                 return {
@@ -1509,7 +1539,10 @@ class DaemonDataProvider(DataProvider):
 
             summary_items: list[dict[str, Any]] = []
             total_queries = 0
+            total_bootstrap_recovery_attempts = 0
+            total_bootstrap_zero_state_count = 0
             aggressive_enabled = 0
+            worst_health_state = "unknown"
 
             for torrent in torrents:
                 info_hash_hex = torrent.get("info_hash")
@@ -2030,14 +2063,16 @@ class LocalDataProvider(DataProvider):
     ) -> Any:  # pragma: no cover
         """Get cached value or fetch if expired."""
         ttl = ttl or self._cache_ttl
+        now = time.time()
         async with self._cache_lock:
             if key in self._cache:
                 value, timestamp = self._cache[key]
-                if time.time() - timestamp < ttl:
+                if now - timestamp < ttl:
                     return value
-            value = await fetch_func()
+        value = await fetch_func()
+        async with self._cache_lock:
             self._cache[key] = (value, time.time())
-            return value
+        return value
 
     async def get_global_stats(self) -> dict[str, Any]:
         """Get global statistics from local session."""
@@ -2529,7 +2564,10 @@ class LocalDataProvider(DataProvider):
 
             summary_items: list[dict[str, Any]] = []
             total_queries = 0
+            total_bootstrap_recovery_attempts = 0
+            total_bootstrap_zero_state_count = 0
             aggressive_enabled = 0
+            bootstrap_health_states: list[str] = []
 
             async with self._session.lock:
                 torrent_sessions = dict(self._session.torrents)
@@ -2573,6 +2611,18 @@ class LocalDataProvider(DataProvider):
                     "routing_table_size": 0,
                     "bootstrap_success_count": 0,
                     "bootstrap_failure_count": 0,
+                    "rebootstrap_attempt_count": 0,
+                    "rebootstrap_success_count": 0,
+                    "rebootstrap_failure_count": 0,
+                    "rebootstrap_last_outcome": "not_attempted",
+                    "rebootstrap_last_reason": "",
+                    "rebootstrap_last_source": "",
+                    "rebootstrap_health_state": "unknown",
+                    "bootstrap_recovery_attempts": 0,
+                    "bootstrap_health_state": "unknown",
+                    "bootstrap_zero_state_count": 0,
+                    "bootstrap_zero_nodes_last_reason": "",
+                    "rebootstrap_consecutive_failures": 0,
                     "last_bootstrap_reason": "",
                     "last_bootstrap_failure_reason": "",
                     "last_zero_node_lookup_at": 0.0,
@@ -2600,6 +2650,42 @@ class LocalDataProvider(DataProvider):
                     metrics["bootstrap_failure_count"] = dht_metrics.get(
                         "bootstrap_failure_count", 0
                     )
+                    metrics["bootstrap_recovery_attempts"] = dht_metrics.get(
+                        "bootstrap_recovery_attempts", 0
+                    )
+                    metrics["bootstrap_health_state"] = dht_metrics.get(
+                        "bootstrap_health_state", "unknown"
+                    )
+                    metrics["bootstrap_zero_state_count"] = dht_metrics.get(
+                        "bootstrap_zero_state_count", 0
+                    )
+                    metrics["bootstrap_zero_nodes_last_reason"] = dht_metrics.get(
+                        "bootstrap_zero_nodes_last_reason", ""
+                    )
+                    metrics["rebootstrap_attempt_count"] = dht_metrics.get(
+                        "rebootstrap_attempt_count", 0
+                    )
+                    metrics["rebootstrap_success_count"] = dht_metrics.get(
+                        "rebootstrap_success_count", 0
+                    )
+                    metrics["rebootstrap_failure_count"] = dht_metrics.get(
+                        "rebootstrap_failure_count", 0
+                    )
+                    metrics["rebootstrap_last_outcome"] = dht_metrics.get(
+                        "rebootstrap_last_outcome", "not_attempted"
+                    )
+                    metrics["rebootstrap_last_reason"] = dht_metrics.get(
+                        "rebootstrap_last_reason", ""
+                    )
+                    metrics["rebootstrap_last_source"] = dht_metrics.get(
+                        "rebootstrap_last_source", ""
+                    )
+                    metrics["rebootstrap_health_state"] = dht_metrics.get(
+                        "rebootstrap_health_state", "unknown"
+                    )
+                    metrics["rebootstrap_consecutive_failures"] = dht_metrics.get(
+                        "rebootstrap_consecutive_failures", 0
+                    )
                     metrics["last_bootstrap_reason"] = dht_metrics.get(
                         "last_bootstrap_reason", ""
                     )
@@ -2608,6 +2694,14 @@ class LocalDataProvider(DataProvider):
                     )
                     metrics["last_zero_node_lookup_at"] = dht_metrics.get(
                         "last_zero_node_lookup_at", 0.0
+                    )
+                    state = str(metrics.get("bootstrap_health_state", "unknown"))
+                    bootstrap_health_states.append(state)
+                    total_bootstrap_recovery_attempts += int(
+                        metrics.get("bootstrap_recovery_attempts", 0) or 0
+                    )
+                    total_bootstrap_zero_state_count += int(
+                        metrics.get("bootstrap_zero_state_count", 0) or 0
                     )
 
                 dht_client = getattr(torrent_session, "dht_client", None)
@@ -2647,6 +2741,11 @@ class LocalDataProvider(DataProvider):
                 "torrents_with_dht": len(summary_items),
                 "aggressive_enabled": aggressive_enabled,
                 "total_queries": total_queries,
+                "total_bootstrap_recovery_attempts": total_bootstrap_recovery_attempts,
+                "total_bootstrap_zero_state_count": total_bootstrap_zero_state_count,
+                "bootstrap_health_state": _aggregate_bootstrap_health_state(
+                    bootstrap_health_states
+                ),
                 "items": worst_items,
                 "all_items": summary_items,
             }

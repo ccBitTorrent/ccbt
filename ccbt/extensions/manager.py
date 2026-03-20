@@ -851,19 +851,12 @@ class ExtensionManager:
         return stats
 
 
-# Singleton pattern removed - ExtensionManager is now managed via AsyncSessionManager.extension_manager
-# This ensures proper lifecycle management and prevents conflicts between multiple session managers
-# Deprecated singleton kept for backward compatibility
-_extension_manager: Optional[ExtensionManager] = (
-    None  # Deprecated - use session_manager.extension_manager
-)
-
-
 def get_extension_manager() -> ExtensionManager:
     """Get the global extension manager.
 
     DEPRECATED: Singleton pattern removed. Use session_manager.extension_manager instead.
-    This function is kept for backward compatibility but will log a warning.
+    This function is kept for backward compatibility but returns a new manager
+    instance to avoid shared global state.
 
     Returns:
         ExtensionManager instance (deprecated - use session_manager.extension_manager)
@@ -874,13 +867,8 @@ def get_extension_manager() -> ExtensionManager:
     warnings.warn(
         "get_extension_manager() is deprecated. "
         "Use session_manager.extension_manager instead. "
-        "Singleton pattern removed to ensure proper lifecycle management.",
+        "compatibility instances are now independent.",
         DeprecationWarning,
         stacklevel=2,
     )
-    global _extension_manager
-    if (
-        _extension_manager is None
-    ):  # pragma: no cover - Singleton initialization, tested via existing instance
-        _extension_manager = ExtensionManager()
-    return _extension_manager
+    return ExtensionManager()

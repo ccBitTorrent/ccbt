@@ -591,31 +591,75 @@ class XetFolder:
             self.logger.info("Deleted synced file: %s", entry.file_path)
             return
 
-        file_metadata = entry.file_metadata or self.sync_manager.get_file_metadata(
-            entry.file_path
-        )
-        if file_metadata is None:
-            file_metadata = self._get_file_metadata_from_snapshot(entry.file_path)
-        if (
-            file_metadata is None
-            and self.session_manager is not None
-            and self.workspace_id is not None
-            and hasattr(self.session_manager, "fetch_xet_metadata")
-        ):
-            metadata_bytes = await self.session_manager.fetch_xet_metadata(
-                self.workspace_id.hex()
-            )
-            if metadata_bytes is not None:
-                await self.apply_remote_metadata_snapshot(metadata_bytes)
-                file_metadata = self.sync_manager.get_file_metadata(entry.file_path)
-                if file_metadata is None:
-                    file_metadata = self._get_file_metadata_from_snapshot(
-                        entry.file_path
-                    )
-        if file_metadata is None:
-            msg = f"Missing file metadata for {entry.file_path}"
-            raise FileNotFoundError(msg)
+        def _metadata_matches_update(
+            metadata: Optional[XetFileMetadata],
+            expected_chunk_hash: bytes,
+        ) -> bool:
+            if expected_chunk_hash == bytes(32):
+                return True
+            chunk_hashes = getattr(metadata, "chunk_hashes", None)
+            if isinstance(chunk_hashes, list) and expected_chunk_hash in chunk_hashes:
+                return True
+            file_hash = getattr(metadata, "file_hash", None)
+            return file_hash is not None and file_hash == expected_chunk_hash
 
+        metadata_refreshed = False
+        entry_metadata = entry.file_metadata
+        while True:
+            file_metadata = entry_metadata or self.sync_manager.get_file_metadata(
+                entry.file_path
+            )
+            if file_metadata is None:
+                file_metadata = self._get_file_metadata_from_snapshot(entry.file_path)
+            if (
+                file_metadata is None
+                and self.session_manager is not None
+                and self.workspace_id is not None
+                and hasattr(self.session_manager, "fetch_xet_metadata")
+            ):
+                metadata_bytes = await self.session_manager.fetch_xet_metadata(
+                    self.workspace_id.hex()
+                )
+                if metadata_bytes is not None:
+                    await self.apply_remote_metadata_snapshot(metadata_bytes)
+                    file_metadata = self.sync_manager.get_file_metadata(entry.file_path)
+                    if file_metadata is None:
+                        file_metadata = self._get_file_metadata_from_snapshot(
+                            entry.file_path
+                        )
+            if file_metadata is None:
+                msg = f"Missing file metadata for {entry.file_path}"
+                raise FileNotFoundError(msg)
+            if entry.chunk_hash != bytes(32) and not _metadata_matches_update(
+                file_metadata, entry.chunk_hash
+            ):
+                file_hash_value = (
+                    file_metadata.file_hash.hex()[:16]
+                    if hasattr(file_metadata, "file_hash")
+                    and file_metadata.file_hash is not None
+                    else "None"
+                )
+                msg = (
+                    f"Incoming file metadata hash mismatch for {entry.file_path}: "
+                    f"expected={entry.chunk_hash.hex()[:16]} file_hash="
+                    f"{file_hash_value}"
+                )
+                if not metadata_refreshed and (
+                    self.session_manager is not None
+                    and self.workspace_id is not None
+                    and hasattr(self.session_manager, "fetch_xet_metadata")
+                ):
+                    metadata_refreshed = True
+                    metadata_bytes = await self.session_manager.fetch_xet_metadata(
+                        self.workspace_id.hex()
+                    )
+                    if metadata_bytes is not None:
+                        await self.apply_remote_metadata_snapshot(metadata_bytes)
+                        entry_metadata = None
+                        continue
+                self.sync_manager.set_last_error(msg)
+                raise FileNotFoundError(msg)
+            break
         file_chunks: list[bytes] = []
         actual_chunk_hashes: list[bytes] = []
         for chunk_hash in file_metadata.chunk_hashes:
@@ -688,6 +732,8 @@ class XetFolder:
                 self.logger.debug("Error updating git ref: %s", e)
 
         await self._refresh_metadata_snapshot()
+        if file_metadata is not None:
+            self.sync_manager.file_metadata_by_path[entry.file_path] = file_metadata
         self._bootstrap_pending = False
         self.sync_manager.set_last_error(None)
         self.logger.info("Update processed: %s", entry.file_path)

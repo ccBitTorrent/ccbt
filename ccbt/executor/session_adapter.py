@@ -958,9 +958,9 @@ class LocalSessionAdapter(SessionAdapter):
         status_dict = await self.session_manager.get_status()
         torrents = []
         for info_hash_hex, status in status_dict.items():
-            # Canonical internal uses connected_peers/active_peers; IPC uses num_peers/num_seeds
-            num_peers = status.get("connected_peers", status.get("num_peers", 0))
-            num_seeds = status.get("active_peers", status.get("num_seeds", 0))
+            # Canonical internal keys were normalized to connected_peers/active_peers.
+            num_peers = int(status.get("connected_peers", 0) or 0)
+            num_seeds = int(status.get("active_peers", 0) or 0)
             torrents.append(
                 TorrentStatusResponse(
                     info_hash=info_hash_hex,
@@ -1007,9 +1007,9 @@ class LocalSessionAdapter(SessionAdapter):
         if not status:
             return None
 
-        # Canonical internal uses connected_peers/active_peers; IPC uses num_peers/num_seeds
-        num_peers = status.get("connected_peers", status.get("num_peers", 0))
-        num_seeds = status.get("active_peers", status.get("num_seeds", 0))
+        # Canonical internal keys were normalized to connected_peers/active_peers.
+        num_peers = int(status.get("connected_peers", 0) or 0)
+        num_seeds = int(status.get("active_peers", 0) or 0)
         return TorrentStatusResponse(
             info_hash=info_hash,
             name=status.get("name", "Unknown"),

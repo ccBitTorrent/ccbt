@@ -45,6 +45,47 @@ class TestSessionManagerLifecycle:
         await manager.stop()
 
     @pytest.mark.asyncio
+    async def test_start_uses_existing_extension_manager(self, tmp_path):
+        """Existing extension manager should be reused during startup."""
+        from ccbt.extensions.manager import ExtensionManager
+
+        manager = AsyncSessionManager(output_dir=str(tmp_path))
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
+
+        injected_extension_manager = ExtensionManager()
+        manager.extension_manager = injected_extension_manager
+        await manager.start()
+
+        assert manager.extension_manager is injected_extension_manager
+        assert manager._extension_manager_resolution_source == "injected"
+        status = manager.get_xet_discovery_status()
+        assert status["extension_manager"]["source"] == "injected"
+        assert status["extension_manager"]["enabled"] is True
+
+        await manager.stop()
+
+    @pytest.mark.asyncio
+    async def test_start_creates_extension_manager_if_missing(self, tmp_path):
+        """Missing extension manager should be resolved with fallback initialization."""
+        manager = AsyncSessionManager(output_dir=str(tmp_path))
+        manager.config.nat.auto_map_ports = False
+        manager.config.discovery.enable_dht = False
+        manager.config.network.enable_tcp = False
+
+        assert manager.extension_manager is None
+        await manager.start()
+
+        assert manager.extension_manager is not None
+        assert manager._extension_manager_resolution_source == "fallback"
+        status = manager.get_xet_discovery_status()
+        assert status["extension_manager"]["source"] == "fallback"
+        assert status["extension_manager"]["enabled"] is True
+
+        await manager.stop()
+
+    @pytest.mark.asyncio
     async def test_start_peer_service_error(self, tmp_path):
         """Test starting session manager when peer service fails."""
         manager = AsyncSessionManager(output_dir=str(tmp_path))
@@ -223,6 +264,7 @@ class TestSessionManagerAddTorrent:
             
             info_hash_hex = await manager.add_torrent("test.torrent")
             assert info_hash_hex == "00" * 20
+            assert manager.torrents[bytes.fromhex(info_hash_hex)].torrent_file_path == "test.torrent"
         
         await manager.stop()
 
@@ -333,6 +375,7 @@ class TestSessionManagerAddMagnet:
             
             info_hash_hex = await manager.add_magnet(magnet_uri)
             assert info_hash_hex == "00" * 20
+            assert manager.torrents[bytes.fromhex(info_hash_hex)].magnet_uri == magnet_uri
         
         await manager.stop()
 

@@ -19,6 +19,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.piece]
 from ccbt.models import DownloadStats, PieceState as CheckpointPieceState, TorrentCheckpoint
 from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceBlock, PieceData, PieceState
 from ccbt.peer.peer import PeerInfo
+from ccbt.utils.shutdown import clear_shutdown, set_shutdown
 
 
 @pytest.fixture
@@ -346,6 +347,312 @@ class TestAsyncPieceManagerPieceSelector:
         assert task.done()
 
     @pytest.mark.asyncio
+    async def test_piece_selector_no_progress_gate_counts_no_peers_reason(self, piece_manager):
+        """No-progress gate should attribute stalls to no-peers when no active peers are present."""
+        piece_manager.is_downloading = True
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._no_progress_stall_threshold = 1
+        piece_manager._no_progress_pause_s = 0.01
+        piece_manager._piece_selection_metrics["no_progress_gate_events"] = 0
+        piece_manager._piece_selection_metrics["no_progress_gate_no_peers"] = 0
+
+        select_calls = 0
+        sleep_calls = 0
+        original_sleep = asyncio.sleep
+
+        async def fake_select_pieces() -> None:
+            nonlocal select_calls
+            select_calls += 1
+
+        async def fast_sleep(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            await original_sleep(0.001)
+            if sleep_calls > 60:
+                piece_manager._stopping = True
+
+        piece_manager._select_pieces = fake_select_pieces
+
+        with patch("ccbt.piece.async_piece_manager.asyncio.sleep", new=fast_sleep):
+            task = asyncio.create_task(piece_manager._piece_selector())
+            await asyncio.sleep(0)
+            await asyncio.wait_for(task, timeout=1.0)
+
+        assert select_calls >= 2
+        assert piece_manager._piece_selection_metrics["no_progress_gate_no_peers"] >= 1
+        assert piece_manager._piece_selection_metrics["no_progress_gate_events"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_piece_selector_no_progress_gate_counts_no_requestable_reason(self, piece_manager):
+        """No-progress gate should attribute stalls to requestable-peer unavailability."""
+        piece_manager.is_downloading = True
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [
+                SimpleNamespace(peer_info=PeerInfo(ip="127.0.0.1", port=6881))
+            ]
+        )
+        piece_manager._no_progress_stall_threshold = 1
+        piece_manager._no_progress_pause_s = 0.01
+        piece_manager._piece_selection_metrics["no_progress_gate_events"] = 0
+        piece_manager._piece_selection_metrics["no_progress_gate_no_requestable_peers"] = 0
+
+        select_calls = 0
+        sleep_calls = 0
+        original_sleep = asyncio.sleep
+
+        async def fake_select_pieces() -> None:
+            nonlocal select_calls
+            select_calls += 1
+            piece_manager._piece_selection_metrics["no_requestable_peers"] += 1
+
+        async def fast_sleep(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            await original_sleep(0.001)
+            if sleep_calls > 60:
+                piece_manager._stopping = True
+
+        piece_manager._select_pieces = fake_select_pieces
+
+        with patch("ccbt.piece.async_piece_manager.asyncio.sleep", new=fast_sleep):
+            task = asyncio.create_task(piece_manager._piece_selector())
+            await asyncio.sleep(0)
+            await asyncio.wait_for(task, timeout=1.0)
+
+        assert select_calls >= 2
+        assert piece_manager._piece_selection_metrics["no_progress_gate_no_requestable_peers"] >= 1
+        assert piece_manager._piece_selection_metrics["no_progress_gate_events"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_piece_selector_no_progress_gate_counts_request_timeout_reason(self, piece_manager):
+        """No-progress gate should attribute stalls to request-timeout when active requests do not advance."""
+        piece_manager.is_downloading = True
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [
+                SimpleNamespace(
+                    peer_info=PeerInfo(ip="127.0.0.1", port=6881),
+                    can_request=lambda: True,
+                    peer_state=SimpleNamespace(pieces_we_have={0}),
+                )
+            ],
+            connections={},
+        )
+        piece_manager.peer_availability[str(piece_manager._peer_manager.get_active_peers()[0].peer_info)] = (
+            SimpleNamespace(
+                pieces={0},
+                reliability_score=1.0,
+                average_download_speed=1.0,
+                connection_quality_score=1.0,
+            )
+        )
+        piece_manager._no_progress_stall_threshold = 1
+        piece_manager._no_progress_pause_s = 0.01
+        piece_manager._piece_selection_metrics["no_progress_gate_events"] = 0
+        piece_manager._piece_selection_metrics["no_progress_gate_request_timeouts"] = 0
+        piece_manager._piece_selection_metrics["no_progress_gate_reason"] = "none"
+
+        piece_manager.pieces[0].state = PieceState.REQUESTED
+
+        select_calls = 0
+        sleep_calls = 0
+        original_sleep = asyncio.sleep
+
+        async def counting_select_pieces() -> None:
+            nonlocal select_calls
+            select_calls += 1
+
+        piece_manager._select_pieces = counting_select_pieces
+
+        async def fast_sleep(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            await original_sleep(0.001)
+            if sleep_calls > 120:
+                piece_manager._stopping = True
+
+        with patch("ccbt.piece.async_piece_manager.asyncio.sleep", new=fast_sleep):
+            task = asyncio.create_task(piece_manager._piece_selector())
+            await asyncio.sleep(0)
+            await asyncio.wait_for(task, timeout=1.0)
+
+        assert select_calls >= 2
+        assert piece_manager._piece_selection_metrics["no_progress_gate_request_timeouts"] >= 1
+        assert piece_manager._piece_selection_metrics["no_progress_gate_reason"] == "request_timeouts"
+        assert piece_manager._piece_selection_metrics["no_progress_gate_events"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_piece_selection_metrics_include_last_no_progress_gate_reason(self, piece_manager):
+        """Piece selection metrics should expose recent no-progress gate reason and timestamp."""
+        piece_manager._piece_selection_metrics["no_progress_gate_reason"] = "test_reason"
+        piece_manager._piece_selection_metrics["no_progress_gate_engaged_at"] = 1234.5
+
+        metrics = piece_manager.get_piece_selection_metrics()
+
+        assert metrics["no_progress_gate_reason"] == "test_reason"
+        assert metrics["no_progress_gate_engaged_at"] == 1234.5
+
+    @pytest.mark.asyncio
+    async def test_piece_selector_no_progress_gate_counts_choked_with_piece_reason(self, piece_manager):
+        """No-progress gate should distinguish choked peers that still advertise piece availability."""
+        piece_manager.is_downloading = True
+        choked_peer = SimpleNamespace(
+            peer_info=PeerInfo(ip="127.0.0.1", port=6881),
+            can_request=lambda: False,
+            peer_state=SimpleNamespace(pieces_we_have={0}),
+        )
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [choked_peer],
+            connections={},
+        )
+        piece_manager._no_progress_stall_threshold = 1
+        piece_manager._no_progress_pause_s = 0.01
+        piece_manager._piece_selection_metrics["no_progress_gate_events"] = 0
+        piece_manager._piece_selection_metrics["no_progress_gate_choked_with_piece"] = 0
+        piece_manager._piece_selection_metrics["no_requestable_peers"] = 0
+
+        piece_manager.pieces[0].state = PieceState.REQUESTED
+        piece_manager.peer_availability[str(choked_peer.peer_info)] = (
+            SimpleNamespace(
+                pieces={0},
+                reliability_score=1.0,
+                average_download_speed=1.0,
+                connection_quality_score=1.0,
+            )
+        )
+
+        select_calls = 0
+        sleep_calls = 0
+        original_sleep = asyncio.sleep
+
+        async def counting_select_pieces() -> None:
+            nonlocal select_calls
+            select_calls += 1
+            piece_manager._piece_selection_metrics["no_requestable_peers"] += 1
+
+        piece_manager._select_pieces = counting_select_pieces
+
+        async def fast_sleep(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            await original_sleep(0.001)
+            if sleep_calls > 120:
+                piece_manager._stopping = True
+
+        with patch("ccbt.piece.async_piece_manager.asyncio.sleep", new=fast_sleep):
+            task = asyncio.create_task(piece_manager._piece_selector())
+            await asyncio.sleep(0)
+            await asyncio.wait_for(task, timeout=1.0)
+
+        assert select_calls >= 2
+        assert piece_manager._piece_selection_metrics["no_progress_gate_choked_with_piece"] >= 1
+        assert piece_manager._piece_selection_metrics["no_progress_gate_events"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_piece_selector_no_progress_gate_counts_true_zero_availability_reason(self, piece_manager):
+        """No-progress gate should capture true-zero-availability stalls when peers have no availability signals."""
+        piece_manager.is_downloading = True
+        peer = SimpleNamespace(
+            peer_info=PeerInfo(ip="198.51.100.31", port=6881),
+            can_request=lambda: True,
+            peer_state=SimpleNamespace(pieces_we_have=set()),
+        )
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [peer],
+            connections={},
+        )
+        piece_manager._no_progress_stall_threshold = 1
+        piece_manager._no_progress_pause_s = 0.01
+        piece_manager._piece_selection_metrics["no_progress_gate_events"] = 0
+        piece_manager._piece_selection_metrics["no_progress_gate_true_zero_availability"] = 0
+
+        select_calls = 0
+        sleep_calls = 0
+        original_sleep = asyncio.sleep
+
+        async def fake_select_pieces() -> None:
+            nonlocal select_calls
+            select_calls += 1
+
+        async def fast_sleep(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            await original_sleep(0.001)
+            if sleep_calls > 80:
+                piece_manager._stopping = True
+
+        piece_manager._select_pieces = fake_select_pieces
+
+        with patch("ccbt.piece.async_piece_manager.asyncio.sleep", new=fast_sleep):
+            task = asyncio.create_task(piece_manager._piece_selector())
+            await asyncio.sleep(0)
+            await asyncio.wait_for(task, timeout=1.0)
+
+        assert select_calls >= 2
+        assert piece_manager._piece_selection_metrics["no_progress_gate_true_zero_availability"] >= 1
+        assert piece_manager._piece_selection_metrics["no_progress_gate_events"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_piece_selector_suppresses_gate_during_transient_unchoke_scarcity(self, piece_manager):
+        """Retry grace should suppress repeated no-progress gates while peers are temporarily unchoked."""
+        piece_manager.is_downloading = True
+        piece_manager._no_progress_stall_threshold = 1
+        piece_manager._no_progress_pause_s = 0.01
+        piece_manager._piece_selection_metrics["no_progress_gate_events"] = 0
+        piece_manager._piece_selection_metrics["selection_no_progress_streak"] = 0
+        piece_manager._metadata_incomplete = False
+        piece_manager._retry_from_active_delay_s = 0.2
+
+        peer = SimpleNamespace(
+            peer_info=PeerInfo(ip="198.51.100.12", port=6881),
+            is_active=lambda: True,
+            can_request=lambda: False,
+            peer_state=SimpleNamespace(pieces_we_have={0}),
+        )
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [peer],
+            connections={},
+        )
+        piece_manager.pieces[0].state = PieceState.REQUESTED
+        piece_manager.pieces[0].request_count = 2
+        piece_manager.pieces[0].requests_dispatched = 1
+        piece_manager.pieces[0].last_request_time = time.time()
+        piece_manager.peer_availability[str(peer.peer_info)] = SimpleNamespace(
+            pieces={0},
+            reliability_score=1.0,
+            average_download_speed=1.0,
+            connection_quality_score=1.0,
+        )
+
+        original_select_pieces = piece_manager._select_pieces
+        select_calls = 0
+
+        async def counting_select_pieces() -> None:
+            nonlocal select_calls
+            select_calls += 1
+            await original_select_pieces()
+
+        piece_manager._select_pieces = counting_select_pieces
+
+        sleep_calls = 0
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            await original_sleep(0.001)
+            if sleep_calls > 60:
+                piece_manager._stopping = True
+
+        with patch("ccbt.piece.async_piece_manager.asyncio.sleep", new=fast_sleep):
+            task = asyncio.create_task(piece_manager._piece_selector())
+            await asyncio.sleep(0)
+            await asyncio.wait_for(task, timeout=1.0)
+
+        assert select_calls >= 2
+        assert piece_manager._piece_selection_metrics["no_progress_gate_events"] == 0
+        assert piece_manager._no_progress_retry_grace_until >= time.time()
+
+    @pytest.mark.asyncio
     async def test_select_pieces_not_downloading(self, piece_manager):
         """Test select_pieces when not downloading."""
         piece_manager.is_downloading = False
@@ -375,6 +682,39 @@ class TestAsyncPieceManagerPieceSelector:
         await piece_manager._select_pieces()
 
         piece_manager._peer_manager.get_active_peers.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_spawn_piece_selection_task_ignored_during_shutdown(self, piece_manager):
+        """Don't spawn a piece-selection task when shutdown is active."""
+        set_shutdown()
+        try:
+            ran = False
+
+            async def delayed_selector() -> None:
+                nonlocal ran
+                ran = True
+
+            piece_manager._spawn_piece_selection_task(delayed_selector())
+            assert len(piece_manager._piece_selection_trigger_tasks) == 0
+            assert not ran
+        finally:
+            clear_shutdown()
+
+    @pytest.mark.asyncio
+    async def test_spawn_piece_selection_task_cancels_on_stop(self, piece_manager):
+        """Tracked piece-selection tasks should be cancelled when the manager stops."""
+        started = asyncio.Event()
+
+        async def delayed_selector() -> None:
+            started.set()
+            await asyncio.sleep(10)
+
+        piece_manager._spawn_piece_selection_task(delayed_selector())
+        assert len(piece_manager._piece_selection_trigger_tasks) == 1
+        await asyncio.wait_for(started.wait(), timeout=1.0)
+
+        await piece_manager.stop()
+        assert len(piece_manager._piece_selection_trigger_tasks) == 0
 
     @pytest.mark.asyncio
     async def test_select_pieces_triggers_recovery_without_piece_info(
@@ -609,6 +949,63 @@ class TestAsyncPieceManagerEdgeCases:
     """Test edge cases and error handling."""
 
     @pytest.mark.asyncio
+    async def test_update_peer_availability_triggers_bounded_retry_for_requested_pieces(self, piece_manager):
+        """Bitfield updates should trigger focused bounded retries when new pieces appear."""
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._retry_requested_pieces = AsyncMock()
+        piece_manager.pieces[0].state = PieceState.REQUESTED
+
+        peer_key = "198.51.100.80:6881"
+        await piece_manager.update_peer_availability(peer_key, b"\x80")
+
+        piece_manager._retry_requested_pieces.assert_awaited_once_with(
+            focus_peer=peer_key,
+            max_retry_count=2,
+            max_requesters=1,
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_peer_availability_from_piece_indices_triggers_bounded_retry_for_requested_pieces(self, piece_manager):
+        """Piece index updates should trigger focused bounded retries when new availability appears."""
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._retry_requested_pieces = AsyncMock()
+        piece_manager.pieces[0].state = PieceState.REQUESTED
+        piece_manager.peer_availability["198.51.100.81:6881"] = SimpleNamespace(
+            pieces={1},
+            reliability_score=1.0,
+            average_download_speed=1.0,
+            connection_quality_score=1.0,
+        )
+
+        await piece_manager.update_peer_availability_from_piece_indices(
+            "198.51.100.81:6881",
+            {0, 1},
+        )
+
+        piece_manager._retry_requested_pieces.assert_awaited_once_with(
+            focus_peer="198.51.100.81:6881",
+            max_retry_count=2,
+            max_requesters=1,
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_peer_availability_no_retry_when_no_new_piece_information(self, piece_manager):
+        """Do not trigger retries when the bitfield does not increase peer availability."""
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._retry_requested_pieces = AsyncMock()
+        piece_manager.pieces[0].state = PieceState.REQUESTED
+        piece_manager.peer_availability["198.51.100.80:6881"] = SimpleNamespace(
+            pieces={0},
+            reliability_score=1.0,
+            average_download_speed=1.0,
+            connection_quality_score=1.0,
+        )
+
+        await piece_manager.update_peer_availability("198.51.100.80:6881", b"\x80")
+
+        piece_manager._retry_requested_pieces.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_get_download_progress_zero_pieces(self):
         """Test download progress with zero pieces."""
         torrent_data = {
@@ -829,6 +1226,67 @@ class TestAsyncPieceManagerEdgeCases:
         assert sum(
             1 for peer in available_peers if peer in (unknown_peer_a, unknown_peer_b)
         ) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_peers_for_piece_allows_unknown_probe_in_two_peer_swarm(self):
+        """Two-peer swarm should keep a bounded unknown peer probe with a known piece peer."""
+        torrent_data = {
+            "info_hash": b"\x0F" * 20,
+            "file_info": {
+                "name": "two-peer.bin",
+                "total_length": 65536,
+                "type": "single",
+            },
+            "pieces_info": {
+                "num_pieces": 1,
+                "piece_length": 65536,
+                "piece_hashes": [b"\x01" * 20],
+                "total_length": 65536,
+            },
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        await piece_manager.update_from_metadata(torrent_data)
+
+        known_peer = MagicMock()
+        known_peer.peer_info = PeerInfo(ip="198.51.100.33", port=6881)
+        known_peer.can_request.return_value = True
+        known_peer.get_available_pipeline_slots.return_value = 8
+        known_peer.outstanding_requests = {}
+        known_peer.max_pipeline_depth = 8
+        known_peer.peer_choking = False
+        known_peer.am_interested = True
+        known_peer.peer_interested = False
+        known_peer.state = SimpleNamespace(value="active")
+        known_peer.stats = SimpleNamespace(download_rate=12.0)
+        known_peer.peer_state = SimpleNamespace(pieces_we_have={0}, bitfield=b"\x80")
+        known_peer.is_active.return_value = True
+
+        unknown_peer = MagicMock()
+        unknown_peer.peer_info = PeerInfo(ip="198.51.100.34", port=6881)
+        unknown_peer.can_request.return_value = True
+        unknown_peer.get_available_pipeline_slots.return_value = 8
+        unknown_peer.outstanding_requests = {}
+        unknown_peer.max_pipeline_depth = 8
+        unknown_peer.peer_choking = False
+        unknown_peer.am_interested = True
+        unknown_peer.peer_interested = False
+        unknown_peer.state = SimpleNamespace(value="active")
+        unknown_peer.stats = SimpleNamespace(download_rate=0.0)
+        unknown_peer.peer_state = SimpleNamespace(pieces_we_have=set(), bitfield=b"")
+        unknown_peer.is_active.return_value = True
+
+        piece_manager.peer_availability[str(known_peer.peer_info)] = SimpleNamespace(
+            pieces={0}
+        )
+        peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [known_peer, unknown_peer], connections={}
+        )
+
+        available_peers = await piece_manager._get_peers_for_piece(0, peer_manager)
+
+        assert known_peer in available_peers
+        assert unknown_peer in available_peers
+        assert len(available_peers) == 2
 
     @pytest.mark.asyncio
     async def test_get_peers_for_piece_raises_probe_budget_for_degraded_bootstrap(self):
@@ -1345,6 +1803,170 @@ class TestAsyncPieceManagerEdgeCases:
             for args, _ in piece_manager.logger.warning.call_args_list
         )
 
+    def test_normalize_peer_key_handles_peer_object_and_string_inputs(self, piece_manager):
+        """Peer-key normalization converts peer objects into stable string keys."""
+
+        peer_connection = SimpleNamespace(
+            peer_info=PeerInfo(ip="198.51.100.70", port=6881)
+        )
+
+        assert (
+            piece_manager._normalize_peer_key(peer_connection)
+            == "198.51.100.70:6881"
+        )
+        assert piece_manager._normalize_peer_key("198.51.100.70:6881") == "198.51.100.70:6881"
+        assert piece_manager._normalize_peer_key(12345) == "12345"
+        assert piece_manager._normalize_peer_key(None) is None
+
+    def test_peer_piece_availability_state_normalizes_connection_peer_key(self, piece_manager):
+        """Piece availability lookup should use normalized peer keys from peer connections."""
+        now = time.time()
+        connection = SimpleNamespace(
+            peer_info=SimpleNamespace(
+                ip="198.51.100.70",
+                port=6881,
+            ),
+            peer_state=SimpleNamespace(pieces_we_have=set()),
+            _last_piece_availability_at=0.0,
+        )
+        piece_manager.peer_availability["198.51.100.70:6881"] = SimpleNamespace(
+            pieces={1},
+            last_updated=now,
+        )
+
+        has_piece, has_fresh_piece = piece_manager._peer_piece_availability_state(
+            connection,
+            1,
+            now,
+        )
+
+        assert has_piece is True
+        assert has_fresh_piece is True
+
+    @pytest.mark.asyncio
+    async def test_retry_requested_pieces_repairs_peer_key_to_string_during_cleanup(
+        self, piece_manager
+    ):
+        """Retry recovery should normalize malformed peer keys before clearing stale entries."""
+        piece_manager.pieces[0].state = PieceState.REQUESTED
+        piece_manager.pieces[0].request_count = 3
+        piece_manager.pieces[0].last_request_time = time.time() - 120.0
+        piece_manager.pieces[0].requests_dispatched = 1
+        piece_manager.pieces[0].last_activity_time = 0.0
+        piece_manager._retry_request_debounce_s = 0.0
+        piece_manager._retry_from_active_max_attempts = 0
+
+        class HashablePeerKey:
+            def __init__(self, ip: str, port: int) -> None:
+                self.peer_info = PeerInfo(ip=ip, port=port)
+
+        malformed_peer_key = HashablePeerKey("198.51.100.91", 6881)
+        piece_manager._requested_pieces_per_peer[malformed_peer_key] = {0}
+
+        focus_peer = SimpleNamespace(
+            peer_info=PeerInfo(ip="198.51.100.91", port=6881),
+            can_request=lambda: True,
+            peer_choking=False,
+            am_interested=True,
+            peer_interested=False,
+            state=SimpleNamespace(value="active"),
+            stats=SimpleNamespace(download_rate=8.0),
+            peer_state=SimpleNamespace(pieces_we_have={0}, bitfield=b"\x80"),
+            is_active=lambda: True,
+        )
+        piece_manager.peer_availability[str(focus_peer.peer_info)] = SimpleNamespace(pieces={0})
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [focus_peer]
+        )
+        piece_manager.request_piece_from_peers = AsyncMock(
+            side_effect=RuntimeError("retry path")
+        )
+        piece_manager.logger = MagicMock()
+
+        await piece_manager._retry_requested_pieces(focus_peer, max_retry_count=1)
+
+        assert piece_manager.request_piece_from_peers.await_count == 1
+        assert malformed_peer_key not in piece_manager._requested_pieces_per_peer
+        assert "198.51.100.91:6881" not in piece_manager._requested_pieces_per_peer
+        assert piece_manager.pieces[0].state == PieceState.MISSING
+        assert any(
+            (args and isinstance(args[0], str) and "Failed to retry piece" in args[0])
+            for args, _ in piece_manager.logger.warning.call_args_list
+        )
+
+    @pytest.mark.asyncio
+    async def test_clear_stale_requested_pieces_normalizes_keys_idempotently(self, piece_manager):
+        """Repeated stale-cleanup passes should remain safe after key normalization."""
+        class HashablePeerKey:
+            def __init__(self, ip: str, port: int) -> None:
+                self.peer_info = PeerInfo(ip=ip, port=port)
+
+        malformed_peer_key = HashablePeerKey("203.0.113.200", 51413)
+        piece_manager._requested_pieces_per_peer[malformed_peer_key] = {0}
+
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.REQUESTED
+        piece.request_count = 3
+        piece.last_request_time = time.time() - 120.0
+        piece.last_activity_time = 0.0
+
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._active_block_requests[0] = {}
+
+        await piece_manager._clear_stale_requested_pieces(timeout=30.0)
+        await piece_manager._clear_stale_requested_pieces(timeout=30.0)
+
+        assert malformed_peer_key not in piece_manager._requested_pieces_per_peer
+        assert "203.0.113.200:51413" not in piece_manager._requested_pieces_per_peer
+
+    @pytest.mark.asyncio
+    async def test_requested_piece_map_helpers_normalize_and_cleanup_entries(self, piece_manager):
+        """Helper methods should normalize peer keys and maintain safe cleanup behavior."""
+        class HashablePeerKey:
+            def __init__(self, ip: str, port: int) -> None:
+                self.peer_info = PeerInfo(ip=ip, port=port)
+
+        normalized_peer = HashablePeerKey("198.51.100.210", 6881)
+        bad_key = object()
+        bad_key_str = str(bad_key)
+
+        piece_manager._requested_piece_map_add(normalized_peer, 0)
+        piece_manager._requested_piece_map_add(bad_key, 0)
+
+        assert "198.51.100.210:6881" in piece_manager._requested_pieces_per_peer
+        assert bad_key_str in piece_manager._requested_pieces_per_peer
+
+        piece_manager._requested_piece_map_discard(normalized_peer, 0)
+        assert "198.51.100.210:6881" not in piece_manager._requested_pieces_per_peer
+
+        piece_manager._requested_piece_map_discard(bad_key, 0)
+        assert bad_key_str not in piece_manager._requested_pieces_per_peer
+
+    @pytest.mark.asyncio
+    async def test_repair_requested_piece_map_locked_merges_malformed_keys(self, piece_manager):
+        """Repair helper should remove malformed keys and normalize usable peer keys."""
+        class HashablePeerKey:
+            def __init__(self, ip: str, port: int) -> None:
+                self.peer_info = PeerInfo(ip=ip, port=port)
+
+        malformed_peer_key = HashablePeerKey("198.51.100.220", 6881)
+
+        piece_manager._requested_pieces_per_peer = {
+            malformed_peer_key: {0},
+            12345: {1},
+            "bad-set": [],
+            "198.51.100.221:6881": {2},
+        }
+
+        await piece_manager._repair_requested_piece_map_locked()
+
+        assert "198.51.100.220:6881" in piece_manager._requested_pieces_per_peer
+        assert malformed_peer_key not in piece_manager._requested_pieces_per_peer
+        assert "12345" in piece_manager._requested_pieces_per_peer
+        assert piece_manager._requested_pieces_per_peer["12345"] == {1}
+        assert "bad-set" not in piece_manager._requested_pieces_per_peer
+        assert piece_manager._requested_pieces_per_peer["198.51.100.221:6881"] == {2}
+
     @pytest.mark.asyncio
     async def test_request_blocks_normal_keeps_requested_state_for_optimistic_retry(self):
         """Optimistic bootstrap should retain REQUESTED state when probes are not immediately capable."""
@@ -1437,6 +2059,106 @@ class TestAsyncPieceManagerEdgeCases:
         assert piece_manager._piece_selection_metrics["no_requestable_peers"] >= 1
 
     @pytest.mark.asyncio
+    async def test_request_piece_from_peers_defers_missing_reset_when_active_peers_are_non_requestable(
+        self, piece_manager
+    ):
+        """Don't reset requested piece to MISSING when active peers exist but can't request."""
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.REQUESTED
+        piece.request_count = 1
+        piece.requests_dispatched = 1
+        piece.last_request_time = time.time() - 1.0
+        piece.last_activity_time = 0.0
+
+        peer = SimpleNamespace(
+            peer_info=PeerInfo(ip="198.51.100.80", port=6881),
+            is_active=lambda: True,
+            can_request=lambda: False,
+            peer_state=SimpleNamespace(pieces_we_have={1}),
+        )
+        peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [peer],
+            connections={},
+        )
+
+        piece_manager.peer_availability[str(peer.peer_info)] = SimpleNamespace(
+            pieces={1},
+            reliability_score=1.0,
+            average_download_speed=1.0,
+            connection_quality_score=1.0,
+            last_updated=time.time(),
+        )
+
+        await piece_manager.request_piece_from_peers(0, peer_manager)
+
+        assert piece.state == PieceState.REQUESTED
+        assert piece_manager._piece_selection_metrics["no_requestable_peers"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_request_piece_from_peers_keeps_request_state_during_recent_active_peer_scarcity(
+        self, piece_manager
+    ):
+        """Keep REQUESTED piece instead of fallback-to-missing during short active-peer scarcity."""
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.REQUESTED
+        piece.request_count = 2
+        piece.requests_dispatched = 1
+        piece.last_request_time = time.time() - 1.0
+        piece.last_activity_time = 0.0
+
+        peer = SimpleNamespace(
+            peer_info=PeerInfo(ip="198.51.100.70", port=6881),
+            is_active=lambda: True,
+            can_request=lambda: True,
+            peer_state=SimpleNamespace(pieces_we_have={1}),
+        )
+        peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [peer],
+            connections={},
+        )
+
+        piece_manager._peer_manager = peer_manager
+        piece_manager.peer_availability[str(peer.peer_info)] = SimpleNamespace(
+            pieces={1},
+            reliability_score=1.0,
+            average_download_speed=1.0,
+            connection_quality_score=1.0,
+        )
+        piece_manager._retry_from_active_max_attempts = 0
+
+        with patch.object(
+            piece_manager,
+            "_get_peers_for_piece",
+            AsyncMock(return_value=[]),
+        ):
+            await piece_manager.request_piece_from_peers(0, peer_manager)
+
+        assert piece.state == PieceState.REQUESTED
+        assert piece_manager._piece_selection_metrics["no_requestable_peers"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_clear_stale_requested_skips_recent_dispatched_requests_with_active_peers(
+        self, piece_manager
+    ):
+        """Keep recent active requested piece in REQUESTED while peer scarcity is transient."""
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.REQUESTED
+        piece.request_count = 3
+        piece.requests_dispatched = 1
+        piece.last_request_time = time.time() - 1.0
+        piece.last_activity_time = 0.0
+
+        active_peer = SimpleNamespace(peer_info=PeerInfo(ip="198.51.100.90", port=6881))
+        piece_manager._peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [active_peer],
+            connections={},
+        )
+
+        await piece_manager._clear_stale_requested_pieces(timeout=1.0)
+
+        assert piece.state == PieceState.REQUESTED
+
+    @pytest.mark.asyncio
     async def test_clear_stale_requested_skips_when_no_requests_dispatched(self):
         """Pieces with no outbound requests should skip stale reset while in REQUESTED."""
         torrent_data = {
@@ -1463,9 +2185,104 @@ class TestAsyncPieceManagerEdgeCases:
         piece.last_request_time = 0.0
         piece.last_activity_time = 0.0
         piece._requested_pieces_per_peer = {}
+        baseline_no_outbound = piece_manager._piece_selection_metrics[
+            "stale_reset_avoided_no_outbound_requests"
+        ]
 
         await piece_manager._clear_stale_requested_pieces(timeout=1.0)
         assert piece.state == PieceState.REQUESTED
+        assert (
+            piece_manager._piece_selection_metrics[
+                "stale_reset_avoided_no_outbound_requests"
+            ]
+            > baseline_no_outbound
+        )
+        assert piece_manager._piece_selection_metrics["stale_reset_avoided_total"] > 0
+
+    @pytest.mark.asyncio
+    async def test_update_peer_have_retries_requested_pieces_on_new_piece(self, piece_manager):
+        """A new HAVE should trigger bounded retry when REQUESTED pieces are pending."""
+        piece_manager.pieces[0].state = PieceState.REQUESTED
+        peer_key = "198.51.100.80:6881"
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._retry_requested_pieces = AsyncMock()
+        piece_manager.peer_availability.clear()
+
+        await piece_manager.update_peer_have(peer_key, 0)
+
+        piece_manager._retry_requested_pieces.assert_awaited_once_with(
+            focus_peer=peer_key,
+            max_retry_count=2,
+            max_requesters=1,
+        )
+        assert piece_manager.piece_frequency[0] == 1
+
+    @pytest.mark.asyncio
+    async def test_update_peer_have_does_not_retry_without_request_pressure(
+        self, piece_manager
+    ):
+        """No retry should occur when there are no REQUESTED pieces."""
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._retry_requested_pieces = AsyncMock()
+        piece_manager.peer_availability.clear()
+
+        await piece_manager.update_peer_have("198.51.100.81:6881", 0)
+
+        piece_manager._retry_requested_pieces.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_clear_stale_requested_skips_recent_activity(self, piece_manager):
+        """Fresh activity on a REQUESTED piece prevents stale-reset fallback."""
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.REQUESTED
+        piece.requests_dispatched = 1
+        piece.request_count = 3
+        piece.last_request_time = time.time() - 5.0
+        piece.last_activity_time = time.time() - 10.0
+
+        baseline_recent = piece_manager._piece_selection_metrics[
+            "stale_reset_avoided_recent_activity"
+        ]
+
+        await piece_manager._clear_stale_requested_pieces(timeout=1.0)
+
+        assert piece.state == PieceState.REQUESTED
+        assert (
+            piece_manager._piece_selection_metrics[
+                "stale_reset_avoided_recent_activity"
+            ]
+            > baseline_recent
+        )
+        assert piece_manager._piece_selection_metrics["stale_reset_avoided_total"] > 0
+
+    @pytest.mark.asyncio
+    async def test_repair_requested_piece_map_increments_counter(self, piece_manager):
+        """Repairing malformed requested-piece keys should increment map-repair metric."""
+
+        class HashablePeerKey:
+            def __init__(self, ip: str, port: int) -> None:
+                self.peer_info = PeerInfo(ip=ip, port=port)
+
+        malformed_peer_key = HashablePeerKey("198.51.100.220", 6881)
+        piece_manager._requested_pieces_per_peer = {
+            malformed_peer_key: {0},
+            "198.51.100.220:6881": {1},
+            "bad-set": [],
+        }
+
+        baseline_repairs = piece_manager._piece_selection_metrics[
+            "requested_piece_map_repairs"
+        ]
+
+        await piece_manager._repair_requested_piece_map_locked()
+
+        assert malformed_peer_key not in piece_manager._requested_pieces_per_peer
+        assert piece_manager._requested_pieces_per_peer["198.51.100.220:6881"] == {0, 1}
+        assert "bad-set" not in piece_manager._requested_pieces_per_peer
+        assert (
+            piece_manager._piece_selection_metrics["requested_piece_map_repairs"]
+            > baseline_repairs
+        )
 
     @pytest.mark.asyncio
     async def test_request_piece_from_peers_retries_from_active_before_missing(

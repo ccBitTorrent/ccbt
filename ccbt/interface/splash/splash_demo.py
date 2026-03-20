@@ -19,10 +19,11 @@ if os.name == 'nt':
 
 try:
     from rich.console import Console
-    from rich.live import Live
 except ImportError:
     print("Rich library is required. Install with: pip install rich")
     sys.exit(1)
+
+from ccbt.utils import style_policy
 
 # Import splash screen
 try:
@@ -52,16 +53,25 @@ async def demo_rich_console() -> None:
     
     try:
         # Create splash screen
-        console.print("[dim]Creating splash screen...[/dim]")
+        console.print(style_policy.markup("Creating splash screen...", style_policy.DIM_STYLE))
         splash = SplashScreen(console=console, duration=90.0)
-        console.print(f"[green]✓ Splash screen created with {len(splash.sequence.animations)} animation segments[/green]\n")
+        console.print(
+            f"{style_policy.markup('✓ Splash screen created with ', style_policy.SUCCESS_STYLE)}"
+            f"{len(splash.sequence.animations)} "
+            f"{style_policy.markup('animation segments', style_policy.SUCCESS_STYLE)}\n"
+        )
         
         # Run the animation (executor handles Live internally)
-        console.print("[yellow]Starting animation...[/yellow]\n")
+        console.print(
+            f"{style_policy.markup('Starting animation...', style_policy.WARNING_STYLE)}\n"
+        )
         await splash.run()
-        console.print("\n[green]✓ Animation completed![/green]")
+        console.print(f"\n{style_policy.markup('✓ Animation completed!', style_policy.SUCCESS_STYLE)}")
     except Exception as e:
-        console.print(f"\n[red]Error: {e}[/red]")
+        console.print(
+            f"\n{style_policy.markup('Error: ', style_policy.ERROR_STYLE)}"
+            f"{style_policy.markup(str(e), style_policy.ERROR_STYLE)}"
+        )
         import traceback
         console.print(traceback.format_exc())
         raise

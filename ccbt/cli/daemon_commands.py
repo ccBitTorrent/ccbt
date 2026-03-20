@@ -289,7 +289,7 @@ def start(
                 expected_duration = detector.get_expected_duration("daemon.start")
                 # Update splash message to indicate daemon is starting
                 with contextlib.suppress(Exception):
-                    splash_manager.update_progress_message("Starting daemon process...")
+                    logger.debug("Starting daemon process...")
 
                 # Start splash screen in background thread
                 def run_splash():
@@ -298,7 +298,6 @@ def start(
                             splash_manager.show_splash_for_task(
                                 task_name="daemon start",
                                 max_duration=expected_duration,
-                                show_progress=True,
                             )
                         )
 
@@ -411,7 +410,7 @@ def start(
                 expected_duration = detector.get_expected_duration("daemon.start")
                 # Update splash message to indicate daemon is starting
                 with contextlib.suppress(Exception):
-                    splash_manager.update_progress_message("Starting daemon process...")
+                    logger.debug("Starting daemon process...")
 
                 # Start splash screen in background thread
                 def run_splash():
@@ -420,7 +419,6 @@ def start(
                             splash_manager.show_splash_for_task(
                                 task_name="daemon start",
                                 max_duration=expected_duration,
-                                show_progress=True,
                             )
                         )
 
@@ -487,9 +485,7 @@ def start(
                 # Update splash message to indicate initialization
                 if splash_manager:
                     with contextlib.suppress(Exception):
-                        splash_manager.update_progress_message(
-                            "Initializing daemon components..."
-                        )
+                        logger.debug("Initializing daemon components...")
 
                 if verbosity.is_verbose():
                     console.print(_("[cyan]Waiting for daemon to be ready...[/cyan]"))
@@ -521,9 +517,7 @@ def start(
                     # Update splash screen message to indicate initialization complete
                     if splash_manager:
                         with contextlib.suppress(Exception):
-                            splash_manager.update_progress_message(
-                                "Daemon initialization complete!"
-                            )  # Ignore errors updating splash
+                            logger.debug("Daemon initialization complete!")
                     # Small additional delay to ensure "Daemon initialization complete" message has been logged
                     time.sleep(0.5)
                     console.print(
@@ -534,7 +528,7 @@ def start(
                     # Clear splash screen only after daemon initialization is fully complete
                     if splash_manager:
                         with contextlib.suppress(Exception):
-                            splash_manager.clear_progress_messages()
+                            splash_manager.stop_splash()
                 else:
                     console.print(
                         _(
@@ -615,9 +609,7 @@ def _wait_for_daemon(
                     # Update splash to indicate waiting for full initialization
                     if splash_manager and last_stage != "waiting":
                         try:
-                            splash_manager.update_progress_message(
-                                "Waiting for daemon to be ready..."
-                            )
+                            logger.debug("Waiting for daemon to be ready...")
                             last_stage = "waiting"
                         except Exception:
                             pass
@@ -632,7 +624,7 @@ def _wait_for_daemon(
             # Update splash message during wait
             if splash_manager and last_stage != "checking":
                 try:
-                    splash_manager.update_progress_message("Checking daemon status...")
+                    logger.debug("Checking daemon status...")
                     last_stage = "checking"
                 except Exception:
                     pass
@@ -823,7 +815,7 @@ def _wait_for_daemon_with_progress(
                     # Update splash screen with stage description
                     if splash_manager:
                         with contextlib.suppress(Exception):
-                            splash_manager.update_progress_message(stage_desc)
+                            logger.debug(stage_desc)
 
                 if progress and task is not None:
                     progress.update(task, description=stage_desc)
@@ -834,7 +826,7 @@ def _wait_for_daemon_with_progress(
                     # Update splash to indicate waiting for full initialization
                     if splash_manager:
                         with contextlib.suppress(Exception):
-                            splash_manager.update_progress_message(
+                            logger.debug(
                                 "Waiting for daemon initialization to complete..."
                             )
                     # Small delay to ensure daemon has fully initialized (including "Daemon initialization complete" message)

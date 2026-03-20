@@ -1167,6 +1167,12 @@ def main() -> int:
         default="auto",
         help="Recording mode: auto (detect), pre-commit, commit, both, or none",
     )
+    parser.add_argument(
+        "--json-out",
+        type=Path,
+        default=None,
+        help="Write benchmark JSON artifact to this path (or directory) for CI",
+    )
 
     args = parser.parse_args()
 
@@ -1413,7 +1419,11 @@ def main() -> int:
     
     # Record benchmark results using new system
     per_run_path, timeseries_path = record_benchmark_results(
-        "encryption", config_name, all_results, args.record_mode
+        "encryption",
+        config_name,
+        all_results,
+        args.record_mode,
+        json_out=args.json_out,
     )
     
     # Backward compatibility

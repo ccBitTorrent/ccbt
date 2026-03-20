@@ -966,12 +966,9 @@ class TestInitializeTransport:
         mock_socket_manager.get_transport.return_value = mock_transport
         mock_socket_manager._generate_connection_id.return_value = 54321
         mock_socket_manager.register_connection = MagicMock()
+        conn.utp_socket_manager = mock_socket_manager
 
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance",
-            return_value=mock_socket_manager,
-        ):
-            await conn.initialize_transport()
+        await conn.initialize_transport()
 
         # Verify transport was set
         assert conn.transport == mock_transport
@@ -993,12 +990,9 @@ class TestInitializeTransport:
         mock_socket_manager.get_transport.return_value = mock_transport
         mock_socket_manager._generate_connection_id.return_value = 99999
         mock_socket_manager.register_connection = MagicMock()
+        conn.utp_socket_manager = mock_socket_manager
 
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance",
-            return_value=mock_socket_manager,
-        ):
-            await conn.initialize_transport()
+        await conn.initialize_transport()
 
         # Verify connection ID was generated
         assert conn.connection_id == 99999

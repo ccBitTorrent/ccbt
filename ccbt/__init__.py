@@ -192,64 +192,7 @@ __all__ = [
 ]
 
 
-# Lazy attribute access to prefer submodules over similarly named attributes
-def __getattr__(
-    name: str,
-):  # pragma: no cover - import-time plumbing, tested via test_getattr_async_main
-    if name == "async_main":
-        import importlib
-
-        return importlib.import_module("ccbt.async_main")
+# Lazy attribute access for undefined attributes
+def __getattr__(name: str):  # pragma: no cover - import-time plumbing
     msg = f"module '{__name__}' has no attribute '{name}'"
     raise AttributeError(msg)
-
-
-# Ensure attribute binding prefers submodule even in long-lived interpreters
-try:  # pragma: no cover - import-time plumbing, tested via module imports
-    import importlib as _importlib
-
-    async_main = _importlib.import_module(
-        "ccbt.async_main"
-    )  # pragma: no cover - Same context
-except Exception:  # pragma: no cover - Exception handling during import, defensive
-    pass  # pragma: no cover - Same context
-
-# Backward compat: if async_main was imported as a function elsewhere, attach
-# commonly patched attributes so patch('ccbt.async_main.X') works.
-try:  # pragma: no cover - import-time plumbing, backward compatibility setup
-    import types as _types
-
-    if isinstance(
-        globals().get("async_main"), _types.FunctionType
-    ):  # pragma: no cover - Edge case: async_main as function, difficult to simulate
-        import ccbt.session.async_main as _am  # pragma: no cover - Same context
-        from ccbt.config.config import (
-            get_config as _get_config,  # pragma: no cover - Same context
-        )
-        from ccbt.core.magnet import (
-            build_minimal_torrent_data as _build_min,
-        )  # pragma: no cover - Same context
-        from ccbt.core.magnet import (
-            parse_magnet as _parse_magnet,
-        )  # pragma: no cover - Same context
-        from ccbt.peer import (
-            AsyncPeerConnectionManager as _APCM,  # noqa: N814
-        )  # pragma: no cover - Same context
-        from ccbt.piece.async_piece_manager import (
-            AsyncPieceManager as _APM,  # noqa: N814
-        )  # pragma: no cover - Same context
-
-        async_main.get_config = _get_config  # pragma: no cover - Same context
-        async_main.AsyncPeerConnectionManager = _APCM  # pragma: no cover - Same context
-        async_main.AsyncPieceManager = _APM  # pragma: no cover - Same context
-        async_main.parse_magnet = _parse_magnet  # pragma: no cover - Same context
-        async_main.build_minimal_torrent_data = (
-            _build_min  # pragma: no cover - Same context
-        )
-        async_main.AsyncDownloadManager = (
-            _am.AsyncDownloadManager
-        )  # pragma: no cover - Same context
-except (
-    Exception
-):  # pragma: no cover - Exception handling during backward compat setup, defensive
-    pass  # pragma: no cover - Same context

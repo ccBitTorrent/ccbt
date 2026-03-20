@@ -80,6 +80,18 @@ class DHTMetricsScreen(MonitoringScreen):  # type: ignore[misc]
                     stats_table.add_column(_("Value"), style="green", ratio=2)
                     stats_table.add_row(_("Torrents with DHT"), str(summary.get("torrents_with_dht", 0)))
                     stats_table.add_row(_("Total queries"), str(summary.get("total_queries", 0)))
+                    stats_table.add_row(
+                        _("Bootstrap recovery attempts"),
+                        str(summary.get("total_bootstrap_recovery_attempts", 0)),
+                    )
+                    stats_table.add_row(
+                        _("Zero-state count"),
+                        str(summary.get("total_bootstrap_zero_state_count", 0)),
+                    )
+                    stats_table.add_row(
+                        _("Bootstrap health"),
+                        str(summary.get("bootstrap_health_state", "unknown")),
+                    )
                     dht_stats_widget.update(Panel(stats_table, border_style="blue"))
                     all_items = summary.get("all_items", [])
                     if all_items:

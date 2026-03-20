@@ -16,32 +16,31 @@ Configuration system: **ConfigManager** in [ccbt/config/config.py](https://githu
 
 | Section | Description | Model (ccbt/models.py) |
 |---------|-------------|-------------------------|
-| `[network]` | Connection limits, pipeline, timeouts, listen ports, rate limits, connection pool, circuit breaker, socket tuning | `NetworkConfig` |
-| `[plugins]` | Enable/auto-load plugins, plugin directories | `PluginsConfig` |
-| `[disk]` | Preallocation, write/hash/disk workers, checkpoint, resume | `DiskConfig` |
-| `[xet_sync]` | XET sync enable, check interval, sync mode, gossip, consensus | `XetSyncConfig` |
-| `[strategy]` | Piece selection, endgame, streaming, priorities | `StrategyConfig` |
-| `[discovery]` | DHT, PEX, trackers, handshake timeouts, aggressive discovery | `DiscoveryConfig` |
-| `[observability]` | Logging, metrics, alerts, event bus | `ObservabilityConfig` |
-| `[limits]` | Global/per-torrent/per-peer rate limits, scheduler | `LimitsConfig` |
-| `[security]` | Encryption, peer validation, rate limit | `SecurityConfig` |
-| `[proxy]` | HTTP proxy for trackers/peers/webseeds | `ProxyConfig` |
+| `[dashboard]` | Metrics dashboard and terminal refresh settings | `DashboardConfig` |
+| `[discovery]` | DHT, PEX, trackers, DHT handshakes and adaptive behavior | `DiscoveryConfig` |
+| `[disk]` | Preallocation, hash and disk workers, checkpoint/resume, nested disk settings | `DiskConfig` |
+| `[ipfs]` | IPFS gateway and discovery behavior | `IPFSConfig` |
+| `[limits]` | Global/per-torrent/per-peer rate limits and scheduler | `LimitsConfig` |
+| `[media]` | Media streaming and token settings | `MediaConfig` |
 | `[ml]` | Peer selection and piece prediction (ML) | `MLConfig` |
-| `[dashboard]` | Metrics dashboard and terminal refresh | `DashboardConfig` |
-| `[queue]` | Active torrent limits, priority, bandwidth allocation | `QueueConfig` |
-| `[ui]` | Locale | `UIConfig` |
-| `[nat]` | NAT-PMP, UPnP, port mapping | `NATConfig` |
-| `[daemon]` | IPC host/port for daemon | `DaemonConfig` |
-| `[webtorrent]` | WebTorrent enable, port, host | (see webtorrent config) |
-| `[network.utp]` | µTP transport tuning | (nested under network) |
-| `[network.protocol_v2]` | Protocol v2 options | (nested under network) |
-| `[plugins.metrics]` | Metrics plugin options | `MetricsPluginConfig` |
-| `[disk.attributes]` | Disk attribute options | (nested under disk) |
-| `[disk.xet]` | XET disk options | (nested under disk) |
-| `[security.ip_filter]` | IP filter rules | `IPFilterConfig` |
-| `[security.blacklist]` | Peer blacklist | `BlacklistConfig` |
-| `[security.ssl]` | SSL/TLS options | `SSLConfig` |
-| `[security.blacklist.local_source]` | Local blacklist source | (nested under security) |
+| `[nat]` | NAT-PMP, UPnP, and port mapping strategy | `NATConfig` |
+| `[network]` | Connections, timeouts, listen ports, pool control, socket tuning | `NetworkConfig` |
+| `[observability]` | Logging, metrics, event bus controls | `ObservabilityConfig` |
+| `[optimization]` | Profile-based performance tuning defaults | `OptimizationConfig` |
+| `[plugins]` | Plugin enablement and auto-load behavior | `PluginsConfig` |
+| `[queue]` | Active torrent limits, priority, and bandwidth allocation | `QueueConfig` |
+| `[security]` | Encryption, peer validation, and protection controls | `SecurityConfig` |
+| `[strategy]` | Piece selection, endgame, streaming and sequencing | `StrategyConfig` |
+| `[ui]` | Locale and localization behavior | `UIConfig` |
+| `[webtorrent]` | WebTorrent enablement and endpoint defaults | `WebTorrentConfig` |
+| `[xet_sync]` | XET sync enable, gossip, consensus and merge policy | `XetSyncConfig` |
+| `[daemon]` | IPC host/port for daemon integration (included when daemon defaults are enabled) | `DaemonConfig` |
+
+Nested sections are represented in TOML and environment naming conventions:
+- `[network.utp]`, `[network.webtorrent]`, `[network.protocol_v2]`
+- `[disk.attributes]`, `[disk.xet]`
+- `[security.ip_filter]`, `[security.blacklist]`, `[security.blacklist.local_source]`, `[security.ssl]`
+- `[plugins.metrics]`
 
 ## Configuration Sources and Precedence
 
@@ -55,6 +54,24 @@ Configuration is loaded in this order (later sources override earlier ones):
 6. **Per-Torrent Overrides**: Individual torrent settings (set via CLI, TUI, or programmatically)
 
 Configuration loading: [ccbt/config/config.py:_load_config](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/config/config.py#L128)
+
+### `btbt config` CLI (inspect and edit `ccbt.toml`)
+
+All configuration introspection and file editing commands live under **`btbt config`** (there is no separate `config-extended` command).
+
+| Command | Purpose |
+|--------|---------|
+| `btbt config describe` | List every nested option path with types, defaults, and descriptions; add `--include-current` for effective values (file + env). |
+| `btbt config schema` | Dump JSON Schema for `Config` (optional `--model`, `-o`). |
+| `btbt config show` / `config get` | Print effective merged configuration (not the full catalog). |
+| `btbt config set` | Set one dotted path; validates before write; `--value`, `--dry-run`, JSON/comma-list parsing. |
+| `btbt config apply` | Merge a JSON/TOML/YAML patch file (or stdin) into the target TOML; validates before write. |
+| `btbt config import` | Import a file; `--mode replace` (full document) or `--mode merge` (deep-merge into existing file). |
+| `btbt config validate` | Load and validate; `--detailed` adds system compatibility checks. |
+
+See [btbt CLI – Configuration](btbt-cli.md#configuration-commands) and [ccbt/cli/config_group.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_group.py).
+
+**Precedence reminder:** After editing the file with `set`/`apply`/`import`, environment variables can still override the same keys at runtime.
 
 ### Windows Path Resolution {#daemon-home-dir}
 
@@ -113,6 +130,15 @@ Strategy config model: `StrategyConfig` in [ccbt/models.py](https://github.com/c
 
 Discovery settings: section `[discovery]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml). DHT (port, bootstrap, IPv6, storage, indexing), PEX, HTTP/UDP trackers, announce/scrape intervals, handshake and DHT timeouts, aggressive discovery. Key options: `min_peers_before_dht`, `dht_enable_storage`, `tracker_announce_interval`, `tracker_scrape_interval`, `tracker_auto_scrape`. Environment variables: `CCBT_MIN_PEERS_BEFORE_DHT`, `CCBT_DHT_ENABLE_STORAGE`, `CCBT_TRACKER_ANNOUNCE_INTERVAL`, `CCBT_TRACKER_SCRAPE_INTERVAL`, `CCBT_TRACKER_AUTO_SCRAPE`.
 
+Recovery behavior uses the following network/discovery controls:
+
+- `enable_fail_fast_dht` / `CCBT_ENABLE_FAIL_FAST_DHT`: allow a quicker fallback when active peers remain below `min_peers_before_dht`.
+- `fail_fast_dht_timeout` / `CCBT_FAIL_FAST_DHT_TIMEOUT`: wait threshold before fail-fast recovery becomes available.
+- `tracker_timeout` / `CCBT_TRACKER_TIMEOUT`: also used to bound immediate tracker handoff duration during low-peer recovery.
+- `min_peers_before_dht` / `CCBT_MIN_PEERS_BEFORE_DHT`: threshold for deciding when immediate DHT fallback is needed.
+
+Low-peer recovery outcomes are now logged per-cycle with a single structured summary line that includes tracker/DHT outcomes, queued peer count, retry plan, and final recovery state.
+
 Discovery config model: `DiscoveryConfig` in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py).
 
 ### Limits Configuration
@@ -123,7 +149,11 @@ Limits config model: `LimitsConfig` in [ccbt/models.py](https://github.com/ccBit
 
 ### Observability Configuration
 
-Observability settings: section `[observability]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml). Log level, log file, metrics port/interval, event bus, alerts rules path.
+Observability settings: section `[observability]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml). Supported keys include `log_level`, `log_file`, `structured_logging`, `log_correlation_id`, `metrics_interval`, `metrics_port`, `event_bus_*`, and `alerts_rules_path`.
+
+Runtime precedence for observability values follows the global configuration order: defaults, TOML values, environment variables (`CCBT_LOG_LEVEL`, `CCBT_LOG_FORMAT`, `CCBT_LOG_CORRELATION_ID`, `CCBT_STRUCTURED_LOGGING`, `CCBT_METRICS_INTERVAL`, etc.), and then CLI overrides.
+
+Verbosity remains CLI-driven: `-v` maps to INFO-style output, `-vv` to DEBUG, and `-vvv` to TRACE.
 
 Observability config model: `ObservabilityConfig` in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py).
 
@@ -234,6 +264,8 @@ Section `[nat]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/cc
 
 ### Daemon Configuration
 
+In the default `ccbt.toml`, the daemon section is omitted because daemon defaults are disabled by default, but it is still accepted when present and mapped via `CCBT_DAEMON_IPC_HOST`/`CCBT_DAEMON_IPC_PORT`.
+
 Section `[daemon]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml): IPC host and port for daemon mode. Model: `DaemonConfig` in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py).
 
 ### WebTorrent Configuration
@@ -248,15 +280,8 @@ Reference: [env.example](https://github.com/ccBittorrent/ccbt/blob/main/env.exam
 
 Format: `CCBT_<SECTION>_<OPTION>=<value>`
 
-Examples:
-- Network: [env.example:10-58](https://github.com/ccBittorrent/ccbt/blob/main/env.example)
-- Disk: [env.example:62-102](https://github.com/ccBittorrent/ccbt/blob/main/env.example)
-- Strategy: [env.example:106-121](https://github.com/ccBittorrent/ccbt/blob/main/env.example)
-- Discovery: [env.example:125-141](https://github.com/ccBittorrent/ccbt/blob/main/env.example)
-- Observability: [env.example:145-162](https://github.com/ccBittorrent/ccbt/blob/main/env.example)
-- Limits: [env.example:166-180](https://github.com/ccBittorrent/ccbt/blob/main/env.example)
-- Security: [env.example:184-189](https://github.com/ccBittorrent/ccbt/blob/main/env.example)
-- ML: [env.example:193-196](https://github.com/ccBittorrent/ccbt/blob/main/env.example)
+Examples are grouped by canonical section in `env.example` (with aliases and legacy compatibility keys preserved in a dedicated section at the end).
+Use the same section names shown in the TOML guide above to map between env and file keys.
 
 Environment variable parsing: [ccbt/config/config.py:_get_env_config](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/config/config.py)
 
@@ -286,12 +311,10 @@ Templates for:
 
 ## Configuration Examples
 
-Example configurations are available in the [examples/](examples/) directory:
-
-- Basic configuration: [example-config-basic.toml](examples/example-config-basic.toml)
-- Advanced configuration: [example-config-advanced.toml](examples/example-config-advanced.toml)
-- Performance configuration: [example-config-performance.toml](examples/example-config-performance.toml)
-- Security configuration: [example-config-security.toml](examples/example-config-security.toml)
+Example templates are intentionally kept minimal and can be derived from:
+- `env.example` (environment compatibility baseline)
+- `ccbt.toml` (canonical defaults generated from `ccbt.models.Config`)
+- Per-feature templates in your deployment automation or CI
 
 ## Hot Reload
 
@@ -410,20 +433,20 @@ Per-torrent configuration is persisted in:
 
 ### Performance Tuning
 
-- Increase `disk.write_buffer_kib` for large sequential writes: [ccbt.toml:64](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
-- Enable `direct_io` on Linux/NVMe for better write throughput: [ccbt.toml:81](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
-- Tune `network.pipeline_depth` and `network.block_size_kib` for your network: [ccbt.toml:11-13](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
+- Increase `disk.write_buffer_kib` for large sequential writes in `ccbt.toml`.
+- Enable `direct_io` on Linux/NVMe for better write throughput in `ccbt.toml`.
+- Tune `network.pipeline_depth` and `network.block_size_kib` for your network in `ccbt.toml`.
 
 ### Resource Optimization
 
-- Adjust `disk.hash_workers` based on CPU cores: [ccbt.toml:70](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
-- Configure `disk.cache_size_mb` based on available RAM: [ccbt.toml:78](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
-- Set `network.max_global_peers` based on bandwidth: [ccbt.toml:6](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
+- Adjust `disk.hash_workers` based on CPU cores in `ccbt.toml`.
+- Configure `disk.cache_size_mb` based on available RAM in `ccbt.toml`.
+- Set `network.max_global_peers` based on bandwidth in `ccbt.toml`.
 
 ### Network Configuration
 
-- Configure timeouts based on network conditions: [ccbt.toml:22-26](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
-- Enable/disable protocols as needed: [ccbt.toml:34-36](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
-- Set rate limits appropriately: [ccbt.toml:39-42](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml)
+- Configure timeouts based on network conditions in `ccbt.toml`.
+- Enable/disable protocols as needed in `ccbt.toml`.
+- Set rate limits appropriately in `ccbt.toml`.
 
 For detailed performance tuning, see [Performance Tuning Guide](performance.md).

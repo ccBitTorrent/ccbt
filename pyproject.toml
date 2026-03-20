@@ -188,15 +188,6 @@ max-branches = 12
 max-returns = 6
 max-statements = 50
 
-[tool.ruff.lint.pylint.messages-control]
-disable = [
-    "too-few-public-methods",
-    "too-many-arguments",
-    "too-many-branches",
-    "too-many-locals",
-    "too-many-statements",
-]
-
 # Pytest configuration
 # Coverage configuration
 [tool.coverage.run]

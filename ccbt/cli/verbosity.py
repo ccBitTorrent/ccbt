@@ -9,7 +9,7 @@ import logging
 from enum import IntEnum
 from typing import Any, ClassVar, Optional
 
-from ccbt.utils.logging_config import get_logger
+from ccbt.utils.logging_config import TRACE_LOG_LEVEL, get_logger
 
 logger = get_logger(__name__)
 
@@ -41,7 +41,7 @@ class VerbosityManager:
         VerbosityLevel.NORMAL: logging.INFO,
         VerbosityLevel.VERBOSE: logging.INFO,
         VerbosityLevel.DEBUG: logging.DEBUG,
-        VerbosityLevel.TRACE: logging.DEBUG,  # TRACE uses DEBUG with stack traces
+        VerbosityLevel.TRACE: TRACE_LOG_LEVEL,  # TRACE uses dedicated TRACE level
     }
 
     def __init__(self, verbosity_count: int = 0):
@@ -96,6 +96,15 @@ class VerbosityManager:
 
         Returns:
             Logging level constant
+
+        """
+        return self.logging_level_for_verbosity()
+
+    def logging_level_for_verbosity(self) -> int:
+        """Return the effective logging level for this verbosity.
+
+        Returns:
+            The logging level constant.
 
         """
         return self.logging_level

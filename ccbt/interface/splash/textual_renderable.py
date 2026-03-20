@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Optional
 
+from ccbt.utils import style_policy
+
 if TYPE_CHECKING:
     from rich.console import Console, RenderableType
     from rich.console import RenderResult
@@ -119,7 +121,7 @@ class StableOverlayBox:
     def __init__(
         self,
         messages: list[str],
-        title: str = "[dim]Logs[/dim]",
+        title: str = "",
     ) -> None:
         """Initialize stable overlay box.
         
@@ -127,6 +129,9 @@ class StableOverlayBox:
             messages: List of log messages to display
             title: Box title
         """
+        if not title:
+            title = style_policy.markup("Logs", style_policy.DIM_STYLE)
+
         self.messages = messages
         self.title = title
         self._cached_panel: Optional[Any] = None

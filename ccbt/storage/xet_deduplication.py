@@ -7,7 +7,6 @@ using SQLite for local caching and DHT for peer-to-peer chunk discovery.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import sqlite3
@@ -291,9 +290,6 @@ class XetDeduplication:
             return storage_file
         except sqlite3.IntegrityError:
             # Another writer inserted the same chunk hash first. Reuse existing entry.
-            with contextlib.suppress(Exception):
-                if storage_file.exists():
-                    storage_file.unlink()
             self.db.execute(
                 "UPDATE chunks SET ref_count = ref_count + 1, last_accessed = ? WHERE hash = ?",
                 (current_time, chunk_hash),

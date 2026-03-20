@@ -1,17 +1,32 @@
 name: Benchmark
 
 on:
-  workflow_dispatch:  # Manual only, never automatic
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Base branch/commit to compare against
+        required: false
+        default: main
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+env:
+  BENCH_BASE_DIR: ${{ github.workspace }}/.ci/benchmark_base
+  BENCH_HEAD_DIR: ${{ github.workspace }}/.ci/benchmark_head
+  BENCH_COMPARE_DIR: ${{ github.workspace }}/docs/en/reports/benchmarks/generated
+  BENCH_CONFIG_FILE: docs/examples/example-config-performance.toml
+  BENCH_QUICK: "1"
+  BENCH_KEEP_HISTORY: "20"
 
 concurrency:
   group: benchmark-write-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   benchmark:
     name: benchmark
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write  # Required to commit benchmark results
       actions: read
@@ -35,42 +50,131 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --dev
-      
-      - name: Run hash verification benchmark
+
+      - name: Run head benchmark suite
         run: |
-          uv run python tests/performance/bench_hash_verify.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
-      
-      - name: Run disk I/O benchmark
+          mkdir -p "${BENCH_HEAD_DIR}"
+          if [ "${BENCH_QUICK}" = "1" ]; then
+            QUICK_ARG="--quick"
+          else
+            QUICK_ARG=""
+          fi
+
+          uv run python tests/performance/bench_hash_verify.py ${QUICK_ARG} \
+            --record-mode=none \
+            --config-file "${BENCH_CONFIG_FILE}" \
+            --json-out "${BENCH_HEAD_DIR}/bench_hash_verify.json"
+
+          uv run python tests/performance/bench_disk_io.py ${QUICK_ARG} --sizes 256KiB 1MiB \
+            --record-mode=none \
+            --config-file "${BENCH_CONFIG_FILE}" \
+            --json-out "${BENCH_HEAD_DIR}/bench_disk_io.json"
+
+          uv run python tests/performance/bench_piece_assembly.py ${QUICK_ARG} \
+            --record-mode=none \
+            --config-file "${BENCH_CONFIG_FILE}" \
+            --json-out "${BENCH_HEAD_DIR}/bench_piece_assembly.json"
+
+          uv run python tests/performance/bench_loopback_throughput.py ${QUICK_ARG} \
+            --record-mode=none \
+            --config-file "${BENCH_CONFIG_FILE}" \
+            --json-out "${BENCH_HEAD_DIR}/bench_loopback_throughput.json"
+
+          uv run python tests/performance/bench_encryption.py ${QUICK_ARG} \
+            --record-mode=none \
+            --config-file "${BENCH_CONFIG_FILE}" \
+            --json-out "${BENCH_HEAD_DIR}/bench_encryption.json"
+
+      - name: Prepare base checkout
         run: |
-          uv run python tests/performance/bench_disk_io.py --quick --sizes 256KiB 1MiB --record-mode=commit --config-file docs/examples/example-config-performance.toml
-      
-      - name: Run piece assembly benchmark
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_REF="${{ github.event.inputs.base_ref }}"
+          fi
+          rm -rf "${BENCH_BASE_DIR}"
+          mkdir -p "${BENCH_BASE_DIR}"
+          git worktree add --detach "${BENCH_BASE_DIR}" "${BASE_REF}"
+
+      - name: Run base benchmark suite
         run: |
-          uv run python tests/performance/bench_piece_assembly.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
-      
-      - name: Run loopback throughput benchmark
+          mkdir -p "${BENCH_BASE_DIR}"
+          if [ "${BENCH_QUICK}" = "1" ]; then
+            QUICK_ARG="--quick"
+          else
+            QUICK_ARG=""
+          fi
+
+          (cd "${BENCH_BASE_DIR}" && \
+            uv run python tests/performance/bench_hash_verify.py ${QUICK_ARG} \
+              --record-mode=none \
+              --config-file "${BENCH_CONFIG_FILE}" \
+              --json-out "${BENCH_BASE_DIR}/bench_hash_verify.json")
+
+          (cd "${BENCH_BASE_DIR}" && \
+            uv run python tests/performance/bench_disk_io.py ${QUICK_ARG} --sizes 256KiB 1MiB \
+              --record-mode=none \
+              --config-file "${BENCH_CONFIG_FILE}" \
+              --json-out "${BENCH_BASE_DIR}/bench_disk_io.json")
+
+          (cd "${BENCH_BASE_DIR}" && \
+            uv run python tests/performance/bench_piece_assembly.py ${QUICK_ARG} \
+              --record-mode=none \
+              --config-file "${BENCH_CONFIG_FILE}" \
+              --json-out "${BENCH_BASE_DIR}/bench_piece_assembly.json")
+
+          (cd "${BENCH_BASE_DIR}" && \
+            uv run python tests/performance/bench_loopback_throughput.py ${QUICK_ARG} \
+              --record-mode=none \
+              --config-file "${BENCH_CONFIG_FILE}" \
+              --json-out "${BENCH_BASE_DIR}/bench_loopback_throughput.json")
+
+          (cd "${BENCH_BASE_DIR}" && \
+            uv run python tests/performance/bench_encryption.py ${QUICK_ARG} \
+              --record-mode=none \
+              --config-file "${BENCH_CONFIG_FILE}" \
+              --json-out "${BENCH_BASE_DIR}/bench_encryption.json")
+
+      - name: Compare and render benchmark reports
         run: |
-          uv run python tests/performance/bench_loopback_throughput.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
-      
-      - name: Run encryption benchmark
-        run: |
-          uv run python tests/performance/bench_encryption.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
-      
+          mkdir -p "${BENCH_COMPARE_DIR}"
+          uv run python dev/scripts/compare_benchmark_json.py \
+            --base "${BENCH_BASE_DIR}" \
+            --head "${BENCH_HEAD_DIR}" \
+            --thresholds dev/benchmark_thresholds.toml \
+            --output "${BENCH_COMPARE_DIR}/comparison_latest.json"
+
+          uv run python dev/scripts/render_benchmark_docs.py \
+            --comparison "${BENCH_COMPARE_DIR}/comparison_latest.json" \
+            --history "${BENCH_COMPARE_DIR}/benchmark_history.json" \
+            --out-dir "${BENCH_COMPARE_DIR}" \
+            --keep "${BENCH_KEEP_HISTORY}"
+
       - name: Upload benchmark artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-results
+          name: benchmark-ci-artifacts
           path: |
-            docs/reports/benchmarks/runs/*.json
-            docs/reports/benchmarks/timeseries/*.json
+            ${{ env.BENCH_BASE_DIR }}/*.json
+            ${{ env.BENCH_HEAD_DIR }}/*.json
+            docs/en/reports/benchmarks/generated/comparison_latest.json
+            docs/en/reports/benchmarks/generated/comparison_latest.md
+            docs/en/reports/benchmarks/generated/trend_charts.md
+            docs/en/reports/benchmarks/generated/benchmark_history.json
           retention-days: 90
       
       - name: Commit benchmark results
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add -f docs/reports/benchmarks/
-          git diff --staged --quiet || git commit -m "ci: record benchmark results [skip ci]"
-          git push
+          git add docs/en/reports/benchmarks/generated/comparison_latest.md \
+            docs/en/reports/benchmarks/generated/comparison_latest.json \
+            docs/en/reports/benchmarks/generated/trend_charts.md \
+            docs/en/reports/benchmarks/generated/benchmark_history.json \
+            docs/en/reports/benchmarks/generated/README.md
+          if ! git diff --cached --quiet; then
+            git commit -m "ci: update benchmark docs artifacts"
+            git push
+          fi

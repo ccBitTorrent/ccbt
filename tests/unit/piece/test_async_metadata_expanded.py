@@ -185,10 +185,15 @@ class TestAsyncMetadataExchange:
     async def test_fetch_metadata_no_peers(self, exchange):
         """Test fetch_metadata with no peers."""
         await exchange.start()
+        mock_on_error = Mock()
+        exchange.on_error = mock_on_error
 
         result = await exchange.fetch_metadata([], max_peers=10)
 
         assert result is None
+        assert exchange._failure_reason == "no_peers"
+        assert mock_on_error.called
+        assert exchange.completed is False
 
         await exchange.stop()
 
@@ -196,10 +201,36 @@ class TestAsyncMetadataExchange:
     async def test_fetch_metadata_zero_max_peers(self, exchange, sample_peers):
         """Test fetch_metadata with zero max_peers."""
         await exchange.start()
+        mock_on_error = Mock()
+        exchange.on_error = mock_on_error
 
         result = await exchange.fetch_metadata(sample_peers, max_peers=0)
 
         assert result is None
+        assert exchange._failure_reason == "invalid_max_peers"
+        assert mock_on_error.called
+        assert exchange.completed is False
+
+        await exchange.stop()
+
+    @pytest.mark.asyncio
+    async def test_fetch_metadata_timeout_reports_reason(self, exchange, sample_peers):
+        """Test timeout path reports deterministic failure reason."""
+        await exchange.start()
+        mock_on_error = Mock()
+        exchange.on_error = mock_on_error
+
+        async def never_complete() -> None:
+            while True:
+                await asyncio.sleep(0.1)
+
+        with patch.object(exchange, "_wait_for_completion", never_complete):
+            result = await exchange.fetch_metadata(sample_peers, timeout=0.05)
+
+        assert result is None
+        assert exchange._failure_reason == "timeout"
+        assert mock_on_error.called
+        assert exchange.completed is False
 
         await exchange.stop()
 
@@ -518,6 +549,7 @@ class TestAsyncMetadataExchange:
         exchange.on_complete = mock_on_complete
 
         await exchange._assemble_metadata()
+        await exchange._assemble_metadata()
 
         assert exchange.completed is True
         assert exchange.metadata_data == metadata_bytes
@@ -542,6 +574,8 @@ class TestAsyncMetadataExchange:
         await exchange._assemble_metadata()
 
         assert exchange.completed is False
+        assert exchange._failure_reason == "hash_mismatch"
+        assert mock_on_error.called
 
     @pytest.mark.asyncio
     async def test_assemble_metadata_exception(self, exchange):
@@ -555,6 +589,7 @@ class TestAsyncMetadataExchange:
         await exchange._assemble_metadata()
 
         mock_on_error.assert_called_once()
+        assert exchange._failure_reason == "assembly_error"
 
     @pytest.mark.asyncio
     async def test_wait_for_completion(self, exchange):

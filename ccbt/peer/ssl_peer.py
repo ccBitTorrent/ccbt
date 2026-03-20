@@ -11,13 +11,36 @@ import logging
 import ssl
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from ccbt.config.config import get_config
-from ccbt.extensions.manager import get_extension_manager
 from ccbt.security.ssl_context import SSLContextBuilder
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class _SSLExtensionProtocol(Protocol):
+    """Subset of extension manager interface used by SSL peer operations."""
+
+    def peer_supports_extension(self, peer_id: str, extension_name: str) -> bool: ...
+
+
+@runtime_checkable
+class _SSLXetExtensionManager(Protocol):
+    """Extension accessor used by SSL peer operations."""
+
+    def get_extension(self, name: str) -> Any: ...
+
+
+@runtime_checkable
+class _SSLProtocolExtensionManager(
+    _SSLExtensionProtocol, _SSLXetExtensionManager, Protocol
+):
+    """Combined extension-manager protocol required for SSL peer handling."""
+
+    @property
+    def extensions(self) -> dict[str, Any]: ...
 
 
 @dataclass
@@ -40,12 +63,17 @@ class SSLPeerConnection:
     with SSL/TLS for opportunistic encryption.
     """
 
-    def __init__(self):
+    def __init__(
+        self, extension_manager: Optional[_SSLProtocolExtensionManager] = None
+    ):
         """Initialize SSL peer connection manager."""
         self.config = get_config()
         self.ssl_builder = SSLContextBuilder()
         self.logger = logging.getLogger(__name__)
         self.stats = SSLPeerStats()
+        self.extension_manager: Optional[_SSLProtocolExtensionManager] = (
+            extension_manager
+        )
 
     async def connect_with_ssl(  # pragma: no cover - Tested in tests/unit/peer/test_ssl_peer.py
         self,
@@ -196,7 +224,7 @@ class SSLPeerConnection:
                 opportunistic
             ):  # pragma: no cover - Exception handling path, tested via mocking
                 self.stats.fallback_to_plain += 1
-                self.logger.info(
+                self.logger.debug(
                     "Falling back to plain connection for %s:%s", peer_ip, peer_port
                 )
                 return reader, writer, False
@@ -231,7 +259,12 @@ class SSLPeerConnection:
 
         """
         try:
-            extension_manager = get_extension_manager()
+            extension_manager = self.extension_manager
+            if extension_manager is None:
+                self.logger.debug(
+                    "Extension manager unavailable for peer SSL capability check"
+                )
+                return False
             return extension_manager.peer_supports_extension(peer_id, "ssl")
         except Exception as e:
             self.logger.debug(
@@ -257,7 +290,12 @@ class SSLPeerConnection:
 
         """
         try:
-            extension_manager = get_extension_manager()
+            extension_manager = self.extension_manager
+            if extension_manager is None:
+                self.logger.debug(
+                    "Extension manager unavailable for SSL extension message"
+                )
+                return None
             extension_protocol = extension_manager.get_extension("protocol")
             ssl_extension = extension_manager.get_extension("ssl")
 
@@ -375,7 +413,12 @@ class SSLPeerConnection:
             await self._send_ssl_extension_message(writer, peer_id, timeout)
 
             # Check SSL extension state for response
-            extension_manager = get_extension_manager()
+            extension_manager = self.extension_manager
+            if extension_manager is None:
+                self.logger.debug(
+                    "Extension manager unavailable for SSL negotiation state"
+                )
+                return None
             ssl_extension = extension_manager.get_extension("ssl")
             if not ssl_extension:
                 return None
@@ -398,7 +441,7 @@ class SSLPeerConnection:
 
             if negotiation_state and negotiation_state.state == "accepted":
                 # SSL upgrade accepted, wrap connection
-                self.logger.info(
+                self.logger.debug(
                     "SSL extension negotiation accepted for peer %s, wrapping connection",
                     peer_id,
                 )
@@ -437,9 +480,12 @@ class SSLPeerConnection:
             self.logger.warning(
                 "SSL negotiation error for peer %s:%s: %s", peer_ip, peer_port, e
             )
-            if ssl_config.ssl_extension_opportunistic:  # pragma: no cover - Exception path with opportunistic mode tested via integration tests
-                return None
-            raise
+
+    def set_extension_manager(
+        self, extension_manager: Optional[_SSLProtocolExtensionManager]
+    ) -> None:
+        """Set extension manager for protocol compatibility."""
+        self.extension_manager = extension_manager
 
     def get_stats(self) -> SSLPeerStats:
         """Get SSL peer connection statistics.

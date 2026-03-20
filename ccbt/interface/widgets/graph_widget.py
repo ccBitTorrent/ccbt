@@ -2968,15 +2968,15 @@ class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
         top_peers = sorted(
             peers,
             key=lambda p: (
-                float(p.get("total_download_rate", 0.0)) + float(p.get("total_upload_rate", 0.0))
+                float(p.get("download_rate", 0.0)) + float(p.get("upload_rate", 0.0))
             ),
             reverse=True,
         )[:6]
 
         for peer in top_peers:
             peer_label = peer.get("peer_key") or f"{peer.get('ip', '?')}:{peer.get('port', '?')}"
-            down = float(peer.get("total_download_rate", 0.0)) / 1024.0
-            up = float(peer.get("total_upload_rate", 0.0)) / 1024.0
+            down = float(peer.get("download_rate", 0.0)) / 1024.0
+            up = float(peer.get("upload_rate", 0.0)) / 1024.0
             quality = self._format_quality(down + up)
             self._table.add_row(
                 str(peer_label),
@@ -2991,8 +2991,7 @@ class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
         distribution = {"excellent": 0, "good": 0, "fair": 0, "poor": 0}
         for peer in peers or []:
             total_rate = (
-                float(peer.get("total_download_rate", 0.0))
-                + float(peer.get("total_upload_rate", 0.0))
+                float(peer.get("download_rate", 0.0)) + float(peer.get("upload_rate", 0.0))
             ) / 1024.0  # KiB/s
             if total_rate >= 1024:
                 distribution["excellent"] += 1

@@ -897,8 +897,8 @@ class TestPeerConnectionManager:
         assert self.manager.on_bitfield_received is None
         assert self.manager.on_piece_received is None
 
-    async def test_shutdown(self):
-        """Test shutting down the connection manager."""
+    async def test_stop(self):
+        """Test stopping the connection manager."""
         # Add mock connections
         for i in range(2):
             peer_info = PeerInfo(ip=f"192.168.1.{100 + i}", port=6881 + i)
@@ -906,8 +906,8 @@ class TestPeerConnectionManager:
             async with self.manager.connection_lock:
                 self.manager.connections[str(peer_info)] = connection
 
-        # Shutdown should not raise errors
-        await self.manager.shutdown()
+        # stop should not raise errors
+        await self.manager.stop()
 
         # All connections should be in error state
         async with self.manager.connection_lock:

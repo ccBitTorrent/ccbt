@@ -225,7 +225,7 @@ def get_app() -> TerminalDashboard:
             # Clear splash on error
             if splash_manager:
                 try:
-                    splash_manager.clear_progress_messages()
+                    splash_manager.stop_splash()
                 except Exception:
                     pass
             logger.exception("Error ensuring daemon is ready: %s", e)
@@ -239,7 +239,7 @@ def get_app() -> TerminalDashboard:
             # Clear splash on error
             if splash_manager:
                 try:
-                    splash_manager.clear_progress_messages()
+                    splash_manager.stop_splash()
                 except Exception:
                     pass
             raise RuntimeError(
@@ -253,7 +253,7 @@ def get_app() -> TerminalDashboard:
             # Clear splash on error
             if splash_manager:
                 try:
-                    splash_manager.clear_progress_messages()
+                    splash_manager.stop_splash()
                 except Exception:
                     pass
             raise RuntimeError(
@@ -314,7 +314,7 @@ def get_app() -> TerminalDashboard:
         # Clear splash on error
         if splash_manager:
             try:
-                splash_manager.clear_progress_messages()
+                splash_manager.stop_splash()
                 # Restore log level if it was suppressed
                 import logging
                 root_logger = logging.getLogger()

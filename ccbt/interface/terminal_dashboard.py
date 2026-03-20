@@ -89,13 +89,13 @@ from ccbt.interface.widgets import (
     GraphsSectionContainer,
     MainTabsContainer,
     Overview,
-    PeersTable,
     SparklineGroup,
     SpeedSparklines,
-    TorrentsTable,
+    ReusableDataTable,
 )
 from ccbt.monitoring import get_alert_manager, get_metrics_collector
 from ccbt.storage.checkpoint import CheckpointManager
+from ccbt.utils import style_policy
 
 logger = logging.getLogger(__name__)
 
@@ -340,10 +340,115 @@ class CustomFooter(Container):  # type: ignore[misc]
                 with Horizontal(classes="footer-row"):
                     for key, action, description in row:
                         yield Static(
-                            f"[cyan]{key}[/cyan] {description}",
+                            f"{style_policy.markup(key, style_policy.KEY_STYLE)} {description}",
                             classes="footer-item",
                             markup=True
                         )
+
+
+class TorrentsTable(ReusableDataTable):  # type: ignore[misc]
+    """Legacy torrent table retained for dashboard compatibility."""
+
+    def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        """Mount the torrents table widget."""
+        self.zebra_stripes = True
+        self.add_columns(_("Info Hash"), _("Name"), _("Status"), _("Progress"), _("Down/Up (B/s)"))
+
+    def update_from_status(self, status: dict[str, dict[str, Any]]) -> None:  # pragma: no cover
+        """Update torrents table with current status."""
+        self.clear()
+        for ih, st in status.items():
+            progress = f"{float(st.get('progress', 0.0)) * 100:.1f}%"
+            rates = f"{float(st.get('download_rate', 0.0)):.0f} / {float(st.get('upload_rate', 0.0)):.0f}"
+            self.add_row(
+                ih,
+                str(st.get("name", "-")),
+                str(st.get("status", "-")),
+                progress,
+                rates,
+                key=ih,
+            )
+
+    def get_selected_info_hash(self) -> Optional[str]:  # pragma: no cover
+        """Get selected torrent hash."""
+        return self.get_selected_key()
+
+
+class PeersTable(ReusableDataTable):  # type: ignore[misc]
+    """Legacy peers table retained for dashboard compatibility."""
+
+    def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        """Mount the peers table widget."""
+        self.zebra_stripes = True
+        self.add_columns(
+            _("IP"),
+            _("Port"),
+            _("Down (B/s)"),
+            _("Up (B/s)"),
+            _("Latency"),
+            _("Quality"),
+            _("Health"),
+            _("Choked"),
+            _("Client"),
+        )
+
+    def _calculate_connection_quality(self, peer_data: dict[str, Any]) -> float:
+        """Calculate connection quality score."""
+        down = float(peer_data.get("download_rate", 0.0))
+        up = float(peer_data.get("upload_rate", 0.0))
+        choked = peer_data.get("choked", True)
+
+        quality = 0.0
+        if not choked:
+            quality += 50.0
+
+        total_speed = down + up
+        if total_speed > 0:
+            speed_score = min(50.0, (total_speed / (1024 * 1024)) * 50.0)
+            quality += speed_score
+
+        return min(100.0, max(0.0, quality))
+
+    def _format_quality_indicator(self, quality: float) -> str:
+        """Format quality as a visual indicator."""
+        color = style_policy.quality_style_for_percentage(quality)
+        return style_policy.markup(f"{quality:.0f}%", color)
+
+    def _get_health_status(self, quality: float) -> str:
+        """Map quality score to health status."""
+        if quality >= 80:
+            return style_policy.markup("Excellent", style_policy.SUCCESS_STYLE)
+        if quality >= 60:
+            return style_policy.markup("Good", style_policy.WARNING_STYLE)
+        if quality >= 40:
+            return style_policy.markup("Fair", style_policy.FAIR_STYLE)
+        return style_policy.markup("Poor", style_policy.ERROR_STYLE)
+
+    def update_from_peers(self, peers: list[dict[str, Any]]) -> None:  # pragma: no cover
+        """Update peers table with current peer data."""
+        self.clear()
+        for p in peers or []:
+            quality = self._calculate_connection_quality(p)
+            quality_str = self._format_quality_indicator(quality)
+            health_status = self._get_health_status(quality)
+
+            latency = p.get("request_latency", 0.0)
+            if latency and latency > 0:
+                latency_str = f"{latency * 1000:.1f} ms"
+            else:
+                latency_str = "N/A"
+
+            self.add_row(
+                str(p.get("ip", "-")),
+                str(p.get("port", "-")),
+                f"{float(p.get('download_rate', 0.0)):.0f}",
+                f"{float(p.get('upload_rate', 0.0)):.0f}",
+                latency_str,
+                quality_str,
+                health_status,
+                str(p.get("choked", False)),
+                str(p.get("client", "?")),
+            )
 
 
 # ============================================================================
@@ -601,7 +706,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
         # Add bindings grouped by category
         for category, bindings in categories.items():
             table.add_row(
-                f"[bold yellow]{category}[/bold yellow]", "", end_section=True
+                style_policy.markup(category, style_policy.SECTION_HEADER_STYLE),
+                "",
+                end_section=True,
             )
             for key, action in bindings:
                 table.add_row(f"  {key}", action)
@@ -1126,9 +1233,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
             if self.statusbar:
                 self.statusbar.update(
                     Panel(
-                        f"[red]Failed to start session: {e}[/red]",
+                        style_policy.markup(f"✖ Failed to start session: {e}", style_policy.ERROR_STYLE),
                         title="Error",
-                        border_style="red",
+                        border_style=style_policy.ERROR_STYLE,
                     )
                 )
             raise
@@ -1203,21 +1310,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     try:
                         # Use Rich formatting for better display
                         from ccbt.utils.rich_logging import CorrelationRichHandler
-                        from rich.console import Console
-                        from rich.logging import RichHandler
-                        
-                        # Create a console that writes to StringIO to capture formatted output
-                        from io import StringIO
-                        console = Console(file=StringIO(), width=120, force_terminal=False)
-                        
-                        # Format message with Rich markup based on level (icons removed)
-                        from ccbt.utils.rich_logging import CorrelationRichHandler
-                        
-                        # Use colors from CorrelationRichHandler (icons removed)
-                        colors = CorrelationRichHandler.LEVEL_COLORS
-                        
                         level_name = record.levelname
-                        color = colors.get(level_name, "white")
                         func_name = getattr(record, "funcName", "unknown")
                         original_msg = record.getMessage()
                         
@@ -1225,19 +1318,34 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         handler = CorrelationRichHandler()
                         colored_msg = handler._colorize_action_text(original_msg)
                         
-                        # Format: [color]LEVEL[/color] [#ff69b4]method_name[/#ff69b4] message
-                        # Using hex color #ff69b4 (hot pink) as Rich doesn't have "pink" as a named color
-                        formatted_msg = f"[{color}]{level_name}[/{color}] [#ff69b4]{func_name}[/#ff69b4] {colored_msg}"
+                        # Shared policy: [LEVEL][method_name] message
+                        level_markup = style_policy.format_log_level_label(level_name)
+                        method_markup = (
+                            style_policy.format_log_method_name(func_name)
+                            if func_name != "unknown"
+                            else ""
+                        )
+                        formatted_msg = (
+                            f"{level_markup} {method_markup} {colored_msg}"
+                            if method_markup
+                            else f"{level_markup} {colored_msg}"
+                        )
                         
                         # Add correlation ID if available
                         if hasattr(record, "correlation_id") and record.correlation_id:
-                            formatted_msg = f"[dim][{record.correlation_id}][/dim] {formatted_msg}"
+                            formatted_msg = (
+                                f"{style_policy.markup(record.correlation_id, style_policy.DIM_STYLE)} "
+                                f"{formatted_msg}"
+                            )
                         
                         # Add timestamp for DEBUG/TRACE levels
                         if record.levelno <= logging.DEBUG:
                             import datetime
                             timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                            formatted_msg = f"[dim]{timestamp}[/dim] {formatted_msg}"
+                            formatted_msg = (
+                                f"{style_policy.markup(timestamp, style_policy.DIM_STYLE)} "
+                                f"{formatted_msg}"
+                            )
                         
                         # Write directly to RichLog - Textual handles thread safety
                         if self.rich_log:
@@ -1302,7 +1410,10 @@ class TerminalDashboard(App):  # type: ignore[misc]
 
             # Write initial message to confirm logging is working
             self.logs.write(
-                "[green]Logging initialized - errors and warnings will appear here[/green]"
+                style_policy.markup(
+                    "Logging initialized - errors and warnings will appear here",
+                    style_policy.SUCCESS_STYLE,
+                )
             )
 
         except Exception as e:
@@ -1311,7 +1422,10 @@ class TerminalDashboard(App):  # type: ignore[misc]
             try:
                 if self.logs:
                     self.logs.write(
-                        "[yellow]Logging handler setup had issues, but basic logging should work[/yellow]"
+                        style_policy.markup(
+                            "Logging handler setup had issues, but basic logging should work",
+                            style_policy.WARNING_STYLE,
+                        )
                     )
             except Exception:
                 pass
@@ -1322,11 +1436,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             try:
                 logger.debug("Ending splash screen - dashboard is ready")
                 # Use stop_splash() which clears console and stops animation
-                if hasattr(self._splash_manager, 'stop_splash'):
-                    self._splash_manager.stop_splash()
-                else:
-                    # Fallback to clear_progress_messages
-                    self._splash_manager.clear_progress_messages()
+                self._splash_manager.stop_splash()
                 
                 # CRITICAL: Add a small delay to ensure splash screen is fully cleared
                 # before Textual renders. This prevents the splash from leaking into the dashboard.
@@ -1484,9 +1594,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 if self.statusbar:
                     self.statusbar.update(
                         Panel(
-                            "[red]●[/red] Data provider not initialized",
+                            style_policy.markup("● Data provider not initialized", style_policy.ERROR_STYLE),
                             title="Status",
-                            border_style="red",
+                            border_style=style_policy.ERROR_STYLE,
                         )
                     )
                 return
@@ -1535,9 +1645,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         if self.statusbar:
                             self.statusbar.update(
                                 Panel(
-                                    "[red]●[/red] Daemon connection lost",
+                                    style_policy.markup("● Daemon connection lost", style_policy.ERROR_STYLE),
                                     title="Status",
-                                    border_style="red",
+                                    border_style=style_policy.ERROR_STYLE,
                                 )
                             )
                         return
@@ -1548,9 +1658,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     if self.statusbar:
                         self.statusbar.update(
                             Panel(
-                                "[red]●[/red] Connection error",
+                                style_policy.markup("● Connection error", style_policy.ERROR_STYLE),
                                 title="Status",
-                                border_style="red",
+                                border_style=style_policy.ERROR_STYLE,
                             )
                         )
                     return
@@ -1703,38 +1813,38 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 ):
                     # Download is active but not progressing
                     if connected_peers == 0:
-                        det.add_row("⚠ Warning", "[yellow]No peers connected[/yellow]")
+                        det.add_row("⚠ Warning", style_policy.markup("No peers connected", style_policy.WARNING_STYLE))
                     elif active_peers == 0:
-                        det.add_row("⚠ Warning", "[yellow]No active peers[/yellow]")
+                        det.add_row("⚠ Warning", style_policy.markup("No active peers", style_policy.WARNING_STYLE))
                     else:
-                        det.add_row("⚠ Warning", "[yellow]Download stalled[/yellow]")
+                        det.add_row("⚠ Warning", style_policy.markup("Download stalled", style_policy.WARNING_STYLE))
 
                 # Show tracker connection status
                 tracker_status = st.get("tracker_status", "unknown")
                 tracker_status_display = tracker_status
                 if tracker_status == "connected":
-                    tracker_status_display = "[green]connected[/green]"
+                    tracker_status_display = style_policy.markup("connected", style_policy.SUCCESS_STYLE)
                 elif tracker_status == "error":
-                    tracker_status_display = "[red]error[/red]"
+                    tracker_status_display = style_policy.markup("error", style_policy.ERROR_STYLE)
                 elif tracker_status == "timeout":
-                    tracker_status_display = "[yellow]timeout[/yellow]"
+                    tracker_status_display = style_policy.markup("timeout", style_policy.WARNING_STYLE)
                 elif tracker_status == "connecting":
-                    tracker_status_display = "[yellow]connecting...[/yellow]"
+                    tracker_status_display = style_policy.markup("connecting...", style_policy.WARNING_STYLE)
                 det.add_row(_("Tracker"), tracker_status_display)
                 if st.get("_stale"):
-                    det.add_row(_("Data"), "[yellow]stale[/yellow]")
+                    det.add_row(_("Data"), style_policy.markup("stale", style_policy.WARNING_STYLE))
 
                 # Show last tracker error if present
                 last_tracker_error = st.get("last_tracker_error")
                 if last_tracker_error:
                     det.add_row(
-                        _("Tracker Error"), f"[red]{str(last_tracker_error)[:50]}[/red]"
+                        _("Tracker Error"), style_policy.markup(str(last_tracker_error)[:50], style_policy.ERROR_STYLE)
                     )
 
                 # Show last error if present
                 last_error = st.get("last_error")
                 if last_error:
-                    det.add_row(_("Last Error"), f"[red]{str(last_error)[:50]}[/red]")
+                    det.add_row(_("Last Error"), style_policy.markup(str(last_error)[:50], style_policy.ERROR_STYLE))
 
                 # Get scrape result (BEP 48)
                 scrape_result = None
@@ -1759,7 +1869,10 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         elapsed = time.time() - scrape_result.last_scrape_time
                         det.add_row(_("Last Scrape"), _("{elapsed:.0f}s ago").format(elapsed=elapsed))
                 else:
-                    det.add_row(_("Scrape"), _("[dim]No data (press 's' to scrape)[/dim]"))
+                    det.add_row(
+                        _("Scrape"),
+                        style_policy.markup("No data (press 's' to scrape)", style_policy.DIM_STYLE),
+                    )
 
                 if getattr(self, "details", None) is not None:
                     self.details.update(Panel(det, title=_("Details")))
@@ -2251,12 +2364,14 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # Validate input before processing
             if not path_or_magnet:
                 self.logs.write(
-                    "[red]Error: No torrent path or magnet link provided[/red]"
+                    f"{style_policy.markup('Error: No torrent path or magnet link provided', style_policy.ERROR_STYLE)}"
                 )
                 return
             # Basic validation: must be magnet link or non-empty path
             if not path_or_magnet.startswith("magnet:") and len(path_or_magnet) < 3:
-                self.logs.write("[red]Error: Invalid torrent path or magnet link[/red]")
+                self.logs.write(
+                    f"{style_policy.markup('Error: Invalid torrent path or magnet link', style_policy.ERROR_STYLE)}"
+                )
                 return
             # Run torrent addition in background to avoid blocking UI thread
             # This prevents the "Callback is still pending after 3 seconds" warning
@@ -2902,12 +3017,14 @@ class TerminalDashboard(App):  # type: ignore[misc]
         """
         # Basic validation
         if not path_or_magnet or not path_or_magnet.strip():
-            self.logs.write("[red]Error: Empty torrent path or magnet link[/red]")
+            self.logs.write(
+                f"{style_policy.markup('Error: Empty torrent path or magnet link', style_policy.ERROR_STYLE)}"
+            )
             self.statusbar.update(
                 Panel(
-                    "Error: No torrent path or magnet link provided",
+                    style_policy.markup("No torrent path or magnet link provided", style_policy.ERROR_STYLE),
                     title="Error",
-                    border_style="red",
+                    border_style=style_policy.ERROR_STYLE,
                 )
             )
             return
@@ -3073,12 +3190,14 @@ class TerminalDashboard(App):  # type: ignore[misc]
         # Note: Ensure command executor is available
         if not hasattr(self, "_command_executor") or not self._command_executor:
             error_msg = "Command executor not available. Cannot add torrent."
-            self.logs.write(f"[red]Error: {error_msg}[/red]")
+            self.logs.write(
+                f"{style_policy.markup(f'Error: {error_msg}', style_policy.ERROR_STYLE)}"
+            )
             self.statusbar.update(
                 Panel(
-                    error_msg,
+                    style_policy.markup(error_msg, style_policy.ERROR_STYLE),
                     title="Error",
-                    border_style="red",
+                    border_style=style_policy.ERROR_STYLE,
                 )
             )
             logger.error("_process_add_torrent: Command executor not available")
@@ -3106,24 +3225,24 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 )
             except asyncio.TimeoutError:
                 error_msg = f"Timeout adding torrent (exceeded {timeout_seconds}s). The torrent may be very large or the connection may be slow."
-                self.logs.write(f"[red]Error: {error_msg}[/red]")
+                self.logs.write(f"{style_policy.markup(f'Error: {error_msg}', style_policy.ERROR_STYLE)}")
                 self.statusbar.update(
                     Panel(
-                        error_msg,
+                        style_policy.markup(error_msg, style_policy.ERROR_STYLE),
                         title="Timeout Error",
-                        border_style="red",
+                        border_style=style_policy.ERROR_STYLE,
                     )
                 )
                 logger.error("_process_add_torrent: Timeout adding torrent")
                 return
             except Exception as e:
                 error_msg = f"Error executing torrent.add command: {str(e)}"
-                self.logs.write(f"[red]Error: {error_msg}[/red]")
+                self.logs.write(f"{style_policy.markup(f'Error: {error_msg}', style_policy.ERROR_STYLE)}")
                 self.statusbar.update(
                     Panel(
-                        error_msg,
+                        style_policy.markup(error_msg, style_policy.ERROR_STYLE),
                         title="Command Error",
-                        border_style="red",
+                        border_style=style_policy.ERROR_STYLE,
                     )
                 )
                 logger.error("_process_add_torrent: Error executing command", exc_info=True)
@@ -3383,12 +3502,12 @@ class TerminalDashboard(App):  # type: ignore[misc]
             logger.error(error_msg)
             self.statusbar.update(
                 Panel(
-                    error_msg,
+                    style_policy.markup(error_msg, style_policy.WARNING_STYLE),
                     title="Timeout Warning",
-                    border_style="yellow",
+                    border_style=style_policy.WARNING_STYLE,
                 ),
             )
-            self.logs.write(f"Warning: {error_msg}")
+            self.logs.write(style_policy.markup(f"Warning: {error_msg}", style_policy.WARNING_STYLE))
             return
         except ValueError as add_error:
             # Handle duplicate torrent/magnet errors gracefully
@@ -3396,24 +3515,24 @@ class TerminalDashboard(App):  # type: ignore[misc]
             logger.warning(error_msg)
             self.statusbar.update(
                 Panel(
-                    error_msg,
+                    style_policy.markup(error_msg, style_policy.WARNING_STYLE),
                     title="Error",
-                    border_style="yellow",
+                    border_style=style_policy.WARNING_STYLE,
                 ),
             )
-            self.logs.write(f"[yellow]Warning: {error_msg}[/yellow]")
+            self.logs.write(style_policy.markup(f"Warning: {error_msg}", style_policy.WARNING_STYLE))
             return
         except Exception as add_error:
             # Re-raise to be caught by outer exception handler
             logger.exception("Error adding torrent: %s", add_error)
             self.statusbar.update(
                 Panel(
-                    f"Error adding torrent: {add_error}",
+                    style_policy.markup(f"Error adding torrent: {add_error}", style_policy.ERROR_STYLE),
                     title="Error",
-                    border_style="red",
+                    border_style=style_policy.ERROR_STYLE,
                 ),
             )
-            self.logs.write(f"[red]Error: {add_error}[/red]")
+            self.logs.write(style_policy.markup(f"Error: {add_error}", style_policy.ERROR_STYLE))
             raise
 
     async def _show_completion_dialog(
@@ -3429,7 +3548,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             from ccbt.interface.screens.base import ConfirmationDialog
             
             # Create a simple message dialog
-            message = f"[green]✓ Download Complete![/green]\n\n"
+            message = f"{style_policy.markup('✓ Download Complete!', style_policy.SUCCESS_STYLE)}\n\n"
             message += f"Torrent: {name}\n"
             message += f"Info Hash: {info_hash_hex[:16]}...\n\n"
             message += "Files have been written to disk and are ready to use."
@@ -3453,7 +3572,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # Also log to logs widget
             if hasattr(self, "logs") and self.logs:
                 self.logs.write(
-                    f"[green]✓ Torrent completed: {name}[/green]"
+                    style_policy.markup(f"✓ Torrent completed: {name}", style_policy.SUCCESS_STYLE)
                 )
         except Exception as e:
             logger.warning(
@@ -3462,7 +3581,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # Fallback: just log to logs widget
             if hasattr(self, "logs") and self.logs:
                 self.logs.write(
-                    f"[green]✓ Torrent completed: {name}[/green]"
+                    style_policy.markup(f"✓ Torrent completed: {name}", style_policy.SUCCESS_STYLE)
                 )
 
     async def _show_advanced_options(
@@ -3712,7 +3831,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 Panel(
                     "No torrent selected. Select a torrent first.",
                     title="Info",
-                    border_style="yellow",
+                    border_style=style_policy.WARNING_STYLE,
                 )
             )
 
@@ -3723,7 +3842,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
         try:
             # Write to logs immediately
             if self.logs:
-                self.logs.write("[yellow]Opening global config screen...[/yellow]")
+                self.logs.write(
+                    style_policy.markup("Opening global config screen...", style_policy.WARNING_STYLE)
+                )
 
             # Add timeout to prevent indefinite hanging
             await asyncio.wait_for(
@@ -3734,13 +3855,16 @@ class TerminalDashboard(App):  # type: ignore[misc]
             error_msg = "Global config screen timed out after 5 seconds"
             logger.error(error_msg)
             if self.logs:
-                self.logs.write(f"[red]ERROR: {error_msg}[/red]")
+                self.logs.write(style_policy.markup(f"ERROR: {error_msg}", style_policy.ERROR_STYLE))
             if self.statusbar:
                 self.statusbar.update(
                     Panel(
-                        "Global config screen timed out. This may indicate a configuration loading issue.",
+                        style_policy.markup(
+                            "Global config screen timed out. This may indicate a configuration loading issue.",
+                            style_policy.ERROR_STYLE,
+                        ),
                         title="Timeout Error",
-                        border_style="red",
+                        border_style=style_policy.ERROR_STYLE,
                     )
                 )
         except AttributeError as e:
@@ -3753,31 +3877,37 @@ class TerminalDashboard(App):  # type: ignore[misc]
             )
             if self.logs:
                 self.logs.write(
-                    f"[red]CRITICAL ERROR opening global config: {error_msg}[/red]"
+                    style_policy.markup(f"CRITICAL ERROR opening global config: {error_msg}", style_policy.ERROR_STYLE)
                 )
-                self.logs.write("[red]Error type: AttributeError[/red]")
+                self.logs.write(style_policy.markup("Error type: AttributeError", style_policy.ERROR_STYLE))
                 self.logs.write(
-                    "[red]This may indicate a list was passed where a dict was expected[/red]"
+                    style_policy.markup(
+                        "This may indicate a list was passed where a dict was expected",
+                        style_policy.ERROR_STYLE,
+                    )
                 )
             if self.statusbar:
                 self.statusbar.update(
                     Panel(
-                        f"Error opening global config: {error_msg}\n\nCheck logs for details.",
+                        style_policy.markup(
+                            f"Error opening global config: {error_msg}\n\nCheck logs for details.",
+                            style_policy.ERROR_STYLE,
+                        ),
                         title="Configuration Error",
-                        border_style="red",
+                        border_style=style_policy.ERROR_STYLE,
                     )
                 )
         except Exception as e:
             error_msg = f"Failed to open global config: {e}"
             logger.exception(error_msg)
             if self.logs:
-                self.logs.write(f"[red]ERROR: {error_msg}[/red]")
+                self.logs.write(style_policy.markup(f"ERROR: {error_msg}", style_policy.ERROR_STYLE))
             if self.statusbar:
                 self.statusbar.update(
                     Panel(
-                        f"Error opening global config: {e}",
+                        style_policy.markup(f"Error opening global config: {e}", style_policy.ERROR_STYLE),
                         title="Error",
-                        border_style="red",
+                        border_style=style_policy.ERROR_STYLE,
                     )
                 )
 
@@ -3951,9 +4081,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
         """Get connection status string for status bar."""
         # Dashboard only works with daemon - check WebSocket connection status
         if hasattr(self.session, "_websocket_connected") and self.session._websocket_connected:  # type: ignore[attr-defined]
-            return "[green]●[/green] Daemon (WebSocket)"
+            return f"{style_policy.markup('●', style_policy.SUCCESS_STYLE)} Daemon (WebSocket)"
         else:
-            return "[yellow]●[/yellow] Daemon (Polling)"
+            return f"{style_policy.markup('●', style_policy.WARNING_STYLE)} Daemon (Polling)"
     
     def _update_connection_status(self) -> None:
         """Update connection status in status bar."""
@@ -4159,7 +4289,6 @@ def _show_startup_splash(
                         splash_manager.show_splash_for_task(
                             task_name="dashboard start",
                             max_duration=expected_duration,
-                            show_progress=True,
                         )
                     )
                 except Exception:
@@ -4246,10 +4375,7 @@ async def _ensure_daemon_running(
 
     # Update splash if available
     if splash_manager:
-        try:
-            splash_manager.update_progress_message("Checking daemon status...")
-        except Exception:
-            pass  # Ignore errors updating splash
+        logger.debug("Checking daemon status...")
 
     # When daemon config file doesn't exist, try default daemon port (64124) as fallback
     ports_to_try = [ipc_port]
@@ -4271,10 +4397,7 @@ async def _ensure_daemon_running(
         if found_port and found_client:
             logger.info("Successfully found daemon on port %d via port scanning", found_port)
             if splash_manager:
-                try:
-                    splash_manager.update_progress_message("Daemon ready!")
-                except Exception:
-                    pass
+                logger.debug("Daemon ready (found via port scan)")
             return (True, found_client)
         else:
             logger.info("Port scanning did not find daemon on any of the tried ports")
@@ -4306,10 +4429,7 @@ async def _ensure_daemon_running(
             if is_running:
                 logger.info("Daemon is already running and healthy via IPC health check on port %d", port)
                 if splash_manager:
-                    try:
-                        splash_manager.update_progress_message("Daemon ready!")
-                    except Exception:
-                        pass
+                    logger.debug("Daemon ready (health check)")
                 return (True, client)
             else:
                 # Health check returned False - try to get more details by attempting a direct status call
@@ -4370,10 +4490,7 @@ async def _ensure_daemon_running(
                 if is_running:
                     logger.info("Daemon is already running and healthy via IPC health check on port %d", port)
                     if splash_manager:
-                        try:
-                            splash_manager.update_progress_message("Daemon ready!")
-                        except Exception:
-                            pass
+                        logger.debug("Daemon ready during retry")
                     return (True, client)
                 else:
                     logger.debug(
@@ -4412,10 +4529,7 @@ async def _ensure_daemon_running(
     logger.info("Daemon is not healthy via IPC health check, starting daemon...")
     
     if splash_manager:
-        try:
-            splash_manager.update_progress_message("Starting daemon...")
-        except Exception:
-            pass
+        logger.debug("Starting daemon...")
     
     try:
         # Ensure daemon config exists
@@ -4527,10 +4641,7 @@ async def _ensure_daemon_running(
         
         # Update splash message before health check
         if splash_manager:
-            try:
-                splash_manager.update_progress_message("Waiting for daemon to be ready...")
-            except Exception:
-                pass
+            logger.debug("Waiting for daemon to be ready...")
         
         # Use dedicated health check function that only uses IPC client
         is_healthy = await _wait_for_daemon_health_check(
@@ -4541,10 +4652,7 @@ async def _ensure_daemon_running(
         
         if is_healthy:
             if splash_manager:
-                try:
-                    splash_manager.update_progress_message("Daemon ready!")
-                except Exception:
-                    pass
+                logger.debug("Daemon ready after health check")
             return (True, client)
         else:
             # Timeout - daemon did not become healthy
@@ -4618,11 +4726,6 @@ def main() -> (
         help="Enable Textual development mode (live CSS editing, console integration)",
     )  # pragma: no cover - Same context
     parser.add_argument(
-        "--no-daemon",
-        action="store_true",
-        help="[DEPRECATED] Dashboard requires daemon - this option is ignored",
-    )  # pragma: no cover - Same context
-    parser.add_argument(
         "--no-splash",
         "-a",
         action="store_true",
@@ -4644,15 +4747,6 @@ def main() -> (
 
     # CRITICAL: Dashboard ONLY works with daemon - no local sessions allowed
     session: Optional[DaemonInterfaceAdapter] = None
-    
-    if args.no_daemon:
-        # User requested --no-daemon but dashboard requires daemon
-        logger.error(
-            "Dashboard requires daemon to be running. "
-            "Local sessions are not supported. "
-            "Please ensure the daemon is running or start it with 'bitonic daemon start'"
-        )
-        return 1
     
     # Start splash screen if enabled
     splash_manager = None
@@ -4712,7 +4806,7 @@ def main() -> (
         # Clear splash on exit
         if splash_manager:
             try:
-                splash_manager.clear_progress_messages()
+                splash_manager.stop_splash()
                 # Restore log level if it was suppressed
                 import logging
                 root_logger = logging.getLogger()

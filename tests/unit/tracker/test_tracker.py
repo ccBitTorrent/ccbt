@@ -538,6 +538,60 @@ class TestAsyncTrackerClientTrackerResilience:
         assert timeout_url in announced_urls
         assert healthy_url in announced_urls
 
+    @pytest.mark.asyncio
+    async def test_announce_to_multiple_non_tracker_error_updates_backoff(self):
+        """Transport-level tracker errors should be tracked for backoff in announce_to_multiple."""
+        client = AsyncTrackerClient()
+        client.session = Mock()
+        client.health_manager._known_good_trackers = set()
+
+        timeout_url = "http://flaky.tracker.example/announce"
+        announced_urls: list[str] = []
+
+        async def fake_announce(
+            torrent_data: dict[str, object], *_args: object, **_kwargs: object
+        ) -> TrackerResponse:
+            announce_url = str(torrent_data["announce"])
+            announced_urls.append(announce_url)
+            if announce_url == timeout_url:
+                raise TimeoutError("transport timeout")
+            return TrackerResponse(interval=1800, peers=[])
+
+        with patch.object(client, "_announce_to_tracker", new=fake_announce):
+            responses = await client.announce_to_multiple(
+                {
+                    "announce": timeout_url,
+                    "info_hash": b"x" * 20,
+                    "peer_id": b"-CC0101-" + b"x" * 12,
+                    "file_info": {"total_length": 12345},
+                },
+                [timeout_url],
+                allow_all_failure_retry=False,
+            )
+
+        assert responses == []
+        assert announced_urls == [timeout_url]
+        assert timeout_url in client.sessions
+        timeout_session = client.sessions[timeout_url]
+        assert timeout_session.failure_count == 1
+        assert timeout_session.last_failure > 0.0
+
+        with patch.object(client, "_announce_to_tracker", new=fake_announce):
+            responses = await client.announce_to_multiple(
+                {
+                    "announce": timeout_url,
+                    "info_hash": b"x" * 20,
+                    "peer_id": b"-CC0101-" + b"x" * 12,
+                    "file_info": {"total_length": 12345},
+                },
+                [timeout_url],
+                allow_all_failure_retry=False,
+            )
+
+        assert responses == []
+        assert timeout_session.failure_count == 1
+        assert announced_urls == [timeout_url]
+
     def test_tracker_session_quarantine_on_repeated_invalid_payload_failures(self):
         """Invalid payload failures should increase streak and eventually quarantine a tracker."""
         client = AsyncTrackerClient()
@@ -559,6 +613,18 @@ class TestAsyncTrackerClientTrackerResilience:
         assert second_session.failure_streak == 2
         assert second_session.quarantine_until > time.time()
 
+    def test_tracker_session_quarantine_on_html_payload_on_first_failure(self) -> None:
+        """HTML payloads should quarantine immediately because they are invalid tracker APIs."""
+        client = AsyncTrackerClient()
+        tracker_url = "http://html.tracker.example/announce"
+
+        client._handle_tracker_failure(
+            tracker_url,
+            failure_reason="Invalid tracker payload (html/xml payload) for tracker response",
+        )
+        first_session = client.sessions[tracker_url]
+        assert first_session.failure_streak == 1
+        assert first_session.quarantine_until > time.time()
 
 
 

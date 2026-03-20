@@ -42,23 +42,21 @@ class TestConnectionLifecycle:
     @pytest.mark.asyncio
     async def test_initialize_transport(self, connection):
         """Test initializing transport via socket manager."""
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance"
-        ) as mock_get_instance:
-            mock_manager = MagicMock()
-            mock_transport = MagicMock()
-            mock_manager.get_transport.return_value = mock_transport
-            mock_manager._generate_connection_id.return_value = 12345
-            mock_get_instance.return_value = mock_manager
+        mock_manager = MagicMock()
+        mock_transport = MagicMock()
+        mock_manager.get_transport.return_value = mock_transport
+        mock_manager._generate_connection_id.return_value = 12345
+        mock_manager.register_connection = MagicMock()
+        connection.utp_socket_manager = mock_manager
 
-            await connection.initialize_transport()
+        await connection.initialize_transport()
 
-            # Transport should be set
-            assert connection.transport is not None
-            # Connection should be registered
-            mock_manager.register_connection.assert_called_once()
-            # Connection ID should be set
-            assert connection.connection_id == 12345
+        # Transport should be set
+        assert connection.transport is not None
+        # Connection should be registered
+        mock_manager.register_connection.assert_called_once()
+        # Connection ID should be set
+        assert connection.connection_id == 12345
 
     def test_get_timestamp_microseconds(self, connection):
         """Test timestamp calculation."""
@@ -303,26 +301,17 @@ class TestSocketManager:
         return manager
 
     @pytest.mark.asyncio
-    async def test_get_instance_singleton(self):
-        """Test get_instance returns singleton."""
-        # Reset singleton for clean test
-        old_instance = UTPSocketManager._instance
-        UTPSocketManager._instance = None
-        
-        try:
-            manager1 = await UTPSocketManager.get_instance()
-            manager2 = await UTPSocketManager.get_instance()
-            assert manager1 is manager2
-            
-            # Cleanup - stop the manager
-            if manager1._initialized:
-                await manager1.stop()
-        except Exception:
-            # If stop fails, try to reset
-            pass
-        finally:
-            # Restore original instance or reset
-            UTPSocketManager._instance = old_instance
+    async def test_get_instance_returns_independent_managers(self):
+        """Test get_instance returns independent manager instances."""
+        manager1 = await UTPSocketManager.get_instance()
+        manager2 = await UTPSocketManager.get_instance()
+        assert manager1 is not manager2
+
+        # Cleanup managers started by compatibility path
+        if manager1._initialized:
+            await manager1.stop()
+        if manager2._initialized:
+            await manager2.stop()
 
     def test_get_statistics(self, socket_manager):
         """Test getting statistics."""

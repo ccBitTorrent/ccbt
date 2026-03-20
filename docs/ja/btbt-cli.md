@@ -391,22 +391,20 @@ uv run btbt files priority abc123... 2 maximum
 
 ## 設定コマンド
 
-設定コマンドグループ: [ccbt/cli/config_commands.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/config_commands.py)
+`config` コマンドグループは [ccbt/cli/config_group.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/config_group.py) で定義されています。コアは [ccbt/cli/config_commands.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/config_commands.py)、追加のサブコマンド（schema、import、export、template など）は [ccbt/cli/config_commands_extended.py](https://github.com/ccBitTorrent/ccbt/blob/main/ccbt/cli/config_commands_extended.py) にあり、**同じ** `btbt config` グループに登録されます（別の `config-extended` コマンドはありません）。
 
 ### config
 
-設定を管理します。
-
-実装: [ccbt/cli/main.py:config](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/main.py#L810)
+設定を管理します（show、get、set、apply、describe、validate など）。
 
 使用方法:
 ```bash
-uv run btbt config [subcommand]
+uv run btbt config --help
+uv run btbt config describe --format table
+uv run btbt config set network.listen_port 6882 --dry-run
 ```
 
-拡張設定コマンド: [ccbt/cli/config_commands_extended.py](https://github.com/ccBitTorrent/ccbittorrent/blob/main/ccbt/cli/config_commands_extended.py)
-
-詳細な設定オプションについては [設定ガイド](configuration.md) を参照してください。
+詳細は [設定ガイド](configuration.md) を参照してください。
 
 ## 高度なコマンド
 

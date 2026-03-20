@@ -139,6 +139,8 @@ class AsyncUDPTrackerClient:
         self._budget_refresh_interval: float = 1.0
         self._pending_cleanup_interval: float = 30.0
         self._last_pending_cleanup: float = 0.0
+        self._stale_response_transaction_ids: dict[int, float] = {}
+        self._stale_response_allowlist_seconds: float = 30.0
 
         # Background tasks
         self._cleanup_task: Optional[asyncio.Task] = None
@@ -195,6 +197,42 @@ class AsyncUDPTrackerClient:
             self._pending_request_stale_history.append(event_time)
         else:
             self._pending_request_success_history.append(event_time)
+
+    def _mark_stale_transaction(
+        self, transaction_id: int, *, now: Optional[float] = None
+    ) -> None:
+        """Track transaction IDs that are expected to be late and suppress noisy warnings."""
+        self._stale_response_transaction_ids[transaction_id] = (
+            time.time() if now is None else now
+        )
+
+    def _is_expected_stale_transaction(
+        self, transaction_id: int, *, now: Optional[float] = None
+    ) -> bool:
+        """Check if a response transaction ID should be treated as expected stale."""
+        now = time.time() if now is None else now
+        seen_at = self._stale_response_transaction_ids.get(transaction_id)
+        if seen_at is None:
+            return False
+
+        if now - seen_at > self._stale_response_allowlist_seconds:
+            self._stale_response_transaction_ids.pop(transaction_id, None)
+            return False
+        return True
+
+    def _cleanup_stale_response_transaction_ids(
+        self, now: Optional[float] = None
+    ) -> None:
+        """Drop old expected-stale IDs from the suppression allowlist."""
+        current_time = time.time() if now is None else now
+        cutoff = current_time - self._stale_response_allowlist_seconds
+        expired = [
+            tx_id
+            for tx_id, seen_at in self._stale_response_transaction_ids.items()
+            if seen_at < cutoff
+        ]
+        for tx_id in expired:
+            self._stale_response_transaction_ids.pop(tx_id, None)
 
     def _trim_request_history(self, now: float) -> None:
         """Trim stale completion history entries from the tracking window."""
@@ -359,6 +397,42 @@ class AsyncUDPTrackerClient:
                     e,
                     exc_info=True,
                 )
+
+    def _trigger_immediate_connection(
+        self, peers: list[dict[str, Any]], tracker_url: str, log_prefix: str
+    ) -> None:
+        """Trigger immediate peer connection callback in a context-aware way."""
+        if not self.on_peers_received:
+            return
+        try:
+            # Primary path: schedule the callback in the running event loop.
+            asyncio.get_running_loop()
+            task = asyncio.create_task(
+                self._call_immediate_connection(peers, tracker_url)
+            )
+            task.add_done_callback(
+                lambda t: self.logger.debug("%s callback task completed", log_prefix)
+                if t.exception() is None
+                else self.logger.warning(
+                    "%s callback task failed: %s",
+                    log_prefix,
+                    t.exception(),
+                )
+            )
+        except RuntimeError:
+            # No running loop - execute inline for unit-test / sync paths.
+            if asyncio.iscoroutinefunction(self.on_peers_received):
+                asyncio.run(self._call_immediate_connection(peers, tracker_url))
+            else:
+                try:
+                    self.on_peers_received(peers, tracker_url)
+                    self.logger.debug("%s callback completed", log_prefix)
+                except Exception as e:
+                    self.logger.warning(
+                        "%s callback failed: %s",
+                        log_prefix,
+                        e,
+                    )
 
     def _raise_connection_failed(self) -> None:
         """Raise ConnectionError for failed tracker connection."""
@@ -2164,6 +2238,7 @@ class AsyncUDPTrackerClient:
             self._pending_request_timestamps.pop(transaction_id, None)
             if future is not None and not future.done():
                 future.cancel()
+            self._mark_stale_transaction(transaction_id, now=now)
             self._record_pending_request_result(stale=True, now=now)
             self.logger.warning(
                 "Cancelling stale tracker request transaction_id=%d (age=%.1fs)",
@@ -2177,17 +2252,18 @@ class AsyncUDPTrackerClient:
             oldest = sorted(
                 self._pending_request_timestamps.items(), key=lambda item: item[1]
             )
-            for transaction_id, created_at in oldest[:overflow]:
+            for transaction_id, _created_at in oldest[:overflow]:
                 future = self.pending_requests.pop(transaction_id, None)
                 self._pending_request_timestamps.pop(transaction_id, None)
                 if future is not None and not future.done():
                     future.cancel()
-                self._record_pending_request_result(stale=True, now=now)
-                self.logger.warning(
-                    "Dropping oldest tracker request to enforce cap: transaction_id=%d, age=%.1fs",
-                    transaction_id,
-                    now - created_at,
-                )
+            self._mark_stale_transaction(transaction_id, now=now)
+            self._record_pending_request_result(stale=True, now=now)
+            self.logger.warning(
+                "Dropping oldest tracker request to enforce cap: transaction_id=%d, age=%.1fs",
+                transaction_id,
+                now - _created_at,
+            )
         return len(stale_tids)
 
     async def _wait_for_response(
@@ -2198,6 +2274,7 @@ class AsyncUDPTrackerClient:
         """Wait for UDP tracker response."""
         future = asyncio.Future()
         now = time.time()
+        start_wait = now
         pruned_count = self._prune_stale_pending_requests(
             now=now, timeout=timeout, additional_new=1
         )
@@ -2215,6 +2292,7 @@ class AsyncUDPTrackerClient:
         try:
             return await asyncio.wait_for(future, timeout=timeout)
         except asyncio.CancelledError:
+            self._mark_stale_transaction(transaction_id, now=time.time())
             self._record_pending_request_result(stale=True, now=time.time())
             self.logger.debug(
                 "Tracker response future cancelled for transaction_id=%d",
@@ -2224,19 +2302,30 @@ class AsyncUDPTrackerClient:
         except asyncio.TimeoutError:
             # Note: Enhanced logging for timeouts - this is a common failure mode
             self._record_pending_request_result(stale=True, now=time.time())
+            elapsed = time.time() - start_wait
+            oldest = (
+                now - min(self._pending_request_timestamps.values(), default=now)
+                if self._pending_request_timestamps
+                else 0.0
+            )
+            self._mark_stale_transaction(transaction_id, now=time.time())
             self.logger.warning(
                 "Timeout waiting for tracker response (transaction_id=%d, timeout=%.1fs). "
                 "This may indicate: (1) Tracker is slow/unresponsive, (2) Network issues, "
                 "or (3) Firewall blocking responses. "
-                "Pending requests: %d",
+                "Pending requests: %d, elapsed=%.1fs, oldest_age=%.1fs, pruned=%d",
                 transaction_id,
                 timeout,
                 len(self.pending_requests),
+                elapsed,
+                oldest,
+                pruned_count,
             )
             return None
         finally:
             self.pending_requests.pop(transaction_id, None)
             self._pending_request_timestamps.pop(transaction_id, None)
+            self._cleanup_stale_response_transaction_ids(now=time.time())
 
     @staticmethod
     def _is_ipv6_address(addr: tuple[str, int]) -> bool:
@@ -2301,6 +2390,47 @@ class AsyncUDPTrackerClient:
                 self.logger.debug("Error parsing peer at offset %d: %s", i, e)
         return (peers, invalid_peers)
 
+    def _extract_announce_peers(
+        self, data: bytes, _addr: tuple[str, int]
+    ) -> tuple[list[dict[str, Any]], int, int, int]:
+        """Extract peer list from ANNOUNCE response.
+
+        Returns a tuple of (peers, interval, seeders, leechers).
+        """
+        if len(data) < 20:
+            return [], 0, 0, 0
+
+        try:
+            interval = struct.unpack("!I", data[8:12])[0]
+            leechers = struct.unpack("!I", data[12:16])[0]
+            seeders = struct.unpack("!I", data[16:20])[0]
+        except struct.error:
+            self.logger.debug(
+                "Failed to parse ANNOUNCE header from %s:%d",
+                _addr[0] if _addr else "unknown",
+                _addr[1] if _addr else 0,
+            )
+            return [], 0, 0, 0
+
+        peers = []
+        invalid_peers = 0
+        peer_data = data[20:]
+        is_ipv6 = self._is_ipv6_address(_addr)
+        stride = 18 if is_ipv6 else 6
+        if peer_data and len(peer_data) % stride != 0:
+            peer_data = peer_data[: len(peer_data) - (len(peer_data) % stride)]
+
+        if peer_data:
+            peers, invalid_peers = self._parse_peers_compact(peer_data, is_ipv6)
+
+        if invalid_peers > 0:
+            self.logger.debug(
+                "Skipped %d invalid peer(s) from orphaned announce response",
+                invalid_peers,
+            )
+
+        return peers, interval, seeders, leechers
+
     @staticmethod
     def _build_bep41_options(tracker_url: str) -> bytes:
         """Build BEP 41 extension options (URLData) to append after byte 98 of announce request."""
@@ -2364,20 +2494,48 @@ class AsyncUDPTrackerClient:
                 # Enhanced logging for unmatched responses
                 # This can happen if: (1) Response arrived after timeout, (2) Transaction ID collision,
                 # or (3) Response from different tracker/client
-                self.logger.warning(
-                    "Received UDP response with transaction_id=%d from %s:%d but no pending request found. "
-                    "This may indicate: (1) Response arrived after timeout, (2) Transaction ID collision, "
-                    "or (3) Response from different tracker/client. "
-                    "Pending transaction IDs: %s (count: %d). Response action: %d",
-                    transaction_id,
-                    _addr[0] if _addr else "unknown",
-                    _addr[1] if _addr else 0,
-                    sorted(self.pending_requests.keys())[
-                        :10
-                    ],  # Show first 10 for brevity
-                    len(self.pending_requests),
-                    action,
-                )
+                if self._is_expected_stale_transaction(transaction_id, now=time.time()):
+                    self.logger.debug(
+                        "Ignoring stale tracker response for timed-out transaction_id=%d from %s:%d (action=%d)",
+                        transaction_id,
+                        _addr[0] if _addr else "unknown",
+                        _addr[1] if _addr else 0,
+                        action,
+                    )
+                else:
+                    self.logger.warning(
+                        "Received UDP response with transaction_id=%d from %s:%d but no pending request found. "
+                        "This may indicate: (1) Response arrived after timeout, (2) Transaction ID collision, "
+                        "or (3) Response from different tracker/client. "
+                        "Pending transaction IDs: %s (count: %d). Response action: %d",
+                        transaction_id,
+                        _addr[0] if _addr else "unknown",
+                        _addr[1] if _addr else 0,
+                        sorted(self.pending_requests.keys())[
+                            :10
+                        ],  # Show first 10 for brevity
+                        len(self.pending_requests),
+                        action,
+                    )
+                if action == TrackerAction.ANNOUNCE.value:
+                    peers, interval, seeders, leechers = self._extract_announce_peers(
+                        data, _addr
+                    )
+                    if peers:
+                        tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
+                        self.logger.info(
+                            "UDP Tracker late ANNOUNCE response for %s (transaction_id=%d) recovered "
+                            "with %d peers (interval=%d, seeders=%d, leechers=%d)",
+                            tracker_url,
+                            transaction_id,
+                            len(peers),
+                            interval,
+                            seeders,
+                            leechers,
+                        )
+                        self._trigger_immediate_connection(
+                            peers, tracker_url, "Late-response immediate connection"
+                        )
                 return
 
             future = self.pending_requests[transaction_id]
@@ -2578,30 +2736,10 @@ class AsyncUDPTrackerClient:
                         )
                         # Call immediate connection callback if registered
                         if self.on_peers_received:
-                            try:
-                                tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
-                                # Call callback asynchronously to avoid blocking
-                                # Store task reference to prevent garbage collection
-                                task = asyncio.create_task(
-                                    self._call_immediate_connection(peers, tracker_url)
-                                )
-                                # Add done callback to log errors if task fails
-                                task.add_done_callback(
-                                    lambda t: self.logger.debug(
-                                        "Immediate connection callback task completed"
-                                    )
-                                    if t.exception() is None
-                                    else self.logger.warning(
-                                        "Immediate connection callback task failed: %s",
-                                        t.exception(),
-                                    )
-                                )
-                            except Exception as e:
-                                self.logger.warning(
-                                    "Failed to trigger immediate peer connection: %s",
-                                    e,
-                                    exc_info=True,
-                                )
+                            tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
+                            self._trigger_immediate_connection(
+                                peers, tracker_url, "Immediate connection"
+                            )
 
             elif action == TrackerAction.SCRAPE.value:
                 # Scrape response format:
@@ -2646,6 +2784,7 @@ class AsyncUDPTrackerClient:
                 now = self._last_pending_cleanup
                 await self._cleanup_sessions()
                 self._cleanup_stale_pending_requests(now=now)
+                self._cleanup_stale_response_transaction_ids(now=now)
             except asyncio.CancelledError:
                 break  # pragma: no cover - Cancellation tested separately
             except Exception:  # pragma: no cover - Exception handling tested separately

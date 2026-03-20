@@ -28,7 +28,6 @@ from ccbt.cli.advanced_commands import recover as recover_cmd
 from ccbt.cli.advanced_commands import security as security_cmd
 from ccbt.cli.advanced_commands import test as test_cmd
 from ccbt.cli.config_commands import config as config_group
-from ccbt.cli.config_commands_extended import config_extended
 from ccbt.cli.create_torrent import create_torrent
 from ccbt.cli.daemon_commands import daemon as daemon_group
 from ccbt.cli.downloads import (
@@ -1334,21 +1333,23 @@ def cli(ctx, config, verbose, debug):
                 from ccbt.models import LogLevel
                 from ccbt.utils.logging_config import setup_logging
 
-                # Temporarily override log level based on verbosity
-                original_log_level = cfg.observability.log_level
-
-                # Map verbosity to log level: -v=INFO, -vv/-vvv=DEBUG
-                if verbosity_manager.is_debug():
-                    cfg.observability.log_level = LogLevel.DEBUG
+                effective_log_level = cfg.observability.log_level
+                if verbosity_manager.is_trace():
+                    # Preserve dedicated trace behavior for -vvv
+                    effective_log_level = (
+                        verbosity_manager.logging_level_for_verbosity()
+                    )
+                elif verbosity_manager.is_debug():
+                    # Preserve previous behavior: -vv behaves as DEBUG
+                    effective_log_level = LogLevel.DEBUG
                 elif verbosity_manager.is_verbose():
-                    cfg.observability.log_level = LogLevel.INFO
-                # else: keep original level (usually INFO)
+                    # Preserve previous behavior: -v behaves as INFO
+                    effective_log_level = LogLevel.INFO
+                # else: keep original configured level
 
-                # Setup logging with verbosity-aware level
-                setup_logging(cfg.observability)
-
-                # Restore original log level (verbosity only affects console output)
-                cfg.observability.log_level = original_log_level
+                setup_logging(
+                    cfg.observability, effective_log_level=effective_log_level
+                )
 
     # docs command removed; docs are maintained in repository
 
@@ -1408,7 +1409,7 @@ def cli(ctx, config, verbose, debug):
 )
 @click.option(
     "--log-level",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    type=click.Choice(["DEBUG", "TRACE", "INFO", "WARNING", "ERROR", "CRITICAL"]),
 )
 @click.option("--enable-metrics", is_flag=True, help=_("Enable metrics"))
 @click.option("--disable-metrics", is_flag=True, help=_("Disable metrics"))
@@ -1764,7 +1765,7 @@ def download(
 )
 @click.option(
     "--log-level",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    type=click.Choice(["DEBUG", "TRACE", "INFO", "WARNING", "ERROR", "CRITICAL"]),
 )
 @click.option("--enable-metrics", is_flag=True, help=_("Enable metrics"))
 @click.option("--disable-metrics", is_flag=True, help=_("Disable metrics"))
@@ -2306,25 +2307,6 @@ def status(ctx):
 
     try:
         asyncio.run(_get_status_async())
-    except Exception as e:
-        console.print(_("[red]Error: {error}[/red]").format(error=e))
-        raise click.ClickException(str(e)) from e
-
-
-@cli.command()
-@click.pass_context
-def config(ctx):
-    """Manage configuration."""
-    console = Console()
-
-    try:
-        # Load configuration
-        config_manager = ConfigManager(ctx.obj["config"])
-        config = config_manager.config
-
-        # Show configuration
-        show_config(config, console)
-
     except Exception as e:
         console.print(_("[red]Error: {error}[/red]").format(error=e))
         raise click.ClickException(str(e)) from e
@@ -3587,7 +3569,6 @@ async def start_debug_mode(_session: AsyncSessionManager, console: Console) -> N
 
 # Register external command groups at module level so they appear in --help
 cli.add_command(config_group)
-cli.add_command(config_extended)
 cli.add_command(daemon_group)
 cli.add_command(torrent_group)
 cli.add_command(torrent_control_group)

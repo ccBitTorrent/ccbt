@@ -44,7 +44,6 @@ from ccbt.peer.peer import (
     InterestedMessage,
     KeepAliveMessage,
     MessageBuffer,
-    MessageDecoder,
     NotInterestedMessage,
     OptimizedMessageDecoder,
     PieceMessage,

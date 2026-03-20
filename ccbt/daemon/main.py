@@ -1224,7 +1224,7 @@ async def main() -> int:
     parser.add_argument(
         "--log-level",
         type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        choices=["DEBUG", "TRACE", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set log level directly",
     )
 
@@ -1254,21 +1254,26 @@ async def main() -> int:
 
         # Note: Apply verbosity/log-level overrides from CLI arguments
         # This ensures daemon respects verbosity flags just like CLI commands
+        effective_log_level = config_manager.config.observability.log_level
         if args.log_level:
             from ccbt.models import LogLevel
 
-            config_manager.config.observability.log_level = LogLevel(args.log_level)
+            effective_log_level = LogLevel(args.log_level)
         elif args.verbose > 0:
             from ccbt.cli.verbosity import VerbosityManager
             from ccbt.models import LogLevel
 
             verbosity_manager = VerbosityManager.from_count(args.verbose)
-            if verbosity_manager.is_debug():
-                config_manager.config.observability.log_level = LogLevel.DEBUG
+            if verbosity_manager.is_trace():
+                effective_log_level = verbosity_manager.logging_level_for_verbosity()
+            elif verbosity_manager.is_debug():
+                effective_log_level = LogLevel.DEBUG
             elif verbosity_manager.is_verbose():
-                config_manager.config.observability.log_level = LogLevel.INFO
+                effective_log_level = LogLevel.INFO
 
-        setup_logging(config_manager.config.observability)
+        setup_logging(
+            config_manager.config.observability, effective_log_level=effective_log_level
+        )
         # Get logger after setup_logging
         from ccbt.utils.logging_config import get_logger
 

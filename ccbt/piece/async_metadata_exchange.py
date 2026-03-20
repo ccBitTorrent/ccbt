@@ -136,6 +136,10 @@ class AsyncMetadataExchange:
         self.on_error: Optional[Callable] = None
 
         self.logger = logging.getLogger(__name__)
+        self._result_reported = False
+        self._completion_reason: Optional[str] = None
+        self._failure_reason: Optional[str] = None
+        self._last_error: Optional[Exception] = None
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -145,6 +149,95 @@ class AsyncMetadataExchange:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit with proper cleanup."""
         await self.stop()
+
+    def _reset_fetch_state(self) -> None:
+        """Reset per-fetch state for deterministic result reporting."""
+        self.completed = False
+        self.metadata_data = None
+        self.metadata_dict = None
+        self.metadata_pieces.clear()
+        self._result_reported = False
+        self._completion_reason = None
+        self._failure_reason = None
+        self._last_error = None
+
+    async def _emit_fetch_failed(
+        self,
+        reason: str,
+        detail: Optional[str] = None,
+        error: Optional[Exception] = None,
+    ) -> None:
+        """Emit a single metadata-fetch-failed result and optional callback."""
+        if self._result_reported:
+            return
+
+        self._result_reported = True
+        self.completed = False
+        self._completion_reason = reason
+        self._failure_reason = reason
+        if error is None:
+            message = reason if detail is None else f"{reason}: {detail}"
+            error = RuntimeError(message)
+        self._last_error = error
+
+        try:
+            from ccbt.utils.events import Event, EventType, emit_event
+
+            payload: dict[str, Any] = {
+                "info_hash": self.info_hash.hex(),
+                "reason": reason,
+            }
+            if detail is not None:
+                payload["detail"] = detail
+            await emit_event(
+                Event(
+                    event_type=EventType.METADATA_FETCH_FAILED.value,
+                    data=payload,
+                )
+            )
+        except Exception as e:
+            self.logger.debug("Failed to emit METADATA_FETCH_FAILED event: %s", e)
+
+        if self.on_error:
+            self.on_error(error)
+
+    async def _emit_fetch_completed(self, metadata_dict: dict[bytes, Any]) -> None:
+        """Emit completion event and invoke completion callback once."""
+        if self._result_reported:
+            return
+
+        self._result_reported = True
+        self.completed = True
+        self._completion_reason = "completed"
+        self._failure_reason = None
+
+        try:
+            from ccbt.utils.events import Event, EventType, emit_event
+
+            metadata_size = (
+                len(self.metadata_data)
+                if hasattr(self, "metadata_data") and self.metadata_data
+                else 0
+            )
+            await emit_event(
+                Event(
+                    event_type=EventType.METADATA_FETCH_COMPLETED.value,
+                    data={
+                        "info_hash": self.info_hash.hex(),
+                        "metadata_size": metadata_size,
+                    },
+                )
+            )
+        except Exception as e:
+            self.logger.debug("Failed to emit METADATA_FETCH_COMPLETED event: %s", e)
+
+        if self.on_complete:
+            self.on_complete(metadata_dict)
+
+        self.logger.info(
+            "Metadata fetch completed (info_hash=%s)",
+            self.info_hash.hex()[:16] + "...",
+        )
 
     def _raise_connection_error(self, message: str) -> None:
         """Raise a ConnectionError with the given message."""
@@ -200,6 +293,7 @@ class AsyncMetadataExchange:
             Parsed metadata dictionary or None if failed
 
         """
+        self._reset_fetch_state()
         self.logger.info(
             "Starting metadata fetch from %s peers",
             min(len(peers), max_peers),
@@ -223,7 +317,13 @@ class AsyncMetadataExchange:
 
         # If no peers, return None immediately
         if not peers or max_peers <= 0:
-            self.logger.warning("No peers available for metadata fetch")
+            if not peers:
+                await self._emit_fetch_failed("no_peers", "No peers available")
+            else:
+                await self._emit_fetch_failed(
+                    "invalid_max_peers",
+                    f"max_peers must be > 0, got {max_peers}",
+                )
             return None
 
         # Create connection tasks
@@ -237,22 +337,10 @@ class AsyncMetadataExchange:
         try:
             await asyncio.wait_for(self._wait_for_completion(), timeout=timeout)
         except asyncio.TimeoutError:
-            self.logger.warning("Metadata fetch timed out")
-            # Emit METADATA_FETCH_FAILED event
-            try:
-                from ccbt.utils.events import Event, EventType, emit_event
-
-                await emit_event(
-                    Event(
-                        event_type=EventType.METADATA_FETCH_FAILED.value,
-                        data={
-                            "info_hash": self.info_hash.hex(),
-                            "reason": "timeout",
-                        },
-                    )
-                )
-            except Exception as e:
-                self.logger.debug("Failed to emit METADATA_FETCH_FAILED event: %s", e)
+            await self._emit_fetch_failed(
+                "timeout",
+                f"Metadata fetch timed out after {timeout:.1f}s",
+            )
             return None
 
         # Cancel remaining tasks
@@ -264,7 +352,10 @@ class AsyncMetadataExchange:
         if self.metadata_dict:
             # Verify metadata contains required fields
             if b"info" not in self.metadata_dict:
-                self.logger.error("Metadata missing 'info' dictionary")
+                await self._emit_fetch_failed(
+                    "missing_info",
+                    "Metadata payload missing required 'info' field",
+                )
                 return None
 
             # Verify info_hash matches if we have it
@@ -283,12 +374,14 @@ class AsyncMetadataExchange:
                     and self.info_hash
                     and info_hash_calculated != self.info_hash
                 ):
-                    self.logger.error(
-                        "Metadata info_hash mismatch: expected %s, got %s",
+                    expected = (
                         self.info_hash.hex()
                         if isinstance(self.info_hash, bytes)
-                        else str(self.info_hash),
-                        info_hash_calculated.hex(),
+                        else str(self.info_hash)
+                    )
+                    await self._emit_fetch_failed(
+                        "info_hash_mismatch",
+                        f"expected={expected} got={info_hash_calculated.hex()}",
                     )
                     return None
 
@@ -296,48 +389,22 @@ class AsyncMetadataExchange:
                     "Metadata validated successfully (info_hash: %s)",
                     info_hash_calculated.hex()[:16] + "...",
                 )
-                # Emit METADATA_FETCH_COMPLETED event
-                try:
-                    from ccbt.utils.events import Event, EventType, emit_event
-
-                    metadata_size = (
-                        len(self.metadata_data)
-                        if hasattr(self, "metadata_data") and self.metadata_data
-                        else 0
-                    )
-                    await emit_event(
-                        Event(
-                            event_type=EventType.METADATA_FETCH_COMPLETED.value,
-                            data={
-                                "info_hash": self.info_hash.hex(),
-                                "metadata_size": metadata_size,
-                            },
-                        )
-                    )
-                except Exception as e:
-                    self.logger.debug(
-                        "Failed to emit METADATA_FETCH_COMPLETED event: %s", e
-                    )
             except Exception:
                 self.logger.exception("Metadata validation failed")
-                # Emit METADATA_FETCH_FAILED event for validation failure
-                try:
-                    from ccbt.utils.events import Event, EventType, emit_event
-
-                    await emit_event(
-                        Event(
-                            event_type=EventType.METADATA_FETCH_FAILED.value,
-                            data={
-                                "info_hash": self.info_hash.hex(),
-                                "reason": "validation_failed",
-                            },
-                        )
-                    )
-                except Exception as e:
-                    self.logger.debug(
-                        "Failed to emit METADATA_FETCH_FAILED event: %s", e
-                    )
+                await self._emit_fetch_failed(
+                    "validation_failed",
+                    "Metadata validation raised an exception",
+                )
                 return None
+
+            if not self._result_reported:
+                await self._emit_fetch_completed(self.metadata_dict)
+
+        if self.metadata_dict is None:
+            await self._emit_fetch_failed(
+                "incomplete_metadata",
+                "Metadata fetch did not produce a complete payload",
+            )
 
         return self.metadata_dict  # pragma: no cover - Return path after timeout, difficult to test without actual metadata fetch
 
@@ -988,6 +1055,9 @@ class AsyncMetadataExchange:
 
     async def _assemble_metadata(self) -> None:
         """Assemble complete metadata from pieces."""
+        if self._result_reported:
+            return
+
         try:
             # Sort pieces by index and concatenate
             sorted_pieces = sorted(self.metadata_pieces.items())
@@ -1003,23 +1073,24 @@ class AsyncMetadataExchange:
             if calculated_hash == self.info_hash:
                 self.metadata_data = metadata_data
                 self.metadata_dict = metadata_dict
-                self.completed = True
+                await self._emit_fetch_completed(metadata_dict)
 
                 self.logger.info(
                     "METADATA_EXCHANGE: Successfully assembled metadata (size=%d bytes, info_hash=%s)",
                     len(metadata_data),
                     calculated_hash.hex()[:16] + "...",
                 )
-
-                if self.on_complete:
-                    self.on_complete(metadata_dict)
             else:
-                self.logger.warning("Metadata hash validation failed")
+                await self._emit_fetch_failed(
+                    "hash_mismatch",
+                    f"expected={self.info_hash.hex()} calculated={calculated_hash.hex()}",
+                )
 
         except Exception as e:
             self.logger.exception("Failed to assemble metadata")
-            if self.on_error:
-                self.on_error(e)
+            await self._emit_fetch_failed(
+                "assembly_error", "Failed to assemble metadata", e
+            )
 
     async def _wait_for_completion(self) -> None:
         """Wait for metadata fetch to complete."""

@@ -97,7 +97,6 @@ class SplashManager:
         task_name: str,
         task_duration: Optional[float] = None,
         max_duration: float = 90.0,
-        show_progress: bool = True,
     ) -> None:
         """Show splash screen for a long-running task.
         
@@ -105,7 +104,6 @@ class SplashManager:
             task_name: Name of the task
             task_duration: Expected task duration (None = use max_duration)
             max_duration: Maximum splash duration
-            show_progress: Whether to show progress messages
         """
         if not self.should_show_splash():
             # Don't show splash if verbosity flags are set
@@ -122,13 +120,7 @@ class SplashManager:
         # Store reference to splash manager in splash screen for stop event checking
         splash._splash_manager = self  # type: ignore[attr-defined]
         
-        # Create adapter for message overlay
-        adapter = self.create_adapter()
-        
         # Start splash screen in background
-        if show_progress:
-            adapter.update_message(f"Starting {task_name}...")
-        
         # Run splash screen
         try:
             # Store reference to running task for cancellation
@@ -158,28 +150,12 @@ class SplashManager:
                 except (asyncio.CancelledError, Exception):
                     pass
             
-            if adapter:
-                adapter.clear_messages()
             # Ensure console is cleared when splash ends
             if self.console:
                 try:
                     self.console.clear()
                 except Exception:
                     pass
-    
-    def update_progress_message(self, message: str) -> None:
-        """Update progress message in splash screen.
-        
-        Args:
-            message: Progress message
-        """
-        if self._adapter:
-            self._adapter.update_message(message)
-    
-    def clear_progress_messages(self) -> None:
-        """Clear progress messages."""
-        if self._adapter:
-            self._adapter.clear_messages()
     
     def stop_splash(self) -> None:
         """Stop the splash screen animation immediately.
@@ -204,9 +180,7 @@ class SplashManager:
                 # Not in an event loop or task is in different thread - that's OK
                 pass
         
-        # Clear progress messages
-        if self._adapter:
-            self._adapter.clear_messages()
+        # Clear progress messages handled by stopping animation lifecycle.
         
         # CRITICAL: Clear the console to stop the Live context display
         # This ensures the splash screen actually stops displaying
@@ -283,7 +257,6 @@ async def show_splash_if_needed(
         await manager.show_splash_for_task(
             task_name=task_name,
             max_duration=duration,
-            show_progress=True,
         )
         return manager
     

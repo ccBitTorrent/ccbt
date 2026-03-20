@@ -15,9 +15,9 @@ build:
     - pip install -r dev/requirements-rtd.txt
     # Install the project itself (needed for mkdocstrings to parse code)
     - pip install -e .
-    # Use the patched build script to ensure i18n plugin works correctly
-    # This applies patches to mkdocs-static-i18n before building
-    - python dev/build_docs_patched_clean.py
+    # Use the patched build script to ensure i18n plugin works correctly.
+    # Keep this strict for docs parity with CI.
+    - MKDOCS_STRICT=true python dev/build_docs_patched_clean.py
 
 # MkDocs configuration
 # Point to the mkdocs.yml file in the dev directory

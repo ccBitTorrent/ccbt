@@ -251,8 +251,8 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                     ip = peer.get("ip", "unknown")
                     port = peer.get("port", 0)
                     client = peer.get("client") or "?"
-                    download_rate = peer.get("total_download_rate", 0.0)
-                    upload_rate = peer.get("total_upload_rate", 0.0)
+                download_rate = float(peer.get("download_rate", 0.0))
+                upload_rate = float(peer.get("upload_rate", 0.0))
                     info_hashes = peer.get("info_hashes", [])
                     connection_duration = peer.get("connection_duration", 0.0)
                     
@@ -337,8 +337,14 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                 else:
                     return f"{rate:.2f} B/s"
             
-            self._peer_detail_table.add_row(_("Download Rate"), format_rate(peer_data.get("total_download_rate", 0.0)))  # type: ignore[attr-defined]
-            self._peer_detail_table.add_row(_("Upload Rate"), format_rate(peer_data.get("total_upload_rate", 0.0)))  # type: ignore[attr-defined]
+            self._peer_detail_table.add_row(
+                _("Download Rate"),
+                format_rate(peer_data.get("download_rate", 0.0)),
+            )  # type: ignore[attr-defined]
+            self._peer_detail_table.add_row(
+                _("Upload Rate"),
+                format_rate(peer_data.get("upload_rate", 0.0)),
+            )  # type: ignore[attr-defined]
             
             # Format bytes
             def format_bytes(bytes_val: int) -> str:

@@ -512,7 +512,10 @@ class TorrentAdditionHandler:
             session.info.name,
         )
         try:
-            metadata_fetched = await session.handle_magnet_metadata_exchange(peer_list)
+            metadata_fetched = await session.handle_magnet_metadata_exchange(
+                peer_list,
+                metadata_source="torrent_addition_peers",
+            )
             if metadata_fetched:
                 self.logger.info(
                     "Emergency: Metadata exchange succeeded with %s peers for %s",
@@ -533,7 +536,8 @@ class TorrentAdditionHandler:
 
             fallback_setup = DHTDiscoverySetup(session)
             metadata_fetched = await fallback_setup.handle_magnet_metadata_exchange(
-                peer_list
+                peer_list,
+                metadata_source="torrent_addition_fallback",
             )
             if metadata_fetched:
                 self.logger.info(

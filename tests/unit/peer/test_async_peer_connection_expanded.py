@@ -29,7 +29,6 @@ from ccbt.peer.peer import (
     HaveMessage,
     InterestedMessage,
     KeepAliveMessage,
-    MessageDecoder,
     NotInterestedMessage,
     PeerInfo,
     PieceMessage,
@@ -75,6 +74,7 @@ async def async_peer_manager(mock_torrent_data, mock_piece_manager):
         torrent_data=mock_torrent_data,
         piece_manager=mock_piece_manager,
     )
+    manager._running = True
     yield manager
     # Ensure clean shutdown - with timeout to prevent hanging
     try:
@@ -408,6 +408,9 @@ class TestAsyncPeerConnectionManagerBasics:
         # Create existing connection
         connection = AsyncPeerConnection(peer_info, async_peer_manager.torrent_data)
         connection.state = ConnectionState.ACTIVE
+        connection.reader = AsyncMock()
+        connection.writer = MagicMock()
+        connection.writer.is_closing = MagicMock(return_value=False)
         async_peer_manager.connections[str(peer_info)] = connection
 
         peer_list = [{"ip": peer_info.ip, "port": peer_info.port}]
@@ -418,9 +421,62 @@ class TestAsyncPeerConnectionManagerBasics:
         assert len(async_peer_manager.connections) == 1
 
     @pytest.mark.asyncio
-    async def test_connect_to_peers_mixed_batch_uses_per_peer_result(self, async_peer_manager):
+    async def test_connect_to_peers_retries_when_existing_connection_stale_and_incomplete(
+        self, async_peer_manager, peer_info, monkeypatch
+    ):
+        """Stale active peers with no bitfield/have should be disconnected and retried."""
+        existing = AsyncPeerConnection(peer_info, async_peer_manager.torrent_data)
+        existing.state = ConnectionState.ACTIVE
+        existing.peer_state.bitfield = None
+        existing.peer_state.pieces_we_have = set()
+        existing.stats.last_activity = time.time() - 45.0
+        existing.reader = AsyncMock()
+        existing.writer = MagicMock()
+        existing.writer.is_closing = MagicMock(return_value=False)
+        async_peer_manager.connections[str(peer_info)] = existing
+
+        connect_mock = AsyncMock()
+        monkeypatch.setattr(async_peer_manager, "_connect_to_peer", connect_mock)
+
+        await async_peer_manager.connect_to_peers(
+            [{"ip": peer_info.ip, "port": peer_info.port}]
+        )
+
+        assert connect_mock.await_count == 1
+        assert len(async_peer_manager.connections) == 0
+
+    @pytest.mark.asyncio
+    async def test_connect_to_peers_skips_active_healthy_duplicate(
+        self, async_peer_manager, peer_info, monkeypatch
+    ):
+        """Healthy active duplicates should be skipped and not reconnected."""
+        existing = AsyncPeerConnection(peer_info, async_peer_manager.torrent_data)
+        existing.state = ConnectionState.ACTIVE
+        existing.peer_state.bitfield = b"\xff"
+        existing.stats.last_activity = time.time()
+        existing.reader = AsyncMock()
+        existing.writer = MagicMock()
+        existing.writer.is_closing = MagicMock(return_value=False)
+        async_peer_manager.connections[str(peer_info)] = existing
+
+        connect_mock = AsyncMock()
+        monkeypatch.setattr(async_peer_manager, "_connect_to_peer", connect_mock)
+
+        await async_peer_manager.connect_to_peers(
+            [{"ip": peer_info.ip, "port": peer_info.port}]
+        )
+
+        assert connect_mock.await_count == 0
+        assert len(async_peer_manager.connections) == 1
+
+    @pytest.mark.asyncio
+    async def test_connect_to_peers_mixed_batch_uses_per_peer_result(
+        self, async_peer_manager
+    ):
         """Regression: each peer's failure must be classified using its own conn_result, not stale result."""
         async_peer_manager._running = True
+        mock_logger = MagicMock()
+        async_peer_manager.logger = mock_logger
         peer_list = [
             {"ip": "192.0.2.1", "port": 6881},
             {"ip": "192.0.2.2", "port": 6882},
@@ -428,20 +484,41 @@ class TestAsyncPeerConnectionManagerBasics:
         # First peer: timeout, second peer: connection refused. Without the fix, second is misclassified.
         with patch(
             "asyncio.open_connection",
-            side_effect=[asyncio.TimeoutError("timed out"), ConnectionError("connection refused")],
+            side_effect=[
+                asyncio.TimeoutError("timed out"),
+                ConnectionError("connection refused"),
+            ]
+            * 20,
         ):
             await async_peer_manager.connect_to_peers(peer_list)
         # No exception means per-peer conn_result was used (UnboundLocalError or wrong type would raise)
         assert len(async_peer_manager.connections) == 0
+        assert all(
+            "UnboundLocalError" not in str(call.args[0])
+            for call in mock_logger.warning.call_args_list
+        )
+        assert mock_logger.warning.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_connect_to_peers_all_fail_no_success_guard(self, async_peer_manager):
         """Regression: when all peers fail, failure path must use conn_result (guards UnboundLocalError)."""
         async_peer_manager._running = True
+        mock_logger = MagicMock()
+        async_peer_manager.logger = mock_logger
         peer_list = [{"ip": "192.0.2.1", "port": 6881}]
         with patch("asyncio.open_connection", side_effect=ConnectionError("refused")):
             await async_peer_manager.connect_to_peers(peer_list)
         assert len(async_peer_manager.connections) == 0
+        batch_summary = async_peer_manager.get_last_connect_batch_summary()
+        assert batch_summary["total_attempts"] == 1
+        assert batch_summary["failed"] == 1
+        assert batch_summary["requestable_connections"] == 0
+        assert batch_summary["metadata_incomplete"] is True
+        assert all(
+            "UnboundLocalError" not in str(call.args[0])
+            for call in mock_logger.warning.call_args_list
+        )
+        assert mock_logger.warning.call_count >= 1
 
 
 class TestAsyncPeerConnectionManagerMessageHandling:
@@ -498,6 +575,33 @@ class TestAsyncPeerConnectionManagerMessageHandling:
         async_peer_manager._send_interested.assert_awaited_once_with(connection)
         async_peer_manager.piece_manager._select_pieces.assert_awaited()
         async_peer_manager.piece_manager._retry_requested_pieces.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_unchoke_retries_and_counts_retry_hits(self, async_peer_manager):
+        """Retry metric increments when UNCHOKE-triggered selection needs retry."""
+        connection = AsyncPeerConnection(
+            PeerInfo(ip="127.0.0.1", port=6881),
+            async_peer_manager.torrent_data,
+        )
+        connection.state = ConnectionState.CHOKED
+        connection.peer_choking = True
+        connection.am_interested = False
+
+        async_peer_manager._send_interested = AsyncMock()
+        async_peer_manager.piece_manager._select_pieces = AsyncMock()
+        async_peer_manager.piece_manager._retry_requested_pieces = AsyncMock()
+        async_peer_manager.piece_manager.is_downloading = True
+        async_peer_manager._schedule_piece_selection_if_ready = AsyncMock(
+            side_effect=[RuntimeError("transient"), True]
+        )
+
+        await async_peer_manager._handle_unchoke(connection, UnchokeMessage())
+        await asyncio.sleep(1.2)
+
+        assert async_peer_manager._unchoke_retry_hits == 1
+        assert (
+            async_peer_manager._schedule_piece_selection_if_ready.await_count == 2
+        )
 
     @pytest.mark.asyncio
     async def test_handle_choke_updates_piece_selection_cadence(self, async_peer_manager):
@@ -897,6 +1001,58 @@ class TestAsyncPeerConnectionManagerConnectionLifecycle:
 
         # Should handle gracefully without crashing
         assert True
+
+    @pytest.mark.asyncio
+    async def test_handle_peer_messages_transport_error_soft_disconnect(self, async_peer_manager):
+        """Transport-level read errors should be treated as soft disconnects."""
+        connection = AsyncPeerConnection(
+            PeerInfo(ip="127.0.0.1", port=6881),
+            async_peer_manager.torrent_data,
+        )
+        connection.state = ConnectionState.ACTIVE
+
+        async def mock_readexactly(_n: int) -> bytes:
+            raise ConnectionResetError("connection reset by peer")
+
+        connection.reader = AsyncMock()
+        connection.reader.readexactly = mock_readexactly
+
+        disconnect_mock = AsyncMock()
+        async_peer_manager._disconnect_peer = disconnect_mock
+
+        await async_peer_manager._handle_peer_messages(connection)
+
+        disconnect_mock.assert_awaited_once()
+        assert (
+            disconnect_mock.await_args.kwargs["terminal_state"]
+            == ConnectionState.DISCONNECTED
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_peer_messages_incomplete_read_soft_disconnect(self, async_peer_manager):
+        """IncompleteReadError on reads should be handled with a soft disconnect."""
+        connection = AsyncPeerConnection(
+            PeerInfo(ip="127.0.0.2", port=6882),
+            async_peer_manager.torrent_data,
+        )
+        connection.state = ConnectionState.ACTIVE
+
+        async def mock_readexactly(_n: int) -> bytes:
+            raise asyncio.IncompleteReadError(partial=b"", expected=4)
+
+        connection.reader = AsyncMock()
+        connection.reader.readexactly = mock_readexactly
+
+        disconnect_mock = AsyncMock()
+        async_peer_manager._disconnect_peer = disconnect_mock
+
+        await async_peer_manager._handle_peer_messages(connection)
+
+        disconnect_mock.assert_awaited_once()
+        assert (
+            disconnect_mock.await_args.kwargs["terminal_state"]
+            == ConnectionState.DISCONNECTED
+        )
 
 
 class TestAsyncPeerConnectionManagerChoking:

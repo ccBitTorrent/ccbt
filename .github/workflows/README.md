@@ -55,16 +55,16 @@ Workflows that run on **PR to main** use the environment **`approval-required`**
   - Run manually when needed from **Actions → Compatibility → Run workflow**
 
 ### Benchmark Workflow (benchmark.yml)
-- **Triggers**: `workflow_dispatch` only (manual)
-- **Purpose**: Performance benchmarking and trend tracking
+- **Triggers**: `workflow_dispatch` and pull_request/PR paths updates
+- **Purpose**: Performance benchmarking, baseline comparison, and trend tracking
 - **Runs**:
-  - Hash verification benchmark
-  - Disk I/O benchmark
-  - Piece assembly benchmark
-  - Loopback throughput benchmark
-  - Encryption benchmark
+  - Run benchmark suite for `head` changeset and compare against `base`
+  - Evaluate deltas against `dev/benchmark_thresholds.toml`
+  - Render committed docs from the comparison output and trend history
 - **Rationale**:
-  - Run manually when needed; can commit results to the repo when run from `main`
+  - Benchmarks stay out of pre-commit for faster local commits
+  - PRs to `main` can validate regressions before merge
+  - Commits only generated reports under `docs/en/reports/benchmarks/generated/`
 
 ### Security Workflow (security.yml)
 - **Triggers**: PR to `main` (runs after approval), weekly schedule, `workflow_dispatch`
@@ -233,7 +233,8 @@ Workflows that run on **PR to main** use the environment **`approval-required`**
 - **CI Pipeline** (`ci.yml`) and **Test** (`test.yml`): PR to `main` (with approval) or manual run
 - **Version Check** (`version-check.yml`): PR to `main` (with approval) or manual run
 - **Security** (`security.yml`): PR to `main` (with approval), weekly schedule, or manual run
-- **Compatibility** (`compatibility.yml`) and **Benchmarks** (`benchmark.yml`): manual run only
+- **Compatibility** (`compatibility.yml`): manual run only
+- **Benchmark** (`benchmark.yml`): manual run and pull_request flow as defined in the workflow
 
 ---
 

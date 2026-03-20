@@ -307,7 +307,7 @@ class PeerConnectionPool:
         self._health_check_task = asyncio.create_task(self._health_check_loop())
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
-        self.logger.info(
+        self.logger.debug(
             "Connection pool started with max_connections=%d", self.max_connections
         )
 
@@ -333,7 +333,7 @@ class PeerConnectionPool:
         # Close all connections
         await self._close_all_connections()
 
-        self.logger.info("Connection pool stopped")
+        self.logger.debug("Connection pool stopped")
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -1071,7 +1071,7 @@ class PeerConnectionPool:
             self.semaphore.release()
 
         if unhealthy_connections:
-            self.logger.info(
+            self.logger.debug(
                 "Removed %d unhealthy connections", len(unhealthy_connections)
             )
 
@@ -1095,7 +1095,7 @@ class PeerConnectionPool:
             self.semaphore.release()
 
         if stale_connections:
-            self.logger.info("Cleaned up %d stale connections", len(stale_connections))
+            self.logger.debug("Cleaned up %d stale connections", len(stale_connections))
 
     def update_connection_metrics(
         self,
@@ -1138,7 +1138,7 @@ class PeerConnectionPool:
         # Sort peers by usage frequency (if available) or take first N
         peers_to_warmup = peer_list[:max_count]
 
-        self.logger.info(
+        self.logger.debug(
             "Warming up %d connections to frequently accessed peers",
             len(peers_to_warmup),
         )
@@ -1162,7 +1162,7 @@ class PeerConnectionPool:
             self._warmup_attempts += len(tasks)
             self._warmup_successes += successes
 
-            self.logger.info(
+            self.logger.debug(
                 "Warmup completed: %d/%d successful", successes, len(tasks)
             )
 
@@ -1733,7 +1733,7 @@ class PeerConnectionPool:
 
         if unhealthy_connections:
             self._cleanup_reason_counts = cleanup_reason_counts
-            self.logger.info(
+            self.logger.debug(
                 "Removed %d unhealthy connections", len(unhealthy_connections)
             )
             for reason in unhealthy_connection_reasons.values():
@@ -1982,7 +1982,7 @@ class PeerConnectionPool:
                 if self.max_connections
                 else 0.0
             )
-            self.logger.info(
+            self.logger.debug(
                 "Cleaned up %d stale connections after two-phase validation (reasons: stale_only=%d)",
                 len(stale_connections),
                 cleanup_reason_counts["stale_only"],

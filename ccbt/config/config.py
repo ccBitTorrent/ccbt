@@ -61,6 +61,7 @@ try:
 except ImportError:
     Fernet = None  # type: ignore[assignment, misc]
 
+from ccbt.config.config_cli_values import COMMA_SEPARATED_LIST_PATHS
 from ccbt.models import (
     Config,
     DiscoveryConfig,
@@ -125,64 +126,45 @@ class ConfigManager:
 
         return None  # pragma: no cover
 
-    def _load_config(self) -> Config:
-        """Load configuration from file and environment."""
-        # Start with defaults
-        config_data = {}
+    def _normalize_loaded_config_data(self, config_data: dict[str, Any]) -> None:
+        """Normalize file-derived config in place (comma-lists, proxy password)."""
+        if (
+            "security" in config_data
+            and "encryption_allowed_ciphers" in config_data.get("security", {})
+        ):
+            value = config_data["security"]["encryption_allowed_ciphers"]
+            if isinstance(value, str) and "," in value:
+                config_data["security"]["encryption_allowed_ciphers"] = [
+                    item.strip() for item in value.split(",") if item.strip()
+                ]
 
-        # Load from TOML file if exists
-        if self.config_file and self.config_file.exists():
-            try:
-                with open(self.config_file, encoding="utf-8") as f:
-                    toml_data = toml.load(f)
-                config_data.update(toml_data)
+        if "proxy" in config_data and "proxy_bypass_list" in config_data.get(
+            "proxy", {}
+        ):
+            value = config_data["proxy"]["proxy_bypass_list"]
+            if isinstance(value, str) and "," in value:
+                config_data["proxy"]["proxy_bypass_list"] = [
+                    item.strip() for item in value.split(",") if item.strip()
+                ]
 
-                # Parse list values from comma-separated strings
-                if (
-                    "security" in config_data
-                    and "encryption_allowed_ciphers" in config_data.get("security", {})
-                ):
-                    value = config_data["security"]["encryption_allowed_ciphers"]
-                    if isinstance(value, str) and "," in value:
-                        config_data["security"]["encryption_allowed_ciphers"] = [
-                            item.strip() for item in value.split(",") if item.strip()
-                        ]
+        if "proxy" in config_data and config_data["proxy"].get("proxy_password"):
+            password = config_data["proxy"]["proxy_password"]
+            if self._is_encrypted(password):
+                try:
+                    decrypted = self._decrypt_proxy_password(password)
+                    config_data["proxy"]["proxy_password"] = decrypted
+                except Exception as e:
+                    logging.warning("Failed to decrypt proxy password: %s", e)
 
-                if "proxy" in config_data and "proxy_bypass_list" in config_data.get(
-                    "proxy", {}
-                ):
-                    value = config_data["proxy"]["proxy_bypass_list"]
-                    if isinstance(value, str) and "," in value:
-                        config_data["proxy"]["proxy_bypass_list"] = [
-                            item.strip() for item in value.split(",") if item.strip()
-                        ]
-
-                # Decrypt proxy password if encrypted
-                if "proxy" in config_data and config_data["proxy"].get(
-                    "proxy_password"
-                ):
-                    password = config_data["proxy"]["proxy_password"]
-                    if self._is_encrypted(password):
-                        try:
-                            decrypted = self._decrypt_proxy_password(password)
-                            config_data["proxy"]["proxy_password"] = decrypted
-                        except Exception as e:
-                            logging.warning("Failed to decrypt proxy password: %s", e)
-                            # Continue with encrypted value (will be re-encrypted on save)
-            except Exception as e:
-                logging.warning(
-                    "Failed to load config file %s: %s", self.config_file, e
-                )
-
-        # Apply environment overrides
+    def _apply_env_windows_and_build_config(
+        self, config_data: dict[str, Any]
+    ) -> Config:
+        """Merge env, apply Windows network caps, and construct ``Config``."""
         env_config = self._get_env_config()
         config_data = self._merge_config(config_data, env_config)
 
-        # Note: Apply Windows-specific connection limits to prevent socket buffer exhaustion
-        # Windows has stricter limits on socket buffers (WinError 10055)
         if IS_WINDOWS and "network" in config_data:
             network_config = config_data.get("network", {})
-            # Reduce connection limits on Windows to prevent socket buffer exhaustion
             if network_config.get("max_global_peers", 600) > 200:
                 network_config["max_global_peers"] = 200
                 logging.debug(
@@ -201,14 +183,47 @@ class ConfigManager:
             config_data["network"] = network_config
 
         try:
-            # Create Pydantic model with validation
             return Config(**config_data)
-
-            # Apply optimization profile if specified (after config is created)
-            # We'll apply it in __init__ after self.config is set
         except Exception as e:
             msg = f"Invalid configuration: {e}"
             raise ConfigurationError(msg) from e
+
+    def simulate_load_from_file_dict(self, file_dict: dict[str, Any]) -> Config:
+        """Validate effective config as if the TOML file were ``file_dict``.
+
+        Merges environment overrides and applies the same Windows adjustments as
+        :meth:`_load_config`. Used by CLI ``config set`` / ``apply`` before persisting.
+
+        Args:
+            file_dict: Parsed TOML object representing the file to write.
+
+        Returns:
+            Validated ``Config`` instance.
+
+        Raises:
+            ConfigurationError: If the resulting configuration is invalid.
+
+        """
+        config_data = dict(file_dict)
+        self._normalize_loaded_config_data(config_data)
+        return self._apply_env_windows_and_build_config(config_data)
+
+    def _load_config(self) -> Config:
+        """Load configuration from file and environment."""
+        config_data: dict[str, Any] = {}
+
+        if self.config_file and self.config_file.exists():
+            try:
+                with open(self.config_file, encoding="utf-8") as f:
+                    toml_data = toml.load(f)
+                config_data.update(toml_data)
+                self._normalize_loaded_config_data(config_data)
+            except Exception as e:
+                logging.warning(
+                    "Failed to load config file %s: %s", self.config_file, e
+                )
+
+        return self._apply_env_windows_and_build_config(config_data)
 
     def _get_env_config(self) -> dict[str, Any]:
         """Get configuration from environment variables."""
@@ -458,9 +473,14 @@ class ConfigManager:
             # Observability
             "CCBT_LOG_LEVEL": "observability.log_level",
             "CCBT_LOG_FILE": "observability.log_file",
+            "CCBT_LOG_FORMAT": "observability.log_format",
+            "CCBT_LOG_CORRELATION_ID": "observability.log_correlation_id",
             "CCBT_ENABLE_METRICS": "observability.enable_metrics",
+            "CCBT_METRICS_INTERVAL": "observability.metrics_interval",
             "CCBT_METRICS_PORT": "observability.metrics_port",
             "CCBT_ENABLE_PEER_TRACING": "observability.enable_peer_tracing",
+            "CCBT_STRUCTURED_LOGGING": "observability.structured_logging",
+            "CCBT_TRACE_FILE": "observability.trace_file",
             # Event bus configuration
             "CCBT_EVENT_BUS_MAX_QUEUE_SIZE": "observability.event_bus_max_queue_size",
             "CCBT_EVENT_BUS_BATCH_SIZE": "observability.event_bus_batch_size",
@@ -579,17 +599,7 @@ class ConfigManager:
             raw: str, path: str
         ) -> Union[bool, int, float, str, list[str]]:
             # Handle list values (comma-separated strings)
-            if path == "security.encryption_allowed_ciphers":
-                return [item.strip() for item in raw.split(",") if item.strip()]
-            if path in {
-                "security.ip_filter.filter_files",
-                "security.ip_filter.filter_urls",
-                "security.blacklist.auto_update_sources",
-                "discovery.dht_bootstrap_nodes",
-                "discovery.dht_ipv6_bootstrap_nodes",
-                "discovery.default_trackers",
-                "proxy.proxy_bypass_list",
-            }:
+            if path in COMMA_SEPARATED_LIST_PATHS:
                 return [item.strip() for item in raw.split(",") if item.strip()]
 
             low = raw.lower()

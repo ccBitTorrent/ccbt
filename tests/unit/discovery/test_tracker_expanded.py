@@ -355,6 +355,63 @@ class TestAsyncTrackerClient:
         await client.stop()
 
     @pytest.mark.asyncio
+    async def test_announce_to_multiple_retries_fallback_once_on_all_timeout_like_failures(
+        self, client, torrent_data
+    ):
+        """Retry briefly with fallback trackers when all announce calls fail quickly."""
+        await client.start()
+        fallback_response = TrackerResponse(interval=1800, peers=[])
+        torrent_data["peer_id"] = b"-CC0101-" + b"x" * 12
+
+        with patch.object(client, "get_fallback_trackers") as mock_fallback:
+            mock_fallback.return_value = ["http://fallback.example.com/announce"]
+            with patch.object(client, "_announce_to_tracker") as mock_announce:
+                mock_announce.side_effect = [
+                    Exception("Connection refused"),
+                    TimeoutError("timed out"),
+                    fallback_response,
+                ]
+
+                responses = await client.announce_to_multiple(
+                    torrent_data,
+                    ["http://tracker1.com/announce", "http://tracker2.com/announce"],
+                )
+
+                assert len(responses) == 1
+                assert responses[0] == fallback_response
+                assert mock_fallback.called
+                assert mock_announce.call_count == 3
+
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_announce_to_multiple_does_not_retry_for_invalid_payload_failures(
+        self, client, torrent_data
+    ):
+        """Avoid retrying fallback when all failures are non-retryable payload parse issues."""
+        await client.start()
+        torrent_data["peer_id"] = b"-CC0101-" + b"x" * 12
+
+        with patch.object(client, "get_fallback_trackers") as mock_fallback:
+            mock_fallback.return_value = ["http://fallback.example.com/announce"]
+            with patch.object(client, "_announce_to_tracker") as mock_announce:
+                mock_announce.side_effect = [
+                    TrackerError("Invalid tracker payload (json-like payload)"),
+                    TrackerError("Invalid tracker payload (json-like payload)"),
+                ]
+
+                responses = await client.announce_to_multiple(
+                    torrent_data,
+                    ["http://tracker1.com/announce", "http://tracker2.com/announce"],
+                )
+
+                assert responses == []
+                assert not mock_fallback.called
+                assert mock_announce.call_count == 2
+
+        await client.stop()
+
+    @pytest.mark.asyncio
     async def test_announce_to_multiple_reuses_generated_peer_id(self, client, torrent_data):
         """A generated peer_id should be reused across all trackers in the same batch."""
         await client.start()
@@ -543,6 +600,19 @@ class TestAsyncTrackerClient:
             mock_get.side_effect = aiohttp.ClientError("Network error")
 
             with pytest.raises(TrackerError, match="Network error"):
+                await client._make_request_async("http://tracker.example.com")
+
+        await client.stop()
+
+    @pytest.mark.asyncio
+    async def test_make_request_async_timeout_error(self, client):
+        """Test async HTTP request timeout handling."""
+        await client.start()
+
+        with patch.object(client.session, "get") as mock_get:
+            mock_get.side_effect = asyncio.TimeoutError("request timed out")
+
+            with pytest.raises(TrackerError, match="HTTP tracker request timed out"):
                 await client._make_request_async("http://tracker.example.com")
 
         await client.stop()
@@ -746,6 +816,13 @@ class TestAsyncTrackerClient:
         invalid_data = b"invalid bencode data"
 
         with pytest.raises(TrackerError, match="Failed to parse"):
+            client._parse_response_async(invalid_data)
+
+    def test_parse_response_async_invalid_payload(self, client):
+        """Test parsing response with invalid non-bencode payload."""
+        invalid_data = b"<html><body>tracker down</body></html>"
+
+        with pytest.raises(TrackerError, match="Invalid tracker payload"):
             client._parse_response_async(invalid_data)
 
     def test_parse_compact_peers(self, client):

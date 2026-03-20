@@ -41,6 +41,31 @@ def _folder_key(add_result: object) -> str:
     return str(add_result)
 
 
+async def _await_registered_file_metadata(
+    manager: AsyncSessionManager,
+    workspace_id_hex: str,
+    file_path: str,
+    expected_file_hash: bytes,
+    attempts: int = 80,
+    delay_seconds: float = 0.02,
+) -> None:
+    tf = TonicFile()
+    for _ in range(attempts):
+        reg = await manager.get_registered_xet_metadata(workspace_id_hex)
+        if reg is not None:
+            parsed = tf.parse_bytes(reg)
+            xet = (parsed or {}).get("xet_metadata") or {}
+            for fm in xet.get("file_metadata", []):
+                if isinstance(fm, dict) and fm.get("file_path") == file_path:
+                    if fm.get("file_hash") == expected_file_hash:
+                        return
+        await asyncio.sleep(delay_seconds)
+    raise AssertionError(
+        f"Timed out waiting for registry metadata for {file_path} with hash "
+        f"{expected_file_hash.hex()[:16]}"
+    )
+
+
 async def test_session_manager_adds_xet_folder_from_tonic(tmp_path) -> None:
     """Session manager should create a live XET folder runtime from a tonic file."""
     workspace = tmp_path / "workspace"
@@ -373,26 +398,12 @@ async def test_incoming_update_fetches_metadata_before_materialization(tmp_path)
     async with destination_folder.sync_manager.queue_lock:
         destination_folder.sync_manager.update_queue.clear()
 
-    # Ensure session registry has the updated metadata before we simulate incoming (avoids
-    # handler applying stale metadata when run under load / after other tests).
-    tf = TonicFile()
-    registry_ready = False
-    for _ in range(30):
-        reg = await manager.get_registered_xet_metadata(source_record["workspace_id"])
-        if reg is not None:
-            parsed = tf.parse_bytes(reg)
-            xet = (parsed or {}).get("xet_metadata") or {}
-            for fm in xet.get("file_metadata", []):
-                if isinstance(fm, dict) and fm.get("file_path") == "notes.txt":
-                    h = fm.get("file_hash")
-                    if h is not None and h == updated_metadata.file_hash:
-                        registry_ready = True
-                        break
-            if registry_ready:
-                break
-        await asyncio.sleep(0.02)
-    if not registry_ready:
-        await asyncio.sleep(0.15)
+    await _await_registered_file_metadata(
+        manager,
+        source_record["workspace_id"],
+        "notes.txt",
+        updated_metadata.file_hash,
+    )
 
     # Ensure only our incoming update is in the queue (clear again right before enqueue).
     async with destination_folder.sync_manager.queue_lock:
@@ -405,6 +416,18 @@ async def test_incoming_update_fetches_metadata_before_materialization(tmp_path)
         chunk_hash=updated_metadata.file_hash,
         git_ref=None,
     )
+    async with destination_folder.sync_manager.queue_lock:
+        queued_update = next(
+            (
+                item
+                for item in destination_folder.sync_manager.update_queue
+                if item.file_path == "notes.txt"
+            ),
+            None,
+        )
+    assert queued_update is not None
+    assert queued_update.file_metadata is not None
+    assert queued_update.file_metadata.file_hash == updated_metadata.file_hash
     started, processed = await destination_folder.sync()
     assert started, "sync() should start successfully"
     assert processed >= 1, (
@@ -424,6 +447,108 @@ async def test_incoming_update_fetches_metadata_before_materialization(tmp_path)
         f"processed={processed}, last_error={destination_folder.sync_manager.last_error!r}"
     )
     assert destination_folder.sync_manager.get_file_metadata("notes.txt") is not None
+    assert (
+        destination_folder.sync_manager.get_file_metadata("notes.txt").file_hash
+        == updated_metadata.file_hash
+    )
+
+    assert await manager.remove_xet_folder(destination_key) is True
+    assert await manager.remove_xet_folder(source_key) is True
+
+
+async def test_incoming_update_refreshes_stale_file_hash_manifest(tmp_path) -> None:
+    """Incoming updates should recover from stale manifest entries by refreshing metadata."""
+    manager = _build_session_manager(tmp_path)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "notes.txt").write_text("initial", encoding="utf-8")
+
+    source_key = _folder_key(
+        await manager.add_xet_folder(
+            folder_path=str(source),
+            check_interval=0.05,
+        )
+    )
+    source_records = await manager.list_xet_folders()
+    source_record = next(record for record in source_records if record["folder_key"] == source_key)
+    source_folder = await manager.get_xet_folder(source_key)
+    assert source_folder is not None
+
+    stale_metadata = await source_folder._build_file_metadata("notes.txt")
+    assert stale_metadata is not None
+    metadata_bytes = await manager.get_registered_xet_metadata(source_record["workspace_id"])
+    assert metadata_bytes is not None
+    tonic_path = tmp_path / "workspace.tonic"
+    tonic_path.write_bytes(metadata_bytes)
+
+    destination = tmp_path / "destination"
+    destination_key = _folder_key(
+        await manager.add_xet_folder(
+            folder_path=str(destination),
+            tonic_file=str(tonic_path),
+            check_interval=0.05,
+        )
+    )
+    destination_folder = await manager.get_xet_folder(destination_key)
+    assert destination_folder is not None
+
+    destination_folder.sync_manager.file_metadata_by_path["notes.txt"] = stale_metadata
+    destination_folder.sync_manager.set_last_error(None)
+    parsed_snapshot = dict(destination_folder.parsed_metadata or {})
+    xet_metadata = dict(parsed_snapshot.get("xet_metadata", {}))
+    xet_metadata["file_metadata"] = [stale_metadata.model_dump()]
+    parsed_snapshot["xet_metadata"] = xet_metadata
+    destination_folder.parsed_metadata = parsed_snapshot
+
+    if destination_folder._realtime_sync is not None:
+        await destination_folder._realtime_sync.stop()
+        destination_folder._realtime_sync = None
+    await destination_folder.folder_watcher.stop()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    async with destination_folder.sync_manager.queue_lock:
+        destination_folder.sync_manager.update_queue.clear()
+
+    (source / "notes.txt").write_text("version two", encoding="utf-8")
+    updated_metadata = await source_folder._build_file_metadata("notes.txt")
+    assert updated_metadata is not None
+    await source_folder._refresh_metadata_snapshot()
+    await _await_registered_file_metadata(
+        manager,
+        source_record["workspace_id"],
+        "notes.txt",
+        updated_metadata.file_hash,
+    )
+
+    await manager._handle_incoming_xet_update(
+        peer_id="peer-source",
+        workspace_id_hex=source_record["workspace_id"],
+        file_path="notes.txt",
+        chunk_hash=updated_metadata.file_hash,
+        git_ref=None,
+    )
+
+    started, processed = await destination_folder.sync()
+    assert started, "sync() should start successfully"
+    assert processed >= 1, (
+        f"expected at least one update processed, got {processed}; "
+        f"last_error={destination_folder.sync_manager.last_error!r}"
+    )
+
+    for _ in range(15):
+        await asyncio.sleep(0.1)
+        if (destination / "notes.txt").exists():
+            content = (destination / "notes.txt").read_text(encoding="utf-8")
+            if content == "version two":
+                break
+    content = (destination / "notes.txt").read_text(encoding="utf-8")
+    assert content == "version two", (
+        f"expected notes.txt content 'version two', got {content!r}; "
+        f"processed={processed}, last_error={destination_folder.sync_manager.last_error!r}"
+    )
+    file_metadata = destination_folder.sync_manager.get_file_metadata("notes.txt")
+    assert file_metadata is not None
+    assert file_metadata.file_hash == updated_metadata.file_hash
 
     assert await manager.remove_xet_folder(destination_key) is True
     assert await manager.remove_xet_folder(source_key) is True

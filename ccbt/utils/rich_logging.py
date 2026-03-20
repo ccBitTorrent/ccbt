@@ -30,6 +30,14 @@ except ImportError:
     Text = None  # type: ignore[assignment,misc]
 
 
+from ccbt.utils.style_policy import (
+    LOG_ACTION_PATTERNS,
+    color_for_log_level,
+    colorize_action_text,
+    format_log_method_name,
+)
+
+
 class CorrelationRichHandler(RichHandler):  # type: ignore[misc]
     """RichHandler with correlation ID support and enhanced formatting.
 
@@ -43,30 +51,21 @@ class CorrelationRichHandler(RichHandler):  # type: ignore[misc]
 
     # Colors for log levels
     LEVEL_COLORS: ClassVar[dict[str, str]] = {
-        "DEBUG": "dim",
-        "INFO": "cyan",
-        "WARNING": "yellow",
-        "ERROR": "red",
-        "CRITICAL": "bold red",
+        "DEBUG": color_for_log_level("DEBUG"),
+        "TRACE": color_for_log_level("TRACE"),
+        "INFO": color_for_log_level("INFO"),
+        "WARNING": color_for_log_level("WARNING"),
+        "ERROR": color_for_log_level("ERROR"),
+        "CRITICAL": color_for_log_level("CRITICAL"),
     }
 
     # Patterns for action text that should be colored bright cyan
-    ACTION_PATTERNS: ClassVar[list[str]] = [
-        r"PIECE_MANAGER:",
-        r"PIECE_MESSAGE:",
-        r"Sent \d+ REQUEST message\(s\)",
-        r"Received piece",
-        r"state transition:",
-        r"No available peers",
-        r"Checking \d+ active peers",
-    ]
+    ACTION_PATTERNS: ClassVar[tuple[str, ...]] = LOG_ACTION_PATTERNS
 
     def __init__(
         self,
         *args: Any,
         console: Optional[Console] = None,
-        show_icons: bool = False,  # noqa: ARG002  # Deprecated, reserved for future use
-        _show_icons: Optional[bool] = None,  # Deprecated, use show_icons
         show_colors: bool = True,
         **kwargs: Any,
     ) -> None:
@@ -75,16 +74,10 @@ class CorrelationRichHandler(RichHandler):  # type: ignore[misc]
         Args:
             *args: Positional arguments for RichHandler
             console: Optional Rich Console instance
-            show_icons: Whether to show icons for log levels (deprecated, always False)
-            _show_icons: Deprecated alias for show_icons
             show_colors: Whether to use colors for log levels
             **kwargs: Keyword arguments for RichHandler
 
         """
-        # Handle deprecated _show_icons parameter (unused for now)
-        if _show_icons is not None:
-            pass  # Reserved for future use
-
         if not _RICH_AVAILABLE:
             # Fallback to StreamHandler if Rich not available
             super().__init__(*args, **kwargs)
@@ -102,7 +95,6 @@ class CorrelationRichHandler(RichHandler):  # type: ignore[misc]
                 color_system="auto",  # Auto-detect color system (256 colors, truecolor, etc.)
             )
 
-        self.show_icons = False  # Always False
         self.show_colors = show_colors
 
         # CRITICAL: RichHandler does NOT process markup by default
@@ -129,67 +121,7 @@ class CorrelationRichHandler(RichHandler):  # type: ignore[misc]
         if not _RICH_AVAILABLE:
             return message
 
-        # Colorize action patterns with bright cyan
-        for pattern in self.ACTION_PATTERNS:
-            # Find all matches and wrap them in bright cyan color
-            matches = list(re.finditer(pattern, message))
-            # Process from end to start to preserve indices
-            for match in reversed(matches):
-                start, end = match.span()
-                matched_text = message[start:end]
-                # Only colorize if not already colorized
-                if "[bright_cyan]" not in message[max(0, start - 20) : start]:
-                    message = (
-                        message[:start]
-                        + f"[bright_cyan]{matched_text}[/bright_cyan]"
-                        + message[end:]
-                    )
-
-        # Colorize ALL_CAPS words (like HANDSHAKE_COMPLETE, MESSAGE, MESSAGE_LOOP) in orange
-        # Pattern matches words that are all uppercase letters, possibly with underscores
-        # Must be at least 2 characters and contain at least one letter (not just underscores)
-        all_caps_pattern = r"\b[A-Z][A-Z_]*[A-Z]\b|\b[A-Z]{2,}\b"
-        matches = list(re.finditer(all_caps_pattern, message))
-        # Process from end to start to preserve indices
-        for match in reversed(matches):
-            start, end = match.span()
-            matched_text = message[start:end]
-            # Verify it's actually all caps (not mixed case)
-            # Must be all uppercase letters, possibly with underscores
-            if not (
-                matched_text.isupper()
-                or (matched_text.replace("_", "").isupper() and "_" in matched_text)
-            ):
-                continue
-
-            # Check if this text is already inside Rich markup tags
-            # Simple heuristic: if there's a '[' nearby before and ']' nearby after, skip
-            # to avoid double-wrapping
-            before_context = message[max(0, start - 30) : start]
-            after_context = message[end : min(len(message), end + 30)]
-
-            # Skip if already inside markup (has opening bracket before and closing after)
-            if "[" in before_context and "]" in after_context:
-                # Check if there's a closing tag marker [/ which would indicate we're inside markup
-                if "[/" in after_context:
-                    continue
-                # Also check if we're right after an opening tag (like [orange1]WORD)
-                if before_context.rstrip().endswith("]"):
-                    continue
-
-            # Only colorize if not already colorized (check for common color tags)
-            if (
-                "[orange1]" not in before_context
-                and "[orange3]" not in before_context
-                and "[#ff8c00]" not in before_context
-            ):
-                message = (
-                    message[:start]
-                    + f"[orange1]{matched_text}[/orange1]"
-                    + message[end:]
-                )
-
-        return message
+        return colorize_action_text(message)
 
     def emit(self, record: logging.LogRecord) -> None:
         """Emit a log record with correlation ID, method name coloring, and action text coloring."""
@@ -216,12 +148,9 @@ class CorrelationRichHandler(RichHandler):  # type: ignore[misc]
                 # Step 2: Add pink-colored method name at the beginning
                 # Format: [#ff69b4]method_name[/#ff69b4] message
                 # Using hex color #ff69b4 (hot pink) as Rich doesn't have "pink" as a named color
-                if func_name and func_name != "unknown":
-                    pink_markup = f"[#ff69b4]{func_name}[/#ff69b4]"
-                    if pink_markup not in colored_msg:
-                        formatted_msg = f"{pink_markup} {colored_msg}"
-                    else:
-                        formatted_msg = colored_msg
+                method_name = format_log_method_name(func_name)
+                if method_name and method_name != colored_msg:
+                    formatted_msg = f"{method_name} {colored_msg}"
                 else:
                     formatted_msg = colored_msg
 
@@ -301,8 +230,6 @@ def strip_rich_markup(text: str) -> str:
     if not _RICH_AVAILABLE:
         return text
 
-    import re
-
     # Remove Rich markup tags like [red], [bold], etc.
     # Pattern matches [tag], [tag=value], [/tag]
     pattern = r"\[/?[^\]]+\]"
@@ -326,8 +253,6 @@ def create_rich_handler(
     level: int = logging.INFO,
     show_path: bool = False,
     rich_tracebacks: bool = True,
-    _show_icons: bool = False,
-    show_icons: bool = False,  # Alias for _show_icons for backward compatibility
     show_colors: bool = True,
 ) -> logging.Handler:
     """Create a RichHandler with correlation ID support and method name coloring.
@@ -337,8 +262,6 @@ def create_rich_handler(
         level: Log level
         show_path: Whether to show file paths in log output
         rich_tracebacks: Whether to use rich tracebacks
-        _show_icons: Whether to show icons for log levels (deprecated, always False)
-        show_icons: Alias for _show_icons (deprecated, always False)
         show_colors: Whether to use colors for log levels
 
     Returns:
@@ -350,9 +273,6 @@ def create_rich_handler(
         ALL_CAPS words (like HANDSHAKE_COMPLETE, MESSAGE) are colored orange.
 
     """
-    # Handle both _show_icons and show_icons parameters (show_icons takes precedence)
-    if show_icons is not False:  # If explicitly set to True (though it's deprecated)
-        _show_icons = show_icons
     if not _RICH_AVAILABLE:
         # Fallback to StreamHandler
         import sys
@@ -380,7 +300,6 @@ def create_rich_handler(
         level=level,
         show_path=show_path,
         rich_tracebacks=rich_tracebacks,
-        show_icons=False,  # Always False - icons removed
         show_colors=show_colors,
     )
 

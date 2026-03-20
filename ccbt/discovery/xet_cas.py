@@ -597,11 +597,10 @@ class P2PCASClient:
 
         # Get extension manager and Xet extension (prefer injected manager)
         if self.extension_manager is None:
-            from ccbt.extensions.manager import get_extension_manager
-
-            extension_manager = get_extension_manager()
-        else:
-            extension_manager = self.extension_manager
+            error_msg = "XetCAS download requires an injected extension_manager"
+            self.logger.debug(error_msg)
+            raise NotImplementedError(error_msg)
+        extension_manager = self.extension_manager
         extension_protocol = extension_manager.get_extension("protocol")
         xet_ext = extension_manager.get_extension("xet")
 
